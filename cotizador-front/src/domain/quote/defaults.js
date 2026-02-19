@@ -1,0 +1,1 @@
+export const IVA_RATE_DEFAULT = 0.21;
