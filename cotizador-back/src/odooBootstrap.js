@@ -31,8 +31,11 @@ export async function loadOdooBootstrap(odoo, { productsLimit } = {}) {
     currency_name: Array.isArray(p.currency_id) ? p.currency_id[1] : null,
   }));
 
-  // Products (sale_ok)
-  const domain = [["sale_ok", "=", true]];
+  // Products (solo para la venta y activos)
+  const domain = [
+    ["sale_ok", "=", true],
+    ["active", "=", true],
+  ];
   // Traemos también product_tmpl_id para poder leer Tags (que viven en product.template)
   const productsRaw = await odoo.executeKw("product.product", "search_read", [domain], {
     fields: ["id", "name", "default_code", "uom_id", "list_price", "product_tmpl_id"],

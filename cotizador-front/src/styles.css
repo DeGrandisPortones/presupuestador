@@ -62,3 +62,11 @@ th, td {
   border-color: #2b59ff;
   box-shadow: 0 1px 8px rgba(43, 89, 255, 0.18);
 }
+
+.quote-row {
+  align-items: flex-start; /* evita el stretch vertical */
+}
+
+.quote-row > .card {
+  min-width: 0; /* evita desbordes raros por contenido (grid/tabla) */
+}

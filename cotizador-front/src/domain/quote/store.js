@@ -131,7 +131,10 @@ export const useQuoteStore = create((set, get) => ({
           ...s.lines,
           {
             product_id: id,
+            // name = alias visible en el cotizador
             name: p.name || "",
+            // raw_name = nombre real de Odoo (para PDF)
+            raw_name: p.raw_name || p.rawName || p.original_name || "",
             code: p.code || null,
             qty: 1,
             // ✅ Para evitar el "0" al agregar:

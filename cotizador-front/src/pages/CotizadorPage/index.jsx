@@ -5,6 +5,8 @@ import { useAuthStore } from "../../domain/auth/store.js";
 
 import { getPricelists, getPrices } from "../../api/odoo";
 import { createQuote, getQuote, submitQuote, updateQuote } from "../../api/quotes";
+import { downloadPresupuestoPdf, downloadProformaPdf } from "../../api/pdf";
+import toast from "react-hot-toast";
 
 import { useQuoteStore } from "../../domain/quote/store";
 import { IVA_RATE_DEFAULT } from "../../domain/quote/defaults";
@@ -136,11 +138,32 @@ export default function CotizadorPage() {
     },
   });
 
+  const onDownloadPresupuesto = async () => {
+    try {
+      const payload = buildPayloadForBack(); // ✅ FIX: antes era quote.buildPayloadForBack()
+      await downloadPresupuestoPdf(payload);
+    } catch (e) {
+      toast.error(e?.response?.data?.error || e.message);
+    }
+  };
+
+  const onDownloadProforma = async () => {
+    try {
+      const payload = buildPayloadForBack(); // ✅ FIX: antes era quote.buildPayloadForBack()
+      await downloadProformaPdf(payload);
+    } catch (e) {
+      toast.error(e?.response?.data?.error || e.message);
+    }
+  };
+
   const canSubmit = ["draft", "rejected_commercial", "rejected_technical"].includes(status);
 
   return (
     <div className="container">
-      <div className="card" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+      <div
+        className="card"
+        style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}
+      >
         <div>
           <h2 style={{ margin: 0 }}>
             {quoteId ? `Presupuesto #${String(quoteId).slice(0, 8)}` : "Nuevo presupuesto"}
@@ -151,10 +174,15 @@ export default function CotizadorPage() {
         </div>
 
         <div style={{ display: "flex", gap: 8 }}>
-          <Button
-            onClick={() => saveM.mutate()}
-            disabled={saveM.isPending}
-          >
+          <Button variant="secondary" onClick={onDownloadPresupuesto}>
+            PDF presupuesto
+          </Button>
+          {user?.is_distribuidor ? (
+            <Button variant="secondary" onClick={onDownloadProforma}>
+              PDF proforma
+            </Button>
+          ) : null}
+          <Button onClick={() => saveM.mutate()} disabled={saveM.isPending}>
             {saveM.isPending ? "Guardando..." : "Guardar"}
           </Button>
 
@@ -171,11 +199,11 @@ export default function CotizadorPage() {
 
       <div className="spacer" />
 
-      <HeaderBar pricelists={pricelistsQ.data || []} loadingPricelists={pricelistsQ.isLoading} />
+      <HeaderBar pricelists={pricelistsQ.data || []} loadingPricelists={pricelistsQ.isLoading} showMargin />
 
       <div className="spacer" />
 
-      <div className="row">
+      <div className="row quote-row">
         <div className="card" style={{ flex: 1, minWidth: 320 }}>
           <SectionCatalog />
         </div>

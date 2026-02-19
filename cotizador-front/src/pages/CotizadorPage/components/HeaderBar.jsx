@@ -41,7 +41,7 @@ export default function HeaderBar({ pricelists, loadingPricelists, showMargin })
 
         {showMargin && (
           <div>
-            <div className="muted">Margen (%)</div>
+            <div className="muted">Coeficiente (%)</div>
             <Input
               type="number"
               value={marginPercent}

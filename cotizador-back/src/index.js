@@ -15,6 +15,7 @@ import { buildAuthRouter } from "./routes/auth.routes.js";
 import { buildQuotesRouter } from "./routes/quotes.routes.js";
 import { buildCatalogRouter } from "./routes/catalog.routes.js";
 import { buildAdminRouter } from "./routes/admin.routes.js";
+import { buildPdfRouter } from "./routes/pdf.routes.js";
 
 
 const app = express();
@@ -55,6 +56,9 @@ app.use("/api/catalog", buildCatalogRouter(odoo));
 
 // Dashboard admin
 app.use("/api/admin", buildAdminRouter(odoo));
+
+// PDF (presupuesto / proforma)
+app.use("/api/pdf", buildPdfRouter());
 
 
 // Error handler

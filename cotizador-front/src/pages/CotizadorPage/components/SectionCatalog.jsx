@@ -182,7 +182,19 @@ export default function SectionCatalog() {
                   </div>
                 </div>
                 {/* Al store le pasamos name=display_name para que el usuario vea el alias en el presupuesto */}
-                <Button onClick={() => addLine({ ...p, name: p.display_name || p.name })}>+</Button>
+                <Button
+                  onClick={() =>
+                    addLine({
+                      ...p,
+                      // alias visible
+                      name: p.display_name || p.name,
+                      // nombre real para PDF
+                      raw_name: p.name,
+                    })
+                  }
+                >
+                  +
+                </Button>
               </div>
             ))}
             {!visibleProducts.length && <div className="muted">Sin productos para mostrar</div>}
