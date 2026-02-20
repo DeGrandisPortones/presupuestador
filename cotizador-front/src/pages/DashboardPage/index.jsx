@@ -25,15 +25,17 @@ export default function DashboardPage() {
 
   const [tab, setTab] = useState("tags"); // tags | aliases | data
 
+  const [catalogKind, setCatalogKind] = useState("porton"); // porton | ipanel // tags | aliases | data
+
   const catalogQ = useQuery({
-    queryKey: ["adminCatalog"],
-    queryFn: adminGetCatalog,
+    queryKey: ["adminCatalog", catalogKind],
+    queryFn: () => adminGetCatalog(catalogKind),
     enabled: !!user?.is_enc_comercial,
   });
 
   const quotesQ = useQuery({
-    queryKey: ["adminQuotes"],
-    queryFn: () => adminGetQuotes(200),
+    queryKey: ["adminQuotes", catalogKind],
+    queryFn: () => adminGetQuotes(catalogKind, 200),
     enabled: !!user?.is_enc_comercial && tab === "data",
   });
 
@@ -115,14 +117,14 @@ export default function DashboardPage() {
 
   const onRefresh = async () => {
     await adminRefreshCatalog();
-    qc.invalidateQueries({ queryKey: ["adminCatalog"] });
+    qc.invalidateQueries({ queryKey: ["adminCatalog", catalogKind] });
     // Para que el usuario vea cambios en el cotizador: cerrar sesión y re-login (bootstrap se guarda en login)
   };
 
   const onCreateSection = async () => {
-    await adminCreateSection({ name: newSectionName, position: Number(newSectionPos || 100) });
+    await adminCreateSection(catalogKind, { name: newSectionName, position: Number(newSectionPos || 100) });
     setNewSectionName("");
-    qc.invalidateQueries({ queryKey: ["adminCatalog"] });
+    qc.invalidateQueries({ queryKey: ["adminCatalog", catalogKind] });
   };
 
   return (
@@ -134,6 +136,16 @@ export default function DashboardPage() {
           <h2 style={{ margin: 0 }}>Dashboard del Presupuestador</h2>
           <div className="muted">Secciones por etiqueta + alias visibles + data</div>
         </div>
+
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <Button variant={catalogKind === "porton" ? "primary" : "ghost"} onClick={() => setCatalogKind("porton")}>
+            Portones
+          </Button>
+          <Button variant={catalogKind === "ipanel" ? "primary" : "ghost"} onClick={() => setCatalogKind("ipanel")}>
+            Ipanel
+          </Button>
+        </div>
+
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           <Button variant="ghost" onClick={onRefresh} disabled={catalogQ.isLoading}>
             Refrescar catálogo
@@ -180,8 +192,8 @@ export default function DashboardPage() {
                         variant="ghost"
                         onClick={async () => {
                           if (!confirm(`Borrar sección "${s.name}"?`)) return;
-                          await adminDeleteSection(s.id);
-                          qc.invalidateQueries({ queryKey: ["adminCatalog"] });
+                          await adminDeleteSection(catalogKind, s.id);
+                          qc.invalidateQueries({ queryKey: ["adminCatalog", catalogKind] });
                         }}
                         title="Borrar"
                       >
@@ -206,8 +218,8 @@ export default function DashboardPage() {
                         value={t.section_id || ""}
                         onChange={async (e) => {
                           const v = e.target.value ? Number(e.target.value) : null;
-                          await adminSetTagSection(t.id, v);
-                          qc.invalidateQueries({ queryKey: ["adminCatalog"] });
+                          await adminSetTagSection(catalogKind, t.id, v);
+                          qc.invalidateQueries({ queryKey: ["adminCatalog", catalogKind] });
                         }}
                         style={{ padding: 8, borderRadius: 10, border: "1px solid #ddd", minWidth: 220 }}
                       >
@@ -245,8 +257,8 @@ export default function DashboardPage() {
                       key={p.id}
                       product={p}
                       onSave={async (alias) => {
-                        await adminSetProductAlias(p.id, alias);
-                        qc.invalidateQueries({ queryKey: ["adminCatalog"] });
+                        await adminSetProductAlias(catalogKind, p.id, alias);
+                        qc.invalidateQueries({ queryKey: ["adminCatalog", catalogKind] });
                       }}
                     />
                   ))}
@@ -289,7 +301,7 @@ export default function DashboardPage() {
                 <div className="spacer" />
 
                 <Button
-                  onClick={() => qc.invalidateQueries({ queryKey: ["adminQuotes"] })}
+                  onClick={() => qc.invalidateQueries({ queryKey: ["adminQuotes", catalogKind] })}
                   disabled={quotesQ.isLoading}
                 >
                   {quotesQ.isLoading ? "Cargando…" : "Refrescar"}

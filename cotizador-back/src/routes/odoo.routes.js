@@ -1,38 +1,15 @@
 import express from "express";
 import { requireAuth } from "../auth.js";
-import { loadOdooBootstrap } from "../odooBootstrap.js";
 
 export function buildOdooRouter(odoo) {
   const router = express.Router();
 
   router.get("/health", (_req, res) => res.json({ ok: true }));
 
-  // Bootstrap para el front (catálogo) - cacheado en memoria
-  router.get("/bootstrap", requireAuth, async (req, res, next) => {
-    try {
-      const limit = req.query.products_limit ? Number(req.query.products_limit) : undefined;
-      const data = await loadOdooBootstrap(odoo, { productsLimit: limit });
-      res.json(data);
-    } catch (e) {
-      next(e);
-    }
-  });
-
   router.get("/debug-auth", async (_req, res, next) => {
     try {
       const uid = await odoo._debugAuth();
       res.json({ ok: true, uid });
-    } catch (e) {
-      next(e);
-    }
-  });
-
-  // Debug: confirma endpoint JSON-RPC y version del servidor (no requiere auth)
-  router.get("/debug-version", async (_req, res, next) => {
-    try {
-      const version = await odoo._debugVersion();
-      const info = odoo._debugInfo();
-      res.json({ ok: true, info, version });
     } catch (e) {
       next(e);
     }
@@ -77,8 +54,7 @@ export function buildOdooRouter(odoo) {
       if (query) domain.push("|", ["name", "ilike", query], ["default_code", "ilike", query]);
 
       const products = await odoo.executeKw("product.product", "search_read", [domain], {
-        // Incluimos list_price para que el front pueda setear precio inmediato al agregar línea
-        fields: ["id", "name", "default_code", "uom_id", "list_price"],
+        fields: ["id", "name", "default_code", "uom_id"],
         limit,
         order: "name asc",
       });
@@ -90,9 +66,6 @@ export function buildOdooRouter(odoo) {
           name: p.name,
           code: p.default_code || null,
           uom_id: Array.isArray(p.uom_id) ? p.uom_id[0] : p.uom_id,
-          list_price: typeof p.list_price === "number" ? p.list_price : null,
-          // alias de compatibilidad
-          price: typeof p.list_price === "number" ? p.list_price : null,
         })),
       });
     } catch (e) {
@@ -168,8 +141,7 @@ export function buildOdooRouter(odoo) {
 
       const productIds = [...new Set(lines.map((l) => Number(l.product_id)))];
       const products = await odoo.executeKw("product.product", "read", [productIds], {
-        // list_price nos alcanza para el flujo actual (y evita N llamadas extra a Odoo)
-        fields: ["id", "name", "default_code", "list_price"],
+        fields: ["id", "name", "default_code"],
       });
       const byId = new Map(products.map((p) => [p.id, p]));
 
@@ -180,8 +152,7 @@ export function buildOdooRouter(odoo) {
         const p = byId.get(productId);
         if (!p) throw new Error(`Producto no encontrado: ${productId}`);
 
-        // ✅ precio inmediato desde Odoo (list_price)
-        const price = typeof p?.list_price === "number" ? p.list_price : 0;
+        const price = await getPriceFromPricelist({ odoo, pricelistId, productId, qty, partnerId });
 
         out.push({
           product_id: productId,

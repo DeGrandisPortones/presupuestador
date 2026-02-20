@@ -4,13 +4,12 @@ import { loadCatalogBootstrap } from "../catalogBootstrap.js";
 
 export function buildCatalogRouter(odoo) {
   const router = express.Router();
-  router.use(requireAuth);
 
-  // Catálogo enriquecido (secciones/tags/alias)
-  router.get("/bootstrap", async (req, res, next) => {
+  // /api/catalog/bootstrap?kind=porton|ipanel
+  router.get("/bootstrap", requireAuth, async (req, res, next) => {
     try {
-      const limit = req.query.products_limit ? Number(req.query.products_limit) : undefined;
-      const data = await loadCatalogBootstrap(odoo, { productsLimit: limit });
+      const kind = req.query.kind || "porton";
+      const data = await loadCatalogBootstrap(odoo, kind);
       res.json(data);
     } catch (e) {
       next(e);

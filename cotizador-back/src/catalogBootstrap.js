@@ -1,56 +1,70 @@
-import { loadOdooBootstrap } from "./odooBootstrap.js";
-import {
-  ensureCatalogTables,
-  listSections,
-  listTagSections,
-  listProductAliases,
-} from "./catalogDb.js";
+import { loadOdooBootstrap, clearOdooBootstrapCache } from "./odooBootstrap.js";
+import { normKind, listSections, getTagSectionMap, getProductAliasMap } from "./catalogDb.js";
 
-/**
- * Devuelve un "bootstrap" enriquecido:
- * - productos con tag_ids (desde Odoo)
- * - secciones (DB)
- * - mapeo tag->seccion (DB)
- * - alias por producto (DB) => display_name
- * - section_ids calculadas por producto (puede estar en varias)
- */
-export async function loadCatalogBootstrap(odoo, { productsLimit } = {}) {
-  await ensureCatalogTables();
-  const base = await loadOdooBootstrap(odoo, { productsLimit });
+let cacheByKind = new Map();
+const TTL_MS = Number(process.env.CATALOG_BOOTSTRAP_TTL_MS || 5 * 60 * 1000);
 
-  const [sections, tagSectionsRows, aliasRows] = await Promise.all([
-    listSections(),
-    listTagSections(),
-    listProductAliases(),
-  ]);
+function nowMs(){ return Date.now(); }
 
-  const tagToSection = new Map((tagSectionsRows || []).map((r) => [Number(r.tag_id), Number(r.section_id)]));
-  const aliasByProduct = new Map((aliasRows || []).map((r) => [Number(r.product_id), String(r.alias)]));
+function normTagName(x){ return (x||"").toString().trim().toLowerCase(); }
 
-  const products = (base.products || []).map((p) => {
-    const tag_ids = Array.isArray(p.tag_ids) ? p.tag_ids.map((x) => Number(x)) : [];
-    const section_ids = [...new Set(tag_ids.map((tid) => tagToSection.get(tid)).filter(Boolean))].map((x) => Number(x));
-    const alias = aliasByProduct.get(Number(p.id)) || null;
+export async function loadCatalogBootstrap(odoo, kind="porton") {
+  const k = normKind(kind);
+  const now = nowMs();
+  const cached = cacheByKind.get(k);
+  if (cached && (now - cached.at) < TTL_MS) return cached.data;
+
+  const odooBoot = await loadOdooBootstrap(odoo);
+  const sections = await listSections(k);
+  const tagSection = await getTagSectionMap(k);
+  const aliasMap = await getProductAliasMap(k);
+
+  const tags = Array.isArray(odooBoot?.tags) ? odooBoot.tags : [];
+  const productsRaw = Array.isArray(odooBoot?.products) ? odooBoot.products : [];
+
+  const ipanelTagIds = new Set(tags.filter(t => normTagName(t.name)==="ipanel").map(t => Number(t.id)));
+
+  const productsFiltered = productsRaw.filter(p => {
+    const tids = Array.isArray(p.tag_ids) ? p.tag_ids.map(Number) : [];
+    const isIpanel = tids.some(tid => ipanelTagIds.has(tid));
+    return k === "ipanel" ? isIpanel : !isIpanel;
+  });
+
+  const sectionById = new Map(sections.map(s => [Number(s.id), s]));
+  const tagById = new Map(tags.map(t => [Number(t.id), t]));
+
+  const products = productsFiltered.map((p) => {
+    const pid = Number(p.id);
+    const alias = aliasMap.get(pid) || null;
+    const tids = Array.isArray(p.tag_ids) ? p.tag_ids.map(Number) : [];
+    const sectionIds = [...new Set(tids.map(tid => tagSection.get(tid)).filter(Boolean).map(Number))];
+    const sectionNames = sectionIds.map(sid => sectionById.get(Number(sid))?.name).filter(Boolean);
+    const tagNames = tids.map(tid => tagById.get(tid)?.name).filter(Boolean);
+
     return {
       ...p,
-      display_name: alias || p.name,
       alias,
-      section_ids,
+      display_name: alias || p.name,
+      section_ids: sectionIds,
+      sections: sectionNames,
+      tags: tagNames,
     };
   });
 
-  // Tags enriquecidos (con section_id)
-  const tags = (base.tags || []).map((t) => ({
-    id: Number(t.id),
-    name: t.name,
-    section_id: tagToSection.get(Number(t.id)) || null,
-  }));
-
-  return {
-    ...base,
-    products,
-    sections: sections || [],
+  const data = {
+    ok: true,
+    kind: k,
+    generated_at: new Date().toISOString(),
+    sections,
     tags,
-    tag_sections: (tagSectionsRows || []).map((r) => ({ tag_id: Number(r.tag_id), section_id: Number(r.section_id) })),
+    products,
   };
+
+  cacheByKind.set(k, { at: now, data });
+  return data;
+}
+
+export function clearCatalogBootstrapCache() {
+  cacheByKind = new Map();
+  clearOdooBootstrapCache();
 }

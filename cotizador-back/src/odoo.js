@@ -70,18 +70,5 @@ export function createOdooClient({ url, db, username, password, companyId = null
     });
   }
 
-  async function commonVersion() {
-    return jsonrpcCall({
-      service: "common",
-      method: "version",
-      args: [],
-    });
-  }
-
-  return {
-    executeKw,
-    _debugAuth: async () => getUid(),
-    _debugVersion: async () => commonVersion(),
-    _debugInfo: () => ({ rootUrl, jsonrpcUrl, db: ODOO_DB }),
-  };
+  return { executeKw, _debugAuth: async () => getUid() };
 }

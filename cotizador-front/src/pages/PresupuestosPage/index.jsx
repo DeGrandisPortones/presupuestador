@@ -53,6 +53,7 @@ function labelStatus(q) {
 export default function PresupuestosPage() {
   const navigate = useNavigate();
   const [filter, setFilter] = useState("all"); // all | rejected | acopio
+  const [searchCustomer, setSearchCustomer] = useState("");
 
   const q = useQuery({
     queryKey: ["quotes", "mine"],
@@ -75,8 +76,13 @@ const requestProdM = useMutation({
   if (filter === "acopio") {
     return arr.filter((x) => x.fulfillment_mode === "acopio");
   }
-  return arr;
-}, [q.data, filter]);
+  let out = arr;
+  const sq = (searchCustomer || "").toString().trim().toLowerCase();
+  if (sq) {
+    out = out.filter((x) => (x.end_customer?.name || "").toString().toLowerCase().includes(sq));
+  }
+  return out;
+}, [q.data, filter, searchCustomer]);
 
   return (
     <div className="container">
@@ -97,6 +103,14 @@ const requestProdM = useMutation({
             Acopio
           </Button>
         </div>
+
+        <div className="spacer" />
+        <input
+          value={searchCustomer}
+          onChange={(e) => setSearchCustomer(e.target.value)}
+          placeholder="Buscar por cliente…"
+          style={{ width: "100%", padding: 10, borderRadius: 12, border: "1px solid #ddd" }}
+        />
       </div>
 
       <div className="spacer" />
@@ -128,7 +142,7 @@ const requestProdM = useMutation({
           <td className="right" style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
             <Button variant="ghost" onClick={() => navigate(`/presupuestos/${r.id}`)}>Ver</Button>
             {r.status === "draft" && (
-              <Button onClick={() => navigate(`/cotizador/${r.id}`)}>Editar</Button>
+              <Button onClick={() => navigate(r.catalog_kind === "ipanel" ? `/cotizador/ipanel/${r.id}` : `/cotizador/${r.id}`)}>Editar</Button>
             )}
           </td>
         </tr>
@@ -161,7 +175,7 @@ const requestProdM = useMutation({
             <td className="right" style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
               <Button variant="ghost" onClick={() => navigate(`/presupuestos/${r.id}`)}>Ver</Button>
               {r.status === "draft" && (
-                <Button variant="ghost" onClick={() => navigate(`/cotizador/${r.id}`)}>Editar</Button>
+                <Button variant="ghost" onClick={() => navigate(r.catalog_kind === "ipanel" ? `/cotizador/ipanel/${r.id}` : `/cotizador/${r.id}`)}>Editar</Button>
               )}
               <Button
                 disabled={!canRequest || requestProdM.isPending}

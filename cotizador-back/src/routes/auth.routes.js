@@ -1,9 +1,8 @@
 import express from "express";
 import { dbQuery } from "../db.js";
 import { signToken, requireAuth } from "../auth.js";
-import { loadCatalogBootstrap } from "../catalogBootstrap.js";
 
-export function buildAuthRouter(odoo) {
+export function buildAuthRouter() {
   const router = express.Router();
 
   // LOGIN
@@ -33,17 +32,7 @@ const q = await dbQuery(
       if (!user) return res.status(401).json({ ok: false, error: "Credenciales inválidas" });
 
       const token = signToken(user);
-
-      // Opcional: bootstrap de Odoo en el login (productos + listas)
-      let bootstrap = null;
-      let bootstrap_error = null;
-      try {
-        if (odoo?.executeKw) bootstrap = await loadCatalogBootstrap(odoo);
-      } catch (e) {
-        bootstrap_error = e?.message || "No se pudo cargar bootstrap de Odoo";
-      }
-
-      res.json({ ok: true, token, user, bootstrap, bootstrap_error });
+      res.json({ ok: true, token, user });
     } catch (e) {
       next(e);
     }

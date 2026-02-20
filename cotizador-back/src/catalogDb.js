@@ -1,127 +1,119 @@
 import { dbQuery } from "./db.js";
 
-// Tablas para dashboard/catalogo (secciones, mapeo tag->seccion, alias visible por producto)
-
-let ensured = false;
-
-export async function ensureCatalogTables() {
-  if (ensured) return;
-
-  // Nota: usamos IF NOT EXISTS para que sea idempotente.
-  await dbQuery(`
-    create table if not exists public.presupuestador_sections (
-      id bigserial primary key,
-      name text not null unique,
-      position integer not null default 100,
-      created_at timestamptz not null default now()
-    );
-  `);
-
-  await dbQuery(`
-    create table if not exists public.presupuestador_tag_sections (
-      tag_id bigint primary key,
-      section_id bigint not null references public.presupuestador_sections(id) on delete cascade,
-      updated_at timestamptz not null default now()
-    );
-  `);
-
-  await dbQuery(`
-    create table if not exists public.presupuestador_product_aliases (
-      product_id bigint primary key,
-      alias text not null,
-      updated_at timestamptz not null default now()
-    );
-  `);
-
-  ensured = true;
+const KINDS = new Set(["porton","ipanel"]);
+export function normKind(kind) {
+  const k = String(kind || "porton").toLowerCase().trim();
+  if (!KINDS.has(k)) throw new Error('kind inválido (usar "porton" o "ipanel")');
+  return k;
 }
 
-export async function listSections() {
-  await ensureCatalogTables();
-  const r = await dbQuery(
-    `select id, name, position from public.presupuestador_sections order by position asc, name asc`
+export async function listSections(kind) {
+  const k = normKind(kind);
+  const q = await dbQuery(
+    `select id, name, position, catalog_kind
+       from public.presupuestador_sections
+      where catalog_kind = $1
+      order by position asc, name asc`,
+    [k]
   );
-  return r.rows || [];
+  return q.rows || [];
 }
 
-export async function upsertSection({ id = null, name, position = 100 }) {
-  await ensureCatalogTables();
-  const n = String(name || "").trim();
-  if (!n) throw new Error("Falta name");
-  const pos = Number(position || 100);
-
-  if (id) {
-    const r = await dbQuery(
-      `update public.presupuestador_sections set name=$2, position=$3 where id=$1 returning id, name, position`,
-      [Number(id), n, pos]
-    );
-    return r.rows?.[0] || null;
-  }
-
-  const r = await dbQuery(
-    `insert into public.presupuestador_sections (name, position) values ($1, $2)
-     on conflict (name) do update set position=excluded.position
-     returning id, name, position`,
-    [n, pos]
+export async function createSection(kind, { name, position = 100 }) {
+  const k = normKind(kind);
+  const q = await dbQuery(
+    `insert into public.presupuestador_sections (name, position, catalog_kind)
+     values ($1, $2, $3)
+     returning id, name, position, catalog_kind`,
+    [String(name || "").trim(), Number(position || 100), k]
   );
-  return r.rows?.[0] || null;
+  return q.rows?.[0];
 }
 
-export async function deleteSection(id) {
-  await ensureCatalogTables();
-  await dbQuery(`delete from public.presupuestador_sections where id=$1`, [Number(id)]);
+export async function deleteSection(kind, id) {
+  const k = normKind(kind);
+  await dbQuery(
+    `delete from public.presupuestador_sections
+      where id = $1 and catalog_kind = $2`,
+    [Number(id), k]
+  );
+  return true;
 }
 
-export async function setTagSection({ tagId, sectionId }) {
-  await ensureCatalogTables();
+export async function getTagSectionMap(kind) {
+  const k = normKind(kind);
+  const q = await dbQuery(
+    `select tag_id, section_id, catalog_kind
+       from public.presupuestador_tag_sections
+      where catalog_kind = $1`,
+    [k]
+  );
+  const map = new Map();
+  for (const r of (q.rows || [])) map.set(Number(r.tag_id), Number(r.section_id));
+  return map;
+}
+
+export async function setTagSection(kind, tagId, sectionId) {
+  const k = normKind(kind);
   const tid = Number(tagId);
-  const sid = sectionId ? Number(sectionId) : null;
+  const sid = sectionId == null || sectionId === "" ? null : Number(sectionId);
+
   if (!tid) throw new Error("tagId inválido");
 
   if (!sid) {
-    await dbQuery(`delete from public.presupuestador_tag_sections where tag_id=$1`, [tid]);
-    return { tag_id: tid, section_id: null };
+    // borrar mapeo
+    await dbQuery(
+      `delete from public.presupuestador_tag_sections
+        where catalog_kind=$1 and tag_id=$2`,
+      [k, tid]
+    );
+    return { catalog_kind: k, tag_id: tid, section_id: null };
   }
 
-  const r = await dbQuery(
-    `insert into public.presupuestador_tag_sections (tag_id, section_id)
-     values ($1, $2)
-     on conflict (tag_id) do update set section_id=excluded.section_id, updated_at=now()
-     returning tag_id, section_id`,
-    [tid, sid]
+  await dbQuery(
+    `insert into public.presupuestador_tag_sections (catalog_kind, tag_id, section_id)
+     values ($1, $2, $3)
+     on conflict (catalog_kind, tag_id)
+     do update set section_id = excluded.section_id, updated_at = now()`,
+    [k, tid, sid]
   );
-  return r.rows?.[0] || null;
+  return { catalog_kind: k, tag_id: tid, section_id: sid };
 }
 
-export async function listTagSections() {
-  await ensureCatalogTables();
-  const r = await dbQuery(`select tag_id, section_id from public.presupuestador_tag_sections`);
-  return r.rows || [];
+export async function getProductAliasMap(kind) {
+  const k = normKind(kind);
+  const q = await dbQuery(
+    `select product_id, alias
+       from public.presupuestador_product_aliases
+      where catalog_kind = $1`,
+    [k]
+  );
+  const map = new Map();
+  for (const r of (q.rows || [])) map.set(Number(r.product_id), String(r.alias || ""));
+  return map;
 }
 
-export async function setProductAlias({ productId, alias }) {
-  await ensureCatalogTables();
+export async function setProductAlias(kind, productId, alias) {
+  const k = normKind(kind);
   const pid = Number(productId);
-  const a = String(alias || "").trim();
   if (!pid) throw new Error("productId inválido");
 
+  const a = String(alias || "").trim();
   if (!a) {
-    await dbQuery(`delete from public.presupuestador_product_aliases where product_id=$1`, [pid]);
-    return { product_id: pid, alias: null };
+    await dbQuery(
+      `delete from public.presupuestador_product_aliases
+        where catalog_kind=$1 and product_id=$2`,
+      [k, pid]
+    );
+    return { catalog_kind: k, product_id: pid, alias: null };
   }
 
-  const r = await dbQuery(
-    `insert into public.presupuestador_product_aliases (product_id, alias)
-     values ($1, $2)
-     on conflict (product_id) do update set alias=excluded.alias, updated_at=now()
-     returning product_id, alias`,
-    [pid, a]
+  await dbQuery(
+    `insert into public.presupuestador_product_aliases (catalog_kind, product_id, alias)
+     values ($1, $2, $3)
+     on conflict (catalog_kind, product_id)
+     do update set alias = excluded.alias, updated_at = now()`,
+    [k, pid, a]
   );
-  return r.rows?.[0] || null;
-}
-
-export async function listProductAliases() {
-  await ensureCatalogTables();
-  const r = await dbQuery(`select product_id, alias from public.presupuestador_product_aliases`);
-  return r.rows || [];
+  return { catalog_kind: k, product_id: pid, alias: a };
 }

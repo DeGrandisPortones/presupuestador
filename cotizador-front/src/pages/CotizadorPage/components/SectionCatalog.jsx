@@ -9,10 +9,10 @@ function normalize(s) {
   return (s || "").toString().trim().toLowerCase();
 }
 
-export default function SectionCatalog() {
+export default function SectionCatalog({ kind = "porton" }) {
   const addLine = useQuoteStore((s) => s.addLine);
 
-  const [boot, setBoot] = useState(() => getOdooBootstrap());
+  const [boot, setBoot] = useState(() => getOdooBootstrap(kind));
   const sections = Array.isArray(boot?.sections) ? boot.sections : [];
   const products = Array.isArray(boot?.products) ? boot.products : [];
 
@@ -72,8 +72,8 @@ export default function SectionCatalog() {
             onClick={async () => {
               setRefreshing(true);
               try {
-                const data = await getCatalogBootstrap();
-                setOdooBootstrap(data);
+                const data = await getCatalogBootstrap(kind);
+                setOdooBootstrap(data, kind);
                 setBoot(data);
               } finally {
                 setRefreshing(false);
@@ -102,9 +102,9 @@ export default function SectionCatalog() {
           onClick={async () => {
             setRefreshing(true);
             try {
-              const data = await getCatalogBootstrap();
-              setOdooBootstrap(data);
-              setBoot(data);
+              const data = await getCatalogBootstrap(kind);
+              setOdooBootstrap(data, kind);
+                setBoot(data);
             } finally {
               setRefreshing(false);
             }

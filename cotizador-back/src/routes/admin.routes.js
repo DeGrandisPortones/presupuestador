@@ -1,16 +1,7 @@
 import express from "express";
 import { requireAuth } from "../auth.js";
-import { clearOdooBootstrapCache } from "../odooBootstrap.js";
-import { loadCatalogBootstrap } from "../catalogBootstrap.js";
-import {
-  upsertSection,
-  deleteSection,
-  setTagSection,
-  setProductAlias,
-  listSections,
-  listTagSections,
-  listProductAliases,
-} from "../catalogDb.js";
+import { loadCatalogBootstrap, clearCatalogBootstrapCache } from "../catalogBootstrap.js";
+import { normKind, createSection, deleteSection, setTagSection, setProductAlias } from "../catalogDb.js";
 import { dbQuery } from "../db.js";
 
 function requireEncComercial(req, res, next) {
@@ -20,113 +11,98 @@ function requireEncComercial(req, res, next) {
 
 export function buildAdminRouter(odoo) {
   const router = express.Router();
-  router.use(requireAuth);
-  router.use(requireEncComercial);
 
-  // Vista unificada para dashboard
-  router.get("/catalog", async (req, res, next) => {
+  // GET /api/admin/catalog?kind=
+  router.get("/catalog", requireAuth, requireEncComercial, async (req, res, next) => {
     try {
-      const data = await loadCatalogBootstrap(odoo);
-      res.json({ ok: true, ...data });
+      const kind = normKind(req.query.kind || "porton");
+      const data = await loadCatalogBootstrap(odoo, kind);
+
+      // incluir mapping tag->section_id para que el front muestre el select
+      const q = await dbQuery(
+        `select tag_id, section_id from public.presupuestador_tag_sections where catalog_kind=$1`,
+        [kind]
+      );
+      const map = new Map((q.rows||[]).map(r => [Number(r.tag_id), Number(r.section_id)]));
+      const tags = (data.tags||[]).map(t => ({...t, section_id: map.get(Number(t.id)) || null}));
+
+      res.json({ ...data, tags });
     } catch (e) {
       next(e);
     }
   });
 
-  // Secciones
-  router.get("/sections", async (_req, res, next) => {
+  router.post("/sections", requireAuth, requireEncComercial, async (req, res, next) => {
     try {
-      const sections = await listSections();
-      res.json({ ok: true, sections });
-    } catch (e) { next(e); }
+      const kind = normKind(req.query.kind || req.body?.kind || "porton");
+      const { name, position } = req.body || {};
+      const section = await createSection(kind, { name, position });
+      res.json({ ok: true, section });
+    } catch (e) {
+      next(e);
+    }
   });
 
-  router.post("/sections", async (req, res, next) => {
+  router.delete("/sections/:id", requireAuth, requireEncComercial, async (req, res, next) => {
     try {
-      const s = await upsertSection(req.body || {});
-      res.json({ ok: true, section: s });
-    } catch (e) { next(e); }
-  });
-
-  router.delete("/sections/:id", async (req, res, next) => {
-    try {
-      await deleteSection(req.params.id);
+      const kind = normKind(req.query.kind || "porton");
+      await deleteSection(kind, req.params.id);
       res.json({ ok: true });
-    } catch (e) { next(e); }
+    } catch (e) {
+      next(e);
+    }
   });
 
-  // Mapeo tag -> section
-  router.put("/tags/:tagId/section", async (req, res, next) => {
+  router.put("/tags/:tagId/section", requireAuth, requireEncComercial, async (req, res, next) => {
     try {
-      const tagId = Number(req.params.tagId);
-      const sectionId = req.body?.section_id ?? null;
-      const r = await setTagSection({ tagId, sectionId });
-      res.json({ ok: true, mapping: r });
-    } catch (e) { next(e); }
+      const kind = normKind(req.query.kind || req.body?.kind || "porton");
+      const mapping = await setTagSection(kind, req.params.tagId, req.body?.section_id ?? null);
+      res.json({ ok: true, mapping });
+    } catch (e) {
+      next(e);
+    }
   });
 
-  // Alias por producto
-  router.put("/products/:productId/alias", async (req, res, next) => {
+  router.put("/products/:productId/alias", requireAuth, requireEncComercial, async (req, res, next) => {
     try {
-      const productId = Number(req.params.productId);
+      const kind = normKind(req.query.kind || req.body?.kind || "porton");
       const alias = req.body?.alias ?? "";
-      const r = await setProductAlias({ productId, alias });
-      res.json({ ok: true, alias: r });
-    } catch (e) { next(e); }
+      const saved = await setProductAlias(kind, req.params.productId, alias);
+      res.json({ ok: true, alias: saved.alias });
+    } catch (e) {
+      next(e);
+    }
   });
 
-  // Refrescar cache (por si cambiaste tags/productos en Odoo)
-  router.post("/refresh", async (_req, res, next) => {
+  router.post("/refresh", requireAuth, requireEncComercial, async (_req, res, next) => {
     try {
-      clearOdooBootstrapCache();
-      const data = await loadCatalogBootstrap(odoo);
-      res.json({ ok: true, refreshed_at: new Date().toISOString(), catalog: data });
-    } catch (e) { next(e); }
+      clearCatalogBootstrapCache();
+      res.json({ ok: true });
+    } catch (e) {
+      next(e);
+    }
   });
 
-  // Data: últimas cotizaciones (para dashboard)
-  router.get("/quotes", async (req, res, next) => {
+  // GET /api/admin/quotes?limit=200&kind=porton|ipanel
+  router.get("/quotes", requireAuth, requireEncComercial, async (req, res, next) => {
     try {
-      const limit = Math.min(500, Math.max(1, Number(req.query.limit || 200)));
-      const r = await dbQuery(
-        `select id, created_at, created_by_user_id, created_by_role, status, fulfillment_mode, pricelist_id,
-                end_customer, lines, note, commercial_decision, technical_decision
-         from public.presupuestador_quotes
-         order by id desc
-         limit $1`,
-        [limit]
+      const limit = Math.min(Number(req.query.limit || 200), 500);
+      const kind = req.query.kind ? normKind(req.query.kind) : null;
+
+      const q = await dbQuery(
+        `select id, created_at, created_by_role, status, fulfillment_mode, end_customer, lines, payload,
+                commercial_decision, technical_decision, rejection_notes, catalog_kind
+           from public.presupuestador_quotes
+          ${kind ? "where catalog_kind = $1" : ""}
+          order by created_at desc
+          limit ${kind ? "$2" : "$1"}`,
+        kind ? [kind, limit] : [limit]
       );
 
-      const catalog = await loadCatalogBootstrap(odoo);
-      const prodById = new Map((catalog.products || []).map((p) => [Number(p.id), p]));
-      const secById = new Map((catalog.sections || []).map((s) => [Number(s.id), s]));
-
-      const quotes = (r.rows || []).map((q) => {
-        const lines = Array.isArray(q.lines) ? q.lines : [];
-        const productIds = [...new Set(lines.map((l) => Number(l.product_id)).filter(Boolean))];
-        const sectionIds = [...new Set(productIds.flatMap((pid) => (prodById.get(pid)?.section_ids || [])))];
-        const sectionNames = sectionIds.map((sid) => secById.get(sid)?.name).filter(Boolean);
-        return {
-          ...q,
-          section_ids: sectionIds,
-          sections: sectionNames,
-        };
-      });
-
-      res.json({ ok: true, quotes });
-    } catch (e) { next(e); }
-  });
-
-  // Para debug rápido: ver config DB sin pegarle a Odoo
-  router.get("/config", async (_req, res, next) => {
-    try {
-      const [sections, tag_sections, aliases] = await Promise.all([
-        listSections(),
-        listTagSections(),
-        listProductAliases(),
-      ]);
-      res.json({ ok: true, sections, tag_sections, aliases });
-    } catch (e) { next(e); }
+      res.json({ ok: true, quotes: q.rows || [] });
+    } catch (e) {
+      next(e);
+    }
   });
 
   return router;

@@ -196,28 +196,6 @@ th, td {
   box-shadow: 0 0 0 3px rgba(1, 163, 159, 0.15);
 }
 
-
-/* Coeficiente (positivo/negativo) */
-.input.dg-coef--neg {
-  border-color: rgba(217, 48, 37, 0.65);
-  background: rgba(217, 48, 37, 0.06);
-}
-
-.input.dg-coef--neg:focus {
-  border-color: rgba(217, 48, 37, 0.75);
-  box-shadow: 0 0 0 3px rgba(217, 48, 37, 0.14);
-}
-
-.input.dg-coef--pos {
-  border-color: rgba(24, 128, 56, 0.55);
-  background: rgba(24, 128, 56, 0.06);
-}
-
-.input.dg-coef--pos:focus {
-  border-color: rgba(24, 128, 56, 0.7);
-  box-shadow: 0 0 0 3px rgba(24, 128, 56, 0.14);
-}
-
 /* Accordion (Secciones -> productos) */
 .dg-accordion {
   display: flex;

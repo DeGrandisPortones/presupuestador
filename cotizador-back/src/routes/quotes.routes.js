@@ -15,6 +15,12 @@ function requireSellerOrDistributor(req, res, next) {
   next();
 }
 
+function normCatalogKind(kind) {
+  const k = String(kind || "porton").toLowerCase().trim();
+  if (!["porton","ipanel"].includes(k)) throw new Error('catalog_kind inválido (usar "porton" o "ipanel")');
+  return k;
+}
+
 /** Odoo helpers (copiados del odoo.routes para no renombrarte todo) */
 function round2(n) {
   return Math.round(Number(n || 0) * 100) / 100;
@@ -190,6 +196,8 @@ export function buildQuotesRouter(odoo) {
       const fulfillment_mode = String(body.fulfillment_mode || "").trim();
       if (!["produccion", "acopio"].includes(fulfillment_mode)) throw new Error("fulfillment_mode debe ser 'produccion' o 'acopio'");
 
+      const catalog_kind = normCatalogKind(body.catalog_kind || "porton");
+
       const end_customer = body.end_customer || {};
       const lines = Array.isArray(body.lines) ? body.lines : [];
       const payload = body.payload || {};
@@ -203,10 +211,10 @@ export function buildQuotesRouter(odoo) {
         insert into public.presupuestador_quotes
           (created_by_user_id, created_by_role, fulfillment_mode, pricelist_id, bill_to_odoo_partner_id,
            end_customer, lines, payload, note,
-           status, commercial_decision, technical_decision)
+           catalog_kind, status, commercial_decision, technical_decision)
         values
           ($1, $2, $3, $4, $5, $6::jsonb, $7::jsonb, $8::jsonb, $9,
-           'draft', 'pending', 'pending')
+           $10, 'draft', 'pending', 'pending')
         returning *
         `,
         [
@@ -219,6 +227,7 @@ export function buildQuotesRouter(odoo) {
           JSON.stringify(lines),
           JSON.stringify(payload),
           note,
+          catalog_kind,
         ]
       );
 
@@ -358,6 +367,13 @@ export function buildQuotesRouter(odoo) {
       if (!quote) throw new Error("Quote no encontrado");
       if (String(quote.created_by_user_id) !== String(u.user_id)) throw new Error("No sos dueño");
 
+      const catalog_kind_locked = quote.catalog_kind || "porton";
+      if (body.catalog_kind && normCatalogKind(body.catalog_kind) !== normCatalogKind(catalog_kind_locked)) {
+        return res.status(400).json({ ok: false, error: "No podés cambiar el tipo de cotizador (portón/ipanel)" });
+      }
+      const catalog_kind = normCatalogKind(body.catalog_kind || catalog_kind_locked);
+
+
       // Validación: para vendedor, end_customer.name es obligatorio (se usa para crear/ubicar partner en Odoo)
       if (vendedorNeedsEndCustomerName(quote) && !getEndCustomerName(quote)) {
         return res.status(400).json({ ok: false, error: "Falta end_customer.name (vendedor)" });
@@ -380,7 +396,8 @@ export function buildQuotesRouter(odoo) {
             end_customer=$5::jsonb,
             lines=$6::jsonb,
             payload=$7::jsonb,
-            note=$8
+            note=$8,
+            catalog_kind=$9
         where id=$1
         returning *
         `,
@@ -393,6 +410,7 @@ export function buildQuotesRouter(odoo) {
           JSON.stringify(body.lines !== undefined ? body.lines : quote.lines),
           JSON.stringify(body.payload !== undefined ? body.payload : quote.payload),
           body.note !== undefined ? body.note : quote.note,
+          catalog_kind,
         ]
       );
 

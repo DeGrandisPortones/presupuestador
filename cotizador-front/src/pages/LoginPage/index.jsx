@@ -22,7 +22,7 @@ export default function LoginPage() {
 
       // Guardamos bootstrap (productos + listas) para que el cotizador arranque con data.
       if (data.bootstrap?.products?.length || data.bootstrap?.pricelists?.length) {
-        setOdooBootstrap(data.bootstrap);
+        setOdooBootstrap(data.bootstrap, "porton");
       }
 
       navigate("/cotizador", { replace: true });

@@ -37,7 +37,11 @@ export default function AppLayout() {
 
         <div className="container" style={{ padding: 0, marginTop: 10, display: "flex", gap: 10, flexWrap: "wrap" }}>
           <NavLink className={({ isActive }) => (isActive ? "navlink active" : "navlink")} to="/cotizador">
-            Cotizador
+            Cotizador Portones
+          </NavLink>
+
+          <NavLink className={({ isActive }) => (isActive ? "navlink active" : "navlink")} to="/cotizador/ipanel">
+            Cotizador Ipanel
           </NavLink>
 
           <NavLink className={({ isActive }) => (isActive ? "navlink active" : "navlink")} to="/presupuestos">

@@ -20,7 +20,7 @@ import SectionCatalog from "./components/SectionCatalog";
 import LinesTable from "./components/LinesTable";
 import SummaryBox from "./components/SummaryBox";
 
-export default function CotizadorPage() {
+export default function CotizadorPage({ catalogKind = "porton" }) {
   const navigate = useNavigate();
   const user = useAuthStore((s) => s.user);
   const params = useParams();
@@ -72,8 +72,18 @@ export default function CotizadorPage() {
   });
 
   useEffect(() => {
-    if (quoteQ.data) loadFromQuote(quoteQ.data);
-  }, [quoteQ.data, loadFromQuote]);
+    if (!quoteQ.data) return;
+
+    // Si abrieron una quote del tipo incorrecto, redirigimos al cotizador correcto.
+    const qKind = (quoteQ.data.catalog_kind || "porton").toString().toLowerCase();
+    if (qKind !== (catalogKind || "porton")) {
+      const id = String(quoteQ.data.id);
+      navigate(qKind === "ipanel" ? `/cotizador/ipanel/${id}` : `/cotizador/${id}`, { replace: true });
+      return;
+    }
+
+    loadFromQuote(quoteQ.data);
+  }, [quoteQ.data, loadFromQuote, catalogKind, navigate]);
 
   // 3) Totales (margen sólo UI)
   const totals = useMemo(
@@ -108,7 +118,7 @@ export default function CotizadorPage() {
   // 5) Guardar (create/update)
   const saveM = useMutation({
     mutationFn: async () => {
-      const payload = buildPayloadForBack();
+      const payload = { ...buildPayloadForBack(), catalog_kind: catalogKind };
 
       // ✅ si hay quoteId => update; si no => create
       if (quoteId) return await updateQuote(quoteId, payload);
@@ -119,7 +129,7 @@ export default function CotizadorPage() {
       qc.invalidateQueries({ queryKey: ["quotes", "mine"] });
 
       // ✅ nos quedamos editando el MISMO presupuesto (con UUID)
-      navigate(`/cotizador/${q.id}`);
+      navigate(catalogKind === "ipanel" ? `/cotizador/ipanel/${q.id}` : `/cotizador/${q.id}`);
     },
   });
 
@@ -127,7 +137,7 @@ export default function CotizadorPage() {
   const submitM = useMutation({
     mutationFn: async () => {
       // ✅ submit también guarda (create/update) para evitar que el usuario tenga que hacer 2 pasos.
-      const payload = buildPayloadForBack();
+      const payload = { ...buildPayloadForBack(), catalog_kind: catalogKind };
 
       // Validaciones mínimas para evitar rechazos del back y que el usuario "no vea" el error.
       if (!String(payload?.end_customer?.name || "").trim()) {
@@ -165,7 +175,7 @@ export default function CotizadorPage() {
 
   const onDownloadPresupuesto = async () => {
     try {
-      const payload = buildPayloadForBack();
+      const payload = { ...buildPayloadForBack(), catalog_kind: catalogKind };
       await downloadPresupuestoPdf(payload);
     } catch (e) {
       toast.error(e?.response?.data?.error || e.message);
@@ -174,7 +184,7 @@ export default function CotizadorPage() {
 
   const onDownloadProforma = async () => {
     try {
-      const payload = buildPayloadForBack();
+      const payload = { ...buildPayloadForBack(), catalog_kind: catalogKind };
       await downloadProformaPdf(payload);
     } catch (e) {
       toast.error(e?.response?.data?.error || e.message);
@@ -236,7 +246,7 @@ export default function CotizadorPage() {
         <div className="card" style={{ flex: 1, minWidth: 320 }}>
           <PortonDimensions />
           <div className="spacer" />
-          <SectionCatalog />
+          <SectionCatalog kind={catalogKind} />
         </div>
 
         <div className="card" style={{ flex: 2, minWidth: 520 }}>

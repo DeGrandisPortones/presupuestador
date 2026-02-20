@@ -1,4 +1,5 @@
-import "dotenv/config";
+import dotenv from "dotenv";
+dotenv.config({ override: true });
 
 if (process.env.ALLOW_INSECURE_TLS === "true") {
   process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
@@ -15,8 +16,6 @@ import { buildAuthRouter } from "./routes/auth.routes.js";
 import { buildQuotesRouter } from "./routes/quotes.routes.js";
 import { buildCatalogRouter } from "./routes/catalog.routes.js";
 import { buildAdminRouter } from "./routes/admin.routes.js";
-import { buildPdfRouter } from "./routes/pdf.routes.js";
-
 
 const app = express();
 
@@ -32,51 +31,41 @@ const odoo = createOdooClient({
   companyId: process.env.ODOO_COMPANY_ID || null,
 });
 
-try {
-  const info = odoo._debugInfo?.();
-  console.log("ODOO_URL env:", process.env.ODOO_URL);
-  console.log("ODOO_DB env:", process.env.ODOO_DB);
-  console.log("Computed JSON-RPC:", info?.jsonrpcUrl);
-} catch (_e) {
-  // ignore
-}
-
+const info = odoo?._debugInfo ? odoo._debugInfo() : null;
+console.log("ODOO_URL:", process.env.ODOO_URL);
+console.log("ODOO_DB :", process.env.ODOO_DB);
+if (info?.jsonrpcUrl) console.log("JSONRPC :", info.jsonrpcUrl);
 console.log("Odoo client executeKw type:", typeof odoo?.executeKw);
 
 // Auth
-app.use("/api/auth", buildAuthRouter(odoo));
+app.use("/api/auth", buildAuthRouter());
 
 // Odoo API
 app.use("/api/odoo", buildOdooRouter(odoo));
 
+// Quotes
 app.use("/api/quotes", buildQuotesRouter(odoo));
 
-// Catálogo enriquecido (secciones/tags/alias)
+// Catalog
 app.use("/api/catalog", buildCatalogRouter(odoo));
 
-// Dashboard admin
+// Admin
 app.use("/api/admin", buildAdminRouter(odoo));
 
-// PDF (presupuesto / proforma)
-app.use("/api/pdf", buildPdfRouter());
-
+// Health
+app.get("/health", (_req, res) => res.json({ ok: true }));
 
 // Error handler
 app.use((err, _req, res, _next) => {
-  console.error("ERROR:", err?.message || err);
-
-  if (err?.response) {
-    console.error("Odoo status:", err.response.status);
-    console.error("Odoo data:", err.response.data);
+  const status = err.status || 400;
+  const msg = err?.message || "Error";
+  console.error("ERROR:", msg);
+  if (err?.odoo) {
+    console.error("Odoo error:", err.odoo?.message || "");
+    if (err.debug) console.error("Odoo debug:", err.debug);
   }
-
-  res.status(400).json({
-    ok: false,
-    error: err?.message || "Error",
-    odoo_status: err?.response?.status,
-    odoo_data: err?.response?.data,
-  });
+  res.status(status).json({ ok: false, error: msg });
 });
 
-const port = Number(process.env.PORT || 4000);
-app.listen(port, () => console.log(`API en http://localhost:${port}`));
+const PORT = Number(process.env.PORT || 4000);
+app.listen(PORT, () => console.log(`API en http://localhost:${PORT}`));

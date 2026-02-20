@@ -166,7 +166,7 @@ export default function QuoteDetailPage() {
 
               <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
                 {quote.status === "draft" && (
-                  <Button onClick={() => navigate(`/cotizador/${quote.id}`)}>Editar</Button>
+                  <Button onClick={() => navigate((quote.catalog_kind || "porton")==="ipanel" ? `/cotizador/ipanel/${quote.id}` : `/cotizador/${quote.id}`)}>Editar</Button>
                 )}
                 <Button variant="ghost" onClick={() => navigate("/presupuestos")}>Volver</Button>
               </div>
