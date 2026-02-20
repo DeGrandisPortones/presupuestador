@@ -24,6 +24,12 @@ export const useQuoteStore = create((set, get) => ({
 
   endCustomer: { ...EMPTY_CUSTOMER },
 
+  // configuración del portón (por ahora sólo medidas)
+  dimensions: {
+    width: "", // metros
+    height: "", // metros
+  },
+
   // { product_id, name, code, qty, basePrice }
   lines: [],
 
@@ -39,6 +45,7 @@ export const useQuoteStore = create((set, get) => ({
       fulfillmentMode: "produccion",
       note: "",
       endCustomer: { ...EMPTY_CUSTOMER },
+      dimensions: { width: "", height: "" },
       lines: [],
     });
   },
@@ -47,6 +54,8 @@ export const useQuoteStore = create((set, get) => ({
     const q = quote || {};
     const end = q.end_customer || {};
     const lines = Array.isArray(q.lines) ? q.lines : [];
+    const payload = q.payload || {};
+    const dims = payload?.dimensions || {};
 
     set({
       quoteId: q.id ?? null,
@@ -64,6 +73,11 @@ export const useQuoteStore = create((set, get) => ({
         ...(end || {}),
       },
 
+      dimensions: {
+        width: dims?.width ?? "",
+        height: dims?.height ?? "",
+      },
+
       lines: lines.map((l) => ({
         product_id: Number(l.product_id),
         name: l.name || "",
@@ -72,6 +86,10 @@ export const useQuoteStore = create((set, get) => ({
         basePrice: Number(l.basePrice ?? l.base_price ?? l.price ?? 0) || 0,
       })),
     });
+  },
+
+  setDimensions(patch) {
+    set((s) => ({ dimensions: { ...s.dimensions, ...(patch || {}) } }));
   },
 
   setQuoteMeta({ quoteId, status, rejectionNotes }) {
@@ -188,6 +206,10 @@ export const useQuoteStore = create((set, get) => ({
   buildPayloadForBack() {
     const s = get();
 
+    const width = Number(String(s.dimensions?.width || "").replace(",", ".")) || 0;
+    const height = Number(String(s.dimensions?.height || "").replace(",", ".")) || 0;
+    const area_m2 = Number.isFinite(width * height) ? width * height : 0;
+
     // guardamos “líneas enriquecidas” para que los reviewers vean nombres/precios sin ir a Odoo
     const lines = s.lines.map((l) => ({
       product_id: l.product_id,
@@ -205,6 +227,11 @@ export const useQuoteStore = create((set, get) => ({
       payload: {
         // dejamos lugar para futuro (alto/ancho/notas/lo que venga)
         margin_percent_ui: s.marginPercent,
+        dimensions: {
+          width: s.dimensions?.width ?? "",
+          height: s.dimensions?.height ?? "",
+          area_m2,
+        },
       },
       note: s.note || null,
     };

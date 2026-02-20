@@ -1,72 +1,286 @@
+/* ===== DG Portones Brand =====
+   - Tipografía institucional: Mont (fallback Montserrat)  fileciteturn12file0
+   - Paleta (HEX): #515859 / #CDA800 / #01A39F / #005060  fileciteturn12file0
+*/
+
 :root {
-  font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+  /* Brand palette */
+  --dg-gray: #515859;
+  --dg-gold: #CDA800;
+  --dg-teal: #01A39F;
+  --dg-petrol: #005060;
+
+  /* UI tokens */
+  --dg-bg: #f5f6f7;
+  --dg-text: #0b1b1d;
+  --dg-muted: rgba(81, 88, 89, 0.82);
+  --dg-border: rgba(81, 88, 89, 0.18);
+  --dg-card: #ffffff;
+  --dg-shadow: 0 10px 30px rgba(0, 0, 0, 0.06);
+
+  font-family: "Mont", "Montserrat", system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+  color-scheme: light;
 }
+
+* { box-sizing: border-box; }
 
 body {
-    margin: 0;
-    background: #f6f7fb;
-    color: #111;
+  margin: 0;
+  background: var(--dg-bg);
+  color: var(--dg-text);
 }
 
+/* Layout */
 .container {
-    max-width: 1200px;
-    margin: 0 auto;
-    padding: 16px;
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 16px;
 }
 
 .card {
-    background: white;
-    border-radius: 10px;
-    padding: 14px;
-    box-shadow: 0 1px 8px rgba(0,0,0,0.06);
+  background: var(--dg-card);
+  border-radius: 14px;
+  padding: 14px;
+  border: 1px solid var(--dg-border);
+  box-shadow: var(--dg-shadow);
 }
 
 .row {
-    display: flex;
-    gap: 12px;
-    flex-wrap: wrap;
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
 }
 
-.spacer { height: 12px;}
+/*
+  El cotizador usa 2 columnas (características + ítems).
+  - En desktop: evitamos que una columna "pise" a la otra.
+  - En pantallas chicas: volvemos a wrap.
+*/
+.quote-row {
+  align-items: flex-start;
+  flex-wrap: nowrap;
+}
 
+.quote-row > .card {
+  min-width: 0;
+}
+
+@media (max-width: 980px) {
+  .quote-row {
+    flex-wrap: wrap;
+  }
+}
+
+.spacer { height: 12px; }
+
+.dg-h3 {
+  margin-top: 0;
+  margin-bottom: 0;
+  font-size: 16px;
+  letter-spacing: 0.2px;
+}
+
+.dg-row {
+  display: flex;
+  gap: 10px;
+}
+.dg-row--between { justify-content: space-between; }
+.dg-row--center { align-items: center; }
+
+/* Tables */
 table {
-    width: 100%;
-    border-collapse: collapse;
+  width: 100%;
+  border-collapse: collapse;
 }
 
 th, td {
-    padding: 10px;
-    border-bottom: 1px solid #eee;
-    vertical-align: middle;
-}
-
-.muted {
-    color: #666;
-    font-size: 12px;
+  padding: 10px;
+  border-bottom: 1px solid rgba(81, 88, 89, 0.12);
+  vertical-align: middle;
 }
 
 .right { text-align: right; }
 
+.muted {
+  color: var(--dg-muted);
+  font-size: 12px;
+}
+
+/* Nav */
 .navlink {
   display: inline-block;
   padding: 8px 10px;
-  border-radius: 10px;
-  border: 1px solid #ddd;
+  border-radius: 12px;
+  border: 1px solid var(--dg-border);
   text-decoration: none;
-  color: #111;
-  background: white;
+  color: var(--dg-text);
+  background: var(--dg-card);
   font-size: 13px;
 }
 
 .navlink.active {
-  border-color: #2b59ff;
-  box-shadow: 0 1px 8px rgba(43, 89, 255, 0.18);
+  border-color: rgba(1, 163, 159, 0.6);
+  box-shadow: 0 1px 10px rgba(1, 163, 159, 0.18);
 }
 
-.quote-row {
-  align-items: flex-start; /* evita el stretch vertical */
+/* Buttons */
+.btn {
+  border: 1px solid transparent;
+  border-radius: 10px;
+  padding: 9px 12px;
+  cursor: pointer;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+  transition: transform 120ms ease, box-shadow 120ms ease, background 120ms ease, border-color 120ms ease;
 }
 
-.quote-row > .card {
-  min-width: 0; /* evita desbordes raros por contenido (grid/tabla) */
+.btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.btn:not(:disabled):active {
+  transform: translateY(1px);
+}
+
+.btn--primary {
+  background: var(--dg-teal);
+  color: #fff;
+  border-color: var(--dg-teal);
+}
+
+.btn--primary:not(:disabled):hover {
+  box-shadow: 0 8px 22px rgba(1, 163, 159, 0.22);
+}
+
+.btn--secondary {
+  background: #fff;
+  color: var(--dg-petrol);
+  border-color: var(--dg-border);
+}
+
+.btn--secondary:not(:disabled):hover {
+  border-color: rgba(1, 163, 159, 0.45);
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.05);
+}
+
+.btn--ghost {
+  background: transparent;
+  color: var(--dg-petrol);
+  border-color: transparent;
+}
+
+.btn--ghost:not(:disabled):hover {
+  background: rgba(1, 163, 159, 0.08);
+  border-color: rgba(1, 163, 159, 0.18);
+}
+
+.btn--danger {
+  background: #d93025;
+  color: #fff;
+  border-color: #d93025;
+}
+
+/* Inputs */
+.input {
+  padding: 9px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--dg-border);
+  outline: none;
+  min-width: 180px;
+  background: #fff;
+}
+
+.input:focus {
+  border-color: rgba(1, 163, 159, 0.65);
+  box-shadow: 0 0 0 3px rgba(1, 163, 159, 0.15);
+}
+
+/* Accordion (Secciones -> productos) */
+.dg-accordion {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.dg-acc-item {
+  border: 1px solid var(--dg-border);
+  border-radius: 14px;
+  overflow: hidden;
+  background: var(--dg-card);
+}
+
+.dg-acc-header {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 12px;
+  background: #fff;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+}
+
+.dg-acc-header:hover {
+  background: rgba(0, 80, 96, 0.04);
+}
+
+.dg-acc-title {
+  font-weight: 900;
+  color: var(--dg-petrol);
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dg-acc-meta {
+  font-size: 12px;
+  color: var(--dg-muted);
+}
+
+.dg-acc-chevron {
+  width: 18px;
+  text-align: center;
+  color: var(--dg-gray);
+  opacity: 0.9;
+}
+
+.dg-acc-body {
+  padding: 12px;
+  border-top: 1px solid rgba(81, 88, 89, 0.12);
+  background: rgba(81, 88, 89, 0.03);
+}
+
+.dg-product-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 520px;
+  overflow: auto;
+  padding-right: 6px;
+}
+
+.dg-product-card {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid rgba(81, 88, 89, 0.12);
+  background: #fff;
+  padding: 10px;
+  border-radius: 12px;
+}
+
+.dg-product-info {
+  min-width: 0;
+}
+
+.dg-product-name {
+  font-weight: 800;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }

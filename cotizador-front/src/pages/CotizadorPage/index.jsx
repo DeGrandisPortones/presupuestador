@@ -15,6 +15,7 @@ import { calcTotals } from "../../domain/quote/pricing";
 import Button from "../../ui/Button.jsx";
 
 import HeaderBar from "./components/HeaderBar";
+import PortonDimensions from "./components/PortonDimensions";
 import SectionCatalog from "./components/SectionCatalog";
 import LinesTable from "./components/LinesTable";
 import SummaryBox from "./components/SummaryBox";
@@ -140,7 +141,7 @@ export default function CotizadorPage() {
 
   const onDownloadPresupuesto = async () => {
     try {
-      const payload = buildPayloadForBack(); // ✅ FIX: antes era quote.buildPayloadForBack()
+      const payload = buildPayloadForBack();
       await downloadPresupuestoPdf(payload);
     } catch (e) {
       toast.error(e?.response?.data?.error || e.message);
@@ -149,7 +150,7 @@ export default function CotizadorPage() {
 
   const onDownloadProforma = async () => {
     try {
-      const payload = buildPayloadForBack(); // ✅ FIX: antes era quote.buildPayloadForBack()
+      const payload = buildPayloadForBack();
       await downloadProformaPdf(payload);
     } catch (e) {
       toast.error(e?.response?.data?.error || e.message);
@@ -160,10 +161,7 @@ export default function CotizadorPage() {
 
   return (
     <div className="container">
-      <div
-        className="card"
-        style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}
-      >
+      <div className="card" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
         <div>
           <h2 style={{ margin: 0 }}>
             {quoteId ? `Presupuesto #${String(quoteId).slice(0, 8)}` : "Nuevo presupuesto"}
@@ -182,7 +180,10 @@ export default function CotizadorPage() {
               PDF proforma
             </Button>
           ) : null}
-          <Button onClick={() => saveM.mutate()} disabled={saveM.isPending}>
+          <Button
+            onClick={() => saveM.mutate()}
+            disabled={saveM.isPending}
+          >
             {saveM.isPending ? "Guardando..." : "Guardar"}
           </Button>
 
@@ -199,12 +200,18 @@ export default function CotizadorPage() {
 
       <div className="spacer" />
 
-      <HeaderBar pricelists={pricelistsQ.data || []} loadingPricelists={pricelistsQ.isLoading} showMargin />
+      <HeaderBar
+        pricelists={pricelistsQ.data || []}
+        loadingPricelists={pricelistsQ.isLoading}
+        showMargin
+      />
 
       <div className="spacer" />
 
       <div className="row quote-row">
         <div className="card" style={{ flex: 1, minWidth: 320 }}>
+          <PortonDimensions />
+          <div className="spacer" />
           <SectionCatalog />
         </div>
 
