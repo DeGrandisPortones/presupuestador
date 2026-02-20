@@ -126,8 +126,28 @@ export default function CotizadorPage() {
   // 6) Enviar a aprobación
   const submitM = useMutation({
     mutationFn: async () => {
-      const id = quoteId || idParam;
-      if (!id) throw new Error("Primero guardá el presupuesto.");
+      // ✅ submit también guarda (create/update) para evitar que el usuario tenga que hacer 2 pasos.
+      const payload = buildPayloadForBack();
+
+      // Validaciones mínimas para evitar rechazos del back y que el usuario "no vea" el error.
+      if (!String(payload?.end_customer?.name || "").trim()) {
+        throw new Error("Completá el nombre del cliente.");
+      }
+      if (!String(payload?.end_customer?.address || "").trim()) {
+        throw new Error("Completá la dirección del cliente.");
+      }
+
+      let id = quoteId || idParam;
+      if (id) {
+        // guardamos cambios antes de enviar
+        await updateQuote(id, payload);
+      } else {
+        const created = await createQuote(payload);
+        id = created.id;
+        // dejamos meta para que el estado local quede consistente
+        setQuoteMeta({ quoteId: created.id, status: created.status, rejectionNotes: created.rejection_notes });
+      }
+
       return await submitQuote(id);
     },
     onSuccess: (q) => {
@@ -136,6 +156,10 @@ export default function CotizadorPage() {
 
       // opcional: ir a “Mis presupuestos”
       navigate(`/presupuestos/${q.id}`);
+      toast.success("Enviado a aprobación.");
+    },
+    onError: (e) => {
+      toast.error(e?.message || "No se pudo enviar a aprobación");
     },
   });
 

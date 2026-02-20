@@ -1,5 +1,13 @@
+import { useEffect, useRef, useState } from "react";
 import Input from "../../../ui/Input.jsx";
 import { useQuoteStore } from "../../../domain/quote/store.js";
+
+function parsePercent(v) {
+  const raw = String(v ?? "").trim();
+  if (!raw || raw === "-" || raw === "." || raw === "-," || raw === "-," || raw === "-.") return null;
+  const n = Number(raw.replace(",", "."));
+  return Number.isFinite(n) ? n : null;
+}
 
 export default function HeaderBar({ pricelists, loadingPricelists, showMargin }) {
   const {
@@ -12,6 +20,18 @@ export default function HeaderBar({ pricelists, loadingPricelists, showMargin })
     endCustomer,
     setEndCustomer,
   } = useQuoteStore();
+
+  // Permite valores intermedios ("-"), sin romper el store numérico.
+  const [marginInput, setMarginInput] = useState(String(marginPercent ?? 0));
+  const editingRef = useRef(false);
+
+  useEffect(() => {
+    if (editingRef.current) return;
+    setMarginInput(String(marginPercent ?? 0));
+  }, [marginPercent]);
+
+  const marginNum = parsePercent(marginInput);
+  const marginTone = marginNum == null ? "" : marginNum < 0 ? "dg-coef--neg" : marginNum > 0 ? "dg-coef--pos" : "";
 
   return (
     <div className="card">
@@ -43,9 +63,34 @@ export default function HeaderBar({ pricelists, loadingPricelists, showMargin })
           <div>
             <div className="muted">Coeficiente (%)</div>
             <Input
-              type="number"
-              value={marginPercent}
-              onChange={(v) => setMarginPercent(v)}
+              type="text"
+              inputMode="decimal"
+              value={marginInput}
+              onFocus={() => {
+                editingRef.current = true;
+              }}
+              onBlur={() => {
+                editingRef.current = false;
+                const n = parsePercent(marginInput);
+                if (n == null) {
+                  setMarginPercent(0);
+                  setMarginInput("0");
+                  return;
+                }
+                setMarginPercent(n);
+                setMarginInput(String(n));
+              }}
+              onChange={(v) => {
+                const next = String(v ?? "");
+
+                // Acepta: "", "-", "10", "-10", "10.5", "-10,5"
+                if (!/^-?\d*(?:[.,]\d*)?$/.test(next)) return;
+
+                setMarginInput(next);
+                const n = parsePercent(next);
+                if (n != null) setMarginPercent(n);
+              }}
+              className={marginTone}
               style={{ minWidth: 120 }}
             />
           </div>
@@ -57,6 +102,16 @@ export default function HeaderBar({ pricelists, loadingPricelists, showMargin })
             value={endCustomer.name}
             onChange={(v) => setEndCustomer({ name: v })}
             placeholder="Nombre"
+            style={{ width: "100%" }}
+          />
+        </div>
+
+        <div style={{ flex: 1, minWidth: 260 }}>
+          <div className="muted">Dirección</div>
+          <Input
+            value={endCustomer.address}
+            onChange={(v) => setEndCustomer({ address: v })}
+            placeholder="Calle y altura, localidad"
             style={{ width: "100%" }}
           />
         </div>

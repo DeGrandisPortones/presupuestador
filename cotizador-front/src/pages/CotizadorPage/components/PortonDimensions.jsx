@@ -7,6 +7,11 @@ function toNumber(v) {
   return Number.isFinite(n) ? n : 0;
 }
 
+function normalizeDecimal(v) {
+  // Dejamos solo dígitos y separadores decimales.
+  return String(v ?? "").replace(/[^0-9.,]/g, "");
+}
+
 export default function PortonDimensions() {
   const dimensions = useQuoteStore((s) => s.dimensions);
   const setDimensions = useQuoteStore((s) => s.setDimensions);
@@ -26,9 +31,10 @@ export default function PortonDimensions() {
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
           <div className="muted">Ancho (m)</div>
           <Input
-            type="number"
+            type="text"
+            inputMode="decimal"
             value={dimensions?.width ?? ""}
-            onChange={(v) => setDimensions({ width: v })}
+            onChange={(v) => setDimensions({ width: normalizeDecimal(v) })}
             placeholder="Ej: 3.2"
             style={{ width: 140 }}
           />
@@ -37,9 +43,10 @@ export default function PortonDimensions() {
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
           <div className="muted">Alto (m)</div>
           <Input
-            type="number"
+            type="text"
+            inputMode="decimal"
             value={dimensions?.height ?? ""}
-            onChange={(v) => setDimensions({ height: v })}
+            onChange={(v) => setDimensions({ height: normalizeDecimal(v) })}
             placeholder="Ej: 2.1"
             style={{ width: 140 }}
           />

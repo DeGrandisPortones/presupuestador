@@ -24,7 +24,13 @@ export const useQuoteStore = create((set, get) => ({
 
   endCustomer: { ...EMPTY_CUSTOMER },
 
-  // { product_id, name, raw_name, code, qty, basePrice }
+  // configuración del portón (por ahora sólo medidas)
+  dimensions: {
+    width: "", // metros
+    height: "", // metros
+  },
+
+  // { product_id, name, code, qty, basePrice }
   lines: [],
 
   reset() {
@@ -39,6 +45,7 @@ export const useQuoteStore = create((set, get) => ({
       fulfillmentMode: "produccion",
       note: "",
       endCustomer: { ...EMPTY_CUSTOMER },
+      dimensions: { width: "", height: "" },
       lines: [],
     });
   },
@@ -47,6 +54,8 @@ export const useQuoteStore = create((set, get) => ({
     const q = quote || {};
     const end = q.end_customer || {};
     const lines = Array.isArray(q.lines) ? q.lines : [];
+    const payload = q.payload || {};
+    const dims = payload?.dimensions || {};
 
     set({
       quoteId: q.id ?? null,
@@ -64,15 +73,23 @@ export const useQuoteStore = create((set, get) => ({
         ...(end || {}),
       },
 
+      dimensions: {
+        width: dims?.width ?? "",
+        height: dims?.height ?? "",
+      },
+
       lines: lines.map((l) => ({
         product_id: Number(l.product_id),
         name: l.name || "",
-        raw_name: l.raw_name || l.rawName || "",
         code: l.code || null,
         qty: Number(l.qty || 1),
         basePrice: Number(l.basePrice ?? l.base_price ?? l.price ?? 0) || 0,
       })),
     });
+  },
+
+  setDimensions(patch) {
+    set((s) => ({ dimensions: { ...s.dimensions, ...(patch || {}) } }));
   },
 
   setQuoteMeta({ quoteId, status, rejectionNotes }) {
@@ -121,7 +138,9 @@ export const useQuoteStore = create((set, get) => ({
       const existing = s.lines.find((l) => l.product_id === id);
       if (existing) {
         return {
-          lines: s.lines.map((l) => (l.product_id === id ? { ...l, qty: Number(l.qty || 0) + 1 } : l)),
+          lines: s.lines.map((l) =>
+            l.product_id === id ? { ...l, qty: Number(l.qty || 0) + 1 } : l
+          ),
         };
       }
 
@@ -140,17 +159,16 @@ export const useQuoteStore = create((set, get) => ({
             // - bootstrap trae list_price
             // - algunos endpoints traen price / basePrice
             // (luego /api/odoo/prices puede recalcular si aplica)
-            basePrice:
-              Number(
-                p.price ??
-                  p.basePrice ??
-                  p.base_price ??
-                  p.list_price ??
-                  p.listPrice ??
-                  p.price_predeterminado ??
-                  p.price_list ??
-                  0
-              ) || 0,
+            basePrice: Number(
+              p.price ??
+              p.basePrice ??
+              p.base_price ??
+              p.list_price ??
+              p.listPrice ??
+              p.price_predeterminado ??
+              p.price_list ??
+              0
+            ) || 0,
           },
         ],
       };
@@ -166,7 +184,9 @@ export const useQuoteStore = create((set, get) => ({
     const id = Number(product_id);
     const q = Math.max(0, Number(qty || 0));
     set((s) => ({
-      lines: s.lines.map((l) => (l.product_id === id ? { ...l, qty: q } : l)).filter((l) => l.qty > 0),
+      lines: s.lines
+        .map((l) => (l.product_id === id ? { ...l, qty: q } : l))
+        .filter((l) => l.qty > 0),
     }));
   },
 
@@ -186,20 +206,20 @@ export const useQuoteStore = create((set, get) => ({
   buildPayloadForBack() {
     const s = get();
 
+    const width = Number(String(s.dimensions?.width || "").replace(",", ".")) || 0;
+    const height = Number(String(s.dimensions?.height || "").replace(",", ".")) || 0;
+    const area_m2 = Number.isFinite(width * height) ? width * height : 0;
+
     // guardamos “líneas enriquecidas” para que los reviewers vean nombres/precios sin ir a Odoo
     const lines = s.lines.map((l) => ({
       product_id: l.product_id,
       qty: l.qty,
       name: l.name,
-      raw_name: l.raw_name || "",
       code: l.code,
       basePrice: l.basePrice,
     }));
 
     return {
-      // útil para PDFs (si existe)
-      quote_id: s.quoteId || null,
-
       fulfillment_mode: s.fulfillmentMode,
       pricelist_id: s.pricelistId,
       end_customer: s.endCustomer,
@@ -207,6 +227,11 @@ export const useQuoteStore = create((set, get) => ({
       payload: {
         // dejamos lugar para futuro (alto/ancho/notas/lo que venga)
         margin_percent_ui: s.marginPercent,
+        dimensions: {
+          width: s.dimensions?.width ?? "",
+          height: s.dimensions?.height ?? "",
+          area_m2,
+        },
       },
       note: s.note || null,
     };
