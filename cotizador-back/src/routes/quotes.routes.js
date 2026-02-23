@@ -36,6 +36,7 @@ function buildDistributorNote({ quote }) {
   if (c?.phone) parts.push(`Tel: ${c.phone}`);
   if (c?.email) parts.push(`Email: ${c.email}`);
   if (c?.address) parts.push(`Dirección: ${c.address}`);
+  if (c?.maps_url) parts.push(`Maps: ${c.maps_url}`);
 
   if (quote.note) parts.push(`Obs: ${quote.note}`);
   return parts.join("\n");
@@ -139,7 +140,9 @@ async function syncQuoteToOdoo({ odoo, quote, approverUser }) {
 
   const note = quote.created_by_role === "distribuidor"
     ? buildDistributorNote({ quote })
-    : `PRESUPUESTADOR QUOTE: ${quote.id}\nDestino: ${quote.fulfillment_mode === "acopio" ? "ACOPIO" : "PRODUCCIÓN"}\n${quote.note || ""}`.trim();
+    : `PRESUPUESTADOR QUOTE: ${quote.id}\nDestino: ${quote.fulfillment_mode === "acopio" ? "ACOPIO" : "PRODUCCIÓN"}`
+      + (quote?.end_customer?.maps_url ? `\nMaps: ${quote.end_customer.maps_url}` : "")
+      + (quote.note ? `\n${quote.note}` : "");
 
   const orderId = await odoo.executeKw("sale.order", "create", [[{
     partner_id: Number(partnerId),
@@ -200,6 +203,21 @@ function getEndCustomerName(quote) {
   return String(quote?.end_customer?.name || "").trim();
 }
 
+function validateEndCustomerRequired(end_customer) {
+  const c = end_customer || {};
+  const name = String(c.name || "").trim();
+  const phone = String(c.phone || "").trim();
+  const address = String(c.address || "").trim();
+  const mapsUrl = String(c.maps_url || "").trim();
+
+  if (!name) return "Falta end_customer.name";
+  if (!phone) return "Falta end_customer.phone";
+  if (!address) return "Falta end_customer.address";
+  if (!mapsUrl) return "Falta end_customer.maps_url";
+  return null;
+}
+
+
 export function buildQuotesRouter(odoo) {
   const router = express.Router();
   router.use(requireAuth);
@@ -220,6 +238,8 @@ export function buildQuotesRouter(odoo) {
       const catalog_kind = normCatalogKind(body.catalog_kind || "porton");
 
       const end_customer = body.end_customer || {};
+      const custErr = validateEndCustomerRequired(end_customer);
+      if (custErr) return res.status(400).json({ ok: false, error: custErr });
       const lines = Array.isArray(body.lines) ? body.lines : [];
       const payload = body.payload || {};
       const note = body.note || null;
@@ -398,6 +418,10 @@ export function buildQuotesRouter(odoo) {
       const catalog_kind = normCatalogKind(body.catalog_kind || catalog_kind_locked);
 
 
+      const nextEndCustomer = body.end_customer !== undefined ? body.end_customer : quote.end_customer;
+      const custErr = validateEndCustomerRequired(nextEndCustomer);
+      if (custErr) return res.status(400).json({ ok: false, error: custErr });
+
       // Validación: para vendedor, end_customer.name es obligatorio (se usa para crear/ubicar partner en Odoo)
       if (vendedorNeedsEndCustomerName(quote) && !getEndCustomerName(quote)) {
         return res.status(400).json({ ok: false, error: "Falta end_customer.name (vendedor)" });
@@ -466,6 +490,9 @@ export function buildQuotesRouter(odoo) {
       const quote = r.rows?.[0];
       if (!quote) throw new Error("Quote no encontrado");
       if (String(quote.created_by_user_id) !== String(u.user_id)) throw new Error("No sos dueño");
+
+      const custErr = validateEndCustomerRequired(quote.end_customer);
+      if (custErr) return res.status(400).json({ ok: false, error: custErr });
 
       // Validación: para vendedor, end_customer.name es obligatorio (se usa para crear/ubicar partner en Odoo)
       if (vendedorNeedsEndCustomerName(quote) && !getEndCustomerName(quote)) {

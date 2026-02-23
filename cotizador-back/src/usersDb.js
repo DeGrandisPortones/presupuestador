@@ -11,6 +11,9 @@ export async function ensureUsersAdminColumns() {
   // is_active: habilitar/inhabilitar login y uso del sistema
   await dbQuery(`alter table public.presupuestador_users add column if not exists is_active boolean not null default true;`);
 
+  // default_maps_url: URL sugerida para Google Maps (prefill en cotizador)
+  await dbQuery(`alter table public.presupuestador_users add column if not exists default_maps_url text null;`);
+
   ensured = true;
 }
 
@@ -58,6 +61,7 @@ export async function listUsers({ role = "all", q = "", active = "all" } = {}) {
            is_distribuidor, is_vendedor,
            is_active,
            odoo_partner_id,
+           default_maps_url,
            created_at, updated_at
     from public.presupuestador_users
     ${where.length ? `where ${where.join(" and ")}` : ""}
@@ -76,6 +80,7 @@ export async function createUser({
   is_distribuidor = false,
   is_vendedor = false,
   odoo_partner_id = null,
+  default_maps_url = null,
   is_active = true,
 } = {}) {
   await ensureUsersAdminColumns();
@@ -99,15 +104,15 @@ export async function createUser({
       (username, password_hash, full_name, is_active,
        is_distribuidor, is_vendedor,
        is_enc_comercial, is_rev_tecnica,
-       odoo_partner_id)
+       odoo_partner_id, default_maps_url)
     values
       ($1, crypt($2, gen_salt('bf')), $3, $4,
        $5, $6,
        false, false,
-       $7)
-    returning id, username, full_name, is_distribuidor, is_vendedor, is_active, odoo_partner_id, created_at, updated_at
+       $7, $8)
+    returning id, username, full_name, is_distribuidor, is_vendedor, is_active, odoo_partner_id, default_maps_url, created_at, updated_at
     `,
-    [u, p, name, !!is_active, dist, vend, pid]
+    [u, p, name, !!is_active, dist, vend, pid, (default_maps_url ? String(default_maps_url).trim() : null)]
   );
 
   return r.rows?.[0] || null;
@@ -119,6 +124,7 @@ export async function updateUser(id, {
   is_distribuidor,
   is_vendedor,
   odoo_partner_id,
+  default_maps_url,
   is_active,
 } = {}) {
   await ensureUsersAdminColumns();
@@ -128,7 +134,7 @@ export async function updateUser(id, {
 
   // Leemos roles actuales para completar defaults
   const cur = await dbQuery(
-    `select id, is_distribuidor, is_vendedor, is_active, full_name, odoo_partner_id
+    `select id, is_distribuidor, is_vendedor, is_active, full_name, odoo_partner_id, default_maps_url
        from public.presupuestador_users where id=$1 limit 1`,
     [userId]
   );
@@ -142,6 +148,7 @@ export async function updateUser(id, {
   const active = is_active !== undefined ? !!is_active : !!current.is_active;
   const name = full_name !== undefined ? (full_name === null ? null : String(full_name).trim()) : current.full_name;
   const pid = odoo_partner_id !== undefined ? (odoo_partner_id ? Number(odoo_partner_id) : null) : current.odoo_partner_id;
+  const mapsUrl = default_maps_url !== undefined ? (default_maps_url ? String(default_maps_url).trim() : null) : (current.default_maps_url ?? null);
 
   // FIX: si el front no manda "password" (undefined), mandamos '' para que Postgres tipifique el parámetro como text.
   const pass = password !== undefined ? String(password || "") : "";
@@ -154,12 +161,13 @@ export async function updateUser(id, {
         is_distribuidor = $4,
         is_vendedor = $5,
         odoo_partner_id = $6,
-        password_hash = case when $7::text is null or $7::text = '' then password_hash else crypt($7::text, gen_salt('bf')) end,
+        default_maps_url = $7,
+        password_hash = case when $8::text is null or $8::text = '' then password_hash else crypt($8::text, gen_salt('bf')) end,
         updated_at = now()
     where id = $1
-    returning id, username, full_name, is_distribuidor, is_vendedor, is_active, odoo_partner_id, created_at, updated_at
+    returning id, username, full_name, is_distribuidor, is_vendedor, is_active, odoo_partner_id, default_maps_url, created_at, updated_at
     `,
-    [userId, name, active, dist, vend, pid, pass]
+    [userId, name, active, dist, vend, pid, mapsUrl, pass]
   );
 
   return r.rows?.[0] || null;

@@ -2,7 +2,6 @@ import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import Button from "../../ui/Button.jsx";
-import Input from "../../ui/Input.jsx";
 import { listQuotes, requestProductionFromAcopio } from "../../api/quotes.js";
 
 function labelAcopioRequest(q) {
@@ -14,7 +13,9 @@ function labelAcopioRequest(q) {
     const tL = t === "approved" ? "T: OK" : t === "rejected" ? "T: NO" : "T: Pend.";
     return `Solicitado · ${cL} · ${tL}`;
   }
-  if (s === "rejected") return "Rechazado (podés reenviar)";
+  if (s === "rejected") {
+    return "Rechazado (podés reenviar)";
+  }
   return "—";
 }
 
@@ -39,7 +40,7 @@ function labelStatus(q) {
   if (s === "syncing_odoo") return "Sincronizando a Odoo";
   if (s === "synced_odoo") return "Enviado a Odoo";
 
-  // compat antiguos
+  // compat antiguos (por si quedaron filas viejas)
   const map = {
     pending_commercial: "Pendiente Comercial",
     rejected_commercial: "Rechazado Comercial",
@@ -49,87 +50,84 @@ function labelStatus(q) {
   return map[s] || s;
 }
 
-function labelPendingWho(q) {
-  if (q?.status !== "pending_approvals") return "—";
-  const c = q?.commercial_decision;
-  const t = q?.technical_decision;
-
-  const pendC = c === "pending";
-  const pendT = t === "pending";
-
-  if (pendC && pendT) return "Comercial y Técnica";
-  if (pendC) return "Comercial";
-  if (pendT) return "Técnica";
-  return "—";
-}
-
-function fmtDate(iso) {
-  if (!iso) return "—";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "—";
-  return d.toLocaleDateString("es-AR");
-}
-
-function editPathForQuote(q) {
-  const kind = (q?.catalog_kind || "porton").toLowerCase();
-  return kind === "ipanel" ? `/cotizador/ipanel/${q.id}` : `/cotizador/${q.id}`;
-}
-
 export default function PresupuestosPage() {
   const navigate = useNavigate();
-  const qc = useQueryClient();
-
-  // all | pending | rejected | acopio
-  const [filter, setFilter] = useState("all");
-  const [clientQ, setClientQ] = useState("");
+  const [filter, setFilter] = useState("all"); // all | pending | rejected | acopio
+  const [searchCustomer, setSearchCustomer] = useState("");
 
   const q = useQuery({
     queryKey: ["quotes", "mine"],
     queryFn: () => listQuotes({ scope: "mine" }),
   });
 
-  const requestProdM = useMutation({
-    mutationFn: (id) => requestProductionFromAcopio(id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["quotes", "mine"] }),
-  });
+const qc = useQueryClient();
+
+const requestProdM = useMutation({
+  mutationFn: (id) => requestProductionFromAcopio(id),
+  onSuccess: () => qc.invalidateQueries({ queryKey: ["quotes", "mine"] }),
+});
+
+  function fmtDate(iso) {
+    if (!iso) return "—";
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return "—";
+    return d.toLocaleDateString("es-AR");
+  }
+
+  function labelPendingWho(q) {
+    if (q?.status !== "pending_approvals") return "—";
+    const c = q?.commercial_decision;
+    const t = q?.technical_decision;
+    const pendC = c === "pending";
+    const pendT = t === "pending";
+    if (pendC && pendT) return "Comercial y Técnica";
+    if (pendC) return "Comercial";
+    if (pendT) return "Técnica";
+    return "—";
+  }
+
 
   const rows = useMemo(() => {
-    const arr = Array.isArray(q.data) ? q.data : [];
+    const arr = (q.data || []).slice();
+
+    // Orden estable por fecha (desc)
+    arr.sort((a, b) => {
+      const ta = a?.created_at ? new Date(a.created_at).getTime() : 0;
+      const tb = b?.created_at ? new Date(b.created_at).getTime() : 0;
+      return tb - ta;
+    });
 
     let out = arr;
 
-    if (filter === "rejected") {
+    if (filter === "pending") {
+      out = out.filter(
+        (x) => x.status === "pending_approvals" && (x.commercial_decision === "pending" || x.technical_decision === "pending")
+      );
+    } else if (filter === "rejected") {
       out = out.filter(
         (x) => x.status === "draft" && (x.commercial_decision === "rejected" || x.technical_decision === "rejected")
-      );
-    } else if (filter === "pending") {
-      out = out.filter(
-        (x) =>
-          x.status === "pending_approvals" &&
-          (x.commercial_decision === "pending" || x.technical_decision === "pending")
       );
     } else if (filter === "acopio") {
       out = out.filter((x) => x.fulfillment_mode === "acopio");
     }
 
-    const nq = (clientQ || "").toLowerCase().trim();
-    if (nq) {
-      out = out.filter((x) => String(x.end_customer?.name || "").toLowerCase().includes(nq));
+    const sq = (searchCustomer || "").toString().trim().toLowerCase();
+    if (sq) {
+      out = out.filter((x) => (x.end_customer?.name || "").toString().toLowerCase().includes(sq));
     }
 
     return out;
-  }, [q.data, filter, clientQ]);
-
-  const showPendingCol = filter === "pending";
+  }, [q.data, filter, searchCustomer]);
 
   return (
     <div className="container">
       <div className="card">
         <h2 style={{ margin: 0 }}>Mis presupuestos</h2>
+        <div className="muted">Borradores, en aprobación, rechazados y enviados a Odoo</div>
 
         <div className="spacer" />
 
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        <div style={{ display: "flex", gap: 8 }}>
           <Button variant={filter === "all" ? "primary" : "ghost"} onClick={() => setFilter("all")}>
             Todos
           </Button>
@@ -145,12 +143,11 @@ export default function PresupuestosPage() {
         </div>
 
         <div className="spacer" />
-
-        <Input
-          value={clientQ}
-          onChange={setClientQ}
-          placeholder="Buscar por cliente..."
-          style={{ width: "100%" }}
+        <input
+          value={searchCustomer}
+          onChange={(e) => setSearchCustomer(e.target.value)}
+          placeholder="Buscar por cliente…"
+          style={{ width: "100%", padding: 10, borderRadius: 12, border: "1px solid #ddd" }}
         />
       </div>
 
@@ -163,84 +160,76 @@ export default function PresupuestosPage() {
         {!q.isLoading && !rows.length && <div className="muted">Sin presupuestos</div>}
 
         {!!rows.length && filter !== "acopio" && (
-          <table>
-            <thead>
-              <tr>
-                <th>Fecha</th>
-                <th>Cliente</th>
-                <th>Estado</th>
-                {showPendingCol && <th>Pendiente</th>}
-                <th>Destino</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((r) => (
-                <tr key={r.id}>
-                  <td>{fmtDate(r.created_at)}</td>
-                  <td>{r.end_customer?.name || <span className="muted">(sin nombre)</span>}</td>
-                  <td>{labelStatus(r)}</td>
-                  {showPendingCol && <td>{labelPendingWho(r)}</td>}
-                  <td>{r.fulfillment_mode === "acopio" ? "Acopio" : "Producción"}</td>
-                  <td className="right" style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
-                    <Button variant="ghost" onClick={() => navigate(`/presupuestos/${r.id}`)}>
-                      Ver
-                    </Button>
-                    {r.status === "draft" && (
-                      <Button onClick={() => navigate(editPathForQuote(r))}>
-                        Editar
-                      </Button>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
+  <table>
+    <thead>
+      <tr>
+        <th>Fecha</th>
+        <th>Cliente</th>
+        <th>Estado</th>
+        {filter === "pending" ? <th>Pendiente</th> : null}
+        <th>Destino</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {rows.map((r) => (
+        <tr key={r.id}>
+          <td>{fmtDate(r.created_at)}</td>
+          <td>{r.end_customer?.name || <span className="muted">(sin nombre)</span>}</td>
+          <td>{labelStatus(r)}</td>
+          {filter === "pending" ? <td>{labelPendingWho(r)}</td> : null}
+          <td>{r.fulfillment_mode === "acopio" ? "Acopio" : "Producción"}</td>
+          <td className="right" style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+            <Button variant="ghost" onClick={() => navigate(`/presupuestos/${r.id}`)}>Ver</Button>
+            {r.status === "draft" && (
+              <Button onClick={() => navigate(r.catalog_kind === "ipanel" ? `/cotizador/ipanel/${r.id}` : `/cotizador/${r.id}`)}>Editar</Button>
+            )}
+          </td>
+        </tr>
+      ))}
+    </tbody>
+  </table>
+)}
 
-        {!!rows.length && filter === "acopio" && (
-          <table>
-            <thead>
-              <tr>
-                <th>Fecha</th>
-                <th>Cliente</th>
-                <th>Estado</th>
-                <th>Solicitud</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((r) => {
-                const reqStatus = r.acopio_to_produccion_status || "none";
-                const canRequest = reqStatus !== "pending";
-                return (
-                  <tr key={r.id}>
-                    <td>{fmtDate(r.created_at)}</td>
-                    <td>{r.end_customer?.name || <span className="muted">(sin nombre)</span>}</td>
-                    <td>{labelStatus(r)}</td>
-                    <td>{labelAcopioRequest(r)}</td>
-                    <td className="right" style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
-                      <Button variant="ghost" onClick={() => navigate(`/presupuestos/${r.id}`)}>
-                        Ver
-                      </Button>
-                      {r.status === "draft" && (
-                        <Button variant="ghost" onClick={() => navigate(editPathForQuote(r))}>
-                          Editar
-                        </Button>
-                      )}
-                      <Button
-                        disabled={!canRequest || requestProdM.isPending}
-                        onClick={() => requestProdM.mutate(r.id)}
-                      >
-                        Enviar a Producción
-                      </Button>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        )}
+{!!rows.length && filter === "acopio" && (
+  <table>
+    <thead>
+      <tr>
+        <th>Fecha</th>
+        <th>Cliente</th>
+        <th>Estado</th>
+        <th>Solicitud</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {rows.map((r) => {
+        const reqStatus = r.acopio_to_produccion_status || "none";
+        const canRequest = reqStatus !== "pending";
+        return (
+          <tr key={r.id}>
+            <td>{fmtDate(r.created_at)}</td>
+            <td>{r.end_customer?.name || <span className="muted">(sin nombre)</span>}</td>
+            <td>{labelStatus(r)}</td>
+            <td>{labelAcopioRequest(r)}</td>
+            <td className="right" style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+              <Button variant="ghost" onClick={() => navigate(`/presupuestos/${r.id}`)}>Ver</Button>
+              {r.status === "draft" && (
+                <Button variant="ghost" onClick={() => navigate(r.catalog_kind === "ipanel" ? `/cotizador/ipanel/${r.id}` : `/cotizador/${r.id}`)}>Editar</Button>
+              )}
+              <Button
+                disabled={!canRequest || requestProdM.isPending}
+                onClick={() => requestProdM.mutate(r.id)}
+              >
+                Enviar a Producción
+              </Button>
+            </td>
+          </tr>
+        );
+      })}
+    </tbody>
+  </table>
+)}
       </div>
     </div>
   );

@@ -22,6 +22,7 @@ export function buildAuthRouter() {
                is_distribuidor, is_vendedor,
                is_enc_comercial, is_rev_tecnica,
                odoo_partner_id,
+               default_maps_url,
                coalesce(is_active, true) as is_active
         from public.presupuestador_users
         where username = $1

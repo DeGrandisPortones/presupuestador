@@ -16,6 +16,7 @@ export function signToken(user) {
 
     // no es crítico que viaje en token, pero ayuda en front
     full_name: user.full_name ?? null,
+    default_maps_url: user.default_maps_url ?? null,
   };
 
   return jwt.sign(payload, process.env.JWT_SECRET, {
@@ -48,6 +49,7 @@ export async function requireAuth(req, res, next) {
                is_distribuidor, is_vendedor,
                is_enc_comercial, is_rev_tecnica,
                odoo_partner_id,
+               default_maps_url,
                coalesce(is_active, true) as is_active
         from public.presupuestador_users
         where id = $1
@@ -71,6 +73,7 @@ export async function requireAuth(req, res, next) {
           is_enc_comercial: !!fresh.is_enc_comercial,
           is_rev_tecnica: !!fresh.is_rev_tecnica,
           odoo_partner_id: fresh.odoo_partner_id ?? null,
+          default_maps_url: fresh.default_maps_url ?? null,
           is_active: !!fresh.is_active,
         }
       : { ...decoded, is_active: decoded.is_active ?? true };
