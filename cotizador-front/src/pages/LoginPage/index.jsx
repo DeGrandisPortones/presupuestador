@@ -35,21 +35,30 @@ export default function LoginPage() {
         <h2 style={{ marginTop: 0 }}>Ingresar</h2>
         <div className="muted">Usuario y contraseña del presupuestador</div>
 
-        <div className="spacer" />
-        <div className="muted">Usuario</div>
-        <Input value={username} onChange={setUsername} placeholder="dist1" style={{ width: "100%" }} />
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (m.isPending) return;
+            if (!username || !password) return;
+            m.mutate();
+          }}
+        >
+          <div className="spacer" />
+          <div className="muted">Usuario</div>
+          <Input value={username} onChange={setUsername} placeholder="dist1" style={{ width: "100%" }} />
 
-        <div className="spacer" />
-        <div className="muted">Contraseña</div>
-        <Input type="password" value={password} onChange={setPassword} placeholder="••••••••" style={{ width: "100%" }} />
+          <div className="spacer" />
+          <div className="muted">Contraseña</div>
+          <Input type="password" value={password} onChange={setPassword} placeholder="••••••••" style={{ width: "100%" }} />
 
-        <div className="spacer" />
-        {m.isError && <div style={{ color: "#d93025", fontSize: 13 }}>{m.error.message}</div>}
-        <div className="spacer" />
+          <div className="spacer" />
+          {m.isError && <div style={{ color: "#d93025", fontSize: 13 }}>{m.error.message}</div>}
+          <div className="spacer" />
 
-        <Button disabled={m.isPending || !username || !password} onClick={() => m.mutate()}>
-          {m.isPending ? "Ingresando..." : "Entrar"}
-        </Button>
+          <Button type="submit" disabled={m.isPending || !username || !password}>
+            {m.isPending ? "Ingresando..." : "Entrar"}
+          </Button>
+        </form>
       </div>
     </div>
   );

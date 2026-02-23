@@ -17,7 +17,6 @@ export default function MenuPage() {
 
       <div className="card">
         <h2 style={{ margin: 0 }}>Menú</h2>
-        <div className="muted">Elegí a dónde querés ir.</div>
       </div>
 
       <div className="spacer" />
@@ -26,7 +25,6 @@ export default function MenuPage() {
         <div className="card menu-card">
           <img className="product-logo" src="/brands/degrandis.png" alt="De Grandis Portones" />
           <div className="menu-title">Cotizador De Grandis Portones</div>
-          <div className="muted">Portones y accesorios</div>
           <div className="spacer" />
           <Button variant="primary" onClick={() => navigate("/cotizador")}>Ir al cotizador</Button>
         </div>
@@ -34,14 +32,12 @@ export default function MenuPage() {
         <div className="card menu-card">
           <img className="product-logo" src="/brands/ipanel.png" alt="Ipanel" />
           <div className="menu-title">Cotizador Ipanel</div>
-          <div className="muted">Panel compuesto</div>
           <div className="spacer" />
           <Button variant="primary" onClick={() => navigate("/cotizador/ipanel")}>Ir al cotizador</Button>
         </div>
 
         <div className="card menu-card">
           <div className="menu-title">Mis presupuestos</div>
-          <div className="muted">Ver, editar y descargar</div>
           <div className="spacer" />
           <Button variant="secondary" onClick={() => navigate("/presupuestos")}>Ver mis presupuestos</Button>
         </div>
@@ -49,7 +45,6 @@ export default function MenuPage() {
         {showDashboard && (
           <div className="card menu-card">
             <div className="menu-title">Dashboard</div>
-            <div className="muted">Configuración del presupuestador</div>
             <div className="spacer" />
             <Button variant="secondary" onClick={() => navigate("/dashboard")}>Abrir dashboard</Button>
           </div>
@@ -58,7 +53,6 @@ export default function MenuPage() {
         {showUsers && (
           <div className="card menu-card">
             <div className="menu-title">Gestor de usuarios</div>
-            <div className="muted">Crear, editar e inhabilitar vendedores/distribuidores</div>
             <div className="spacer" />
             <Button variant="secondary" onClick={() => navigate("/usuarios")}>Abrir gestor</Button>
           </div>
@@ -67,7 +61,6 @@ export default function MenuPage() {
         {showCommercialInbox && (
           <div className="card menu-card">
             <div className="menu-title">Aprobación Comercial</div>
-            <div className="muted">Bandeja de pendientes</div>
             <div className="spacer" />
             <Button variant="secondary" onClick={() => navigate("/aprobacion/comercial")}>Ir a aprobación</Button>
           </div>
@@ -76,7 +69,6 @@ export default function MenuPage() {
         {showTechInbox && (
           <div className="card menu-card">
             <div className="menu-title">Revisión Técnica</div>
-            <div className="muted">Bandeja de pendientes</div>
             <div className="spacer" />
             <Button variant="secondary" onClick={() => navigate("/aprobacion/tecnica")}>Ir a revisión</Button>
           </div>

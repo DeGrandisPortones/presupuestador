@@ -28,7 +28,7 @@ export const useQuoteStore = create((set, get) => ({
   pricelistId: null,
   pricelistName: "",
   marginPercent: 0,          // número (para cálculos)
-  marginPercentInput: "0",   // string (para permitir escribir '-' etc)
+  marginPercentInput: "",    // string (para permitir escribir '-' etc)
   partnerId: null,
 
   fulfillmentMode: "produccion", // "produccion" | "acopio"
@@ -54,7 +54,7 @@ export const useQuoteStore = create((set, get) => ({
       pricelistId: null,
       pricelistName: "",
       marginPercent: 0,
-      marginPercentInput: "0",
+      marginPercentInput: "",
       partnerId: null,
       fulfillmentMode: "produccion",
       conditionMode: "cond1",
@@ -84,7 +84,8 @@ export const useQuoteStore = create((set, get) => ({
       pricelistName: "",
 
       marginPercent: m,
-      marginPercentInput: String(payload?.margin_percent_ui ?? m),
+      // Si es 0 (o viene vacío), mostramos vacío para que el usuario no tenga que borrar "0"
+      marginPercentInput: m === 0 ? "" : String(payload?.margin_percent_ui ?? m),
 
       fulfillmentMode: q.fulfillment_mode || "produccion",
       conditionMode: cond === "cond2" ? "cond2" : "cond1",
@@ -133,6 +134,11 @@ export const useQuoteStore = create((set, get) => ({
   // Permite negativos y estados intermedios ('-')
   setMarginPercentInput(v) {
     const raw = String(v ?? "");
+    // Si el usuario lo vacía, interpretamos 0 pero dejamos el input vacío
+    if (raw.trim() === "") {
+      set({ marginPercentInput: "", marginPercent: 0 });
+      return;
+    }
     const parsed = parseMargin(raw);
 
     if (parsed === null) {
@@ -147,17 +153,22 @@ export const useQuoteStore = create((set, get) => ({
     const s = get();
     const parsed = parseMargin(s.marginPercentInput);
     if (parsed === null) {
-      set({ marginPercent: 0, marginPercentInput: "0" });
+      set({ marginPercent: 0, marginPercentInput: "" });
       return;
     }
-    // normalizamos formato: usamos punto y sin espacios
+    // 0 => vacío (mejor UX). Si no, normalizamos formato: punto y sin espacios.
+    if (parsed === 0) {
+      set({ marginPercent: 0, marginPercentInput: "" });
+      return;
+    }
     set({ marginPercent: parsed, marginPercentInput: String(parsed) });
   },
 
   // setter numérico (por compat)
   setMarginPercent(v) {
     const n = Number(v || 0);
-    set({ marginPercent: Number.isFinite(n) ? n : 0, marginPercentInput: String(Number.isFinite(n) ? n : 0) });
+    const safe = Number.isFinite(n) ? n : 0;
+    set({ marginPercent: safe, marginPercentInput: safe === 0 ? "" : String(safe) });
   },
 
   setPartnerId(v) {

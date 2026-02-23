@@ -132,7 +132,6 @@ export default function UsersAdminPage() {
       <div className="card" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
         <div>
           <h2 style={{ margin: 0 }}>Gestor de usuarios</h2>
-          <div className="muted">Alta/baja de vendedores y distribuidores</div>
         </div>
 
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
@@ -228,7 +227,6 @@ export default function UsersAdminPage() {
 
         <div className="card" style={{ flex: 2, minWidth: 520 }}>
           <h3 style={{ marginTop: 0 }}>{mode === "create" ? "Crear usuario" : `Editar usuario #${selectedId}`}</h3>
-          <div className="muted">El password se guarda con hash (bcrypt vía pgcrypto).</div>
 
           <div className="spacer" />
 
