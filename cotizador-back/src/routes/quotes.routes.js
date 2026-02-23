@@ -53,12 +53,24 @@ async function getCreatorOdooPartnerId(createdByUserId) {
 
 async function findOrCreateCustomerPartner(odoo, customer) {
   if (customer?.email) {
-    const ids = await odoo.executeKw("res.partner", "search", [[[["email", "=", customer.email]]]], { limit: 1 });
+    // ✅ args = [domain]  (domain = [["campo","op","valor"]])
+    const ids = await odoo.executeKw(
+      "res.partner",
+      "search",
+      [[["email", "=", customer.email]]],
+      { limit: 1 }
+    );
     if (ids?.[0]) return ids[0];
   }
+
   if (!customer?.name) throw new Error("Falta end_customer.name (vendedor)");
 
-  const ids2 = await odoo.executeKw("res.partner", "search", [[[["name", "=", customer.name]]]], { limit: 1 });
+  const ids2 = await odoo.executeKw(
+    "res.partner",
+    "search",
+    [[["name", "=", customer.name]]],
+    { limit: 1 }
+  );
   if (ids2?.[0]) return ids2[0];
 
   const id = await odoo.executeKw("res.partner", "create", [[{
@@ -69,6 +81,7 @@ async function findOrCreateCustomerPartner(odoo, customer) {
     city: (customer.city || false),
     customer_rank: 1,
   }]]);
+
   return id;
 }
 

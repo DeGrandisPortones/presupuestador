@@ -8,7 +8,8 @@ export default function MenuPage() {
 
   const canQuote = !!(user?.is_vendedor || user?.is_distribuidor);
 
-  const showDashboard = !!(user?.is_distribuidor || user?.is_enc_comercial);
+  // ✅ Dashboard SOLO Enc. Comercial
+  const showDashboard = !!user?.is_enc_comercial;
   const showCommercialInbox = !!user?.is_enc_comercial;
   const showUsers = !!user?.is_enc_comercial;
   const showTechInbox = !!user?.is_rev_tecnica;
@@ -25,33 +26,30 @@ export default function MenuPage() {
 
       <div className="menu-grid">
         {canQuote && (
-        <div className="card menu-card">
-          <img className="product-logo" src="/brands/degrandis.png" alt="De Grandis Portones" />
-          <div className="menu-title">Cotizador De Grandis Portones</div>
-          <div className="spacer" />
-          <Button variant="primary" onClick={() => navigate("/cotizador")}>Ir al cotizador</Button>
-        </div>
+          <div className="card menu-card">
+            <img className="product-logo" src="/brands/degrandis.png" alt="De Grandis Portones" />
+            <div className="menu-title">Cotizador De Grandis Portones</div>
+            <div className="spacer" />
+            <Button variant="primary" onClick={() => navigate("/cotizador")}>Ir al cotizador</Button>
+          </div>
         )}
-
 
         {canQuote && (
-        <div className="card menu-card">
-          <img className="product-logo" src="/brands/ipanel.png" alt="Ipanel" />
-          <div className="menu-title">Cotizador Ipanel</div>
-          <div className="spacer" />
-          <Button variant="primary" onClick={() => navigate("/cotizador/ipanel")}>Ir al cotizador</Button>
-        </div>
+          <div className="card menu-card">
+            <img className="product-logo" src="/brands/ipanel.png" alt="Ipanel" />
+            <div className="menu-title">Cotizador Ipanel</div>
+            <div className="spacer" />
+            <Button variant="primary" onClick={() => navigate("/cotizador/ipanel")}>Ir al cotizador</Button>
+          </div>
         )}
-
 
         {canQuote && (
-        <div className="card menu-card">
-          <div className="menu-title">Mis presupuestos</div>
-          <div className="spacer" />
-          <Button variant="secondary" onClick={() => navigate("/presupuestos")}>Ver mis presupuestos</Button>
-        </div>
+          <div className="card menu-card">
+            <div className="menu-title">Mis presupuestos</div>
+            <div className="spacer" />
+            <Button variant="secondary" onClick={() => navigate("/presupuestos")}>Ver mis presupuestos</Button>
+          </div>
         )}
-
 
         {showDashboard && (
           <div className="card menu-card">
