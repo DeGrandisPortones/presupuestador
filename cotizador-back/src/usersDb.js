@@ -142,7 +142,9 @@ export async function updateUser(id, {
   const active = is_active !== undefined ? !!is_active : !!current.is_active;
   const name = full_name !== undefined ? (full_name === null ? null : String(full_name).trim()) : current.full_name;
   const pid = odoo_partner_id !== undefined ? (odoo_partner_id ? Number(odoo_partner_id) : null) : current.odoo_partner_id;
-  const pass = password !== undefined ? String(password || "") : null;
+
+  // FIX: si el front no manda "password" (undefined), mandamos '' para que Postgres tipifique el parámetro como text.
+  const pass = password !== undefined ? String(password || "") : "";
 
   const r = await dbQuery(
     `
@@ -152,7 +154,7 @@ export async function updateUser(id, {
         is_distribuidor = $4,
         is_vendedor = $5,
         odoo_partner_id = $6,
-        password_hash = case when $7 is null or $7 = '' then password_hash else crypt($7, gen_salt('bf')) end,
+        password_hash = case when $7::text is null or $7::text = '' then password_hash else crypt($7::text, gen_salt('bf')) end,
         updated_at = now()
     where id = $1
     returning id, username, full_name, is_distribuidor, is_vendedor, is_active, odoo_partner_id, created_at, updated_at
