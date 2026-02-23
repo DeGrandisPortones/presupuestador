@@ -7,6 +7,17 @@ const EMPTY_CUSTOMER = {
   address: "",
 };
 
+function normMarginInput(v) {
+  return String(v ?? "").replace(",", ".").trim();
+}
+
+function parseMargin(v) {
+  const s = normMarginInput(v);
+  if (!s || s === "-" || s === "." || s === "-.") return null;
+  const n = Number(s);
+  return Number.isFinite(n) ? n : null;
+}
+
 export const useQuoteStore = create((set, get) => ({
   // meta
   quoteId: null,
@@ -16,10 +27,12 @@ export const useQuoteStore = create((set, get) => ({
   // config
   pricelistId: null,
   pricelistName: "",
-  marginPercent: 0,
+  marginPercent: 0,          // número (para cálculos)
+  marginPercentInput: "0",   // string (para permitir escribir '-' etc)
   partnerId: null,
 
   fulfillmentMode: "produccion", // "produccion" | "acopio"
+  conditionMode: "cond1",        // "cond1" | "cond2"
   note: "",
 
   endCustomer: { ...EMPTY_CUSTOMER },
@@ -30,7 +43,7 @@ export const useQuoteStore = create((set, get) => ({
     height: "", // metros
   },
 
-  // { product_id, name, code, qty, basePrice }
+  // { product_id, name, raw_name, code, qty, basePrice }
   lines: [],
 
   reset() {
@@ -41,8 +54,10 @@ export const useQuoteStore = create((set, get) => ({
       pricelistId: null,
       pricelistName: "",
       marginPercent: 0,
+      marginPercentInput: "0",
       partnerId: null,
       fulfillmentMode: "produccion",
+      conditionMode: "cond1",
       note: "",
       endCustomer: { ...EMPTY_CUSTOMER },
       dimensions: { width: "", height: "" },
@@ -57,6 +72,9 @@ export const useQuoteStore = create((set, get) => ({
     const payload = q.payload || {};
     const dims = payload?.dimensions || {};
 
+    const m = Number(payload?.margin_percent_ui ?? 0) || 0;
+    const cond = String(payload?.condition_mode || "cond1");
+
     set({
       quoteId: q.id ?? null,
       status: q.status || "draft",
@@ -65,7 +83,11 @@ export const useQuoteStore = create((set, get) => ({
       pricelistId: q.pricelist_id ?? null,
       pricelistName: "",
 
+      marginPercent: m,
+      marginPercentInput: String(payload?.margin_percent_ui ?? m),
+
       fulfillmentMode: q.fulfillment_mode || "produccion",
+      conditionMode: cond === "cond2" ? "cond2" : "cond1",
       note: q.note || "",
 
       endCustomer: {
@@ -81,6 +103,7 @@ export const useQuoteStore = create((set, get) => ({
       lines: lines.map((l) => ({
         product_id: Number(l.product_id),
         name: l.name || "",
+        raw_name: l.raw_name || l.rawName || l.raw || "",
         code: l.code || null,
         qty: Number(l.qty || 1),
         basePrice: Number(l.basePrice ?? l.base_price ?? l.price ?? 0) || 0,
@@ -107,8 +130,34 @@ export const useQuoteStore = create((set, get) => ({
     });
   },
 
+  // Permite negativos y estados intermedios ('-')
+  setMarginPercentInput(v) {
+    const raw = String(v ?? "");
+    const parsed = parseMargin(raw);
+
+    if (parsed === null) {
+      set({ marginPercentInput: raw });
+      return;
+    }
+    set({ marginPercentInput: raw, marginPercent: parsed });
+  },
+
+  // Para usar en onBlur: si quedó inválido, lo normaliza a 0
+  commitMarginPercentInput() {
+    const s = get();
+    const parsed = parseMargin(s.marginPercentInput);
+    if (parsed === null) {
+      set({ marginPercent: 0, marginPercentInput: "0" });
+      return;
+    }
+    // normalizamos formato: usamos punto y sin espacios
+    set({ marginPercent: parsed, marginPercentInput: String(parsed) });
+  },
+
+  // setter numérico (por compat)
   setMarginPercent(v) {
-    set({ marginPercent: Number(v || 0) });
+    const n = Number(v || 0);
+    set({ marginPercent: Number.isFinite(n) ? n : 0, marginPercentInput: String(Number.isFinite(n) ? n : 0) });
   },
 
   setPartnerId(v) {
@@ -119,6 +168,12 @@ export const useQuoteStore = create((set, get) => ({
     const mode = String(v || "").trim();
     if (!["produccion", "acopio"].includes(mode)) return;
     set({ fulfillmentMode: mode });
+  },
+
+  setConditionMode(v) {
+    const mode = String(v || "").trim();
+    if (!["cond1", "cond2"].includes(mode)) return;
+    set({ conditionMode: mode });
   },
 
   setNote(v) {
@@ -149,16 +204,10 @@ export const useQuoteStore = create((set, get) => ({
           ...s.lines,
           {
             product_id: id,
-            // name = alias visible en el cotizador
             name: p.name || "",
-            // raw_name = nombre real de Odoo (para PDF)
-            raw_name: p.raw_name || p.rawName || p.original_name || "",
+            raw_name: p.raw_name || p.rawName || p.original_name || p.name || "",
             code: p.code || null,
             qty: 1,
-            // ✅ Para evitar el "0" al agregar:
-            // - bootstrap trae list_price
-            // - algunos endpoints traen price / basePrice
-            // (luego /api/odoo/prices puede recalcular si aplica)
             basePrice: Number(
               p.price ??
               p.basePrice ??
@@ -210,11 +259,11 @@ export const useQuoteStore = create((set, get) => ({
     const height = Number(String(s.dimensions?.height || "").replace(",", ".")) || 0;
     const area_m2 = Number.isFinite(width * height) ? width * height : 0;
 
-    // guardamos “líneas enriquecidas” para que los reviewers vean nombres/precios sin ir a Odoo
     const lines = s.lines.map((l) => ({
       product_id: l.product_id,
       qty: l.qty,
       name: l.name,
+      raw_name: l.raw_name || null,
       code: l.code,
       basePrice: l.basePrice,
     }));
@@ -225,8 +274,8 @@ export const useQuoteStore = create((set, get) => ({
       end_customer: s.endCustomer,
       lines,
       payload: {
-        // dejamos lugar para futuro (alto/ancho/notas/lo que venga)
         margin_percent_ui: s.marginPercent,
+        condition_mode: s.conditionMode,
         dimensions: {
           width: s.dimensions?.width ?? "",
           height: s.dimensions?.height ?? "",

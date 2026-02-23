@@ -189,7 +189,11 @@ function renderPdf({ title, payload, useBasePrice }) {
   const customerEmail = safeStr(endCustomer?.email);
   const customerAddress = safeStr(endCustomer?.address);
 
-  const destination = safeStr(payload?.fulfillment_mode);
+  const destinationRaw = safeStr(payload?.fulfillment_mode);
+  const destination = destinationRaw === "acopio" ? "Acopio" : destinationRaw === "produccion" ? "Producción" : (destinationRaw || "—");
+  const conditionRaw = safeStr(payload?.payload?.condition_mode ?? payload?.condition_mode);
+  const conditionMode = conditionRaw === "cond2" ? "Condición 2" : conditionRaw === "cond1" ? "Condición 1" : (conditionRaw || "");
+  const showDestination = !!useBasePrice; // Proforma sí, Presupuesto no
   const obs = safeStr(payload?.note);
 
   const quoteNo = getQuoteNumber(payload);
@@ -255,12 +259,25 @@ function renderPdf({ title, payload, useBasePrice }) {
   const x0 = margin;
   const rowW = innerW;
 
-  const cols1 = [
-    { w: rowW * 0.40, text: `Cliente\n${customerName}` },
-    { w: rowW * 0.22, text: `Teléfono\n${customerPhone || "—"}` },
-    { w: rowW * 0.24, text: `Email\n${customerEmail || "—"}` },
-    { w: rowW * 0.14, text: `Destino\n${destination || "—"}` },
-  ];
+  const cols1 = showDestination
+    ? [
+        { w: rowW * 0.40, text: `Cliente
+${customerName}` },
+        { w: rowW * 0.22, text: `Teléfono
+${customerPhone || "—"}` },
+        { w: rowW * 0.24, text: `Email
+${customerEmail || "—"}` },
+        { w: rowW * 0.14, text: `Destino
+${destination || "—"}` },
+      ]
+    : [
+        { w: rowW * 0.45, text: `Cliente
+${customerName}` },
+        { w: rowW * 0.25, text: `Teléfono
+${customerPhone || "—"}` },
+        { w: rowW * 0.30, text: `Email
+${customerEmail || "—"}` },
+      ];
 
   drawRow(doc, {
     x: x0,
@@ -277,6 +294,7 @@ function renderPdf({ title, payload, useBasePrice }) {
   // Observaciones / dirección (si hay)
   const extraLines = [];
   if (customerAddress) extraLines.push(`Dirección: ${customerAddress}`);
+  if (conditionMode) extraLines.push(`Condición: ${conditionMode}`);
   if (!useBasePrice) extraLines.push(`Coeficiente: ${formatQty(coefPct)}%`);
   if (obs) extraLines.push(`Obs: ${obs}`);
 

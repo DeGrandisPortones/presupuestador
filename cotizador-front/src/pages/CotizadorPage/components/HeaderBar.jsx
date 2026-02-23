@@ -5,13 +5,22 @@ export default function HeaderBar({ pricelists, loadingPricelists, showMargin })
   const {
     pricelistId,
     marginPercent,
+    marginPercentInput,
     setPricelist,
-    setMarginPercent,
+    setMarginPercentInput,
+    commitMarginPercentInput,
     fulfillmentMode,
     setFulfillmentMode,
+    conditionMode,
+    setConditionMode,
     endCustomer,
     setEndCustomer,
   } = useQuoteStore();
+
+  const coefClass =
+    marginPercent < 0 ? "coef-input coef-negative" :
+    marginPercent > 0 ? "coef-input coef-positive" :
+    "coef-input";
 
   return (
     <div className="card">
@@ -43,9 +52,13 @@ export default function HeaderBar({ pricelists, loadingPricelists, showMargin })
           <div>
             <div className="muted">Coeficiente (%)</div>
             <Input
-              type="number"
-              value={marginPercent}
-              onChange={(v) => setMarginPercent(v)}
+              type="text"
+              inputMode="decimal"
+              value={marginPercentInput}
+              onChange={(v) => setMarginPercentInput(v)}
+              onBlur={() => commitMarginPercentInput()}
+              className={coefClass}
+              placeholder="0"
               style={{ minWidth: 120 }}
             />
           </div>
@@ -83,14 +96,26 @@ export default function HeaderBar({ pricelists, loadingPricelists, showMargin })
 
         <div>
           <div className="muted">Destino</div>
-          <select
-            value={fulfillmentMode || ""}
-            onChange={(e) => setFulfillmentMode(e.target.value)}
-            style={{ padding: "8px 10px", borderRadius: 8, border: "1px solid #ddd", minWidth: 180 }}
-          >
-            <option value="produccion">Producción</option>
-            <option value="acopio">Acopio</option>
-          </select>
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <select
+              value={fulfillmentMode || ""}
+              onChange={(e) => setFulfillmentMode(e.target.value)}
+              style={{ padding: "8px 10px", borderRadius: 8, border: "1px solid #ddd", minWidth: 170 }}
+            >
+              <option value="produccion">Producción</option>
+              <option value="acopio">Acopio</option>
+            </select>
+
+            <select
+              value={conditionMode || "cond1"}
+              onChange={(e) => setConditionMode(e.target.value)}
+              style={{ padding: "8px 10px", borderRadius: 8, border: "1px solid #ddd", minWidth: 150 }}
+              title="Condición"
+            >
+              <option value="cond1">Condición 1</option>
+              <option value="cond2">Condición 2</option>
+            </select>
+          </div>
         </div>
       </div>
     </div>

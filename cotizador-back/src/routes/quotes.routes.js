@@ -41,6 +41,16 @@ function buildDistributorNote({ quote }) {
   return parts.join("\n");
 }
 
+async function getCreatorOdooPartnerId(createdByUserId) {
+  try {
+    const r = await dbQuery(`select odoo_partner_id from public.presupuestador_users where id=$1`, [Number(createdByUserId)]);
+    const v = r.rows?.[0]?.odoo_partner_id;
+    return v ? Number(v) : null;
+  } catch {
+    return null;
+  }
+}
+
 async function findOrCreateCustomerPartner(odoo, customer) {
   if (customer?.email) {
     const ids = await odoo.executeKw("res.partner", "search", [[[["email", "=", customer.email]]]], { limit: 1 });
@@ -70,8 +80,8 @@ async function syncQuoteToOdoo({ odoo, quote, approverUser }) {
   let partnerId = null;
 
   if (quote.created_by_role === "distribuidor") {
-    partnerId = quote.bill_to_odoo_partner_id || approverUser.odoo_partner_id;
-    if (!partnerId) throw new Error("Distribuidor sin bill_to_odoo_partner_id (quote) y sin odoo_partner_id (JWT)");
+    partnerId = quote.bill_to_odoo_partner_id || approverUser.odoo_partner_id || await getCreatorOdooPartnerId(quote.created_by_user_id);
+    if (!partnerId) throw new Error("Distribuidor sin bill_to_odoo_partner_id (quote) y sin odoo_partner_id (JWT/DB)");
   } else {
     partnerId = await findOrCreateCustomerPartner(odoo, quote.end_customer || {});
   }
@@ -204,7 +214,10 @@ export function buildQuotesRouter(odoo) {
       const note = body.note || null;
 
       const pricelist_id = Number(body.pricelist_id || 1);
-      const bill_to_odoo_partner_id = body.bill_to_odoo_partner_id ? Number(body.bill_to_odoo_partner_id) : null;
+      let bill_to_odoo_partner_id = body.bill_to_odoo_partner_id ? Number(body.bill_to_odoo_partner_id) : null;
+      if (created_by_role === "distribuidor" && !bill_to_odoo_partner_id) {
+        bill_to_odoo_partner_id = u.odoo_partner_id ? Number(u.odoo_partner_id) : null;
+      }
 
       const q = await dbQuery(
         `
@@ -440,6 +453,18 @@ export function buildQuotesRouter(odoo) {
       }
 
       const isDistributor = quote.created_by_role === "distribuidor";
+
+      // Si es distribuidor y no quedó bill_to, lo seteamos con el partner del dueño (del token)
+      if (isDistributor && !quote.bill_to_odoo_partner_id && u.odoo_partner_id) {
+        const updBill = await dbQuery(
+          `update public.presupuestador_quotes set bill_to_odoo_partner_id=$2 where id=$1 returning *`,
+          [id, Number(u.odoo_partner_id)]
+        );
+        if (updBill.rows?.[0]) {
+          // actualizamos la variable para lo que sigue
+          Object.assign(quote, updBill.rows[0]);
+        }
+      }
 
       // Vendedor: entra a Comercial y Técnica al mismo tiempo.
       // Distribuidor: Comercial queda auto-aprobado; Técnica decide.

@@ -15,13 +15,18 @@ export default function AppLayout() {
 
   const roleText = roles.length ? roles.join(" / ") : "Cargando sesión...";
 
+  const showDashboard = !!(user?.is_enc_comercial || user?.is_distribuidor);
+
   return (
     <div>
-      <div className="card" style={{ borderRadius: 0 }}>
+      <div className="card app-header" style={{ borderRadius: 0 }}>
         <div className="container" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: 0 }}>
-          <div>
-            <div style={{ fontWeight: 900 }}>Presupuestador</div>
-            <div className="muted">{user ? `${user.username} · ${roleText}` : roleText}</div>
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <img className="brand-logo" src="/brands/dflex.png" alt="Dflex" />
+            <div>
+              <div style={{ fontWeight: 900 }}>Presupuestador</div>
+              <div className="muted">{user ? `${user.username} · ${roleText}` : roleText}</div>
+            </div>
           </div>
 
           <Button
@@ -36,7 +41,11 @@ export default function AppLayout() {
         </div>
 
         <div className="container" style={{ padding: 0, marginTop: 10, display: "flex", gap: 10, flexWrap: "wrap" }}>
-          <NavLink className={({ isActive }) => (isActive ? "navlink active" : "navlink")} to="/cotizador">
+          <NavLink className={({ isActive }) => (isActive ? "navlink active" : "navlink")} to="/menu">
+            Menú
+          </NavLink>
+
+          <NavLink className={({ isActive }) => (isActive ? "navlink active" : "navlink")} to="/cotizador" end>
             Cotizador Portones
           </NavLink>
 
@@ -54,7 +63,7 @@ export default function AppLayout() {
             </NavLink>
           )}
 
-          {user?.is_enc_comercial && (
+          {showDashboard && (
             <NavLink className={({ isActive }) => (isActive ? "navlink active" : "navlink")} to="/dashboard">
               Dashboard
             </NavLink>

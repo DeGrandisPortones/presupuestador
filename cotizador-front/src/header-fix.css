@@ -1,0 +1,60 @@
+/* Header contrast fixes (dark header) */
+.app-header .navlink{
+  background: rgba(255,255,255,.10);
+  color: rgba(255,255,255,.92);
+  border-color: rgba(255,255,255,.22);
+}
+
+.app-header .navlink:hover{
+  background: rgba(255,255,255,.14);
+  border-color: rgba(255,255,255,.35);
+}
+
+.app-header .navlink.active{
+  background: var(--dg-teal);
+  border-color: var(--dg-teal);
+  color: #fff;
+}
+
+/* Logout + any ghost buttons in header */
+.app-header .btn--ghost{
+  background: rgba(255,255,255,.10);
+  color: rgba(255,255,255,.92);
+  border-color: rgba(255,255,255,.22);
+}
+
+.app-header .btn--ghost:not(:disabled):hover{
+  background: rgba(255,255,255,.14);
+  border-color: rgba(255,255,255,.35);
+}
+
+/* Secondary buttons (if any) on header */
+.app-header .btn--secondary{
+  background: rgba(255,255,255,.10);
+  color: rgba(255,255,255,.92);
+  border-color: rgba(255,255,255,.22);
+}
+
+.app-header .btn--secondary:not(:disabled):hover{
+  background: rgba(255,255,255,.14);
+  border-color: rgba(255,255,255,.35);
+}
+
+/* Muted text on dark header */
+.app-header .muted{
+  color: rgba(255,255,255,.72);
+}
+
+
+/* Coeficiente: verde si positivo, rojo si negativo */
+.coef-input {
+  border-width: 2px !important;
+}
+.coef-input.coef-negative {
+  border-color: rgba(217, 48, 37, 0.85) !important;
+  background: rgba(217, 48, 37, 0.10) !important;
+}
+.coef-input.coef-positive {
+  border-color: rgba(20, 160, 60, 0.85) !important;
+  background: rgba(20, 160, 60, 0.10) !important;
+}

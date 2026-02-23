@@ -16,6 +16,7 @@ import { buildAuthRouter } from "./routes/auth.routes.js";
 import { buildQuotesRouter } from "./routes/quotes.routes.js";
 import { buildCatalogRouter } from "./routes/catalog.routes.js";
 import { buildAdminRouter } from "./routes/admin.routes.js";
+import { buildPdfRouter } from "./routes/pdf.routes.js";
 
 const app = express();
 
@@ -51,6 +52,9 @@ app.use("/api/catalog", buildCatalogRouter(odoo));
 
 // Admin
 app.use("/api/admin", buildAdminRouter(odoo));
+
+// PDF
+app.use("/api/pdf", buildPdfRouter());
 
 // Health
 app.get("/health", (_req, res) => res.json({ ok: true }));

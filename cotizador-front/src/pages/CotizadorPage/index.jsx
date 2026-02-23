@@ -196,13 +196,20 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
   return (
     <div className="container">
       <div className="card" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
-        <div>
-          <h2 style={{ margin: 0 }}>
+         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <img
+            className="product-logo"
+            src={catalogKind === "ipanel" ? "/brands/ipanel.png" : "/brands/degrandis.png"}
+            alt={catalogKind === "ipanel" ? "Ipanel" : "DeGrandis Portones"}
+          />
+          <div>
+            <h2 style={{ margin: 0 }}>
             {quoteId ? `Presupuesto #${String(quoteId).slice(0, 8)}` : "Nuevo presupuesto"}
           </h2>
           <div className="muted">
             Estado: <b>{status}</b>
           </div>
+        </div>
         </div>
 
         <div style={{ display: "flex", gap: 8 }}>

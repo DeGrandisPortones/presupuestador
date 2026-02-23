@@ -2,9 +2,11 @@ import { useEffect } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 
 import CotizadorPage from "./pages/CotizadorPage/index.jsx";
+import MenuPage from "./pages/MenuPage/index.jsx";
 
 const CotizadorPortonRoute = () => <CotizadorPage catalogKind="porton" />;
 const CotizadorIpanelRoute = () => <CotizadorPage catalogKind="ipanel" />;
+
 import LoginPage from "./pages/LoginPage/index.jsx";
 
 import PresupuestosPage from "./pages/PresupuestosPage/index.jsx";
@@ -47,7 +49,9 @@ export default function App() {
             </RequireAuth>
           }
         >
-          <Route index element={<Navigate to="/cotizador" replace />} />
+          <Route index element={<Navigate to="/menu" replace />} />
+
+          <Route path="menu" element={<MenuPage />} />
 
           <Route path="cotizador" element={<CotizadorPortonRoute />} />
           <Route path="cotizador/:id" element={<CotizadorPortonRoute />} />
@@ -63,7 +67,7 @@ export default function App() {
           <Route path="dashboard" element={<DashboardPage />} />
         </Route>
 
-        <Route path="*" element={<Navigate to={token ? "/cotizador" : "/login"} replace />} />
+        <Route path="*" element={<Navigate to={token ? "/menu" : "/login"} replace />} />
       </Routes>
     </BrowserRouter>
   );

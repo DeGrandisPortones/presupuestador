@@ -284,3 +284,61 @@ th, td {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+
+/* Brand header (Dflex) */
+.app-header{
+  background: #0b0f10;
+  color: #fff;
+  border: 0;
+}
+.app-header .muted{ color: rgba(255,255,255,.72); }
+.brand-logo{
+  height: 34px;
+  width: auto;
+  display: block;
+}
+.product-logo{
+  height: 40px;
+  width: auto;
+  display: block;
+}
+@media (max-width: 520px){
+  .brand-logo{ height: 30px; }
+  .product-logo{ height: 34px; }
+}
+
+/* Nav links contrast on dark header */
+.app-header .navlink{
+  color: rgba(255,255,255,.88);
+  border-color: rgba(255,255,255,.25);
+}
+.app-header .navlink:hover{
+  border-color: rgba(255,255,255,.45);
+}
+.app-header .navlink.active{
+  background: rgba(255,255,255,.14);
+  border-color: rgba(255,255,255,.35);
+}
+
+
+/* Menu */
+.menu-grid{
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+@media (max-width: 980px){
+  .menu-grid{ grid-template-columns: 1fr; }
+}
+.menu-card{
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-start;
+}
+.menu-title{
+  font-weight: 900;
+  color: var(--dg-petrol);
+  letter-spacing: .2px;
+}
