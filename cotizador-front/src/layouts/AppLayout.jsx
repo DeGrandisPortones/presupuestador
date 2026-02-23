@@ -15,6 +15,7 @@ export default function AppLayout() {
 
   const roleText = roles.length ? roles.join(" / ") : "Cargando sesión...";
 
+  const canQuote = !!(user?.is_vendedor || user?.is_distribuidor);
   const showDashboard = !!(user?.is_enc_comercial || user?.is_distribuidor);
 
   return (
@@ -46,17 +47,22 @@ export default function AppLayout() {
             </NavLink>
           </div>
 
-          <NavLink className={({ isActive }) => (isActive ? "navlink active" : "navlink")} to="/cotizador" end>
-            Cotizador Portones
-          </NavLink>
+          {canQuote && (
+            <>
+            <NavLink className={({ isActive }) => (isActive ? "navlink active" : "navlink")} to="/cotizador" end>
+              Cotizador Portones
+            </NavLink>
 
-          <NavLink className={({ isActive }) => (isActive ? "navlink active" : "navlink")} to="/cotizador/ipanel">
-            Cotizador Ipanel
-          </NavLink>
+            <NavLink className={({ isActive }) => (isActive ? "navlink active" : "navlink")} to="/cotizador/ipanel">
+              Cotizador Ipanel
+            </NavLink>
 
-          <NavLink className={({ isActive }) => (isActive ? "navlink active" : "navlink")} to="/presupuestos">
-            Mis presupuestos
-          </NavLink>
+            <NavLink className={({ isActive }) => (isActive ? "navlink active" : "navlink")} to="/presupuestos">
+              Mis presupuestos
+            </NavLink>
+            </>
+          )}
+
 
           {user?.is_enc_comercial && (
             <NavLink className={({ isActive }) => (isActive ? "navlink active" : "navlink")} to="/aprobacion/comercial">
