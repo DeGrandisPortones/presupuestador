@@ -69,6 +69,13 @@ export default function AppLayout() {
             </NavLink>
           )}
 
+
+          {user?.is_enc_comercial && (
+            <NavLink className={({ isActive }) => (isActive ? "navlink active" : "navlink")} to="/usuarios">
+              Gestor de usuarios
+            </NavLink>
+          )}
+
           {user?.is_rev_tecnica && (
             <NavLink className={({ isActive }) => (isActive ? "navlink active" : "navlink")} to="/aprobacion/tecnica">
               Revisión Técnica

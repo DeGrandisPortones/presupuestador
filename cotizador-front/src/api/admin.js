@@ -41,3 +41,30 @@ export async function adminGetQuotes(kind = "porton", limit = 200) {
   if (!data?.ok) throw new Error(data?.error || "No se pudieron cargar las cotizaciones");
   return data.quotes || [];
 }
+
+// =========================
+// Gestor de usuarios
+// =========================
+
+export async function adminListUsers({ role = "all", q = "", active = "all" } = {}) {
+  const qs = new URLSearchParams();
+  if (role) qs.set("role", role);
+  if (q) qs.set("q", q);
+  if (active) qs.set("active", active);
+
+  const { data } = await http.get(`/api/admin/users?${qs.toString()}`);
+  if (!data?.ok) throw new Error(data?.error || "No se pudieron cargar usuarios");
+  return data.users || [];
+}
+
+export async function adminCreateUser(payload) {
+  const { data } = await http.post(`/api/admin/users`, payload);
+  if (!data?.ok) throw new Error(data?.error || "No se pudo crear el usuario");
+  return data.user;
+}
+
+export async function adminUpdateUser(id, payload) {
+  const { data } = await http.put(`/api/admin/users/${encodeURIComponent(String(id))}`, payload);
+  if (!data?.ok) throw new Error(data?.error || "No se pudo actualizar el usuario");
+  return data.user;
+}

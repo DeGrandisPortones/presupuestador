@@ -65,8 +65,8 @@ async function findOrCreateCustomerPartner(odoo, customer) {
     name: customer.name,
     email: customer.email || false,
     phone: customer.phone || false,
-    street: customer.street || false,
-    city: customer.city || false,
+    street: (customer.street || customer.address || false),
+    city: (customer.city || false),
     customer_rank: 1,
   }]]);
   return id;
@@ -198,10 +198,8 @@ export function buildQuotesRouter(odoo) {
       const body = req.body || {};
 
       const created_by_role =
-        u.is_distribuidor && !u.is_vendedor ? "distribuidor" :
-        u.is_vendedor && !u.is_distribuidor ? "vendedor" :
         (body.created_by_role === "distribuidor" || body.created_by_role === "vendedor") ? body.created_by_role :
-        (() => { throw new Error('Usuario "ambos": mandá created_by_role="vendedor" o "distribuidor".'); })();
+        (u.is_distribuidor ? "distribuidor" : "vendedor");
 
       const fulfillment_mode = String(body.fulfillment_mode || "").trim();
       if (!["produccion", "acopio"].includes(fulfillment_mode)) throw new Error("fulfillment_mode debe ser 'produccion' o 'acopio'");
@@ -392,6 +390,19 @@ export function buildQuotesRouter(odoo) {
         return res.status(400).json({ ok: false, error: "Falta end_customer.name (vendedor)" });
       }
 
+      // Distribuidor: aseguramos partner de facturación para poder sincronizar a Odoo
+      if (quote.created_by_role === "distribuidor" && !quote.bill_to_odoo_partner_id) {
+        const pid = await getCreatorOdooPartnerId(quote.created_by_user_id);
+        if (!pid) {
+          return res.status(400).json({ ok: false, error: "Distribuidor sin odoo_partner_id (setear en presupuestador_users.odoo_partner_id)" });
+        }
+        await dbQuery(
+          `update public.presupuestador_quotes set bill_to_odoo_partner_id=$2 where id=$1`,
+          [id, Number(pid)]
+        );
+        quote.bill_to_odoo_partner_id = Number(pid);
+      }
+
       // Rechazo vuelve a draft (con commercial_decision/technical_decision en 'rejected')
       if (!["draft","rejected_commercial","rejected_technical"].includes(quote.status)) {
         throw new Error("Solo se edita en borrador");
@@ -446,6 +457,19 @@ export function buildQuotesRouter(odoo) {
       // Validación: para vendedor, end_customer.name es obligatorio (se usa para crear/ubicar partner en Odoo)
       if (vendedorNeedsEndCustomerName(quote) && !getEndCustomerName(quote)) {
         return res.status(400).json({ ok: false, error: "Falta end_customer.name (vendedor)" });
+      }
+
+      // Distribuidor: aseguramos partner de facturación para poder sincronizar a Odoo
+      if (quote.created_by_role === "distribuidor" && !quote.bill_to_odoo_partner_id) {
+        const pid = await getCreatorOdooPartnerId(quote.created_by_user_id);
+        if (!pid) {
+          return res.status(400).json({ ok: false, error: "Distribuidor sin odoo_partner_id (setear en presupuestador_users.odoo_partner_id)" });
+        }
+        await dbQuery(
+          `update public.presupuestador_quotes set bill_to_odoo_partner_id=$2 where id=$1`,
+          [id, Number(pid)]
+        );
+        quote.bill_to_odoo_partner_id = Number(pid);
       }
 
       if (!["draft", "rejected_commercial", "rejected_technical"].includes(quote.status)) {

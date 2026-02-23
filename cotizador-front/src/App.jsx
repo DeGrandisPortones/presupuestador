@@ -14,6 +14,7 @@ import QuoteDetailPage from "./pages/QuoteDetailPage/index.jsx";
 import AprobacionComercialPage from "./pages/AprobacionComercialPage/index.jsx";
 import AprobacionTecnicaPage from "./pages/AprobacionTecnicaPage/index.jsx";
 import DashboardPage from "./pages/DashboardPage/index.jsx";
+import UsersAdminPage from "./pages/UsersAdminPage/index.jsx";
 
 import RequireAuth from "./routes/RequireAuth.jsx";
 import AppLayout from "./layouts/AppLayout.jsx";
@@ -63,6 +64,8 @@ export default function App() {
 
           <Route path="aprobacion/comercial" element={<AprobacionComercialPage />} />
           <Route path="aprobacion/tecnica" element={<AprobacionTecnicaPage />} />
+
+          <Route path="usuarios" element={<UsersAdminPage />} />
 
           <Route path="dashboard" element={<DashboardPage />} />
         </Route>

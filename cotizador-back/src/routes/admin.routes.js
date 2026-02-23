@@ -3,6 +3,7 @@ import { requireAuth } from "../auth.js";
 import { loadCatalogBootstrap, clearCatalogBootstrapCache } from "../catalogBootstrap.js";
 import { normKind, createSection, deleteSection, setTagSection, setProductAlias } from "../catalogDb.js";
 import { dbQuery } from "../db.js";
+import { listUsers, createUser, updateUser } from "../usersDb.js";
 
 function requireEncComercial(req, res, next) {
   if (!req.user?.is_enc_comercial) return res.status(403).json({ ok: false, error: "No autorizado" });
@@ -11,6 +12,10 @@ function requireEncComercial(req, res, next) {
 
 export function buildAdminRouter(odoo) {
   const router = express.Router();
+
+  // =========================
+  // CATÁLOGO / DASHBOARD
+  // =========================
 
   // GET /api/admin/catalog?kind=
   router.get("/catalog", requireAuth, requireEncComercial, async (req, res, next) => {
@@ -23,8 +28,8 @@ export function buildAdminRouter(odoo) {
         `select tag_id, section_id from public.presupuestador_tag_sections where catalog_kind=$1`,
         [kind]
       );
-      const map = new Map((q.rows||[]).map(r => [Number(r.tag_id), Number(r.section_id)]));
-      const tags = (data.tags||[]).map(t => ({...t, section_id: map.get(Number(t.id)) || null}));
+      const map = new Map((q.rows || []).map((r) => [Number(r.tag_id), Number(r.section_id)]));
+      const tags = (data.tags || []).map((t) => ({ ...t, section_id: map.get(Number(t.id)) || null }));
 
       res.json({ ...data, tags });
     } catch (e) {
@@ -100,6 +105,43 @@ export function buildAdminRouter(odoo) {
       );
 
       res.json({ ok: true, quotes: q.rows || [] });
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  // =========================
+  // GESTOR DE USUARIOS
+  // =========================
+
+  // GET /api/admin/users?role=vendedor|distribuidor|all&q=...&active=all|true|false
+  router.get("/users", requireAuth, requireEncComercial, async (req, res, next) => {
+    try {
+      const role = req.query.role || "all";
+      const q = req.query.q || "";
+      const active = req.query.active || "all";
+      const users = await listUsers({ role, q, active });
+      res.json({ ok: true, users });
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  // POST /api/admin/users
+  router.post("/users", requireAuth, requireEncComercial, async (req, res, next) => {
+    try {
+      const u = await createUser(req.body || {});
+      res.json({ ok: true, user: u });
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  // PUT /api/admin/users/:id
+  router.put("/users/:id", requireAuth, requireEncComercial, async (req, res, next) => {
+    try {
+      const u = await updateUser(req.params.id, req.body || {});
+      res.json({ ok: true, user: u });
     } catch (e) {
       next(e);
     }
