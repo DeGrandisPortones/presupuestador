@@ -80,7 +80,7 @@ async function syncQuoteToOdoo({ odoo, quote, approverUser }) {
   let partnerId = null;
 
   if (quote.created_by_role === "distribuidor") {
-    partnerId = quote.bill_to_odoo_partner_id || approverUser.odoo_partner_id || await getCreatorOdooPartnerId(quote.created_by_user_id);
+    partnerId = quote.bill_to_odoo_partner_id || await getCreatorOdooPartnerId(quote.created_by_user_id) || approverUser.odoo_partner_id;
     if (!partnerId) throw new Error("Distribuidor sin bill_to_odoo_partner_id (quote) y sin odoo_partner_id (JWT/DB)");
   } else {
     partnerId = await findOrCreateCustomerPartner(odoo, quote.end_customer || {});
@@ -609,6 +609,9 @@ router.post("/:id/review/commercial", requireRole("is_enc_comercial"), async (re
       return res.json({ ok: true, quote: finalQuote, order });
     } catch (e) {
       const msg = String(e?.message || "Error al sincronizar a Odoo");
+      console.error("SYNC ODOO ERROR:", msg);
+      if (e?.odoo) console.error("ODOO:", e.odoo);
+      if (e?.debug) console.error("ODOO DEBUG:", e.debug);
       await dbQuery(
         `
         update public.presupuestador_quotes
@@ -618,7 +621,7 @@ router.post("/:id/review/commercial", requireRole("is_enc_comercial"), async (re
         `,
         [id, msg]
       );
-      return res.status(502).json({ ok: false, error: "Error al sincronizar a Odoo. Reintentá." });
+      return res.status(502).json({ ok: false, error: process.env.NODE_ENV === "development" ? `Error al sincronizar a Odoo: ${msg}` : "Error al sincronizar a Odoo. Reintentá." });
     }
   } catch (e) { next(e); }
 });
@@ -732,6 +735,9 @@ router.post("/:id/review/technical", requireRole("is_rev_tecnica"), async (req, 
       return res.json({ ok: true, quote: finalQuote, order });
     } catch (e) {
       const msg = String(e?.message || "Error al sincronizar a Odoo");
+      console.error("SYNC ODOO ERROR:", msg);
+      if (e?.odoo) console.error("ODOO:", e.odoo);
+      if (e?.debug) console.error("ODOO DEBUG:", e.debug);
       await dbQuery(
         `
         update public.presupuestador_quotes
@@ -741,7 +747,7 @@ router.post("/:id/review/technical", requireRole("is_rev_tecnica"), async (req, 
         `,
         [id, msg]
       );
-      return res.status(502).json({ ok: false, error: "Error al sincronizar a Odoo. Reintentá." });
+      return res.status(502).json({ ok: false, error: process.env.NODE_ENV === "development" ? `Error al sincronizar a Odoo: ${msg}` : "Error al sincronizar a Odoo. Reintentá." });
     }
   } catch (e) { next(e); }
 });
