@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useMutation } from "@tanstack/react-query";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Navigate } from "react-router-dom";
 
 import Input from "../../ui/Input.jsx";
 import Button from "../../ui/Button.jsx";
@@ -11,6 +11,9 @@ import { setOdooBootstrap } from "../../domain/odoo/bootstrap.js";
 export default function LoginPage() {
   const navigate = useNavigate();
   const setSession = useAuthStore((s) => s.setSession);
+  const token = useAuthStore((s) => s.token);
+
+  if (token) return <Navigate to="/menu" replace />;
 
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
