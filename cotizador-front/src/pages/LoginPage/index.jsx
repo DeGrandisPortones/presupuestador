@@ -25,7 +25,7 @@ export default function LoginPage() {
         setOdooBootstrap(data.bootstrap, "porton");
       }
 
-      navigate("/cotizador", { replace: true });
+      navigate("/menu", { replace: true });
     },
   });
 
