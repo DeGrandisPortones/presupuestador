@@ -6,7 +6,8 @@ export default defineConfig({
   plugins: [react()],
   server: {
     proxy: {
-      "/api": "https://presupuestador-7oet.onrender.com",
+      "/api": "https://presupuestador-7oet.onrender.com/",
     },
   },
 });
+
