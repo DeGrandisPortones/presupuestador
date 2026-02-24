@@ -159,6 +159,59 @@ th, td {
   border-color: var(--dg-border);
 }
 
+/* Login */
+.login-title {
+  text-align: center;
+  margin-bottom: 6px;
+}
+
+.login-logos {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  margin: 6px 0 14px;
+}
+
+.login-logo {
+  height: 34px;
+  width: auto;
+  object-fit: contain;
+}
+
+.login-logos.shake {
+  animation: login-shake 420ms cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
+}
+
+@keyframes login-shake {
+  0% {
+    transform: translate3d(0, 0, 0);
+  }
+  10%,
+  90% {
+    transform: translate3d(-1px, 0, 0);
+  }
+  20%,
+  80% {
+    transform: translate3d(2px, 0, 0);
+  }
+  30%,
+  50%,
+  70% {
+    transform: translate3d(-4px, 0, 0);
+  }
+  40%,
+  60% {
+    transform: translate3d(4px, 0, 0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .login-logos.shake {
+    animation: none;
+  }
+}
+
 .btn--secondary:not(:disabled):hover {
   border-color: rgba(1, 163, 159, 0.45);
   box-shadow: 0 8px 18px rgba(0, 0, 0, 0.05);
