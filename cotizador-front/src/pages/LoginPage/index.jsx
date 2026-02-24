@@ -48,7 +48,7 @@ export default function LoginPage() {
         >
           <div className="spacer" />
           <div className="muted">Usuario</div>
-          <Input value={username} onChange={setUsername} placeholder="dist1" style={{ width: "100%" }} />
+          <Input value={username} onChange={setUsername} placeholder="usuario" style={{ width: "100%" }} />
 
           <div className="spacer" />
           <div className="muted">Contraseña</div>
