@@ -17,6 +17,30 @@ export async function ensureUsersAdminColumns() {
   // is_medidor: usuario técnico que carga mediciones
   await dbQuery(`alter table public.presupuestador_users add column if not exists is_medidor boolean not null default false;`);
 
+  // ✅ Fix: el esquema original tenía un CHECK que exige que el usuario tenga al menos un rol.
+  // Al agregar is_medidor, el CHECK viejo no lo contempla y falla al crear usuarios medidores.
+  // Reemplazamos el CHECK por uno que incluya is_medidor.
+  // Usamos NOT VALID para no romper si existieran filas históricas que no cumplan.
+  try {
+    await dbQuery(`alter table public.presupuestador_users drop constraint if exists presupuestador_users_role_check;`);
+  } catch {
+    // ignore
+  }
+  try {
+    await dbQuery(
+      `alter table public.presupuestador_users add constraint presupuestador_users_role_check
+       check (
+         coalesce(is_distribuidor,false)
+         or coalesce(is_vendedor,false)
+         or coalesce(is_enc_comercial,false)
+         or coalesce(is_rev_tecnica,false)
+         or coalesce(is_medidor,false)
+       ) not valid;`
+    );
+  } catch {
+    // ignore
+  }
+
   ensured = true;
 }
 
