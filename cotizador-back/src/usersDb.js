@@ -14,18 +14,21 @@ export async function ensureUsersAdminColumns() {
   // default_maps_url: URL sugerida para Google Maps (prefill en cotizador)
   await dbQuery(`alter table public.presupuestador_users add column if not exists default_maps_url text null;`);
 
+  // is_medidor: usuario técnico que carga mediciones
+  await dbQuery(`alter table public.presupuestador_users add column if not exists is_medidor boolean not null default false;`);
+
   ensured = true;
 }
 
 function normRole(role) {
   const r = String(role || "all").toLowerCase().trim();
-  if (!["all","vendedor","distribuidor"].includes(r)) throw new Error("role inválido");
+  if (!["all", "vendedor", "distribuidor", "medidor"].includes(r)) throw new Error("role inválido");
   return r;
 }
 
 function normActive(active) {
   const a = String(active || "all").toLowerCase().trim();
-  if (!["all","true","false","active","inactive"].includes(a)) throw new Error("active inválido");
+  if (!["all", "true", "false", "active", "inactive"].includes(a)) throw new Error("active inválido");
   if (a === "active") return "true";
   if (a === "inactive") return "false";
   return a;
@@ -41,11 +44,12 @@ export async function listUsers({ role = "all", q = "", active = "all" } = {}) {
   const where = [];
   const params = [];
 
-  // Solo vendedores/distribuidores
-  where.push("(is_vendedor = true or is_distribuidor = true)");
+  // Solo usuarios operativos del presupuestador (vendedor/distribuidor/medidor)
+  where.push("(is_vendedor = true or is_distribuidor = true or is_medidor = true)");
 
   if (roleN === "vendedor") where.push("is_vendedor = true");
   if (roleN === "distribuidor") where.push("is_distribuidor = true");
+  if (roleN === "medidor") where.push("is_medidor = true");
 
   if (activeN === "true") where.push("is_active = true");
   if (activeN === "false") where.push("is_active = false");
@@ -53,12 +57,13 @@ export async function listUsers({ role = "all", q = "", active = "all" } = {}) {
   if (query) {
     params.push(`%${query}%`);
     params.push(`%${query}%`);
-    where.push(`(username ilike $${params.length-1} or coalesce(full_name,'') ilike $${params.length})`);
+    where.push(`(username ilike $${params.length - 1} or coalesce(full_name,'') ilike $${params.length})`);
   }
 
   const sql = `
     select id, username, full_name,
-           is_distribuidor, is_vendedor,
+           is_distribuidor, is_vendedor, is_medidor,
+           is_enc_comercial, is_rev_tecnica,
            is_active,
            odoo_partner_id,
            default_maps_url,
@@ -79,6 +84,7 @@ export async function createUser({
   full_name = null,
   is_distribuidor = false,
   is_vendedor = false,
+  is_medidor = false,
   odoo_partner_id = null,
   default_maps_url = null,
   is_active = true,
@@ -94,7 +100,8 @@ export async function createUser({
 
   const dist = !!is_distribuidor;
   const vend = !!is_vendedor;
-  if (!dist && !vend) throw new Error("El usuario debe ser vendedor o distribuidor");
+  const med = !!is_medidor;
+  if (!dist && !vend && !med) throw new Error("El usuario debe ser vendedor, distribuidor o medidor");
 
   const pid = odoo_partner_id ? Number(odoo_partner_id) : null;
 
@@ -102,17 +109,20 @@ export async function createUser({
     `
     insert into public.presupuestador_users
       (username, password_hash, full_name, is_active,
-       is_distribuidor, is_vendedor,
+       is_distribuidor, is_vendedor, is_medidor,
        is_enc_comercial, is_rev_tecnica,
        odoo_partner_id, default_maps_url)
     values
       ($1, crypt($2, gen_salt('bf')), $3, $4,
-       $5, $6,
+       $5, $6, $7,
        false, false,
-       $7, $8)
-    returning id, username, full_name, is_distribuidor, is_vendedor, is_active, odoo_partner_id, default_maps_url, created_at, updated_at
+       $8, $9)
+    returning id, username, full_name,
+              is_distribuidor, is_vendedor, is_medidor,
+              is_enc_comercial, is_rev_tecnica,
+              is_active, odoo_partner_id, default_maps_url, created_at, updated_at
     `,
-    [u, p, name, !!is_active, dist, vend, pid, (default_maps_url ? String(default_maps_url).trim() : null)]
+    [u, p, name, !!is_active, dist, vend, med, pid, (default_maps_url ? String(default_maps_url).trim() : null)]
   );
 
   return r.rows?.[0] || null;
@@ -123,6 +133,7 @@ export async function updateUser(id, {
   password,
   is_distribuidor,
   is_vendedor,
+  is_medidor,
   odoo_partner_id,
   default_maps_url,
   is_active,
@@ -134,7 +145,7 @@ export async function updateUser(id, {
 
   // Leemos roles actuales para completar defaults
   const cur = await dbQuery(
-    `select id, is_distribuidor, is_vendedor, is_active, full_name, odoo_partner_id, default_maps_url
+    `select id, is_distribuidor, is_vendedor, is_medidor, is_active, full_name, odoo_partner_id, default_maps_url
        from public.presupuestador_users where id=$1 limit 1`,
     [userId]
   );
@@ -143,7 +154,8 @@ export async function updateUser(id, {
 
   const dist = is_distribuidor !== undefined ? !!is_distribuidor : !!current.is_distribuidor;
   const vend = is_vendedor !== undefined ? !!is_vendedor : !!current.is_vendedor;
-  if (!dist && !vend) throw new Error("El usuario debe ser vendedor o distribuidor");
+  const med = is_medidor !== undefined ? !!is_medidor : !!current.is_medidor;
+  if (!dist && !vend && !med) throw new Error("El usuario debe ser vendedor, distribuidor o medidor");
 
   const active = is_active !== undefined ? !!is_active : !!current.is_active;
   const name = full_name !== undefined ? (full_name === null ? null : String(full_name).trim()) : current.full_name;
@@ -160,14 +172,18 @@ export async function updateUser(id, {
         is_active = $3,
         is_distribuidor = $4,
         is_vendedor = $5,
-        odoo_partner_id = $6,
-        default_maps_url = $7,
-        password_hash = case when $8::text is null or $8::text = '' then password_hash else crypt($8::text, gen_salt('bf')) end,
+        is_medidor = $6,
+        odoo_partner_id = $7,
+        default_maps_url = $8,
+        password_hash = case when $9::text is null or $9::text = '' then password_hash else crypt($9::text, gen_salt('bf')) end,
         updated_at = now()
     where id = $1
-    returning id, username, full_name, is_distribuidor, is_vendedor, is_active, odoo_partner_id, default_maps_url, created_at, updated_at
+    returning id, username, full_name,
+              is_distribuidor, is_vendedor, is_medidor,
+              is_enc_comercial, is_rev_tecnica,
+              is_active, odoo_partner_id, default_maps_url, created_at, updated_at
     `,
-    [userId, name, active, dist, vend, pid, mapsUrl, pass]
+    [userId, name, active, dist, vend, med, pid, mapsUrl, pass]
   );
 
   return r.rows?.[0] || null;

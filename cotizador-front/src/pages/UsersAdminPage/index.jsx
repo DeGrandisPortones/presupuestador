@@ -15,7 +15,7 @@ export default function UsersAdminPage() {
   const user = useAuthStore((s) => s.user);
   const qc = useQueryClient();
 
-  const [roleTab, setRoleTab] = useState("all"); // all | vendedor | distribuidor
+  const [roleTab, setRoleTab] = useState("all"); // all | vendedor | distribuidor | medidor
   const [q, setQ] = useState("");
   const [activeFilter, setActiveFilter] = useState("all"); // all | true | false
 
@@ -41,6 +41,7 @@ export default function UsersAdminPage() {
   const [fPassword, setFPassword] = useState("");
   const [fIsVendedor, setFIsVendedor] = useState(true);
   const [fIsDistribuidor, setFIsDistribuidor] = useState(false);
+  const [fIsMedidor, setFIsMedidor] = useState(false);
   const [fOdooPartnerId, setFOdooPartnerId] = useState("");
   const [fDefaultMapsUrl, setFDefaultMapsUrl] = useState("");
   const [fIsActive, setFIsActive] = useState(true);
@@ -51,8 +52,9 @@ export default function UsersAdminPage() {
     setFUsername("");
     setFFullName("");
     setFPassword("");
-    setFIsVendedor(roleTab !== "distribuidor");
+    setFIsVendedor(roleTab !== "distribuidor" && roleTab !== "medidor");
     setFIsDistribuidor(roleTab === "distribuidor");
+    setFIsMedidor(roleTab === "medidor");
     setFOdooPartnerId("");
     setFDefaultMapsUrl("");
     setFIsActive(true);
@@ -66,6 +68,7 @@ export default function UsersAdminPage() {
     setFPassword(""); // vacío => no cambia
     setFIsVendedor(!!u.is_vendedor);
     setFIsDistribuidor(!!u.is_distribuidor);
+    setFIsMedidor(!!u.is_medidor);
     setFOdooPartnerId(u.odoo_partner_id ? String(u.odoo_partner_id) : "");
     setFDefaultMapsUrl(u.default_maps_url ? String(u.default_maps_url) : "");
     setFIsActive(!!u.is_active);
@@ -79,6 +82,7 @@ export default function UsersAdminPage() {
         full_name: fFullName,
         is_vendedor: fIsVendedor,
         is_distribuidor: fIsDistribuidor,
+        is_medidor: fIsMedidor,
         odoo_partner_id: fOdooPartnerId ? Number(fOdooPartnerId) : null,
         default_maps_url: fDefaultMapsUrl ? String(fDefaultMapsUrl) : null,
         is_active: fIsActive,
@@ -98,6 +102,8 @@ export default function UsersAdminPage() {
         password: fPassword ? fPassword : "", // vacío => no cambia
         is_vendedor: fIsVendedor,
         is_distribuidor: fIsDistribuidor,
+        is_medidor: fIsMedidor,
+        is_medidor: fIsMedidor,
         odoo_partner_id: fOdooPartnerId ? Number(fOdooPartnerId) : null,
         default_maps_url: fDefaultMapsUrl ? String(fDefaultMapsUrl) : null,
         is_active: fIsActive,
@@ -148,6 +154,9 @@ export default function UsersAdminPage() {
           </Button>
           <Button variant={roleTab === "distribuidor" ? "primary" : "ghost"} onClick={() => { setRoleTab("distribuidor"); resetCreate(); }}>
             Distribuidores
+          </Button>
+          <Button variant={roleTab === "medidor" ? "primary" : "ghost"} onClick={() => { setRoleTab("medidor"); resetCreate(); }}>
+            Medidores
           </Button>
         </div>
       </div>
@@ -285,6 +294,10 @@ export default function UsersAdminPage() {
               <input type="checkbox" checked={fIsDistribuidor} onChange={(e) => setFIsDistribuidor(e.target.checked)} />
               Distribuidor
             </label>
+            <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <input type="checkbox" checked={fIsMedidor} onChange={(e) => setFIsMedidor(e.target.checked)} />
+              Medidor
+            </label>
             <label style={{ display: "flex", gap: 8, alignItems: "center", marginLeft: 10 }}>
               <input type="checkbox" checked={fIsActive} onChange={(e) => setFIsActive(e.target.checked)} />
               Activo
@@ -300,7 +313,7 @@ export default function UsersAdminPage() {
                 onClick={() => {
                   if (!fUsername.trim()) return toast.error("Falta username");
                   if (!fPassword) return toast.error("Falta password");
-                  if (!fIsVendedor && !fIsDistribuidor) return toast.error("Elegí Vendedor o Distribuidor");
+                  if (!fIsVendedor && !fIsDistribuidor && !fIsMedidor) return toast.error("Elegí Vendedor / Distribuidor / Medidor");
                   createM.mutate();
                 }}
                 disabled={createM.isPending}
@@ -311,7 +324,7 @@ export default function UsersAdminPage() {
               <Button
                 variant="primary"
                 onClick={() => {
-                  if (!fIsVendedor && !fIsDistribuidor) return toast.error("Elegí Vendedor o Distribuidor");
+                  if (!fIsVendedor && !fIsDistribuidor && !fIsMedidor) return toast.error("Elegí Vendedor / Distribuidor / Medidor");
                   updateM.mutate();
                 }}
                 disabled={updateM.isPending}

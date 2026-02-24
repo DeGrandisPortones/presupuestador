@@ -15,6 +15,8 @@ import AprobacionComercialPage from "./pages/AprobacionComercialPage/index.jsx";
 import AprobacionTecnicaPage from "./pages/AprobacionTecnicaPage/index.jsx";
 import DashboardPage from "./pages/DashboardPage/index.jsx";
 import UsersAdminPage from "./pages/UsersAdminPage/index.jsx";
+import MedicionesPage from "./pages/MedicionesPage/index.jsx";
+import MedicionDetailPage from "./pages/MedicionDetailPage/index.jsx";
 
 import RequireAuth from "./routes/RequireAuth.jsx";
 import AppLayout from "./layouts/AppLayout.jsx";
@@ -61,6 +63,9 @@ export default function App() {
 
           <Route path="presupuestos" element={<PresupuestosPage />} />
           <Route path="presupuestos/:id" element={<QuoteDetailPage />} />
+
+          <Route path="mediciones" element={<MedicionesPage />} />
+          <Route path="mediciones/:id" element={<MedicionDetailPage />} />
 
           <Route path="aprobacion/comercial" element={<AprobacionComercialPage />} />
           <Route path="aprobacion/tecnica" element={<AprobacionTecnicaPage />} />

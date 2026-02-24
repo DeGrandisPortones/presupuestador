@@ -17,6 +17,7 @@ import { buildQuotesRouter } from "./routes/quotes.routes.js";
 import { buildCatalogRouter } from "./routes/catalog.routes.js";
 import { buildAdminRouter } from "./routes/admin.routes.js";
 import { buildPdfRouter } from "./routes/pdf.routes.js";
+import { buildMeasurementsRouter } from "./routes/measurements.routes.js";
 
 const app = express();
 
@@ -46,6 +47,9 @@ app.use("/api/odoo", buildOdooRouter(odoo));
 
 // Quotes
 app.use("/api/quotes", buildQuotesRouter(odoo));
+
+// Measurements
+app.use("/api/measurements", buildMeasurementsRouter());
 
 // Catalog
 app.use("/api/catalog", buildCatalogRouter(odoo));

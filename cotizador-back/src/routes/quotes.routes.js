@@ -1,6 +1,7 @@
 import express from "express";
 import { requireAuth } from "../auth.js";
 import { dbQuery } from "../db.js";
+import { ensureQuotesMeasurementColumns } from "../quotesSchema.js";
 
 /** RBAC */
 function requireRole(flag) {
@@ -237,6 +238,17 @@ function validateBusinessRequired(payload, catalog_kind) {
 
 export function buildQuotesRouter(odoo) {
   const router = express.Router();
+
+  // Asegura columnas nuevas (mediciones) antes de atender requests
+  router.use(async (_req, _res, next) => {
+    try {
+      await ensureQuotesMeasurementColumns();
+      next();
+    } catch (e) {
+      next(e);
+    }
+  });
+
   router.use(requireAuth);
 
   // Crear draft
@@ -319,6 +331,20 @@ export function buildQuotesRouter(odoo) {
           from public.presupuestador_quotes q
           left join public.presupuestador_users u on u.id = q.created_by_user_id
           where q.created_by_user_id = $1
+          order by q.id desc
+          limit 200
+        `;
+        params = [Number(u.user_id)];
+      } else if (scope === "measurement_required") {
+        if (!u.is_vendedor && !u.is_distribuidor) {
+          return res.status(403).json({ ok: false, error: "No autorizado" });
+        }
+        sql = `
+          select q.*, u.username as created_by_username, u.full_name as created_by_full_name
+          from public.presupuestador_quotes q
+          left join public.presupuestador_users u on u.id = q.created_by_user_id
+          where q.created_by_user_id = $1
+            and q.requires_measurement = true
           order by q.id desc
           limit 200
         `;
@@ -694,7 +720,15 @@ router.post("/:id/review/commercial", requireRole("is_enc_comercial"), async (re
         update public.presupuestador_quotes
         set status='synced_odoo',
             odoo_sale_order_id=$2,
-            odoo_sale_order_name=$3
+            odoo_sale_order_name=$3,
+            requires_measurement = case
+              when catalog_kind='porton' and fulfillment_mode='produccion' then true
+              else requires_measurement
+            end,
+            measurement_status = case
+              when catalog_kind='porton' and fulfillment_mode='produccion' and (measurement_status is null or measurement_status='none') then 'pending'
+              else measurement_status
+            end
         where id=$1 and status='syncing_odoo'
         returning *
         `,
@@ -820,7 +854,15 @@ router.post("/:id/review/technical", requireRole("is_rev_tecnica"), async (req, 
         update public.presupuestador_quotes
         set status='synced_odoo',
             odoo_sale_order_id=$2,
-            odoo_sale_order_name=$3
+            odoo_sale_order_name=$3,
+            requires_measurement = case
+              when catalog_kind='porton' and fulfillment_mode='produccion' then true
+              else requires_measurement
+            end,
+            measurement_status = case
+              when catalog_kind='porton' and fulfillment_mode='produccion' and (measurement_status is null or measurement_status='none') then 'pending'
+              else measurement_status
+            end
         where id=$1 and status='syncing_odoo'
         returning *
         `,
@@ -909,7 +951,15 @@ async function finalizeAcopioToProduccionIfReady(id) {
     `
     update public.presupuestador_quotes
     set fulfillment_mode='produccion',
-        acopio_to_produccion_status='approved'
+        acopio_to_produccion_status='approved',
+        requires_measurement = case
+          when catalog_kind='porton' and status='synced_odoo' then true
+          else requires_measurement
+        end,
+        measurement_status = case
+          when catalog_kind='porton' and status='synced_odoo' and (measurement_status is null or measurement_status='none') then 'pending'
+          else measurement_status
+        end
     where id=$1
       and fulfillment_mode='acopio'
       and acopio_to_produccion_status='pending'

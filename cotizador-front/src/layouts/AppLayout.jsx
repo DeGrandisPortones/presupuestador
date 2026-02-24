@@ -12,6 +12,7 @@ export default function AppLayout() {
   if (user?.is_vendedor) roles.push("Vendedor");
   if (user?.is_enc_comercial) roles.push("Enc. Comercial");
   if (user?.is_rev_tecnica) roles.push("Rev. Técnica");
+  if (user?.is_medidor) roles.push("Medidor");
 
   const roleText = roles.length ? roles.join(" / ") : "Cargando sesión...";
 
@@ -66,6 +67,12 @@ export default function AppLayout() {
                 Mis presupuestos
               </NavLink>
             </>
+          )}
+
+          {user?.is_medidor && (
+            <NavLink className={({ isActive }) => (isActive ? "navlink active" : "navlink")} to="/mediciones">
+              Mediciones
+            </NavLink>
           )}
 
           {user?.is_enc_comercial && (

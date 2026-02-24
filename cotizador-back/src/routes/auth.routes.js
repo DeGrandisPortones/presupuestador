@@ -20,7 +20,7 @@ export function buildAuthRouter() {
         `
         select id, username, full_name,
                is_distribuidor, is_vendedor,
-               is_enc_comercial, is_rev_tecnica,
+               is_enc_comercial, is_rev_tecnica, is_medidor,
                odoo_partner_id,
                default_maps_url,
                coalesce(is_active, true) as is_active

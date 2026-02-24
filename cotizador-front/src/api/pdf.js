@@ -24,3 +24,9 @@ export async function downloadProformaPdf(payload) {
   });
   triggerDownload(res.data, `proforma_${Date.now()}.pdf`);
 }
+
+
+export async function downloadMedicionPdf(quoteId) {
+  const res = await http.get(`/api/pdf/medicion/${quoteId}`, { responseType: "blob" });
+  triggerDownload(res.data, `medicion_${quoteId}.pdf`);
+}

@@ -19,6 +19,16 @@ function labelAcopioRequest(q) {
   return "—";
 }
 
+function labelMeasurementStatus(q) {
+  const s = q?.measurement_status || "none";
+  if (s === "pending") return "Pendiente";
+  if (s === "submitted") return "Enviada";
+  if (s === "needs_fix") return "A corregir";
+  if (s === "approved") return "Aprobada";
+  if (s === "none") return "Pendiente";
+  return s;
+}
+
 function labelStatus(q) {
   const s = q?.status;
   const c = q?.commercial_decision;
@@ -53,7 +63,7 @@ function labelStatus(q) {
 
 export default function PresupuestosPage() {
   const navigate = useNavigate();
-    const [filter, setFilter] = useState("all"); // all | saved | pending | rejected | acopio
+    const [filter, setFilter] = useState("all"); // all | saved | pending | rejected | acopio | mediciones
   const [searchCustomer, setSearchCustomer] = useState("");
 
   const q = useQuery({
@@ -149,6 +159,9 @@ const requestProdM = useMutation({
           <Button variant={filter === "acopio" ? "primary" : "ghost"} onClick={() => setFilter("acopio")}>
             Acopio
           </Button>
+          <Button variant={filter === "mediciones" ? "primary" : "ghost"} onClick={() => setFilter("mediciones")}>
+            Mediciones
+          </Button>
         </div>
 
         <div className="spacer" />
@@ -176,6 +189,7 @@ const requestProdM = useMutation({
         <th>Cliente</th>
         <th>Estado</th>
         {filter === "pending" ? <th>Pendiente</th> : null}
+        {filter === "mediciones" ? <th>Medición</th> : null}
         <th>Destino</th>
         <th></th>
       </tr>
@@ -187,6 +201,7 @@ const requestProdM = useMutation({
           <td>{r.end_customer?.name || <span className="muted">(sin nombre)</span>}</td>
           <td>{labelStatus(r)}</td>
           {filter === "pending" ? <td>{labelPendingWho(r)}</td> : null}
+          {filter === "mediciones" ? <td>{labelMeasurementStatus(r)}</td> : null}
           <td>{r.fulfillment_mode === "acopio" ? "Acopio" : "Producción"}</td>
           <td className="right" style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
             <Button variant="ghost" onClick={() => navigate(`/presupuestos/${r.id}`)}>Ver</Button>

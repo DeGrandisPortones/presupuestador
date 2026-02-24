@@ -11,6 +11,7 @@ export function signToken(user) {
     is_vendedor: !!user.is_vendedor,
     is_enc_comercial: !!user.is_enc_comercial,
     is_rev_tecnica: !!user.is_rev_tecnica,
+    is_medidor: !!user.is_medidor,
 
     odoo_partner_id: user.odoo_partner_id ?? null,
 
@@ -47,7 +48,7 @@ export async function requireAuth(req, res, next) {
         `
         select id, username, full_name,
                is_distribuidor, is_vendedor,
-               is_enc_comercial, is_rev_tecnica,
+               is_enc_comercial, is_rev_tecnica, is_medidor,
                odoo_partner_id,
                default_maps_url,
                coalesce(is_active, true) as is_active
@@ -72,6 +73,7 @@ export async function requireAuth(req, res, next) {
           is_vendedor: !!fresh.is_vendedor,
           is_enc_comercial: !!fresh.is_enc_comercial,
           is_rev_tecnica: !!fresh.is_rev_tecnica,
+          is_medidor: !!fresh.is_medidor,
           odoo_partner_id: fresh.odoo_partner_id ?? null,
           default_maps_url: fresh.default_maps_url ?? null,
           is_active: !!fresh.is_active,

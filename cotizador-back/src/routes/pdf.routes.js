@@ -3,6 +3,9 @@ import PDFDocument from "pdfkit";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
+import { dbQuery } from "../db.js";
+import { requireAuth } from "../auth.js";
+import { ensureQuotesMeasurementColumns } from "../quotesSchema.js";
 
 function safeStr(v) {
   return String(v ?? "").trim();
@@ -11,6 +14,103 @@ function safeStr(v) {
 function n2(v) {
   const n = Number(v);
   return Number.isFinite(n) ? n : 0;
+}
+
+function yn(v) {
+  return v ? "Sí" : "No";
+}
+
+function pick(obj, path, fallback = "") {
+  try {
+    return path.split(".").reduce((a, k) => (a && a[k] !== undefined ? a[k] : undefined), obj) ?? fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+async function renderMeasurementPdf({ quote, form }) {
+  const doc = new PDFDocument({ size: "A4", margin: 36 });
+  const buffers = [];
+  doc.on("data", buffers.push.bind(buffers));
+
+  const title = "PLANILLA DE MEDICIÓN";
+  doc.fontSize(16).font("Helvetica-Bold").text(title, { align: "center" });
+  doc.moveDown(0.5);
+
+  const c = quote.end_customer || {};
+  doc.fontSize(11).font("Helvetica-Bold").text("Membrete");
+  doc.font("Helvetica").text(`Cliente: ${safeStr(c.name)}`);
+  doc.text(`Teléfono: ${safeStr(c.phone)}`);
+  doc.text(`Dirección: ${safeStr(c.address)}`);
+  doc.text(`Maps: ${safeStr(c.maps_url)}`);
+  if (quote.odoo_sale_order_name || quote.odoo_sale_order_id) {
+    doc.text(`Odoo: ${safeStr(quote.odoo_sale_order_name || ("SO#" + quote.odoo_sale_order_id))}`);
+  }
+  doc.moveDown(0.8);
+
+  doc.font("Helvetica-Bold").text("Datos generales");
+  doc.font("Helvetica").text(`Fecha: ${safeStr(pick(form, "fecha"))}`);
+  doc.text(`Distribuidor: ${safeStr(pick(form, "distribuidor"))}`);
+  doc.text(`N° portón / Nota de venta: ${safeStr(pick(form, "nro_porton"))}`);
+  doc.moveDown(0.8);
+
+  doc.font("Helvetica-Bold").text("Medidas");
+  doc.font("Helvetica").text(`Ancho (mm): ${safeStr(pick(form, "ancho_mm"))}`);
+  doc.text(`Alto (mm): ${safeStr(pick(form, "alto_mm"))}`);
+  doc.text(
+    `Parantes - Cant: ${safeStr(pick(form, "parantes.cant"))} | Izq: ${safeStr(pick(form, "parantes.izq"))} | Der: ${safeStr(pick(form, "parantes.der"))}`
+  );
+  doc.moveDown(0.8);
+
+  doc.font("Helvetica-Bold").text("Colocación / Motor");
+  doc.font("Helvetica").text(`Tipo colocación: ${safeStr(pick(form, "colocacion"))}`);
+  doc.text(`Portón en acopio: ${yn(!!pick(form, "en_acopio"))}`);
+  doc.text(`Lado motor/soporte: ${safeStr(pick(form, "lado_motor"))}`);
+  doc.text(`Toma corriente: ${safeStr(pick(form, "toma_corriente"))}`);
+  doc.moveDown(0.8);
+
+  doc.font("Helvetica-Bold").text("Anclajes / Rebajes");
+  doc.font("Helvetica").text(`Anclaje: ${safeStr(pick(form, "anclaje"))}`);
+  doc.text(`Otro: ${safeStr(pick(form, "anclaje_otro"))}`);
+  doc.text(`Rebaje lateral (mm): ${safeStr(pick(form, "rebaje_lateral_mm"))}`);
+  doc.text(`Rebaje inferior (mm): ${safeStr(pick(form, "rebaje_inferior_mm"))}`);
+  doc.moveDown(0.8);
+
+  doc.font("Helvetica-Bold").text("Sistema");
+  doc.font("Helvetica").text(`Color sistema: ${safeStr(pick(form, "color_sistema"))}`);
+  doc.text(`Accionamiento: ${safeStr(pick(form, "accionamiento"))}`);
+  doc.text(`Levadizo: ${safeStr(pick(form, "levadizo"))}`);
+  doc.text(`Estructura metálica: ${yn(!!pick(form, "estructura_metalica"))}`);
+  doc.moveDown(0.8);
+
+  doc.font("Helvetica-Bold").text("Revestimiento");
+  doc.font("Helvetica").text(`Tipo: ${safeStr(pick(form, "tipo_revestimiento"))}`);
+  doc.text(`Orientación: ${safeStr(pick(form, "orientacion_revestimiento"))}`);
+  doc.text(`Material: ${safeStr(pick(form, "material_revestimiento"))}`);
+  doc.text(`Color: ${safeStr(pick(form, "color_revestimiento"))}`);
+  const tubos = pick(form, "tubos", []);
+  doc.text(`Tubos: ${Array.isArray(tubos) ? tubos.join(", ") : safeStr(tubos)}`);
+  doc.text(`Lucera con vidrios: ${yn(!!pick(form, "lucera"))} | Cantidad: ${safeStr(pick(form, "lucera_cantidad"))}`);
+  doc.text(`Peso revestimiento: ${safeStr(pick(form, "peso_revestimiento"))}`);
+  doc.moveDown(0.8);
+
+  doc.font("Helvetica-Bold").text("Servicios");
+  doc.font("Helvetica").text(`Traslado: ${yn(!!pick(form, "traslado"))}`);
+  doc.text(`Dirección de entrega: ${safeStr(pick(form, "direccion_entrega"))}`);
+  doc.text(`Relevamiento de medidas: ${yn(!!pick(form, "relevamiento"))}`);
+  doc.text(`Contacto en obra: ${safeStr(pick(form, "contacto_obra"))}`);
+  doc.text(`Instalación: ${yn(!!pick(form, "instalacion"))}`);
+  doc.text(`Diente inferior / trampa tierra: ${yn(!!pick(form, "diente_inferior"))} | Mm a superponer: ${safeStr(pick(form, "mm_superponer"))}`);
+  doc.moveDown(0.8);
+
+  doc.font("Helvetica-Bold").text("Observaciones");
+  doc.font("Helvetica").text(safeStr(pick(form, "observaciones")), { width: 520 });
+
+  doc.end();
+
+  return await new Promise((resolve) => {
+    doc.on("end", () => resolve(Buffer.concat(buffers)));
+  });
 }
 
 // El PDF “modelo” usa coma para miles y punto para decimales (estilo en-US).
@@ -464,6 +564,35 @@ export function buildPdfRouter() {
 
       res.setHeader("Content-Type", "application/pdf");
       res.setHeader("Content-Disposition", `attachment; filename="presupuesto_${Date.now()}.pdf"`);
+      res.send(pdf);
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  // PDF de medición (cargada por medidor) - descargable por vendedor
+  router.get("/medicion/:id", requireAuth, async (req, res, next) => {
+    try {
+      await ensureQuotesMeasurementColumns();
+      const id = Number(req.params.id);
+      if (!id) return res.status(400).json({ ok: false, error: "id inválido" });
+
+      const r = await dbQuery(`select * from public.presupuestador_quotes where id=$1 limit 1`, [id]);
+      const quote = r.rows?.[0];
+      if (!quote) return res.status(404).json({ ok: false, error: "Presupuesto no encontrado" });
+
+      // RBAC: dueño (vendedor/distrib), medidor, enc_comercial o rev_tecnica
+      const isOwner = String(quote.created_by_user_id) === String(req.user.user_id);
+      const can = isOwner || !!req.user.is_medidor || !!req.user.is_enc_comercial || !!req.user.is_rev_tecnica;
+      if (!can) return res.status(403).json({ ok: false, error: "No autorizado" });
+
+      if (!quote.measurement_form) {
+        return res.status(400).json({ ok: false, error: "Este presupuesto todavía no tiene medición cargada" });
+      }
+
+      const pdf = await renderMeasurementPdf({ quote, form: quote.measurement_form });
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader("Content-Disposition", `attachment; filename="medicion_${id}.pdf"`);
       res.send(pdf);
     } catch (e) {
       next(e);
