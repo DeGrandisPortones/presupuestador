@@ -3,6 +3,10 @@
     {
       "source": "/api/:path*",
       "destination": "https://presupuestador-7oet.onrender.com/api/:path*"
+    },
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
     }
   ]
 }
