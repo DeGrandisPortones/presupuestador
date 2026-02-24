@@ -217,6 +217,23 @@ function validateEndCustomerRequired(end_customer) {
   return null;
 }
 
+function validateBusinessRequired(payload, catalog_kind) {
+  const p = payload || {};
+  const cond = String(p.condition_mode || "").trim();
+  const condText = String(p.condition_text || "").trim();
+  const payment = String(p.payment_method || "").trim();
+  const portonType = String(p.porton_type || "").trim();
+
+  if (!payment) return "Falta payload.payment_method";
+  if (cond === "special" && !condText) return "Falta payload.condition_text (condición especial)";
+
+  const kind = String(catalog_kind || "porton").toLowerCase().trim();
+  if (kind === "porton" && !portonType) return "Falta payload.porton_type";
+  return null;
+}
+
+
+
 
 export function buildQuotesRouter(odoo) {
   const router = express.Router();
@@ -243,6 +260,9 @@ export function buildQuotesRouter(odoo) {
       const lines = Array.isArray(body.lines) ? body.lines : [];
       const payload = body.payload || {};
       const note = body.note || null;
+
+      const bizErr = validateBusinessRequired(payload, catalog_kind);
+      if (bizErr) return res.status(400).json({ ok: false, error: bizErr });
 
       const pricelist_id = Number(body.pricelist_id || 1);
       let bill_to_odoo_partner_id = body.bill_to_odoo_partner_id ? Number(body.bill_to_odoo_partner_id) : null;
@@ -295,10 +315,11 @@ export function buildQuotesRouter(odoo) {
           return res.status(403).json({ ok: false, error: "No autorizado" });
         }
         sql = `
-          select *
-          from public.presupuestador_quotes
-          where created_by_user_id = $1
-          order by id desc
+          select q.*, u.username as created_by_username, u.full_name as created_by_full_name
+          from public.presupuestador_quotes q
+          left join public.presupuestador_users u on u.id = q.created_by_user_id
+          where q.created_by_user_id = $1
+          order by q.id desc
           limit 200
         `;
         params = [Number(u.user_id)];
@@ -311,16 +332,17 @@ export function buildQuotesRouter(odoo) {
         // - o ya rechazó y volvió al vendedor (returned_to_seller + commercial_decision=rejected)
         // - o ya aprobó pero aún no se sincronizó (pending_approvals + commercial_decision=approved)
         sql = `
-          select *
-          from public.presupuestador_quotes
-          where created_by_role = 'vendedor'
+          select q.*, u.username as created_by_username, u.full_name as created_by_full_name
+          from public.presupuestador_quotes q
+          left join public.presupuestador_users u on u.id = q.created_by_user_id
+          where q.created_by_role = 'vendedor'
             and (
               -- Pendientes o ya aprobados por Comercial (pero falta Técnica)
               (status = 'pending_approvals' and commercial_decision in ('pending','approved'))
               -- Aviso: Técnica rechazó (volvió a draft), para que Comercial lo vea como "rechazado por técnica"
               or (status = 'draft' and technical_decision = 'rejected')
             )
-          order by id desc
+          order by q.id desc
           limit 200
         `;
       } else if (scope === "technical_inbox") {
@@ -329,8 +351,9 @@ export function buildQuotesRouter(odoo) {
         }
         // Técnica ve vendedores + distribuidores.
         sql = `
-          select *
-          from public.presupuestador_quotes
+          select q.*, u.username as created_by_username, u.full_name as created_by_full_name
+          from public.presupuestador_quotes q
+          left join public.presupuestador_users u on u.id = q.created_by_user_id
           where
             (
               -- Pendientes o ya aprobados por Técnica (pero falta Comercial)
@@ -338,7 +361,7 @@ export function buildQuotesRouter(odoo) {
               -- Aviso: Comercial rechazó (volvió a draft), para que Técnica lo vea como "rechazado por comercial"
               or (status = 'draft' and commercial_decision = 'rejected')
             )
-          order by id desc
+          order by q.id desc
           limit 200
         `;
       }
@@ -348,9 +371,10 @@ export function buildQuotesRouter(odoo) {
         }
         // Pestaña "Acopio" (Comercial): solicitudes de pasar a Producción (todas)
         sql = `
-          select *
-          from public.presupuestador_quotes
-          where fulfillment_mode = 'acopio'
+          select q.*, u.username as created_by_username, u.full_name as created_by_full_name
+          from public.presupuestador_quotes q
+          left join public.presupuestador_users u on u.id = q.created_by_user_id
+          where q.fulfillment_mode = 'acopio'
             and acopio_to_produccion_status = 'pending'
           order by acopio_to_produccion_requested_at desc nulls last, id desc
           limit 200
@@ -361,9 +385,10 @@ export function buildQuotesRouter(odoo) {
         }
         // Pestaña "Acopio" (Técnica): solicitudes de pasar a Producción (todas)
         sql = `
-          select *
-          from public.presupuestador_quotes
-          where fulfillment_mode = 'acopio'
+          select q.*, u.username as created_by_username, u.full_name as created_by_full_name
+          from public.presupuestador_quotes q
+          left join public.presupuestador_users u on u.id = q.created_by_user_id
+          where q.fulfillment_mode = 'acopio'
             and acopio_to_produccion_status = 'pending'
           order by acopio_to_produccion_requested_at desc nulls last, id desc
           limit 200
@@ -421,6 +446,10 @@ export function buildQuotesRouter(odoo) {
       const nextEndCustomer = body.end_customer !== undefined ? body.end_customer : quote.end_customer;
       const custErr = validateEndCustomerRequired(nextEndCustomer);
       if (custErr) return res.status(400).json({ ok: false, error: custErr });
+
+      const nextPayload = body.payload !== undefined ? body.payload : quote.payload;
+      const bizErr = validateBusinessRequired(nextPayload, catalog_kind);
+      if (bizErr) return res.status(400).json({ ok: false, error: bizErr });
 
       // Validación: para vendedor, end_customer.name es obligatorio (se usa para crear/ubicar partner en Odoo)
       if (vendedorNeedsEndCustomerName(quote) && !getEndCustomerName(quote)) {
@@ -493,6 +522,9 @@ export function buildQuotesRouter(odoo) {
 
       const custErr = validateEndCustomerRequired(quote.end_customer);
       if (custErr) return res.status(400).json({ ok: false, error: custErr });
+
+      const bizErr = validateBusinessRequired(quote.payload || {}, quote.catalog_kind || "porton");
+      if (bizErr) return res.status(400).json({ ok: false, error: bizErr });
 
       // Validación: para vendedor, end_customer.name es obligatorio (se usa para crear/ubicar partner en Odoo)
       if (vendedorNeedsEndCustomerName(quote) && !getEndCustomerName(quote)) {

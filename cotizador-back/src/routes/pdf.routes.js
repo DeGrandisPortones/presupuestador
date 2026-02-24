@@ -188,11 +188,14 @@ function renderPdf({ title, payload, useBasePrice }) {
   const customerPhone = safeStr(endCustomer?.phone);
   const customerEmail = safeStr(endCustomer?.email);
   const customerAddress = safeStr(endCustomer?.address);
+  const customerMaps = safeStr(endCustomer?.maps_url);
 
   const destinationRaw = safeStr(payload?.fulfillment_mode);
   const destination = destinationRaw === "acopio" ? "Acopio" : destinationRaw === "produccion" ? "Producción" : (destinationRaw || "—");
   const conditionRaw = safeStr(payload?.payload?.condition_mode ?? payload?.condition_mode);
-  const conditionMode = conditionRaw === "cond2" ? "Condición 2" : conditionRaw === "cond1" ? "Condición 1" : (conditionRaw || "");
+  const conditionText = safeStr(payload?.payload?.condition_text ?? payload?.condition_text);
+  const conditionMode = conditionRaw === "cond2" ? "Condición 2" : conditionRaw === "cond1" ? "Condición 1" : conditionRaw === "special" ? "Especial" : (conditionRaw || "");
+  const paymentMethod = safeStr(payload?.payload?.payment_method ?? payload?.payment_method);
   const showDestination = !!useBasePrice; // Proforma sí, Presupuesto no
   const obs = safeStr(payload?.note);
 
@@ -294,7 +297,11 @@ ${customerEmail || "—"}` },
   // Observaciones / dirección (si hay)
   const extraLines = [];
   if (customerAddress) extraLines.push(`Dirección: ${customerAddress}`);
-  if (conditionMode) extraLines.push(`Condición: ${conditionMode}`);
+  if (customerMaps) extraLines.push(`Maps: ${customerMaps}`);
+  if (paymentMethod) extraLines.push(`Forma de Pago: ${paymentMethod}`);
+  if (conditionMode) {
+    extraLines.push(`Condición: ${conditionMode}${conditionRaw === "special" && conditionText ? ` (${conditionText})` : ""}`);
+  }
   if (!useBasePrice) extraLines.push(`Coeficiente: ${formatQty(coefPct)}%`);
   if (obs) extraLines.push(`Obs: ${obs}`);
 

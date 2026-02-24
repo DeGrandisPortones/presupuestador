@@ -40,6 +40,7 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
     applyBasePrices,
     loadFromQuote,
     reset,
+    setEndCustomer,
     buildPayloadForBack,
     setQuoteMeta,
   } = useQuoteStore();
@@ -48,8 +49,14 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
 
   // si no hay id en URL, es “nuevo”
   useEffect(() => {
-    if (!idParam) reset();
-  }, [idParam, reset]);
+    if (!idParam) {
+      reset();
+      // Prefill Maps URL por usuario (si Enc. Comercial lo configuró)
+      if (user?.default_maps_url) {
+        setEndCustomer({ maps_url: user.default_maps_url });
+      }
+    }
+  }, [idParam, reset, user?.default_maps_url, setEndCustomer]);
 
   // 1) Pricelists
   const pricelistsQ = useQuery({
@@ -115,10 +122,33 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
     run().catch(console.error);
   }, [pricelistId, partnerId, linesKey, lines.length, applyBasePrices]);
 
-  // 5) Guardar (create/update)
+  
+  function validateRequired(payload) {
+    const c = payload?.end_customer || {};
+    const p = payload?.payload || {};
+    const errs = [];
+
+    if (!String(c.name || "").trim()) errs.push("Completá el nombre del cliente.");
+    if (!String(c.phone || "").trim()) errs.push("Completá el teléfono del cliente.");
+    if (!String(c.address || "").trim()) errs.push("Completá la dirección del cliente.");
+    if (!String(c.maps_url || "").trim()) errs.push("Completá el URL de Google Maps del cliente.");
+    if (!String(p.payment_method || "").trim()) errs.push("Seleccioná la forma de pago.");
+    if ((catalogKind || "porton") === "porton" && !String(p.porton_type || "").trim()) {
+      errs.push("Seleccioná el tipo/sistema del portón.");
+    }
+    if (String(p.condition_mode || "") === "special" && !String(p.condition_text || "").trim()) {
+      errs.push("Completá la condición especial.");
+    }
+    if (!Array.isArray(payload?.lines) || payload.lines.length === 0) errs.push("Agregá al menos un producto.");
+
+    if (errs.length) throw new Error(errs[0]);
+  }
+
+// 5) Guardar (create/update)
   const saveM = useMutation({
     mutationFn: async () => {
       const payload = { ...buildPayloadForBack(), catalog_kind: catalogKind };
+      validateRequired(payload);
 
       // ✅ si hay quoteId => update; si no => create
       if (quoteId) return await updateQuote(quoteId, payload);
@@ -138,14 +168,10 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
     mutationFn: async () => {
       // ✅ submit también guarda (create/update) para evitar que el usuario tenga que hacer 2 pasos.
       const payload = { ...buildPayloadForBack(), catalog_kind: catalogKind };
+      validateRequired(payload);
 
-      // Validaciones mínimas para evitar rechazos del back y que el usuario "no vea" el error.
-      if (!String(payload?.end_customer?.name || "").trim()) {
-        throw new Error("Completá el nombre del cliente.");
-      }
-      if (!String(payload?.end_customer?.address || "").trim()) {
-        throw new Error("Completá la dirección del cliente.");
-      }
+      // Validaciones para evitar rechazos del back y que el usuario "no vea" el error.
+      validateRequired(payload);
 
       let id = quoteId || idParam;
       if (id) {
@@ -176,6 +202,7 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
   const onDownloadPresupuesto = async () => {
     try {
       const payload = { ...buildPayloadForBack(), catalog_kind: catalogKind };
+      validateRequired(payload);
       await downloadPresupuestoPdf(payload);
     } catch (e) {
       toast.error(e?.response?.data?.error || e.message);
@@ -185,6 +212,7 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
   const onDownloadProforma = async () => {
     try {
       const payload = { ...buildPayloadForBack(), catalog_kind: catalogKind };
+      validateRequired(payload);
       await downloadProformaPdf(payload);
     } catch (e) {
       toast.error(e?.response?.data?.error || e.message);

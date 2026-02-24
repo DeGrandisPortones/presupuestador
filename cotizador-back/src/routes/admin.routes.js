@@ -1,7 +1,7 @@
 import express from "express";
 import { requireAuth } from "../auth.js";
 import { loadCatalogBootstrap, clearCatalogBootstrapCache } from "../catalogBootstrap.js";
-import { normKind, createSection, deleteSection, setTagSection, setProductAlias } from "../catalogDb.js";
+import { normKind, createSection, deleteSection, setTagSection, setProductAlias, getTypeSectionsMap, setTypeSections } from "../catalogDb.js";
 import { dbQuery } from "../db.js";
 import { listUsers, createUser, updateUser } from "../usersDb.js";
 
@@ -31,7 +31,9 @@ export function buildAdminRouter(odoo) {
       const map = new Map((q.rows || []).map((r) => [Number(r.tag_id), Number(r.section_id)]));
       const tags = (data.tags || []).map((t) => ({ ...t, section_id: map.get(Number(t.id)) || null }));
 
-      res.json({ ...data, tags });
+      const type_sections = await getTypeSectionsMap(kind);
+
+      res.json({ ...data, tags, type_sections });
     } catch (e) {
       next(e);
     }
@@ -142,6 +144,20 @@ export function buildAdminRouter(odoo) {
     try {
       const u = await updateUser(req.params.id, req.body || {});
       res.json({ ok: true, user: u });
+    } catch (e) {
+      next(e);
+    }
+  });
+
+
+  // PUT /api/admin/types/:typeKey/sections?kind=porton|ipanel
+  router.put("/types/:typeKey/sections", requireAuth, requireEncComercial, async (req, res, next) => {
+    try {
+      const kind = normKind(req.query.kind || "porton");
+      const typeKey = req.params.typeKey;
+      const section_ids = Array.isArray(req.body?.section_ids) ? req.body.section_ids : [];
+      const mapping = await setTypeSections(kind, typeKey, section_ids);
+      res.json({ ok: true, mapping });
     } catch (e) {
       next(e);
     }

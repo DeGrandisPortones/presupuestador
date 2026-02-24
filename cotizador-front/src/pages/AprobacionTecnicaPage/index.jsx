@@ -26,6 +26,20 @@ function rowLabel(r) {
   return r.status;
 }
 
+
+function fmtDate(iso) {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "—";
+  return d.toLocaleDateString("es-AR");
+}
+
+function createdByLabel(r) {
+  const name = r?.created_by_full_name || r?.created_by_username || (r?.created_by_user_id ? `#${r.created_by_user_id}` : "—");
+  const role = r?.created_by_role ? ` (${r.created_by_role})` : "";
+  return `${name}${role}`;
+}
+
 export default function AprobacionTecnicaPage() {
   const navigate = useNavigate();
   const user = useAuthStore((s) => s.user);
@@ -120,9 +134,9 @@ const acopioM = useMutation({
           <table>
             <thead>
               <tr>
-                <th>ID</th>
+                <th>Fecha</th>
+                <th>Vendedor/Distribuidor</th>
                 <th>Cliente</th>
-                <th>Creado por</th>
                 <th>Estado</th>
                 <th></th>
               </tr>
@@ -130,9 +144,9 @@ const acopioM = useMutation({
             <tbody>
               {rows.map((r) => (
                 <tr key={r.id}>
-                  <td>#{r.id}</td>
+                  <td>{fmtDate(r.created_at)}</td>
+                  <td>{createdByLabel(r)}</td>
                   <td>{r.end_customer?.name || <span className="muted">(sin nombre)</span>}</td>
-                  <td>{r.created_by_role}</td>
                   <td>{rowLabel(r)}</td>
                   <td className="right">
                     <Button onClick={() => navigate(`/presupuestos/${r.id}`)}>Abrir</Button>
@@ -155,9 +169,9 @@ const acopioM = useMutation({
       <table>
         <thead>
           <tr>
-            <th>ID</th>
+            <th>Fecha</th>
+            <th>Vendedor/Distribuidor</th>
             <th>Cliente</th>
-            <th>Creado por</th>
             <th>Solicitud</th>
             <th>Decisiones</th>
             <th></th>
@@ -168,9 +182,9 @@ const acopioM = useMutation({
             const canAct = (r.acopio_to_produccion_technical_decision || "pending") === "pending";
             return (
               <tr key={r.id}>
-                <td>#{r.id}</td>
+                <td>{fmtDate(r.acopio_to_produccion_requested_at || r.created_at)}</td>
+                <td>{createdByLabel(r)}</td>
                 <td>{r.end_customer?.name || <span className="muted">(sin nombre)</span>}</td>
-                <td>{r.created_by_role}</td>
                 <td>{r.acopio_to_produccion_notes || <span className="muted">(sin nota)</span>}</td>
                 <td>{acopioReqLabel(r)}</td>
                 <td className="right" style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>

@@ -5,6 +5,7 @@ const EMPTY_CUSTOMER = {
   phone: "",
   email: "",
   address: "",
+  maps_url: "",
 };
 
 function normMarginInput(v) {
@@ -32,8 +33,12 @@ export const useQuoteStore = create((set, get) => ({
   partnerId: null,
 
   fulfillmentMode: "produccion", // "produccion" | "acopio"
-  conditionMode: "cond1",        // "cond1" | "cond2"
+  conditionMode: "cond1",        // "cond1" | "cond2" | "special"
+  conditionText: "",          // solo si conditionMode === "special"
+  paymentMethod: "",          // forma de pago
   note: "",
+
+  portonType: "",             // tipo/sistema de portón (solo catalog_kind=porton)
 
   endCustomer: { ...EMPTY_CUSTOMER },
 
@@ -58,7 +63,10 @@ export const useQuoteStore = create((set, get) => ({
       partnerId: null,
       fulfillmentMode: "produccion",
       conditionMode: "cond1",
+      conditionText: "",
+      paymentMethod: "",
       note: "",
+      portonType: "",
       endCustomer: { ...EMPTY_CUSTOMER },
       dimensions: { width: "", height: "" },
       lines: [],
@@ -74,6 +82,9 @@ export const useQuoteStore = create((set, get) => ({
 
     const m = Number(payload?.margin_percent_ui ?? 0) || 0;
     const cond = String(payload?.condition_mode || "cond1");
+    const condText = String(payload?.condition_text || "");
+    const pay = String(payload?.payment_method || "");
+    const portonType = String(payload?.porton_type || "");
 
     set({
       quoteId: q.id ?? null,
@@ -88,7 +99,10 @@ export const useQuoteStore = create((set, get) => ({
       marginPercentInput: m === 0 ? "" : String(payload?.margin_percent_ui ?? m),
 
       fulfillmentMode: q.fulfillment_mode || "produccion",
-      conditionMode: cond === "cond2" ? "cond2" : "cond1",
+      conditionMode: cond === "cond2" ? "cond2" : (cond === "special" ? "special" : "cond1"),
+      conditionText: condText,
+      paymentMethod: pay,
+      portonType: portonType,
       note: q.note || "",
 
       endCustomer: {
@@ -183,8 +197,21 @@ export const useQuoteStore = create((set, get) => ({
 
   setConditionMode(v) {
     const mode = String(v || "").trim();
-    if (!["cond1", "cond2"].includes(mode)) return;
-    set({ conditionMode: mode });
+    if (!["cond1", "cond2", "special"].includes(mode)) return;
+    // si sale de special, limpiamos texto
+    set((s) => ({ conditionMode: mode, conditionText: mode === "special" ? s.conditionText : "" }));
+  },
+
+  setConditionText(v) {
+    set({ conditionText: String(v || "") });
+  },
+
+  setPaymentMethod(v) {
+    set({ paymentMethod: String(v || "") });
+  },
+
+  setPortonType(v) {
+    set({ portonType: String(v || "") });
   },
 
   setNote(v) {
@@ -287,6 +314,9 @@ export const useQuoteStore = create((set, get) => ({
       payload: {
         margin_percent_ui: s.marginPercent,
         condition_mode: s.conditionMode,
+        condition_text: s.conditionText || "",
+        payment_method: s.paymentMethod || "",
+        porton_type: s.portonType || "",
         dimensions: {
           width: s.dimensions?.width ?? "",
           height: s.dimensions?.height ?? "",

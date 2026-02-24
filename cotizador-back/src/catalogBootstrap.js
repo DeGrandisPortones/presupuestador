@@ -1,5 +1,5 @@
 import { loadOdooBootstrap, clearOdooBootstrapCache } from "./odooBootstrap.js";
-import { normKind, listSections, getTagSectionMap, getProductAliasMap } from "./catalogDb.js";
+import { normKind, listSections, getTagSectionMap, getProductAliasMap, getTypeSectionsMap } from "./catalogDb.js";
 
 let cacheByKind = new Map();
 const TTL_MS = Number(process.env.CATALOG_BOOTSTRAP_TTL_MS || 5 * 60 * 1000);
@@ -18,6 +18,7 @@ export async function loadCatalogBootstrap(odoo, kind="porton") {
   const sections = await listSections(k);
   const tagSection = await getTagSectionMap(k);
   const aliasMap = await getProductAliasMap(k);
+  const typeSections = await getTypeSectionsMap(k);
 
   const tags = Array.isArray(odooBoot?.tags) ? odooBoot.tags : [];
   const productsRaw = Array.isArray(odooBoot?.products) ? odooBoot.products : [];
@@ -56,6 +57,7 @@ export async function loadCatalogBootstrap(odoo, kind="porton") {
     kind: k,
     generated_at: new Date().toISOString(),
     sections,
+    type_sections: typeSections,
     tags,
     products,
   };

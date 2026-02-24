@@ -42,6 +42,7 @@ export default function UsersAdminPage() {
   const [fIsVendedor, setFIsVendedor] = useState(true);
   const [fIsDistribuidor, setFIsDistribuidor] = useState(false);
   const [fOdooPartnerId, setFOdooPartnerId] = useState("");
+  const [fDefaultMapsUrl, setFDefaultMapsUrl] = useState("");
   const [fIsActive, setFIsActive] = useState(true);
 
   const resetCreate = () => {
@@ -53,6 +54,7 @@ export default function UsersAdminPage() {
     setFIsVendedor(roleTab !== "distribuidor");
     setFIsDistribuidor(roleTab === "distribuidor");
     setFOdooPartnerId("");
+    setFDefaultMapsUrl("");
     setFIsActive(true);
   };
 
@@ -65,6 +67,7 @@ export default function UsersAdminPage() {
     setFIsVendedor(!!u.is_vendedor);
     setFIsDistribuidor(!!u.is_distribuidor);
     setFOdooPartnerId(u.odoo_partner_id ? String(u.odoo_partner_id) : "");
+    setFDefaultMapsUrl(u.default_maps_url ? String(u.default_maps_url) : "");
     setFIsActive(!!u.is_active);
   };
 
@@ -77,6 +80,7 @@ export default function UsersAdminPage() {
         is_vendedor: fIsVendedor,
         is_distribuidor: fIsDistribuidor,
         odoo_partner_id: fOdooPartnerId ? Number(fOdooPartnerId) : null,
+        default_maps_url: fDefaultMapsUrl ? String(fDefaultMapsUrl) : null,
         is_active: fIsActive,
       }),
     onSuccess: () => {
@@ -95,6 +99,7 @@ export default function UsersAdminPage() {
         is_vendedor: fIsVendedor,
         is_distribuidor: fIsDistribuidor,
         odoo_partner_id: fOdooPartnerId ? Number(fOdooPartnerId) : null,
+        default_maps_url: fDefaultMapsUrl ? String(fDefaultMapsUrl) : null,
         is_active: fIsActive,
       }),
     onSuccess: () => {
@@ -261,6 +266,11 @@ export default function UsersAdminPage() {
             <div>
               <div className="muted" style={{ marginBottom: 6 }}>Odoo partner ID (opcional)</div>
               <Input value={fOdooPartnerId} onChange={setFOdooPartnerId} placeholder="12345" style={{ width: "100%" }} />
+            </div>
+
+            <div>
+              <div className="muted" style={{ marginBottom: 6 }}>Maps por defecto (URL)</div>
+              <Input value={fDefaultMapsUrl} onChange={setFDefaultMapsUrl} placeholder="https://maps.app.goo.gl/..." style={{ width: "100%" }} />
             </div>
           </div>
 

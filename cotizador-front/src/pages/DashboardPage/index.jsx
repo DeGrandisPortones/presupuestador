@@ -1,6 +1,7 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuthStore } from "../../domain/auth/store.js";
+import { PORTON_TYPES } from "../../domain/quote/portonConstants.js";
 
 import Button from "../../ui/Button.jsx";
 import Input from "../../ui/Input.jsx";
@@ -11,6 +12,7 @@ import {
   adminDeleteSection,
   adminSetTagSection,
   adminSetProductAlias,
+  adminSetTypeSections,
   adminRefreshCatalog,
   adminGetQuotes,
 } from "../../api/admin.js";
@@ -23,7 +25,7 @@ export default function DashboardPage() {
   const user = useAuthStore((s) => s.user);
   const qc = useQueryClient();
 
-  const [tab, setTab] = useState("tags"); // tags | aliases | data
+  const [tab, setTab] = useState("tags"); // tags | aliases | types | data
 
   const [catalogKind, setCatalogKind] = useState("porton"); // porton | ipanel // tags | aliases | data
 
@@ -50,6 +52,7 @@ export default function DashboardPage() {
   const sections = Array.isArray(catalog?.sections) ? catalog.sections : [];
   const tags = Array.isArray(catalog?.tags) ? catalog.tags : [];
   const products = Array.isArray(catalog?.products) ? catalog.products : [];
+  const typeSections = catalog?.type_sections || {};
 
   const productById = useMemo(() => new Map(products.map((p) => [Number(p.id), p])), [products]);
   const tagById = useMemo(() => new Map(tags.map((t) => [Number(t.id), t])), [tags]);
@@ -158,6 +161,7 @@ export default function DashboardPage() {
       <div className="card" style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
         <button className={tab === "tags" ? "navlink active" : "navlink"} type="button" onClick={() => setTab("tags")}>Etiquetas → Secciones</button>
         <button className={tab === "aliases" ? "navlink active" : "navlink"} type="button" onClick={() => setTab("aliases")}>Alias de productos</button>
+        <button className={tab === "types" ? "navlink active" : "navlink"} type="button" onClick={() => setTab("types")}>Tipos → Secciones</button>
         <button className={tab === "data" ? "navlink active" : "navlink"} type="button" onClick={() => setTab("data")}>Data</button>
       </div>
 
@@ -264,6 +268,21 @@ export default function DashboardPage() {
                   ))}
                 </div>
               </div>
+            </div>
+          )}
+
+
+          {tab === "types" && (
+            <div className="row">
+              <TypesSectionsCard
+                catalogKind={catalogKind}
+                sections={sections}
+                typeSections={typeSections}
+                onSave={async (typeKey, sectionIds) => {
+                  await adminSetTypeSections(catalogKind, typeKey, sectionIds);
+                  qc.invalidateQueries({ queryKey: ["adminCatalog", catalogKind] });
+                }}
+              />
             </div>
           )}
 
@@ -394,6 +413,96 @@ export default function DashboardPage() {
         </>
       )}
     </div>
+  );
+}
+
+
+function TypesSectionsCard({ catalogKind, sections, typeSections, onSave }) {
+  const [selectedType, setSelectedType] = useState(PORTON_TYPES?.[0]?.key || "");
+  const [selectedSectionIds, setSelectedSectionIds] = useState([]);
+
+  const canUse = (catalogKind || "porton") === "porton";
+
+  useEffect(() => {
+    // si cambia tipo, cargamos selección actual
+    const arr = canUse && selectedType ? (typeSections?.[selectedType] || []) : [];
+    setSelectedSectionIds((arr || []).map((x) => Number(x)));
+  }, [selectedType, catalogKind, canUse, typeSections]);
+
+  if (!canUse) {
+    return (
+      <div className="card" style={{ flex: 1 }}>
+        <h3 style={{ marginTop: 0 }}>Tipos → Secciones</h3>
+        <div className="muted">Esto aplica solo a Portones (I-PANEL va aparte).</div>
+      </div>
+    );
+  }
+
+  const sectionSet = new Set(selectedSectionIds.map((x) => Number(x)));
+
+  return (
+    <>
+      <div className="card" style={{ flex: 1, minWidth: 320 }}>
+        <h3 style={{ marginTop: 0 }}>Tipos / Sistemas</h3>
+        <div className="muted">Seleccioná un tipo y marcá qué secciones deben aparecer.</div>
+        <div className="spacer" />
+
+        <select
+          value={selectedType}
+          onChange={(e) => setSelectedType(e.target.value)}
+          style={{ padding: 10, borderRadius: 10, border: "1px solid #ddd", width: "100%" }}
+        >
+          {PORTON_TYPES.map((t) => (
+            <option key={t.key} value={t.key}>{t.label}</option>
+          ))}
+        </select>
+
+        <div className="spacer" />
+
+        <Button
+          variant="primary"
+          onClick={async () => {
+            await onSave(selectedType, selectedSectionIds);
+          }}
+        >
+          Guardar asignación
+        </Button>
+
+        <div className="spacer" />
+        <div className="muted">
+          Nota: si un tipo NO tiene secciones asignadas, el vendedor NO verá ninguna sección.
+        </div>
+      </div>
+
+      <div className="card" style={{ flex: 2, minWidth: 520 }}>
+        <h3 style={{ marginTop: 0 }}>Secciones visibles</h3>
+        <div className="spacer" />
+
+        <div style={{ display: "flex", flexDirection: "column", gap: 8, maxHeight: 620, overflow: "auto", paddingRight: 6 }}>
+          {sections.map((s) => {
+            const sid = Number(s.id);
+            const checked = sectionSet.has(sid);
+            return (
+              <label key={sid} style={{ display: "flex", gap: 10, alignItems: "center", border: "1px solid #eee", padding: 10, borderRadius: 10 }}>
+                <input
+                  type="checkbox"
+                  checked={checked}
+                  onChange={(e) => {
+                    const next = new Set(sectionSet);
+                    if (e.target.checked) next.add(sid);
+                    else next.delete(sid);
+                    setSelectedSectionIds([...next]);
+                  }}
+                />
+                <div style={{ fontWeight: 700 }}>{s.name}</div>
+                <div className="muted" style={{ marginLeft: "auto" }}>Pos: {s.position}</div>
+              </label>
+            );
+          })}
+          {!sections.length && <div className="muted">No hay secciones creadas todavía.</div>}
+        </div>
+      </div>
+    </>
   );
 }
 

@@ -68,3 +68,11 @@ export async function adminUpdateUser(id, payload) {
   if (!data?.ok) throw new Error(data?.error || "No se pudo actualizar el usuario");
   return data.user;
 }
+
+
+export async function adminSetTypeSections(kind = "porton", typeKey, section_ids = []) {
+  const key = encodeURIComponent(String(typeKey || ""));
+  const { data } = await http.put(`/api/admin/types/${key}/sections?kind=${encodeURIComponent(kind)}`, { section_ids });
+  if (!data?.ok) throw new Error(data?.error || "No se pudo asignar secciones al tipo");
+  return data.mapping;
+}

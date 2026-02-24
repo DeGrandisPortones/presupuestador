@@ -11,10 +11,12 @@ function normalize(s) {
 
 export default function SectionCatalog({ kind = "porton" }) {
   const addLine = useQuoteStore((s) => s.addLine);
+  const portonType = useQuoteStore((s) => s.portonType);
 
   const [boot, setBoot] = useState(() => getOdooBootstrap(kind));
   const sections = Array.isArray(boot?.sections) ? boot.sections : [];
   const products = Array.isArray(boot?.products) ? boot.products : [];
+  const typeSections = boot?.type_sections || {};
 
   const [openSectionId, setOpenSectionId] = useState(null);
   const [queryBySection, setQueryBySection] = useState({});
@@ -22,12 +24,22 @@ export default function SectionCatalog({ kind = "porton" }) {
 
   const sectionList = useMemo(() => {
     // orden fijo por position asc (definido desde dashboard)
-    return [...sections].sort(
+    const ordered = [...sections].sort(
       (a, b) =>
         (Number(a.position || 0) - Number(b.position || 0)) ||
         String(a.name).localeCompare(String(b.name))
     );
-  }, [sections]);
+
+    // Filtro por tipo/sistema (solo portón). Si no hay tipo seleccionado o no hay mapeo => NO mostrar secciones.
+    if ((kind || "porton") === "porton") {
+      const key = String(portonType || "").trim();
+      const allowed = key ? (typeSections[key] || []) : [];
+      const allowedSet = new Set((allowed || []).map((x) => Number(x)));
+      return ordered.filter((s) => allowedSet.has(Number(s.id)));
+    }
+
+    return ordered;
+  }, [sections, kind, portonType, typeSections]);
 
   // auto abrir la primera sección si no hay una seleccionada
   useEffect(() => {
@@ -118,8 +130,8 @@ export default function SectionCatalog({ kind = "porton" }) {
         <>
           <div className="spacer" />
           <div className="muted">
-            No hay secciones configuradas todavía. Cargá/actualizá el catálogo
-            desde Odoo.
+            No hay secciones para mostrar.
+            {(kind || "porton") === "porton" ? " Elegí primero el Tipo/Sistema y asegurate de que Enc. Comercial haya asignado secciones para ese tipo." : ""}
           </div>
         </>
       ) : (

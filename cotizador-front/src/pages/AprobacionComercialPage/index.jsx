@@ -26,6 +26,20 @@ function rowLabel(r) {
   return r.status;
 }
 
+
+function fmtDate(iso) {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "—";
+  return d.toLocaleDateString("es-AR");
+}
+
+function createdByLabel(r) {
+  const name = r?.created_by_full_name || r?.created_by_username || (r?.created_by_user_id ? `#${r.created_by_user_id}` : "—");
+  const role = r?.created_by_role ? ` (${r.created_by_role})` : "";
+  return `${name}${role}`;
+}
+
 export default function AprobacionComercialPage() {
   const navigate = useNavigate();
   const user = useAuthStore((s) => s.user);
@@ -120,20 +134,20 @@ const rows = useMemo(() => {
           <table>
             <thead>
               <tr>
-                <th>ID</th>
+                <th>Fecha</th>
+                <th>Vendedor/Distribuidor</th>
                 <th>Cliente</th>
                 <th>Estado</th>
-                <th>Destino</th>
                 <th></th>
               </tr>
             </thead>
             <tbody>
               {rows.map((r) => (
                 <tr key={r.id}>
-                  <td>#{r.id}</td>
+                  <td>{fmtDate(r.created_at)}</td>
+                  <td>{createdByLabel(r)}</td>
                   <td>{r.end_customer?.name || <span className="muted">(sin nombre)</span>}</td>
                   <td>{rowLabel(r)}</td>
-                  <td>{r.fulfillment_mode === "acopio" ? "Acopio" : "Producción"}</td>
                   <td className="right">
                     <Button onClick={() => navigate(`/presupuestos/${r.id}`)}>Abrir</Button>
                   </td>
@@ -155,7 +169,8 @@ const rows = useMemo(() => {
       <table>
         <thead>
           <tr>
-            <th>ID</th>
+            <th>Fecha</th>
+            <th>Vendedor/Distribuidor</th>
             <th>Cliente</th>
             <th>Solicitud</th>
             <th>Decisiones</th>
@@ -167,7 +182,8 @@ const rows = useMemo(() => {
             const canAct = (r.acopio_to_produccion_commercial_decision || "pending") === "pending";
             return (
               <tr key={r.id}>
-                <td>#{r.id}</td>
+                <td>{fmtDate(r.acopio_to_produccion_requested_at || r.created_at)}</td>
+                <td>{createdByLabel(r)}</td>
                 <td>{r.end_customer?.name || <span className="muted">(sin nombre)</span>}</td>
                 <td>{r.acopio_to_produccion_notes || <span className="muted">(sin nota)</span>}</td>
                 <td>{acopioReqLabel(r)}</td>

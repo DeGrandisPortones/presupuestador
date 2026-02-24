@@ -1,5 +1,6 @@
 import Input from "../../../ui/Input.jsx";
 import { useQuoteStore } from "../../../domain/quote/store.js";
+import { PAYMENT_METHODS } from "../../../domain/quote/portonConstants.js";
 
 export default function HeaderBar({ pricelists, loadingPricelists, showMargin }) {
   const {
@@ -13,6 +14,10 @@ export default function HeaderBar({ pricelists, loadingPricelists, showMargin })
     setFulfillmentMode,
     conditionMode,
     setConditionMode,
+    conditionText,
+    setConditionText,
+    paymentMethod,
+    setPaymentMethod,
     endCustomer,
     setEndCustomer,
   } = useQuoteStore();
@@ -94,6 +99,30 @@ export default function HeaderBar({ pricelists, loadingPricelists, showMargin })
           />
         </div>
 
+        <div style={{ flex: 1, minWidth: 260 }}>
+          <div className="muted">Google Maps (URL)</div>
+          <Input
+            value={endCustomer.maps_url || ""}
+            onChange={(v) => setEndCustomer({ maps_url: v })}
+            placeholder="https://maps.app.goo.gl/..."
+            style={{ width: "100%" }}
+          />
+        </div>
+
+        <div style={{ minWidth: 240 }}>
+          <div className="muted">Forma de Pago</div>
+          <select
+            value={paymentMethod || ""}
+            onChange={(e) => setPaymentMethod(e.target.value)}
+            style={{ padding: "8px 10px", borderRadius: 8, border: "1px solid #ddd", minWidth: 220 }}
+          >
+            <option value="">Seleccione Forma de Pago</option>
+            {PAYMENT_METHODS.map((x) => (
+              <option key={x} value={x}>{x}</option>
+            ))}
+          </select>
+        </div>
+
         <div>
           <div className="muted">Destino</div>
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
@@ -114,7 +143,17 @@ export default function HeaderBar({ pricelists, loadingPricelists, showMargin })
             >
               <option value="cond1">Condición 1</option>
               <option value="cond2">Condición 2</option>
+              <option value="special">Especial</option>
             </select>
+
+            {conditionMode === "special" ? (
+              <Input
+                value={conditionText || ""}
+                onChange={(v) => setConditionText(v)}
+                placeholder="Escribí la condición especial..."
+                style={{ minWidth: 260 }}
+              />
+            ) : null}
           </div>
         </div>
       </div>

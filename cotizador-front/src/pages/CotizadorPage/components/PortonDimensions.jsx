@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import { useQuoteStore } from "../../../domain/quote/store";
+import { PORTON_TYPES } from "../../../domain/quote/portonConstants.js";
 import Input from "../../../ui/Input";
 
 function toNumber(v) {
@@ -15,6 +16,8 @@ function normalizeDecimal(v) {
 export default function PortonDimensions() {
   const dimensions = useQuoteStore((s) => s.dimensions);
   const setDimensions = useQuoteStore((s) => s.setDimensions);
+  const portonType = useQuoteStore((s) => s.portonType);
+  const setPortonType = useQuoteStore((s) => s.setPortonType);
 
   const width = useMemo(() => toNumber(dimensions?.width), [dimensions?.width]);
   const height = useMemo(() => toNumber(dimensions?.height), [dimensions?.height]);
@@ -25,6 +28,19 @@ export default function PortonDimensions() {
 
   return (
     <div>
+      <div style={{ fontWeight: 800, marginBottom: 8 }}>Tipo / Sistema</div>
+      <select
+        value={portonType || ""}
+        onChange={(e) => setPortonType(e.target.value)}
+        style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #ddd", width: "100%" }}
+      >
+        <option value="">Seleccione un sistema</option>
+        {PORTON_TYPES.map((t) => (
+          <option key={t.key} value={t.key}>{t.label}</option>
+        ))}
+      </select>
+
+      <div className="spacer" />
       <div style={{ fontWeight: 800, marginBottom: 8 }}>Medidas del portón</div>
 
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end" }}>

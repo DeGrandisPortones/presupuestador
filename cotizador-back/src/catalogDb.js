@@ -1,5 +1,22 @@
 import { dbQuery } from "./db.js";
 
+
+let typeSectionsEnsured = false;
+async function ensureTypeSectionsTable() {
+  if (typeSectionsEnsured) return;
+  await dbQuery(`
+    create table if not exists public.presupuestador_type_sections (
+      catalog_kind text not null,
+      type_key text not null,
+      section_id integer not null,
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now(),
+      primary key (catalog_kind, type_key, section_id)
+    );
+  `);
+  typeSectionsEnsured = true;
+}
+
 const KINDS = new Set(["porton","ipanel"]);
 export function normKind(kind) {
   const k = String(kind || "porton").toLowerCase().trim();
@@ -116,4 +133,50 @@ export async function setProductAlias(kind, productId, alias) {
     [k, pid, a]
   );
   return { catalog_kind: k, product_id: pid, alias: a };
+}
+
+
+export async function getTypeSectionsMap(kind) {
+  await ensureTypeSectionsTable();
+  const k = normKind(kind);
+  const q = await dbQuery(
+    `select type_key, section_id
+       from public.presupuestador_type_sections
+      where catalog_kind = $1
+      order by type_key asc, section_id asc`,
+    [k]
+  );
+
+  const out = {};
+  for (const r of (q.rows || [])) {
+    const key = String(r.type_key || "");
+    if (!out[key]) out[key] = [];
+    out[key].push(Number(r.section_id));
+  }
+  return out;
+}
+
+export async function setTypeSections(kind, typeKey, sectionIds) {
+  await ensureTypeSectionsTable();
+  const k = normKind(kind);
+  const key = String(typeKey || "").trim();
+  if (!key) throw new Error("typeKey inválido");
+
+  const ids = Array.isArray(sectionIds) ? sectionIds.map((x) => Number(x)).filter(Boolean) : [];
+
+  await dbQuery(
+    `delete from public.presupuestador_type_sections where catalog_kind=$1 and type_key=$2`,
+    [k, key]
+  );
+
+  for (const sid of ids) {
+    await dbQuery(
+      `insert into public.presupuestador_type_sections (catalog_kind, type_key, section_id)
+       values ($1, $2, $3)
+       on conflict do nothing`,
+      [k, key, sid]
+    );
+  }
+
+  return { catalog_kind: k, type_key: key, section_ids: ids };
 }
