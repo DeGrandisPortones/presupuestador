@@ -26,6 +26,7 @@ function labelStatus(q) {
 
   if (s === "draft") {
     if (c === "rejected" || t === "rejected") return "Rechazado (corregir)";
+    if (c === "pending" && t === "pending") return "Guardado";
     return "Borrador";
   }
 
@@ -52,7 +53,7 @@ function labelStatus(q) {
 
 export default function PresupuestosPage() {
   const navigate = useNavigate();
-  const [filter, setFilter] = useState("all"); // all | pending | rejected | acopio
+    const [filter, setFilter] = useState("all"); // all | saved | pending | rejected | acopio
   const [searchCustomer, setSearchCustomer] = useState("");
 
   const q = useQuery({
@@ -99,7 +100,12 @@ const requestProdM = useMutation({
 
     let out = arr;
 
-    if (filter === "pending") {
+    if (filter === "saved") {
+      out = out.filter(
+        (x) => x.status === "draft" && x.commercial_decision === "pending" && x.technical_decision === "pending"
+      );
+    } else if (filter === "pending") {
+
       out = out.filter(
         (x) => x.status === "pending_approvals" && (x.commercial_decision === "pending" || x.technical_decision === "pending")
       );
@@ -131,7 +137,10 @@ const requestProdM = useMutation({
           <Button variant={filter === "all" ? "primary" : "ghost"} onClick={() => setFilter("all")}>
             Todos
           </Button>
-          <Button variant={filter === "pending" ? "primary" : "ghost"} onClick={() => setFilter("pending")}>
+                    <Button variant={filter === "saved" ? "primary" : "ghost"} onClick={() => setFilter("saved")}>
+            Guardados
+          </Button>
+<Button variant={filter === "pending" ? "primary" : "ghost"} onClick={() => setFilter("pending")}>
             Pendientes
           </Button>
           <Button variant={filter === "rejected" ? "primary" : "ghost"} onClick={() => setFilter("rejected")}>
