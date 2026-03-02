@@ -4,7 +4,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { useAuthStore } from "../../domain/auth/store.js";
 
 import { getPricelists, getPrices } from "../../api/odoo";
-import { createQuote, getQuote, submitQuote, updateQuote } from "../../api/quotes";
+import { createQuote, getQuote, confirmQuote, updateQuote } from "../../api/quotes";
 import { downloadPresupuestoPdf, downloadProformaPdf } from "../../api/pdf";
 import toast from "react-hot-toast";
 
@@ -26,7 +26,6 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
   const params = useParams();
   const qc = useQueryClient();
 
-  // ✅ UUID como string (NO Number)
   const idParam = params.id ? String(params.id) : null;
 
   const {
@@ -47,31 +46,26 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
 
   const [ivaRate] = useState(IVA_RATE_DEFAULT);
 
-  // si no hay id en URL, es “nuevo”
   useEffect(() => {
     if (!idParam) {
       reset();
-      // Prefill Maps URL por usuario (si Enc. Comercial lo configuró)
       if (user?.default_maps_url) {
         setEndCustomer({ maps_url: user.default_maps_url });
       }
     }
   }, [idParam, reset, user?.default_maps_url, setEndCustomer]);
 
-  // 1) Pricelists
   const pricelistsQ = useQuery({
     queryKey: ["pricelists"],
     queryFn: getPricelists,
   });
 
-  // default pricelist
   useEffect(() => {
     if (!pricelistId && pricelistsQ.data?.length) {
       setPricelist(pricelistsQ.data[0]);
     }
   }, [pricelistId, pricelistsQ.data, setPricelist]);
 
-  // 2) Si estamos editando (URL con id), cargamos desde back
   const quoteQ = useQuery({
     queryKey: ["quote", idParam],
     queryFn: () => getQuote(idParam),
@@ -81,7 +75,6 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
   useEffect(() => {
     if (!quoteQ.data) return;
 
-    // Si abrieron una quote del tipo incorrecto, redirigimos al cotizador correcto.
     const qKind = (quoteQ.data.catalog_kind || "porton").toString().toLowerCase();
     if (qKind !== (catalogKind || "porton")) {
       const id = String(quoteQ.data.id);
@@ -92,13 +85,11 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
     loadFromQuote(quoteQ.data);
   }, [quoteQ.data, loadFromQuote, catalogKind, navigate]);
 
-  // 3) Totales (margen sólo UI)
   const totals = useMemo(
     () => calcTotals(lines, marginPercent, ivaRate),
     [lines, marginPercent, ivaRate]
   );
 
-  // 4) Recalcular precios base cuando cambian líneas o pricelist
   const linesKey = useMemo(
     () => lines.map((l) => `${l.product_id}:${l.qty}`).join("|"),
     [lines]
@@ -122,8 +113,20 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
     run().catch(console.error);
   }, [pricelistId, partnerId, linesKey, lines.length, applyBasePrices]);
 
-  
-  function validateRequired(payload) {
+  // =============================
+  // Validaciones (nuevo flujo)
+  // =============================
+  function validateDraft(payload) {
+    const c = payload?.end_customer || {};
+    const errs = [];
+
+    if (!String(c.name || "").trim()) errs.push("Completá el nombre del cliente.");
+    if (!Array.isArray(payload?.lines) || payload.lines.length === 0) errs.push("Agregá al menos un producto.");
+
+    if (errs.length) throw new Error(errs[0]);
+  }
+
+  function validateConfirm(payload) {
     const c = payload?.end_customer || {};
     const p = payload?.payload || {};
     const errs = [];
@@ -144,65 +147,84 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
     if (errs.length) throw new Error(errs[0]);
   }
 
-// 5) Guardar (create/update)
+  // =============================
+  // Guardar (create/update)
+  // =============================
   const saveM = useMutation({
     mutationFn: async () => {
-      const payload = { ...buildPayloadForBack(), catalog_kind: catalogKind };
-      validateRequired(payload);
+      const payload = {
+        ...buildPayloadForBack(),
+        catalog_kind: catalogKind,
+        // Draft: si todavía no se eligió destino, default acopio
+        fulfillment_mode: (buildPayloadForBack()?.fulfillment_mode || "acopio"),
+      };
+      validateDraft(payload);
 
-      // ✅ si hay quoteId => update; si no => create
       if (quoteId) return await updateQuote(quoteId, payload);
       return await createQuote(payload);
     },
     onSuccess: (q) => {
       setQuoteMeta({ quoteId: q.id, status: q.status, rejectionNotes: q.rejection_notes });
       qc.invalidateQueries({ queryKey: ["quotes", "mine"] });
-
-      // ✅ nos quedamos editando el MISMO presupuesto (con UUID)
       navigate(catalogKind === "ipanel" ? `/cotizador/ipanel/${q.id}` : `/cotizador/${q.id}`);
+      toast.success("Guardado.");
     },
+    onError: (e) => toast.error(e?.message || "No se pudo guardar"),
   });
 
-  // 6) Enviar a aprobación
-  const submitM = useMutation({
+  // =============================
+  // Confirmar presupuesto
+  // =============================
+  const confirmM = useMutation({
     mutationFn: async () => {
-      // ✅ submit también guarda (create/update) para evitar que el usuario tenga que hacer 2 pasos.
-      const payload = { ...buildPayloadForBack(), catalog_kind: catalogKind };
-      validateRequired(payload);
-
-      // Validaciones para evitar rechazos del back y que el usuario "no vea" el error.
-      validateRequired(payload);
+      const payload = {
+        ...buildPayloadForBack(),
+        catalog_kind: catalogKind,
+        fulfillment_mode: (buildPayloadForBack()?.fulfillment_mode || "acopio"),
+      };
+      validateConfirm(payload);
 
       let id = quoteId || idParam;
       if (id) {
-        // guardamos cambios antes de enviar
         await updateQuote(id, payload);
       } else {
         const created = await createQuote(payload);
         id = created.id;
-        // dejamos meta para que el estado local quede consistente
         setQuoteMeta({ quoteId: created.id, status: created.status, rejectionNotes: created.rejection_notes });
       }
 
-      return await submitQuote(id);
+      // Elegir destino
+      const raw = window.prompt("Confirmar presupuesto.\nEscribí 'A' para Acopio o 'P' para Producción:", "A");
+      if (!raw) throw new Error("Confirmación cancelada.");
+      const v = raw.trim().toUpperCase();
+      let dest = "acopio";
+
+      if (v === "A") {
+        dest = "acopio";
+        window.alert("Tendrá una instancia para poder aplicar cambios al presupuesto.");
+      } else if (v === "P") {
+        dest = "produccion";
+        const ok = window.confirm("No podrá realizar cambio alguno al presupuesto, ¿desea continuar?");
+        if (!ok) throw new Error("Confirmación cancelada.");
+      } else {
+        throw new Error("Opción inválida. Usá 'A' o 'P'.");
+      }
+
+      return await confirmQuote(id, { fulfillment_mode: dest });
     },
     onSuccess: (q) => {
       setQuoteMeta({ quoteId: q.id, status: q.status, rejectionNotes: q.rejection_notes });
       qc.invalidateQueries({ queryKey: ["quotes", "mine"] });
-
-      // opcional: ir a “Mis presupuestos”
       navigate(`/presupuestos/${q.id}`);
-      toast.success("Enviado a aprobación.");
+      toast.success("Presupuesto confirmado.");
     },
-    onError: (e) => {
-      toast.error(e?.message || "No se pudo enviar a aprobación");
-    },
+    onError: (e) => toast.error(e?.message || "No se pudo confirmar"),
   });
 
   const onDownloadPresupuesto = async () => {
     try {
       const payload = { ...buildPayloadForBack(), catalog_kind: catalogKind };
-      validateRequired(payload);
+      validateConfirm(payload);
       await downloadPresupuestoPdf(payload);
     } catch (e) {
       toast.error(e?.response?.data?.error || e.message);
@@ -212,19 +234,19 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
   const onDownloadProforma = async () => {
     try {
       const payload = { ...buildPayloadForBack(), catalog_kind: catalogKind };
-      validateRequired(payload);
+      validateConfirm(payload);
       await downloadProformaPdf(payload);
     } catch (e) {
       toast.error(e?.response?.data?.error || e.message);
     }
   };
 
-  const canSubmit = ["draft", "rejected_commercial", "rejected_technical"].includes(status);
+  const canConfirm = ["draft", "rejected_commercial", "rejected_technical"].includes(status);
 
   return (
     <div className="container">
       <div className="card" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
-         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
           <img
             className="product-logo"
             src={catalogKind === "ipanel" ? "/brands/ipanel.png" : "/brands/degrandis.png"}
@@ -232,12 +254,10 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
           />
           <div>
             <h2 style={{ margin: 0 }}>
-            {quoteId ? `Presupuesto #${String(quoteId).slice(0, 8)}` : "Nuevo presupuesto"}
-          </h2>
-          <div className="muted">
-            Estado: <b>{status}</b>
+              {quoteId ? `Presupuesto #${quoteId}` : "Nuevo presupuesto"}
+            </h2>
+            <div className="muted">Estado: <b>{status}</b></div>
           </div>
-        </div>
         </div>
 
         <div style={{ display: "flex", gap: 8 }}>
@@ -249,20 +269,18 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
               PDF proforma
             </Button>
           ) : null}
-          <Button
-            onClick={() => saveM.mutate()}
-            disabled={saveM.isPending}
-          >
+
+          <Button onClick={() => saveM.mutate()} disabled={saveM.isPending}>
             {saveM.isPending ? "Guardando..." : "Guardar"}
           </Button>
 
           <Button
             variant="primary"
-            onClick={() => submitM.mutate()}
-            disabled={!canSubmit || submitM.isPending}
-            title={!canSubmit ? "Sólo se envía desde borrador o rechazados" : ""}
+            onClick={() => confirmM.mutate()}
+            disabled={!canConfirm || confirmM.isPending}
+            title={!canConfirm ? "Sólo se confirma desde borrador o rechazados" : ""}
           >
-            {submitM.isPending ? "Enviando..." : "Enviar a aprobación"}
+            {confirmM.isPending ? "Confirmando..." : "Confirmar presupuesto"}
           </Button>
         </div>
       </div>
@@ -291,11 +309,9 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
         </div>
       </div>
 
-      {saveM.isError && <div className="spacer" />}
+      {(saveM.isError || confirmM.isError) && <div className="spacer" />}
       {saveM.isError && <div style={{ color: "#d93025", fontSize: 13 }}>{saveM.error.message}</div>}
-
-      {submitM.isError && <div className="spacer" />}
-      {submitM.isError && <div style={{ color: "#d93025", fontSize: 13 }}>{submitM.error.message}</div>}
+      {confirmM.isError && <div style={{ color: "#d93025", fontSize: 13 }}>{confirmM.error.message}</div>}
     </div>
   );
 }

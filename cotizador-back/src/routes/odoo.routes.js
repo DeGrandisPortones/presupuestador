@@ -227,7 +227,7 @@ export function buildOdooRouter(odoo) {
       // calcular precio base por línea
       const productIds = [...new Set(lines.map((l) => Number(l.product_id)))];
       const products = await odoo.executeKw("product.product", "read", [productIds], {
-        fields: ["id", "name"],
+        fields: ["id", "name", "uom_id"],
       });
       const byId = new Map(products.map((p) => [p.id, p]));
 
@@ -237,28 +237,30 @@ export function buildOdooRouter(odoo) {
         const qty = Number(l.qty || 1);
         const p = byId.get(productId);
         if (!p) throw new Error(`Producto no encontrado: ${productId}`);
-    const uomId = Array.isArray(p?.uom_id) ? p.uom_id[0] : null;
-    if (!uomId) throw new Error(`Producto sin uom_id: ${productId}`);
 
-    // No calculamos precio acá: dejamos que Odoo lo compute con la pricelist del sale.order
-    orderLines.push([0, 0, {
-      product_id: productId,
-      product_uom_qty: qty,
-      product_uom: uomId,
-      name: p.name,
-    }]);
+        const uomId = Array.isArray(p?.uom_id) ? p.uom_id[0] : null;
+        if (!uomId) throw new Error(`Producto sin uom_id: ${productId}`);
+
+        // No calculamos precio acá: dejamos que Odoo lo compute con la pricelist del sale.order
+        orderLines.push([0, 0, {
+          product_id: productId,
+          product_uom_qty: qty,
+          product_uom: uomId,
+          name: p.name,
+        }]);
       }
 
       const note = isDistributorFlow
         ? buildDistributorNote({ endCustomer, extra_note: body.note || "" })
         : (body.note || false);
 
-      const orderId = await odoo.executeKw("sale.order", "create", [[{
+      // create con dict (vals) para que Odoo retorne un id (int)
+      const orderId = await odoo.executeKw("sale.order", "create", [{
         partner_id: partnerId,
         pricelist_id: pricelistId,
         order_line: orderLines,
         note,
-      }]]);
+      }]);
 
       const [order] = await odoo.executeKw("sale.order", "read", [[orderId]], {
         fields: ["id", "name", "amount_total", "partner_id", "state", "pricelist_id"],

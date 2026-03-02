@@ -3,7 +3,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { useNavigate, useParams } from "react-router-dom";
 
 import Button from "../../ui/Button.jsx";
-import { getQuote, reviewCommercial, reviewTechnical } from "../../api/quotes.js";
+import { getQuote, reviewCommercial, reviewTechnical, createRevisionQuote } from "../../api/quotes.js";
 import { reviewMeasurement } from "../../api/measurements.js";
 import { downloadMedicionPdf } from "../../api/pdf.js";
 import { useAuthStore } from "../../domain/auth/store.js";
@@ -20,6 +20,10 @@ function measurementStatusLabel(s) {
   if (s === "approved") return "Aprobada";
   if (s === "none" || !s) return "Pendiente";
   return s;
+}
+
+function hasMeasurementForPdf(q) {
+  return !!q?.measurement_form || !!q?.measurement_source_quote_id || ["submitted", "needs_fix", "approved"].includes(q?.measurement_status);
 }
 
 function decisionLabel(d) {
@@ -81,6 +85,14 @@ export default function QuoteDetailPage() {
     onSuccess: () => q.refetch(),
   });
 
+  const revisionM = useMutation({
+    mutationFn: () => createRevisionQuote(quoteId),
+    onSuccess: (newQuote) => {
+      if (!newQuote?.id) return;
+      navigate(newQuote.catalog_kind === "ipanel" ? `/cotizador/ipanel/${newQuote.id}` : `/cotizador/${newQuote.id}`);
+    },
+  });
+
   const techM = useMutation({
     mutationFn: ({ action }) => reviewTechnical(quoteId, { action, notes }),
     onSuccess: () => q.refetch(),
@@ -109,6 +121,20 @@ export default function QuoteDetailPage() {
         <h2 style={{ margin: 0 }}>
           Presupuesto #{quoteId ? String(quoteId).slice(0, 8) : "—"}
         </h2>
+
+        {quote?.original_quote_id && String(quote.original_quote_id) !== String(quote.id) && (
+          <div className="muted" style={{ marginTop: 6 }}>
+            Relacionado a:
+            <Button
+              variant="ghost"
+              style={{ marginLeft: 6 }}
+              onClick={() => navigate(`/presupuestos/${quote.original_quote_id}`)}
+              title="Abrir presupuesto original"
+            >
+              #{String(quote.original_quote_id).slice(0, 8)}
+            </Button>
+          </div>
+        )}
 
         {q.isLoading && <div className="muted">Cargando...</div>}
         {q.isError && <div style={{ color: "#d93025", fontSize: 13 }}>{q.error.message}</div>}
@@ -186,6 +212,7 @@ export default function QuoteDetailPage() {
                 <div className="muted">Cliente</div>
                 <div style={{ fontWeight: 700 }}>{quote.end_customer?.name || "(sin nombre)"}</div>
                 <div className="muted">{quote.end_customer?.phone || ""}</div>
+                <div className="muted">{quote.end_customer?.address || ""}</div>
               </div>
 
               <div style={{ flex: 1 }}>
@@ -196,6 +223,16 @@ export default function QuoteDetailPage() {
               <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
                 {quote.status === "draft" && (
                   <Button onClick={() => navigate((quote.catalog_kind || "porton")==="ipanel" ? `/cotizador/ipanel/${quote.id}` : `/cotizador/${quote.id}`)}>Editar</Button>
+                )}
+                {((user?.is_vendedor || user?.is_distribuidor) && String(quote.created_by_user_id) === String(user.user_id) && quote.status === "synced_odoo" && hasMeasurementForPdf(quote)) && (
+                  <Button
+                    variant="ghost"
+                    disabled={revisionM.isPending}
+                    onClick={() => revisionM.mutate()}
+                    title="Crear un nuevo presupuesto (ajuste) referenciado a este"
+                  >
+                    {revisionM.isPending ? "Creando…" : "Crear ajuste"}
+                  </Button>
                 )}
                 <Button variant="ghost" onClick={() => navigate("/presupuestos")}>Volver</Button>
               </div>
@@ -234,7 +271,7 @@ export default function QuoteDetailPage() {
                       </div>
                     </div>
 
-                    {quote.measurement_form && (
+                    {hasMeasurementForPdf(quote) && (
                       <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
                         <Button variant="secondary" onClick={() => downloadMedicionPdf(quote.id)}>
                           Descargar PDF
@@ -245,7 +282,7 @@ export default function QuoteDetailPage() {
 
                   <div className="spacer" />
 
-                  {!quote.measurement_form && (
+                  {!hasMeasurementForPdf(quote) && (
                     <div className="muted">Todavía no hay medición cargada.</div>
                   )}
 

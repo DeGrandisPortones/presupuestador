@@ -137,6 +137,7 @@ const rows = useMemo(() => {
                 <th>Fecha</th>
                 <th>Vendedor/Distribuidor</th>
                 <th>Cliente</th>
+                <th>Dirección</th>
                 <th>Estado</th>
                 <th></th>
               </tr>
@@ -147,6 +148,7 @@ const rows = useMemo(() => {
                   <td>{fmtDate(r.created_at)}</td>
                   <td>{createdByLabel(r)}</td>
                   <td>{r.end_customer?.name || <span className="muted">(sin nombre)</span>}</td>
+                  <td>{r.end_customer?.address || "—"}</td>
                   <td>{rowLabel(r)}</td>
                   <td className="right">
                     <Button onClick={() => navigate(`/presupuestos/${r.id}`)}>Abrir</Button>
@@ -172,6 +174,7 @@ const rows = useMemo(() => {
             <th>Fecha</th>
             <th>Vendedor/Distribuidor</th>
             <th>Cliente</th>
+            <th>Dirección</th>
             <th>Solicitud</th>
             <th>Decisiones</th>
             <th></th>
@@ -185,6 +188,7 @@ const rows = useMemo(() => {
                 <td>{fmtDate(r.acopio_to_produccion_requested_at || r.created_at)}</td>
                 <td>{createdByLabel(r)}</td>
                 <td>{r.end_customer?.name || <span className="muted">(sin nombre)</span>}</td>
+                <td>{r.end_customer?.address || "—"}</td>
                 <td>{r.acopio_to_produccion_notes || <span className="muted">(sin nota)</span>}</td>
                 <td>{acopioReqLabel(r)}</td>
                 <td className="right" style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>

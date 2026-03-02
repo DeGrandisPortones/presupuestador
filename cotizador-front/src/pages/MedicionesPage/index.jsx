@@ -7,6 +7,26 @@ import Input from "../../ui/Input.jsx";
 import { useAuthStore } from "../../domain/auth/store.js";
 import { listMeasurements } from "../../api/measurements.js";
 
+
+function fmtDate(iso) {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "—";
+  return d.toLocaleDateString("es-AR");
+}
+
+function buildWhatsappUrl(phone) {
+  const raw = (phone || "").toString();
+  let digits = raw.replace(/\D/g, "");
+  if (!digits) return null;
+
+  // Normalización rápida AR (decisión por defecto)
+  if (digits.startsWith("0")) digits = digits.slice(1);
+  if (digits.startsWith("15")) digits = digits.slice(2);
+  if (!digits.startsWith("54")) digits = `54${digits}`;
+  return `https://wa.me/${digits}`;
+}
+
 function labelMeasurementStatus(s) {
   if (s === "pending") return "Pendiente";
   if (s === "needs_fix") return "Corregir";
@@ -93,7 +113,7 @@ export default function MedicionesPage() {
           <table>
             <thead>
               <tr>
-                <th>ID</th>
+                <th>Fecha</th>
                 <th>Cliente</th>
                 <th>Dirección</th>
                 <th>Teléfono</th>
@@ -105,14 +125,24 @@ export default function MedicionesPage() {
             <tbody>
               {rows.map((r) => (
                 <tr key={r.id}>
-                  <td>#{r.id}</td>
+                  <td>{fmtDate(r.created_at)}</td>
                   <td style={{ fontWeight: 800 }}>{r.end_customer?.name || "(sin nombre)"}</td>
                   <td>{r.end_customer?.address || "—"}</td>
-                  <td>{r.end_customer?.phone || "—"}</td>
+                  <td>
+                    {(() => {
+                      const ph = r.end_customer?.phone || "";
+                      const w = buildWhatsappUrl(ph);
+                      return w ? (
+                        <a href={w} target="_blank" rel="noreferrer">{ph}</a>
+                      ) : (
+                        (ph || "—")
+                      );
+                    })()}
+                  </td>
                   <td>
                     {r.end_customer?.maps_url ? (
                       <a href={r.end_customer.maps_url} target="_blank" rel="noreferrer">
-                        Abrir
+                        📍 Abrir
                       </a>
                     ) : (
                       "—"
@@ -120,7 +150,7 @@ export default function MedicionesPage() {
                   </td>
                   <td>{labelMeasurementStatus(r.measurement_status)}</td>
                   <td className="right">
-                    <Button onClick={() => navigate(`/mediciones/${r.id}`)}>Abrir</Button>
+                    <Button onClick={() => navigate(`/mediciones/${r.id}`)}>Formulario</Button>
                   </td>
                 </tr>
               ))}

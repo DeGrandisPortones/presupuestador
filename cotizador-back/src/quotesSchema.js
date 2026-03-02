@@ -2,9 +2,28 @@ import { dbQuery } from "./db.js";
 
 let ensured = false;
 
+/**
+ * Ensures DB columns used by:
+ * - mediciones
+ * - acopio -> producción
+ * - workflow v2 (confirmación + copias)
+ */
 export async function ensureQuotesMeasurementColumns() {
   if (ensured) return;
 
+  // =========================
+  // Workflow v2: copias
+  // =========================
+  await dbQuery(`alter table public.presupuestador_quotes add column if not exists quote_kind text not null default 'original';`);
+  await dbQuery(`alter table public.presupuestador_quotes add column if not exists parent_quote_id int null;`);
+  await dbQuery(`alter table public.presupuestador_quotes add column if not exists confirmed_at timestamptz null;`);
+
+  // Monto del presupuesto confirmado (seña / a cuenta) - se usa más adelante
+  await dbQuery(`alter table public.presupuestador_quotes add column if not exists deposit_amount numeric(16,2) null;`);
+
+  // =========================
+  // Mediciones
+  // =========================
   await dbQuery(`alter table public.presupuestador_quotes add column if not exists requires_measurement boolean not null default false;`);
   await dbQuery(`alter table public.presupuestador_quotes add column if not exists measurement_status text not null default 'none';`);
   await dbQuery(`alter table public.presupuestador_quotes add column if not exists measurement_form jsonb null;`);

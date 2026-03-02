@@ -58,12 +58,13 @@ async function renderMeasurementPdf({ quote, form }) {
   doc.font("Helvetica").text(`Ancho (mm): ${safeStr(pick(form, "ancho_mm"))}`);
   doc.text(`Alto (mm): ${safeStr(pick(form, "alto_mm"))}`);
   doc.text(
-    `Parantes - Cant: ${safeStr(pick(form, "parantes.cant"))} | Izq: ${safeStr(pick(form, "parantes.izq"))} | Der: ${safeStr(pick(form, "parantes.der"))}`
-  );
+      `Parantes - Cant: ${safeStr(pick(form, "parantes.cant"))} | Puerta Izq: ${safeStr(pick(form, "parantes.puerta_izq") || pick(form, "parantes.izq"))} | Puerta Der: ${safeStr(pick(form, "parantes.puerta_der") || pick(form, "parantes.der"))} | Motor/Soporte Izq: ${safeStr(pick(form, "parantes.motor_izq"))} | Motor/Soporte Der: ${safeStr(pick(form, "parantes.motor_der"))}`
+    );
   doc.moveDown(0.8);
 
   doc.font("Helvetica-Bold").text("Colocación / Motor");
   doc.font("Helvetica").text(`Tipo colocación: ${safeStr(pick(form, "colocacion"))}`);
+  doc.text(`Colocación (otro): ${safeStr(pick(form, "colocacion_otro"))}`);
   doc.text(`Portón en acopio: ${yn(!!pick(form, "en_acopio"))}`);
   doc.text(`Lado motor/soporte: ${safeStr(pick(form, "lado_motor"))}`);
   doc.text(`Toma corriente: ${safeStr(pick(form, "toma_corriente"))}`);
@@ -79,8 +80,10 @@ async function renderMeasurementPdf({ quote, form }) {
   doc.font("Helvetica-Bold").text("Sistema");
   doc.font("Helvetica").text(`Color sistema: ${safeStr(pick(form, "color_sistema"))}`);
   doc.text(`Accionamiento: ${safeStr(pick(form, "accionamiento"))}`);
+  doc.text(`Accionamiento (otro): ${safeStr(pick(form, "accionamiento_otro"))}`);
   doc.text(`Levadizo: ${safeStr(pick(form, "levadizo"))}`);
   doc.text(`Estructura metálica: ${yn(!!pick(form, "estructura_metalica"))}`);
+  doc.text(`Detalle estructura metálica: ${safeStr(pick(form, "estructura_metalica_detalle"))}`);
   doc.moveDown(0.8);
 
   doc.font("Helvetica-Bold").text("Revestimiento");
@@ -586,11 +589,25 @@ export function buildPdfRouter() {
       const can = isOwner || !!req.user.is_medidor || !!req.user.is_enc_comercial || !!req.user.is_rev_tecnica;
       if (!can) return res.status(403).json({ ok: false, error: "No autorizado" });
 
-      if (!quote.measurement_form) {
+      let form = quote.measurement_form;
+
+      // Si es una revisión, puede heredar la medición del original (measurement_source_quote_id)
+      if (!form && quote.measurement_source_quote_id) {
+        const r2 = await dbQuery(`select measurement_form from public.presupuestador_quotes where id=$1 limit 1`, [Number(quote.measurement_source_quote_id)]);
+        form = r2.rows?.[0]?.measurement_form || null;
+      }
+
+      // Compat: si solo tiene original_quote_id
+      if (!form && quote.original_quote_id) {
+        const r3 = await dbQuery(`select measurement_form from public.presupuestador_quotes where id=$1 limit 1`, [Number(quote.original_quote_id)]);
+        form = r3.rows?.[0]?.measurement_form || null;
+      }
+
+      if (!form) {
         return res.status(400).json({ ok: false, error: "Este presupuesto todavía no tiene medición cargada" });
       }
 
-      const pdf = await renderMeasurementPdf({ quote, form: quote.measurement_form });
+      const pdf = await renderMeasurementPdf({ quote, form });
       res.setHeader("Content-Type", "application/pdf");
       res.setHeader("Content-Disposition", `attachment; filename="medicion_${id}.pdf"`);
       res.send(pdf);

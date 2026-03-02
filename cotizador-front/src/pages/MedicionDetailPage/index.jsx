@@ -15,6 +15,21 @@ function todayISO() {
   return `${y}-${m}-${day}`;
 }
 
+function normalizeMeasurementForm(raw) {
+  const f = raw && typeof raw === "object" ? { ...raw } : {};
+  const p = (f.parantes && typeof f.parantes === "object") ? { ...f.parantes } : {};
+  // Compat: versiones viejas usaban izq/der para el lado de la puerta
+  if ((p.izq || p.der) && (p.puerta_izq === undefined && p.puerta_der === undefined)) {
+    p.puerta_izq = p.izq || "";
+    p.puerta_der = p.der || "";
+  }
+  if (p.motor_izq === undefined) p.motor_izq = p.motor_izq || "";
+  if (p.motor_der === undefined) p.motor_der = p.motor_der || "";
+  if (p.cant === undefined) p.cant = p.cant || "";
+  f.parantes = p;
+  return f;
+}
+
 function makeEmptyForm(quote) {
   const createdBy = quote?.created_by_full_name || quote?.created_by_username || "";
   return {
@@ -23,8 +38,9 @@ function makeEmptyForm(quote) {
     nro_porton: "",
     ancho_mm: "",
     alto_mm: "",
-    parantes: { cant: "", izq: "", der: "" },
+    parantes: { cant: "", puerta_izq: "", puerta_der: "", motor_izq: "", motor_der: "" },
     colocacion: "", // dentro_vano | detras_vano | otro
+    colocacion_otro: "",
     en_acopio: false,
     lado_motor: "",
     toma_corriente: "",
@@ -33,9 +49,11 @@ function makeEmptyForm(quote) {
     rebaje_lateral_mm: "",
     rebaje_inferior_mm: "",
     color_sistema: "",
-    accionamiento: "", // manual | automatico
+    accionamiento: "", // manual | automatico | otro
+    accionamiento_otro: "",
     levadizo: "", // coplanar | comun
     estructura_metalica: false,
+    estructura_metalica_detalle: "",
     tipo_revestimiento: "",
     orientacion_revestimiento: "",
     material_revestimiento: "",
@@ -104,7 +122,7 @@ export default function MedicionDetailPage() {
 
   useEffect(() => {
     if (!quote) return;
-    const f = quote.measurement_form || makeEmptyForm(quote);
+    const f = quote.measurement_form ? normalizeMeasurementForm(quote.measurement_form) : makeEmptyForm(quote);
     setForm(f);
   }, [quote]);
 
@@ -117,7 +135,7 @@ export default function MedicionDetailPage() {
 
   const endCustomer = quote?.end_customer || {};
 
-  const tubosOptions = ["20x10x20", "30x15x30", "40x20x40", "50x25x50"];
+  const tubosOptions = ["20x10x20", "40x10x40", "20x20x20", "40x20x40"];
 
   const toggTubos = (t) => {
     const arr = Array.isArray(form?.tubos) ? form.tubos.slice() : [];
@@ -231,11 +249,17 @@ export default function MedicionDetailPage() {
                   <Field label="Parantes - Cant">
                     <Input value={form.parantes?.cant || ""} onChange={(v) => setForm({ ...form, parantes: { ...(form.parantes||{}), cant: v } })} style={{ width: "100%" }} />
                   </Field>
-                  <Field label="Parantes - Izq">
-                    <Input value={form.parantes?.izq || ""} onChange={(v) => setForm({ ...form, parantes: { ...(form.parantes||{}), izq: v } })} style={{ width: "100%" }} />
+                  <Field label="Puerta - Izq">
+                    <Input value={form.parantes?.puerta_izq || ""} onChange={(v) => setForm({ ...form, parantes: { ...(form.parantes||{}), puerta_izq: v } })} style={{ width: "100%" }} />
                   </Field>
-                  <Field label="Parantes - Der">
-                    <Input value={form.parantes?.der || ""} onChange={(v) => setForm({ ...form, parantes: { ...(form.parantes||{}), der: v } })} style={{ width: "100%" }} />
+                  <Field label="Puerta - Der">
+                    <Input value={form.parantes?.puerta_der || ""} onChange={(v) => setForm({ ...form, parantes: { ...(form.parantes||{}), puerta_der: v } })} style={{ width: "100%" }} />
+                  </Field>
+                  <Field label="Motor/Soporte - Izq">
+                    <Input value={form.parantes?.motor_izq || ""} onChange={(v) => setForm({ ...form, parantes: { ...(form.parantes||{}), motor_izq: v } })} style={{ width: "100%" }} />
+                  </Field>
+                  <Field label="Motor/Soporte - Der">
+                    <Input value={form.parantes?.motor_der || ""} onChange={(v) => setForm({ ...form, parantes: { ...(form.parantes||{}), motor_der: v } })} style={{ width: "100%" }} />
                   </Field>
                 </Row>
                 <div className="spacer" />
@@ -251,6 +275,9 @@ export default function MedicionDetailPage() {
                       <option value="detras_vano">Detrás del vano</option>
                       <option value="otro">Otro</option>
                     </select>
+                  </Field>
+                  <Field label="Otro (si aplica)">
+                    <Input value={form.colocacion_otro || ""} onChange={(v) => setForm({ ...form, colocacion_otro: v })} style={{ width: "100%" }} />
                   </Field>
                   <Field label="Portón en acopio">
                     <Checkbox label="Sí" checked={form.en_acopio} onChange={(v) => setForm({ ...form, en_acopio: v })} />
@@ -311,7 +338,11 @@ export default function MedicionDetailPage() {
                       <option value="">—</option>
                       <option value="manual">Manual</option>
                       <option value="automatico">Automático</option>
+                      <option value="otro">Otro</option>
                     </select>
+                  </Field>
+                  <Field label="Otro (si aplica)">
+                    <Input value={form.accionamiento_otro || ""} onChange={(v) => setForm({ ...form, accionamiento_otro: v })} style={{ width: "100%" }} />
                   </Field>
                   <Field label="Levadizo">
                     <select
@@ -331,6 +362,9 @@ export default function MedicionDetailPage() {
                 <Row>
                   <Field label="Estructura metálica">
                     <Checkbox label="Sí" checked={form.estructura_metalica} onChange={(v) => setForm({ ...form, estructura_metalica: v })} />
+                  </Field>
+                  <Field label="Detalle estructura metálica">
+                    <Input value={form.estructura_metalica_detalle || ""} onChange={(v) => setForm({ ...form, estructura_metalica_detalle: v })} style={{ width: "100%" }} />
                   </Field>
                   <Field label="Tipo revestimiento">
                     <Input value={form.tipo_revestimiento || ""} onChange={(v) => setForm({ ...form, tipo_revestimiento: v })} style={{ width: "100%" }} />

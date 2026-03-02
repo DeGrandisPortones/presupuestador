@@ -2,7 +2,8 @@ import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import Button from "../../ui/Button.jsx";
-import { listQuotes, requestProductionFromAcopio } from "../../api/quotes.js";
+import { listQuotes, requestProductionFromAcopio, createRevisionQuote } from "../../api/quotes.js";
+import { downloadMedicionPdf } from "../../api/pdf.js";
 
 function labelAcopioRequest(q) {
   const s = q?.acopio_to_produccion_status || "none";
@@ -17,6 +18,14 @@ function labelAcopioRequest(q) {
     return "Rechazado (podés reenviar)";
   }
   return "—";
+}
+
+function hasMeasurement(q) {
+  return !!q?.measurement_form || !!q?.measurement_source_quote_id || ["submitted", "needs_fix", "approved"].includes(q?.measurement_status);
+}
+
+function labelMeasuredSimple(q) {
+  return hasMeasurement(q) ? "Medido" : "Pendiente";
 }
 
 function labelMeasurementStatus(q) {
@@ -63,7 +72,7 @@ function labelStatus(q) {
 
 export default function PresupuestosPage() {
   const navigate = useNavigate();
-    const [filter, setFilter] = useState("all"); // all | saved | pending | rejected | acopio | mediciones
+    const [filter, setFilter] = useState("all"); // all | saved | pending | rejected | acopio | produccion | mediciones | medidos_odoo
   const [searchCustomer, setSearchCustomer] = useState("");
 
   const q = useQuery({
@@ -125,6 +134,14 @@ const requestProdM = useMutation({
       );
     } else if (filter === "acopio") {
       out = out.filter((x) => x.fulfillment_mode === "acopio");
+    } else if (filter === "produccion") {
+      out = out.filter((x) => x.fulfillment_mode === "produccion");
+    } else if (filter === "mediciones") {
+      // Pestaña de Medición: solo producción y portones en Odoo que requieren medición
+      out = out.filter((x) => x.fulfillment_mode === "produccion" && x.status === "synced_odoo" && x.requires_measurement === true);
+    } else if (filter === "medidos_odoo") {
+      // Medidos y ya enviados a Odoo
+      out = out.filter((x) => x.status === "synced_odoo" && x.fulfillment_mode === "produccion" && hasMeasurement(x) && x.measurement_status === "approved");
     }
 
     const sq = (searchCustomer || "").toString().trim().toLowerCase();
@@ -147,10 +164,10 @@ const requestProdM = useMutation({
           <Button variant={filter === "all" ? "primary" : "ghost"} onClick={() => setFilter("all")}>
             Todos
           </Button>
-                    <Button variant={filter === "saved" ? "primary" : "ghost"} onClick={() => setFilter("saved")}>
+          <Button variant={filter === "saved" ? "primary" : "ghost"} onClick={() => setFilter("saved")}>
             Guardados
           </Button>
-<Button variant={filter === "pending" ? "primary" : "ghost"} onClick={() => setFilter("pending")}>
+          <Button variant={filter === "pending" ? "primary" : "ghost"} onClick={() => setFilter("pending")}>
             Pendientes
           </Button>
           <Button variant={filter === "rejected" ? "primary" : "ghost"} onClick={() => setFilter("rejected")}>
@@ -159,8 +176,14 @@ const requestProdM = useMutation({
           <Button variant={filter === "acopio" ? "primary" : "ghost"} onClick={() => setFilter("acopio")}>
             Acopio
           </Button>
+          <Button variant={filter === "produccion" ? "primary" : "ghost"} onClick={() => setFilter("produccion")}>
+            Producción
+          </Button>
           <Button variant={filter === "mediciones" ? "primary" : "ghost"} onClick={() => setFilter("mediciones")}>
-            Mediciones
+            Medición
+          </Button>
+          <Button variant={filter === "medidos_odoo" ? "primary" : "ghost"} onClick={() => setFilter("medidos_odoo")}>
+            Medidos · Odoo
           </Button>
         </div>
 
@@ -187,9 +210,11 @@ const requestProdM = useMutation({
       <tr>
         <th>Fecha</th>
         <th>Cliente</th>
+        <th>Dirección</th>
         <th>Estado</th>
         {filter === "pending" ? <th>Pendiente</th> : null}
         {filter === "mediciones" ? <th>Medición</th> : null}
+        {(filter === "mediciones" || filter === "medidos_odoo") ? <th>PDF</th> : null}
         <th>Destino</th>
         <th></th>
       </tr>
@@ -199,12 +224,38 @@ const requestProdM = useMutation({
         <tr key={r.id}>
           <td>{fmtDate(r.created_at)}</td>
           <td>{r.end_customer?.name || <span className="muted">(sin nombre)</span>}</td>
+          <td>{r.end_customer?.address || "—"}</td>
           <td>{labelStatus(r)}</td>
           {filter === "pending" ? <td>{labelPendingWho(r)}</td> : null}
-          {filter === "mediciones" ? <td>{labelMeasurementStatus(r)}</td> : null}
+          {filter === "mediciones" ? <td>{labelMeasuredSimple(r)}</td> : null}
+          {(filter === "mediciones" || filter === "medidos_odoo") ? (
+            <td>
+              {hasMeasurement(r) ? (
+                <Button variant="ghost" title="Descargar PDF" onClick={() => downloadMedicionPdf(r.id)}>📄</Button>
+              ) : (
+                <span className="muted">—</span>
+              )}
+            </td>
+          ) : null}
           <td>{r.fulfillment_mode === "acopio" ? "Acopio" : "Producción"}</td>
           <td className="right" style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
             <Button variant="ghost" onClick={() => navigate(`/presupuestos/${r.id}`)}>Ver</Button>
+            {(filter === "mediciones" || filter === "medidos_odoo") && hasMeasurement(r) ? (
+              <Button
+                variant="ghost"
+                title="Crear ajuste (nuevo presupuesto referenciado)"
+                onClick={async () => {
+                  try {
+                    const nq = await createRevisionQuote(r.id);
+                    navigate(nq.catalog_kind === "ipanel" ? `/cotizador/ipanel/${nq.id}` : `/cotizador/${nq.id}`);
+                  } catch (e) {
+                    window.alert(e?.message || "No se pudo crear el ajuste");
+                  }
+                }}
+              >
+                Ajuste
+              </Button>
+            ) : null}
             {r.status === "draft" && (
               <Button onClick={() => navigate(r.catalog_kind === "ipanel" ? `/cotizador/ipanel/${r.id}` : `/cotizador/${r.id}`)}>Editar</Button>
             )}
@@ -221,6 +272,7 @@ const requestProdM = useMutation({
       <tr>
         <th>Fecha</th>
         <th>Cliente</th>
+        <th>Dirección</th>
         <th>Estado</th>
         <th>Solicitud</th>
         <th></th>
@@ -234,10 +286,27 @@ const requestProdM = useMutation({
           <tr key={r.id}>
             <td>{fmtDate(r.created_at)}</td>
             <td>{r.end_customer?.name || <span className="muted">(sin nombre)</span>}</td>
+            <td>{r.end_customer?.address || "—"}</td>
             <td>{labelStatus(r)}</td>
             <td>{labelAcopioRequest(r)}</td>
             <td className="right" style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
               <Button variant="ghost" onClick={() => navigate(`/presupuestos/${r.id}`)}>Ver</Button>
+            {(filter === "mediciones" || filter === "medidos_odoo") && hasMeasurement(r) ? (
+              <Button
+                variant="ghost"
+                title="Crear ajuste (nuevo presupuesto referenciado)"
+                onClick={async () => {
+                  try {
+                    const nq = await createRevisionQuote(r.id);
+                    navigate(nq.catalog_kind === "ipanel" ? `/cotizador/ipanel/${nq.id}` : `/cotizador/${nq.id}`);
+                  } catch (e) {
+                    window.alert(e?.message || "No se pudo crear el ajuste");
+                  }
+                }}
+              >
+                Ajuste
+              </Button>
+            ) : null}
               {r.status === "draft" && (
                 <Button variant="ghost" onClick={() => navigate(r.catalog_kind === "ipanel" ? `/cotizador/ipanel/${r.id}` : `/cotizador/${r.id}`)}>Editar</Button>
               )}

@@ -27,11 +27,18 @@ export async function updateQuote(id, payload) {
   return data.quote;
 }
 
-export async function submitQuote(id) {
-  const { data } = await http.post(`/api/quotes/${id}/submit`);
-  if (!data?.ok) throw new Error(data?.error || "No se pudo enviar a aprobación");
+/**
+ * Confirmar presupuesto (antes: submit).
+ * El back sigue exponiendo POST /api/quotes/:id/submit pero ahora acepta fulfillment_mode.
+ */
+export async function confirmQuote(id, { fulfillment_mode } = {}) {
+  const { data } = await http.post(`/api/quotes/${id}/submit`, { fulfillment_mode });
+  if (!data?.ok) throw new Error(data?.error || "No se pudo confirmar el presupuesto");
   return data.quote;
 }
+
+// Backwards compat
+export const submitQuote = confirmQuote;
 
 export async function reviewCommercial(id, { action, notes }) {
   const { data } = await http.post(`/api/quotes/${id}/review/commercial`, { action, notes });
