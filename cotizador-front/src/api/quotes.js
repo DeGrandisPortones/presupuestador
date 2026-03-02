@@ -1,5 +1,12 @@
 import { http } from "./http.js";
 
+/**
+ * Quotes API (Front)
+ * ------------------------------------------------------------
+ * Nota: algunos nombres son aliases para mantener compatibilidad
+ * con pantallas nuevas/viejas durante la transición del flujo.
+ */
+
 export async function listQuotes({ scope = "mine" } = {}) {
   const params = new URLSearchParams();
   params.set("scope", scope);
@@ -28,21 +35,33 @@ export async function updateQuote(id, payload) {
 }
 
 /**
- * ✅ Nuevo nombre funcional: "Confirmar presupuesto".
- * Por compatibilidad, hoy apunta al mismo endpoint que submitQuote (/:id/submit).
- * Si más adelante agregamos /:id/confirm en el backend, podemos cambiarlo acá sin tocar la UI.
+ * Legacy: "Enviar a aprobación"
+ * (en el flujo nuevo se usa "Confirmar presupuesto")
  */
-export async function confirmQuote(id) {
-  const { data } = await http.post(`/api/quotes/${id}/submit`);
-  if (!data?.ok) throw new Error(data?.error || "No se pudo confirmar el presupuesto");
-  return data.quote;
-}
-
-// Compat legado (UI vieja / integraciones)
 export async function submitQuote(id) {
   const { data } = await http.post(`/api/quotes/${id}/submit`);
   if (!data?.ok) throw new Error(data?.error || "No se pudo enviar a aprobación");
   return data.quote;
+}
+
+/**
+ * Nuevo nombre: "Confirmar presupuesto"
+ * - Preferimos /confirm si existe en el back
+ * - Fallback a /submit para compatibilidad
+ */
+export async function confirmQuote(id) {
+  try {
+    const { data } = await http.post(`/api/quotes/${id}/confirm`);
+    if (!data?.ok) throw new Error(data?.error || "No se pudo confirmar el presupuesto");
+    return data.quote;
+  } catch (e) {
+    const msg = String(e?.message || "").toLowerCase();
+    // Fallback típico cuando el back aún no tiene /confirm
+    if (msg.includes("not found") || msg.includes("404") || msg.includes("cannot post")) {
+      return await submitQuote(id);
+    }
+    throw e;
+  }
 }
 
 export async function reviewCommercial(id, { action, notes }) {
@@ -57,10 +76,33 @@ export async function reviewTechnical(id, { action, notes }) {
   return data; // { ok, quote, order? }
 }
 
+/**
+ * Solicitar pasar un portón en Acopio a Producción
+ * (flujo existente en el back: /acopio/request_production)
+ */
 export async function requestProductionFromAcopio(id, { notes } = {}) {
   const { data } = await http.post(`/api/quotes/${id}/acopio/request_production`, { notes });
   if (!data?.ok) throw new Error(data?.error || "No se pudo solicitar cambio a Producción");
   return data.quote;
+}
+
+/**
+ * Alias usado por algunas pantallas: moveToProduccion
+ * - Preferimos /move_to_produccion si existiera
+ * - Fallback a /acopio/request_production (implementado en back)
+ */
+export async function moveToProduccion(id, { notes } = {}) {
+  try {
+    const { data } = await http.post(`/api/quotes/${id}/move_to_produccion`, { notes });
+    if (!data?.ok) throw new Error(data?.error || "No se pudo mover a Producción");
+    return data.quote;
+  } catch (e) {
+    const msg = String(e?.message || "").toLowerCase();
+    if (msg.includes("not found") || msg.includes("404") || msg.includes("cannot post")) {
+      return await requestProductionFromAcopio(id, { notes });
+    }
+    throw e;
+  }
 }
 
 export async function reviewAcopioCommercial(id, { action, notes } = {}) {
@@ -77,7 +119,6 @@ export async function reviewAcopioTechnical(id, { action, notes } = {}) {
 
 /**
  * Crea una copia/revisión del presupuesto (para ajustes o para el flujo Acopio→Producción).
- * Si el backend todavía no implementa el endpoint, este llamado fallará solo si el usuario lo ejecuta.
  */
 export async function createRevisionQuote(id) {
   const { data } = await http.post(`/api/quotes/${id}/revision`);
