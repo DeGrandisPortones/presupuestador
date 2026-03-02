@@ -484,6 +484,30 @@ export function buildQuotesRouter(odoo) {
     } catch (e) { next(e); }
   });
 
+  // Crear una COPIA manual (ajuste) del presupuesto.
+  // Devuelve una quote_kind='copy' referenciada al original (parent_quote_id).
+  router.post("/:id/revision", requireSellerOrDistributor, async (req, res, next) => {
+    try {
+      const u = req.user;
+      const id = req.params.id;
+
+      const r = await dbQuery(`select * from public.presupuestador_quotes where id=$1`, [id]);
+      const quote = r.rows?.[0];
+      if (!quote) throw new Error("Quote no encontrado");
+      if (String(quote.created_by_user_id) !== String(u.user_id)) throw new Error("No sos dueño");
+
+      // Solo desde originales (evitamos copiar copias)
+      if ((quote.quote_kind || "original") !== "original") {
+        return res.status(400).json({ ok: false, error: "Solo se puede crear ajuste desde un presupuesto original" });
+      }
+
+      const copy = await createEditCopyFromQuote(Number(id));
+      if (!copy) throw new Error("No se pudo crear la copia");
+
+      res.json({ ok: true, quote: copy });
+    } catch (e) { next(e); }
+  });
+
   // =========================
   // Editar draft (solo owner)
   // =========================

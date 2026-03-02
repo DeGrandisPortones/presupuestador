@@ -27,22 +27,9 @@ export async function updateQuote(id, payload) {
   return data.quote;
 }
 
-/**
- * Confirmar presupuesto (antes: submit).
- * El back sigue exponiendo POST /api/quotes/:id/submit pero ahora acepta fulfillment_mode.
- */
-export async function confirmQuote(id, { fulfillment_mode } = {}) {
-  const { data } = await http.post(`/api/quotes/${id}/submit`, { fulfillment_mode });
-  if (!data?.ok) throw new Error(data?.error || "No se pudo confirmar el presupuesto");
-  return data.quote;
-}
-
-// Backwards compat
-export const submitQuote = confirmQuote;
-
-export async function moveToProduccion(id) {
-  const { data } = await http.post(`/api/quotes/${id}/move_to_produccion`);
-  if (!data?.ok) throw new Error(data?.error || "No se pudo pasar a Producción");
+export async function submitQuote(id) {
+  const { data } = await http.post(`/api/quotes/${id}/submit`);
+  if (!data?.ok) throw new Error(data?.error || "No se pudo enviar a aprobación");
   return data.quote;
 }
 
@@ -73,5 +60,15 @@ export async function reviewAcopioCommercial(id, { action, notes } = {}) {
 export async function reviewAcopioTechnical(id, { action, notes } = {}) {
   const { data } = await http.post(`/api/quotes/${id}/acopio/review/technical`, { action, notes });
   if (!data?.ok) throw new Error(data?.error || "No se pudo revisar solicitud Acopio→Producción (Técnica)");
+  return data.quote;
+}
+
+/**
+ * Crea una copia/revisión del presupuesto (para ajustes o para el flujo Acopio→Producción).
+ * Si el backend todavía no implementa el endpoint, este llamado fallará solo si el usuario lo ejecuta.
+ */
+export async function createRevisionQuote(id) {
+  const { data } = await http.post(`/api/quotes/${id}/revision`);
+  if (!data?.ok) throw new Error(data?.error || "No se pudo crear el ajuste");
   return data.quote;
 }

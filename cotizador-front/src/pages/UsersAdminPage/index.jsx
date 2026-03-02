@@ -103,7 +103,6 @@ export default function UsersAdminPage() {
         is_vendedor: fIsVendedor,
         is_distribuidor: fIsDistribuidor,
         is_medidor: fIsMedidor,
-        is_medidor: fIsMedidor,
         odoo_partner_id: fOdooPartnerId ? Number(fOdooPartnerId) : null,
         default_maps_url: fDefaultMapsUrl ? String(fDefaultMapsUrl) : null,
         is_active: fIsActive,
