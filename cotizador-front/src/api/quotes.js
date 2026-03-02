@@ -27,6 +27,18 @@ export async function updateQuote(id, payload) {
   return data.quote;
 }
 
+/**
+ * ✅ Nuevo nombre funcional: "Confirmar presupuesto".
+ * Por compatibilidad, hoy apunta al mismo endpoint que submitQuote (/:id/submit).
+ * Si más adelante agregamos /:id/confirm en el backend, podemos cambiarlo acá sin tocar la UI.
+ */
+export async function confirmQuote(id) {
+  const { data } = await http.post(`/api/quotes/${id}/submit`);
+  if (!data?.ok) throw new Error(data?.error || "No se pudo confirmar el presupuesto");
+  return data.quote;
+}
+
+// Compat legado (UI vieja / integraciones)
 export async function submitQuote(id) {
   const { data } = await http.post(`/api/quotes/${id}/submit`);
   if (!data?.ok) throw new Error(data?.error || "No se pudo enviar a aprobación");
