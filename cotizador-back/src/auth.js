@@ -12,10 +12,10 @@ export function signToken(user) {
     is_enc_comercial: !!user.is_enc_comercial,
     is_rev_tecnica: !!user.is_rev_tecnica,
     is_medidor: !!user.is_medidor,
+    is_logistica: !!user.is_logistica,
 
     odoo_partner_id: user.odoo_partner_id ?? null,
 
-    // no es crítico que viaje en token, pero ayuda en front
     full_name: user.full_name ?? null,
     default_maps_url: user.default_maps_url ?? null,
   };
@@ -26,7 +26,6 @@ export function signToken(user) {
 }
 
 // Refresca roles/partner desde DB para evitar tokens viejos.
-// Además, si el usuario está inhabilitado (is_active=false), corta el acceso.
 export async function requireAuth(req, res, next) {
   const h = req.headers.authorization || "";
   const m = h.match(/^Bearer\s+(.+)$/i);
@@ -35,11 +34,10 @@ export async function requireAuth(req, res, next) {
   try {
     const decoded = jwt.verify(m[1], process.env.JWT_SECRET);
 
-    // Aseguramos columnas (por si todavía no están)
     try {
       await ensureUsersAdminColumns();
     } catch {
-      // si falla, seguimos sin bloquear (fallback)
+      // ignore
     }
 
     let fresh = null;
@@ -48,7 +46,7 @@ export async function requireAuth(req, res, next) {
         `
         select id, username, full_name,
                is_distribuidor, is_vendedor,
-               is_enc_comercial, is_rev_tecnica, is_medidor,
+               is_enc_comercial, is_rev_tecnica, is_medidor, is_logistica,
                odoo_partner_id,
                default_maps_url,
                coalesce(is_active, true) as is_active
@@ -74,6 +72,7 @@ export async function requireAuth(req, res, next) {
           is_enc_comercial: !!fresh.is_enc_comercial,
           is_rev_tecnica: !!fresh.is_rev_tecnica,
           is_medidor: !!fresh.is_medidor,
+          is_logistica: !!fresh.is_logistica,
           odoo_partner_id: fresh.odoo_partner_id ?? null,
           default_maps_url: fresh.default_maps_url ?? null,
           is_active: !!fresh.is_active,
@@ -86,7 +85,7 @@ export async function requireAuth(req, res, next) {
 
     req.user = u;
     next();
-  } catch (e) {
+  } catch {
     return res.status(401).json({ ok: false, error: "Token inválido/expirado" });
   }
 }

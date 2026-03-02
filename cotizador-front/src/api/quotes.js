@@ -40,6 +40,12 @@ export async function confirmQuote(id, { fulfillment_mode } = {}) {
 // Backwards compat
 export const submitQuote = confirmQuote;
 
+export async function moveToProduccion(id) {
+  const { data } = await http.post(`/api/quotes/${id}/move_to_produccion`);
+  if (!data?.ok) throw new Error(data?.error || "No se pudo pasar a Producción");
+  return data.quote;
+}
+
 export async function reviewCommercial(id, { action, notes }) {
   const { data } = await http.post(`/api/quotes/${id}/review/commercial`, { action, notes });
   if (!data?.ok) throw new Error(data?.error || "No se pudo registrar revisión comercial");

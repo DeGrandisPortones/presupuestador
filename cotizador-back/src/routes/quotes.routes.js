@@ -3,6 +3,13 @@ import { requireAuth } from "../auth.js";
 import { dbQuery } from "../db.js";
 import { ensureQuotesMeasurementColumns } from "../quotesSchema.js";
 
+// =========================
+// Config
+// =========================
+const MEASUREMENT_PRODUCT_ID = 2961; // SERVICIO DE MEDICION Y RELEVAMIENTO
+const PLACEHOLDER_PRODUCT_ID = 3070; // Cajas Navideñas (placeholder)
+const IVA_RATE = 0.21;
+
 /** RBAC */
 function requireRole(flag) {
   return (req, res, next) => {
@@ -99,42 +106,29 @@ async function syncQuoteToOdoo({ odoo, quote, approverUser }) {
     partnerId = await findOrCreateCustomerPartner(odoo, quote.end_customer || {});
   }
 
-  // ⚠️ En la etapa actual mantenemos el detalle completo (se ajustará luego a “tipo de portón” + descuento).
-  const lines = Array.isArray(quote.lines) ? quote.lines : [];
-  if (!lines.length) throw new Error("Faltan lines[]");
+  // ✅ NUEVO: la venta inicial a Odoo NO manda detalle.
+  // Mandamos 1 línea placeholder con el TOTAL (IVA incluido) como seña/a-cuenta.
+  const total = calcQuoteTotalWithIva({ lines: quote.lines, payload: quote.payload });
 
-  const productIds = [...new Set(lines.map((l) => Number(l.product_id)))];
-  const products = await odoo.executeKw("product.product", "read", [productIds], { fields: ["id", "name", "uom_id"] });
-  const byId = new Map(products.map((p) => [p.id, p]));
+  const [ph] = await odoo.executeKw(
+    "product.product",
+    "read",
+    [[Number(PLACEHOLDER_PRODUCT_ID)]],
+    { fields: ["id", "name", "uom_id"] }
+  );
+  if (!ph?.id) throw new Error(`Producto placeholder no encontrado en Odoo: ${PLACEHOLDER_PRODUCT_ID}`);
+  const uomId = Array.isArray(ph?.uom_id) ? ph.uom_id[0] : null;
+  if (!uomId) throw new Error(`Producto placeholder sin uom_id: ${PLACEHOLDER_PRODUCT_ID}`);
 
-  const orderLines = [];
-  for (const l of lines) {
-    const productId = Number(l.product_id);
-    const qty = Number(l.qty || 1);
-    const p = byId.get(productId);
-    if (!p) throw new Error(`Producto no encontrado: ${productId}`);
-    const uomId = Array.isArray(p?.uom_id) ? p.uom_id[0] : null;
-    if (!uomId) throw new Error(`Producto sin uom_id: ${productId}`);
-
-    const maybePrice =
-      (typeof l.price_unit === "number" ? l.price_unit :
-      (typeof l.unit_price === "number" ? l.unit_price :
-      (typeof l.price === "number" ? l.price :
-      (typeof l.basePrice === "number" ? l.basePrice :
-      (typeof l.base_price === "number" ? l.base_price : null)))));
-
-    const lineVals = {
-      product_id: productId,
-      product_uom_qty: qty,
+  const orderLines = [
+    [0, 0, {
+      product_id: Number(PLACEHOLDER_PRODUCT_ID),
+      product_uom_qty: 1,
       product_uom: uomId,
-      name: p.name,
-    };
-    if (maybePrice !== null && Number.isFinite(maybePrice)) {
-      lineVals.price_unit = round2(maybePrice);
-    }
-
-    orderLines.push([0, 0, lineVals]);
-  }
+      name: ph.name,
+      price_unit: round2(total),
+    }],
+  ];
 
   const note = quote.created_by_role === "distribuidor"
     ? buildDistributorNote({ quote })
@@ -153,7 +147,7 @@ async function syncQuoteToOdoo({ odoo, quote, approverUser }) {
     fields: ["id", "name", "amount_total", "partner_id", "state", "pricelist_id"],
   });
 
-  return order;
+  return { order, deposit_amount: round2(total) };
 }
 
 /**
@@ -226,6 +220,13 @@ function validateEndCustomerRequired(end_customer) {
   return null;
 }
 
+function validateEndCustomerDraft(end_customer) {
+  const c = end_customer || {};
+  const name = String(c.name || "").trim();
+  if (!name) return "Falta end_customer.name";
+  return null;
+}
+
 function validateBusinessRequired(payload, catalog_kind) {
   const p = payload || {};
   const cond = String(p.condition_mode || "").trim();
@@ -239,6 +240,26 @@ function validateBusinessRequired(payload, catalog_kind) {
   const kind = String(catalog_kind || "porton").toLowerCase().trim();
   if (kind === "porton" && !portonType) return "Falta payload.porton_type";
   return null;
+}
+
+function hasMeasurementLine(lines) {
+  const arr = Array.isArray(lines) ? lines : [];
+  return arr.some((l) => Number(l?.product_id) === MEASUREMENT_PRODUCT_ID);
+}
+
+function calcQuoteTotalWithIva({ lines, payload }) {
+  const arr = Array.isArray(lines) ? lines : [];
+  const m = Number(payload?.margin_percent_ui || 0) || 0;
+  const subtotal = round2(
+    arr.reduce((acc, l) => {
+      const qty = Number(l?.qty || 0) || 0;
+      const base = Number(l?.basePrice ?? l?.base_price ?? l?.price ?? 0) || 0;
+      const unit = base * (1 + m / 100);
+      return acc + qty * unit;
+    }, 0)
+  );
+  const iva = round2(subtotal * IVA_RATE);
+  return round2(subtotal + iva);
 }
 
 async function createEditCopyFromQuote(parentId) {
@@ -323,11 +344,13 @@ export function buildQuotesRouter(odoo) {
           (quote_kind, parent_quote_id,
            created_by_user_id, created_by_role, fulfillment_mode, pricelist_id, bill_to_odoo_partner_id,
            end_customer, lines, payload, note,
-           catalog_kind, status, commercial_decision, technical_decision)
+           catalog_kind, status, commercial_decision, technical_decision,
+           requires_measurement)
         values
           ('original', null,
            $1, $2, $3, $4, $5, $6::jsonb, $7::jsonb, $8::jsonb, $9,
-           $10, 'draft', 'pending', 'pending')
+           $10, 'draft', 'pending', 'pending',
+           $11)
         returning *
         `,
         [
@@ -341,6 +364,7 @@ export function buildQuotesRouter(odoo) {
           JSON.stringify(payload),
           note,
           catalog_kind,
+          hasMeasurementLine(lines),
         ]
       );
 
@@ -501,7 +525,8 @@ export function buildQuotesRouter(odoo) {
             lines=$6::jsonb,
             payload=$7::jsonb,
             note=$8,
-            catalog_kind=$9
+            catalog_kind=$9,
+            requires_measurement=$10
         where id=$1
         returning *
         `,
@@ -515,6 +540,7 @@ export function buildQuotesRouter(odoo) {
           JSON.stringify(body.payload !== undefined ? body.payload : quote.payload),
           body.note !== undefined ? body.note : quote.note,
           catalog_kind,
+          hasMeasurementLine(body.lines !== undefined ? body.lines : quote.lines),
         ]
       );
 
@@ -564,12 +590,17 @@ export function buildQuotesRouter(odoo) {
       const commercial_decision = isDistributor ? "approved" : "pending";
       const technical_decision = "pending";
 
+      const reqMeas = hasMeasurementLine(quote.lines);
+      const nextMeasStatus = (fm === "produccion" && reqMeas) ? "pending" : "none";
+
       const upd = await dbQuery(
         `
         update public.presupuestador_quotes
         set status=$2,
             fulfillment_mode=$3,
             confirmed_at = now(),
+            requires_measurement=$6,
+            measurement_status=$7,
             commercial_decision=$4,
             technical_decision=$5,
             commercial_by_user_id=null,
@@ -582,7 +613,7 @@ export function buildQuotesRouter(odoo) {
         where id=$1
         returning *
         `,
-        [id, status, fm, commercial_decision, technical_decision]
+        [id, status, fm, commercial_decision, technical_decision, reqMeas, nextMeasStatus]
       );
 
       const confirmed = upd.rows?.[0] || quote;
@@ -681,7 +712,7 @@ export function buildQuotesRouter(odoo) {
       }
 
       try {
-        const order = await syncQuoteToOdoo({ odoo, quote: qSync, approverUser: u });
+        const { order, deposit_amount } = await syncQuoteToOdoo({ odoo, quote: qSync, approverUser: u });
 
         const upd2 = await dbQuery(
           `
@@ -689,18 +720,17 @@ export function buildQuotesRouter(odoo) {
           set status='synced_odoo',
               odoo_sale_order_id=$2,
               odoo_sale_order_name=$3,
-              requires_measurement = case
-                when catalog_kind='porton' and fulfillment_mode='produccion' then true
-                else requires_measurement
-              end,
+              deposit_sale_order_id=$2,
+              deposit_sale_order_name=$3,
+              deposit_amount=$4,
               measurement_status = case
-                when catalog_kind='porton' and fulfillment_mode='produccion' and (measurement_status is null or measurement_status='none') then 'pending'
+                when fulfillment_mode='produccion' and requires_measurement = true and (measurement_status is null or measurement_status='none') then 'pending'
                 else measurement_status
               end
           where id=$1 and status='syncing_odoo'
           returning *
           `,
-          [id, Number(order.id), order.name]
+          [id, Number(order.id), order.name, deposit_amount]
         );
 
         const finalQuote = upd2.rows?.[0] || (await dbQuery(`select * from public.presupuestador_quotes where id=$1`, [id])).rows?.[0];
@@ -798,7 +828,7 @@ export function buildQuotesRouter(odoo) {
       }
 
       try {
-        const order = await syncQuoteToOdoo({ odoo, quote: qSync, approverUser: u });
+        const { order, deposit_amount } = await syncQuoteToOdoo({ odoo, quote: qSync, approverUser: u });
 
         const upd2 = await dbQuery(
           `
@@ -806,18 +836,17 @@ export function buildQuotesRouter(odoo) {
           set status='synced_odoo',
               odoo_sale_order_id=$2,
               odoo_sale_order_name=$3,
-              requires_measurement = case
-                when catalog_kind='porton' and fulfillment_mode='produccion' then true
-                else requires_measurement
-              end,
+              deposit_sale_order_id=$2,
+              deposit_sale_order_name=$3,
+              deposit_amount=$4,
               measurement_status = case
-                when catalog_kind='porton' and fulfillment_mode='produccion' and (measurement_status is null or measurement_status='none') then 'pending'
+                when fulfillment_mode='produccion' and requires_measurement = true and (measurement_status is null or measurement_status='none') then 'pending'
                 else measurement_status
               end
           where id=$1 and status='syncing_odoo'
           returning *
           `,
-          [id, Number(order.id), order.name]
+          [id, Number(order.id), order.name, deposit_amount]
         );
 
         const finalQuote = upd2.rows?.[0] || (await dbQuery(`select * from public.presupuestador_quotes where id=$1`, [id])).rows?.[0];
@@ -1024,6 +1053,269 @@ export function buildQuotesRouter(odoo) {
       return res.json({ ok: true, quote: qFinal || q1 });
     } catch (e) { next(e); }
   });
+
+// ============================================================
+// NUEVO: ACOPIO -> PRODUCCIÓN (SIN aprobaciones intermedias)
+// (para el flujo nuevo: al confirmar en Producción se considera "ya pasado")
+// ============================================================
+router.post("/:id/move_to_produccion", requireSellerOrDistributor, async (req, res, next) => {
+  try {
+    const u = req.user;
+    const id = Number(req.params.id);
+    if (!id) return res.status(400).json({ ok: false, error: "id inválido" });
+
+    const cur = await dbQuery(`select * from public.presupuestador_quotes where id=$1 limit 1`, [id]);
+    const quote = cur.rows?.[0];
+    if (!quote) return res.status(404).json({ ok: false, error: "Presupuesto no encontrado" });
+    if (String(quote.created_by_user_id) !== String(u.user_id)) return res.status(403).json({ ok: false, error: "No sos dueño" });
+    if (quote.fulfillment_mode !== "acopio") return res.status(400).json({ ok: false, error: "Solo aplica a portones en acopio" });
+
+    const nextMeas = quote.requires_measurement === true;
+    const nextMeasStatus = nextMeas ? "pending" : "none";
+
+    const upd = await dbQuery(
+      `
+      update public.presupuestador_quotes
+      set fulfillment_mode='produccion',
+          measurement_status=$2
+      where id=$1
+      returning *
+      `,
+      [id, nextMeasStatus]
+    );
+
+    return res.json({ ok: true, quote: upd.rows?.[0] || null });
+  } catch (e) { next(e); }
+});
+
+// ============================================================
+// NUEVO: Aprobaciones finales + envío FINAL a Odoo
+// Se ejecuta sobre la COPIA (quote_kind='copy')
+// ============================================================
+
+async function syncFinalQuoteToOdoo({ odoo, revisionQuote, originalQuote, approverUser }) {
+  const pricelistId = Number(revisionQuote.pricelist_id || originalQuote.pricelist_id || 1);
+
+  // partner destino (mismas reglas que depósito)
+  let partnerId = null;
+  if (originalQuote.created_by_role === "distribuidor") {
+    partnerId = originalQuote.bill_to_odoo_partner_id || await getCreatorOdooPartnerId(originalQuote.created_by_user_id) || approverUser.odoo_partner_id;
+    if (!partnerId) throw new Error("Distribuidor sin partner en Odoo");
+  } else {
+    partnerId = await findOrCreateCustomerPartner(odoo, originalQuote.end_customer || {});
+  }
+
+  const lines = Array.isArray(revisionQuote.lines) ? revisionQuote.lines : [];
+  if (!lines.length) throw new Error("La copia no tiene items");
+
+  const productIds = [...new Set(lines.map((l) => Number(l.product_id)).concat([Number(PLACEHOLDER_PRODUCT_ID)]))];
+  const products = await odoo.executeKw("product.product", "read", [productIds], { fields: ["id", "name", "uom_id"] });
+  const byId = new Map(products.map((p) => [p.id, p]));
+
+  const orderLines = [];
+  for (const l of lines) {
+    const productId = Number(l.product_id);
+    const qty = Number(l.qty || 1);
+    const p = byId.get(productId);
+    if (!p) throw new Error(`Producto no encontrado: ${productId}`);
+    const uomId = Array.isArray(p?.uom_id) ? p.uom_id[0] : null;
+    if (!uomId) throw new Error(`Producto sin uom_id: ${productId}`);
+
+    const maybePrice =
+      (typeof l.price_unit === "number" ? l.price_unit :
+      (typeof l.unit_price === "number" ? l.unit_price :
+      (typeof l.price === "number" ? l.price :
+      (typeof l.basePrice === "number" ? l.basePrice :
+      (typeof l.base_price === "number" ? l.base_price : null)))));
+
+    const lineVals = {
+      product_id: productId,
+      product_uom_qty: qty,
+      product_uom: uomId,
+      name: p.name,
+    };
+    if (maybePrice !== null && Number.isFinite(maybePrice)) {
+      lineVals.price_unit = round2(maybePrice);
+    }
+    orderLines.push([0, 0, lineVals]);
+  }
+
+  const dep = Number(originalQuote.deposit_amount || 0) || 0;
+  if (dep > 0) {
+    const ph = byId.get(Number(PLACEHOLDER_PRODUCT_ID));
+    const uomId = Array.isArray(ph?.uom_id) ? ph.uom_id[0] : null;
+    orderLines.push([0, 0, {
+      product_id: Number(PLACEHOLDER_PRODUCT_ID),
+      product_uom_qty: 1,
+      product_uom: uomId,
+      name: `Descuento seña (Quote ${originalQuote.id})`,
+      price_unit: round2(-dep),
+    }]);
+  }
+
+  const note = `PRESUPUESTADOR FINAL: COPY ${revisionQuote.id} (ORIG ${originalQuote.id})`
+    + `\nReferencia seña: ${originalQuote.deposit_sale_order_name || originalQuote.odoo_sale_order_name || originalQuote.deposit_sale_order_id || originalQuote.odoo_sale_order_id || "—"}`;
+
+  const orderId = await odoo.executeKw("sale.order", "create", [[{
+    partner_id: Number(partnerId),
+    pricelist_id: pricelistId,
+    order_line: orderLines,
+    note,
+  }]]);
+
+  const [order] = await odoo.executeKw("sale.order", "read", [[orderId]], {
+    fields: ["id", "name", "amount_total", "partner_id", "state", "pricelist_id"],
+  });
+
+  return order;
+}
+
+router.post("/:id/final/submit", requireSellerOrDistributor, async (req, res, next) => {
+  try {
+    const u = req.user;
+    const id = Number(req.params.id);
+    if (!id) return res.status(400).json({ ok: false, error: "id inválido" });
+
+    const cur = await dbQuery(`select * from public.presupuestador_quotes where id=$1 limit 1`, [id]);
+    const q = cur.rows?.[0];
+    if (!q) return res.status(404).json({ ok: false, error: "Presupuesto no encontrado" });
+    if (q.quote_kind !== 'copy') return res.status(400).json({ ok: false, error: "final/submit solo aplica a la COPIA" });
+    if (String(q.created_by_user_id) !== String(u.user_id)) return res.status(403).json({ ok: false, error: "No sos dueño" });
+
+    const parentId = Number(q.parent_quote_id);
+    if (!parentId) return res.status(400).json({ ok: false, error: "La copia no tiene parent_quote_id" });
+    const pr = await dbQuery(`select * from public.presupuestador_quotes where id=$1 limit 1`, [parentId]);
+    const orig = pr.rows?.[0];
+    if (!orig) return res.status(400).json({ ok: false, error: "No se encontró el original" });
+    if (!orig.deposit_sale_order_id && !orig.odoo_sale_order_id) return res.status(409).json({ ok: false, error: "El original todavía no fue enviado a Odoo" });
+
+    if (orig.requires_measurement === true && orig.measurement_status !== 'approved') {
+      return res.status(409).json({ ok: false, error: "Primero debe estar aprobada la medición" });
+    }
+
+    const logDecision = (orig.requires_measurement === true) ? 'pending' : 'approved';
+
+    const upd = await dbQuery(
+      `
+      update public.presupuestador_quotes
+      set final_status='pending_approvals',
+          final_technical_decision='pending',
+          final_logistics_decision=$2,
+          final_technical_notes=null,
+          final_logistics_notes=null
+      where id=$1
+      returning *
+      `,
+      [id, logDecision]
+    );
+    return res.json({ ok: true, quote: upd.rows?.[0] || null });
+  } catch (e) { next(e); }
+});
+
+router.post("/:id/final/review/technical", requireRole('is_rev_tecnica'), async (req, res, next) => {
+  try {
+    const u = req.user;
+    const id = Number(req.params.id);
+    const { action, notes } = req.body || {};
+    const act = String(action || '').toLowerCase().trim();
+    if (!['approve','reject'].includes(act)) return res.status(400).json({ ok: false, error: "action inválida" });
+
+    const cur = await dbQuery(`select * from public.presupuestador_quotes where id=$1 limit 1`, [id]);
+    const q = cur.rows?.[0];
+    if (!q) return res.status(404).json({ ok: false, error: "No encontrado" });
+    if (q.final_status !== 'pending_approvals') return res.status(409).json({ ok: false, error: "No está en aprobación final" });
+    if (q.final_technical_decision !== 'pending') return res.json({ ok: true, quote: q });
+
+    if (act === 'reject') {
+      const msg = String(notes || 'Rechazado').trim();
+      const upd = await dbQuery(
+        `update public.presupuestador_quotes set final_status='draft', final_technical_decision='rejected', final_technical_notes=$2 where id=$1 returning *`,
+        [id, msg]
+      );
+      return res.json({ ok: true, quote: upd.rows?.[0] || null });
+    }
+
+    const upd1 = await dbQuery(
+      `update public.presupuestador_quotes set final_technical_decision='approved', final_technical_notes=$2 where id=$1 returning *`,
+      [id, (notes ? String(notes) : null)]
+    );
+    const q1 = upd1.rows?.[0] || q;
+
+    // si logística ya está ok (o no aplica), sincronizamos
+    if (q1.final_logistics_decision === 'approved') {
+      const parentId = Number(q1.parent_quote_id);
+      const pr = await dbQuery(`select * from public.presupuestador_quotes where id=$1 limit 1`, [parentId]);
+      const orig = pr.rows?.[0];
+      if (!orig) return res.json({ ok: true, quote: q1 });
+
+      const updSync = await dbQuery(`update public.presupuestador_quotes set final_status='syncing_odoo' where id=$1 and final_status='pending_approvals' returning *`, [id]);
+      const qSync = updSync.rows?.[0];
+      if (qSync) {
+        const order = await syncFinalQuoteToOdoo({ odoo, revisionQuote: qSync, originalQuote: orig, approverUser: u });
+        const upd2 = await dbQuery(
+          `update public.presupuestador_quotes set final_status='synced_odoo', final_sale_order_id=$2, final_sale_order_name=$3 where id=$1 returning *`,
+          [id, Number(order.id), order.name]
+        );
+        return res.json({ ok: true, quote: upd2.rows?.[0] || qSync, order });
+      }
+    }
+
+    return res.json({ ok: true, quote: q1 });
+  } catch (e) { next(e); }
+});
+
+router.post("/:id/final/review/logistics", requireRole('is_logistica'), async (req, res, next) => {
+  try {
+    const u = req.user;
+    const id = Number(req.params.id);
+    const { action, notes } = req.body || {};
+    const act = String(action || '').toLowerCase().trim();
+    if (!['approve','reject'].includes(act)) return res.status(400).json({ ok: false, error: "action inválida" });
+
+    const cur = await dbQuery(`select * from public.presupuestador_quotes where id=$1 limit 1`, [id]);
+    const q = cur.rows?.[0];
+    if (!q) return res.status(404).json({ ok: false, error: "No encontrado" });
+    if (q.final_status !== 'pending_approvals') return res.status(409).json({ ok: false, error: "No está en aprobación final" });
+    if (q.final_logistics_decision !== 'pending') return res.json({ ok: true, quote: q });
+
+    // Solo aplica si el original requería medición
+    const parentId = Number(q.parent_quote_id);
+    const pr = await dbQuery(`select * from public.presupuestador_quotes where id=$1 limit 1`, [parentId]);
+    const orig = pr.rows?.[0];
+    if (!orig) return res.status(400).json({ ok: false, error: "No se encontró el original" });
+    if (orig.requires_measurement !== true) return res.status(400).json({ ok: false, error: "Logística solo aplica cuando requiere medición" });
+
+    if (act === 'reject') {
+      const msg = String(notes || 'Rechazado').trim();
+      const upd = await dbQuery(
+        `update public.presupuestador_quotes set final_status='draft', final_logistics_decision='rejected', final_logistics_notes=$2 where id=$1 returning *`,
+        [id, msg]
+      );
+      return res.json({ ok: true, quote: upd.rows?.[0] || null });
+    }
+
+    const upd1 = await dbQuery(
+      `update public.presupuestador_quotes set final_logistics_decision='approved', final_logistics_notes=$2 where id=$1 returning *`,
+      [id, (notes ? String(notes) : null)]
+    );
+    const q1 = upd1.rows?.[0] || q;
+
+    if (q1.final_technical_decision === 'approved') {
+      const updSync = await dbQuery(`update public.presupuestador_quotes set final_status='syncing_odoo' where id=$1 and final_status='pending_approvals' returning *`, [id]);
+      const qSync = updSync.rows?.[0];
+      if (qSync) {
+        const order = await syncFinalQuoteToOdoo({ odoo, revisionQuote: qSync, originalQuote: orig, approverUser: u });
+        const upd2 = await dbQuery(
+          `update public.presupuestador_quotes set final_status='synced_odoo', final_sale_order_id=$2, final_sale_order_name=$3 where id=$1 returning *`,
+          [id, Number(order.id), order.name]
+        );
+        return res.json({ ok: true, quote: upd2.rows?.[0] || qSync, order });
+      }
+    }
+
+    return res.json({ ok: true, quote: q1 });
+  } catch (e) { next(e); }
+});
 
   return router;
 }
