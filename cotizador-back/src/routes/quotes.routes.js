@@ -104,14 +104,17 @@ async function findOrCreateCustomerPartner(odoo, customer) {
   );
   if (ids2?.[0]) return ids2[0];
 
-  const id = await odoo.executeKw("res.partner", "create", [[{
+  const rawId = await odoo.executeKw("res.partner", "create", [{
     name: name,
     email: email || false,
     phone: toText(customer?.phone) || false,
     street: (toText(customer?.street) || toText(customer?.address) || false),
     city: (toText(customer?.city) || false),
     customer_rank: 1,
-  }]]);
+  }]);
+
+  const id = toIntId(rawId);
+  if (!id) throw new Error("No se pudo crear partner en Odoo");
 
   return id;
 }
@@ -162,12 +165,15 @@ async function syncQuoteToOdoo({ odoo, quote, approverUser }) {
       + (quote?.end_customer?.maps_url ? `\nMaps: ${quote.end_customer.maps_url}` : "")
       + (quote.note ? `\n${quote.note}` : "");
 
-  const orderId = await odoo.executeKw("sale.order", "create", [[{
+  const rawOrderId = await odoo.executeKw("sale.order", "create", [{
         partner_id: partnerId,
     pricelist_id: pricelistId,
     order_line: orderLines,
     note,
-  }]]);
+  }]);
+
+  const orderId = toIntId(rawOrderId);
+  if (!orderId) throw new Error("No se pudo crear sale.order en Odoo");
 
   const [order] = await odoo.executeKw("sale.order", "read", [[orderId]], {
     fields: ["id", "name", "amount_total", "partner_id", "state", "pricelist_id"],
@@ -1200,12 +1206,15 @@ async function syncFinalQuoteToOdoo({ odoo, revisionQuote, originalQuote, approv
   const note = `PRESUPUESTADOR FINAL: COPY ${revisionQuote.id} (ORIG ${originalQuote.id})`
     + `\nReferencia seña: ${originalQuote.deposit_sale_order_name || originalQuote.odoo_sale_order_name || originalQuote.deposit_sale_order_id || originalQuote.odoo_sale_order_id || "—"}`;
 
-  const orderId = await odoo.executeKw("sale.order", "create", [[{
+  const rawOrderId = await odoo.executeKw("sale.order", "create", [{
     partner_id: Number(partnerId),
     pricelist_id: pricelistId,
     order_line: orderLines,
     note,
-  }]]);
+  }]);
+
+  const orderId = toIntId(rawOrderId);
+  if (!orderId) throw new Error("No se pudo crear sale.order en Odoo");
 
   const [order] = await odoo.executeKw("sale.order", "read", [[orderId]], {
     fields: ["id", "name", "amount_total", "partner_id", "state", "pricelist_id"],

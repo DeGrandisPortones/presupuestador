@@ -309,14 +309,14 @@ async function findOrCreateCustomerPartner(odoo, customer) {
   if (ids2?.[0]) return ids2[0];
 
   // 3) crear
-  const id = await odoo.executeKw("res.partner", "create", [[{
+  const id = await odoo.executeKw("res.partner", "create", [{
     name: customer.name,
     email: customer.email || false,
     phone: customer.phone || false,
     street: customer.street || false,
     city: customer.city || false,
     customer_rank: 1,
-  }]]);
+  }]);
   return id;
 }
 
