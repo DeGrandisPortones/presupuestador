@@ -7,9 +7,7 @@ import { ensureQuotesMeasurementColumns } from "../quotesSchema.js";
 // Config
 // =========================
 const MEASUREMENT_PRODUCT_ID = 2961; // SERVICIO DE MEDICION Y RELEVAMIENTO
-// Producto genérico para “seña/a-cuenta” (1 sola línea en Odoo).
-// Override opcional por env: ODOO_PLACEHOLDER_PRODUCT_ID
-const PLACEHOLDER_PRODUCT_ID = Number(process.env.ODOO_PLACEHOLDER_PRODUCT_ID || 2880);
+const PLACEHOLDER_PRODUCT_ID = Number(process.env.ODOO_PLACEHOLDER_PRODUCT_ID || 2880); // Producto genérico (1 sola línea en Odoo)
 const IVA_RATE = 0.21;
 
 /** RBAC */
@@ -82,7 +80,7 @@ async function getCreatorOdooPartnerId(createdByUserId) {
 }
 
 async function findOrCreateCustomerPartner(odoo, customer) {
-    const email = toText(customer?.email);
+  const email = toText(customer?.email);
   if (email) {
     const ids = await odoo.executeKw(
       "res.partner",
@@ -90,11 +88,11 @@ async function findOrCreateCustomerPartner(odoo, customer) {
       [[["email", "=", email]]],
       { limit: 1 }
     );
-    if (ids?.[0]) return ids[0];
+    if (ids?.[0]) return toIntId(ids[0]);
   }
 
-    const name = toText(customer?.name);
-  if (!name) throw new Error("Falta end_name (vendedor)");
+  const name = toText(customer?.name);
+  if (!name) throw new Error("Falta end_customer.name (vendedor)");
 
   const ids2 = await odoo.executeKw(
     "res.partner",
@@ -102,10 +100,10 @@ async function findOrCreateCustomerPartner(odoo, customer) {
     [[["name", "=", name]]],
     { limit: 1 }
   );
-  if (ids2?.[0]) return ids2[0];
+  if (ids2?.[0]) return toIntId(ids2[0]);
 
-  const rawId = await odoo.executeKw("res.partner", "create", [{
-    name: name,
+  const created = await odoo.executeKw("res.partner", "create", [{
+    name,
     email: email || false,
     phone: toText(customer?.phone) || false,
     street: (toText(customer?.street) || toText(customer?.address) || false),
@@ -113,24 +111,24 @@ async function findOrCreateCustomerPartner(odoo, customer) {
     customer_rank: 1,
   }]);
 
-  const id = toIntId(rawId);
+  const id = toIntId(created);
   if (!id) throw new Error("No se pudo crear partner en Odoo");
-
   return id;
 }
 
 async function syncQuoteToOdoo({ odoo, quote, approverUser }) {
-    const pricelistId = toIntId(quote?.pricelist_id) || 1;
+  const pricelistId = toIntId(quote?.pricelist_id) || 1;
 
   // partner destino
   let partnerId = null;
 
   if (quote.created_by_role === "distribuidor") {
-        partnerId = toIntId(quote?.bill_to_odoo_partner_id) || await getCreatorOdooPartnerId(quote.created_by_user_id) || toIntId(approverUser?.odoo_partner_id);
+    partnerId = toIntId(quote?.bill_to_odoo_partner_id) || await getCreatorOdooPartnerId(quote.created_by_user_id) || toIntId(approverUser?.odoo_partner_id);
     if (!partnerId) throw new Error("Distribuidor sin bill_to_odoo_partner_id (quote) y sin odoo_partner_id (JWT/DB)");
   } else {
     partnerId = await findOrCreateCustomerPartner(odoo, quote.end_customer || {});
   }
+
   partnerId = toIntId(partnerId);
   if (!partnerId) throw new Error("partner_id inválido para Odoo");
 
@@ -146,7 +144,7 @@ async function syncQuoteToOdoo({ odoo, quote, approverUser }) {
     { fields: ["id", "name", "uom_id"] }
   );
   if (!ph?.id) throw new Error(`Producto placeholder no encontrado en Odoo: ${PLACEHOLDER_PRODUCT_ID}`);
-    const uomId = toIntId(ph?.uom_id);
+  const uomId = toIntId(ph?.uom_id);
   if (!uomId) throw new Error(`Producto placeholder sin uom_id: ${PLACEHOLDER_PRODUCT_ID}`);
 
   const orderLines = [
@@ -165,14 +163,13 @@ async function syncQuoteToOdoo({ odoo, quote, approverUser }) {
       + (quote?.end_customer?.maps_url ? `\nMaps: ${quote.end_customer.maps_url}` : "")
       + (quote.note ? `\n${quote.note}` : "");
 
-  const rawOrderId = await odoo.executeKw("sale.order", "create", [{
-        partner_id: partnerId,
+  const createdOrderId = await odoo.executeKw("sale.order", "create", [{
+    partner_id: partnerId,
     pricelist_id: pricelistId,
     order_line: orderLines,
     note,
   }]);
-
-  const orderId = toIntId(rawOrderId);
+  const orderId = toIntId(createdOrderId);
   if (!orderId) throw new Error("No se pudo crear sale.order en Odoo");
 
   const [order] = await odoo.executeKw("sale.order", "read", [[orderId]], {
@@ -251,7 +248,6 @@ function validateEndCustomerRequired(end_customer) {
   if (!mapsUrl) return "Falta end_customer.maps_url";
   return null;
 }
-
 
 function validateBusinessRequired(payload, catalog_kind) {
   const p = payload || {};
@@ -770,8 +766,6 @@ export function buildQuotesRouter(odoo) {
           set status='synced_odoo',
               odoo_sale_order_id=$2,
               odoo_sale_order_name=$3,
-              deposit_sale_order_id=$2,
-              deposit_sale_order_name=$3,
               deposit_amount=$4,
               measurement_status = case
                 when fulfillment_mode='produccion' and requires_measurement = true and (measurement_status is null or measurement_status='none') then 'pending'
@@ -886,8 +880,6 @@ export function buildQuotesRouter(odoo) {
           set status='synced_odoo',
               odoo_sale_order_id=$2,
               odoo_sale_order_name=$3,
-              deposit_sale_order_id=$2,
-              deposit_sale_order_name=$3,
               deposit_amount=$4,
               measurement_status = case
                 when fulfillment_mode='produccion' and requires_measurement = true and (measurement_status is null or measurement_status='none') then 'pending'
@@ -1144,16 +1136,18 @@ router.post("/:id/move_to_produccion", requireSellerOrDistributor, async (req, r
 // ============================================================
 
 async function syncFinalQuoteToOdoo({ odoo, revisionQuote, originalQuote, approverUser }) {
-  const pricelistId = Number(revisionQuote.pricelist_id || originalQuote.pricelist_id || 1);
+  const pricelistId = toIntId(revisionQuote?.pricelist_id) || toIntId(originalQuote?.pricelist_id) || 1;
 
   // partner destino (mismas reglas que depósito)
   let partnerId = null;
   if (originalQuote.created_by_role === "distribuidor") {
-    partnerId = originalQuote.bill_to_odoo_partner_id || await getCreatorOdooPartnerId(originalQuote.created_by_user_id) || approverUser.odoo_partner_id;
+    partnerId = toIntId(originalQuote?.bill_to_odoo_partner_id) || await getCreatorOdooPartnerId(originalQuote.created_by_user_id) || toIntId(approverUser?.odoo_partner_id);
     if (!partnerId) throw new Error("Distribuidor sin partner en Odoo");
   } else {
     partnerId = await findOrCreateCustomerPartner(odoo, originalQuote.end_customer || {});
   }
+  partnerId = toIntId(partnerId);
+  if (!partnerId) throw new Error("partner_id inválido para Odoo");
 
   const lines = Array.isArray(revisionQuote.lines) ? revisionQuote.lines : [];
   if (!lines.length) throw new Error("La copia no tiene items");
@@ -1168,7 +1162,7 @@ async function syncFinalQuoteToOdoo({ odoo, revisionQuote, originalQuote, approv
     const qty = Number(l.qty || 1);
     const p = byId.get(productId);
     if (!p) throw new Error(`Producto no encontrado: ${productId}`);
-    const uomId = Array.isArray(p?.uom_id) ? p.uom_id[0] : null;
+    const uomId = toIntId(p?.uom_id);
     if (!uomId) throw new Error(`Producto sin uom_id: ${productId}`);
 
     const maybePrice =
@@ -1193,7 +1187,7 @@ async function syncFinalQuoteToOdoo({ odoo, revisionQuote, originalQuote, approv
   const dep = Number(originalQuote.deposit_amount || 0) || 0;
   if (dep > 0) {
     const ph = byId.get(Number(PLACEHOLDER_PRODUCT_ID));
-    const uomId = Array.isArray(ph?.uom_id) ? ph.uom_id[0] : null;
+    const uomId = toIntId(ph?.uom_id);
     orderLines.push([0, 0, {
       product_id: Number(PLACEHOLDER_PRODUCT_ID),
       product_uom_qty: 1,
@@ -1204,17 +1198,15 @@ async function syncFinalQuoteToOdoo({ odoo, revisionQuote, originalQuote, approv
   }
 
   const note = `PRESUPUESTADOR FINAL: COPY ${revisionQuote.id} (ORIG ${originalQuote.id})`
-    + `\nReferencia seña: ${originalQuote.deposit_sale_order_name || originalQuote.odoo_sale_order_name || originalQuote.deposit_sale_order_id || originalQuote.odoo_sale_order_id || "—"}`;
+    + `
+Referencia seña: ${originalQuote.odoo_sale_order_name || originalQuote.odoo_sale_order_id || "—"}`;
 
-  const rawOrderId = await odoo.executeKw("sale.order", "create", [{
-    partner_id: Number(partnerId),
+  const orderId = await odoo.executeKw("sale.order", "create", [{
+    partner_id: partnerId,
     pricelist_id: pricelistId,
     order_line: orderLines,
     note,
   }]);
-
-  const orderId = toIntId(rawOrderId);
-  if (!orderId) throw new Error("No se pudo crear sale.order en Odoo");
 
   const [order] = await odoo.executeKw("sale.order", "read", [[orderId]], {
     fields: ["id", "name", "amount_total", "partner_id", "state", "pricelist_id"],
@@ -1240,7 +1232,7 @@ router.post("/:id/final/submit", requireSellerOrDistributor, async (req, res, ne
     const pr = await dbQuery(`select * from public.presupuestador_quotes where id=$1 limit 1`, [parentId]);
     const orig = pr.rows?.[0];
     if (!orig) return res.status(400).json({ ok: false, error: "No se encontró el original" });
-    if (!orig.deposit_sale_order_id && !orig.odoo_sale_order_id) return res.status(409).json({ ok: false, error: "El original todavía no fue enviado a Odoo" });
+    if (!orig.odoo_sale_order_id) return res.status(409).json({ ok: false, error: "El original todavía no fue enviado a Odoo" });
 
     if (orig.requires_measurement === true && orig.measurement_status !== 'approved') {
       return res.status(409).json({ ok: false, error: "Primero debe estar aprobada la medición" });
