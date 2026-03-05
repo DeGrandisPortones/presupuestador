@@ -7,7 +7,9 @@ import { ensureQuotesMeasurementColumns } from "../quotesSchema.js";
 // Config
 // =========================
 const MEASUREMENT_PRODUCT_ID = 2961; // SERVICIO DE MEDICION Y RELEVAMIENTO
-const PLACEHOLDER_PRODUCT_ID = Number(process.env.ODOO_PLACEHOLDER_PRODUCT_ID || 2880); // Producto genérico (1 sola línea en Odoo)
+// Producto genérico para “seña/a-cuenta” (1 sola línea en Odoo).
+// Override opcional por env: ODOO_PLACEHOLDER_PRODUCT_ID
+const PLACEHOLDER_PRODUCT_ID = Number(process.env.ODOO_PLACEHOLDER_PRODUCT_ID || 2880);
 const IVA_RATE = 0.21;
 
 /** RBAC */
@@ -29,7 +31,6 @@ function normCatalogKind(kind) {
   return k;
 }
 
-
 /**
  * Helpers de normalización para evitar mandar listas a Odoo (ej: many2one [id, name])
  * que después terminan en errores tipo "unhashable type: 'list'".
@@ -48,7 +49,6 @@ function toText(v) {
   const s = (x === null || x === undefined) ? "" : String(x);
   return s.trim();
 }
-
 
 /** Odoo helpers */
 function round2(n) {
@@ -82,7 +82,7 @@ async function getCreatorOdooPartnerId(createdByUserId) {
 }
 
 async function findOrCreateCustomerPartner(odoo, customer) {
-  const email = toText(customer?.email);
+    const email = toText(customer?.email);
   if (email) {
     const ids = await odoo.executeKw(
       "res.partner",
@@ -93,8 +93,8 @@ async function findOrCreateCustomerPartner(odoo, customer) {
     if (ids?.[0]) return ids[0];
   }
 
-  const name = toText(customer?.name);
-  if (!name) throw new Error("Falta end_customer.name (vendedor)");
+    const name = toText(customer?.name);
+  if (!name) throw new Error("Falta end_name (vendedor)");
 
   const ids2 = await odoo.executeKw(
     "res.partner",
@@ -105,7 +105,7 @@ async function findOrCreateCustomerPartner(odoo, customer) {
   if (ids2?.[0]) return ids2[0];
 
   const id = await odoo.executeKw("res.partner", "create", [[{
-    name,
+    name: name,
     email: email || false,
     phone: toText(customer?.phone) || false,
     street: (toText(customer?.street) || toText(customer?.address) || false),
@@ -116,15 +116,14 @@ async function findOrCreateCustomerPartner(odoo, customer) {
   return id;
 }
 
-
 async function syncQuoteToOdoo({ odoo, quote, approverUser }) {
-  const pricelistId = toIntId(quote?.pricelist_id) || 1;
+    const pricelistId = toIntId(quote?.pricelist_id) || 1;
 
   // partner destino
   let partnerId = null;
 
   if (quote.created_by_role === "distribuidor") {
-    partnerId = toIntId(quote?.bill_to_odoo_partner_id) || await getCreatorOdooPartnerId(quote.created_by_user_id) || toIntId(approverUser?.odoo_partner_id);
+        partnerId = toIntId(quote?.bill_to_odoo_partner_id) || await getCreatorOdooPartnerId(quote.created_by_user_id) || toIntId(approverUser?.odoo_partner_id);
     if (!partnerId) throw new Error("Distribuidor sin bill_to_odoo_partner_id (quote) y sin odoo_partner_id (JWT/DB)");
   } else {
     partnerId = await findOrCreateCustomerPartner(odoo, quote.end_customer || {});
@@ -144,7 +143,7 @@ async function syncQuoteToOdoo({ odoo, quote, approverUser }) {
     { fields: ["id", "name", "uom_id"] }
   );
   if (!ph?.id) throw new Error(`Producto placeholder no encontrado en Odoo: ${PLACEHOLDER_PRODUCT_ID}`);
-  const uomId = toIntId(ph?.uom_id);
+    const uomId = toIntId(ph?.uom_id);
   if (!uomId) throw new Error(`Producto placeholder sin uom_id: ${PLACEHOLDER_PRODUCT_ID}`);
 
   const orderLines = [
@@ -164,7 +163,7 @@ async function syncQuoteToOdoo({ odoo, quote, approverUser }) {
       + (quote.note ? `\n${quote.note}` : "");
 
   const orderId = await odoo.executeKw("sale.order", "create", [[{
-    partner_id: partnerId,
+        partner_id: partnerId,
     pricelist_id: pricelistId,
     order_line: orderLines,
     note,
@@ -247,12 +246,6 @@ function validateEndCustomerRequired(end_customer) {
   return null;
 }
 
-function validateEndCustomerDraft(end_customer) {
-  const c = end_customer || {};
-  const name = String(c.name || "").trim();
-  if (!name) return "Falta end_customer.name";
-  return null;
-}
 
 function validateBusinessRequired(payload, catalog_kind) {
   const p = payload || {};
