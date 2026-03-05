@@ -48,6 +48,12 @@ function toText(v) {
   return s.trim();
 }
 
+
+function isUuid(v) {
+  const s = String(v || "").trim();
+  return /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(s);
+}
+
 /** Odoo helpers */
 function round2(n) {
   return Math.round(Number(n || 0) * 100) / 100;
@@ -523,7 +529,7 @@ export function buildQuotesRouter(odoo) {
         return res.status(400).json({ ok: false, error: "Solo se puede crear ajuste desde un presupuesto original" });
       }
 
-      const copy = await createEditCopyFromQuote(Number(id));
+      const copy = await createEditCopyFromQuote(id);
       if (!copy) throw new Error("No se pudo crear la copia");
 
       res.json({ ok: true, quote: copy });
@@ -668,10 +674,10 @@ export function buildQuotesRouter(odoo) {
       try {
         const exists = await dbQuery(
           `select id from public.presupuestador_quotes where quote_kind='copy' and parent_quote_id=$1 limit 1`,
-          [Number(id)]
+          [id]
         );
         if (!exists.rows?.[0]) {
-          await createEditCopyFromQuote(Number(id));
+          await createEditCopyFromQuote(id);
         }
       } catch {
         // no bloqueamos la confirmación por falla de la copia
@@ -1103,8 +1109,8 @@ export function buildQuotesRouter(odoo) {
 router.post("/:id/move_to_produccion", requireSellerOrDistributor, async (req, res, next) => {
   try {
     const u = req.user;
-    const id = Number(req.params.id);
-    if (!id) return res.status(400).json({ ok: false, error: "id inválido" });
+    const id = String(req.params.id || "").trim();
+    if (!isUuid(id)) return res.status(400).json({ ok: false, error: "id inválido" });
 
     const cur = await dbQuery(`select * from public.presupuestador_quotes where id=$1 limit 1`, [id]);
     const quote = cur.rows?.[0];
@@ -1218,8 +1224,8 @@ Referencia seña: ${originalQuote.odoo_sale_order_name || originalQuote.odoo_sal
 router.post("/:id/final/submit", requireSellerOrDistributor, async (req, res, next) => {
   try {
     const u = req.user;
-    const id = Number(req.params.id);
-    if (!id) return res.status(400).json({ ok: false, error: "id inválido" });
+    const id = String(req.params.id || "").trim();
+    if (!isUuid(id)) return res.status(400).json({ ok: false, error: "id inválido" });
 
     const cur = await dbQuery(`select * from public.presupuestador_quotes where id=$1 limit 1`, [id]);
     const q = cur.rows?.[0];
@@ -1227,7 +1233,7 @@ router.post("/:id/final/submit", requireSellerOrDistributor, async (req, res, ne
     if (q.quote_kind !== 'copy') return res.status(400).json({ ok: false, error: "final/submit solo aplica a la COPIA" });
     if (String(q.created_by_user_id) !== String(u.user_id)) return res.status(403).json({ ok: false, error: "No sos dueño" });
 
-    const parentId = Number(q.parent_quote_id);
+    const parentId = String(q.parent_quote_id || "").trim();
     if (!parentId) return res.status(400).json({ ok: false, error: "La copia no tiene parent_quote_id" });
     const pr = await dbQuery(`select * from public.presupuestador_quotes where id=$1 limit 1`, [parentId]);
     const orig = pr.rows?.[0];
@@ -1260,7 +1266,8 @@ router.post("/:id/final/submit", requireSellerOrDistributor, async (req, res, ne
 router.post("/:id/final/review/technical", requireRole('is_rev_tecnica'), async (req, res, next) => {
   try {
     const u = req.user;
-    const id = Number(req.params.id);
+    const id = String(req.params.id || "").trim();
+    if (!isUuid(id)) return res.status(400).json({ ok: false, error: "id inválido" });
     const { action, notes } = req.body || {};
     const act = String(action || '').toLowerCase().trim();
     if (!['approve','reject'].includes(act)) return res.status(400).json({ ok: false, error: "action inválida" });
@@ -1288,7 +1295,7 @@ router.post("/:id/final/review/technical", requireRole('is_rev_tecnica'), async 
 
     // si logística ya está ok (o no aplica), sincronizamos
     if (q1.final_logistics_decision === 'approved') {
-      const parentId = Number(q1.parent_quote_id);
+      const parentId = String(q1.parent_quote_id || "").trim();
       const pr = await dbQuery(`select * from public.presupuestador_quotes where id=$1 limit 1`, [parentId]);
       const orig = pr.rows?.[0];
       if (!orig) return res.json({ ok: true, quote: q1 });
@@ -1312,7 +1319,8 @@ router.post("/:id/final/review/technical", requireRole('is_rev_tecnica'), async 
 router.post("/:id/final/review/logistics", requireRole('is_logistica'), async (req, res, next) => {
   try {
     const u = req.user;
-    const id = Number(req.params.id);
+    const id = String(req.params.id || "").trim();
+    if (!isUuid(id)) return res.status(400).json({ ok: false, error: "id inválido" });
     const { action, notes } = req.body || {};
     const act = String(action || '').toLowerCase().trim();
     if (!['approve','reject'].includes(act)) return res.status(400).json({ ok: false, error: "action inválida" });
@@ -1324,7 +1332,7 @@ router.post("/:id/final/review/logistics", requireRole('is_logistica'), async (r
     if (q.final_logistics_decision !== 'pending') return res.json({ ok: true, quote: q });
 
     // Solo aplica si el original requería medición
-    const parentId = Number(q.parent_quote_id);
+    const parentId = String(q.parent_quote_id || "").trim();
     const pr = await dbQuery(`select * from public.presupuestador_quotes where id=$1 limit 1`, [parentId]);
     const orig = pr.rows?.[0];
     if (!orig) return res.status(400).json({ ok: false, error: "No se encontró el original" });

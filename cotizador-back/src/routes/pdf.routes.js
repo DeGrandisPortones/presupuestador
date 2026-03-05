@@ -7,6 +7,12 @@ import { dbQuery } from "../db.js";
 import { requireAuth } from "../auth.js";
 import { ensureQuotesMeasurementColumns } from "../quotesSchema.js";
 
+function isUuid(v) {
+  const s = String(v || "").trim();
+  return /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(s);
+}
+
+
 function safeStr(v) {
   return String(v ?? "").trim();
 }
@@ -577,8 +583,8 @@ export function buildPdfRouter() {
   router.get("/medicion/:id", requireAuth, async (req, res, next) => {
     try {
       await ensureQuotesMeasurementColumns();
-      const id = Number(req.params.id);
-      if (!id) return res.status(400).json({ ok: false, error: "id inválido" });
+      const id = String(req.params.id || "").trim();
+      if (!isUuid(id)) return res.status(400).json({ ok: false, error: "id inválido" });
 
       const r = await dbQuery(`select * from public.presupuestador_quotes where id=$1 limit 1`, [id]);
       const quote = r.rows?.[0];

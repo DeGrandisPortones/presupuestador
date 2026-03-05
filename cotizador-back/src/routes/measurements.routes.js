@@ -24,6 +24,12 @@ function normalizeStatus(s) {
   return v;
 }
 
+
+function isUuid(v) {
+  // acepta UUID v4 pero no rompe si llega otro UUID válido (solo chequeo básico)
+  const s = String(v || "").trim();
+  return /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(s);
+}
 export function buildMeasurementsRouter() {
   const router = express.Router();
 
@@ -89,8 +95,8 @@ export function buildMeasurementsRouter() {
   router.get("/:id", async (req, res, next) => {
     try {
       const u = req.user;
-      const id = Number(req.params.id);
-      if (!id) return res.status(400).json({ ok: false, error: "id inválido" });
+      const id = String(req.params.id || "").trim();
+      if (!isUuid(id)) return res.status(400).json({ ok: false, error: "id inválido" });
 
       const r = await dbQuery(
         `
@@ -117,8 +123,8 @@ export function buildMeasurementsRouter() {
   router.put("/:id", requireMedidor, async (req, res, next) => {
     try {
       const u = req.user;
-      const id = Number(req.params.id);
-      if (!id) return res.status(400).json({ ok: false, error: "id inválido" });
+      const id = String(req.params.id || "").trim();
+      if (!isUuid(id)) return res.status(400).json({ ok: false, error: "id inválido" });
 
       const body = req.body || {};
       const form = body.form ?? null;
@@ -175,8 +181,8 @@ export function buildMeasurementsRouter() {
   router.post("/:id/review", async (req, res, next) => {
     try {
       const u = req.user;
-      const id = Number(req.params.id);
-      if (!id) return res.status(400).json({ ok: false, error: "id inválido" });
+      const id = String(req.params.id || "").trim();
+      if (!isUuid(id)) return res.status(400).json({ ok: false, error: "id inválido" });
 
       const { action, notes } = req.body || {};
       const act = String(action || "").toLowerCase().trim();
