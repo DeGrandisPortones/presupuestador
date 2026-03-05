@@ -6,7 +6,7 @@ import { ensureQuotesMeasurementColumns } from "../quotesSchema.js";
 // =========================
 // Config
 // =========================
-const MEASUREMENT_PRODUCT_ID = 2961; // SERVICIO DE MEDICION Y RELEVAMIENTO
+const MEASUREMENT_PRODUCT_ID = Number(process.env.ODOO_MEASUREMENT_PRODUCT_ID || 2865); // SERVICIO DE MEDICION Y RELEVAMIENTO
 const PLACEHOLDER_PRODUCT_ID = Number(process.env.ODOO_PLACEHOLDER_PRODUCT_ID || 2880); // Producto genérico (1 sola línea en Odoo)
 const IVA_RATE = 0.21;
 
@@ -266,7 +266,7 @@ function validateBusinessRequired(payload, catalog_kind) {
 
 function hasMeasurementLine(lines) {
   const arr = Array.isArray(lines) ? lines : [];
-  return arr.some((l) => Number(l?.product_id) === MEASUREMENT_PRODUCT_ID);
+  return arr.some((l) => toIntId(l?.product_id) === MEASUREMENT_PRODUCT_ID);
 }
 
 function calcQuoteTotalWithIva({ lines, payload }) {
