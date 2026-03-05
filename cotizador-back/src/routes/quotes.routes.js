@@ -7,7 +7,7 @@ import { ensureQuotesMeasurementColumns } from "../quotesSchema.js";
 // Config
 // =========================
 const MEASUREMENT_PRODUCT_ID = 2961; // SERVICIO DE MEDICION Y RELEVAMIENTO
-const PLACEHOLDER_PRODUCT_ID = 3070; // Cajas Navideñas (placeholder)
+const PLACEHOLDER_PRODUCT_ID = Number(process.env.ODOO_PLACEHOLDER_PRODUCT_ID || 2880); // Producto genérico (1 sola línea en Odoo)
 const IVA_RATE = 0.21;
 
 /** RBAC */
@@ -28,6 +28,27 @@ function normCatalogKind(kind) {
   if (!["porton","ipanel"].includes(k)) throw new Error('catalog_kind inválido (usar "porton" o "ipanel")');
   return k;
 }
+
+
+/**
+ * Helpers de normalización para evitar mandar listas a Odoo (ej: many2one [id, name])
+ * que después terminan en errores tipo "unhashable type: 'list'".
+ */
+function toScalar(v) {
+  if (Array.isArray(v)) return v[0];
+  return v;
+}
+function toIntId(v) {
+  const x = toScalar(v);
+  const n = Number(x);
+  return Number.isFinite(n) ? n : null;
+}
+function toText(v) {
+  const x = toScalar(v);
+  const s = (x === null || x === undefined) ? "" : String(x);
+  return s.trim();
+}
+
 
 /** Odoo helpers */
 function round2(n) {
@@ -61,50 +82,56 @@ async function getCreatorOdooPartnerId(createdByUserId) {
 }
 
 async function findOrCreateCustomerPartner(odoo, customer) {
-  if (customer?.email) {
+  const email = toText(customer?.email);
+  if (email) {
     const ids = await odoo.executeKw(
       "res.partner",
       "search",
-      [[["email", "=", customer.email]]],
+      [[["email", "=", email]]],
       { limit: 1 }
     );
     if (ids?.[0]) return ids[0];
   }
 
-  if (!customer?.name) throw new Error("Falta end_customer.name (vendedor)");
+  const name = toText(customer?.name);
+  if (!name) throw new Error("Falta end_customer.name (vendedor)");
 
   const ids2 = await odoo.executeKw(
     "res.partner",
     "search",
-    [[["name", "=", customer.name]]],
+    [[["name", "=", name]]],
     { limit: 1 }
   );
   if (ids2?.[0]) return ids2[0];
 
   const id = await odoo.executeKw("res.partner", "create", [[{
-    name: customer.name,
-    email: customer.email || false,
-    phone: customer.phone || false,
-    street: (customer.street || customer.address || false),
-    city: (customer.city || false),
+    name,
+    email: email || false,
+    phone: toText(customer?.phone) || false,
+    street: (toText(customer?.street) || toText(customer?.address) || false),
+    city: (toText(customer?.city) || false),
     customer_rank: 1,
   }]]);
 
   return id;
 }
 
+
 async function syncQuoteToOdoo({ odoo, quote, approverUser }) {
-  const pricelistId = Number(quote.pricelist_id || 1);
+  const pricelistId = toIntId(quote?.pricelist_id) || 1;
 
   // partner destino
   let partnerId = null;
 
   if (quote.created_by_role === "distribuidor") {
-    partnerId = quote.bill_to_odoo_partner_id || await getCreatorOdooPartnerId(quote.created_by_user_id) || approverUser.odoo_partner_id;
+    partnerId = toIntId(quote?.bill_to_odoo_partner_id) || await getCreatorOdooPartnerId(quote.created_by_user_id) || toIntId(approverUser?.odoo_partner_id);
     if (!partnerId) throw new Error("Distribuidor sin bill_to_odoo_partner_id (quote) y sin odoo_partner_id (JWT/DB)");
   } else {
     partnerId = await findOrCreateCustomerPartner(odoo, quote.end_customer || {});
   }
+  partnerId = toIntId(partnerId);
+  if (!partnerId) throw new Error("partner_id inválido para Odoo");
+
 
   // ✅ NUEVO: la venta inicial a Odoo NO manda detalle.
   // Mandamos 1 línea placeholder con el TOTAL (IVA incluido) como seña/a-cuenta.
@@ -117,7 +144,7 @@ async function syncQuoteToOdoo({ odoo, quote, approverUser }) {
     { fields: ["id", "name", "uom_id"] }
   );
   if (!ph?.id) throw new Error(`Producto placeholder no encontrado en Odoo: ${PLACEHOLDER_PRODUCT_ID}`);
-  const uomId = Array.isArray(ph?.uom_id) ? ph.uom_id[0] : null;
+  const uomId = toIntId(ph?.uom_id);
   if (!uomId) throw new Error(`Producto placeholder sin uom_id: ${PLACEHOLDER_PRODUCT_ID}`);
 
   const orderLines = [
@@ -137,7 +164,7 @@ async function syncQuoteToOdoo({ odoo, quote, approverUser }) {
       + (quote.note ? `\n${quote.note}` : "");
 
   const orderId = await odoo.executeKw("sale.order", "create", [[{
-    partner_id: Number(partnerId),
+    partner_id: partnerId,
     pricelist_id: pricelistId,
     order_line: orderLines,
     note,
