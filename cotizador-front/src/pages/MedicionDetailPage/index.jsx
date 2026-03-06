@@ -15,61 +15,114 @@ function todayISO() {
   return `${y}-${m}-${day}`;
 }
 
-function normalizeMeasurementForm(raw) {
+function isYes(v) {
+  return v === true || String(v || "").toLowerCase().trim() === "si";
+}
+
+function deriveDistribuidor(quote) {
+  const role = String(quote?.created_by_role || "").toLowerCase().trim();
+  if (role === "vendedor") return "De Grandis Portones";
+  return quote?.created_by_full_name || quote?.created_by_username || "";
+}
+
+function deriveEnAcopio(quote) {
+  // Si la quote vino de acopio y luego pasó a producción, suele quedar trazado en acopio_to_produccion_*.
+  const fm = String(quote?.fulfillment_mode || "").toLowerCase().trim();
+  if (fm === "acopio") return true;
+  const st = String(quote?.acopio_to_produccion_status || "").toLowerCase().trim();
+  if (st && st !== "none") return true;
+  if (quote?.acopio_to_produccion_requested_at) return true;
+  return false;
+}
+
+function normalizeMeasurementForm(raw, quote) {
   const f = raw && typeof raw === "object" ? { ...raw } : {};
+
+  if (!f.fecha) f.fecha = todayISO();
+  if (!f.distribuidor) f.distribuidor = deriveDistribuidor(quote);
+  if (f.en_acopio === undefined) f.en_acopio = deriveEnAcopio(quote);
+
+  // Parantes
   const p = (f.parantes && typeof f.parantes === "object") ? { ...f.parantes } : {};
-  // Compat: versiones viejas usaban izq/der para el lado de la puerta
-  if ((p.izq || p.der) && (p.puerta_izq === undefined && p.puerta_der === undefined)) {
-    p.puerta_izq = p.izq || "";
-    p.puerta_der = p.der || "";
-  }
-  if (p.motor_izq === undefined) p.motor_izq = p.motor_izq || "";
-  if (p.motor_der === undefined) p.motor_der = p.motor_der || "";
-  if (p.cant === undefined) p.cant = p.cant || "";
+  if (p.cant === undefined) p.cant = "";
   f.parantes = p;
+
+  // Esquema (6 inputs)
+  const esq = (f.esquema && typeof f.esquema === "object") ? { ...f.esquema } : {};
+  const alto = Array.isArray(esq.alto) ? esq.alto.slice(0, 3) : [];
+  const ancho = Array.isArray(esq.ancho) ? esq.ancho.slice(0, 3) : [];
+  while (alto.length < 3) alto.push("");
+  while (ancho.length < 3) ancho.push("");
+  esq.alto = alto;
+  esq.ancho = ancho;
+  f.esquema = esq;
+
+  // Compat: versiones viejas tenían ancho_mm/alto_mm
+  if ((f.ancho_mm || f.alto_mm) && !raw?.esquema) {
+    if (f.alto_mm && !f.esquema.alto[1]) f.esquema.alto[1] = String(f.alto_mm);
+    if (f.ancho_mm && !f.esquema.ancho[1]) f.esquema.ancho[1] = String(f.ancho_mm);
+  }
+
+  // Compat: yes/no en strings
+  if (f.estructura_metalica !== undefined && typeof f.estructura_metalica !== "boolean") f.estructura_metalica = isYes(f.estructura_metalica);
+  if (f.lucera !== undefined && typeof f.lucera !== "boolean") f.lucera = isYes(f.lucera);
+  if (f.traslado !== undefined && typeof f.traslado !== "boolean") f.traslado = isYes(f.traslado);
+  if (f.relevamiento !== undefined && typeof f.relevamiento !== "boolean") f.relevamiento = isYes(f.relevamiento);
+
+  if (f.color_revestimiento !== "Otros") {
+    f.color_revestimiento_otro = f.color_revestimiento_otro || "";
+  }
+
   return f;
 }
 
 function makeEmptyForm(quote) {
-  const createdBy = quote?.created_by_full_name || quote?.created_by_username || "";
   return {
     fecha: todayISO(),
-    distribuidor: createdBy,
+    distribuidor: deriveDistribuidor(quote),
     nro_porton: "",
-    ancho_mm: "",
-    alto_mm: "",
-    parantes: { cant: "", puerta_izq: "", puerta_der: "", motor_izq: "", motor_der: "" },
-    colocacion: "", // dentro_vano | detras_vano | otro
-    colocacion_otro: "",
-    en_acopio: false,
-    lado_motor: "",
-    toma_corriente: "",
-    anclaje: "", // sin | lateral | frontal | otro
-    anclaje_otro: "",
-    rebaje_lateral_mm: "",
-    rebaje_inferior_mm: "",
-    color_sistema: "",
-    accionamiento: "", // manual | automatico | otro
-    accionamiento_otro: "",
+
+    // Top
+    parantes: { cant: "" },
+    lado_puerta: "", // izquierda | derecha
+    lado_motor: "", // izquierda | derecha
+    toma_corriente: "", // izquierda | derecha
+
+    // esquema
+    esquema: { alto: ["", "", ""], ancho: ["", "", ""] },
+
+    // Observaciones
+    observaciones: "",
+
+    // Instalación / sistema
+    colocacion: "", // dentro_vano | detras_vano
+    en_acopio: deriveEnAcopio(quote),
+    accionamiento: "", // manual | automatico
     levadizo: "", // coplanar | comun
     estructura_metalica: false,
-    estructura_metalica_detalle: "",
-    tipo_revestimiento: "",
-    orientacion_revestimiento: "",
-    material_revestimiento: "",
+    rebaje_lateral_mm: "",
+    rebaje_inferior_mm: "",
+    anclaje: "", // lateral | frontal | sin
+    color_sistema: "",
+
+    // Revestimiento
+    tipo_revestimiento: "", // lamas | varillado_inyectado | varillado_simple
+    varillado_medida: "", // 20 x 10 x 20 | 40 x 10 x 40
+    orientacion_revestimiento: "", // lamas_horizontales | lamas_verticales | varillado_vertical
+    revestimiento: "",
     color_revestimiento: "",
-    tubos: [],
+    color_revestimiento_otro: "",
     lucera: false,
     lucera_cantidad: "",
     peso_revestimiento: "",
+
+    // Servicios
     traslado: false,
-    direccion_entrega: "",
-    relevamiento: true,
-    contacto_obra: "",
-    instalacion: false,
-    diente_inferior: false,
-    mm_superponer: "",
-    observaciones: "",
+    relevamiento: false,
+
+    // Contacto obra
+    contacto_obra_nombre: "",
+    contacto_obra_tel: "",
   };
 }
 
@@ -95,12 +148,18 @@ function Field({ label, children }) {
   );
 }
 
-function Checkbox({ label, checked, onChange }) {
+function Select({ value, onChange, options, placeholder = "—" }) {
   return (
-    <label style={{ display: "flex", gap: 8, alignItems: "center", userSelect: "none" }}>
-      <input type="checkbox" checked={!!checked} onChange={(e) => onChange(e.target.checked)} />
-      {label}
-    </label>
+    <select
+      value={value ?? ""}
+      onChange={(e) => onChange?.(e.target.value)}
+      style={{ padding: 10, borderRadius: 10, border: "1px solid #ddd", width: "100%" }}
+    >
+      <option value="">{placeholder}</option>
+      {options.map((o) => (
+        <option key={o.value} value={o.value}>{o.label}</option>
+      ))}
+    </select>
   );
 }
 
@@ -117,12 +176,13 @@ export default function MedicionDetailPage() {
   });
 
   const quote = q.data;
+  const endCustomer = quote?.end_customer || {};
 
   const [form, setForm] = useState(null);
 
   useEffect(() => {
     if (!quote) return;
-    const f = quote.measurement_form ? normalizeMeasurementForm(quote.measurement_form) : makeEmptyForm(quote);
+    const f = quote.measurement_form ? normalizeMeasurementForm(quote.measurement_form, quote) : makeEmptyForm(quote);
     setForm(f);
   }, [quote]);
 
@@ -133,17 +193,23 @@ export default function MedicionDetailPage() {
 
   const canEdit = !!user?.is_medidor;
 
-  const endCustomer = quote?.end_customer || {};
+  const leftRightOptions = useMemo(
+    () => ([
+      { value: "izquierda", label: "Izquierda" },
+      { value: "derecha", label: "Derecha" },
+    ]),
+    []
+  );
 
-  const tubosOptions = ["20x10x20", "40x10x40", "20x20x20", "40x20x40"];
+  const yesNoOptions = useMemo(
+    () => ([
+      { value: "no", label: "No" },
+      { value: "si", label: "Sí" },
+    ]),
+    []
+  );
 
-  const toggTubos = (t) => {
-    const arr = Array.isArray(form?.tubos) ? form.tubos.slice() : [];
-    const idx = arr.indexOf(t);
-    if (idx >= 0) arr.splice(idx, 1);
-    else arr.push(t);
-    setForm({ ...form, tubos: arr });
-  };
+  const setYesNoBool = (key, v) => setForm({ ...form, [key]: v === "si" });
 
   if (!user?.is_medidor) {
     return (
@@ -223,229 +289,333 @@ export default function MedicionDetailPage() {
             <>
               <Section title="Datos generales">
                 <Row>
-                  <Field label="Fecha (YYYY-MM-DD)">
-                    <Input value={form.fecha || ""} onChange={(v) => setForm({ ...form, fecha: v })} style={{ width: "100%" }} />
+                  <Field label="Fecha">
+                    <Input type="date" value={form.fecha || ""} onChange={(v) => setForm({ ...form, fecha: v })} style={{ width: "100%" }} />
                   </Field>
-                  <Field label="Distribuidor / Vendedor">
+                  <Field label="Distribuidor">
                     <Input value={form.distribuidor || ""} onChange={(v) => setForm({ ...form, distribuidor: v })} style={{ width: "100%" }} />
                   </Field>
-                  <Field label="N° portón / Nota de venta">
+                  <Field label="Cliente">
+                    <Input value={endCustomer.name || ""} onChange={() => {}} disabled style={{ width: "100%", opacity: 0.9 }} />
+                  </Field>
+                  <Field label="N° de portón (Nota de venta)">
                     <Input value={form.nro_porton || ""} onChange={(v) => setForm({ ...form, nro_porton: v })} style={{ width: "100%" }} />
                   </Field>
                 </Row>
               </Section>
 
-              <Section title="Medidas">
+              <Section title="Parantes / Laterales">
                 <Row>
-                  <Field label="Ancho (mm)">
-                    <Input value={form.ancho_mm || ""} onChange={(v) => setForm({ ...form, ancho_mm: v })} style={{ width: "100%" }} />
+                  <Field label="Parantes (Cant)">
+                    <Input type="number" value={form.parantes?.cant || ""} onChange={(v) => setForm({ ...form, parantes: { ...(form.parantes || {}), cant: v } })} style={{ width: "100%" }} />
                   </Field>
-                  <Field label="Alto (mm)">
-                    <Input value={form.alto_mm || ""} onChange={(v) => setForm({ ...form, alto_mm: v })} style={{ width: "100%" }} />
+                  <Field label="Lado de la puerta">
+                    <Select value={form.lado_puerta || ""} onChange={(v) => setForm({ ...form, lado_puerta: v })} options={leftRightOptions} />
                   </Field>
-                </Row>
-                <div className="spacer" />
-                <Row>
-                  <Field label="Parantes - Cant">
-                    <Input value={form.parantes?.cant || ""} onChange={(v) => setForm({ ...form, parantes: { ...(form.parantes||{}), cant: v } })} style={{ width: "100%" }} />
+                  <Field label="Lado de motor o soporte">
+                    <Select value={form.lado_motor || ""} onChange={(v) => setForm({ ...form, lado_motor: v })} options={leftRightOptions} />
                   </Field>
-                  <Field label="Puerta - Izq">
-                    <Input value={form.parantes?.puerta_izq || ""} onChange={(v) => setForm({ ...form, parantes: { ...(form.parantes||{}), puerta_izq: v } })} style={{ width: "100%" }} />
-                  </Field>
-                  <Field label="Puerta - Der">
-                    <Input value={form.parantes?.puerta_der || ""} onChange={(v) => setForm({ ...form, parantes: { ...(form.parantes||{}), puerta_der: v } })} style={{ width: "100%" }} />
-                  </Field>
-                  <Field label="Motor/Soporte - Izq">
-                    <Input value={form.parantes?.motor_izq || ""} onChange={(v) => setForm({ ...form, parantes: { ...(form.parantes||{}), motor_izq: v } })} style={{ width: "100%" }} />
-                  </Field>
-                  <Field label="Motor/Soporte - Der">
-                    <Input value={form.parantes?.motor_der || ""} onChange={(v) => setForm({ ...form, parantes: { ...(form.parantes||{}), motor_der: v } })} style={{ width: "100%" }} />
-                  </Field>
-                </Row>
-                <div className="spacer" />
-                <Row>
-                  <Field label="Tipo colocación">
-                    <select
-                      value={form.colocacion || ""}
-                      onChange={(e) => setForm({ ...form, colocacion: e.target.value })}
-                      style={{ padding: 10, borderRadius: 10, border: "1px solid #ddd", width: "100%" }}
-                    >
-                      <option value="">—</option>
-                      <option value="dentro_vano">Dentro del vano</option>
-                      <option value="detras_vano">Detrás del vano</option>
-                      <option value="otro">Otro</option>
-                    </select>
-                  </Field>
-                  <Field label="Otro (si aplica)">
-                    <Input value={form.colocacion_otro || ""} onChange={(v) => setForm({ ...form, colocacion_otro: v })} style={{ width: "100%" }} />
-                  </Field>
-                  <Field label="Portón en acopio">
-                    <Checkbox label="Sí" checked={form.en_acopio} onChange={(v) => setForm({ ...form, en_acopio: v })} />
+                  <Field label="Toma Corriente">
+                    <Select value={form.toma_corriente || ""} onChange={(v) => setForm({ ...form, toma_corriente: v })} options={leftRightOptions} />
                   </Field>
                 </Row>
               </Section>
 
-              <Section title="Motor / Anclajes / Rebajes">
-                <Row>
-                  <Field label="Lado motor / soporte">
-                    <Input value={form.lado_motor || ""} onChange={(v) => setForm({ ...form, lado_motor: v })} style={{ width: "100%" }} />
-                  </Field>
-                  <Field label="Toma corriente">
-                    <Input value={form.toma_corriente || ""} onChange={(v) => setForm({ ...form, toma_corriente: v })} style={{ width: "100%" }} />
-                  </Field>
-                </Row>
-                <div className="spacer" />
-                <Row>
-                  <Field label="Anclaje">
-                    <select
-                      value={form.anclaje || ""}
-                      onChange={(e) => setForm({ ...form, anclaje: e.target.value })}
-                      style={{ padding: 10, borderRadius: 10, border: "1px solid #ddd", width: "100%" }}
-                    >
-                      <option value="">—</option>
-                      <option value="sin">Sin anclaje</option>
-                      <option value="lateral">Lateral</option>
-                      <option value="frontal">Frontal</option>
-                      <option value="otro">Otro</option>
-                    </select>
-                  </Field>
-                  <Field label="Otro (si aplica)">
-                    <Input value={form.anclaje_otro || ""} onChange={(v) => setForm({ ...form, anclaje_otro: v })} style={{ width: "100%" }} />
-                  </Field>
-                </Row>
-                <div className="spacer" />
-                <Row>
-                  <Field label="Rebaje lateral (mm)">
-                    <Input value={form.rebaje_lateral_mm || ""} onChange={(v) => setForm({ ...form, rebaje_lateral_mm: v })} style={{ width: "100%" }} />
-                  </Field>
-                  <Field label="Rebaje inferior (mm)">
-                    <Input value={form.rebaje_inferior_mm || ""} onChange={(v) => setForm({ ...form, rebaje_inferior_mm: v })} style={{ width: "100%" }} />
-                  </Field>
-                </Row>
-              </Section>
+              <Section title="Esquema (medidas)">
+                <div style={{ display: "flex", gap: 14, flexWrap: "wrap", alignItems: "flex-start" }}>
+                  <div style={{ flex: 2, minWidth: 320 }}>
+                    <div style={{ border: "1px solid #eee", borderRadius: 12, padding: 10, background: "#fff" }}>
+                      <img
+                        src="/measurement_scheme.png"
+                        alt="Esquema"
+                        style={{ width: "100%", height: "auto", display: "block" }}
+                      />
+                    </div>
+                    <div className="muted" style={{ marginTop: 8, fontSize: 12 }}>
+                      Ingresá un número en cada rectángulo (mm).
+                    </div>
+                  </div>
 
-              <Section title="Sistema / Revestimiento">
-                <Row>
-                  <Field label="Color sistema">
-                    <Input value={form.color_sistema || ""} onChange={(v) => setForm({ ...form, color_sistema: v })} style={{ width: "100%" }} />
-                  </Field>
-                  <Field label="Accionamiento">
-                    <select
-                      value={form.accionamiento || ""}
-                      onChange={(e) => setForm({ ...form, accionamiento: e.target.value })}
-                      style={{ padding: 10, borderRadius: 10, border: "1px solid #ddd", width: "100%" }}
-                    >
-                      <option value="">—</option>
-                      <option value="manual">Manual</option>
-                      <option value="automatico">Automático</option>
-                      <option value="otro">Otro</option>
-                    </select>
-                  </Field>
-                  <Field label="Otro (si aplica)">
-                    <Input value={form.accionamiento_otro || ""} onChange={(v) => setForm({ ...form, accionamiento_otro: v })} style={{ width: "100%" }} />
-                  </Field>
-                  <Field label="Levadizo">
-                    <select
-                      value={form.levadizo || ""}
-                      onChange={(e) => setForm({ ...form, levadizo: e.target.value })}
-                      style={{ padding: 10, borderRadius: 10, border: "1px solid #ddd", width: "100%" }}
-                    >
-                      <option value="">—</option>
-                      <option value="coplanar">Coplanar</option>
-                      <option value="comun">Común</option>
-                    </select>
-                  </Field>
-                </Row>
+                  <div style={{ flex: 1, minWidth: 260 }}>
+                    <div style={{ fontWeight: 900, marginBottom: 8 }}>Alto</div>
+                    <Row>
+                      {[0, 1, 2].map((i) => (
+                        <Field key={`alto-${i}`} label={`Alto ${i + 1} (mm)`}>
+                          <Input
+                            type="number"
+                            value={form.esquema?.alto?.[i] ?? ""}
+                            onChange={(v) => {
+                              const next = { ...(form.esquema || {}) };
+                              const arr = Array.isArray(next.alto) ? next.alto.slice(0, 3) : ["", "", ""];
+                              while (arr.length < 3) arr.push("");
+                              arr[i] = v;
+                              next.alto = arr;
+                              setForm({ ...form, esquema: next });
+                            }}
+                            style={{ width: "100%" }}
+                          />
+                        </Field>
+                      ))}
+                    </Row>
 
-                <div className="spacer" />
+                    <div className="spacer" />
 
-                <Row>
-                  <Field label="Estructura metálica">
-                    <Checkbox label="Sí" checked={form.estructura_metalica} onChange={(v) => setForm({ ...form, estructura_metalica: v })} />
-                  </Field>
-                  <Field label="Detalle estructura metálica">
-                    <Input value={form.estructura_metalica_detalle || ""} onChange={(v) => setForm({ ...form, estructura_metalica_detalle: v })} style={{ width: "100%" }} />
-                  </Field>
-                  <Field label="Tipo revestimiento">
-                    <Input value={form.tipo_revestimiento || ""} onChange={(v) => setForm({ ...form, tipo_revestimiento: v })} style={{ width: "100%" }} />
-                  </Field>
-                  <Field label="Orientación">
-                    <Input value={form.orientacion_revestimiento || ""} onChange={(v) => setForm({ ...form, orientacion_revestimiento: v })} style={{ width: "100%" }} />
-                  </Field>
-                </Row>
-
-                <div className="spacer" />
-
-                <Row>
-                  <Field label="Material revestimiento">
-                    <Input value={form.material_revestimiento || ""} onChange={(v) => setForm({ ...form, material_revestimiento: v })} style={{ width: "100%" }} />
-                  </Field>
-                  <Field label="Color revestimiento">
-                    <Input value={form.color_revestimiento || ""} onChange={(v) => setForm({ ...form, color_revestimiento: v })} style={{ width: "100%" }} />
-                  </Field>
-                  <Field label="Peso revestimiento">
-                    <Input value={form.peso_revestimiento || ""} onChange={(v) => setForm({ ...form, peso_revestimiento: v })} style={{ width: "100%" }} />
-                  </Field>
-                </Row>
-
-                <div className="spacer" />
-
-                <div className="muted" style={{ marginBottom: 6 }}>Tubos</div>
-                <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-                  {tubosOptions.map((t) => (
-                    <Checkbox
-                      key={t}
-                      label={t}
-                      checked={(form.tubos || []).includes(t)}
-                      onChange={() => toggTubos(t)}
-                    />
-                  ))}
+                    <div style={{ fontWeight: 900, marginBottom: 8 }}>Ancho</div>
+                    <Row>
+                      {[0, 1, 2].map((i) => (
+                        <Field key={`ancho-${i}`} label={`Ancho ${i + 1} (mm)`}>
+                          <Input
+                            type="number"
+                            value={form.esquema?.ancho?.[i] ?? ""}
+                            onChange={(v) => {
+                              const next = { ...(form.esquema || {}) };
+                              const arr = Array.isArray(next.ancho) ? next.ancho.slice(0, 3) : ["", "", ""];
+                              while (arr.length < 3) arr.push("");
+                              arr[i] = v;
+                              next.ancho = arr;
+                              setForm({ ...form, esquema: next });
+                            }}
+                            style={{ width: "100%" }}
+                          />
+                        </Field>
+                      ))}
+                    </Row>
+                  </div>
                 </div>
+              </Section>
+
+              <Section title="Instalación / Sistema">
+                <Row>
+                  <Field label="Tipo de colocación">
+                    <Select
+                      value={form.colocacion || ""}
+                      onChange={(v) => setForm({ ...form, colocacion: v })}
+                      options={[
+                        { value: "dentro_vano", label: "Por dentro del vano" },
+                        { value: "detras_vano", label: "Por detrás del vano" },
+                      ]}
+                    />
+                  </Field>
+
+                  <Field label="Portón en acopio">
+                    <Input value={form.en_acopio ? "Sí" : "No"} onChange={() => {}} disabled style={{ width: "100%", opacity: 0.9 }} />
+                  </Field>
+
+                  <Field label="Tipo de accionamiento">
+                    <Select
+                      value={form.accionamiento || ""}
+                      onChange={(v) => setForm({ ...form, accionamiento: v })}
+                      options={[
+                        { value: "manual", label: "Manual" },
+                        { value: "automatico", label: "Automático" },
+                      ]}
+                    />
+                  </Field>
+
+                  <Field label="Sistema levadizo">
+                    <Select
+                      value={form.levadizo || ""}
+                      onChange={(v) => setForm({ ...form, levadizo: v })}
+                      options={[
+                        { value: "coplanar", label: "Coplanar" },
+                        { value: "comun", label: "Común" },
+                      ]}
+                    />
+                  </Field>
+                </Row>
+
+                <div className="spacer" />
+
+                <Row>
+                  <Field label="Estructura metálica para puerta">
+                    <Select
+                      value={form.estructura_metalica ? "si" : "no"}
+                      onChange={(v) => setYesNoBool("estructura_metalica", v)}
+                      options={yesNoOptions}
+                    />
+                  </Field>
+
+                  <Field label="Rebaje lateral (mm)">
+                    <Input type="number" value={form.rebaje_lateral_mm || ""} onChange={(v) => setForm({ ...form, rebaje_lateral_mm: v })} style={{ width: "100%" }} />
+                  </Field>
+
+                  <Field label="Rebaje inferior (mm)">
+                    <Input type="number" value={form.rebaje_inferior_mm || ""} onChange={(v) => setForm({ ...form, rebaje_inferior_mm: v })} style={{ width: "100%" }} />
+                  </Field>
+
+                  <Field label="Anclaje de fijación">
+                    <Select
+                      value={form.anclaje || ""}
+                      onChange={(v) => setForm({ ...form, anclaje: v })}
+                      options={[
+                        { value: "lateral", label: "Lateral" },
+                        { value: "frontal", label: "Frontal" },
+                        { value: "sin", label: "Sin Anclajes" },
+                      ]}
+                    />
+                  </Field>
+                </Row>
+
+                <div className="spacer" />
+
+                <Row>
+                  <Field label="Color de sistema">
+                    <Select
+                      value={form.color_sistema || ""}
+                      onChange={(v) => setForm({ ...form, color_sistema: v })}
+                      options={[
+                        { value: "Blanco", label: "Blanco" },
+                        { value: "Gris topo", label: "Gris topo" },
+                        { value: "Negro texturado Brillante", label: "Negro texturado Brillante" },
+                        { value: "Negro Semi Mate", label: "Negro Semi Mate" },
+                        { value: "Negro Textourado mate", label: "Negro Textourado mate" },
+                        { value: "Bronce colonial", label: "Bronce colonial" },
+                      ]}
+                    />
+                  </Field>
+                </Row>
+              </Section>
+
+              <Section title="Revestimiento">
+                <Row>
+                  <Field label="Tipo de Revestimiento">
+                    <Select
+                      value={form.tipo_revestimiento || ""}
+                      onChange={(v) => {
+                        const next = { ...form, tipo_revestimiento: v };
+                        if (!["varillado_inyectado", "varillado_simple"].includes(v)) next.varillado_medida = "";
+                        setForm(next);
+                      }}
+                      options={[
+                        { value: "lamas", label: "Lamas" },
+                        { value: "varillado_inyectado", label: "Varillado Inyectado" },
+                        { value: "varillado_simple", label: "Varillado Simple" },
+                      ]}
+                    />
+                  </Field>
+
+                  {["varillado_inyectado", "varillado_simple"].includes(form.tipo_revestimiento) && (
+                    <Field label="Medida (Varillado)">
+                      <Select
+                        value={form.varillado_medida || ""}
+                        onChange={(v) => setForm({ ...form, varillado_medida: v })}
+                        options={[
+                          { value: "20 x 10 x 20", label: "20 x 10 x 20" },
+                          { value: "40 x 10 x 40", label: "40 x 10 x 40" },
+                        ]}
+                      />
+                    </Field>
+                  )}
+
+                  <Field label="Orientación del revestimiento">
+                    <Select
+                      value={form.orientacion_revestimiento || ""}
+                      onChange={(v) => setForm({ ...form, orientacion_revestimiento: v })}
+                      options={[
+                        { value: "lamas_horizontales", label: "Lamas Horizontales" },
+                        { value: "lamas_verticales", label: "Lamas Verticales" },
+                        { value: "varillado_vertical", label: "Varillado Vertical" },
+                      ]}
+                    />
+                  </Field>
+                </Row>
+
+                <div className="spacer" />
+
+                <Row>
+                  <Field label="Revestimiento">
+                    <Select
+                      value={form.revestimiento || ""}
+                      onChange={(v) => setForm({ ...form, revestimiento: v })}
+                      options={[
+                        { value: "Apto Aluminio", label: "Apto Aluminio" },
+                        { value: "Simil madera Clásico Simil", label: "Simil madera Clásico Simil" },
+                        { value: "Simil Aluminio Clásico", label: "Simil Aluminio Clásico" },
+                        { value: "Apto PVC", label: "Apto PVC" },
+                        { value: "Simil madera doble inyectado", label: "Simil madera doble inyectado" },
+                        { value: "Simil aluminio doble inyectado", label: "Simil aluminio doble inyectado" },
+                        { value: "Varillado", label: "Varillado" },
+                      ]}
+                    />
+                  </Field>
+
+                  <Field label="Color de revestimiento">
+                    <Select
+                      value={form.color_revestimiento || ""}
+                      onChange={(v) => {
+                        const next = { ...form, color_revestimiento: v };
+                        if (v !== "Otros") next.color_revestimiento_otro = "";
+                        setForm(next);
+                      }}
+                      options={[
+                        { value: "Roble", label: "Roble" },
+                        { value: "Negro Texturado", label: "Negro Texturado" },
+                        { value: "Negro Semi mate", label: "Negro Semi mate" },
+                        { value: "Blanco", label: "Blanco" },
+                        { value: "Bronce Colonial", label: "Bronce Colonial" },
+                        { value: "Negro Micro", label: "Negro Micro" },
+                        { value: "Nogal", label: "Nogal" },
+                        { value: "Gris Topo", label: "Gris Topo" },
+                        { value: "Otros", label: "Otros" },
+                      ]}
+                    />
+                  </Field>
+
+                  {form.color_revestimiento === "Otros" && (
+                    <Field label="Otros (especificar)">
+                      <Input value={form.color_revestimiento_otro || ""} onChange={(v) => setForm({ ...form, color_revestimiento_otro: v })} style={{ width: "100%" }} />
+                    </Field>
+                  )}
+                </Row>
 
                 <div className="spacer" />
 
                 <Row>
                   <Field label="Lucera con vidrios">
-                    <Checkbox label="Sí" checked={form.lucera} onChange={(v) => setForm({ ...form, lucera: v })} />
+                    <Select
+                      value={form.lucera ? "si" : "no"}
+                      onChange={(v) => {
+                        const yes = v === "si";
+                        setForm({ ...form, lucera: yes, lucera_cantidad: yes ? (form.lucera_cantidad || "") : "" });
+                      }}
+                      options={yesNoOptions}
+                    />
                   </Field>
-                  <Field label="Cantidad lucera">
-                    <Input value={form.lucera_cantidad || ""} onChange={(v) => setForm({ ...form, lucera_cantidad: v })} style={{ width: "100%" }} />
+
+                  {form.lucera && (
+                    <Field label="Cantidad (Lucera)">
+                      <Input type="number" value={form.lucera_cantidad || ""} onChange={(v) => setForm({ ...form, lucera_cantidad: v })} style={{ width: "100%" }} />
+                    </Field>
+                  )}
+
+                  <Field label="Peso del revestimiento a colocar">
+                    <Input type="number" value={form.peso_revestimiento || ""} onChange={(v) => setForm({ ...form, peso_revestimiento: v })} style={{ width: "100%" }} />
                   </Field>
                 </Row>
               </Section>
 
-              <Section title="Servicios">
+              <Section title="Servicios / Contacto">
                 <Row>
-                  <Field label="Traslado">
-                    <Checkbox label="Sí" checked={form.traslado} onChange={(v) => setForm({ ...form, traslado: v })} />
+                  <Field label="Servicio de traslado">
+                    <Select value={form.traslado ? "si" : "no"} onChange={(v) => setYesNoBool("traslado", v)} options={yesNoOptions} />
                   </Field>
-                  <Field label="Dirección entrega">
-                    <Input value={form.direccion_entrega || ""} onChange={(v) => setForm({ ...form, direccion_entrega: v })} style={{ width: "100%" }} />
+                  <Field label="Servicio de relevamiento de medidas">
+                    <Select value={form.relevamiento ? "si" : "no"} onChange={(v) => setYesNoBool("relevamiento", v)} options={yesNoOptions} />
                   </Field>
                 </Row>
 
                 <div className="spacer" />
 
                 <Row>
-                  <Field label="Relevamiento medidas">
-                    <Checkbox label="Sí" checked={form.relevamiento} onChange={(v) => setForm({ ...form, relevamiento: v })} />
+                  <Field label="Nombre de contacto en obra">
+                    <textarea
+                      value={form.contacto_obra_nombre || ""}
+                      onChange={(e) => setForm({ ...form, contacto_obra_nombre: e.target.value })}
+                      style={{ width: "100%", minHeight: 64, padding: 10, borderRadius: 10, border: "1px solid #ddd", resize: "vertical" }}
+                    />
                   </Field>
-                  <Field label="Contacto en obra">
-                    <Input value={form.contacto_obra || ""} onChange={(v) => setForm({ ...form, contacto_obra: v })} style={{ width: "100%" }} />
-                  </Field>
-                </Row>
-
-                <div className="spacer" />
-
-                <Row>
-                  <Field label="Instalación">
-                    <Checkbox label="Sí" checked={form.instalacion} onChange={(v) => setForm({ ...form, instalacion: v })} />
-                  </Field>
-                  <Field label="Diente inferior / trampa tierra">
-                    <Checkbox label="Sí" checked={form.diente_inferior} onChange={(v) => setForm({ ...form, diente_inferior: v })} />
-                  </Field>
-                  <Field label="Mm a superponer">
-                    <Input value={form.mm_superponer || ""} onChange={(v) => setForm({ ...form, mm_superponer: v })} style={{ width: "100%" }} />
+                  <Field label="Teléfono de contacto en obra">
+                    <Input type="tel" value={form.contacto_obra_tel || ""} onChange={(v) => setForm({ ...form, contacto_obra_tel: v })} style={{ width: "100%" }} />
                   </Field>
                 </Row>
               </Section>

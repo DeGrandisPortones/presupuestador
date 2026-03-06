@@ -54,62 +54,57 @@ async function renderMeasurementPdf({ quote, form }) {
   }
   doc.moveDown(0.8);
 
+  const alto = pick(form, "esquema.alto", []);
+  const ancho = pick(form, "esquema.ancho", []);
+  const altoStr = Array.isArray(alto) ? alto.map((x) => safeStr(x)).filter(Boolean).join(" | ") : safeStr(alto);
+  const anchoStr = Array.isArray(ancho) ? ancho.map((x) => safeStr(x)).filter(Boolean).join(" | ") : safeStr(ancho);
+
   doc.font("Helvetica-Bold").text("Datos generales");
   doc.font("Helvetica").text(`Fecha: ${safeStr(pick(form, "fecha"))}`);
   doc.text(`Distribuidor: ${safeStr(pick(form, "distribuidor"))}`);
-  doc.text(`N° portón / Nota de venta: ${safeStr(pick(form, "nro_porton"))}`);
+  doc.text(`N° de portón (Nota de venta): ${safeStr(pick(form, "nro_porton"))}`);
   doc.moveDown(0.8);
 
-  doc.font("Helvetica-Bold").text("Medidas");
-  doc.font("Helvetica").text(`Ancho (mm): ${safeStr(pick(form, "ancho_mm"))}`);
-  doc.text(`Alto (mm): ${safeStr(pick(form, "alto_mm"))}`);
-  doc.text(
-      `Parantes - Cant: ${safeStr(pick(form, "parantes.cant"))} | Puerta Izq: ${safeStr(pick(form, "parantes.puerta_izq") || pick(form, "parantes.izq"))} | Puerta Der: ${safeStr(pick(form, "parantes.puerta_der") || pick(form, "parantes.der"))} | Motor/Soporte Izq: ${safeStr(pick(form, "parantes.motor_izq"))} | Motor/Soporte Der: ${safeStr(pick(form, "parantes.motor_der"))}`
-    );
-  doc.moveDown(0.8);
-
-  doc.font("Helvetica-Bold").text("Colocación / Motor");
-  doc.font("Helvetica").text(`Tipo colocación: ${safeStr(pick(form, "colocacion"))}`);
-  doc.text(`Colocación (otro): ${safeStr(pick(form, "colocacion_otro"))}`);
-  doc.text(`Portón en acopio: ${yn(!!pick(form, "en_acopio"))}`);
-  doc.text(`Lado motor/soporte: ${safeStr(pick(form, "lado_motor"))}`);
+  doc.font("Helvetica-Bold").text("Parantes / Laterales");
+  doc.font("Helvetica").text(`Parantes (Cant): ${safeStr(pick(form, "parantes.cant"))}`);
+  doc.text(`Lado de la puerta: ${safeStr(pick(form, "lado_puerta"))}`);
+  doc.text(`Lado de motor o soporte: ${safeStr(pick(form, "lado_motor"))}`);
   doc.text(`Toma corriente: ${safeStr(pick(form, "toma_corriente"))}`);
+  doc.moveDown(0.6);
+  doc.font("Helvetica-Bold").text("Esquema (mm)");
+  doc.font("Helvetica").text(`Alto: ${altoStr || "—"}`);
+  doc.text(`Ancho: ${anchoStr || "—"}`);
   doc.moveDown(0.8);
 
-  doc.font("Helvetica-Bold").text("Anclajes / Rebajes");
-  doc.font("Helvetica").text(`Anclaje: ${safeStr(pick(form, "anclaje"))}`);
-  doc.text(`Otro: ${safeStr(pick(form, "anclaje_otro"))}`);
+  doc.font("Helvetica-Bold").text("Instalación / Sistema");
+  doc.font("Helvetica").text(`Tipo de colocación: ${safeStr(pick(form, "colocacion"))}`);
+  doc.text(`Portón en acopio: ${yn(!!pick(form, "en_acopio"))}`);
+  doc.text(`Tipo de accionamiento: ${safeStr(pick(form, "accionamiento"))}`);
+  doc.text(`Sistema levadizo: ${safeStr(pick(form, "levadizo"))}`);
+  doc.text(`Estructura metálica para puerta: ${yn(!!pick(form, "estructura_metalica"))}`);
   doc.text(`Rebaje lateral (mm): ${safeStr(pick(form, "rebaje_lateral_mm"))}`);
   doc.text(`Rebaje inferior (mm): ${safeStr(pick(form, "rebaje_inferior_mm"))}`);
-  doc.moveDown(0.8);
-
-  doc.font("Helvetica-Bold").text("Sistema");
-  doc.font("Helvetica").text(`Color sistema: ${safeStr(pick(form, "color_sistema"))}`);
-  doc.text(`Accionamiento: ${safeStr(pick(form, "accionamiento"))}`);
-  doc.text(`Accionamiento (otro): ${safeStr(pick(form, "accionamiento_otro"))}`);
-  doc.text(`Levadizo: ${safeStr(pick(form, "levadizo"))}`);
-  doc.text(`Estructura metálica: ${yn(!!pick(form, "estructura_metalica"))}`);
-  doc.text(`Detalle estructura metálica: ${safeStr(pick(form, "estructura_metalica_detalle"))}`);
+  doc.text(`Anclaje de fijación: ${safeStr(pick(form, "anclaje"))}`);
+  doc.text(`Color de sistema: ${safeStr(pick(form, "color_sistema"))}`);
   doc.moveDown(0.8);
 
   doc.font("Helvetica-Bold").text("Revestimiento");
-  doc.font("Helvetica").text(`Tipo: ${safeStr(pick(form, "tipo_revestimiento"))}`);
-  doc.text(`Orientación: ${safeStr(pick(form, "orientacion_revestimiento"))}`);
-  doc.text(`Material: ${safeStr(pick(form, "material_revestimiento"))}`);
-  doc.text(`Color: ${safeStr(pick(form, "color_revestimiento"))}`);
-  const tubos = pick(form, "tubos", []);
-  doc.text(`Tubos: ${Array.isArray(tubos) ? tubos.join(", ") : safeStr(tubos)}`);
-  doc.text(`Lucera con vidrios: ${yn(!!pick(form, "lucera"))} | Cantidad: ${safeStr(pick(form, "lucera_cantidad"))}`);
-  doc.text(`Peso revestimiento: ${safeStr(pick(form, "peso_revestimiento"))}`);
+  doc.font("Helvetica").text(`Tipo de Revestimiento: ${safeStr(pick(form, "tipo_revestimiento"))}`);
+  doc.text(`Medida (Varillado): ${safeStr(pick(form, "varillado_medida"))}`);
+  doc.text(`Orientación del revestimiento: ${safeStr(pick(form, "orientacion_revestimiento"))}`);
+  doc.text(`Revestimiento: ${safeStr(pick(form, "revestimiento"))}`);
+  const cr = safeStr(pick(form, "color_revestimiento"));
+  const crOther = safeStr(pick(form, "color_revestimiento_otro"));
+  doc.text(`Color de revestimiento: ${cr}${cr === "Otros" && crOther ? " (" + crOther + ")" : ""}`);
+  doc.text(`Lucera con vidrios: ${yn(!!pick(form, "lucera"))}${pick(form, "lucera") ? " | Cantidad: " + safeStr(pick(form, "lucera_cantidad")) : ""}`);
+  doc.text(`Peso del revestimiento a colocar: ${safeStr(pick(form, "peso_revestimiento"))}`);
   doc.moveDown(0.8);
 
-  doc.font("Helvetica-Bold").text("Servicios");
-  doc.font("Helvetica").text(`Traslado: ${yn(!!pick(form, "traslado"))}`);
-  doc.text(`Dirección de entrega: ${safeStr(pick(form, "direccion_entrega"))}`);
-  doc.text(`Relevamiento de medidas: ${yn(!!pick(form, "relevamiento"))}`);
-  doc.text(`Contacto en obra: ${safeStr(pick(form, "contacto_obra"))}`);
-  doc.text(`Instalación: ${yn(!!pick(form, "instalacion"))}`);
-  doc.text(`Diente inferior / trampa tierra: ${yn(!!pick(form, "diente_inferior"))} | Mm a superponer: ${safeStr(pick(form, "mm_superponer"))}`);
+  doc.font("Helvetica-Bold").text("Servicios / Contacto");
+  doc.font("Helvetica").text(`Servicio de traslado: ${yn(!!pick(form, "traslado"))}`);
+  doc.text(`Servicio de relevamiento de medidas: ${yn(!!pick(form, "relevamiento"))}`);
+  doc.text(`Contacto en obra (nombre): ${safeStr(pick(form, "contacto_obra_nombre"))}`);
+  doc.text(`Contacto en obra (tel): ${safeStr(pick(form, "contacto_obra_tel"))}`);
   doc.moveDown(0.8);
 
   doc.font("Helvetica-Bold").text("Observaciones");
@@ -599,14 +594,22 @@ export function buildPdfRouter() {
 
       // Si es una revisión, puede heredar la medición del original (measurement_source_quote_id)
       if (!form && quote.measurement_source_quote_id) {
-        const r2 = await dbQuery(`select measurement_form from public.presupuestador_quotes where id=$1 limit 1`, [Number(quote.measurement_source_quote_id)]);
-        form = r2.rows?.[0]?.measurement_form || null;
+        const src = quote.measurement_source_quote_id;
+        const srcId = isUuid(src) ? String(src) : Number(src);
+        if (srcId) {
+          const r2 = await dbQuery(`select measurement_form from public.presupuestador_quotes where id=$1 limit 1`, [srcId]);
+          form = r2.rows?.[0]?.measurement_form || null;
+        }
       }
 
       // Compat: si solo tiene original_quote_id
       if (!form && quote.original_quote_id) {
-        const r3 = await dbQuery(`select measurement_form from public.presupuestador_quotes where id=$1 limit 1`, [Number(quote.original_quote_id)]);
-        form = r3.rows?.[0]?.measurement_form || null;
+        const src = quote.original_quote_id;
+        const srcId = isUuid(src) ? String(src) : Number(src);
+        if (srcId) {
+          const r3 = await dbQuery(`select measurement_form from public.presupuestador_quotes where id=$1 limit 1`, [srcId]);
+          form = r3.rows?.[0]?.measurement_form || null;
+        }
       }
 
       if (!form) {

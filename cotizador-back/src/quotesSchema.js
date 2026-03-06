@@ -36,7 +36,8 @@ export async function ensureQuotesMeasurementColumns() {
   await dbQuery(`alter table public.presupuestador_quotes add column if not exists measurement_review_at timestamptz null;`);
   await dbQuery(`alter table public.presupuestador_quotes add column if not exists measurement_review_notes text null;`);
 
-  // Backfill seguro: portones ya en Odoo y en producción => requieren medición
+  // Backfill selectivo: solo portones en Odoo+producción que tengan el producto de medición en líneas
+  const measurementProductId = String(process.env.ODOO_MEASUREMENT_PRODUCT_ID || 2865);
   await dbQuery(`
     update public.presupuestador_quotes
     set requires_measurement = true,
@@ -44,6 +45,11 @@ export async function ensureQuotesMeasurementColumns() {
     where catalog_kind = 'porton'
       and status = 'synced_odoo'
       and fulfillment_mode = 'produccion'
+      and exists (
+        select 1
+        from jsonb_array_elements(coalesce(lines, '[]'::jsonb)) elem
+        where (elem->>'product_id') = '${measurementProductId}'
+      )
   `);
 
   ensured = true;
