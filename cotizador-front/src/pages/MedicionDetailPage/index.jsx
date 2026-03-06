@@ -35,6 +35,35 @@ function deriveEnAcopio(quote) {
   return false;
 }
 
+const SCHEME_RECT_PCTS = {
+  // Coordenadas en % (calculadas sobre la imagen 618x295)
+  alto: [
+    { left: 9.22, top: 43.73, width: 14.40, height: 14.24 },
+    { left: 27.02, top: 43.73, width: 14.40, height: 14.24 },
+    { left: 44.50, top: 43.73, width: 14.24, height: 14.24 },
+  ],
+  ancho: [
+    { left: 71.36, top: 22.71, width: 14.40, height: 14.24 },
+    { left: 71.36, top: 48.14, width: 14.40, height: 13.90 },
+    { left: 71.36, top: 82.71, width: 14.40, height: 14.24 },
+  ],
+};
+
+const schemeOverlayBaseStyle = {
+  position: "absolute",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  fontWeight: 900,
+  color: "#111",
+  textShadow: "0 1px 0 rgba(255,255,255,0.9)",
+  background: "rgba(255,255,255,0.55)",
+  borderRadius: 6,
+  pointerEvents: "none",
+};
+
+
+
 function normalizeMeasurementForm(raw, quote) {
   const f = raw && typeof raw === "object" ? { ...raw } : {};
 
@@ -324,13 +353,55 @@ export default function MedicionDetailPage() {
               <Section title="Esquema (medidas)">
                 <div style={{ display: "flex", gap: 14, flexWrap: "wrap", alignItems: "flex-start" }}>
                   <div style={{ flex: 2, minWidth: 320 }}>
-                    <div style={{ border: "1px solid #eee", borderRadius: 12, padding: 10, background: "#fff" }}>
-                      <img
-                        src="/measurement_scheme.png"
-                        alt="Esquema"
-                        style={{ width: "100%", height: "auto", display: "block" }}
-                      />
-                    </div>
+<div style={{ border: "1px solid #eee", borderRadius: 12, padding: 10, background: "#fff" }}>
+  <div style={{ position: "relative", width: "100%" }}>
+    <img
+      src="/measurement_scheme.png"
+      alt="Esquema"
+      style={{ width: "100%", height: "auto", display: "block" }}
+    />
+
+    {/* Valores ingresados, sobre los rectángulos */}
+    {SCHEME_RECT_PCTS.alto.map((p, i) => {
+      const v = form.esquema?.alto?.[i];
+      if (v === "" || v === null || v === undefined) return null;
+      return (
+        <div
+          key={`alto-ov-${i}`}
+          style={{
+            ...schemeOverlayBaseStyle,
+            left: `${p.left}%`,
+            top: `${p.top}%`,
+            width: `${p.width}%`,
+            height: `${p.height}%`,
+            fontSize: 14,
+          }}
+        >
+          {v}
+        </div>
+      );
+    })}
+    {SCHEME_RECT_PCTS.ancho.map((p, i) => {
+      const v = form.esquema?.ancho?.[i];
+      if (v === "" || v === null || v === undefined) return null;
+      return (
+        <div
+          key={`ancho-ov-${i}`}
+          style={{
+            ...schemeOverlayBaseStyle,
+            left: `${p.left}%`,
+            top: `${p.top}%`,
+            width: `${p.width}%`,
+            height: `${p.height}%`,
+            fontSize: 14,
+          }}
+        >
+          {v}
+        </div>
+      );
+    })}
+  </div>
+</div>
                     <div className="muted" style={{ marginTop: 8, fontSize: 12 }}>
                       Ingresá un número en cada rectángulo (mm).
                     </div>
