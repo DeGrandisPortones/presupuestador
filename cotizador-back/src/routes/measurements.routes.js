@@ -1,3 +1,4 @@
+import crypto from "crypto";
 import express from "express";
 import { requireAuth } from "../auth.js";
 import { dbQuery } from "../db.js";
@@ -14,7 +15,7 @@ function canReadMeasurement({ user, quote }) {
   if (isOwner) return true;
   if (user.is_enc_comercial) return true;
   if (user.is_rev_tecnica) return true;
-  if (user.is_medidor) return true; // medidor puede ver (para trabajar)
+  if (user.is_medidor) return true;
   return false;
 }
 
@@ -24,12 +25,15 @@ function normalizeStatus(s) {
   return v;
 }
 
-
 function isUuid(v) {
-  // acepta UUID v4 pero no rompe si llega otro UUID válido (solo chequeo básico)
   const s = String(v || "").trim();
   return /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(s);
 }
+
+function makeShareToken() {
+  return crypto.randomBytes(24).toString("hex");
+}
+
 export function buildMeasurementsRouter() {
   const router = express.Router();
 
@@ -44,8 +48,6 @@ export function buildMeasurementsRouter() {
 
   router.use(requireAuth);
 
-  // Bandeja del medidor
-  // GET /api/measurements?status=pending|needs_fix|submitted|approved|all&q=cliente
   router.get("/", requireMedidor, async (req, res, next) => {
     try {
       const u = req.user;
@@ -57,7 +59,6 @@ export function buildMeasurementsRouter() {
         "q.status = 'synced_odoo'",
         "q.fulfillment_mode = 'produccion'",
         "q.requires_measurement = true",
-        // asignación: si está asignado, solo lo ve el asignado; si no, cualquiera
         "(q.measurement_assigned_to_user_id is null or q.measurement_assigned_to_user_id = $1)",
       ];
       const params = [Number(u.user_id)];
@@ -66,7 +67,6 @@ export function buildMeasurementsRouter() {
         params.push(status);
         where.push(`q.measurement_status = $${params.length}`);
       } else {
-        // all => todos menos none
         where.push(`q.measurement_status <> 'none'`);
       }
 
@@ -91,7 +91,6 @@ export function buildMeasurementsRouter() {
     }
   });
 
-  // Abrir una medición
   router.get("/:id", async (req, res, next) => {
     try {
       const u = req.user;
@@ -118,8 +117,6 @@ export function buildMeasurementsRouter() {
     }
   });
 
-  // Guardar / enviar medición (medidor)
-  // PUT /api/measurements/:id  body: { form: {...}, submit: true|false }
   router.put("/:id", requireMedidor, async (req, res, next) => {
     try {
       const u = req.user;
@@ -136,7 +133,6 @@ export function buildMeasurementsRouter() {
       const quote = cur.rows?.[0];
       if (!quote) return res.status(404).json({ ok: false, error: "Presupuesto no encontrado" });
 
-      // Solo aplica a portones en producción ya en Odoo
       if (!(quote.catalog_kind === "porton" && quote.status === "synced_odoo" && quote.fulfillment_mode === "produccion")) {
         return res.status(400).json({ ok: false, error: "Este presupuesto no requiere medición" });
       }
@@ -144,7 +140,6 @@ export function buildMeasurementsRouter() {
       const st = quote.measurement_status || "none";
       if (st === "approved") return res.status(409).json({ ok: false, error: "La medición ya fue aprobada" });
       if (st === "submitted" && !quote.measurement_review_notes) {
-        // submitted no editable hasta que el vendedor la rechace (needs_fix)
         return res.status(409).json({ ok: false, error: "La medición ya fue enviada. Esperá la revisión." });
       }
       if (st === "submitted" && quote.measurement_status !== "needs_fix") {
@@ -152,6 +147,7 @@ export function buildMeasurementsRouter() {
       }
 
       const nextStatus = submit ? "submitted" : "pending";
+      const nextShareToken = submit ? String(quote.measurement_share_token || makeShareToken()) : null;
 
       const upd = await dbQuery(
         `
@@ -164,11 +160,16 @@ export function buildMeasurementsRouter() {
             measurement_review_at = null,
             measurement_assigned_to_user_id = coalesce(measurement_assigned_to_user_id, $4),
             measurement_by_user_id = $4,
-            measurement_at = now()
+            measurement_at = now(),
+            measurement_share_token = coalesce($5, measurement_share_token),
+            measurement_share_enabled_at = case
+              when $6::boolean = true then coalesce(measurement_share_enabled_at, now())
+              else measurement_share_enabled_at
+            end
         where id = $1
         returning *
         `,
-        [id, JSON.stringify(form), nextStatus, Number(u.user_id)]
+        [id, JSON.stringify(form), nextStatus, Number(u.user_id), nextShareToken, submit]
       );
 
       res.json({ ok: true, quote: upd.rows?.[0] || null });
@@ -177,7 +178,6 @@ export function buildMeasurementsRouter() {
     }
   });
 
-  // Revisión por vendedor/distribuidor (dueño)
   router.post("/:id/review", async (req, res, next) => {
     try {
       const u = req.user;

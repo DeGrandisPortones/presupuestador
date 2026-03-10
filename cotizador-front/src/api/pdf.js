@@ -25,8 +25,18 @@ export async function downloadProformaPdf(payload) {
   triggerDownload(res.data, `proforma_${Date.now()}.pdf`);
 }
 
-
 export async function downloadMedicionPdf(quoteId) {
+  const blob = await fetchMedicionPdfBlob(quoteId);
+  triggerDownload(blob, `medicion_${quoteId}.pdf`);
+}
+
+export async function fetchMedicionPdfBlob(quoteId) {
   const res = await http.get(`/api/pdf/medicion/${quoteId}`, { responseType: "blob" });
-  triggerDownload(res.data, `medicion_${quoteId}.pdf`);
+  return res.data;
+}
+
+export function getMedicionPublicPdfUrl(token) {
+  const t = String(token || "").trim();
+  if (!t || typeof window === "undefined") return null;
+  return new URL(`/api/pdf/medicion/public/${encodeURIComponent(t)}`, window.location.origin).toString();
 }

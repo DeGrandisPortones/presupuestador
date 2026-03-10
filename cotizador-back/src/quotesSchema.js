@@ -36,6 +36,10 @@ export async function ensureQuotesMeasurementColumns() {
   await dbQuery(`alter table public.presupuestador_quotes add column if not exists measurement_review_at timestamptz null;`);
   await dbQuery(`alter table public.presupuestador_quotes add column if not exists measurement_review_notes text null;`);
 
+  // Link público para compartir la medición con el cliente por WhatsApp
+  await dbQuery(`alter table public.presupuestador_quotes add column if not exists measurement_share_token text null;`);
+  await dbQuery(`alter table public.presupuestador_quotes add column if not exists measurement_share_enabled_at timestamptz null;`);
+
   // Backfill selectivo: solo portones en Odoo+producción que tengan el producto de medición en líneas
   const measurementProductId = String(process.env.ODOO_MEASUREMENT_PRODUCT_ID || 2865);
   await dbQuery(`

@@ -2,10 +2,16 @@ import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useNavigate, useParams } from "react-router-dom";
 
+import { fetchMedicionPdfBlob, getMedicionPublicPdfUrl } from "../../api/pdf.js";
 import Button from "../../ui/Button.jsx";
 import Input from "../../ui/Input.jsx";
 import { useAuthStore } from "../../domain/auth/store.js";
 import { getMeasurement, saveMeasurement } from "../../api/measurements.js";
+import {
+  buildMeasurementWhatsappMessage,
+  buildWhatsappUrl,
+  tryNativeShareWithPdf,
+} from "../../utils/whatsapp.js";
 
 function todayISO() {
   const d = new Date();
@@ -26,7 +32,6 @@ function deriveDistribuidor(quote) {
 }
 
 function deriveEnAcopio(quote) {
-  // Si la quote vino de acopio y luego pasó a producción, suele quedar trazado en acopio_to_produccion_*.
   const fm = String(quote?.fulfillment_mode || "").toLowerCase().trim();
   if (fm === "acopio") return true;
   const st = String(quote?.acopio_to_produccion_status || "").toLowerCase().trim();
@@ -36,16 +41,15 @@ function deriveEnAcopio(quote) {
 }
 
 const SCHEME_RECT_PCTS = {
-  // Coordenadas en % (calculadas sobre la imagen 618x295)
   alto: [
-    { left: 9.22, top: 43.73, width: 14.40, height: 14.24 },
-    { left: 27.02, top: 43.73, width: 14.40, height: 14.24 },
-    { left: 44.50, top: 43.73, width: 14.24, height: 14.24 },
+    { left: 9.22, top: 43.73, width: 14.4, height: 14.24 },
+    { left: 27.02, top: 43.73, width: 14.4, height: 14.24 },
+    { left: 44.5, top: 43.73, width: 14.24, height: 14.24 },
   ],
   ancho: [
-    { left: 71.36, top: 22.71, width: 14.40, height: 14.24 },
-    { left: 71.36, top: 48.14, width: 14.40, height: 13.90 },
-    { left: 71.36, top: 82.71, width: 14.40, height: 14.24 },
+    { left: 71.36, top: 22.71, width: 14.4, height: 14.24 },
+    { left: 71.36, top: 48.14, width: 14.4, height: 13.9 },
+    { left: 71.36, top: 82.71, width: 14.4, height: 14.24 },
   ],
 };
 
@@ -62,8 +66,6 @@ const schemeOverlayBaseStyle = {
   pointerEvents: "none",
 };
 
-
-
 function normalizeMeasurementForm(raw, quote) {
   const f = raw && typeof raw === "object" ? { ...raw } : {};
 
@@ -71,13 +73,11 @@ function normalizeMeasurementForm(raw, quote) {
   if (!f.distribuidor) f.distribuidor = deriveDistribuidor(quote);
   if (f.en_acopio === undefined) f.en_acopio = deriveEnAcopio(quote);
 
-  // Parantes
-  const p = (f.parantes && typeof f.parantes === "object") ? { ...f.parantes } : {};
+  const p = f.parantes && typeof f.parantes === "object" ? { ...f.parantes } : {};
   if (p.cant === undefined) p.cant = "";
   f.parantes = p;
 
-  // Esquema (6 inputs)
-  const esq = (f.esquema && typeof f.esquema === "object") ? { ...f.esquema } : {};
+  const esq = f.esquema && typeof f.esquema === "object" ? { ...f.esquema } : {};
   const alto = Array.isArray(esq.alto) ? esq.alto.slice(0, 3) : [];
   const ancho = Array.isArray(esq.ancho) ? esq.ancho.slice(0, 3) : [];
   while (alto.length < 3) alto.push("");
@@ -86,13 +86,11 @@ function normalizeMeasurementForm(raw, quote) {
   esq.ancho = ancho;
   f.esquema = esq;
 
-  // Compat: versiones viejas tenían ancho_mm/alto_mm
   if ((f.ancho_mm || f.alto_mm) && !raw?.esquema) {
     if (f.alto_mm && !f.esquema.alto[1]) f.esquema.alto[1] = String(f.alto_mm);
     if (f.ancho_mm && !f.esquema.ancho[1]) f.esquema.ancho[1] = String(f.ancho_mm);
   }
 
-  // Compat: yes/no en strings
   if (f.estructura_metalica !== undefined && typeof f.estructura_metalica !== "boolean") f.estructura_metalica = isYes(f.estructura_metalica);
   if (f.lucera !== undefined && typeof f.lucera !== "boolean") f.lucera = isYes(f.lucera);
   if (f.traslado !== undefined && typeof f.traslado !== "boolean") f.traslado = isYes(f.traslado);
@@ -110,46 +108,32 @@ function makeEmptyForm(quote) {
     fecha: todayISO(),
     distribuidor: deriveDistribuidor(quote),
     nro_porton: "",
-
-    // Top
     parantes: { cant: "" },
-    lado_puerta: "", // izquierda | derecha
-    lado_motor: "", // izquierda | derecha
-    toma_corriente: "", // izquierda | derecha
-
-    // esquema
+    lado_puerta: "",
+    lado_motor: "",
+    toma_corriente: "",
     esquema: { alto: ["", "", ""], ancho: ["", "", ""] },
-
-    // Observaciones
     observaciones: "",
-
-    // Instalación / sistema
-    colocacion: "", // dentro_vano | detras_vano
+    colocacion: "",
     en_acopio: deriveEnAcopio(quote),
-    accionamiento: "", // manual | automatico
-    levadizo: "", // coplanar | comun
+    accionamiento: "",
+    levadizo: "",
     estructura_metalica: false,
     rebaje_lateral_mm: "",
     rebaje_inferior_mm: "",
-    anclaje: "", // lateral | frontal | sin
+    anclaje: "",
     color_sistema: "",
-
-    // Revestimiento
-    tipo_revestimiento: "", // lamas | varillado_inyectado | varillado_simple
-    varillado_medida: "", // 20 x 10 x 20 | 40 x 10 x 40
-    orientacion_revestimiento: "", // lamas_horizontales | lamas_verticales | varillado_vertical
+    tipo_revestimiento: "",
+    varillado_medida: "",
+    orientacion_revestimiento: "",
     revestimiento: "",
     color_revestimiento: "",
     color_revestimiento_otro: "",
     lucera: false,
     lucera_cantidad: "",
     peso_revestimiento: "",
-
-    // Servicios
     traslado: false,
     relevamiento: false,
-
-    // Contacto obra
     contacto_obra_nombre: "",
     contacto_obra_tel: "",
   };
@@ -208,6 +192,7 @@ export default function MedicionDetailPage() {
   const endCustomer = quote?.end_customer || {};
 
   const [form, setForm] = useState(null);
+  const [shareInfo, setShareInfo] = useState(null);
 
   useEffect(() => {
     if (!quote) return;
@@ -217,7 +202,58 @@ export default function MedicionDetailPage() {
 
   const mSave = useMutation({
     mutationFn: ({ submit }) => saveMeasurement(quoteId, { form, submit }),
-    onSuccess: () => q.refetch(),
+    onMutate: () => setShareInfo(null),
+    onSuccess: async (savedQuote, variables) => {
+      await q.refetch();
+
+      if (!variables?.submit) {
+        setShareInfo({ tone: "success", message: "Medición guardada." });
+        return;
+      }
+
+      const token = savedQuote?.measurement_share_token;
+      const publicPdfUrl = getMedicionPublicPdfUrl(token);
+      const whatsappText = buildMeasurementWhatsappMessage(publicPdfUrl);
+      const whatsappUrl = buildWhatsappUrl(savedQuote?.end_customer?.phone || endCustomer.phone, whatsappText);
+
+      let tone = "success";
+      let message = "Medición enviada.";
+
+      try {
+        const pdfBlob = await fetchMedicionPdfBlob(quoteId);
+        const shared = await tryNativeShareWithPdf({
+          blob: pdfBlob,
+          filename: `medicion_${quoteId}.pdf`,
+          title: "Planilla de medición",
+          text: whatsappText,
+        });
+
+        if (shared) {
+          message = "Medición enviada. Se abrió el compartir del dispositivo con el PDF listo para enviar por WhatsApp.";
+        } else if (whatsappUrl) {
+          window.open(whatsappUrl, "_blank", "noopener,noreferrer");
+          message = "Medición enviada. Se abrió WhatsApp con el mensaje listo y el link público a la planilla.";
+        } else {
+          tone = "warning";
+          message = "Medición enviada, pero falta el teléfono del cliente para preparar WhatsApp.";
+        }
+      } catch {
+        if (whatsappUrl) {
+          window.open(whatsappUrl, "_blank", "noopener,noreferrer");
+          message = "Medición enviada. Se abrió WhatsApp con el mensaje listo y el link público a la planilla.";
+        } else {
+          tone = "warning";
+          message = "Medición enviada, pero no se pudo generar el PDF ni preparar WhatsApp.";
+        }
+      }
+
+      setShareInfo({
+        tone,
+        message,
+        whatsappUrl,
+        publicPdfUrl,
+      });
+    },
   });
 
   const canEdit = !!user?.is_medidor;
@@ -259,7 +295,7 @@ export default function MedicionDetailPage() {
         <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
           <div>
             <h2 style={{ margin: 0 }}>Medición · Presupuesto #{quoteId}</h2>
-            <div className="muted">Completar y luego “Aceptar” para enviar al vendedor.</div>
+            <div className="muted">Completar y luego “Aceptar” para enviar la medición y preparar el WhatsApp del cliente.</div>
           </div>
 
           <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
@@ -353,55 +389,50 @@ export default function MedicionDetailPage() {
               <Section title="Esquema (medidas)">
                 <div style={{ display: "flex", gap: 14, flexWrap: "wrap", alignItems: "flex-start" }}>
                   <div style={{ flex: 2, minWidth: 320 }}>
-<div style={{ border: "1px solid #eee", borderRadius: 12, padding: 10, background: "#fff" }}>
-  <div style={{ position: "relative", width: "100%" }}>
-    <img
-      src="/measurement_scheme.png"
-      alt="Esquema"
-      style={{ width: "100%", height: "auto", display: "block" }}
-    />
+                    <div style={{ border: "1px solid #eee", borderRadius: 12, padding: 10, background: "#fff" }}>
+                      <div style={{ position: "relative", width: "100%" }}>
+                        <img src="/measurement_scheme.png" alt="Esquema" style={{ width: "100%", height: "auto", display: "block" }} />
 
-    {/* Valores ingresados, sobre los rectángulos */}
-    {SCHEME_RECT_PCTS.alto.map((p, i) => {
-      const v = form.esquema?.alto?.[i];
-      if (v === "" || v === null || v === undefined) return null;
-      return (
-        <div
-          key={`alto-ov-${i}`}
-          style={{
-            ...schemeOverlayBaseStyle,
-            left: `${p.left}%`,
-            top: `${p.top}%`,
-            width: `${p.width}%`,
-            height: `${p.height}%`,
-            fontSize: 14,
-          }}
-        >
-          {v}
-        </div>
-      );
-    })}
-    {SCHEME_RECT_PCTS.ancho.map((p, i) => {
-      const v = form.esquema?.ancho?.[i];
-      if (v === "" || v === null || v === undefined) return null;
-      return (
-        <div
-          key={`ancho-ov-${i}`}
-          style={{
-            ...schemeOverlayBaseStyle,
-            left: `${p.left}%`,
-            top: `${p.top}%`,
-            width: `${p.width}%`,
-            height: `${p.height}%`,
-            fontSize: 14,
-          }}
-        >
-          {v}
-        </div>
-      );
-    })}
-  </div>
-</div>
+                        {SCHEME_RECT_PCTS.alto.map((p, i) => {
+                          const v = form.esquema?.alto?.[i];
+                          if (v === "" || v === null || v === undefined) return null;
+                          return (
+                            <div
+                              key={`alto-ov-${i}`}
+                              style={{
+                                ...schemeOverlayBaseStyle,
+                                left: `${p.left}%`,
+                                top: `${p.top}%`,
+                                width: `${p.width}%`,
+                                height: `${p.height}%`,
+                                fontSize: 14,
+                              }}
+                            >
+                              {v}
+                            </div>
+                          );
+                        })}
+                        {SCHEME_RECT_PCTS.ancho.map((p, i) => {
+                          const v = form.esquema?.ancho?.[i];
+                          if (v === "" || v === null || v === undefined) return null;
+                          return (
+                            <div
+                              key={`ancho-ov-${i}`}
+                              style={{
+                                ...schemeOverlayBaseStyle,
+                                left: `${p.left}%`,
+                                top: `${p.top}%`,
+                                width: `${p.width}%`,
+                                height: `${p.height}%`,
+                                fontSize: 14,
+                              }}
+                            >
+                              {v}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
                     <div className="muted" style={{ marginTop: 8, fontSize: 12 }}>
                       Ingresá un número en cada rectángulo (mm).
                     </div>
@@ -467,11 +498,9 @@ export default function MedicionDetailPage() {
                       ]}
                     />
                   </Field>
-
                   <Field label="Portón en acopio">
                     <Input value={form.en_acopio ? "Sí" : "No"} onChange={() => {}} disabled style={{ width: "100%", opacity: 0.9 }} />
                   </Field>
-
                   <Field label="Tipo de accionamiento">
                     <Select
                       value={form.accionamiento || ""}
@@ -482,7 +511,6 @@ export default function MedicionDetailPage() {
                       ]}
                     />
                   </Field>
-
                   <Field label="Sistema levadizo">
                     <Select
                       value={form.levadizo || ""}
@@ -499,21 +527,14 @@ export default function MedicionDetailPage() {
 
                 <Row>
                   <Field label="Estructura metálica para puerta">
-                    <Select
-                      value={form.estructura_metalica ? "si" : "no"}
-                      onChange={(v) => setYesNoBool("estructura_metalica", v)}
-                      options={yesNoOptions}
-                    />
+                    <Select value={form.estructura_metalica ? "si" : "no"} onChange={(v) => setYesNoBool("estructura_metalica", v)} options={yesNoOptions} />
                   </Field>
-
                   <Field label="Rebaje lateral (mm)">
                     <Input type="number" value={form.rebaje_lateral_mm || ""} onChange={(v) => setForm({ ...form, rebaje_lateral_mm: v })} style={{ width: "100%" }} />
                   </Field>
-
                   <Field label="Rebaje inferior (mm)">
                     <Input type="number" value={form.rebaje_inferior_mm || ""} onChange={(v) => setForm({ ...form, rebaje_inferior_mm: v })} style={{ width: "100%" }} />
                   </Field>
-
                   <Field label="Anclaje de fijación">
                     <Select
                       value={form.anclaje || ""}
@@ -609,7 +630,6 @@ export default function MedicionDetailPage() {
                       ]}
                     />
                   </Field>
-
                   <Field label="Color de revestimiento">
                     <Select
                       value={form.color_revestimiento || ""}
@@ -701,18 +721,11 @@ export default function MedicionDetailPage() {
 
               <div className="card">
                 <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-                  <Button
-                    variant="secondary"
-                    onClick={() => mSave.mutate({ submit: false })}
-                    disabled={!canEdit || mSave.isPending}
-                  >
+                  <Button variant="secondary" onClick={() => mSave.mutate({ submit: false })} disabled={!canEdit || mSave.isPending}>
                     {mSave.isPending ? "Guardando…" : "Guardar"}
                   </Button>
 
-                  <Button
-                    onClick={() => mSave.mutate({ submit: true })}
-                    disabled={!canEdit || mSave.isPending}
-                  >
+                  <Button onClick={() => mSave.mutate({ submit: true })} disabled={!canEdit || mSave.isPending}>
                     {mSave.isPending ? "Enviando…" : "Aceptar (Enviar)"}
                   </Button>
                 </div>
@@ -724,10 +737,47 @@ export default function MedicionDetailPage() {
                   </>
                 )}
 
-                {mSave.isSuccess && (
+                {shareInfo?.message && (
                   <>
                     <div className="spacer" />
-                    <div className="muted">Guardado.</div>
+                    <div
+                      style={{
+                        padding: 12,
+                        borderRadius: 10,
+                        border: shareInfo.tone === "warning" ? "1px solid #ffe3a3" : "1px solid #bfe6c8",
+                        background: shareInfo.tone === "warning" ? "#fff7e6" : "#e7f7ed",
+                      }}
+                    >
+                      <div style={{ fontWeight: 900, marginBottom: 6 }}>
+                        {shareInfo.tone === "warning" ? "WhatsApp pendiente" : "WhatsApp preparado"}
+                      </div>
+                      <div>{shareInfo.message}</div>
+
+                      {(shareInfo.whatsappUrl || shareInfo.publicPdfUrl) && (
+                        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
+                          {shareInfo.whatsappUrl && (
+                            <Button variant="secondary" onClick={() => window.open(shareInfo.whatsappUrl, "_blank", "noopener,noreferrer")}>
+                              Abrir WhatsApp
+                            </Button>
+                          )}
+                          {shareInfo.publicPdfUrl && (
+                            <Button
+                              variant="ghost"
+                              onClick={async () => {
+                                try {
+                                  await navigator.clipboard.writeText(shareInfo.publicPdfUrl);
+                                  setShareInfo((prev) => prev ? { ...prev, message: `${prev.message} Link copiado.` } : prev);
+                                } catch {
+                                  window.open(shareInfo.publicPdfUrl, "_blank", "noopener,noreferrer");
+                                }
+                              }}
+                            >
+                              Copiar link PDF
+                            </Button>
+                          )}
+                        </div>
+                      )}
+                    </div>
                   </>
                 )}
               </div>
