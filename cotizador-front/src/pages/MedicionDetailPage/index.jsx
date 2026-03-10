@@ -823,14 +823,27 @@ export default function MedicionDetailPage() {
                   <Button
                     onClick={() => {
                       const st = String(quote?.measurement_status || "").toLowerCase().trim();
+                      const token = String(quote?.measurement_share_token || "").trim();
+                      const publicPdfUrl = getMedicionPublicPdfUrl(token);
+                      const whatsappText = buildMeasurementWhatsappMessage(publicPdfUrl);
+                      const whatsappUrl = buildWhatsappUrl(endCustomer.phone, whatsappText);
 
                       if (st === "submitted" || st === "approved") {
+                        if (whatsappUrl) {
+                          window.open(whatsappUrl, "_blank", "noopener,noreferrer");
+                          setShareInfo({
+                            tone: "success",
+                            message: "Se abrió WhatsApp con el mensaje listo para el cliente.",
+                            whatsappUrl,
+                            publicPdfUrl,
+                          });
+                          return;
+                        }
+
                         setShareInfo({
                           tone: "warning",
-                          message:
-                            st === "approved"
-                              ? "La medición ya fue aprobada."
-                              : "La medición ya fue enviada. Esperá la revisión.",
+                          message: "La medición ya fue enviada, pero falta el teléfono del cliente para abrir WhatsApp.",
+                          publicPdfUrl,
                         });
                         return;
                       }
