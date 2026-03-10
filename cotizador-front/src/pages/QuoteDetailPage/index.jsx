@@ -15,7 +15,7 @@ function pillStyle(bg, border) {
 
 function measurementStatusLabel(s) {
   if (s === "pending") return "Pendiente";
-  if (s === "submitted") return "Enviada (esperando revisión)";
+  if (s === "submitted") return "Enviada";
   if (s === "needs_fix") return "A corregir";
   if (s === "approved") return "Aprobada";
   if (s === "none" || !s) return "Pendiente";
