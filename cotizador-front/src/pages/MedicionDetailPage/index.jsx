@@ -90,10 +90,18 @@ function normalizeMeasurementForm(raw, quote) {
     if (f.ancho_mm && !f.esquema.ancho[1]) f.esquema.ancho[1] = String(f.ancho_mm);
   }
 
-  if (f.estructura_metalica !== undefined && typeof f.estructura_metalica !== "boolean") f.estructura_metalica = isYes(f.estructura_metalica);
-  if (f.lucera !== undefined && typeof f.lucera !== "boolean") f.lucera = isYes(f.lucera);
-  if (f.traslado !== undefined && typeof f.traslado !== "boolean") f.traslado = isYes(f.traslado);
-  if (f.relevamiento !== undefined && typeof f.relevamiento !== "boolean") f.relevamiento = isYes(f.relevamiento);
+  if (f.estructura_metalica !== undefined && typeof f.estructura_metalica !== "boolean") {
+    f.estructura_metalica = isYes(f.estructura_metalica);
+  }
+  if (f.lucera !== undefined && typeof f.lucera !== "boolean") {
+    f.lucera = isYes(f.lucera);
+  }
+  if (f.traslado !== undefined && typeof f.traslado !== "boolean") {
+    f.traslado = isYes(f.traslado);
+  }
+  if (f.relevamiento !== undefined && typeof f.relevamiento !== "boolean") {
+    f.relevamiento = isYes(f.relevamiento);
+  }
 
   if (f.color_revestimiento !== "Otros") {
     f.color_revestimiento_otro = f.color_revestimiento_otro || "";
@@ -180,7 +188,7 @@ export default function MedicionDetailPage() {
   const quoteId = id ? String(id) : null;
   const user = useAuthStore((s) => s.user);
   const navigate = useNavigate();
-  const whatsappWindowRef = useRef(null);
+  const pendingWhatsappWindowRef = useRef(null);
 
   const q = useQuery({
     queryKey: ["measurement", quoteId],
@@ -194,43 +202,100 @@ export default function MedicionDetailPage() {
   const [form, setForm] = useState(null);
   const [shareInfo, setShareInfo] = useState(null);
 
-  useEffect(() => {
-    if (!quote) return;
-    const f = quote.measurement_form ? normalizeMeasurementForm(quote.measurement_form, quote) : makeEmptyForm(quote);
-    setForm(f);
-  }, [quote]);
-
-  function closePendingWhatsappWindow() {
-    try {
-      if (whatsappWindowRef.current && !whatsappWindowRef.current.closed) {
-        whatsappWindowRef.current.close();
-      }
-    } catch {
-      // noop
-    }
-    whatsappWindowRef.current = null;
-  }
-
   function openPendingWhatsappWindow() {
     try {
-      const win = window.open("", "_blank");
-      if (win) {
-        win.document.write(`
-          <title>Preparando WhatsApp</title>
-          <div style="font-family: Arial, sans-serif; padding: 24px; color: #111827;">
-            <h3 style="margin: 0 0 8px;">Preparando WhatsApp...</h3>
-            <p style="margin: 0;">Guardando la medición y generando el mensaje para el cliente.</p>
-          </div>
+      const popup = window.open("", "_blank");
+      if (!popup) return null;
+
+      try {
+        popup.opener = null;
+      } catch {}
+
+      try {
+        popup.document.write(`
+          <!doctype html>
+          <html lang="es">
+            <head>
+              <meta charset="utf-8" />
+              <title>Preparando WhatsApp…</title>
+              <style>
+                body {
+                  font-family: Arial, sans-serif;
+                  margin: 0;
+                  min-height: 100vh;
+                  display: flex;
+                  align-items: center;
+                  justify-content: center;
+                  background: #f6f7f9;
+                  color: #111827;
+                }
+                .box {
+                  padding: 24px 28px;
+                  border-radius: 14px;
+                  background: white;
+                  border: 1px solid #e5e7eb;
+                  box-shadow: 0 10px 30px rgba(0,0,0,0.08);
+                  text-align: center;
+                }
+              </style>
+            </head>
+            <body>
+              <div class="box">Preparando WhatsApp…</div>
+            </body>
+          </html>
         `);
-        win.document.close();
-      }
-      whatsappWindowRef.current = win;
-      return win;
+        popup.document.close();
+      } catch {}
+
+      pendingWhatsappWindowRef.current = popup;
+      return popup;
     } catch {
-      whatsappWindowRef.current = null;
+      pendingWhatsappWindowRef.current = null;
       return null;
     }
   }
+
+  function closePendingWhatsappWindow() {
+    const popup = pendingWhatsappWindowRef.current;
+    if (popup && !popup.closed) {
+      try {
+        popup.close();
+      } catch {}
+    }
+    pendingWhatsappWindowRef.current = null;
+  }
+
+  function redirectPendingWhatsappWindow(url) {
+    const popup = pendingWhatsappWindowRef.current;
+    if (popup && !popup.closed) {
+      try {
+        popup.location.href = url;
+        pendingWhatsappWindowRef.current = null;
+        return true;
+      } catch {}
+    }
+
+    try {
+      window.open(url, "_blank", "noopener,noreferrer");
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  useEffect(() => {
+    if (!quote) return;
+    const f = quote.measurement_form
+      ? normalizeMeasurementForm(quote.measurement_form, quote)
+      : makeEmptyForm(quote);
+    setForm(f);
+  }, [quote]);
+
+  useEffect(() => {
+    return () => {
+      closePendingWhatsappWindow();
+    };
+  }, []);
 
   const mSave = useMutation({
     mutationFn: ({ submit }) => saveMeasurement(quoteId, { form, submit }),
@@ -246,28 +311,21 @@ export default function MedicionDetailPage() {
       const token = savedQuote?.measurement_share_token;
       const publicPdfUrl = getMedicionPublicPdfUrl(token);
       const whatsappText = buildMeasurementWhatsappMessage(publicPdfUrl);
-      const customerPhone = savedQuote?.end_customer?.phone || endCustomer.phone;
-      const whatsappUrl = buildWhatsappUrl(customerPhone, whatsappText);
+      const whatsappUrl = buildWhatsappUrl(
+        savedQuote?.end_customer?.phone || endCustomer.phone,
+        whatsappText
+      );
 
       if (whatsappUrl) {
-        const popup = whatsappWindowRef.current;
-        try {
-          if (popup && !popup.closed) {
-            popup.location.replace(whatsappUrl);
-          } else {
-            window.open(whatsappUrl, "_blank", "noopener,noreferrer");
-          }
-        } catch {
-          window.open(whatsappUrl, "_blank", "noopener,noreferrer");
-        }
-
+        const opened = redirectPendingWhatsappWindow(whatsappUrl);
         setShareInfo({
-          tone: "success",
-          message: "Medición enviada. Se abrió WhatsApp con el mensaje listo para el cliente.",
+          tone: opened ? "success" : "warning",
+          message: opened
+            ? "Medición enviada. Se abrió WhatsApp con el mensaje listo para el cliente."
+            : "Medición enviada. No se pudo abrir WhatsApp automáticamente, pero el mensaje quedó listo.",
           whatsappUrl,
           publicPdfUrl,
         });
-        whatsappWindowRef.current = null;
         return;
       }
 
@@ -278,13 +336,12 @@ export default function MedicionDetailPage() {
         publicPdfUrl,
       });
     },
-    onError: () => {
+    onError: (error) => {
       closePendingWhatsappWindow();
-    },
-    onSettled: () => {
-      if (whatsappWindowRef.current?.closed) {
-        whatsappWindowRef.current = null;
-      }
+      setShareInfo({
+        tone: "warning",
+        message: error?.message || "No se pudo enviar la medición.",
+      });
     },
   });
 
@@ -444,6 +501,7 @@ export default function MedicionDetailPage() {
                             </div>
                           );
                         })}
+
                         {SCHEME_RECT_PCTS.ancho.map((p, i) => {
                           const v = form.esquema?.ancho?.[i];
                           if (v === "" || v === null || v === undefined) return null;
@@ -662,6 +720,7 @@ export default function MedicionDetailPage() {
                       ]}
                     />
                   </Field>
+
                   <Field label="Color de revestimiento">
                     <Select
                       value={form.color_revestimiento || ""}
@@ -753,12 +812,29 @@ export default function MedicionDetailPage() {
 
               <div className="card">
                 <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-                  <Button variant="secondary" onClick={() => mSave.mutate({ submit: false })} disabled={!canEdit || mSave.isPending}>
+                  <Button
+                    variant="secondary"
+                    onClick={() => mSave.mutate({ submit: false })}
+                    disabled={!canEdit || mSave.isPending}
+                  >
                     {mSave.isPending ? "Guardando…" : "Guardar"}
                   </Button>
 
                   <Button
                     onClick={() => {
+                      const st = String(quote?.measurement_status || "").toLowerCase().trim();
+
+                      if (st === "submitted" || st === "approved") {
+                        setShareInfo({
+                          tone: "warning",
+                          message:
+                            st === "approved"
+                              ? "La medición ya fue aprobada."
+                              : "La medición ya fue enviada. Esperá la revisión.",
+                        });
+                        return;
+                      }
+
                       openPendingWhatsappWindow();
                       mSave.mutate({ submit: true });
                     }}
@@ -794,10 +870,14 @@ export default function MedicionDetailPage() {
                       {(shareInfo.whatsappUrl || shareInfo.publicPdfUrl) && (
                         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
                           {shareInfo.whatsappUrl && (
-                            <Button variant="secondary" onClick={() => window.open(shareInfo.whatsappUrl, "_blank", "noopener,noreferrer")}>
+                            <Button
+                              variant="secondary"
+                              onClick={() => window.open(shareInfo.whatsappUrl, "_blank", "noopener,noreferrer")}
+                            >
                               Abrir WhatsApp
                             </Button>
                           )}
+
                           {shareInfo.publicPdfUrl && (
                             <Button
                               variant="ghost"
