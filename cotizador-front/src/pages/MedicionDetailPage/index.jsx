@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useNavigate, useParams } from "react-router-dom";
 
-import { fetchMedicionPdfBlob, getMedicionPublicPdfUrl } from "../../api/pdf.js";
+import { getMedicionPublicPdfUrl } from "../../api/pdf.js";
 import Button from "../../ui/Button.jsx";
 import Input from "../../ui/Input.jsx";
 import { useAuthStore } from "../../domain/auth/store.js";
@@ -10,7 +10,6 @@ import { getMeasurement, saveMeasurement } from "../../api/measurements.js";
 import {
   buildMeasurementWhatsappMessage,
   buildWhatsappUrl,
-  tryNativeShareWithPdf,
 } from "../../utils/whatsapp.js";
 
 function todayISO() {
@@ -216,41 +215,20 @@ export default function MedicionDetailPage() {
       const whatsappText = buildMeasurementWhatsappMessage(publicPdfUrl);
       const whatsappUrl = buildWhatsappUrl(savedQuote?.end_customer?.phone || endCustomer.phone, whatsappText);
 
-      let tone = "success";
-      let message = "Medición enviada.";
-
-      try {
-        const pdfBlob = await fetchMedicionPdfBlob(quoteId);
-        const shared = await tryNativeShareWithPdf({
-          blob: pdfBlob,
-          filename: `medicion_${quoteId}.pdf`,
-          title: "Planilla de medición",
-          text: whatsappText,
+      if (whatsappUrl) {
+        window.open(whatsappUrl, "_blank", "noopener,noreferrer");
+        setShareInfo({
+          tone: "success",
+          message: "Medición enviada. Se abrió WhatsApp con el mensaje listo para el cliente.",
+          whatsappUrl,
+          publicPdfUrl,
         });
-
-        if (shared) {
-          message = "Medición enviada. Se abrió el compartir del dispositivo con el PDF listo para enviar por WhatsApp.";
-        } else if (whatsappUrl) {
-          window.open(whatsappUrl, "_blank", "noopener,noreferrer");
-          message = "Medición enviada. Se abrió WhatsApp con el mensaje listo y el link público a la planilla.";
-        } else {
-          tone = "warning";
-          message = "Medición enviada, pero falta el teléfono del cliente para preparar WhatsApp.";
-        }
-      } catch {
-        if (whatsappUrl) {
-          window.open(whatsappUrl, "_blank", "noopener,noreferrer");
-          message = "Medición enviada. Se abrió WhatsApp con el mensaje listo y el link público a la planilla.";
-        } else {
-          tone = "warning";
-          message = "Medición enviada, pero no se pudo generar el PDF ni preparar WhatsApp.";
-        }
+        return;
       }
 
       setShareInfo({
-        tone,
-        message,
-        whatsappUrl,
+        tone: "warning",
+        message: "Medición enviada, pero falta el teléfono del cliente para abrir WhatsApp.",
         publicPdfUrl,
       });
     },
@@ -295,7 +273,7 @@ export default function MedicionDetailPage() {
         <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
           <div>
             <h2 style={{ margin: 0 }}>Medición · Presupuesto #{quoteId}</h2>
-            <div className="muted">Completar y luego “Aceptar” para enviar la medición y preparar el WhatsApp del cliente.</div>
+            <div className="muted">Completar y luego “Aceptar” para enviar la medición y abrir el WhatsApp del cliente.</div>
           </div>
 
           <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
