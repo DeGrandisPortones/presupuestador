@@ -23,7 +23,7 @@ export function buildMeasurementWhatsappMessage(publicPdfUrl) {
   const parts = [
     "Se ha realizado el relevamiento de medidas de la obra para poder comenzar la producción de su portón.",
     publicPdfUrl
-      ? `En el siguiente link podrá descargar la planilla de medición:\n${publicPdfUrl}`
+      ? `En el siguiente link podrá ver la planilla de medición online:\n${publicPdfUrl}`
       : "La planilla de medición ya se encuentra disponible.",
     "Gracias por confiar en De Grandis Portones.",
   ];

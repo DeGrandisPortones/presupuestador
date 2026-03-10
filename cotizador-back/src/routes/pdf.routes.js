@@ -773,7 +773,7 @@ export function buildPdfRouter() {
 
       const pdf = await renderMeasurementPdf({ quote, form });
       res.setHeader("Content-Type", "application/pdf");
-      res.setHeader("Content-Disposition", `attachment; filename="medicion_${quote.id}.pdf"`);
+      res.setHeader("Content-Disposition", `inline; filename="medicion_${quote.id}.pdf"`);
       res.send(pdf);
     } catch (e) {
       next(e);
