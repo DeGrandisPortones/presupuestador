@@ -29,6 +29,28 @@ const PORTON_TYPE_TO_ODOO_PRODUCT_ID = Object.freeze({
   corredizo_simil_aluminio: 3224,
 });
 
+function normalizePortonTypeKey(v) {
+  return String(v || "")
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+}
+
+function getQuotePayloadObject(quote) {
+  const raw = quote?.payload;
+  if (!raw) return {};
+  if (typeof raw === "object") return raw;
+  try {
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
 /** RBAC */
 function requireRole(flag) {
   return (req, res, next) => {
@@ -170,7 +192,7 @@ async function syncQuoteToOdoo({ odoo, quote, approverUser }) {
     [[Number(initialProductId)]],
     { fields: ["id", "name", "uom_id"] }
   );
-  if (!ph?.id) throw new Error(`Producto inicial no encontrado en Odoo: ${initialProductId}`);
+  if (!ph?.id) throw new Error(`Producto inicial no encontrado en Odoo: ${initialProductId} (porton_type=${normalizePortonTypeKey(getQuotePayloadObject(quote).porton_type ?? getQuotePayloadObject(quote).portonType ?? quote?.porton_type ?? "") || "sin_tipo"})`);
   const uomId = toIntId(ph?.uom_id);
   if (!uomId) throw new Error(`Producto inicial sin uom_id: ${initialProductId}`);
 
@@ -315,7 +337,9 @@ function getInitialOdooProductIdForQuote(quote) {
   const kind = String(quote?.catalog_kind || 'porton').toLowerCase().trim();
   if (kind !== 'porton') return Number(PLACEHOLDER_PRODUCT_ID);
 
-  const portonType = String(quote?.payload?.porton_type || '').trim();
+  const payload = getQuotePayloadObject(quote);
+  const rawPortonType = payload.porton_type ?? payload.portonType ?? quote?.porton_type ?? '';
+  const portonType = normalizePortonTypeKey(rawPortonType);
   const mapped = PORTON_TYPE_TO_ODOO_PRODUCT_ID[portonType];
   return Number(mapped || PLACEHOLDER_PRODUCT_ID);
 }

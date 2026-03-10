@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useNavigate, useParams } from "react-router-dom";
 
@@ -192,6 +192,7 @@ export default function MedicionDetailPage() {
 
   const [form, setForm] = useState(null);
   const [shareInfo, setShareInfo] = useState(null);
+  const pendingWhatsappWindowRef = useRef(null);
 
   useEffect(() => {
     if (!quote) return;
@@ -199,13 +200,53 @@ export default function MedicionDetailPage() {
     setForm(f);
   }, [quote]);
 
+  const openPendingWhatsappWindow = () => {
+    try {
+      const w = window.open("about:blank", "_blank");
+      if (!w) return null;
+      w.document.title = "Preparando WhatsApp";
+      w.document.body.innerHTML = '<div style="font-family: Arial, sans-serif; padding: 24px; color: #111827;">Preparando WhatsApp...</div>';
+      pendingWhatsappWindowRef.current = w;
+      return w;
+    } catch {
+      pendingWhatsappWindowRef.current = null;
+      return null;
+    }
+  };
+
+  const closePendingWhatsappWindow = () => {
+    try {
+      const w = pendingWhatsappWindowRef.current;
+      if (w && !w.closed) w.close();
+    } catch {}
+    pendingWhatsappWindowRef.current = null;
+  };
+
+  const redirectPendingWhatsappWindow = (url) => {
+    const w = pendingWhatsappWindowRef.current;
+    if (!url) return false;
+    try {
+      if (w && !w.closed) {
+        w.location.replace(url);
+        pendingWhatsappWindowRef.current = null;
+        return true;
+      }
+    } catch {}
+    pendingWhatsappWindowRef.current = null;
+    return false;
+  };
+
   const mSave = useMutation({
     mutationFn: ({ submit }) => saveMeasurement(quoteId, { form, submit }),
-    onMutate: () => setShareInfo(null),
+    onMutate: ({ submit }) => {
+      setShareInfo(null);
+      if (!submit) closePendingWhatsappWindow();
+    },
     onSuccess: async (savedQuote, variables) => {
       await q.refetch();
 
       if (!variables?.submit) {
+        closePendingWhatsappWindow();
         setShareInfo({ tone: "success", message: "Medición guardada." });
         return;
       }
@@ -216,7 +257,10 @@ export default function MedicionDetailPage() {
       const whatsappUrl = buildWhatsappUrl(savedQuote?.end_customer?.phone || endCustomer.phone, whatsappText);
 
       if (whatsappUrl) {
-        window.open(whatsappUrl, "_blank", "noopener,noreferrer");
+        const redirected = redirectPendingWhatsappWindow(whatsappUrl);
+        if (!redirected) {
+          window.open(whatsappUrl, "_blank");
+        }
         setShareInfo({
           tone: "success",
           message: "Medición enviada. Se abrió WhatsApp con el mensaje listo para el cliente.",
@@ -226,11 +270,15 @@ export default function MedicionDetailPage() {
         return;
       }
 
+      closePendingWhatsappWindow();
       setShareInfo({
         tone: "warning",
         message: "Medición enviada, pero falta el teléfono del cliente para abrir WhatsApp.",
         publicPdfUrl,
       });
+    },
+    onError: () => {
+      closePendingWhatsappWindow();
     },
   });
 
@@ -703,7 +751,7 @@ export default function MedicionDetailPage() {
                     {mSave.isPending ? "Guardando…" : "Guardar"}
                   </Button>
 
-                  <Button onClick={() => mSave.mutate({ submit: true })} disabled={!canEdit || mSave.isPending}>
+                  <Button onClick={() => { openPendingWhatsappWindow(); mSave.mutate({ submit: true }); }} disabled={!canEdit || mSave.isPending}>
                     {mSave.isPending ? "Enviando…" : "Aceptar (Enviar)"}
                   </Button>
                 </div>
