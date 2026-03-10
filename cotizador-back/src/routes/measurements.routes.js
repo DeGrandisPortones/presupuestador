@@ -4,6 +4,8 @@ import { requireAuth } from "../auth.js";
 import { dbQuery } from "../db.js";
 import { ensureQuotesMeasurementColumns } from "../quotesSchema.js";
 
+const MEASUREMENT_PRODUCT_ID = Number(process.env.ODOO_MEASUREMENT_PRODUCT_ID || 2865);
+
 function requireMedidor(req, res, next) {
   if (!req.user?.is_medidor) return res.status(403).json({ ok: false, error: "No autorizado" });
   next();
@@ -58,10 +60,17 @@ export function buildMeasurementsRouter() {
         "q.catalog_kind = 'porton'",
         "q.status = 'synced_odoo'",
         "q.fulfillment_mode = 'produccion'",
-        "q.requires_measurement = true",
+        `(
+          q.requires_measurement = true
+          or exists (
+            select 1
+            from jsonb_array_elements(coalesce(q.lines, '[]'::jsonb)) elem
+            where (elem->>'product_id') = $2
+          )
+        )`,
         "(q.measurement_assigned_to_user_id is null or q.measurement_assigned_to_user_id = $1)",
       ];
-      const params = [Number(u.user_id)];
+      const params = [Number(u.user_id), String(MEASUREMENT_PRODUCT_ID)];
 
       if (status !== "all") {
         params.push(status);

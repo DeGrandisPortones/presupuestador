@@ -180,6 +180,7 @@ export default function MedicionDetailPage() {
   const quoteId = id ? String(id) : null;
   const user = useAuthStore((s) => s.user);
   const navigate = useNavigate();
+  const whatsappWindowRef = useRef(null);
 
   const q = useQuery({
     queryKey: ["measurement", quoteId],
@@ -192,7 +193,6 @@ export default function MedicionDetailPage() {
 
   const [form, setForm] = useState(null);
   const [shareInfo, setShareInfo] = useState(null);
-  const pendingWhatsappWindowRef = useRef(null);
 
   useEffect(() => {
     if (!quote) return;
@@ -200,53 +200,45 @@ export default function MedicionDetailPage() {
     setForm(f);
   }, [quote]);
 
-  const openPendingWhatsappWindow = () => {
+  function closePendingWhatsappWindow() {
     try {
-      const w = window.open("about:blank", "_blank");
-      if (!w) return null;
-      w.document.title = "Preparando WhatsApp";
-      w.document.body.innerHTML = '<div style="font-family: Arial, sans-serif; padding: 24px; color: #111827;">Preparando WhatsApp...</div>';
-      pendingWhatsappWindowRef.current = w;
-      return w;
+      if (whatsappWindowRef.current && !whatsappWindowRef.current.closed) {
+        whatsappWindowRef.current.close();
+      }
     } catch {
-      pendingWhatsappWindowRef.current = null;
+      // noop
+    }
+    whatsappWindowRef.current = null;
+  }
+
+  function openPendingWhatsappWindow() {
+    try {
+      const win = window.open("", "_blank");
+      if (win) {
+        win.document.write(`
+          <title>Preparando WhatsApp</title>
+          <div style="font-family: Arial, sans-serif; padding: 24px; color: #111827;">
+            <h3 style="margin: 0 0 8px;">Preparando WhatsApp...</h3>
+            <p style="margin: 0;">Guardando la medición y generando el mensaje para el cliente.</p>
+          </div>
+        `);
+        win.document.close();
+      }
+      whatsappWindowRef.current = win;
+      return win;
+    } catch {
+      whatsappWindowRef.current = null;
       return null;
     }
-  };
-
-  const closePendingWhatsappWindow = () => {
-    try {
-      const w = pendingWhatsappWindowRef.current;
-      if (w && !w.closed) w.close();
-    } catch {}
-    pendingWhatsappWindowRef.current = null;
-  };
-
-  const redirectPendingWhatsappWindow = (url) => {
-    const w = pendingWhatsappWindowRef.current;
-    if (!url) return false;
-    try {
-      if (w && !w.closed) {
-        w.location.replace(url);
-        pendingWhatsappWindowRef.current = null;
-        return true;
-      }
-    } catch {}
-    pendingWhatsappWindowRef.current = null;
-    return false;
-  };
+  }
 
   const mSave = useMutation({
     mutationFn: ({ submit }) => saveMeasurement(quoteId, { form, submit }),
-    onMutate: ({ submit }) => {
-      setShareInfo(null);
-      if (!submit) closePendingWhatsappWindow();
-    },
+    onMutate: () => setShareInfo(null),
     onSuccess: async (savedQuote, variables) => {
       await q.refetch();
 
       if (!variables?.submit) {
-        closePendingWhatsappWindow();
         setShareInfo({ tone: "success", message: "Medición guardada." });
         return;
       }
@@ -254,19 +246,28 @@ export default function MedicionDetailPage() {
       const token = savedQuote?.measurement_share_token;
       const publicPdfUrl = getMedicionPublicPdfUrl(token);
       const whatsappText = buildMeasurementWhatsappMessage(publicPdfUrl);
-      const whatsappUrl = buildWhatsappUrl(savedQuote?.end_customer?.phone || endCustomer.phone, whatsappText);
+      const customerPhone = savedQuote?.end_customer?.phone || endCustomer.phone;
+      const whatsappUrl = buildWhatsappUrl(customerPhone, whatsappText);
 
       if (whatsappUrl) {
-        const redirected = redirectPendingWhatsappWindow(whatsappUrl);
-        if (!redirected) {
-          window.open(whatsappUrl, "_blank");
+        const popup = whatsappWindowRef.current;
+        try {
+          if (popup && !popup.closed) {
+            popup.location.replace(whatsappUrl);
+          } else {
+            window.open(whatsappUrl, "_blank", "noopener,noreferrer");
+          }
+        } catch {
+          window.open(whatsappUrl, "_blank", "noopener,noreferrer");
         }
+
         setShareInfo({
           tone: "success",
           message: "Medición enviada. Se abrió WhatsApp con el mensaje listo para el cliente.",
           whatsappUrl,
           publicPdfUrl,
         });
+        whatsappWindowRef.current = null;
         return;
       }
 
@@ -279,6 +280,11 @@ export default function MedicionDetailPage() {
     },
     onError: () => {
       closePendingWhatsappWindow();
+    },
+    onSettled: () => {
+      if (whatsappWindowRef.current?.closed) {
+        whatsappWindowRef.current = null;
+      }
     },
   });
 
@@ -751,7 +757,13 @@ export default function MedicionDetailPage() {
                     {mSave.isPending ? "Guardando…" : "Guardar"}
                   </Button>
 
-                  <Button onClick={() => { openPendingWhatsappWindow(); mSave.mutate({ submit: true }); }} disabled={!canEdit || mSave.isPending}>
+                  <Button
+                    onClick={() => {
+                      openPendingWhatsappWindow();
+                      mSave.mutate({ submit: true });
+                    }}
+                    disabled={!canEdit || mSave.isPending}
+                  >
                     {mSave.isPending ? "Enviando…" : "Aceptar (Enviar)"}
                   </Button>
                 </div>

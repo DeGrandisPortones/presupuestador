@@ -29,28 +29,6 @@ const PORTON_TYPE_TO_ODOO_PRODUCT_ID = Object.freeze({
   corredizo_simil_aluminio: 3224,
 });
 
-function normalizePortonTypeKey(v) {
-  return String(v || "")
-    .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")
-    .toLowerCase()
-    .trim()
-    .replace(/[^a-z0-9]+/g, "_")
-    .replace(/^_+|_+$/g, "");
-}
-
-function getQuotePayloadObject(quote) {
-  const raw = quote?.payload;
-  if (!raw) return {};
-  if (typeof raw === "object") return raw;
-  try {
-    const parsed = JSON.parse(raw);
-    return parsed && typeof parsed === "object" ? parsed : {};
-  } catch {
-    return {};
-  }
-}
-
 /** RBAC */
 function requireRole(flag) {
   return (req, res, next) => {
@@ -184,24 +162,15 @@ async function syncQuoteToOdoo({ odoo, quote, approverUser }) {
   // Mandamos 1 sola linea con el TOTAL (IVA incluido) del presupuesto.
   // Para portones, el producto depende del sistema elegido en payload.porton_type.
   const total = calcQuoteTotalWithIva({ lines: quote.lines, payload: quote.payload });
-  const initialProductId = getInitialOdooProductIdForQuote(quote);
-
-  const [ph] = await odoo.executeKw(
-    "product.product",
-    "read",
-    [[Number(initialProductId)]],
-    { fields: ["id", "name", "uom_id"] }
-  );
-  if (!ph?.id) throw new Error(`Producto inicial no encontrado en Odoo: ${initialProductId} (porton_type=${normalizePortonTypeKey(getQuotePayloadObject(quote).porton_type ?? getQuotePayloadObject(quote).portonType ?? quote?.porton_type ?? "") || "sin_tipo"})`);
-  const uomId = toIntId(ph?.uom_id);
-  if (!uomId) throw new Error(`Producto inicial sin uom_id: ${initialProductId}`);
+  const requestedInitialProductId = getInitialOdooProductIdForQuote(quote);
+  const initialProduct = await resolveInitialOdooProduct(odoo, requestedInitialProductId);
 
   const orderLines = [
     [0, 0, {
-      product_id: Number(initialProductId),
+      product_id: Number(initialProduct.productId),
       product_uom_qty: 1,
-      product_uom: uomId,
-      name: ph.name,
+      product_uom: initialProduct.uomId,
+      name: initialProduct.productName,
       price_unit: round2(total),
     }],
   ];
@@ -318,6 +287,10 @@ function hasMeasurementLine(lines) {
   return arr.some((l) => toIntId(l?.product_id) === MEASUREMENT_PRODUCT_ID);
 }
 
+function quoteNeedsMeasurement(quote) {
+  return !!(quote?.requires_measurement === true || hasMeasurementLine(quote?.lines));
+}
+
 function calcQuoteTotalWithIva({ lines, payload }) {
   const arr = Array.isArray(lines) ? lines : [];
   const m = Number(payload?.margin_percent_ui || 0) || 0;
@@ -333,15 +306,90 @@ function calcQuoteTotalWithIva({ lines, payload }) {
   return round2(subtotal + iva);
 }
 
-function getInitialOdooProductIdForQuote(quote) {
-  const kind = String(quote?.catalog_kind || 'porton').toLowerCase().trim();
-  if (kind !== 'porton') return Number(PLACEHOLDER_PRODUCT_ID);
+function normalizePortonTypeKey(value) {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .replace(/_+/g, "_");
+}
 
-  const payload = getQuotePayloadObject(quote);
-  const rawPortonType = payload.porton_type ?? payload.portonType ?? quote?.porton_type ?? '';
-  const portonType = normalizePortonTypeKey(rawPortonType);
-  const mapped = PORTON_TYPE_TO_ODOO_PRODUCT_ID[portonType];
+function getInitialOdooProductIdForQuote(quote) {
+  const kind = String(quote?.catalog_kind || "porton").toLowerCase().trim();
+  if (kind !== "porton") return Number(PLACEHOLDER_PRODUCT_ID);
+
+  const rawPortonType = quote?.payload?.porton_type ?? "";
+  const normalizedPortonType = normalizePortonTypeKey(rawPortonType);
+  const mapped =
+    PORTON_TYPE_TO_ODOO_PRODUCT_ID[String(rawPortonType || "").trim()] ??
+    PORTON_TYPE_TO_ODOO_PRODUCT_ID[normalizedPortonType];
+
   return Number(mapped || PLACEHOLDER_PRODUCT_ID);
+}
+
+async function resolveInitialOdooProduct(odoo, requestedProductId) {
+  const requestedId = Number(requestedProductId);
+
+  const [directVariant] = await odoo.executeKw(
+    "product.product",
+    "read",
+    [[requestedId]],
+    { fields: ["id", "name", "uom_id", "product_tmpl_id"] }
+  );
+
+  if (directVariant?.id) {
+    const uomId = toIntId(directVariant.uom_id);
+    if (!uomId) throw new Error(`Producto inicial sin uom_id: ${requestedId}`);
+    return {
+      productId: Number(directVariant.id),
+      productName: directVariant.name,
+      uomId,
+    };
+  }
+
+  const [template] = await odoo.executeKw(
+    "product.template",
+    "read",
+    [[requestedId]],
+    { fields: ["id", "name"] }
+  );
+
+  if (!template?.id) {
+    throw new Error(`Producto inicial no encontrado en Odoo: ${requestedId}`);
+  }
+
+  const variantIds = await odoo.executeKw(
+    "product.product",
+    "search",
+    [[["product_tmpl_id", "=", Number(template.id)]]],
+    { limit: 1 }
+  );
+  const variantId = toIntId(variantIds?.[0]);
+  if (!variantId) {
+    throw new Error(`Producto inicial sin variante en Odoo: ${requestedId}`);
+  }
+
+  const [resolvedVariant] = await odoo.executeKw(
+    "product.product",
+    "read",
+    [[variantId]],
+    { fields: ["id", "name", "uom_id"] }
+  );
+  if (!resolvedVariant?.id) {
+    throw new Error(`Variante de producto inicial no encontrada en Odoo: ${variantId}`);
+  }
+
+  const uomId = toIntId(resolvedVariant.uom_id);
+  if (!uomId) throw new Error(`Producto inicial sin uom_id: ${variantId}`);
+
+  return {
+    productId: Number(resolvedVariant.id),
+    productName: resolvedVariant.name,
+    uomId,
+  };
 }
 
 async function createEditCopyFromQuote(parentId) {
@@ -827,14 +875,29 @@ export function buildQuotesRouter(odoo) {
               odoo_sale_order_id=$2,
               odoo_sale_order_name=$3,
               deposit_amount=$4,
+              requires_measurement = case
+                when exists (
+                  select 1
+                  from jsonb_array_elements(coalesce(lines, '[]'::jsonb)) elem
+                  where (elem->>'product_id') = $5
+                ) then true
+                else requires_measurement
+              end,
               measurement_status = case
-                when fulfillment_mode='produccion' and requires_measurement = true and (measurement_status is null or measurement_status='none') then 'pending'
+                when fulfillment_mode='produccion' and (
+                  requires_measurement = true
+                  or exists (
+                    select 1
+                    from jsonb_array_elements(coalesce(lines, '[]'::jsonb)) elem
+                    where (elem->>'product_id') = $5
+                  )
+                ) and (measurement_status is null or measurement_status='none') then 'pending'
                 else measurement_status
               end
           where id=$1 and status='syncing_odoo'
           returning *
           `,
-          [id, Number(order.id), order.name, deposit_amount]
+          [id, Number(order.id), order.name, deposit_amount, String(MEASUREMENT_PRODUCT_ID)]
         );
 
         const finalQuote = upd2.rows?.[0] || (await dbQuery(`select * from public.presupuestador_quotes where id=$1`, [id])).rows?.[0];
@@ -941,14 +1004,29 @@ export function buildQuotesRouter(odoo) {
               odoo_sale_order_id=$2,
               odoo_sale_order_name=$3,
               deposit_amount=$4,
+              requires_measurement = case
+                when exists (
+                  select 1
+                  from jsonb_array_elements(coalesce(lines, '[]'::jsonb)) elem
+                  where (elem->>'product_id') = $5
+                ) then true
+                else requires_measurement
+              end,
               measurement_status = case
-                when fulfillment_mode='produccion' and requires_measurement = true and (measurement_status is null or measurement_status='none') then 'pending'
+                when fulfillment_mode='produccion' and (
+                  requires_measurement = true
+                  or exists (
+                    select 1
+                    from jsonb_array_elements(coalesce(lines, '[]'::jsonb)) elem
+                    where (elem->>'product_id') = $5
+                  )
+                ) and (measurement_status is null or measurement_status='none') then 'pending'
                 else measurement_status
               end
           where id=$1 and status='syncing_odoo'
           returning *
           `,
-          [id, Number(order.id), order.name, deposit_amount]
+          [id, Number(order.id), order.name, deposit_amount, String(MEASUREMENT_PRODUCT_ID)]
         );
 
         const finalQuote = upd2.rows?.[0] || (await dbQuery(`select * from public.presupuestador_quotes where id=$1`, [id])).rows?.[0];
@@ -1023,11 +1101,22 @@ export function buildQuotesRouter(odoo) {
       set fulfillment_mode='produccion',
           acopio_to_produccion_status='approved',
           requires_measurement = case
-            when catalog_kind='porton' and status='synced_odoo' then true
+            when exists (
+              select 1
+              from jsonb_array_elements(coalesce(lines, '[]'::jsonb)) elem
+              where (elem->>'product_id') = $2
+            ) then true
             else requires_measurement
           end,
           measurement_status = case
-            when catalog_kind='porton' and status='synced_odoo' and (measurement_status is null or measurement_status='none') then 'pending'
+            when catalog_kind='porton' and status='synced_odoo' and (
+              requires_measurement = true
+              or exists (
+                select 1
+                from jsonb_array_elements(coalesce(lines, '[]'::jsonb)) elem
+                where (elem->>'product_id') = $2
+              )
+            ) and (measurement_status is null or measurement_status='none') then 'pending'
             else measurement_status
           end
       where id=$1
@@ -1037,7 +1126,7 @@ export function buildQuotesRouter(odoo) {
         and acopio_to_produccion_technical_decision='approved'
       returning *
       `,
-      [id]
+      [id, String(MEASUREMENT_PRODUCT_ID)]
     );
     return r.rows?.[0] || null;
   }
@@ -1172,7 +1261,7 @@ router.post("/:id/move_to_produccion", requireSellerOrDistributor, async (req, r
     if (String(quote.created_by_user_id) !== String(u.user_id)) return res.status(403).json({ ok: false, error: "No sos dueño" });
     if (quote.fulfillment_mode !== "acopio") return res.status(400).json({ ok: false, error: "Solo aplica a portones en acopio" });
 
-    const nextMeas = quote.requires_measurement === true;
+    const nextMeas = quoteNeedsMeasurement(quote);
     const nextMeasStatus = nextMeas ? "pending" : "none";
 
     const upd = await dbQuery(
@@ -1294,11 +1383,11 @@ router.post("/:id/final/submit", requireSellerOrDistributor, async (req, res, ne
     if (!orig) return res.status(400).json({ ok: false, error: "No se encontro el original" });
     if (!orig.odoo_sale_order_id) return res.status(409).json({ ok: false, error: "El original todavia no fue enviado a Odoo" });
 
-    if (orig.requires_measurement === true && orig.measurement_status !== 'approved') {
+    if (quoteNeedsMeasurement(orig) && orig.measurement_status !== 'approved') {
       return res.status(409).json({ ok: false, error: "Primero debe estar aprobada la medicion" });
     }
 
-    const logDecision = (orig.requires_measurement === true) ? 'pending' : 'approved';
+    const logDecision = quoteNeedsMeasurement(orig) ? 'pending' : 'approved';
 
     const upd = await dbQuery(
       `
