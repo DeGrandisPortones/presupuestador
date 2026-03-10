@@ -5,6 +5,7 @@ import { useAuthStore } from "../../domain/auth/store.js";
 
 import { getPricelists, getPrices } from "../../api/odoo";
 import { createQuote, getQuote, confirmQuote, updateQuote } from "../../api/quotes";
+import { createOrGetDoorFromQuote } from "../../api/doors.js";
 import { downloadPresupuestoPdf, downloadProformaPdf } from "../../api/pdf";
 import toast from "react-hot-toast";
 
@@ -113,6 +114,14 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
     run().catch(console.error);
   }, [pricelistId, partnerId, linesKey, lines.length, applyBasePrices]);
 
+  function getDraftPayload() {
+    return {
+      ...buildPayloadForBack(),
+      catalog_kind: catalogKind,
+      fulfillment_mode: (buildPayloadForBack()?.fulfillment_mode || "acopio"),
+    };
+  }
+
   // =============================
   // Validaciones (nuevo flujo)
   // =============================
@@ -147,17 +156,9 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
     if (errs.length) throw new Error(errs[0]);
   }
 
-  // =============================
-  // Guardar (create/update)
-  // =============================
   const saveM = useMutation({
     mutationFn: async () => {
-      const payload = {
-        ...buildPayloadForBack(),
-        catalog_kind: catalogKind,
-        // Draft: si todavía no se eligió destino, default acopio
-        fulfillment_mode: (buildPayloadForBack()?.fulfillment_mode || "acopio"),
-      };
+      const payload = getDraftPayload();
       validateDraft(payload);
 
       if (quoteId) return await updateQuote(quoteId, payload);
@@ -172,9 +173,6 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
     onError: (e) => toast.error(e?.message || "No se pudo guardar"),
   });
 
-  // =============================
-  // Confirmar presupuesto
-  // =============================
   const confirmM = useMutation({
     mutationFn: async () => {
       const payload = {
@@ -193,7 +191,6 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
         setQuoteMeta({ quoteId: created.id, status: created.status, rejectionNotes: created.rejection_notes });
       }
 
-      // Elegir destino
       const raw = window.prompt("Confirmar presupuesto.\nEscribí 'A' para Acopio o 'P' para Producción:", "A");
       if (!raw) throw new Error("Confirmación cancelada.");
       const v = raw.trim().toUpperCase();
@@ -221,6 +218,34 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
     onError: (e) => toast.error(e?.message || "No se pudo confirmar"),
   });
 
+  const doorM = useMutation({
+    mutationFn: async () => {
+      if ((catalogKind || "porton") !== "porton") {
+        throw new Error("La puerta sólo se habilita desde el cotizador de portones.");
+      }
+
+      const payload = getDraftPayload();
+      validateDraft(payload);
+
+      let id = quoteId || idParam;
+      if (id) {
+        await updateQuote(id, payload);
+      } else {
+        const created = await createQuote(payload);
+        id = created.id;
+        setQuoteMeta({ quoteId: created.id, status: created.status, rejectionNotes: created.rejection_notes });
+        qc.invalidateQueries({ queryKey: ["quotes", "mine"] });
+      }
+
+      return await createOrGetDoorFromQuote(id);
+    },
+    onSuccess: (door) => {
+      navigate(`/puertas/${door.id}`);
+      toast.success("Checklist de puerta listo.");
+    },
+    onError: (e) => toast.error(e?.message || "No se pudo abrir la puerta"),
+  });
+
   const onDownloadPresupuesto = async () => {
     try {
       const payload = { ...buildPayloadForBack(), catalog_kind: catalogKind };
@@ -242,6 +267,7 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
   };
 
   const canConfirm = ["draft", "rejected_commercial", "rejected_technical"].includes(status);
+  const canOpenDoor = !!(user?.is_vendedor && (catalogKind || "porton") === "porton");
 
   return (
     <div className="container">
@@ -260,13 +286,19 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
           </div>
         </div>
 
-        <div style={{ display: "flex", gap: 8 }}>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
           <Button variant="secondary" onClick={onDownloadPresupuesto}>
             PDF presupuesto
           </Button>
           {user?.is_distribuidor ? (
             <Button variant="secondary" onClick={onDownloadProforma}>
               PDF proforma
+            </Button>
+          ) : null}
+
+          {canOpenDoor ? (
+            <Button variant="ghost" onClick={() => doorM.mutate()} disabled={doorM.isPending}>
+              {doorM.isPending ? "Abriendo puerta..." : "Puerta"}
             </Button>
           ) : null}
 
@@ -309,9 +341,10 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
         </div>
       </div>
 
-      {(saveM.isError || confirmM.isError) && <div className="spacer" />}
+      {(saveM.isError || confirmM.isError || doorM.isError) && <div className="spacer" />}
       {saveM.isError && <div style={{ color: "#d93025", fontSize: 13 }}>{saveM.error.message}</div>}
       {confirmM.isError && <div style={{ color: "#d93025", fontSize: 13 }}>{confirmM.error.message}</div>}
+      {doorM.isError && <div style={{ color: "#d93025", fontSize: 13 }}>{doorM.error.message}</div>}
     </div>
   );
 }

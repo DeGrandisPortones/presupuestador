@@ -17,6 +17,7 @@ import DashboardPage from "./pages/DashboardPage/index.jsx";
 import UsersAdminPage from "./pages/UsersAdminPage/index.jsx";
 import MedicionesPage from "./pages/MedicionesPage/index.jsx";
 import MedicionDetailPage from "./pages/MedicionDetailPage/index.jsx";
+import PuertaChecklistPage from "./pages/PuertaChecklistPage/index.jsx";
 
 import RequireAuth from "./routes/RequireAuth.jsx";
 import AppLayout from "./layouts/AppLayout.jsx";
@@ -60,6 +61,8 @@ export default function App() {
           <Route path="cotizador/:id" element={<CotizadorPortonRoute />} />
           <Route path="cotizador/ipanel" element={<CotizadorIpanelRoute />} />
           <Route path="cotizador/ipanel/:id" element={<CotizadorIpanelRoute />} />
+
+          <Route path="puertas/:id" element={<PuertaChecklistPage />} />
 
           <Route path="presupuestos" element={<PresupuestosPage />} />
           <Route path="presupuestos/:id" element={<QuoteDetailPage />} />
