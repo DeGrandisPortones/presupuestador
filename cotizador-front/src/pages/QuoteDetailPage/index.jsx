@@ -4,10 +4,10 @@ import { useNavigate, useParams } from "react-router-dom";
 
 import Button from "../../ui/Button.jsx";
 import { getQuote, reviewCommercial, reviewTechnical, createRevisionQuote } from "../../api/quotes.js";
-import { reviewMeasurement } from "../../api/measurements.js";
 import { downloadMedicionPdf } from "../../api/pdf.js";
 import { useAuthStore } from "../../domain/auth/store.js";
 import { formatARS } from "../../domain/quote/pricing.js";
+import MeasurementReadOnlyView from "../../components/MeasurementReadOnlyView.jsx";
 
 function pillStyle(bg, border) {
   return { padding: "2px 8px", borderRadius: 999, background: bg, border: `1px solid ${border}`, fontSize: 12, fontWeight: 800 };
@@ -40,7 +40,6 @@ export default function QuoteDetailPage() {
   const user = useAuthStore((s) => s.user);
 
   const [notes, setNotes] = useState("");
-  const [measurementNotes, setMeasurementNotes] = useState("");
 
   const q = useQuery({
     queryKey: ["quote", quoteId],
@@ -63,22 +62,9 @@ export default function QuoteDetailPage() {
     quote?.status === "pending_approvals" &&
     quote?.technical_decision === "pending";
 
-
   const showMeasurement =
     !!quote?.requires_measurement ||
     (quote?.catalog_kind === "porton" && quote?.status === "synced_odoo" && quote?.fulfillment_mode === "produccion");
-
-  const canSellerReviewMeasurement =
-    !!user &&
-    !!quote &&
-    (user.is_vendedor || user.is_distribuidor) &&
-    String(quote.created_by_user_id) === String(user.user_id) &&
-    quote.measurement_status === "submitted";
-
-  const measurementReviewM = useMutation({
-    mutationFn: ({ action }) => reviewMeasurement(quoteId, { action, notes: measurementNotes }),
-    onSuccess: () => q.refetch(),
-  });
 
   const commercialM = useMutation({
     mutationFn: ({ action }) => reviewCommercial(quoteId, { action, notes }),
@@ -222,7 +208,7 @@ export default function QuoteDetailPage() {
 
               <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
                 {quote.status === "draft" && (
-                  <Button onClick={() => navigate((quote.catalog_kind || "porton")==="ipanel" ? `/cotizador/ipanel/${quote.id}` : `/cotizador/${quote.id}`)}>Editar</Button>
+                  <Button onClick={() => navigate((quote.catalog_kind || "porton") === "ipanel" ? `/cotizador/ipanel/${quote.id}` : `/cotizador/${quote.id}`)}>Editar</Button>
                 )}
                 {((user?.is_vendedor || user?.is_distribuidor) && String(quote.created_by_user_id) === String(user.user_id) && quote.status === "synced_odoo" && hasMeasurementForPdf(quote)) && (
                   <Button
@@ -256,7 +242,6 @@ export default function QuoteDetailPage() {
 
             <div className="spacer" />
 
-
             {showMeasurement && (
               <>
                 <div className="spacer" />
@@ -286,57 +271,7 @@ export default function QuoteDetailPage() {
                     <div className="muted">Todavía no hay medición cargada.</div>
                   )}
 
-                  {quote.measurement_form && (
-                    <pre style={{ margin: 0, whiteSpace: "pre-wrap", fontSize: 12, background: "#fff", padding: 10, borderRadius: 10, border: "1px solid #eee" }}>
-{JSON.stringify(quote.measurement_form, null, 2)}
-                    </pre>
-                  )}
-
-                  {canSellerReviewMeasurement && (
-                    <>
-                      <div className="spacer" />
-                      <div className="muted">Revisión del vendedor</div>
-                      <textarea
-                        value={measurementNotes}
-                        onChange={(e) => setMeasurementNotes(e.target.value)}
-                        placeholder="Motivo si rechaza / notas si aprueba…"
-                        style={{
-                          width: "100%",
-                          minHeight: 60,
-                          padding: "8px 10px",
-                          borderRadius: 8,
-                          border: "1px solid #ddd",
-                          outline: "none",
-                          resize: "vertical",
-                        }}
-                      />
-
-                      <div className="spacer" />
-
-                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                        <Button
-                          onClick={() => measurementReviewM.mutate({ action: "approve" })}
-                          disabled={measurementReviewM.isPending}
-                        >
-                          Aprobar medición
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          onClick={() => measurementReviewM.mutate({ action: "reject" })}
-                          disabled={measurementReviewM.isPending}
-                        >
-                          Rechazar (corregir)
-                        </Button>
-                      </div>
-
-                      {measurementReviewM.isError && (
-                        <>
-                          <div className="spacer" />
-                          <div style={{ color: "#d93025", fontSize: 13 }}>{measurementReviewM.error.message}</div>
-                        </>
-                      )}
-                    </>
-                  )}
+                  {quote.measurement_form && <MeasurementReadOnlyView quote={quote} />}
                 </div>
               </>
             )}
