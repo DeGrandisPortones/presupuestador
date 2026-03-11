@@ -1,21 +1,27 @@
-Parche Puerta / Checklist
+Patch: Puerta aislada o vinculada a portón
 
 Incluye:
-- cotizador-front/src/App.jsx
-- cotizador-front/src/api/doors.js
-- cotizador-front/src/pages/CotizadorPage/index.jsx
-- cotizador-front/src/pages/PuertaChecklistPage/index.jsx
+- Alta de puerta standalone desde Menú > Puertas
+- Vinculación opcional a presupuesto de portón
+- Lista de proveedores Odoo con tag/categoría "Puerta"
+- Monto de venta y costo de compra de la puerta
+- Flujo de aprobación Comercial/Técnica para puertas
+- Al aprobarse ambas, crea en Odoo:
+  * sale.order del cliente
+  * purchase.order al proveedor
+- Producto Odoo usado para venta y compra: 3225
+- En el detalle del portón, muestra puertas vinculadas para logística
+
+Archivos incluidos:
 - cotizador-back/src/index.js
 - cotizador-back/src/doorsSchema.js
 - cotizador-back/src/routes/doors.routes.js
+- cotizador-front/src/App.jsx
+- cotizador-front/src/api/doors.js
+- cotizador-front/src/pages/MenuPage/index.jsx
+- cotizador-front/src/pages/AprobacionComercialPage/index.jsx
+- cotizador-front/src/pages/AprobacionTecnicaPage/index.jsx
+- cotizador-front/src/pages/PuertaChecklistPage/index.jsx
+- cotizador-front/src/pages/QuoteDetailPage/index.jsx
 
-Qué hace:
-- Agrega el botón "Puerta" sólo en el cotizador de portones y sólo para vendedores.
-- Si el presupuesto de portón todavía no existe, primero lo guarda en draft.
-- Crea (o reutiliza) un checklist de puerta ligado al presupuesto de portón.
-- Si el portón ya tiene número Odoo (ej. S02049), la puerta muestra código PS02049.
-- El formulario toma como base la hoja "Checklist" del Excel subido.
-
-Notas:
-- El checklist se guarda en la nueva tabla public.presupuestador_doors.
-- Se asume relación 1 a 1 entre portón y puerta (índice único por linked_quote_id).
+Copiar y reemplazar respetando la misma estructura de carpetas.

@@ -7,8 +7,7 @@ export default function MenuPage() {
   const user = useAuthStore((s) => s.user);
 
   const canQuote = !!(user?.is_vendedor || user?.is_distribuidor);
-
-  // ✅ Dashboard SOLO Enc. Comercial
+  const canStandaloneDoor = !!user?.is_vendedor;
   const showDashboard = !!user?.is_enc_comercial;
   const showCommercialInbox = !!user?.is_enc_comercial;
   const showUsers = !!user?.is_enc_comercial;
@@ -40,6 +39,15 @@ export default function MenuPage() {
             <div className="menu-title">Cotizador Ipanel</div>
             <div className="spacer" />
             <Button variant="primary" onClick={() => navigate("/cotizador/ipanel")}>Ir al cotizador</Button>
+          </div>
+        )}
+
+        {canStandaloneDoor && (
+          <div className="card menu-card">
+            <div className="menu-title">Puertas</div>
+            <div className="muted">Puerta aislada o vinculada a un portón</div>
+            <div className="spacer" />
+            <Button variant="primary" onClick={() => navigate("/puertas/nueva")}>Nueva puerta</Button>
           </div>
         )}
 

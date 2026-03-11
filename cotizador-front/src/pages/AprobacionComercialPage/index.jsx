@@ -3,6 +3,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import Button from "../../ui/Button.jsx";
 import { listQuotes, reviewAcopioCommercial } from "../../api/quotes.js";
+import { listDoors, reviewDoorCommercial } from "../../api/doors.js";
 import { useAuthStore } from "../../domain/auth/store.js";
 
 function acopioReqLabel(r) {
@@ -26,7 +27,6 @@ function rowLabel(r) {
   return r.status;
 }
 
-
 function fmtDate(iso) {
   if (!iso) return "—";
   const d = new Date(iso);
@@ -40,12 +40,24 @@ function createdByLabel(r) {
   return `${name}${role}`;
 }
 
+function doorRowLabel(r) {
+  if (r.status === "pending_approvals") {
+    if (r.commercial_decision === "pending") return "Pendiente tu decisión";
+    if (r.commercial_decision === "approved" && r.technical_decision === "pending") return "Aprobada Comercial · Pendiente Técnica";
+    return "En aprobación";
+  }
+  if (r.status === "draft" && r.technical_decision === "rejected") return "Rechazada por Técnica";
+  if (r.status === "synced_odoo") return `Venta ${r.odoo_sale_order_name || "—"} · Compra ${r.odoo_purchase_order_name || "—"}`;
+  if (r.status === "syncing_odoo") return "Sincronizando…";
+  return r.status;
+}
+
 export default function AprobacionComercialPage() {
   const navigate = useNavigate();
   const user = useAuthStore((s) => s.user);
 
-  const [tab, setTab] = useState("aprobaciones"); // aprobaciones | acopio
-  const [filter, setFilter] = useState("all"); // all | pending | rejected
+  const [tab, setTab] = useState("aprobaciones");
+  const [filter, setFilter] = useState("all");
 
   const q = useQuery({
     queryKey: ["quotes", "commercial_inbox"],
@@ -53,177 +65,178 @@ export default function AprobacionComercialPage() {
     enabled: !!user?.is_enc_comercial,
   });
 
-const acopioQ = useQuery({
-  queryKey: ["quotes", "commercial_acopio"],
-  queryFn: () => listQuotes({ scope: "commercial_acopio" }),
-  enabled: tab === "acopio" && !!user?.is_enc_comercial,
-});
+  const acopioQ = useQuery({
+    queryKey: ["quotes", "commercial_acopio"],
+    queryFn: () => listQuotes({ scope: "commercial_acopio" }),
+    enabled: tab === "acopio" && !!user?.is_enc_comercial,
+  });
 
-const acopioM = useMutation({
-  mutationFn: ({ id, action, notes }) => reviewAcopioCommercial(id, { action, notes }),
-  onSuccess: () => acopioQ.refetch(),
-});
+  const doorsQ = useQuery({
+    queryKey: ["doors", "commercial_inbox"],
+    queryFn: () => listDoors({ scope: "commercial_inbox" }),
+    enabled: tab === "puertas" && !!user?.is_enc_comercial,
+  });
 
+  const acopioM = useMutation({
+    mutationFn: ({ id, action, notes }) => reviewAcopioCommercial(id, { action, notes }),
+    onSuccess: () => acopioQ.refetch(),
+  });
 
-const rows = useMemo(() => {
+  const doorM = useMutation({
+    mutationFn: ({ id, action, notes }) => reviewDoorCommercial(id, { action, notes }),
+    onSuccess: () => doorsQ.refetch(),
+  });
+
+  const rows = useMemo(() => {
     const arr = q.data || [];
-    if (filter === "pending") {
-      return arr.filter((x) => x.status === "pending_approvals" && x.commercial_decision === "pending");
-    }
-    if (filter === "rejected") {
-      return arr.filter((x) => x.status === "draft" && x.technical_decision === "rejected");
-    }
+    if (filter === "pending") return arr.filter((x) => x.status === "pending_approvals" && x.commercial_decision === "pending");
+    if (filter === "rejected") return arr.filter((x) => x.status === "draft" && x.technical_decision === "rejected");
     return arr;
   }, [q.data, filter]);
+
+  const doorRows = useMemo(() => {
+    const arr = doorsQ.data || [];
+    if (filter === "pending") return arr.filter((x) => x.status === "pending_approvals" && x.commercial_decision === "pending");
+    if (filter === "rejected") return arr.filter((x) => x.status === "draft" && x.technical_decision === "rejected");
+    return arr;
+  }, [doorsQ.data, filter]);
 
   const acopioRows = useMemo(() => acopioQ.data || [], [acopioQ.data]);
 
   if (!user?.is_enc_comercial) {
-    return (
-      <div className="container">
-        <div className="card">No autorizado (falta rol Enc. Comercial).</div>
-      </div>
-    );
+    return <div className="container"><div className="card">No autorizado (falta rol Enc. Comercial).</div></div>;
   }
 
   return (
     <div className="container">
       <div className="card">
         <h2 style={{ margin: 0 }}>Aprobación Comercial</h2>
-        <div className="muted">Pendientes (tu decisión) + avisos de rechazos de Técnica</div>
-
+        <div className="muted">Presupuestos, puertas y solicitudes de Acopio → Producción</div>
         <div className="spacer" />
-
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-  <Button variant={tab === "aprobaciones" ? "primary" : "ghost"} onClick={() => setTab("aprobaciones")}>
-    Aprobaciones
-  </Button>
-  <Button variant={tab === "acopio" ? "primary" : "ghost"} onClick={() => setTab("acopio")}>
-    Acopio → Producción
-  </Button>
-</div>
-
-{tab === "aprobaciones" && (
-  <>
-    <div className="spacer" />
-    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-      <Button variant={filter === "all" ? "primary" : "ghost"} onClick={() => setFilter("all")}>
-        Todos
-      </Button>
-      <Button variant={filter === "pending" ? "primary" : "ghost"} onClick={() => setFilter("pending")}>
-        Pendientes
-      </Button>
-      <Button variant={filter === "rejected" ? "primary" : "ghost"} onClick={() => setFilter("rejected")}>
-        Rechazados (Técnica)
-      </Button>
-    </div>
-  </>
-)}
+          <Button variant={tab === "aprobaciones" ? "primary" : "ghost"} onClick={() => setTab("aprobaciones")}>Aprobaciones</Button>
+          <Button variant={tab === "puertas" ? "primary" : "ghost"} onClick={() => setTab("puertas")}>Puertas</Button>
+          <Button variant={tab === "acopio" ? "primary" : "ghost"} onClick={() => setTab("acopio")}>Acopio → Producción</Button>
+        </div>
+        {tab !== "acopio" && (
+          <>
+            <div className="spacer" />
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <Button variant={filter === "all" ? "primary" : "ghost"} onClick={() => setFilter("all")}>Todos</Button>
+              <Button variant={filter === "pending" ? "primary" : "ghost"} onClick={() => setFilter("pending")}>Pendientes</Button>
+              <Button variant={filter === "rejected" ? "primary" : "ghost"} onClick={() => setFilter("rejected")}>Rechazados</Button>
+            </div>
+          </>
+        )}
       </div>
 
       <div className="spacer" />
 
       <div className="card">
-{tab === "aprobaciones" && (
-  <>
-        {q.isLoading && <div className="muted">Cargando...</div>}
-        {q.isError && <div style={{ color: "#d93025", fontSize: 13 }}>{q.error.message}</div>}
-        {!q.isLoading && !rows.length && <div className="muted">Sin ítems</div>}
-
-        {!!rows.length && (
-          <table>
-            <thead>
-              <tr>
-                <th>Fecha</th>
-                <th>Vendedor/Distribuidor</th>
-                <th>Cliente</th>
-                <th>Dirección</th>
-                <th>Estado</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((r) => (
-                <tr key={r.id}>
-                  <td>{fmtDate(r.created_at)}</td>
-                  <td>{createdByLabel(r)}</td>
-                  <td>{r.end_customer?.name || <span className="muted">(sin nombre)</span>}</td>
-                  <td>{r.end_customer?.address || "—"}</td>
-                  <td>{rowLabel(r)}</td>
-                  <td className="right">
-                    <Button onClick={() => navigate(`/presupuestos/${r.id}`)}>Abrir</Button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        {tab === "aprobaciones" && (
+          <>
+            {q.isLoading && <div className="muted">Cargando...</div>}
+            {q.isError && <div style={{ color: "#d93025", fontSize: 13 }}>{q.error.message}</div>}
+            {!q.isLoading && !rows.length && <div className="muted">Sin ítems</div>}
+            {!!rows.length && (
+              <table>
+                <thead>
+                  <tr><th>Fecha</th><th>Vendedor/Distribuidor</th><th>Cliente</th><th>Dirección</th><th>Estado</th><th></th></tr>
+                </thead>
+                <tbody>
+                  {rows.map((r) => (
+                    <tr key={r.id}>
+                      <td>{fmtDate(r.created_at)}</td>
+                      <td>{createdByLabel(r)}</td>
+                      <td>{r.end_customer?.name || <span className="muted">(sin nombre)</span>}</td>
+                      <td>{r.end_customer?.address || "—"}</td>
+                      <td>{rowLabel(r)}</td>
+                      <td className="right"><Button onClick={() => navigate(`/presupuestos/${r.id}`)}>Abrir</Button></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </>
         )}
-  </>
-)}
 
-{tab === "acopio" && (
-  <>
-    {acopioQ.isLoading && <div className="muted">Cargando...</div>}
-    {acopioQ.isError && <div style={{ color: "#d93025", fontSize: 13 }}>{acopioQ.error.message}</div>}
-    {!acopioQ.isLoading && !acopioRows.length && <div className="muted">Sin solicitudes</div>}
+        {tab === "puertas" && (
+          <>
+            {doorsQ.isLoading && <div className="muted">Cargando...</div>}
+            {doorsQ.isError && <div style={{ color: "#d93025", fontSize: 13 }}>{doorsQ.error.message}</div>}
+            {!doorsQ.isLoading && !doorRows.length && <div className="muted">Sin puertas</div>}
+            {!!doorRows.length && (
+              <table>
+                <thead>
+                  <tr><th>Fecha</th><th>Vendedor</th><th>Código</th><th>Cliente</th><th>Proveedor</th><th>Estado</th><th></th></tr>
+                </thead>
+                <tbody>
+                  {doorRows.map((r) => {
+                    const canAct = r.status === "pending_approvals" && r.commercial_decision === "pending";
+                    return (
+                      <tr key={r.id}>
+                        <td>{fmtDate(r.created_at)}</td>
+                        <td>{createdByLabel(r)}</td>
+                        <td>{r.door_code}</td>
+                        <td>{r.end_customer?.name || r.record?.obra_cliente || "—"}</td>
+                        <td>{r.supplier_name || r.record?.supplier_name || "—"}</td>
+                        <td>{doorRowLabel(r)}</td>
+                        <td className="right" style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+                          <Button variant="ghost" onClick={() => navigate(`/puertas/${r.id}`)}>Abrir</Button>
+                          {canAct ? (
+                            <>
+                              <Button disabled={doorM.isPending} onClick={() => doorM.mutate({ id: r.id, action: "approve", notes: null })}>OK</Button>
+                              <Button variant="ghost" disabled={doorM.isPending} onClick={() => { const msg = window.prompt("Motivo del rechazo:", ""); if (msg !== null) doorM.mutate({ id: r.id, action: "reject", notes: msg }); }}>Rechazar</Button>
+                            </>
+                          ) : null}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            )}
+          </>
+        )}
 
-    {!!acopioRows.length && (
-      <table>
-        <thead>
-          <tr>
-            <th>Fecha</th>
-            <th>Vendedor/Distribuidor</th>
-            <th>Cliente</th>
-            <th>Dirección</th>
-            <th>Solicitud</th>
-            <th>Decisiones</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>
-          {acopioRows.map((r) => {
-            const canAct = (r.acopio_to_produccion_commercial_decision || "pending") === "pending";
-            return (
-              <tr key={r.id}>
-                <td>{fmtDate(r.acopio_to_produccion_requested_at || r.created_at)}</td>
-                <td>{createdByLabel(r)}</td>
-                <td>{r.end_customer?.name || <span className="muted">(sin nombre)</span>}</td>
-                <td>{r.end_customer?.address || "—"}</td>
-                <td>{r.acopio_to_produccion_notes || <span className="muted">(sin nota)</span>}</td>
-                <td>{acopioReqLabel(r)}</td>
-                <td className="right" style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
-                  <Button variant="ghost" onClick={() => navigate(`/presupuestos/${r.id}`)}>Abrir</Button>
-                  {canAct ? (
-                    <>
-                      <Button
-                        disabled={acopioM.isPending}
-                        onClick={() => acopioM.mutate({ id: r.id, action: "approve", notes: null })}
-                      >
-                        OK
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        disabled={acopioM.isPending}
-                        onClick={() => {
-                          const msg = window.prompt("Motivo del rechazo:", "");
-                          if (msg !== null) acopioM.mutate({ id: r.id, action: "reject", notes: msg });
-                        }}
-                      >
-                        Rechazar
-                      </Button>
-                    </>
-                  ) : (
-                    <span className="muted">Ya decidiste</span>
-                  )}
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
-    )}
-  </>
-)}
+        {tab === "acopio" && (
+          <>
+            {acopioQ.isLoading && <div className="muted">Cargando...</div>}
+            {acopioQ.isError && <div style={{ color: "#d93025", fontSize: 13 }}>{acopioQ.error.message}</div>}
+            {!acopioQ.isLoading && !acopioRows.length && <div className="muted">Sin solicitudes</div>}
+            {!!acopioRows.length && (
+              <table>
+                <thead>
+                  <tr><th>Fecha</th><th>Vendedor/Distribuidor</th><th>Cliente</th><th>Dirección</th><th>Solicitud</th><th>Decisiones</th><th></th></tr>
+                </thead>
+                <tbody>
+                  {acopioRows.map((r) => {
+                    const canAct = (r.acopio_to_produccion_commercial_decision || "pending") === "pending";
+                    return (
+                      <tr key={r.id}>
+                        <td>{fmtDate(r.acopio_to_produccion_requested_at || r.created_at)}</td>
+                        <td>{createdByLabel(r)}</td>
+                        <td>{r.end_customer?.name || <span className="muted">(sin nombre)</span>}</td>
+                        <td>{r.end_customer?.address || "—"}</td>
+                        <td>{r.acopio_to_produccion_notes || <span className="muted">(sin nota)</span>}</td>
+                        <td>{acopioReqLabel(r)}</td>
+                        <td className="right" style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+                          <Button variant="ghost" onClick={() => navigate(`/presupuestos/${r.id}`)}>Abrir</Button>
+                          {canAct ? (
+                            <>
+                              <Button disabled={acopioM.isPending} onClick={() => acopioM.mutate({ id: r.id, action: "approve", notes: null })}>OK</Button>
+                              <Button variant="ghost" disabled={acopioM.isPending} onClick={() => { const msg = window.prompt("Motivo del rechazo:", ""); if (msg !== null) acopioM.mutate({ id: r.id, action: "reject", notes: msg }); }}>Rechazar</Button>
+                            </>
+                          ) : <span className="muted">Ya decidiste</span>}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            )}
+          </>
+        )}
       </div>
     </div>
   );
