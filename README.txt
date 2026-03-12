@@ -1,1 +1,1 @@
-Reemplaza SOLO este archivo:\n- cotizador-back/src/odoo.js\n\nEste fix prueba /jsonrpc y /odoo/jsonrpc, y guarda el endpoint correcto cuando uno funciona.\nLuego redeploya el backend.\n
+Reemplaza SOLO cotizador-back/src/odoo.js por este archivo y redeploya.\nEsto revierte el cambio que rompió la conexión con Odoo.\n
