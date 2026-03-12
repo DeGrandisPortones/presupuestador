@@ -176,7 +176,11 @@ export default function PuertaChecklistPage() {
   });
 
   const submitM = useMutation({
-    mutationFn: () => submitDoor(id),
+    mutationFn: async () => {
+      const saved = await updateDoor(id, { record: form });
+      setForm(normalizeForm(saved.record, user));
+      return await submitDoor(id);
+    },
     onSuccess: () => {
       toast.success("Puerta enviada a aprobación.");
       q.refetch();
@@ -574,10 +578,10 @@ export default function PuertaChecklistPage() {
             <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
               {canSellerEdit && (
                 <>
-                  <Button onClick={() => saveM.mutate()} disabled={saveM.isPending}>
+                  <Button onClick={() => saveM.mutate()} disabled={saveM.isPending || submitM.isPending}>
                     {saveM.isPending ? "Guardando..." : "Guardar"}
                   </Button>
-                  <Button variant="primary" onClick={() => submitM.mutate()} disabled={submitM.isPending || door.status === "pending_approvals" || door.status === "synced_odoo"}>
+                  <Button variant="primary" onClick={() => submitM.mutate()} disabled={submitM.isPending || saveM.isPending || door.status === "pending_approvals" || door.status === "synced_odoo"}>
                     {submitM.isPending ? "Enviando..." : "Enviar a aprobación"}
                   </Button>
                 </>
