@@ -1,5 +1,5 @@
 import dotenv from "dotenv";
-dotenv.config({ override: true });
+dotenv.config();
 
 if (process.env.ALLOW_INSECURE_TLS === "true") {
   process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
