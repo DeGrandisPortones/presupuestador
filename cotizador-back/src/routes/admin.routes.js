@@ -4,6 +4,7 @@ import { loadCatalogBootstrap, clearCatalogBootstrapCache } from "../catalogBoot
 import { normKind, createSection, deleteSection, setTagSection, setProductAlias, getTypeSectionsMap, setTypeSections } from "../catalogDb.js";
 import { dbQuery } from "../db.js";
 import { listUsers, createUser, updateUser } from "../usersDb.js";
+import { getCommercialFinalQuoteSettings, setCommercialFinalQuoteSettings } from "../settingsDb.js";
 
 function requireEncComercial(req, res, next) {
   if (!req.user?.is_enc_comercial) return res.status(403).json({ ok: false, error: "No autorizado" });
@@ -13,27 +14,33 @@ function requireEncComercial(req, res, next) {
 export function buildAdminRouter(odoo) {
   const router = express.Router();
 
-  // =========================
-  // CATÁLOGO / DASHBOARD
-  // =========================
-
-  // GET /api/admin/catalog?kind=
   router.get("/catalog", requireAuth, requireEncComercial, async (req, res, next) => {
     try {
       const kind = normKind(req.query.kind || "porton");
       const data = await loadCatalogBootstrap(odoo, kind);
-
-      // incluir mapping tag->section_id para que el front muestre el select
-      const q = await dbQuery(
-        `select tag_id, section_id from public.presupuestador_tag_sections where catalog_kind=$1`,
-        [kind]
-      );
+      const q = await dbQuery(`select tag_id, section_id from public.presupuestador_tag_sections where catalog_kind=$1`, [kind]);
       const map = new Map((q.rows || []).map((r) => [Number(r.tag_id), Number(r.section_id)]));
       const tags = (data.tags || []).map((t) => ({ ...t, section_id: map.get(Number(t.id)) || null }));
-
       const type_sections = await getTypeSectionsMap(kind);
-
       res.json({ ...data, tags, type_sections });
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  router.get("/final-settings", requireAuth, requireEncComercial, async (_req, res, next) => {
+    try {
+      const settings = await getCommercialFinalQuoteSettings();
+      res.json({ ok: true, settings });
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  router.put("/final-settings", requireAuth, requireEncComercial, async (req, res, next) => {
+    try {
+      const settings = await setCommercialFinalQuoteSettings(req.body || {});
+      res.json({ ok: true, settings });
     } catch (e) {
       next(e);
     }
@@ -90,33 +97,26 @@ export function buildAdminRouter(odoo) {
     }
   });
 
-  // GET /api/admin/quotes?limit=200&kind=porton|ipanel
   router.get("/quotes", requireAuth, requireEncComercial, async (req, res, next) => {
     try {
       const limit = Math.min(Number(req.query.limit || 200), 500);
       const kind = req.query.kind ? normKind(req.query.kind) : null;
-
       const q = await dbQuery(
-        `select id, created_at, created_by_role, status, fulfillment_mode, end_customer, lines, payload,
-                commercial_decision, technical_decision, rejection_notes, catalog_kind
+        `select id, created_at, created_by_role, status, final_status, fulfillment_mode, end_customer, lines, payload,
+                commercial_decision, technical_decision, rejection_notes, catalog_kind,
+                final_sale_order_name, final_difference_amount, final_absorbed_by_company
            from public.presupuestador_quotes
           ${kind ? "where catalog_kind = $1" : ""}
           order by created_at desc
           limit ${kind ? "$2" : "$1"}`,
         kind ? [kind, limit] : [limit]
       );
-
       res.json({ ok: true, quotes: q.rows || [] });
     } catch (e) {
       next(e);
     }
   });
 
-  // =========================
-  // GESTOR DE USUARIOS
-  // =========================
-
-  // GET /api/admin/users?role=vendedor|distribuidor|all&q=...&active=all|true|false
   router.get("/users", requireAuth, requireEncComercial, async (req, res, next) => {
     try {
       const role = req.query.role || "all";
@@ -129,7 +129,6 @@ export function buildAdminRouter(odoo) {
     }
   });
 
-  // POST /api/admin/users
   router.post("/users", requireAuth, requireEncComercial, async (req, res, next) => {
     try {
       const u = await createUser(req.body || {});
@@ -139,7 +138,6 @@ export function buildAdminRouter(odoo) {
     }
   });
 
-  // PUT /api/admin/users/:id
   router.put("/users/:id", requireAuth, requireEncComercial, async (req, res, next) => {
     try {
       const u = await updateUser(req.params.id, req.body || {});
@@ -149,8 +147,6 @@ export function buildAdminRouter(odoo) {
     }
   });
 
-
-  // PUT /api/admin/types/:typeKey/sections?kind=porton|ipanel
   router.put("/types/:typeKey/sections", requireAuth, requireEncComercial, async (req, res, next) => {
     try {
       const kind = normKind(req.query.kind || "porton");

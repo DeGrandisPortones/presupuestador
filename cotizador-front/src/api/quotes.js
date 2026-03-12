@@ -1,16 +1,8 @@
 import { http } from "./http.js";
 
-/**
- * Quotes API (Front)
- * ------------------------------------------------------------
- * Nota: algunos nombres son aliases para mantener compatibilidad
- * con pantallas nuevas/viejas durante la transición del flujo.
- */
-
 export async function listQuotes({ scope = "mine" } = {}) {
   const params = new URLSearchParams();
   params.set("scope", scope);
-
   const { data } = await http.get(`/api/quotes?${params.toString()}`);
   if (!data?.ok) throw new Error(data?.error || "No se pudieron cargar presupuestos");
   return data.quotes || [];
@@ -34,21 +26,12 @@ export async function updateQuote(id, payload) {
   return data.quote;
 }
 
-/**
- * Legacy: "Enviar a aprobación"
- * (en el flujo nuevo se usa "Confirmar presupuesto")
- */
 export async function submitQuote(id) {
   const { data } = await http.post(`/api/quotes/${id}/submit`);
   if (!data?.ok) throw new Error(data?.error || "No se pudo enviar a aprobación");
   return data.quote;
 }
 
-/**
- * Nuevo nombre: "Confirmar presupuesto"
- * - Preferimos /confirm si existe en el back
- * - Fallback a /submit para compatibilidad
- */
 export async function confirmQuote(id) {
   try {
     const { data } = await http.post(`/api/quotes/${id}/confirm`);
@@ -56,7 +39,6 @@ export async function confirmQuote(id) {
     return data.quote;
   } catch (e) {
     const msg = String(e?.message || "").toLowerCase();
-    // Fallback típico cuando el back aún no tiene /confirm
     if (msg.includes("not found") || msg.includes("404") || msg.includes("cannot post")) {
       return await submitQuote(id);
     }
@@ -64,33 +46,30 @@ export async function confirmQuote(id) {
   }
 }
 
+export async function submitFinalQuote(id) {
+  const { data } = await http.post(`/api/quotes/${id}/final/submit`, {});
+  if (!data?.ok) throw new Error(data?.error || "No se pudo enviar la cotización final a Odoo");
+  return data.quote;
+}
+
 export async function reviewCommercial(id, { action, notes }) {
   const { data } = await http.post(`/api/quotes/${id}/review/commercial`, { action, notes });
   if (!data?.ok) throw new Error(data?.error || "No se pudo registrar revisión comercial");
-  return data; // { ok, quote }
+  return data;
 }
 
 export async function reviewTechnical(id, { action, notes }) {
   const { data } = await http.post(`/api/quotes/${id}/review/technical`, { action, notes });
   if (!data?.ok) throw new Error(data?.error || "No se pudo registrar revisión técnica");
-  return data; // { ok, quote, order? }
+  return data;
 }
 
-/**
- * Solicitar pasar un portón en Acopio a Producción
- * (flujo existente en el back: /acopio/request_production)
- */
 export async function requestProductionFromAcopio(id, { notes } = {}) {
   const { data } = await http.post(`/api/quotes/${id}/acopio/request_production`, { notes });
   if (!data?.ok) throw new Error(data?.error || "No se pudo solicitar cambio a Producción");
   return data.quote;
 }
 
-/**
- * Alias usado por algunas pantallas: moveToProduccion
- * - Preferimos /move_to_produccion si existiera
- * - Fallback a /acopio/request_production (implementado en back)
- */
 export async function moveToProduccion(id, { notes } = {}) {
   try {
     const { data } = await http.post(`/api/quotes/${id}/move_to_produccion`, { notes });
@@ -117,9 +96,6 @@ export async function reviewAcopioTechnical(id, { action, notes } = {}) {
   return data.quote;
 }
 
-/**
- * Crea una copia/revisión del presupuesto (para ajustes o para el flujo Acopio→Producción).
- */
 export async function createRevisionQuote(id) {
   const { data } = await http.post(`/api/quotes/${id}/revision`);
   if (!data?.ok) throw new Error(data?.error || "No se pudo crear el ajuste");

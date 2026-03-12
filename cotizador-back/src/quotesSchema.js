@@ -1,4 +1,5 @@
 import { dbQuery } from "./db.js";
+import { ensureSettingsTable } from "./settingsDb.js";
 
 let ensured = false;
 
@@ -7,6 +8,7 @@ let ensured = false;
  * - mediciones
  * - acopio -> producción
  * - workflow v2 (confirmación + copias)
+ * - cotización final detallada a Odoo
  */
 export async function ensureQuotesMeasurementColumns() {
   if (ensured) return;
@@ -18,7 +20,7 @@ export async function ensureQuotesMeasurementColumns() {
   await dbQuery(`alter table public.presupuestador_quotes add column if not exists parent_quote_id int null;`);
   await dbQuery(`alter table public.presupuestador_quotes add column if not exists confirmed_at timestamptz null;`);
 
-  // Monto del presupuesto confirmado (seña / a cuenta) - se usa más adelante
+  // Monto del presupuesto confirmado (seña / a cuenta)
   await dbQuery(`alter table public.presupuestador_quotes add column if not exists deposit_amount numeric(16,2) null;`);
 
   // =========================
@@ -36,9 +38,24 @@ export async function ensureQuotesMeasurementColumns() {
   await dbQuery(`alter table public.presupuestador_quotes add column if not exists measurement_review_at timestamptz null;`);
   await dbQuery(`alter table public.presupuestador_quotes add column if not exists measurement_review_notes text null;`);
 
-  // Link público para compartir la medición con el cliente por WhatsApp
   await dbQuery(`alter table public.presupuestador_quotes add column if not exists measurement_share_token text null;`);
   await dbQuery(`alter table public.presupuestador_quotes add column if not exists measurement_share_enabled_at timestamptz null;`);
+
+  // =========================
+  // Flujo final detallado a Odoo
+  // =========================
+  await dbQuery(`alter table public.presupuestador_quotes add column if not exists final_status text null;`);
+  await dbQuery(`alter table public.presupuestador_quotes add column if not exists final_technical_decision text null;`);
+  await dbQuery(`alter table public.presupuestador_quotes add column if not exists final_logistics_decision text null;`);
+  await dbQuery(`alter table public.presupuestador_quotes add column if not exists final_technical_notes text null;`);
+  await dbQuery(`alter table public.presupuestador_quotes add column if not exists final_logistics_notes text null;`);
+  await dbQuery(`alter table public.presupuestador_quotes add column if not exists final_sale_order_id int null;`);
+  await dbQuery(`alter table public.presupuestador_quotes add column if not exists final_sale_order_name text null;`);
+  await dbQuery(`alter table public.presupuestador_quotes add column if not exists final_synced_at timestamptz null;`);
+  await dbQuery(`alter table public.presupuestador_quotes add column if not exists final_tolerance_percent numeric(8,2) null;`);
+  await dbQuery(`alter table public.presupuestador_quotes add column if not exists final_tolerance_amount numeric(16,2) null;`);
+  await dbQuery(`alter table public.presupuestador_quotes add column if not exists final_difference_amount numeric(16,2) null;`);
+  await dbQuery(`alter table public.presupuestador_quotes add column if not exists final_absorbed_by_company boolean not null default false;`);
 
   // Backfill selectivo: solo portones en Odoo+producción que tengan el producto de medición en líneas
   const measurementProductId = String(process.env.ODOO_MEASUREMENT_PRODUCT_ID || 2865);
@@ -56,5 +73,6 @@ export async function ensureQuotesMeasurementColumns() {
       )
   `);
 
+  await ensureSettingsTable();
   ensured = true;
 }

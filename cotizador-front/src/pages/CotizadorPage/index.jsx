@@ -4,7 +4,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { useAuthStore } from "../../domain/auth/store.js";
 
 import { getPricelists, getPrices } from "../../api/odoo";
-import { createQuote, getQuote, confirmQuote, updateQuote } from "../../api/quotes";
+import { createQuote, getQuote, confirmQuote, submitFinalQuote, updateQuote } from "../../api/quotes";
 import { createOrGetDoorFromQuote, createStandaloneDoor, updateDoor } from "../../api/doors.js";
 import { downloadPresupuestoPdf, downloadProformaPdf } from "../../api/pdf";
 import toast from "react-hot-toast";
@@ -50,21 +50,14 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
   useEffect(() => {
     if (!idParam) {
       reset();
-      if (user?.default_maps_url) {
-        setEndCustomer({ maps_url: user.default_maps_url });
-      }
+      if (user?.default_maps_url) setEndCustomer({ maps_url: user.default_maps_url });
     }
   }, [idParam, reset, user?.default_maps_url, setEndCustomer]);
 
-  const pricelistsQ = useQuery({
-    queryKey: ["pricelists"],
-    queryFn: getPricelists,
-  });
+  const pricelistsQ = useQuery({ queryKey: ["pricelists"], queryFn: getPricelists });
 
   useEffect(() => {
-    if (!pricelistId && pricelistsQ.data?.length) {
-      setPricelist(pricelistsQ.data[0]);
-    }
+    if (!pricelistId && pricelistsQ.data?.length) setPricelist(pricelistsQ.data[0]);
   }, [pricelistId, pricelistsQ.data, setPricelist]);
 
   const quoteQ = useQuery({
@@ -75,42 +68,31 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
 
   useEffect(() => {
     if (!quoteQ.data) return;
-
     const qKind = (quoteQ.data.catalog_kind || "porton").toString().toLowerCase();
     if (qKind !== (catalogKind || "porton")) {
       const id = String(quoteQ.data.id);
       navigate(qKind === "ipanel" ? `/cotizador/ipanel/${id}` : `/cotizador/${id}`, { replace: true });
       return;
     }
-
     loadFromQuote(quoteQ.data);
   }, [quoteQ.data, loadFromQuote, catalogKind, navigate]);
 
-  const totals = useMemo(
-    () => calcTotals(lines, marginPercent, ivaRate),
-    [lines, marginPercent, ivaRate]
-  );
-
-  const linesKey = useMemo(
-    () => lines.map((l) => `${l.product_id}:${l.qty}`).join("|"),
-    [lines]
-  );
+  const totals = useMemo(() => calcTotals(lines, marginPercent, ivaRate), [lines, marginPercent, ivaRate]);
+  const linesKey = useMemo(() => lines.map((l) => `${l.product_id}:${l.qty}`).join("|"), [lines]);
+  const isRevisionQuote = (quoteQ.data?.quote_kind || "original") === "copy";
+  const finalStatus = String(quoteQ.data?.final_status || "");
 
   useEffect(() => {
     async function run() {
-      if (!pricelistId) return;
-      if (!lines.length) return;
-
+      if (!pricelistId || !lines.length) return;
       const payload = {
         pricelist_id: pricelistId,
         partner_id: partnerId,
         lines: lines.map((l) => ({ product_id: l.product_id, qty: l.qty })),
       };
-
       const data = await getPrices(payload);
       applyBasePrices(data);
     }
-
     run().catch(console.error);
   }, [pricelistId, partnerId, linesKey, lines.length, applyBasePrices]);
 
@@ -118,17 +100,15 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
     return {
       ...buildPayloadForBack(),
       catalog_kind: catalogKind,
-      fulfillment_mode: (buildPayloadForBack()?.fulfillment_mode || "acopio"),
+      fulfillment_mode: buildPayloadForBack()?.fulfillment_mode || "acopio",
     };
   }
 
   function validateDraft(payload) {
     const c = payload?.end_customer || {};
     const errs = [];
-
     if (!String(c.name || "").trim()) errs.push("Completá el nombre del cliente.");
     if (!Array.isArray(payload?.lines) || payload.lines.length === 0) errs.push("Agregá al menos un producto.");
-
     if (errs.length) throw new Error(errs[0]);
   }
 
@@ -136,20 +116,14 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
     const c = payload?.end_customer || {};
     const p = payload?.payload || {};
     const errs = [];
-
     if (!String(c.name || "").trim()) errs.push("Completá el nombre del cliente.");
     if (!String(c.phone || "").trim()) errs.push("Completá el teléfono del cliente.");
     if (!String(c.address || "").trim()) errs.push("Completá la dirección del cliente.");
     if (!String(c.maps_url || "").trim()) errs.push("Completá el URL de Google Maps del cliente.");
     if (!String(p.payment_method || "").trim()) errs.push("Seleccioná la forma de pago.");
-    if ((catalogKind || "porton") === "porton" && !String(p.porton_type || "").trim()) {
-      errs.push("Seleccioná el tipo/sistema del portón.");
-    }
-    if (String(p.condition_mode || "") === "special" && !String(p.condition_text || "").trim()) {
-      errs.push("Completá la condición especial.");
-    }
+    if ((catalogKind || "porton") === "porton" && !String(p.porton_type || "").trim()) errs.push("Seleccioná el tipo/sistema del portón.");
+    if (String(p.condition_mode || "") === "special" && !String(p.condition_text || "").trim()) errs.push("Completá la condición especial.");
     if (!Array.isArray(payload?.lines) || payload.lines.length === 0) errs.push("Agregá al menos un producto.");
-
     if (errs.length) throw new Error(errs[0]);
   }
 
@@ -167,7 +141,6 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
       maps_url: String(payloadCustomer.maps_url || currentCustomer.maps_url || "").trim(),
     };
     record.obra_cliente = String(record.end_customer.name || record.obra_cliente || "").trim();
-
     return record;
   }
 
@@ -175,7 +148,6 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
     mutationFn: async () => {
       const payload = getDraftPayload();
       validateDraft(payload);
-
       if (quoteId) return await updateQuote(quoteId, payload);
       return await createQuote(payload);
     },
@@ -193,7 +165,7 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
       const payload = {
         ...buildPayloadForBack(),
         catalog_kind: catalogKind,
-        fulfillment_mode: (buildPayloadForBack()?.fulfillment_mode || "acopio"),
+        fulfillment_mode: buildPayloadForBack()?.fulfillment_mode || "acopio",
       };
       validateConfirm(payload);
 
@@ -204,6 +176,10 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
         const created = await createQuote(payload);
         id = created.id;
         setQuoteMeta({ quoteId: created.id, status: created.status, rejectionNotes: created.rejection_notes });
+      }
+
+      if (isRevisionQuote) {
+        return await submitFinalQuote(id);
       }
 
       const raw = window.prompt("Confirmar presupuesto.\nEscribí 'A' para Acopio o 'P' para Producción:", "A");
@@ -228,26 +204,20 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
       setQuoteMeta({ quoteId: q.id, status: q.status, rejectionNotes: q.rejection_notes });
       qc.invalidateQueries({ queryKey: ["quotes", "mine"] });
       navigate(`/presupuestos/${q.id}`);
-      toast.success("Presupuesto confirmado.");
+      toast.success(isRevisionQuote ? "Cotización final enviada a Odoo." : "Presupuesto confirmado.");
     },
-    onError: (e) => toast.error(e?.message || "No se pudo confirmar"),
+    onError: (e) => toast.error(e?.message || (isRevisionQuote ? "No se pudo enviar la cotización final" : "No se pudo confirmar")),
   });
 
   const doorM = useMutation({
     mutationFn: async () => {
-      if ((catalogKind || "porton") !== "porton") {
-        throw new Error("La puerta sólo se habilita desde el cotizador de portones.");
-      }
-
+      if ((catalogKind || "porton") !== "porton") throw new Error("La puerta sólo se habilita desde el cotizador de portones.");
       const payload = getDraftPayload();
       const customerName = String(payload?.end_customer?.name || "").trim();
-      if (!customerName) {
-        throw new Error("Completá al menos el nombre del cliente para abrir la puerta.");
-      }
+      if (!customerName) throw new Error("Completá al menos el nombre del cliente para abrir la puerta.");
 
       if (Array.isArray(payload?.lines) && payload.lines.length > 0) {
         validateDraft(payload);
-
         let id = quoteId || idParam;
         if (id) {
           await updateQuote(id, payload);
@@ -257,7 +227,6 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
           setQuoteMeta({ quoteId: created.id, status: created.status, rejectionNotes: created.rejection_notes });
           qc.invalidateQueries({ queryKey: ["quotes", "mine"] });
         }
-
         return await createOrGetDoorFromQuote(id);
       }
 
@@ -292,8 +261,10 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
     }
   };
 
-  const canConfirm = ["draft", "rejected_commercial", "rejected_technical"].includes(status);
-  const canOpenDoor = !!(user?.is_vendedor && (catalogKind || "porton") === "porton");
+  const canConfirm = isRevisionQuote
+    ? ["", "draft", "rejected"].includes(finalStatus || "")
+    : ["draft", "rejected_commercial", "rejected_technical"].includes(status);
+  const canOpenDoor = !!(user?.is_vendedor && (catalogKind || "porton") === "porton" && !isRevisionQuote);
 
   return (
     <div className="container">
@@ -306,51 +277,40 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
           />
           <div>
             <h2 style={{ margin: 0 }}>
-              {quoteId ? `Presupuesto #${quoteId}` : "Nuevo presupuesto"}
+              {quoteId ? `${isRevisionQuote ? "Ajuste" : "Presupuesto"} #${quoteId}` : "Nuevo presupuesto"}
             </h2>
-            <div className="muted">Estado: <b>{status}</b></div>
+            <div className="muted">
+              Estado: <b>{isRevisionQuote ? (finalStatus || status) : status}</b>
+              {isRevisionQuote && quoteQ.data?.parent_quote_id ? <> · Ref. original: <b>{String(quoteQ.data.parent_quote_id).slice(0, 8)}</b></> : null}
+            </div>
           </div>
         </div>
 
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
-          <Button variant="secondary" onClick={onDownloadPresupuesto}>
-            PDF presupuesto
-          </Button>
-          {user?.is_distribuidor ? (
-            <Button variant="secondary" onClick={onDownloadProforma}>
-              PDF proforma
-            </Button>
-          ) : null}
-
-          {canOpenDoor ? (
-            <Button variant="ghost" onClick={() => doorM.mutate()} disabled={doorM.isPending}>
-              {doorM.isPending ? "Abriendo puerta..." : "Puerta"}
-            </Button>
-          ) : null}
-
-          <Button onClick={() => saveM.mutate()} disabled={saveM.isPending}>
-            {saveM.isPending ? "Guardando..." : "Guardar"}
-          </Button>
-
-          <Button
-            variant="primary"
-            onClick={() => confirmM.mutate()}
-            disabled={!canConfirm || confirmM.isPending}
-            title={!canConfirm ? "Sólo se confirma desde borrador o rechazados" : ""}
-          >
-            {confirmM.isPending ? "Confirmando..." : "Confirmar presupuesto"}
+          <Button variant="secondary" onClick={onDownloadPresupuesto}>PDF presupuesto</Button>
+          {user?.is_distribuidor ? <Button variant="secondary" onClick={onDownloadProforma}>PDF proforma</Button> : null}
+          {canOpenDoor ? <Button variant="ghost" onClick={() => doorM.mutate()} disabled={doorM.isPending}>{doorM.isPending ? "Abriendo puerta..." : "Puerta"}</Button> : null}
+          <Button onClick={() => saveM.mutate()} disabled={saveM.isPending}>{saveM.isPending ? "Guardando..." : "Guardar"}</Button>
+          <Button variant="primary" onClick={() => confirmM.mutate()} disabled={!canConfirm || confirmM.isPending}>
+            {confirmM.isPending ? "Confirmando..." : (isRevisionQuote ? "Enviar cotización final" : "Confirmar presupuesto")}
           </Button>
         </div>
       </div>
 
+      {isRevisionQuote && (
+        <>
+          <div className="spacer" />
+          <div className="card" style={{ background: "#fafafa" }}>
+            <div style={{ fontWeight: 900, marginBottom: 6 }}>Cotización final a Odoo</div>
+            <div className="muted">
+              Esta instancia editable genera la nueva cotización detallada en Odoo y descuenta la seña ya enviada del presupuesto original.
+            </div>
+          </div>
+        </>
+      )}
+
       <div className="spacer" />
-
-      <HeaderBar
-        pricelists={pricelistsQ.data || []}
-        loadingPricelists={pricelistsQ.isLoading}
-        showMargin
-      />
-
+      <HeaderBar pricelists={pricelistsQ.data || []} loadingPricelists={pricelistsQ.isLoading} showMargin />
       <div className="spacer" />
 
       <div className="row quote-row">

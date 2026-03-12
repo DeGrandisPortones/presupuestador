@@ -6,6 +6,18 @@ export async function adminGetCatalog(kind = "porton") {
   return data;
 }
 
+export async function adminGetFinalSettings() {
+  const { data } = await http.get(`/api/admin/final-settings`);
+  if (!data?.ok) throw new Error(data?.error || "No se pudo cargar la tolerancia comercial");
+  return data.settings || { tolerance_percent: 0 };
+}
+
+export async function adminSaveFinalSettings(payload) {
+  const { data } = await http.put(`/api/admin/final-settings`, payload || {});
+  if (!data?.ok) throw new Error(data?.error || "No se pudo guardar la tolerancia comercial");
+  return data.settings || { tolerance_percent: 0 };
+}
+
 export async function adminCreateSection(kind = "porton", { name, position = 100 }) {
   const { data } = await http.post(`/api/admin/sections?kind=${encodeURIComponent(kind)}`, { name, position });
   if (!data?.ok) throw new Error(data?.error || "No se pudo guardar la sección");
@@ -42,10 +54,6 @@ export async function adminGetQuotes(kind = "porton", limit = 200) {
   return data.quotes || [];
 }
 
-// =========================
-// Gestor de usuarios
-// =========================
-
 export async function adminListUsers({ role = "all", q = "", active = "all" } = {}) {
   const qs = new URLSearchParams();
   if (role) qs.set("role", role);
@@ -68,7 +76,6 @@ export async function adminUpdateUser(id, payload) {
   if (!data?.ok) throw new Error(data?.error || "No se pudo actualizar el usuario");
   return data.user;
 }
-
 
 export async function adminSetTypeSections(kind = "porton", typeKey, section_ids = []) {
   const key = encodeURIComponent(String(typeKey || ""));
