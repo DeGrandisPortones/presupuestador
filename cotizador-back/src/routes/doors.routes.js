@@ -230,14 +230,21 @@ async function listSuppliersByTag(odoo, query = "") {
     { limit: 20 }
   );
   const ids = Array.isArray(tagIds) ? tagIds.map(Number).filter(Boolean) : [];
-  const domain = [["supplier_rank", ">", 0]];
-  if (ids.length) domain.push(["category_id", "in", ids]);
+
+  // Regla funcional: alcanza con que el contacto tenga el tag "Puerta".
+  // No exigimos supplier_rank porque en Odoo pueden existir terceros válidos
+  // para compra que todavía no fueron usados como proveedor formal.
+  if (!ids.length) return [];
+
+  const domain = [["category_id", "in", ids]];
   if (safeText(query)) domain.push(["name", "ilike", safeText(query)]);
+
   const rows = await odoo.executeKw("res.partner", "search_read", [domain], {
     fields: ["id", "name", "phone", "email", "category_id", "supplier_rank"],
     limit: 80,
     order: "name asc",
   });
+
   return (rows || []).map((r) => ({
     id: r.id,
     name: r.name,
