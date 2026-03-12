@@ -97,6 +97,18 @@ function Field({ label, children, minWidth = 220 }) {
     </div>
   );
 }
+function Notice({ tone = "info", children }) {
+  const palette = {
+    info: { background: "#eef4ff", border: "#c7dafc", color: "#24457a" },
+    warn: { background: "#fff7e6", border: "#ffd9a8", color: "#7a4b00" },
+  };
+  const colors = palette[tone] || palette.info;
+  return (
+    <div style={{ padding: 10, borderRadius: 10, border: `1px solid ${colors.border}`, background: colors.background, color: colors.color }}>
+      {children}
+    </div>
+  );
+}
 function buildStandardText(form) {
   const sentido = textOrDash(form.sentido_apertura);
   const mano = textOrDash(form.mano_bisagras);
@@ -161,9 +173,16 @@ export default function PuertaChecklistPage() {
     setForm(normalizeForm(door.record, user));
   }, [door, user]);
 
-  const canSellerEdit = !!user?.is_vendedor && String(door?.created_by_user_id || "") === String(user?.user_id || "");
+  const isSellerOwner = !!user?.is_vendedor && String(door?.created_by_user_id || "") === String(user?.user_id || "");
+  const canSellerEdit = isSellerOwner;
   const canCommercialAct = !!user?.is_enc_comercial && door?.status === "pending_approvals" && door?.commercial_decision === "pending";
   const canTechAct = !!user?.is_rev_tecnica && door?.status === "pending_approvals" && door?.technical_decision === "pending";
+  const isPendingApprovals = door?.status === "pending_approvals";
+  const isSyncedOdoo = door?.status === "synced_odoo";
+  const formLockedByStatus = isPendingApprovals || isSyncedOdoo;
+  const formReadOnly = !canSellerEdit || formLockedByStatus;
+  const showSellerOwnerNotice = !!user?.is_vendedor && !isSellerOwner;
+  const showSellerStatusNotice = isSellerOwner && formLockedByStatus;
 
   const saveM = useMutation({
     mutationFn: () => updateDoor(id, { record: form }),
@@ -205,6 +224,8 @@ export default function PuertaChecklistPage() {
     },
     onError: (e) => toast.error(e?.message || "No se pudo registrar la revisión técnica"),
   });
+
+  const submitDisabled = submitM.isPending || saveM.isPending || isPendingApprovals || isSyncedOdoo;
 
   const summary = useMemo(() => {
     if (!form) return { total: 0, ok: 0, ready: false, standardText: "" };
@@ -259,18 +280,35 @@ export default function PuertaChecklistPage() {
               {door.odoo_sale_order_name ? <span>Venta Odoo: <b>{door.odoo_sale_order_name}</b></span> : null}
               {door.odoo_purchase_order_name ? <span>Compra Odoo: <b>{door.odoo_purchase_order_name}</b></span> : null}
             </div>
+
+            {(showSellerOwnerNotice || showSellerStatusNotice) && <div className="spacer" />}
+            {showSellerOwnerNotice && (
+              <Notice tone="warn">
+                Solo el vendedor que creó esta puerta puede modificarla y completarla.
+              </Notice>
+            )}
+            {showSellerStatusNotice && isPendingApprovals && (
+              <Notice tone="info">
+                Esta puerta ya fue enviada a aprobación. Mientras esté en aprobación no se puede modificar ni volver a enviarla.
+              </Notice>
+            )}
+            {showSellerStatusNotice && isSyncedOdoo && (
+              <Notice tone="info">
+                Esta puerta ya fue sincronizada con Odoo. Queda solo de lectura y no admite más cambios.
+              </Notice>
+            )}
           </Section>
 
           <Section title="Cliente">
             <Row>
               <Field label="Nombre">
-                <Input value={form.end_customer?.name || ""} onChange={(v) => setForm({ ...form, end_customer: { ...(form.end_customer || {}), name: v }, obra_cliente: v })} style={{ width: "100%" }} disabled={!canSellerEdit} />
+                <Input value={form.end_customer?.name || ""} onChange={(v) => setForm({ ...form, end_customer: { ...(form.end_customer || {}), name: v }, obra_cliente: v })} style={{ width: "100%" }} disabled={formReadOnly} />
               </Field>
               <Field label="Teléfono">
-                <Input value={form.end_customer?.phone || ""} onChange={(v) => setForm({ ...form, end_customer: { ...(form.end_customer || {}), phone: v } })} style={{ width: "100%" }} disabled={!canSellerEdit} />
+                <Input value={form.end_customer?.phone || ""} onChange={(v) => setForm({ ...form, end_customer: { ...(form.end_customer || {}), phone: v } })} style={{ width: "100%" }} disabled={formReadOnly} />
               </Field>
               <Field label="Email">
-                <Input value={form.end_customer?.email || ""} onChange={(v) => setForm({ ...form, end_customer: { ...(form.end_customer || {}), email: v } })} style={{ width: "100%" }} disabled={!canSellerEdit} />
+                <Input value={form.end_customer?.email || ""} onChange={(v) => setForm({ ...form, end_customer: { ...(form.end_customer || {}), email: v } })} style={{ width: "100%" }} disabled={formReadOnly} />
               </Field>
             </Row>
 
@@ -278,10 +316,10 @@ export default function PuertaChecklistPage() {
 
             <Row>
               <Field label="Dirección">
-                <Input value={form.end_customer?.address || ""} onChange={(v) => setForm({ ...form, end_customer: { ...(form.end_customer || {}), address: v } })} style={{ width: "100%" }} disabled={!canSellerEdit} />
+                <Input value={form.end_customer?.address || ""} onChange={(v) => setForm({ ...form, end_customer: { ...(form.end_customer || {}), address: v } })} style={{ width: "100%" }} disabled={formReadOnly} />
               </Field>
               <Field label="Maps URL">
-                <Input value={form.end_customer?.maps_url || ""} onChange={(v) => setForm({ ...form, end_customer: { ...(form.end_customer || {}), maps_url: v } })} style={{ width: "100%" }} disabled={!canSellerEdit} />
+                <Input value={form.end_customer?.maps_url || ""} onChange={(v) => setForm({ ...form, end_customer: { ...(form.end_customer || {}), maps_url: v } })} style={{ width: "100%" }} disabled={formReadOnly} />
               </Field>
             </Row>
           </Section>
@@ -289,10 +327,10 @@ export default function PuertaChecklistPage() {
           <Section title="Datos del registro">
             <Row>
               <Field label="Obra / Cliente">
-                <Input value={form.obra_cliente || ""} onChange={(v) => setForm({ ...form, obra_cliente: v })} style={{ width: "100%" }} disabled={!canSellerEdit} />
+                <Input value={form.obra_cliente || ""} onChange={(v) => setForm({ ...form, obra_cliente: v })} style={{ width: "100%" }} disabled={formReadOnly} />
               </Field>
               <Field label="NV">
-                <Input value={form.nv || ""} onChange={(v) => setForm({ ...form, nv: v })} style={{ width: "100%" }} disabled={!canSellerEdit} />
+                <Input value={form.nv || ""} onChange={(v) => setForm({ ...form, nv: v })} style={{ width: "100%" }} disabled={formReadOnly} />
               </Field>
               <Field label="Asociado a portón">
                 <Input value={form.asociado_porton || ""} onChange={(v) => setForm({ ...form, asociado_porton: v })} style={{ width: "100%" }} disabled />
@@ -303,13 +341,13 @@ export default function PuertaChecklistPage() {
 
             <Row>
               <Field label="Tipo">
-                <Input value={form.tipo || ""} onChange={(v) => setForm({ ...form, tipo: v })} style={{ width: "100%" }} disabled={!canSellerEdit} />
+                <Input value={form.tipo || ""} onChange={(v) => setForm({ ...form, tipo: v })} style={{ width: "100%" }} disabled={formReadOnly} />
               </Field>
               <Field label="Vista">
-                <Input value={form.vista || ""} onChange={(v) => setForm({ ...form, vista: v })} style={{ width: "100%" }} disabled={!canSellerEdit} />
+                <Input value={form.vista || ""} onChange={(v) => setForm({ ...form, vista: v })} style={{ width: "100%" }} disabled={formReadOnly} />
               </Field>
               <Field label="Fecha">
-                <Input type="date" value={form.fecha || ""} onChange={(v) => setForm({ ...form, fecha: v })} style={{ width: "100%" }} disabled={!canSellerEdit} />
+                <Input type="date" value={form.fecha || ""} onChange={(v) => setForm({ ...form, fecha: v })} style={{ width: "100%" }} disabled={formReadOnly} />
               </Field>
             </Row>
           </Section>
@@ -329,14 +367,14 @@ export default function PuertaChecklistPage() {
                   }}
                   options={(suppliersQ.data || []).map((s) => ({ value: String(s.id), label: s.name }))}
                   placeholder={suppliersQ.isLoading ? "Cargando proveedores..." : "Seleccionar proveedor"}
-                  disabled={!canSellerEdit}
+                  disabled={formReadOnly}
                 />
               </Field>
               <Field label="Nombre proveedor">
                 <Input value={form.proveedor || ""} onChange={(v) => setForm({ ...form, proveedor: v })} style={{ width: "100%" }} disabled />
               </Field>
               <Field label="NV proveedor">
-                <Input value={form.nv_proveedor || ""} onChange={(v) => setForm({ ...form, nv_proveedor: v })} style={{ width: "100%" }} disabled={!canSellerEdit} />
+                <Input value={form.nv_proveedor || ""} onChange={(v) => setForm({ ...form, nv_proveedor: v })} style={{ width: "100%" }} disabled={formReadOnly} />
               </Field>
             </Row>
 
@@ -344,13 +382,13 @@ export default function PuertaChecklistPage() {
 
             <Row>
               <Field label="Importe venta">
-                <Input value={form.sale_amount || ""} onChange={(v) => setForm({ ...form, sale_amount: v })} style={{ width: "100%" }} disabled={!canSellerEdit} />
+                <Input value={form.sale_amount || ""} onChange={(v) => setForm({ ...form, sale_amount: v })} style={{ width: "100%" }} disabled={formReadOnly} />
               </Field>
               <Field label="Importe compra">
-                <Input value={form.purchase_amount || ""} onChange={(v) => setForm({ ...form, purchase_amount: v })} style={{ width: "100%" }} disabled={!canSellerEdit} />
+                <Input value={form.purchase_amount || ""} onChange={(v) => setForm({ ...form, purchase_amount: v })} style={{ width: "100%" }} disabled={formReadOnly} />
               </Field>
               <Field label="Condiciones proveedor">
-                <Input value={form.proveedor_condiciones || ""} onChange={(v) => setForm({ ...form, proveedor_condiciones: v })} style={{ width: "100%" }} disabled={!canSellerEdit} />
+                <Input value={form.proveedor_condiciones || ""} onChange={(v) => setForm({ ...form, proveedor_condiciones: v })} style={{ width: "100%" }} disabled={formReadOnly} />
               </Field>
             </Row>
           </Section>
@@ -358,13 +396,13 @@ export default function PuertaChecklistPage() {
           <Section title="Definición técnica (desde exterior)">
             <Row>
               <Field label="Sentido de apertura">
-                <Select value={form.sentido_apertura || ""} onChange={(v) => setForm({ ...form, sentido_apertura: v })} options={GIRO_OPTIONS} disabled={!canSellerEdit} />
+                <Select value={form.sentido_apertura || ""} onChange={(v) => setForm({ ...form, sentido_apertura: v })} options={GIRO_OPTIONS} disabled={formReadOnly} />
               </Field>
               <Field label="Mano (bisagras)">
-                <Select value={form.mano_bisagras || ""} onChange={(v) => setForm({ ...form, mano_bisagras: v })} options={MANO_OPTIONS} disabled={!canSellerEdit} />
+                <Select value={form.mano_bisagras || ""} onChange={(v) => setForm({ ...form, mano_bisagras: v })} options={MANO_OPTIONS} disabled={formReadOnly} />
               </Field>
               <Field label="Ángulo de apertura">
-                <Select value={form.angulo_apertura || ""} onChange={(v) => setForm({ ...form, angulo_apertura: v })} options={ANGULO_OPTIONS} disabled={!canSellerEdit} />
+                <Select value={form.angulo_apertura || ""} onChange={(v) => setForm({ ...form, angulo_apertura: v })} options={ANGULO_OPTIONS} disabled={formReadOnly} />
               </Field>
             </Row>
 
@@ -372,13 +410,13 @@ export default function PuertaChecklistPage() {
 
             <Row>
               <Field label="Ángulo (si elegiste Otro)">
-                <Input value={form.angulo_otro || ""} onChange={(v) => setForm({ ...form, angulo_otro: v })} style={{ width: "100%" }} disabled={!canSellerEdit} />
+                <Input value={form.angulo_otro || ""} onChange={(v) => setForm({ ...form, angulo_otro: v })} style={{ width: "100%" }} disabled={formReadOnly} />
               </Field>
               <Field label="Interferencias">
-                <Select value={form.interferencias || ""} onChange={(v) => setForm({ ...form, interferencias: v })} options={INTERFERENCIA_OPTIONS} disabled={!canSellerEdit} />
+                <Select value={form.interferencias || ""} onChange={(v) => setForm({ ...form, interferencias: v })} options={INTERFERENCIA_OPTIONS} disabled={formReadOnly} />
               </Field>
               <Field label="Accesorios">
-                <Select value={form.accesorios || ""} onChange={(v) => setForm({ ...form, accesorios: v })} options={ACCESORIO_OPTIONS} disabled={!canSellerEdit} />
+                <Select value={form.accesorios || ""} onChange={(v) => setForm({ ...form, accesorios: v })} options={ACCESORIO_OPTIONS} disabled={formReadOnly} />
               </Field>
             </Row>
 
@@ -390,7 +428,7 @@ export default function PuertaChecklistPage() {
                   value={form.motivo_no_estandar || ""}
                   onChange={(e) => setForm({ ...form, motivo_no_estandar: e.target.value })}
                   style={{ width: "100%", minHeight: 64, padding: 10, borderRadius: 10, border: "1px solid #ddd", resize: "vertical" }}
-                  disabled={!canSellerEdit}
+                  disabled={formReadOnly}
                 />
               </Field>
             </Row>
@@ -399,13 +437,13 @@ export default function PuertaChecklistPage() {
 
             <Row>
               <Field label="Tipo de marco">
-                <Input value={form.tipo_marco || ""} onChange={(v) => setForm({ ...form, tipo_marco: v })} style={{ width: "100%" }} disabled={!canSellerEdit} />
+                <Input value={form.tipo_marco || ""} onChange={(v) => setForm({ ...form, tipo_marco: v })} style={{ width: "100%" }} disabled={formReadOnly} />
               </Field>
               <Field label="Tipo de hoja">
-                <Input value={form.tipo_hoja || ""} onChange={(v) => setForm({ ...form, tipo_hoja: v })} style={{ width: "100%" }} disabled={!canSellerEdit} />
+                <Input value={form.tipo_hoja || ""} onChange={(v) => setForm({ ...form, tipo_hoja: v })} style={{ width: "100%" }} disabled={formReadOnly} />
               </Field>
               <Field label="Lado de cerradura (desde exterior)">
-                <Input value={form.lado_cerradura || ""} onChange={(v) => setForm({ ...form, lado_cerradura: v })} style={{ width: "100%" }} disabled={!canSellerEdit} />
+                <Input value={form.lado_cerradura || ""} onChange={(v) => setForm({ ...form, lado_cerradura: v })} style={{ width: "100%" }} disabled={formReadOnly} />
               </Field>
             </Row>
           </Section>
@@ -439,7 +477,7 @@ export default function PuertaChecklistPage() {
                           }}
                           options={STATUS_OPTIONS}
                           placeholder="Estado"
-                          disabled={!canSellerEdit}
+                          disabled={formReadOnly}
                         />
                       </td>
                       <td style={{ minWidth: 260 }}>
@@ -451,7 +489,7 @@ export default function PuertaChecklistPage() {
                             setForm({ ...form, checklist: next });
                           }}
                           style={{ width: "100%", minHeight: 48, padding: 10, borderRadius: 10, border: "1px solid #ddd", resize: "vertical" }}
-                          disabled={!canSellerEdit}
+                          disabled={formReadOnly}
                         />
                       </td>
                       <td style={{ minWidth: 180 }}>
@@ -463,7 +501,7 @@ export default function PuertaChecklistPage() {
                             setForm({ ...form, checklist: next });
                           }}
                           style={{ width: "100%" }}
-                          disabled={!canSellerEdit}
+                          disabled={formReadOnly}
                         />
                       </td>
                       <td style={{ minWidth: 160 }}>
@@ -476,14 +514,14 @@ export default function PuertaChecklistPage() {
                             setForm({ ...form, checklist: next });
                           }}
                           style={{ width: "100%" }}
-                          disabled={!canSellerEdit}
+                          disabled={formReadOnly}
                         />
                       </td>
                       <td style={{ textAlign: "center", minWidth: 80 }}>
                         <input
                           type="checkbox"
                           checked={!!row.ok}
-                          disabled={!canSellerEdit}
+                          disabled={formReadOnly}
                           onChange={(e) => {
                             const checked = e.target.checked;
                             const next = form.checklist.slice();
@@ -532,7 +570,7 @@ export default function PuertaChecklistPage() {
               value={form.observaciones || ""}
               onChange={(e) => setForm({ ...form, observaciones: e.target.value })}
               style={{ width: "100%", minHeight: 100, padding: 10, borderRadius: 10, border: "1px solid #ddd", resize: "vertical" }}
-              disabled={!canSellerEdit}
+              disabled={formReadOnly}
             />
           </Section>
 
@@ -575,13 +613,34 @@ export default function PuertaChecklistPage() {
           )}
 
           <div className="card">
+            {!canSellerEdit && !!user?.is_vendedor && (
+              <div style={{ marginBottom: 10 }}>
+                <Notice tone="warn">
+                  Esta puerta es de otro vendedor. Solo su creador puede guardarla o enviarla a aprobación.
+                </Notice>
+              </div>
+            )}
+            {canSellerEdit && isPendingApprovals && (
+              <div style={{ marginBottom: 10 }}>
+                <Notice tone="info">
+                  La puerta ya está en aprobación. Los botones quedan bloqueados hasta que vuelva a borrador o sea aprobada/rechazada.
+                </Notice>
+              </div>
+            )}
+            {canSellerEdit && isSyncedOdoo && (
+              <div style={{ marginBottom: 10 }}>
+                <Notice tone="info">
+                  La puerta ya fue sincronizada con Odoo. No se puede volver a guardar ni enviar a aprobación.
+                </Notice>
+              </div>
+            )}
             <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
               {canSellerEdit && (
                 <>
-                  <Button onClick={() => saveM.mutate()} disabled={saveM.isPending || submitM.isPending}>
+                  <Button onClick={() => saveM.mutate()} disabled={saveM.isPending || submitM.isPending || formLockedByStatus}>
                     {saveM.isPending ? "Guardando..." : "Guardar"}
                   </Button>
-                  <Button variant="primary" onClick={() => submitM.mutate()} disabled={submitM.isPending || saveM.isPending || door.status === "pending_approvals" || door.status === "synced_odoo"}>
+                  <Button variant="primary" onClick={() => submitM.mutate()} disabled={submitDisabled}>
                     {submitM.isPending ? "Enviando..." : "Enviar a aprobación"}
                   </Button>
                 </>
