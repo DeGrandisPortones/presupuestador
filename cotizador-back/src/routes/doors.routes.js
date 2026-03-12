@@ -254,7 +254,7 @@ async function listSuppliersByTag(odoo, query = "") {
   }));
 }
 function extractDoorCore(record) {
-  const endCustomer = record?.end_customer && typeof record.end_customer === "object" ? record.end_customer : {};
+  const endCustomer = record?.end_customer && typeof record === "object" ? record.end_customer : {};
   return {
     supplierId: toInt(record?.supplier_odoo_partner_id),
     saleAmount: parseAmount(record?.sale_amount),
@@ -285,7 +285,7 @@ async function syncDoorToOdoo({ odoo, door }) {
   const { productId, name, uomId } = await resolveProductInfo(odoo, ODOO_DOOR_PRODUCT_ID);
   const customerPartnerId = await findOrCreateCustomerPartner(odoo, core.customer);
 
-  const saleOrderId = await odoo.executeKw("sale.order", "create", [[{
+  const saleOrderId = await odoo.executeKw("sale.order", "create", [{
     partner_id: customerPartnerId,
     order_line: [[0, 0, {
       product_id: productId,
@@ -299,12 +299,13 @@ async function syncDoorToOdoo({ odoo, door }) {
       + (door.linked_quote_id ? `\nPortón vinculado: ${door.linked_quote_id}` : "")
       + (safeText(record?.asociado_porton) ? `\nNV portón: ${safeText(record.asociado_porton)}` : "")
       + (core.proveedorCondiciones ? `\nCondiciones proveedor: ${core.proveedorCondiciones}` : ""),
-  }]]);
-  const [saleOrder] = await odoo.executeKw("sale.order", "read", [[saleOrderId]], {
+  }]);
+  const saleOrderReadId = Number(Array.isArray(saleOrderId) ? saleOrderId[0] : saleOrderId);
+  const [saleOrder] = await odoo.executeKw("sale.order", "read", [[saleOrderReadId]], {
     fields: ["id", "name", "amount_total", "state", "partner_id"],
   });
 
-  const purchaseOrderId = await odoo.executeKw("purchase.order", "create", [[{
+  const purchaseOrderId = await odoo.executeKw("purchase.order", "create", [{
     partner_id: core.supplierId,
     order_line: [[0, 0, {
       product_id: productId,
@@ -318,8 +319,9 @@ async function syncDoorToOdoo({ odoo, door }) {
       `PUERTA TERCERIZADA: ${door.door_code}`
       + (door.linked_quote_id ? `\nPortón vinculado: ${door.linked_quote_id}` : "")
       + (core.proveedorCondiciones ? `\nCondiciones: ${core.proveedorCondiciones}` : ""),
-  }]]);
-  const [purchaseOrder] = await odoo.executeKw("purchase.order", "read", [[purchaseOrderId]], {
+  }]);
+  const purchaseOrderReadId = Number(Array.isArray(purchaseOrderId) ? purchaseOrderId[0] : purchaseOrderId);
+  const [purchaseOrder] = await odoo.executeKw("purchase.order", "read", [[purchaseOrderReadId]], {
     fields: ["id", "name", "state", "partner_id"],
   });
 
@@ -642,6 +644,7 @@ export function buildDoorsRouter(odooArg) {
       const door = await getDoorHydratedById(id);
       if (!door) return res.status(404).json({ ok: false, error: "Puerta no encontrada" });
       if (door.status !== "pending_approvals") return res.status(409).json({ ok: false, error: "La puerta no está en aprobación" });
+      if (door.commercial_decision !== "pending") return res.status(409).json({ ok: false, error: "La revisión comercial ya fue resuelta" });
 
       if (action === "reject") {
         await dbQuery(
@@ -686,6 +689,7 @@ export function buildDoorsRouter(odooArg) {
       const door = await getDoorHydratedById(id);
       if (!door) return res.status(404).json({ ok: false, error: "Puerta no encontrada" });
       if (door.status !== "pending_approvals") return res.status(409).json({ ok: false, error: "La puerta no está en aprobación" });
+      if (door.technical_decision !== "pending") return res.status(409).json({ ok: false, error: "La revisión técnica ya fue resuelta" });
 
       if (action === "reject") {
         await dbQuery(
