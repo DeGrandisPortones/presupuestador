@@ -1,10 +1,1 @@
-Reemplaza SOLO:
-- cotizador-back/src/odoo.js
-
-Este fix:
-- intenta JSON-RPC clásico
-- si eso falla, intenta el flujo web de Odoo:
-  /web/session/authenticate
-  /web/dataset/call_kw/...
-
-No toca ninguna otra parte del sistema.
+Reemplaza SOLO estos archivos del backend:\n- cotizador-back/src/odoo.js\n- cotizador-back/src/index.js\n- cotizador-back/src/routes/odoo.routes.js\n\nSon las versiones del commit bueno a01abc50aa0ef1ef09513cf902f4f775d6932b0d.\nEsto deshace los 7 commits posteriores en el nucleo de conexion Odoo sin tocar el resto del proyecto.\n
