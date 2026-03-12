@@ -7,11 +7,12 @@ export default function MenuPage() {
   const user = useAuthStore((s) => s.user);
 
   const canQuote = !!(user?.is_vendedor || user?.is_distribuidor);
-  const canStandaloneDoor = !!user?.is_vendedor;
+
   const showDashboard = !!user?.is_enc_comercial;
   const showCommercialInbox = !!user?.is_enc_comercial;
   const showUsers = !!user?.is_enc_comercial;
   const showTechInbox = !!user?.is_rev_tecnica;
+  const showDoors = !!user?.is_vendedor;
 
   return (
     <div className="container">
@@ -42,12 +43,12 @@ export default function MenuPage() {
           </div>
         )}
 
-        {canStandaloneDoor && (
+        {showDoors && (
           <div className="card menu-card">
             <div className="menu-title">Puertas</div>
-            <div className="muted">Puerta aislada o vinculada a un portón</div>
+            <div className="muted">Puertas aisladas o vinculadas a portón.</div>
             <div className="spacer" />
-            <Button variant="primary" onClick={() => navigate("/puertas/nueva")}>Nueva puerta</Button>
+            <Button variant="primary" onClick={() => navigate("/puertas")}>Abrir puertas</Button>
           </div>
         )}
 

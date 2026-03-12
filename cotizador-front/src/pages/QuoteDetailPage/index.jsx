@@ -4,7 +4,7 @@ import { useNavigate, useParams } from "react-router-dom";
 
 import Button from "../../ui/Button.jsx";
 import { getQuote, reviewCommercial, reviewTechnical, createRevisionQuote } from "../../api/quotes.js";
-import { listDoors } from "../../api/doors.js";
+import { listDoorsByQuote } from "../../api/doors.js";
 import { downloadMedicionPdf } from "../../api/pdf.js";
 import { useAuthStore } from "../../domain/auth/store.js";
 import { formatARS } from "../../domain/quote/pricing.js";
@@ -37,30 +37,48 @@ export default function QuoteDetailPage() {
   const user = useAuthStore((s) => s.user);
   const [notes, setNotes] = useState("");
 
-  const q = useQuery({ queryKey: ["quote", quoteId], queryFn: () => getQuote(quoteId), enabled: !!quoteId });
-  const quote = q.data;
-
-  const doorsQ = useQuery({
-    queryKey: ["doors", "by_quote", quoteId],
-    queryFn: () => listDoors({ scope: "by_quote", quoteId }),
-    enabled: !!quoteId && !!(user?.is_vendedor || user?.is_distribuidor || user?.is_enc_comercial || user?.is_rev_tecnica),
+  const q = useQuery({
+    queryKey: ["quote", quoteId],
+    queryFn: () => getQuote(quoteId),
+    enabled: !!quoteId,
   });
 
+  const linkedDoorsQ = useQuery({
+    queryKey: ["doors", "by-quote", quoteId],
+    queryFn: () => listDoorsByQuote(quoteId),
+    enabled: !!quoteId,
+  });
+
+  const quote = q.data;
   const canCommercial = !!user?.is_enc_comercial && quote?.created_by_role === "vendedor";
   const canTech = !!user?.is_rev_tecnica;
+
   const canCommercialAct = canCommercial && quote?.status === "pending_approvals" && quote?.commercial_decision === "pending";
   const canTechAct = canTech && quote?.status === "pending_approvals" && quote?.technical_decision === "pending";
-  const showMeasurement = !!quote?.requires_measurement || (quote?.catalog_kind === "porton" && quote?.status === "synced_odoo" && quote?.fulfillment_mode === "produccion");
 
-  const commercialM = useMutation({ mutationFn: ({ action }) => reviewCommercial(quoteId, { action, notes }), onSuccess: () => q.refetch() });
+  const showMeasurement =
+    !!quote?.requires_measurement ||
+    (quote?.catalog_kind === "porton" && quote?.status === "synced_odoo" && quote?.fulfillment_mode === "produccion");
+
+  const commercialM = useMutation({
+    mutationFn: ({ action }) => reviewCommercial(quoteId, { action, notes }),
+    onSuccess: () => q.refetch(),
+  });
+
   const revisionM = useMutation({
     mutationFn: () => createRevisionQuote(quoteId),
-    onSuccess: (newQuote) => { if (!newQuote?.id) return; navigate(newQuote.catalog_kind === "ipanel" ? `/cotizador/ipanel/${newQuote.id}` : `/cotizador/${newQuote.id}`); },
+    onSuccess: (newQuote) => {
+      if (!newQuote?.id) return;
+      navigate(newQuote.catalog_kind === "ipanel" ? `/cotizador/ipanel/${newQuote.id}` : `/cotizador/${newQuote.id}`);
+    },
   });
-  const techM = useMutation({ mutationFn: ({ action }) => reviewTechnical(quoteId, { action, notes }), onSuccess: () => q.refetch() });
+
+  const techM = useMutation({
+    mutationFn: ({ action }) => reviewTechnical(quoteId, { action, notes }),
+    onSuccess: () => q.refetch(),
+  });
 
   const lines = Array.isArray(quote?.lines) ? quote.lines : [];
-  const linkedDoors = doorsQ.data || [];
 
   const rejectionBoxes = useMemo(() => {
     if (!quote) return [];
@@ -70,20 +88,10 @@ export default function QuoteDetailPage() {
     return arr;
   }, [quote]);
 
-  const showCrossNoticeCommercial = canCommercial && quote?.technical_decision === "rejected";
-  const showCrossNoticeTech = canTech && quote?.commercial_decision === "rejected";
-
   return (
     <div className="container">
       <div className="card">
         <h2 style={{ margin: 0 }}>Presupuesto #{quoteId ? String(quoteId).slice(0, 8) : "—"}</h2>
-
-        {quote?.original_quote_id && String(quote.original_quote_id) !== String(quote.id) && (
-          <div className="muted" style={{ marginTop: 6 }}>
-            Relacionado a:
-            <Button variant="ghost" style={{ marginLeft: 6 }} onClick={() => navigate(`/presupuestos/${quote.original_quote_id}`)} title="Abrir presupuesto original">#{String(quote.original_quote_id).slice(0, 8)}</Button>
-          </div>
-        )}
 
         {q.isLoading && <div className="muted">Cargando...</div>}
         {q.isError && <div style={{ color: "#d93025", fontSize: 13 }}>{q.error.message}</div>}
@@ -91,39 +99,32 @@ export default function QuoteDetailPage() {
         {quote && (
           <>
             <div className="spacer" />
+
             <div className="muted" style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
               <span>Estado: <b>{quote.status}</b></span>
               <span>· Creado por: <b>{quote.created_by_role}</b></span>
               <span>· Destino: <b>{quote.fulfillment_mode === "acopio" ? "Acopio" : "Producción"}</b></span>
+
               {quote.status === "synced_odoo" && <span style={pillStyle("#e7f7ed", "#bfe6c8")}>En Odoo: {quote.odoo_sale_order_name || `SO#${quote.odoo_sale_order_id}`}</span>}
               {quote.status === "syncing_odoo" && <span style={pillStyle("#fff7e6", "#ffd9a8")}>Sincronizando a Odoo…</span>}
               {quote.status === "pending_approvals" && <span style={pillStyle("#eef4ff", "#c7dafc")}>En aprobación</span>}
               {quote.status === "draft" && (quote.commercial_decision === "rejected" || quote.technical_decision === "rejected") && <span style={pillStyle("#fff5f5", "#f2c1be")}>Rechazado (para corregir)</span>}
             </div>
 
-            {(showCrossNoticeCommercial || showCrossNoticeTech) && (
-              <>
-                <div className="spacer" />
-                <div style={{ padding: 10, borderRadius: 10, border: "1px solid #ffe3a3", background: "#fff7e6" }}>
-                  <div style={{ fontWeight: 900, marginBottom: 6 }}>Aviso</div>
-                  {showCrossNoticeCommercial && <div>Técnica lo rechazó: <b>{quote.technical_notes || "(sin motivo)"}</b></div>}
-                  {showCrossNoticeTech && <div>Comercial lo rechazó: <b>{quote.commercial_notes || "(sin motivo)"}</b></div>}
-                </div>
-              </>
-            )}
-
             {!!rejectionBoxes.length && (
               <>
                 <div className="spacer" />
                 {rejectionBoxes.map((b) => (
                   <div key={b.title} style={{ padding: 10, borderRadius: 10, border: "1px solid #f2c1be", background: "#fff5f5", marginBottom: 10 }}>
-                    <div style={{ fontWeight: 900, marginBottom: 6 }}>{b.title}</div><div>{b.body}</div>
+                    <div style={{ fontWeight: 900, marginBottom: 6 }}>{b.title}</div>
+                    <div>{b.body}</div>
                   </div>
                 ))}
               </>
             )}
 
             <div className="spacer" />
+
             <div className="row">
               <div style={{ flex: 1 }}>
                 <div className="muted">Cliente</div>
@@ -131,37 +132,50 @@ export default function QuoteDetailPage() {
                 <div className="muted">{quote.end_customer?.phone || ""}</div>
                 <div className="muted">{quote.end_customer?.address || ""}</div>
               </div>
+
               <div style={{ flex: 1 }}>
                 <div className="muted">Observaciones</div>
                 <div>{quote.note || <span className="muted">(sin notas)</span>}</div>
               </div>
+
               <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
                 {quote.status === "draft" && <Button onClick={() => navigate((quote.catalog_kind || "porton") === "ipanel" ? `/cotizador/ipanel/${quote.id}` : `/cotizador/${quote.id}`)}>Editar</Button>}
                 {((user?.is_vendedor || user?.is_distribuidor) && String(quote.created_by_user_id) === String(user.user_id) && quote.status === "synced_odoo" && hasMeasurementForPdf(quote)) && (
-                  <Button variant="ghost" disabled={revisionM.isPending} onClick={() => revisionM.mutate()} title="Crear un nuevo presupuesto (ajuste) referenciado a este">{revisionM.isPending ? "Creando…" : "Crear ajuste"}</Button>
+                  <Button variant="ghost" disabled={revisionM.isPending} onClick={() => revisionM.mutate()} title="Crear un nuevo presupuesto (ajuste) referenciado a este">
+                    {revisionM.isPending ? "Creando…" : "Crear ajuste"}
+                  </Button>
                 )}
                 <Button variant="ghost" onClick={() => navigate("/presupuestos")}>Volver</Button>
               </div>
             </div>
 
-            {!!linkedDoors.length && (
-              <>
-                <div className="spacer" />
-                <div className="card" style={{ background: "#fafafa" }}>
-                  <div style={{ fontWeight: 900, marginBottom: 6 }}>Puertas vinculadas</div>
-                  <div className="muted" style={{ marginBottom: 8 }}>Visibilidad logística para no olvidar la puerta cuando también se entrega el portón.</div>
-                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                    {linkedDoors.map((d) => (
-                      <Button key={d.id} variant="secondary" onClick={() => navigate(`/puertas/${d.id}`)}>
-                        {d.door_code} · {d.status === "synced_odoo" ? (d.odoo_purchase_order_name || "OC lista") : d.status}
-                      </Button>
+            <div className="spacer" />
+
+            {!!linkedDoorsQ.data?.length && (
+              <div className="card" style={{ background: "#fafafa" }}>
+                <div style={{ fontWeight: 900, marginBottom: 8 }}>Puertas vinculadas</div>
+                <table>
+                  <thead>
+                    <tr><th>Código</th><th>Cliente</th><th>Estado</th><th>Venta Odoo</th><th>Compra Odoo</th><th></th></tr>
+                  </thead>
+                  <tbody>
+                    {linkedDoorsQ.data.map((d) => (
+                      <tr key={d.id}>
+                        <td>{d.door_code}</td>
+                        <td>{d.record?.end_customer?.name || d.record?.obra_cliente || "—"}</td>
+                        <td>{d.status}</td>
+                        <td>{d.odoo_sale_order_name || "—"}</td>
+                        <td>{d.odoo_purchase_order_name || "—"}</td>
+                        <td className="right"><Button variant="ghost" onClick={() => navigate(`/puertas/${d.id}`)}>Abrir puerta</Button></td>
+                      </tr>
                     ))}
-                  </div>
-                </div>
-              </>
+                  </tbody>
+                </table>
+              </div>
             )}
 
             <div className="spacer" />
+
             <div className="card" style={{ background: "#fafafa" }}>
               <div style={{ fontWeight: 900, marginBottom: 6 }}>Aprobaciones</div>
               <div className="muted" style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
@@ -177,18 +191,17 @@ export default function QuoteDetailPage() {
                   <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
                     <div>
                       <div style={{ fontWeight: 900 }}>Planilla de medición</div>
-                      <div className="muted">Estado: <b>{measurementStatusLabel(quote.measurement_status)}</b>{quote.measurement_status === "needs_fix" && quote.measurement_review_notes ? ` · ${quote.measurement_review_notes}` : ""}</div>
+                      <div className="muted">Estado: <b>{measurementStatusLabel(quote.measurement_status)}</b></div>
                     </div>
-                    {hasMeasurementForPdf(quote) && <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}><Button variant="secondary" onClick={() => downloadMedicionPdf(quote.id)}>Descargar PDF</Button></div>}
+                    {hasMeasurementForPdf(quote) && <Button variant="secondary" onClick={() => downloadMedicionPdf(quote.id)}>Descargar PDF</Button>}
                   </div>
                   <div className="spacer" />
-                  {!hasMeasurementForPdf(quote) && <div className="muted">Todavía no hay medición cargada.</div>}
                   {quote.measurement_form && <MeasurementReadOnlyView quote={quote} />}
                 </div>
               </>
             )}
 
-            <h3 style={{ marginTop: 16 }}>Ítems</h3>
+            <h3 style={{ marginTop: 0 }}>Ítems</h3>
             {!lines.length && <div className="muted">Sin ítems</div>}
             {!!lines.length && (
               <table>
@@ -222,22 +235,15 @@ export default function QuoteDetailPage() {
                   <textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Motivo si rechaza / notas si aprueba…" style={{ width: "100%", minHeight: 60, padding: "8px 10px", borderRadius: 8, border: "1px solid #ddd", outline: "none", resize: "vertical" }} />
                   <div className="spacer" />
                   <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                    {canCommercial && (
-                      <>
-                        <Button disabled={!canCommercialAct || commercialM.isPending} onClick={() => commercialM.mutate({ action: "approve" })}>{commercialM.isPending ? "Procesando..." : "Aprobar Comercial"}</Button>
-                        <Button variant="danger" disabled={!canCommercialAct || commercialM.isPending} onClick={() => commercialM.mutate({ action: "reject" })}>Rechazar Comercial</Button>
-                      </>
-                    )}
-                    {canTech && (
-                      <>
-                        <Button disabled={!canTechAct || techM.isPending} onClick={() => techM.mutate({ action: "approve" })}>{techM.isPending ? "Procesando..." : "Aprobar Técnica (si ya aprobó Comercial, envía a Odoo)"}</Button>
-                        <Button variant="danger" disabled={!canTechAct || techM.isPending} onClick={() => techM.mutate({ action: "reject" })}>Rechazar Técnica</Button>
-                      </>
-                    )}
+                    {canCommercial && <>
+                      <Button disabled={!canCommercialAct || commercialM.isPending} onClick={() => commercialM.mutate({ action: "approve" })}>{commercialM.isPending ? "Procesando..." : "Aprobar Comercial"}</Button>
+                      <Button variant="danger" disabled={!canCommercialAct || commercialM.isPending} onClick={() => commercialM.mutate({ action: "reject" })}>Rechazar Comercial</Button>
+                    </>}
+                    {canTech && <>
+                      <Button disabled={!canTechAct || techM.isPending} onClick={() => techM.mutate({ action: "approve" })}>{techM.isPending ? "Procesando..." : "Aprobar Técnica (si ya aprobó Comercial, envía a Odoo)"}</Button>
+                      <Button variant="danger" disabled={!canTechAct || techM.isPending} onClick={() => techM.mutate({ action: "reject" })}>Rechazar Técnica</Button>
+                    </>}
                   </div>
-                  {(commercialM.isError || techM.isError) && <div className="spacer" />}
-                  {commercialM.isError && <div style={{ color: "#d93025", fontSize: 13 }}>{commercialM.error.message}</div>}
-                  {techM.isError && <div style={{ color: "#d93025", fontSize: 13 }}>{techM.error.message}</div>}
                 </div>
               </>
             )}

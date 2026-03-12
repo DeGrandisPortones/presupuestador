@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 
 import CotizadorPage from "./pages/CotizadorPage/index.jsx";
 import MenuPage from "./pages/MenuPage/index.jsx";
+import PuertasPage from "./pages/PuertasPage/index.jsx";
 
 const CotizadorPortonRoute = () => <CotizadorPage catalogKind="porton" />;
 const CotizadorIpanelRoute = () => <CotizadorPage catalogKind="ipanel" />;
@@ -62,7 +63,7 @@ export default function App() {
           <Route path="cotizador/ipanel" element={<CotizadorIpanelRoute />} />
           <Route path="cotizador/ipanel/:id" element={<CotizadorIpanelRoute />} />
 
-          <Route path="puertas/nueva" element={<PuertaChecklistPage />} />
+          <Route path="puertas" element={<PuertasPage />} />
           <Route path="puertas/:id" element={<PuertaChecklistPage />} />
 
           <Route path="presupuestos" element={<PresupuestosPage />} />

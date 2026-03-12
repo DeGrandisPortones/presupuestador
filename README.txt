@@ -1,27 +1,32 @@
-Patch: Puerta aislada o vinculada a portón
+Parche corregido de puertas.
 
-Incluye:
-- Alta de puerta standalone desde Menú > Puertas
-- Vinculación opcional a presupuesto de portón
-- Lista de proveedores Odoo con tag/categoría "Puerta"
-- Monto de venta y costo de compra de la puerta
-- Flujo de aprobación Comercial/Técnica para puertas
-- Al aprobarse ambas, crea en Odoo:
-  * sale.order del cliente
-  * purchase.order al proveedor
-- Producto Odoo usado para venta y compra: 3225
-- En el detalle del portón, muestra puertas vinculadas para logística
+Este zip NO reemplaza cotizador-back/src/index.js.
+La idea es no volver a tocar el bootstrap de Odoo ni romper /api/odoo/pricelists.
 
 Archivos incluidos:
-- cotizador-back/src/index.js
 - cotizador-back/src/doorsSchema.js
 - cotizador-back/src/routes/doors.routes.js
-- cotizador-front/src/App.jsx
 - cotizador-front/src/api/doors.js
+- cotizador-front/src/App.jsx
 - cotizador-front/src/pages/MenuPage/index.jsx
+- cotizador-front/src/pages/PuertasPage/index.jsx
+- cotizador-front/src/pages/PuertaChecklistPage/index.jsx
+- cotizador-front/src/pages/CotizadorPage/index.jsx
 - cotizador-front/src/pages/AprobacionComercialPage/index.jsx
 - cotizador-front/src/pages/AprobacionTecnicaPage/index.jsx
-- cotizador-front/src/pages/PuertaChecklistPage/index.jsx
 - cotizador-front/src/pages/QuoteDetailPage/index.jsx
 
-Copiar y reemplazar respetando la misma estructura de carpetas.
+Importante:
+1) No pises tu index.js del backend.
+2) Tu index.js actual ya debe tener montado /api/doors.
+3) Si no lo tiene, solo agregá:
+   import { buildDoorsRouter } from "./routes/doors.routes.js";
+   app.use("/api/doors", buildDoorsRouter());
+
+Producto de puerta en Odoo:
+- Usa el item 3225 para venta y compra.
+
+Proveedor:
+- Busca proveedores por tag/categoría "Puerta".
+- Si tu tag en Odoo tiene otro nombre exacto, seteá:
+  ODOO_DOOR_SUPPLIER_TAG_NAME=<nombre exacto>

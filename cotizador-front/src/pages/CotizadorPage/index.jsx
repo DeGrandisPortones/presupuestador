@@ -122,9 +122,6 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
     };
   }
 
-  // =============================
-  // Validaciones (nuevo flujo)
-  // =============================
   function validateDraft(payload) {
     const c = payload?.end_customer || {};
     const errs = [];
@@ -241,7 +238,7 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
     },
     onSuccess: (door) => {
       navigate(`/puertas/${door.id}`);
-      toast.success("Checklist de puerta listo.");
+      toast.success("Puerta vinculada lista.");
     },
     onError: (e) => toast.error(e?.message || "No se pudo abrir la puerta"),
   });
