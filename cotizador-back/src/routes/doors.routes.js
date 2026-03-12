@@ -89,7 +89,7 @@ function buildChecklist(responsible = "") {
     mk("B", "Si no es estándar, registrar motivo (seguridad, evacuación, viento, interferencias, etc.)."),
     mk("C", "Definir mano desde exterior: bisagras a IZQUIERDA = MI; bisagras a DERECHA = MD."),
     mk("C", "Confirmar picaporte/cerradura del lado opuesto a bisagras."),
-    mk("D", "Confirmar ángulo requerido (90° default / 120° / 180° / otro)."),
+    mk("D", "Definir ángulo requerido (90° default / 120° / 180° / otro)."),
     mk("D", "Verificar interferencias (pared, mueble, escalón, baranda, artefactos, etc.)."),
     mk("D", "Definir accesorios (tope, retenedor, cierrapuertas) según condiciones."),
     mk("E", "Tipo de marco definido (madera/chapa/aluminio/u otro)."),
@@ -109,7 +109,7 @@ function buildInitialDoorRecord({ quote = null, user }) {
     nv: "",
     tipo: "Puerta principal",
     vista: "Exterior",
-    responsable,
+    responsable: responsible,
     proveedor: "",
     proveedor_condiciones: "",
     fecha: nowDate(),
@@ -630,13 +630,13 @@ export function buildDoorsRouter(odooArg) {
       const action = safeText(req.body?.action).toLowerCase();
       const notes = safeText(req.body?.notes);
       if (!Number.isFinite(id)) return res.status(400).json({ ok: false, error: "id inválido" });
-      if (!['approve', 'reject'].includes(action)) return res.status(400).json({ ok: false, error: "action inválida" });
+      if (!["approve", "reject"].includes(action)) return res.status(400).json({ ok: false, error: "action inválida" });
 
       const door = await getDoorHydratedById(id);
       if (!door) return res.status(404).json({ ok: false, error: "Puerta no encontrada" });
-      if (door.status !== 'pending_approvals') return res.status(409).json({ ok: false, error: "La puerta no está en aprobación" });
+      if (door.status !== "pending_approvals") return res.status(409).json({ ok: false, error: "La puerta no está en aprobación" });
 
-      if (action === 'reject') {
+      if (action === "reject") {
         await dbQuery(
           `
           update public.presupuestador_doors
@@ -646,7 +646,7 @@ export function buildDoorsRouter(odooArg) {
               updated_at=now()
           where id=$1
           `,
-          [id, notes || 'Rechazado']
+          [id, notes || "Rechazado"]
         );
         return res.json({ ok: true, door: await getDoorHydratedById(id) });
       }
@@ -674,13 +674,13 @@ export function buildDoorsRouter(odooArg) {
       const action = safeText(req.body?.action).toLowerCase();
       const notes = safeText(req.body?.notes);
       if (!Number.isFinite(id)) return res.status(400).json({ ok: false, error: "id inválido" });
-      if (!['approve', 'reject'].includes(action)) return res.status(400).json({ ok: false, error: "action inválida" });
+      if (!["approve", "reject"].includes(action)) return res.status(400).json({ ok: false, error: "action inválida" });
 
       const door = await getDoorHydratedById(id);
       if (!door) return res.status(404).json({ ok: false, error: "Puerta no encontrada" });
-      if (door.status !== 'pending_approvals') return res.status(409).json({ ok: false, error: "La puerta no está en aprobación" });
+      if (door.status !== "pending_approvals") return res.status(409).json({ ok: false, error: "La puerta no está en aprobación" });
 
-      if (action === 'reject') {
+      if (action === "reject") {
         await dbQuery(
           `
           update public.presupuestador_doors
@@ -690,7 +690,7 @@ export function buildDoorsRouter(odooArg) {
               updated_at=now()
           where id=$1
           `,
-          [id, notes || 'Rechazado']
+          [id, notes || "Rechazado"]
         );
         return res.json({ ok: true, door: await getDoorHydratedById(id) });
       }
