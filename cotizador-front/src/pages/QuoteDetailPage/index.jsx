@@ -1,10 +1,11 @@
 import { useMemo, useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useNavigate, useParams } from "react-router-dom";
+import toast from "react-hot-toast";
 
 import Button from "../../ui/Button.jsx";
 import { getQuote, reviewCommercial, reviewTechnical, createRevisionQuote } from "../../api/quotes.js";
-import { listDoorsByQuote } from "../../api/doors.js";
+import { createOrGetDoorFromQuote, listDoorsByQuote } from "../../api/doors.js";
 import { downloadMedicionPdf } from "../../api/pdf.js";
 import { useAuthStore } from "../../domain/auth/store.js";
 import { formatARS } from "../../domain/quote/pricing.js";
@@ -52,6 +53,12 @@ export default function QuoteDetailPage() {
   const quote = q.data;
   const canCommercial = !!user?.is_enc_comercial && quote?.created_by_role === "vendedor";
   const canTech = !!user?.is_rev_tecnica;
+  const canManageLinkedDoor = !!(
+    user?.is_vendedor &&
+    String(quote?.created_by_user_id || "") === String(user?.user_id || "") &&
+    quote?.created_by_role === "vendedor" &&
+    (quote?.catalog_kind || "porton") === "porton"
+  );
 
   const canCommercialAct = canCommercial && quote?.status === "pending_approvals" && quote?.commercial_decision === "pending";
   const canTechAct = canTech && quote?.status === "pending_approvals" && quote?.technical_decision === "pending";
@@ -71,6 +78,16 @@ export default function QuoteDetailPage() {
       if (!newQuote?.id) return;
       navigate(newQuote.catalog_kind === "ipanel" ? `/cotizador/ipanel/${newQuote.id}` : `/cotizador/${newQuote.id}`);
     },
+  });
+
+  const linkedDoorM = useMutation({
+    mutationFn: () => createOrGetDoorFromQuote(quoteId),
+    onSuccess: async (door) => {
+      await linkedDoorsQ.refetch();
+      toast.success("Puerta vinculada lista.");
+      navigate(`/puertas/${door.id}`);
+    },
+    onError: (e) => toast.error(e?.message || "No se pudo abrir la puerta vinculada"),
   });
 
   const techM = useMutation({
@@ -138,8 +155,15 @@ export default function QuoteDetailPage() {
                 <div>{quote.note || <span className="muted">(sin notas)</span>}</div>
               </div>
 
-              <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
+              <div style={{ display: "flex", gap: 8, alignItems: "flex-end", flexWrap: "wrap" }}>
                 {quote.status === "draft" && <Button onClick={() => navigate((quote.catalog_kind || "porton") === "ipanel" ? `/cotizador/ipanel/${quote.id}` : `/cotizador/${quote.id}`)}>Editar</Button>}
+                {canManageLinkedDoor && (
+                  <Button variant="ghost" disabled={linkedDoorM.isPending} onClick={() => linkedDoorM.mutate()}>
+                    {linkedDoorM.isPending
+                      ? "Abriendo puerta..."
+                      : ((linkedDoorsQ.data || []).length ? "Abrir puerta vinculada" : "Crear puerta vinculada")}
+                  </Button>
+                )}
                 {((user?.is_vendedor || user?.is_distribuidor) && String(quote.created_by_user_id) === String(user.user_id) && quote.status === "synced_odoo" && hasMeasurementForPdf(quote)) && (
                   <Button variant="ghost" disabled={revisionM.isPending} onClick={() => revisionM.mutate()} title="Crear un nuevo presupuesto (ajuste) referenciado a este">
                     {revisionM.isPending ? "Creando…" : "Crear ajuste"}

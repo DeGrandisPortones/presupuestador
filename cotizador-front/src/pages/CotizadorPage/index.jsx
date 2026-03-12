@@ -5,7 +5,7 @@ import { useAuthStore } from "../../domain/auth/store.js";
 
 import { getPricelists, getPrices } from "../../api/odoo";
 import { createQuote, getQuote, confirmQuote, updateQuote } from "../../api/quotes";
-import { createOrGetDoorFromQuote } from "../../api/doors.js";
+import { createOrGetDoorFromQuote, createStandaloneDoor, updateDoor } from "../../api/doors.js";
 import { downloadPresupuestoPdf, downloadProformaPdf } from "../../api/pdf";
 import toast from "react-hot-toast";
 
@@ -153,6 +153,24 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
     if (errs.length) throw new Error(errs[0]);
   }
 
+  function buildStandaloneDoorRecordSeed(baseRecord, payload) {
+    const record = baseRecord && typeof baseRecord === "object" ? { ...baseRecord } : {};
+    const currentCustomer = record.end_customer && typeof record.end_customer === "object" ? record.end_customer : {};
+    const payloadCustomer = payload?.end_customer && typeof payload.end_customer === "object" ? payload.end_customer : {};
+
+    record.end_customer = {
+      ...currentCustomer,
+      name: String(payloadCustomer.name || currentCustomer.name || "").trim(),
+      phone: String(payloadCustomer.phone || currentCustomer.phone || "").trim(),
+      email: String(payloadCustomer.email || currentCustomer.email || "").trim(),
+      address: String(payloadCustomer.address || currentCustomer.address || "").trim(),
+      maps_url: String(payloadCustomer.maps_url || currentCustomer.maps_url || "").trim(),
+    };
+    record.obra_cliente = String(record.end_customer.name || record.obra_cliente || "").trim();
+
+    return record;
+  }
+
   const saveM = useMutation({
     mutationFn: async () => {
       const payload = getDraftPayload();
@@ -222,23 +240,34 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
       }
 
       const payload = getDraftPayload();
-      validateDraft(payload);
-
-      let id = quoteId || idParam;
-      if (id) {
-        await updateQuote(id, payload);
-      } else {
-        const created = await createQuote(payload);
-        id = created.id;
-        setQuoteMeta({ quoteId: created.id, status: created.status, rejectionNotes: created.rejection_notes });
-        qc.invalidateQueries({ queryKey: ["quotes", "mine"] });
+      const customerName = String(payload?.end_customer?.name || "").trim();
+      if (!customerName) {
+        throw new Error("Completá al menos el nombre del cliente para abrir la puerta.");
       }
 
-      return await createOrGetDoorFromQuote(id);
+      if (Array.isArray(payload?.lines) && payload.lines.length > 0) {
+        validateDraft(payload);
+
+        let id = quoteId || idParam;
+        if (id) {
+          await updateQuote(id, payload);
+        } else {
+          const created = await createQuote(payload);
+          id = created.id;
+          setQuoteMeta({ quoteId: created.id, status: created.status, rejectionNotes: created.rejection_notes });
+          qc.invalidateQueries({ queryKey: ["quotes", "mine"] });
+        }
+
+        return await createOrGetDoorFromQuote(id);
+      }
+
+      const standaloneDoor = await createStandaloneDoor();
+      const nextRecord = buildStandaloneDoorRecordSeed(standaloneDoor?.record, payload);
+      return await updateDoor(standaloneDoor.id, { record: nextRecord });
     },
     onSuccess: (door) => {
       navigate(`/puertas/${door.id}`);
-      toast.success("Puerta vinculada lista.");
+      toast.success(door?.linked_quote_id ? "Puerta vinculada lista." : "Puerta aislada lista.");
     },
     onError: (e) => toast.error(e?.message || "No se pudo abrir la puerta"),
   });

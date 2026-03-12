@@ -4,7 +4,7 @@ import { dbQuery } from "../db.js";
 import { ensureDoorsSchema } from "../doorsSchema.js";
 import { createOdooClient } from "../odoo.js";
 
-const ODOO_DOOR_PRODUCT_ID = Number(process.env.ODOO_DOOR_PRODUCT_ID || 3225);
+const ODOO_DOOR_PRODUCT_ID = Number(process.env.ODOO_DOOR_PRODUCT_ID || 3226);
 const ODOO_DOOR_SUPPLIER_TAG_NAME = String(process.env.ODOO_DOOR_SUPPLIER_TAG_NAME || "Puerta").trim();
 
 function requireSeller(req, res, next) {
