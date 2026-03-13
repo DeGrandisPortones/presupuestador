@@ -149,6 +149,17 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
     validateCustomerContact(c, { requirePhone: true, requireMaps: true, requireCity: true });
   }
 
+  function validatePdfDownload(payload) {
+    const c = payload?.end_customer || {};
+    const errs = [];
+    if (!String(c.name || "").trim()) errs.push("Completá el nombre del cliente.");
+    if (!String(c.phone || "").trim()) errs.push("Completá el teléfono del cliente.");
+    if (!Array.isArray(payload?.lines) || payload.lines.length === 0) errs.push("Agregá al menos un producto.");
+    if (errs.length) throw new Error(errs[0]);
+
+    validateCustomerContact(c, { requirePhone: true, requireMaps: false, requireCity: false });
+  }
+
   function buildStandaloneDoorRecordSeed(baseRecord, payload) {
     const record = baseRecord && typeof baseRecord === "object" ? { ...baseRecord } : {};
     const currentCustomer = record.end_customer && typeof record.end_customer === "object" ? record.end_customer : {};
@@ -260,7 +271,7 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
   const onDownloadPresupuesto = async () => {
     try {
       const payload = { ...buildPayloadForBack(), catalog_kind: catalogKind };
-      validateConfirm(payload);
+      validatePdfDownload(payload);
       await downloadPresupuestoPdf(payload);
     } catch (e) {
       toast.error(e?.response?.data?.error || e.message);
@@ -270,7 +281,7 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
   const onDownloadProforma = async () => {
     try {
       const payload = { ...buildPayloadForBack(), catalog_kind: catalogKind };
-      validateConfirm(payload);
+      validatePdfDownload(payload);
       await downloadProformaPdf(payload);
     } catch (e) {
       toast.error(e?.response?.data?.error || e.message);
