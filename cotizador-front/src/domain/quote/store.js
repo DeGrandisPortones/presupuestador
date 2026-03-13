@@ -5,7 +5,6 @@ const EMPTY_CUSTOMER = {
   phone: "",
   email: "",
   address: "",
-  city: "",
   maps_url: "",
 };
 
@@ -21,31 +20,35 @@ function parseMargin(v) {
 }
 
 export const useQuoteStore = create((set, get) => ({
+  // meta
   quoteId: null,
   status: "draft",
   rejectionNotes: null,
 
+  // config
   pricelistId: null,
   pricelistName: "",
-  marginPercent: 0,
-  marginPercentInput: "",
+  marginPercent: 0,          // número (para cálculos)
+  marginPercentInput: "",    // string (para permitir escribir '-' etc)
   partnerId: null,
 
-  fulfillmentMode: "produccion",
-  conditionMode: "cond1",
-  conditionText: "",
-  paymentMethod: "",
+  fulfillmentMode: "produccion", // "produccion" | "acopio"
+  conditionMode: "cond1",        // "cond1" | "cond2" | "special"
+  conditionText: "",          // solo si conditionMode === "special"
+  paymentMethod: "",          // forma de pago
   note: "",
 
-  portonType: "",
+  portonType: "",             // tipo/sistema de portón (solo catalog_kind=porton)
 
   endCustomer: { ...EMPTY_CUSTOMER },
 
+  // configuración del portón (por ahora sólo medidas)
   dimensions: {
-    width: "",
-    height: "",
+    width: "", // metros
+    height: "", // metros
   },
 
+  // { product_id, name, raw_name, code, qty, basePrice }
   lines: [],
 
   reset() {
@@ -87,32 +90,44 @@ export const useQuoteStore = create((set, get) => ({
       quoteId: q.id ?? null,
       status: q.status || "draft",
       rejectionNotes: q.rejection_notes || null,
+
       pricelistId: q.pricelist_id ?? null,
       pricelistName: "",
+
       marginPercent: m,
+      // Si es 0 (o viene vacío), mostramos vacío para que el usuario no tenga que borrar "0"
       marginPercentInput: m === 0 ? "" : String(payload?.margin_percent_ui ?? m),
+
       fulfillmentMode: q.fulfillment_mode || "produccion",
       conditionMode: cond === "cond2" ? "cond2" : (cond === "special" ? "special" : "cond1"),
       conditionText: condText,
       paymentMethod: pay,
-      portonType,
+      portonType: portonType,
       note: q.note || "",
+
       endCustomer: {
         ...EMPTY_CUSTOMER,
         ...(end || {}),
       },
+
       dimensions: {
         width: dims?.width ?? "",
         height: dims?.height ?? "",
       },
-      lines: lines.map((l) => ({
-        product_id: Number(l.product_id),
-        name: l.name || "",
-        raw_name: l.raw_name || l.rawName || l.raw || "",
-        code: l.code || null,
-        qty: Number(l.qty || 1),
-        basePrice: Number(l.basePrice ?? l.base_price ?? l.price ?? 0) || 0,
-      })),
+
+      lines: lines.map((l) => {
+        const rawName = l.raw_name || l.rawName || l.raw || l.name || "";
+        const visibleName = l.name || l.display_name || l.alias || rawName || `Producto ${l.product_id}`;
+
+        return {
+          product_id: Number(l.product_id),
+          name: visibleName,
+          raw_name: rawName,
+          code: l.code || null,
+          qty: Number(l.qty || 1),
+          basePrice: Number(l.basePrice ?? l.base_price ?? l.price ?? 0) || 0,
+        };
+      }),
     });
   },
 
@@ -135,8 +150,10 @@ export const useQuoteStore = create((set, get) => ({
     });
   },
 
+  // Permite negativos y estados intermedios ('-')
   setMarginPercentInput(v) {
     const raw = String(v ?? "");
+    // Si el usuario lo vacía, interpretamos 0 pero dejamos el input vacío
     if (raw.trim() === "") {
       set({ marginPercentInput: "", marginPercent: 0 });
       return;
@@ -150,6 +167,7 @@ export const useQuoteStore = create((set, get) => ({
     set({ marginPercentInput: raw, marginPercent: parsed });
   },
 
+  // Para usar en onBlur: si quedó inválido, lo normaliza a 0
   commitMarginPercentInput() {
     const s = get();
     const parsed = parseMargin(s.marginPercentInput);
@@ -157,6 +175,7 @@ export const useQuoteStore = create((set, get) => ({
       set({ marginPercent: 0, marginPercentInput: "" });
       return;
     }
+    // 0 => vacío (mejor UX). Si no, normalizamos formato: punto y sin espacios.
     if (parsed === 0) {
       set({ marginPercent: 0, marginPercentInput: "" });
       return;
@@ -164,6 +183,7 @@ export const useQuoteStore = create((set, get) => ({
     set({ marginPercent: parsed, marginPercentInput: String(parsed) });
   },
 
+  // setter numérico (por compat)
   setMarginPercent(v) {
     const n = Number(v || 0);
     const safe = Number.isFinite(n) ? n : 0;
@@ -183,6 +203,7 @@ export const useQuoteStore = create((set, get) => ({
   setConditionMode(v) {
     const mode = String(v || "").trim();
     if (!["cond1", "cond2", "special"].includes(mode)) return;
+    // si sale de special, limpiamos texto
     set((s) => ({ conditionMode: mode, conditionText: mode === "special" ? s.conditionText : "" }));
   },
 
@@ -226,7 +247,7 @@ export const useQuoteStore = create((set, get) => ({
           ...s.lines,
           {
             product_id: id,
-            name: p.name || "",
+            name: p.display_name || p.alias || p.name || "",
             raw_name: p.raw_name || p.rawName || p.original_name || p.name || "",
             code: p.code || null,
             qty: 1,
