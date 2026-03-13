@@ -11,6 +11,11 @@ function requireMedidor(req, res, next) {
   next();
 }
 
+function requireTechnicalReviewer(req, res, next) {
+  if (!req.user?.is_rev_tecnica) return res.status(403).json({ ok: false, error: "No autorizado" });
+  next();
+}
+
 function canReadMeasurement({ user, quote }) {
   if (!user || !quote) return false;
   const isOwner = String(quote.created_by_user_id) === String(user.user_id);
@@ -25,6 +30,19 @@ function normalizeStatus(s) {
   const v = String(s || "pending").toLowerCase().trim();
   if (!["pending", "needs_fix", "submitted", "approved", "all"].includes(v)) return "pending";
   return v;
+}
+
+function normalizeViewer(v) {
+  const s = String(v || "medidor").toLowerCase().trim();
+  if (!["medidor", "tecnica"].includes(s)) return "medidor";
+  return s;
+}
+
+function normalizeDateOnly(v) {
+  const s = String(v || "").trim();
+  if (!s) return "";
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return "";
+  return s;
 }
 
 function isUuid(v) {
@@ -50,11 +68,22 @@ export function buildMeasurementsRouter() {
 
   router.use(requireAuth);
 
-  router.get("/", requireMedidor, async (req, res, next) => {
+  router.get("/", async (req, res, next) => {
     try {
       const u = req.user;
+      const viewer = normalizeViewer(req.query.viewer || "medidor");
       const status = normalizeStatus(req.query.status || "pending");
-      const q = String(req.query.q || "").trim();
+      const customer = String(req.query.customer || req.query.q || "").trim();
+      const locality = String(req.query.locality || "").trim();
+      const dateFrom = normalizeDateOnly(req.query.date_from);
+      const dateTo = normalizeDateOnly(req.query.date_to);
+
+      if (viewer === "medidor" && !u?.is_medidor) {
+        return res.status(403).json({ ok: false, error: "No autorizado" });
+      }
+      if (viewer === "tecnica" && !u?.is_rev_tecnica) {
+        return res.status(403).json({ ok: false, error: "No autorizado" });
+      }
 
       const where = [
         "q.catalog_kind = 'porton'",
@@ -65,12 +94,16 @@ export function buildMeasurementsRouter() {
           or exists (
             select 1
             from jsonb_array_elements(coalesce(q.lines, '[]'::jsonb)) elem
-            where (elem->>'product_id') = $2
+            where (elem->>'product_id') = $1
           )
         )`,
-        "(q.measurement_assigned_to_user_id is null or q.measurement_assigned_to_user_id = $1)",
       ];
-      const params = [Number(u.user_id), String(MEASUREMENT_PRODUCT_ID)];
+      const params = [String(MEASUREMENT_PRODUCT_ID)];
+
+      if (viewer === "medidor") {
+        params.push(Number(u.user_id));
+        where.push(`(q.measurement_assigned_to_user_id is null or q.measurement_assigned_to_user_id = $${params.length})`);
+      }
 
       if (status !== "all") {
         params.push(status);
@@ -79,9 +112,27 @@ export function buildMeasurementsRouter() {
         where.push(`q.measurement_status <> 'none'`);
       }
 
-      if (q) {
-        params.push(`%${q}%`);
-        where.push(`(q.end_customer->>'name') ilike $${params.length}`);
+      if (customer) {
+        params.push(`%${customer}%`);
+        where.push(`(coalesce(q.end_customer->>'name', '')) ilike $${params.length}`);
+      }
+
+      if (locality) {
+        params.push(`%${locality}%`);
+        where.push(`(
+          coalesce(q.end_customer->>'city', '') ilike $${params.length}
+          or coalesce(q.end_customer->>'address', '') ilike $${params.length}
+        )`);
+      }
+
+      if (dateFrom) {
+        params.push(dateFrom);
+        where.push(`q.measurement_scheduled_for >= $${params.length}::date`);
+      }
+
+      if (dateTo) {
+        params.push(dateTo);
+        where.push(`q.measurement_scheduled_for <= $${params.length}::date`);
       }
 
       const sql = `
@@ -89,7 +140,11 @@ export function buildMeasurementsRouter() {
         from public.presupuestador_quotes q
         left join public.presupuestador_users u on u.id = q.created_by_user_id
         where ${where.join(" and ")}
-        order by q.id desc
+        order by
+          case when q.measurement_scheduled_for is null then 1 else 0 end asc,
+          q.measurement_scheduled_for asc,
+          q.created_at desc nulls last,
+          q.id desc
         limit 300
       `;
 
@@ -121,6 +176,45 @@ export function buildMeasurementsRouter() {
       if (!canReadMeasurement({ user: u, quote })) return res.status(403).json({ ok: false, error: "No autorizado" });
 
       res.json({ ok: true, quote });
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  router.put("/:id/schedule", requireTechnicalReviewer, async (req, res, next) => {
+    try {
+      const u = req.user;
+      const id = String(req.params.id || "").trim();
+      if (!isUuid(id)) return res.status(400).json({ ok: false, error: "id inválido" });
+
+      const scheduledFor = normalizeDateOnly(req.body?.scheduled_for);
+      if (!scheduledFor) {
+        return res.status(400).json({ ok: false, error: "Falta scheduled_for (YYYY-MM-DD)" });
+      }
+
+      const cur = await dbQuery(`select * from public.presupuestador_quotes where id=$1 limit 1`, [id]);
+      const quote = cur.rows?.[0];
+      if (!quote) return res.status(404).json({ ok: false, error: "Presupuesto no encontrado" });
+
+      if (!(quote.catalog_kind === "porton" && quote.status === "synced_odoo" && quote.fulfillment_mode === "produccion")) {
+        return res.status(400).json({ ok: false, error: "Este presupuesto no requiere medición" });
+      }
+
+      const upd = await dbQuery(
+        `
+        update public.presupuestador_quotes
+        set requires_measurement = true,
+            measurement_status = case when measurement_status = 'none' then 'pending' else measurement_status end,
+            measurement_scheduled_for = $2::date,
+            measurement_scheduled_by_user_id = $3,
+            measurement_scheduled_at = now()
+        where id = $1
+        returning *
+        `,
+        [id, scheduledFor, Number(u.user_id)]
+      );
+
+      return res.json({ ok: true, quote: upd.rows?.[0] || null });
     } catch (e) {
       next(e);
     }

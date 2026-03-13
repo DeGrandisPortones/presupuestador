@@ -31,6 +31,9 @@ export async function ensureQuotesMeasurementColumns() {
   await dbQuery(`alter table public.presupuestador_quotes add column if not exists measurement_form jsonb null;`);
 
   await dbQuery(`alter table public.presupuestador_quotes add column if not exists measurement_assigned_to_user_id int null;`);
+  await dbQuery(`alter table public.presupuestador_quotes add column if not exists measurement_scheduled_for date null;`);
+  await dbQuery(`alter table public.presupuestador_quotes add column if not exists measurement_scheduled_by_user_id int null;`);
+  await dbQuery(`alter table public.presupuestador_quotes add column if not exists measurement_scheduled_at timestamptz null;`);
   await dbQuery(`alter table public.presupuestador_quotes add column if not exists measurement_by_user_id int null;`);
   await dbQuery(`alter table public.presupuestador_quotes add column if not exists measurement_at timestamptz null;`);
 

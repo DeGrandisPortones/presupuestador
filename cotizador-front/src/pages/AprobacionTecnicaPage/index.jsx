@@ -2,8 +2,10 @@ import { useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import Button from "../../ui/Button.jsx";
+import Input from "../../ui/Input.jsx";
 import { listQuotes, reviewAcopioTechnical } from "../../api/quotes.js";
 import { listDoors, reviewDoorTechnical } from "../../api/doors.js";
+import { listMeasurements, scheduleMeasurement } from "../../api/measurements.js";
 import { useAuthStore } from "../../domain/auth/store.js";
 
 function acopioReqLabel(r) {
@@ -36,19 +38,40 @@ function createdByLabel(r) {
   const role = r?.created_by_role ? ` (${r.created_by_role})` : "";
   return `${name}${role}`;
 }
+function measurementStatusLabel(s) {
+  if (s === "pending") return "Pendiente";
+  if (s === "needs_fix") return "A corregir";
+  if (s === "submitted") return "Enviada";
+  if (s === "approved") return "Aprobada";
+  return s || "—";
+}
+function localityLabel(r) {
+  return r?.end_customer?.city || r?.end_customer?.address || "—";
+}
 
 export default function AprobacionTecnicaPage() {
   const navigate = useNavigate();
   const user = useAuthStore((s) => s.user);
   const [tab, setTab] = useState("aprobaciones");
   const [filter, setFilter] = useState("all");
+  const [measurementStatus, setMeasurementStatus] = useState("pending");
+  const [measurementDates, setMeasurementDates] = useState({});
 
   const q = useQuery({ queryKey: ["quotes", "technical_inbox"], queryFn: () => listQuotes({ scope: "technical_inbox" }), enabled: !!user?.is_rev_tecnica });
   const acopioQ = useQuery({ queryKey: ["quotes", "technical_acopio"], queryFn: () => listQuotes({ scope: "technical_acopio" }), enabled: tab === "acopio" && !!user?.is_rev_tecnica });
   const doorsQ = useQuery({ queryKey: ["doors", "technical_inbox"], queryFn: () => listDoors({ scope: "technical_inbox" }), enabled: tab === "puertas" && !!user?.is_rev_tecnica });
+  const measQ = useQuery({
+    queryKey: ["measurements", "tecnica", measurementStatus],
+    queryFn: () => listMeasurements({ status: measurementStatus, viewer: "tecnica" }),
+    enabled: tab === "mediciones" && !!user?.is_rev_tecnica,
+  });
 
   const acopioM = useMutation({ mutationFn: ({ id, action, notes }) => reviewAcopioTechnical(id, { action, notes }), onSuccess: () => acopioQ.refetch() });
   const doorM = useMutation({ mutationFn: ({ id, action, notes }) => reviewDoorTechnical(id, { action, notes }), onSuccess: () => doorsQ.refetch() });
+  const scheduleM = useMutation({
+    mutationFn: ({ id, scheduledFor }) => scheduleMeasurement(id, { scheduledFor }),
+    onSuccess: () => measQ.refetch(),
+  });
 
   const rows = useMemo(() => {
     const arr = q.data || [];
@@ -57,17 +80,29 @@ export default function AprobacionTecnicaPage() {
     return arr;
   }, [q.data, filter]);
 
+  const measurementRows = useMemo(() => {
+    const arr = (measQ.data || []).slice();
+    arr.sort((a, b) => {
+      const ta = a?.measurement_scheduled_for ? new Date(`${a.measurement_scheduled_for}T00:00:00`).getTime() : Number.MAX_SAFE_INTEGER;
+      const tb = b?.measurement_scheduled_for ? new Date(`${b.measurement_scheduled_for}T00:00:00`).getTime() : Number.MAX_SAFE_INTEGER;
+      if (ta !== tb) return ta - tb;
+      return String(a?.end_customer?.name || "").localeCompare(String(b?.end_customer?.name || ""), "es");
+    });
+    return arr;
+  }, [measQ.data]);
+
   if (!user?.is_rev_tecnica) return <div className="container"><div className="card">No autorizado (falta rol Rev. Técnica).</div></div>;
 
   return (
     <div className="container">
       <div className="card">
         <h2 style={{ margin: 0 }}>Revisión Técnica</h2>
-        <div className="muted">Presupuestos y puertas pendientes de tu decisión.</div>
+        <div className="muted">Presupuestos, portones a medir y puertas pendientes de tu decisión.</div>
 
         <div className="spacer" />
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           <Button variant={tab === "aprobaciones" ? "primary" : "ghost"} onClick={() => setTab("aprobaciones")}>Aprobaciones</Button>
+          <Button variant={tab === "mediciones" ? "primary" : "ghost"} onClick={() => setTab("mediciones")}>Mediciones</Button>
           <Button variant={tab === "acopio" ? "primary" : "ghost"} onClick={() => setTab("acopio")}>Acopio → Producción</Button>
           <Button variant={tab === "puertas" ? "primary" : "ghost"} onClick={() => setTab("puertas")}>Puertas</Button>
         </div>
@@ -79,6 +114,19 @@ export default function AprobacionTecnicaPage() {
               <Button variant={filter === "all" ? "primary" : "ghost"} onClick={() => setFilter("all")}>Todos</Button>
               <Button variant={filter === "pending" ? "primary" : "ghost"} onClick={() => setFilter("pending")}>Pendientes</Button>
               <Button variant={filter === "rejected" ? "primary" : "ghost"} onClick={() => setFilter("rejected")}>Rechazados (Comercial)</Button>
+            </div>
+          </>
+        )}
+
+        {tab === "mediciones" && (
+          <>
+            <div className="spacer" />
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <Button variant={measurementStatus === "pending" ? "primary" : "ghost"} onClick={() => setMeasurementStatus("pending")}>Pendientes</Button>
+              <Button variant={measurementStatus === "needs_fix" ? "primary" : "ghost"} onClick={() => setMeasurementStatus("needs_fix")}>A corregir</Button>
+              <Button variant={measurementStatus === "submitted" ? "primary" : "ghost"} onClick={() => setMeasurementStatus("submitted")}>Enviadas</Button>
+              <Button variant={measurementStatus === "approved" ? "primary" : "ghost"} onClick={() => setMeasurementStatus("approved")}>Aprobadas</Button>
+              <Button variant={measurementStatus === "all" ? "primary" : "ghost"} onClick={() => setMeasurementStatus("all")}>Todas</Button>
             </div>
           </>
         )}
@@ -96,6 +144,62 @@ export default function AprobacionTecnicaPage() {
               <table><thead><tr><th>Fecha</th><th>Vendedor/Distribuidor</th><th>Cliente</th><th>Dirección</th><th>Estado</th><th></th></tr></thead><tbody>
                 {rows.map((r) => <tr key={r.id}><td>{fmtDate(r.created_at)}</td><td>{createdByLabel(r)}</td><td>{r.end_customer?.name || <span className="muted">(sin nombre)</span>}</td><td>{r.end_customer?.address || "—"}</td><td>{rowLabel(r)}</td><td className="right"><Button onClick={() => navigate(`/presupuestos/${r.id}`)}>Abrir</Button></td></tr>)}
               </tbody></table>
+            )}
+          </>
+        )}
+
+        {tab === "mediciones" && (
+          <>
+            {measQ.isLoading && <div className="muted">Cargando...</div>}
+            {measQ.isError && <div style={{ color: "#d93025", fontSize: 13 }}>{measQ.error.message}</div>}
+            {!measQ.isLoading && !measurementRows.length && <div className="muted">Sin portones para medición</div>}
+            {!!measurementRows.length && (
+              <table>
+                <thead>
+                  <tr>
+                    <th>Cliente</th>
+                    <th>Localidad</th>
+                    <th>Dirección</th>
+                    <th>Estado</th>
+                    <th>Fecha visita</th>
+                    <th>Asignar fecha</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {measurementRows.map((r) => {
+                    const dateValue = measurementDates[r.id] ?? r.measurement_scheduled_for ?? "";
+                    return (
+                      <tr key={r.id}>
+                        <td style={{ fontWeight: 800 }}>{r.end_customer?.name || "(sin nombre)"}</td>
+                        <td>{localityLabel(r)}</td>
+                        <td>{r.end_customer?.address || "—"}</td>
+                        <td>{measurementStatusLabel(r.measurement_status)}</td>
+                        <td>{fmtDate(r.measurement_scheduled_for)}</td>
+                        <td style={{ minWidth: 220 }}>
+                          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                            <Input
+                              type="date"
+                              value={dateValue}
+                              onChange={(v) => setMeasurementDates((prev) => ({ ...prev, [r.id]: v }))}
+                              style={{ width: "100%" }}
+                            />
+                            <Button
+                              disabled={scheduleM.isPending || !dateValue}
+                              onClick={() => scheduleM.mutate({ id: r.id, scheduledFor: dateValue })}
+                            >
+                              Guardar
+                            </Button>
+                          </div>
+                        </td>
+                        <td className="right">
+                          <Button variant="ghost" onClick={() => navigate(`/presupuestos/${r.id}`)}>Abrir</Button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
             )}
           </>
         )}
