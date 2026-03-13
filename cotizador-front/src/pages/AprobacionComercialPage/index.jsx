@@ -1,10 +1,13 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import Button from "../../ui/Button.jsx";
+import PaginationControls from "../../ui/PaginationControls.jsx";
 import { listQuotes, reviewAcopioCommercial } from "../../api/quotes.js";
 import { listDoors, reviewDoorCommercial } from "../../api/doors.js";
 import { useAuthStore } from "../../domain/auth/store.js";
+
+const PAGE_SIZE = 25;
 
 function acopioReqLabel(r) {
   const c = r?.acopio_to_produccion_commercial_decision || "pending";
@@ -43,6 +46,9 @@ export default function AprobacionComercialPage() {
 
   const [tab, setTab] = useState("aprobaciones");
   const [filter, setFilter] = useState("all");
+  const [pageAprobaciones, setPageAprobaciones] = useState(1);
+  const [pageAcopio, setPageAcopio] = useState(1);
+  const [pagePuertas, setPagePuertas] = useState(1);
 
   const q = useQuery({
     queryKey: ["quotes", "commercial_inbox"],
@@ -75,6 +81,43 @@ export default function AprobacionComercialPage() {
     if (filter === "rejected") return arr.filter((x) => x.status === "draft" && x.technical_decision === "rejected");
     return arr;
   }, [q.data, filter]);
+
+  const acopioRows = useMemo(() => acopioQ.data || [], [acopioQ.data]);
+  const doorRows = useMemo(() => doorsQ.data || [], [doorsQ.data]);
+
+  useEffect(() => {
+    setPageAprobaciones(1);
+  }, [filter]);
+
+  useEffect(() => {
+    const totalPages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
+    if (pageAprobaciones > totalPages) setPageAprobaciones(totalPages);
+  }, [rows.length, pageAprobaciones]);
+
+  useEffect(() => {
+    const totalPages = Math.max(1, Math.ceil(acopioRows.length / PAGE_SIZE));
+    if (pageAcopio > totalPages) setPageAcopio(totalPages);
+  }, [acopioRows.length, pageAcopio]);
+
+  useEffect(() => {
+    const totalPages = Math.max(1, Math.ceil(doorRows.length / PAGE_SIZE));
+    if (pagePuertas > totalPages) setPagePuertas(totalPages);
+  }, [doorRows.length, pagePuertas]);
+
+  const visibleRows = useMemo(() => {
+    const start = (pageAprobaciones - 1) * PAGE_SIZE;
+    return rows.slice(start, start + PAGE_SIZE);
+  }, [rows, pageAprobaciones]);
+
+  const visibleAcopioRows = useMemo(() => {
+    const start = (pageAcopio - 1) * PAGE_SIZE;
+    return acopioRows.slice(start, start + PAGE_SIZE);
+  }, [acopioRows, pageAcopio]);
+
+  const visibleDoorRows = useMemo(() => {
+    const start = (pagePuertas - 1) * PAGE_SIZE;
+    return doorRows.slice(start, start + PAGE_SIZE);
+  }, [doorRows, pagePuertas]);
 
   if (!user?.is_enc_comercial) {
     return <div className="container"><div className="card">No autorizado (falta rol Enc. Comercial).</div></div>;
@@ -114,9 +157,39 @@ export default function AprobacionComercialPage() {
             {q.isError && <div style={{ color: "#d93025", fontSize: 13 }}>{q.error.message}</div>}
             {!q.isLoading && !rows.length && <div className="muted">Sin ítems</div>}
             {!!rows.length && (
-              <table><thead><tr><th>Fecha</th><th>Vendedor/Distribuidor</th><th>Cliente</th><th>Dirección</th><th>Estado</th><th></th></tr></thead><tbody>
-                {rows.map((r) => <tr key={r.id}><td>{fmtDate(r.created_at)}</td><td>{createdByLabel(r)}</td><td>{r.end_customer?.name || <span className="muted">(sin nombre)</span>}</td><td>{r.end_customer?.address || "—"}</td><td>{rowLabel(r)}</td><td className="right"><Button onClick={() => navigate(`/presupuestos/${r.id}`)}>Abrir</Button></td></tr>)}
-              </tbody></table>
+              <>
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Fecha</th>
+                      <th>Vendedor/Distribuidor</th>
+                      <th>Cliente</th>
+                      <th>Dirección</th>
+                      <th>Estado</th>
+                      <th></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {visibleRows.map((r) => (
+                      <tr key={r.id}>
+                        <td>{fmtDate(r.created_at)}</td>
+                        <td>{createdByLabel(r)}</td>
+                        <td>{r.end_customer?.name || <span className="muted">(sin nombre)</span>}</td>
+                        <td>{r.end_customer?.address || "—"}</td>
+                        <td>{rowLabel(r)}</td>
+                        <td className="right"><Button onClick={() => navigate(`/presupuestos/${r.id}`)}>Abrir</Button></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+
+                <PaginationControls
+                  page={pageAprobaciones}
+                  totalItems={rows.length}
+                  pageSize={PAGE_SIZE}
+                  onPageChange={setPageAprobaciones}
+                />
+              </>
             )}
           </>
         )}
@@ -125,14 +198,54 @@ export default function AprobacionComercialPage() {
           <>
             {acopioQ.isLoading && <div className="muted">Cargando...</div>}
             {acopioQ.isError && <div style={{ color: "#d93025", fontSize: 13 }}>{acopioQ.error.message}</div>}
-            {!acopioQ.isLoading && !(acopioQ.data || []).length && <div className="muted">Sin solicitudes</div>}
-            {!!(acopioQ.data || []).length && (
-              <table><thead><tr><th>Fecha</th><th>Vendedor/Distribuidor</th><th>Cliente</th><th>Dirección</th><th>Solicitud</th><th>Decisiones</th><th></th></tr></thead><tbody>
-                {(acopioQ.data || []).map((r) => {
-                  const canAct = (r.acopio_to_produccion_commercial_decision || "pending") === "pending";
-                  return <tr key={r.id}><td>{fmtDate(r.acopio_to_produccion_requested_at || r.created_at)}</td><td>{createdByLabel(r)}</td><td>{r.end_customer?.name || <span className="muted">(sin nombre)</span>}</td><td>{r.end_customer?.address || "—"}</td><td>{r.acopio_to_produccion_notes || <span className="muted">(sin nota)</span>}</td><td>{acopioReqLabel(r)}</td><td className="right" style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}><Button variant="ghost" onClick={() => navigate(`/presupuestos/${r.id}`)}>Abrir</Button>{canAct ? <><Button disabled={acopioM.isPending} onClick={() => acopioM.mutate({ id: r.id, action: "approve", notes: null })}>OK</Button><Button variant="ghost" disabled={acopioM.isPending} onClick={() => { const msg = window.prompt("Motivo del rechazo:", ""); if (msg !== null) acopioM.mutate({ id: r.id, action: "reject", notes: msg }); }}>Rechazar</Button></> : <span className="muted">Ya decidiste</span>}</td></tr>;
-                })}
-              </tbody></table>
+            {!acopioQ.isLoading && !acopioRows.length && <div className="muted">Sin solicitudes</div>}
+            {!!acopioRows.length && (
+              <>
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Fecha</th>
+                      <th>Vendedor/Distribuidor</th>
+                      <th>Cliente</th>
+                      <th>Dirección</th>
+                      <th>Solicitud</th>
+                      <th>Decisiones</th>
+                      <th></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {visibleAcopioRows.map((r) => {
+                      const canAct = (r.acopio_to_produccion_commercial_decision || "pending") === "pending";
+                      return (
+                        <tr key={r.id}>
+                          <td>{fmtDate(r.acopio_to_produccion_requested_at || r.created_at)}</td>
+                          <td>{createdByLabel(r)}</td>
+                          <td>{r.end_customer?.name || <span className="muted">(sin nombre)</span>}</td>
+                          <td>{r.end_customer?.address || "—"}</td>
+                          <td>{r.acopio_to_produccion_notes || <span className="muted">(sin nota)</span>}</td>
+                          <td>{acopioReqLabel(r)}</td>
+                          <td className="right" style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+                            <Button variant="ghost" onClick={() => navigate(`/presupuestos/${r.id}`)}>Abrir</Button>
+                            {canAct ? (
+                              <>
+                                <Button disabled={acopioM.isPending} onClick={() => acopioM.mutate({ id: r.id, action: "approve", notes: null })}>OK</Button>
+                                <Button variant="ghost" disabled={acopioM.isPending} onClick={() => { const msg = window.prompt("Motivo del rechazo:", ""); if (msg !== null) acopioM.mutate({ id: r.id, action: "reject", notes: msg }); }}>Rechazar</Button>
+                              </>
+                            ) : <span className="muted">Ya decidiste</span>}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+
+                <PaginationControls
+                  page={pageAcopio}
+                  totalItems={acopioRows.length}
+                  pageSize={PAGE_SIZE}
+                  onPageChange={setPageAcopio}
+                />
+              </>
             )}
           </>
         )}
@@ -141,11 +254,45 @@ export default function AprobacionComercialPage() {
           <>
             {doorsQ.isLoading && <div className="muted">Cargando...</div>}
             {doorsQ.isError && <div style={{ color: "#d93025", fontSize: 13 }}>{doorsQ.error.message}</div>}
-            {!doorsQ.isLoading && !(doorsQ.data || []).length && <div className="muted">Sin puertas pendientes</div>}
-            {!!(doorsQ.data || []).length && (
-              <table><thead><tr><th>Código</th><th>Cliente</th><th>Portón vinculado</th><th>Venta</th><th>Compra</th><th></th></tr></thead><tbody>
-                {(doorsQ.data || []).map((d) => <tr key={d.id}><td>{d.door_code}</td><td>{d.record?.end_customer?.name || d.record?.obra_cliente || "—"}</td><td>{d.linked_quote_odoo_name || d.record?.asociado_porton || "—"}</td><td>{d.sale_amount ? `$ ${Number(d.sale_amount).toLocaleString("es-AR")}` : "—"}</td><td>{d.purchase_amount ? `$ ${Number(d.purchase_amount).toLocaleString("es-AR")}` : "—"}</td><td className="right" style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}><Button variant="ghost" onClick={() => navigate(`/puertas/${d.id}`)}>Abrir</Button><Button disabled={doorM.isPending} onClick={() => doorM.mutate({ id: d.id, action: "approve", notes: null })}>OK</Button><Button variant="ghost" disabled={doorM.isPending} onClick={() => { const msg = window.prompt("Motivo del rechazo:", ""); if (msg !== null) doorM.mutate({ id: d.id, action: "reject", notes: msg }); }}>Rechazar</Button></td></tr>)}
-              </tbody></table>
+            {!doorsQ.isLoading && !doorRows.length && <div className="muted">Sin puertas pendientes</div>}
+            {!!doorRows.length && (
+              <>
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Código</th>
+                      <th>Cliente</th>
+                      <th>Portón vinculado</th>
+                      <th>Venta</th>
+                      <th>Compra</th>
+                      <th></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {visibleDoorRows.map((d) => (
+                      <tr key={d.id}>
+                        <td>{d.door_code}</td>
+                        <td>{d.record?.end_customer?.name || d.record?.obra_cliente || "—"}</td>
+                        <td>{d.linked_quote_odoo_name || d.record?.asociado_porton || "—"}</td>
+                        <td>{d.sale_amount ? `$ ${Number(d.sale_amount).toLocaleString("es-AR")}` : "—"}</td>
+                        <td>{d.purchase_amount ? `$ ${Number(d.purchase_amount).toLocaleString("es-AR")}` : "—"}</td>
+                        <td className="right" style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+                          <Button variant="ghost" onClick={() => navigate(`/puertas/${d.id}`)}>Abrir</Button>
+                          <Button disabled={doorM.isPending} onClick={() => doorM.mutate({ id: d.id, action: "approve", notes: null })}>OK</Button>
+                          <Button variant="ghost" disabled={doorM.isPending} onClick={() => { const msg = window.prompt("Motivo del rechazo:", ""); if (msg !== null) doorM.mutate({ id: d.id, action: "reject", notes: msg }); }}>Rechazar</Button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+
+                <PaginationControls
+                  page={pagePuertas}
+                  totalItems={doorRows.length}
+                  pageSize={PAGE_SIZE}
+                  onPageChange={setPagePuertas}
+                />
+              </>
             )}
           </>
         )}

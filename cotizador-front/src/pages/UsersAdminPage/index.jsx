@@ -1,11 +1,14 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import toast from "react-hot-toast";
 
 import Button from "../../ui/Button.jsx";
 import Input from "../../ui/Input.jsx";
+import PaginationControls from "../../ui/PaginationControls.jsx";
 import { useAuthStore } from "../../domain/auth/store.js";
 import { adminCreateUser, adminListUsers, adminUpdateUser } from "../../api/admin.js";
+
+const PAGE_SIZE = 25;
 
 function norm(s) {
   return String(s || "").toLowerCase().trim();
@@ -18,6 +21,7 @@ export default function UsersAdminPage() {
   const [roleTab, setRoleTab] = useState("all"); // all | vendedor | distribuidor | medidor
   const [q, setQ] = useState("");
   const [activeFilter, setActiveFilter] = useState("all"); // all | true | false
+  const [page, setPage] = useState(1);
 
   const [selectedId, setSelectedId] = useState(null);
 
@@ -121,6 +125,10 @@ export default function UsersAdminPage() {
     onError: (e) => toast.error(e.message),
   });
 
+  useEffect(() => {
+    setPage(1);
+  }, [roleTab, q, activeFilter]);
+
   if (!user?.is_enc_comercial) {
     return (
       <div className="container">
@@ -134,6 +142,16 @@ export default function UsersAdminPage() {
   }
 
   const filtered = users;
+
+  useEffect(() => {
+    const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+    if (page > totalPages) setPage(totalPages);
+  }, [filtered.length, page]);
+
+  const visibleUsers = useMemo(() => {
+    const start = (page - 1) * PAGE_SIZE;
+    return filtered.slice(start, start + PAGE_SIZE);
+  }, [filtered, page]);
 
   return (
     <div className="container">
@@ -195,47 +213,58 @@ export default function UsersAdminPage() {
 
           {!usersQ.isLoading && !filtered.length && <div className="muted">Sin usuarios</div>}
 
-          <div style={{ display: "flex", flexDirection: "column", gap: 8, maxHeight: 520, overflow: "auto", paddingRight: 6 }}>
-            {filtered.map((u) => {
-              const active = !!u.is_active;
-              const isSel = String(u.id) === String(selectedId);
-              return (
-                <div
-                  key={u.id}
-                  style={{
-                    border: "1px solid #eee",
-                    padding: 10,
-                    borderRadius: 12,
-                    cursor: "pointer",
-                    background: isSel ? "rgba(1,163,159,0.08)" : "transparent",
-                  }}
-                  onClick={() => loadEdit(u)}
-                >
-                  <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
-                    <div style={{ fontWeight: 800 }}>{u.username}</div>
-                    <div className="muted" style={{ fontSize: 12 }}>{active ? "Activo" : "Inactivo"}</div>
-                  </div>
-                  <div className="muted" style={{ fontSize: 12 }}>
-                    {u.full_name || "(sin nombre)"}
-                    {u.odoo_partner_id ? ` · Odoo partner: ${u.odoo_partner_id}` : ""}
-                  </div>
-
-                  <div style={{ marginTop: 8, display: "flex", gap: 8, justifyContent: "flex-end" }}>
-                    <Button
-                      variant="ghost"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        toggleActiveM.mutate({ id: u.id, nextActive: !active });
+          {!!filtered.length && (
+            <>
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {visibleUsers.map((u) => {
+                  const active = !!u.is_active;
+                  const isSel = String(u.id) === String(selectedId);
+                  return (
+                    <div
+                      key={u.id}
+                      style={{
+                        border: "1px solid #eee",
+                        padding: 10,
+                        borderRadius: 12,
+                        cursor: "pointer",
+                        background: isSel ? "rgba(1,163,159,0.08)" : "transparent",
                       }}
-                      disabled={toggleActiveM.isPending}
+                      onClick={() => loadEdit(u)}
                     >
-                      {active ? "Inhabilitar" : "Habilitar"}
-                    </Button>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+                      <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+                        <div style={{ fontWeight: 800 }}>{u.username}</div>
+                        <div className="muted" style={{ fontSize: 12 }}>{active ? "Activo" : "Inactivo"}</div>
+                      </div>
+                      <div className="muted" style={{ fontSize: 12 }}>
+                        {u.full_name || "(sin nombre)"}
+                        {u.odoo_partner_id ? ` · Odoo partner: ${u.odoo_partner_id}` : ""}
+                      </div>
+
+                      <div style={{ marginTop: 8, display: "flex", gap: 8, justifyContent: "flex-end" }}>
+                        <Button
+                          variant="ghost"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            toggleActiveM.mutate({ id: u.id, nextActive: !active });
+                          }}
+                          disabled={toggleActiveM.isPending}
+                        >
+                          {active ? "Inhabilitar" : "Habilitar"}
+                        </Button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <PaginationControls
+                page={page}
+                totalItems={filtered.length}
+                pageSize={PAGE_SIZE}
+                onPageChange={setPage}
+              />
+            </>
+          )}
         </div>
 
         <div className="card" style={{ flex: 2, minWidth: 520 }}>

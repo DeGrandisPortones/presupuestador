@@ -1,8 +1,11 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import Button from "../../ui/Button.jsx";
-import { listQuotes, moveToProduccion } from "../../api/quotes.js";
+import PaginationControls from "../../ui/PaginationControls.jsx";
+import { listQuotes, requestProductionFromAcopio } from "../../api/quotes.js";
+
+const PAGE_SIZE = 25;
 
 function labelMeasurementStatus(q) {
   const s = q?.measurement_status || "none";
@@ -25,13 +28,6 @@ function labelStatus(q) {
     return "Borrador";
   }
 
-  if (q?.fulfillment_mode === "acopio" && q?.acopio_to_produccion_status === "pending") {
-    return "Acopio · Solicitud a Producción";
-  }
-  if (q?.fulfillment_mode === "acopio" && q?.acopio_to_produccion_status === "rejected") {
-    return "Acopio · Solicitud rechazada";
-  }
-
   if (s === "pending_approvals") {
     if (c === "pending" && t === "pending") return "Pendiente Comercial y Técnica";
     if (c === "approved" && t === "pending") return "Pendiente Técnica";
@@ -50,6 +46,7 @@ export default function PresupuestosPage() {
   const navigate = useNavigate();
   const [filter, setFilter] = useState("all"); // all | saved | pending | rejected | acopio | produccion | mediciones
   const [searchCustomer, setSearchCustomer] = useState("");
+  const [page, setPage] = useState(1);
 
   const q = useQuery({
     queryKey: ["quotes", "mine"],
@@ -59,9 +56,13 @@ export default function PresupuestosPage() {
   const qc = useQueryClient();
 
   const moveM = useMutation({
-    mutationFn: (id) => moveToProduccion(id),
+    mutationFn: (id) => requestProductionFromAcopio(id),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["quotes", "mine"] }),
   });
+
+  useEffect(() => {
+    setPage(1);
+  }, [filter, searchCustomer]);
 
   function fmtDate(iso) {
     if (!iso) return "—";
@@ -107,6 +108,16 @@ export default function PresupuestosPage() {
 
     return out;
   }, [q.data, filter, searchCustomer]);
+
+  useEffect(() => {
+    const totalPages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
+    if (page > totalPages) setPage(totalPages);
+  }, [rows.length, page]);
+
+  const visibleRows = useMemo(() => {
+    const start = (page - 1) * PAGE_SIZE;
+    return rows.slice(start, start + PAGE_SIZE);
+  }, [rows, page]);
 
   return (
     <div className="container">
@@ -158,47 +169,52 @@ export default function PresupuestosPage() {
         {!q.isLoading && !rows.length && <div className="muted">Sin presupuestos</div>}
 
         {!!rows.length && (
-          <table>
-            <thead>
-              <tr>
-                <th>Fecha</th>
-                <th>Cliente</th>
-                <th>Estado</th>
-                <th>Destino</th>
-                {filter === "mediciones" ? <th>Medición</th> : null}
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((r) => (
-                <tr key={r.id}>
-                  <td>{fmtDate(r.created_at)}</td>
-                  <td>{r.end_customer?.name || <span className="muted">(sin nombre)</span>}</td>
-                  <td>{labelStatus(r)}</td>
-                  <td>{r.fulfillment_mode === "acopio" ? "Acopio" : "Producción"}</td>
-                  {filter === "mediciones" ? <td>{labelMeasurementStatus(r)}</td> : null}
-                  <td className="right" style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
-                    <Button variant="ghost" onClick={() => navigate(`/presupuestos/${r.id}`)}>Ver</Button>
-                    {r.status === "draft" && (
-                      <Button onClick={() => navigate(r.catalog_kind === "ipanel" ? `/cotizador/ipanel/${r.id}` : `/cotizador/${r.id}`)}>Editar</Button>
-                    )}
-                    {filter === "acopio" && (
-                      r.acopio_to_produccion_status === "pending" ? (
-                        <span className="muted">Solicitud en revisión</span>
-                      ) : (
+          <>
+            <table>
+              <thead>
+                <tr>
+                  <th>Fecha</th>
+                  <th>Cliente</th>
+                  <th>Estado</th>
+                  <th>Destino</th>
+                  {filter === "mediciones" ? <th>Medición</th> : null}
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {visibleRows.map((r) => (
+                  <tr key={r.id}>
+                    <td>{fmtDate(r.created_at)}</td>
+                    <td>{r.end_customer?.name || <span className="muted">(sin nombre)</span>}</td>
+                    <td>{labelStatus(r)}</td>
+                    <td>{r.fulfillment_mode === "acopio" ? "Acopio" : "Producción"}</td>
+                    {filter === "mediciones" ? <td>{labelMeasurementStatus(r)}</td> : null}
+                    <td className="right" style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+                      <Button variant="ghost" onClick={() => navigate(`/presupuestos/${r.id}`)}>Ver</Button>
+                      {r.status === "draft" && (
+                        <Button onClick={() => navigate(r.catalog_kind === "ipanel" ? `/cotizador/ipanel/${r.id}` : `/cotizador/${r.id}`)}>Editar</Button>
+                      )}
+                      {filter === "acopio" && (
                         <Button
-                          disabled={moveM.isPending}
+                          disabled={moveM.isPending || r.acopio_to_produccion_status === "pending"}
                           onClick={() => moveM.mutate(r.id)}
                         >
-                          Solicitar paso a Producción
+                          {r.acopio_to_produccion_status === "pending" ? "Solicitud en revisión" : "Solicitar paso a Producción"}
                         </Button>
-                      )
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+
+            <PaginationControls
+              page={page}
+              totalItems={rows.length}
+              pageSize={PAGE_SIZE}
+              onPageChange={setPage}
+            />
+          </>
         )}
       </div>
     </div>
