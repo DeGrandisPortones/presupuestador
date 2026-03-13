@@ -9,13 +9,8 @@ function normalize(s) {
   return (s || "").toString().trim().toLowerCase();
 }
 
-function getProductLabel(product) {
-  return product?.display_name || product?.alias || product?.name || "";
-}
-
 export default function SectionCatalog({ kind = "porton" }) {
   const addLine = useQuoteStore((s) => s.addLine);
-  const lines = useQuoteStore((s) => s.lines);
   const portonType = useQuoteStore((s) => s.portonType);
 
   const [boot, setBoot] = useState(() => getOdooBootstrap(kind));
@@ -26,7 +21,7 @@ export default function SectionCatalog({ kind = "porton" }) {
   const [openSectionId, setOpenSectionId] = useState(null);
   const [queryBySection, setQueryBySection] = useState({});
   const [refreshing, setRefreshing] = useState(false);
-  const [completedBySection, setCompletedBySection] = useState({});
+  const [autoloadTried, setAutoloadTried] = useState(false);
 
   const sectionList = useMemo(() => {
     const ordered = [...sections].sort(
@@ -45,6 +40,46 @@ export default function SectionCatalog({ kind = "porton" }) {
     return ordered;
   }, [sections, kind, portonType, typeSections]);
 
+  useEffect(() => {
+    setBoot(getOdooBootstrap(kind));
+    setAutoloadTried(false);
+  }, [kind]);
+
+  useEffect(() => {
+    if (boot || refreshing || autoloadTried) return;
+
+    let cancelled = false;
+
+    async function loadCatalog() {
+      setRefreshing(true);
+      try {
+        const data = await getCatalogBootstrap(kind);
+        if (cancelled) return;
+        setOdooBootstrap(data, kind);
+        setBoot(data);
+      } catch {
+        if (!cancelled) setAutoloadTried(true);
+      } finally {
+        if (!cancelled) {
+          setRefreshing(false);
+          setAutoloadTried(true);
+        }
+      }
+    }
+
+    loadCatalog();
+    return () => {
+      cancelled = true;
+    };
+  }, [boot, refreshing, autoloadTried, kind]);
+
+  useEffect(() => {
+    if (!sectionList.length) return;
+    if (openSectionId == null || !sectionList.some((s) => Number(s.id) === Number(openSectionId))) {
+      setOpenSectionId(Number(sectionList[0].id));
+    }
+  }, [sectionList, openSectionId]);
+
   const productsBySection = useMemo(() => {
     const map = new Map();
     for (const s of sectionList) map.set(Number(s.id), []);
@@ -58,84 +93,29 @@ export default function SectionCatalog({ kind = "porton" }) {
     return map;
   }, [products, sectionList]);
 
-  const lineProductIds = useMemo(
-    () => new Set((lines || []).map((l) => Number(l.product_id)).filter(Boolean)),
-    [lines]
-  );
-
-  useEffect(() => {
-    if (!sectionList.length) {
-      setCompletedBySection({});
-      return;
-    }
-
-    const highestIndexWithProducts = sectionList.reduce((acc, section, index) => {
-      const hasAnySelectedProduct = (productsBySection.get(Number(section.id)) || []).some((p) =>
-        lineProductIds.has(Number(p.id))
-      );
-      return hasAnySelectedProduct ? index : acc;
-    }, -1);
-
-    setCompletedBySection((prev) => {
-      const next = {};
-      sectionList.forEach((section, index) => {
-        const sid = Number(section.id);
-        next[sid] = !!prev[sid] || index <= highestIndexWithProducts;
-      });
-      return next;
-    });
-  }, [sectionList, productsBySection, lineProductIds]);
-
-  const maxUnlockedIndex = useMemo(() => {
-    if (!sectionList.length) return -1;
-    let lastUnlocked = 0;
-    for (let i = 0; i < sectionList.length - 1; i += 1) {
-      const sid = Number(sectionList[i].id);
-      if (!completedBySection[sid]) break;
-      lastUnlocked = i + 1;
-    }
-    return lastUnlocked;
-  }, [sectionList, completedBySection]);
-
-  useEffect(() => {
-    if (!sectionList.length) return;
-
-    const safeIndex = Math.max(0, Math.min(maxUnlockedIndex, sectionList.length - 1));
-    const fallbackId = Number(sectionList[safeIndex]?.id);
-
-    if (openSectionId == null) {
-      setOpenSectionId(fallbackId);
-      return;
-    }
-
-    const currentIndex = sectionList.findIndex((s) => Number(s.id) === Number(openSectionId));
-    if (currentIndex === -1 || currentIndex > maxUnlockedIndex) {
-      setOpenSectionId(fallbackId);
-    }
-  }, [sectionList, openSectionId, maxUnlockedIndex]);
-
   function getVisibleProducts(sectionId) {
     const all = productsBySection.get(Number(sectionId)) || [];
     const q = normalize(queryBySection[sectionId] || "");
     if (!q) return all;
 
     return all.filter((p) => {
-      const label = normalize(getProductLabel(p));
+      const name = normalize(p.display_name || p.alias || p.name);
+      const alias = normalize(p.alias || "");
       const raw = normalize(p.name);
-      const alias = normalize(p.alias);
       const code = normalize(p.code);
-      return label.includes(q) || raw.includes(q) || alias.includes(q) || code.includes(q);
+      return name.includes(q) || alias.includes(q) || raw.includes(q) || code.includes(q);
     });
   }
 
-  function markSectionComplete(sectionId) {
-    const sid = Number(sectionId);
-    setCompletedBySection((prev) => ({ ...prev, [sid]: true }));
-
-    const currentIndex = sectionList.findIndex((s) => Number(s.id) === sid);
-    const nextSection = sectionList[currentIndex + 1];
-    if (nextSection) {
-      setOpenSectionId(Number(nextSection.id));
+  async function refreshCatalog() {
+    setRefreshing(true);
+    try {
+      const data = await getCatalogBootstrap(kind);
+      setOdooBootstrap(data, kind);
+      setBoot(data);
+    } finally {
+      setRefreshing(false);
+      setAutoloadTried(true);
     }
   }
 
@@ -147,24 +127,16 @@ export default function SectionCatalog({ kind = "porton" }) {
           <Button
             variant="ghost"
             disabled={refreshing}
-            onClick={async () => {
-              setRefreshing(true);
-              try {
-                const data = await getCatalogBootstrap(kind);
-                setOdooBootstrap(data, kind);
-                setBoot(data);
-              } finally {
-                setRefreshing(false);
-              }
-            }}
+            onClick={refreshCatalog}
           >
-            {refreshing ? "Cargando…" : "Cargar catálogo"}
+            {refreshing ? "Cargando…" : "Actualizar catálogo"}
           </Button>
         </div>
         <div className="spacer" />
         <div className="muted">
-          Todavía no hay catálogo en el navegador. Podés cargarlo con el botón o
-          cerrando y volviendo a entrar.
+          {refreshing
+            ? "Cargando catálogo automáticamente…"
+            : "No se pudo cargar el catálogo automáticamente. Podés reintentar con el botón de actualizar."}
         </div>
       </div>
     );
@@ -177,16 +149,7 @@ export default function SectionCatalog({ kind = "porton" }) {
         <Button
           variant="ghost"
           disabled={refreshing}
-          onClick={async () => {
-            setRefreshing(true);
-            try {
-              const data = await getCatalogBootstrap(kind);
-              setOdooBootstrap(data, kind);
-              setBoot(data);
-            } finally {
-              setRefreshing(false);
-            }
-          }}
+          onClick={refreshCatalog}
         >
           {refreshing ? "Actualizando…" : "Actualizar catálogo"}
         </Button>
@@ -202,119 +165,69 @@ export default function SectionCatalog({ kind = "porton" }) {
         </>
       ) : (
         <div className="dg-accordion">
-          {sectionList.map((s, index) => {
+          {sectionList.map((s) => {
             const sid = Number(s.id);
             const isOpen = openSectionId === sid;
-            const isLocked = index > maxUnlockedIndex;
-            const isCompleted = !!completedBySection[sid];
             const all = productsBySection.get(sid) || [];
             const visible = getVisibleProducts(sid);
             const q = queryBySection[sid] || "";
-            const nextSection = sectionList[index + 1];
 
             return (
               <div key={sid} className={isOpen ? "dg-acc-item is-open" : "dg-acc-item"}>
                 <button
                   type="button"
                   className="dg-acc-header"
-                  onClick={() => {
-                    if (isLocked) return;
-                    setOpenSectionId(isOpen ? null : sid);
-                  }}
-                  disabled={isLocked}
-                  style={isLocked ? { opacity: 0.55, cursor: "not-allowed" } : undefined}
+                  onClick={() => setOpenSectionId(isOpen ? null : sid)}
                 >
                   <div className="dg-acc-title">{s.name}</div>
                   <div className="dg-acc-meta">
-                    {isLocked ? "Bloqueada" : isCompleted ? "Completada" : "Pendiente"} · {visible.length}/{all.length}
+                    {visible.length}/{all.length}
                   </div>
                   <div className="dg-acc-chevron">{isOpen ? "▾" : "▸"}</div>
                 </button>
 
                 {isOpen ? (
                   <div className="dg-acc-body">
-                    <div
-                      style={{
-                        padding: "10px 12px",
-                        borderRadius: 10,
-                        border: "1px solid #eee",
-                        background: isCompleted ? "#eef9f3" : "#fafafa",
-                        marginBottom: 12,
-                        fontSize: 13,
-                      }}
-                    >
-                      {isCompleted
-                        ? "Sección completada. Podés seguir agregando productos o continuar con las siguientes."
-                        : nextSection
-                          ? "Completá esta sección para habilitar la siguiente según el orden definido en el dashboard."
-                          : "Esta es la última sección habilitada para este tipo."}
-                    </div>
-
                     <Input
                       value={q}
                       onChange={(v) =>
                         setQueryBySection((prev) => ({ ...prev, [sid]: v }))
                       }
-                      placeholder="Buscar dentro de esta sección (alias, nombre o código)…"
+                      placeholder="Buscar dentro de esta sección (nombre o código)…"
                       style={{ width: "100%" }}
                     />
 
                     <div className="spacer" />
 
                     <div className="dg-product-list">
-                      {visible.map((p) => {
-                        const label = getProductLabel(p);
-                        const rawName = String(p?.name || "").trim();
-                        const showRaw = rawName && rawName !== label;
-
-                        return (
-                          <div key={p.id} className="dg-product-card">
-                            <div className="dg-product-info">
-                              <div className="dg-product-name">
-                                {label}
-                              </div>
-                              <div className="muted" style={{ fontSize: 12 }}>
-                                ID: {p.id}
-                                {p.code ? ` · ${p.code}` : ""}
-                                {showRaw ? ` · ${rawName}` : ""}
-                              </div>
+                      {visible.map((p) => (
+                        <div key={p.id} className="dg-product-card">
+                          <div className="dg-product-info">
+                            <div className="dg-product-name">
+                              {p.display_name || p.alias || p.name}
                             </div>
-
-                            <Button
-                              onClick={() =>
-                                addLine({
-                                  ...p,
-                                  name: label,
-                                  raw_name: rawName || label,
-                                })
-                              }
-                            >
-                              +
-                            </Button>
+                            <div className="muted" style={{ fontSize: 12 }}>
+                              ID: {p.id}
+                              {p.code ? ` · ${p.code}` : ""}
+                              {p.alias && p.alias !== p.name ? <span>{` · ${p.name}`}</span> : null}
+                            </div>
                           </div>
-                        );
-                      })}
+
+                          <Button
+                            onClick={() =>
+                              addLine({
+                                ...p,
+                                name: p.display_name || p.alias || p.name,
+                                raw_name: p.name,
+                              })
+                            }
+                          >
+                            +
+                          </Button>
+                        </div>
+                      ))}
                       {!visible.length && (
                         <div className="muted">Sin productos para mostrar en esta sección</div>
-                      )}
-                    </div>
-
-                    <div className="spacer" />
-                    <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, flexWrap: "wrap" }}>
-                      {!isCompleted ? (
-                        <Button onClick={() => markSectionComplete(sid)}>
-                          {nextSection ? "Completar sección y seguir" : "Completar sección"}
-                        </Button>
-                      ) : (
-                        nextSection ? (
-                          <Button variant="secondary" onClick={() => setOpenSectionId(Number(nextSection.id))}>
-                            Ir a la siguiente
-                          </Button>
-                        ) : (
-                          <Button variant="secondary" disabled>
-                            Última sección
-                          </Button>
-                        )
                       )}
                     </div>
                   </div>
