@@ -25,6 +25,13 @@ function labelStatus(q) {
     return "Borrador";
   }
 
+  if (q?.fulfillment_mode === "acopio" && q?.acopio_to_produccion_status === "pending") {
+    return "Acopio · Solicitud a Producción";
+  }
+  if (q?.fulfillment_mode === "acopio" && q?.acopio_to_produccion_status === "rejected") {
+    return "Acopio · Solicitud rechazada";
+  }
+
   if (s === "pending_approvals") {
     if (c === "pending" && t === "pending") return "Pendiente Comercial y Técnica";
     if (c === "approved" && t === "pending") return "Pendiente Técnica";
@@ -176,12 +183,16 @@ export default function PresupuestosPage() {
                       <Button onClick={() => navigate(r.catalog_kind === "ipanel" ? `/cotizador/ipanel/${r.id}` : `/cotizador/${r.id}`)}>Editar</Button>
                     )}
                     {filter === "acopio" && (
-                      <Button
-                        disabled={moveM.isPending}
-                        onClick={() => moveM.mutate(r.id)}
-                      >
-                        Pasar a Producción
-                      </Button>
+                      r.acopio_to_produccion_status === "pending" ? (
+                        <span className="muted">Solicitud en revisión</span>
+                      ) : (
+                        <Button
+                          disabled={moveM.isPending}
+                          onClick={() => moveM.mutate(r.id)}
+                        >
+                          Solicitar paso a Producción
+                        </Button>
+                      )
                     )}
                   </td>
                 </tr>

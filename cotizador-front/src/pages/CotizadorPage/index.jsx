@@ -46,6 +46,7 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
   } = useQuoteStore();
 
   const [ivaRate] = useState(IVA_RATE_DEFAULT);
+  const [destinationPickerOpen, setDestinationPickerOpen] = useState(false);
 
   useEffect(() => {
     if (!idParam) {
@@ -161,11 +162,12 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
   });
 
   const confirmM = useMutation({
-    mutationFn: async () => {
+    mutationFn: async ({ fulfillment_mode } = {}) => {
+      const nextMode = String(fulfillment_mode || buildPayloadForBack()?.fulfillment_mode || "acopio").trim();
       const payload = {
         ...buildPayloadForBack(),
         catalog_kind: catalogKind,
-        fulfillment_mode: buildPayloadForBack()?.fulfillment_mode || "acopio",
+        fulfillment_mode: nextMode,
       };
       validateConfirm(payload);
 
@@ -182,25 +184,19 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
         return await submitFinalQuote(id);
       }
 
-      const raw = window.prompt("Confirmar presupuesto.\nEscribí 'A' para Acopio o 'P' para Producción:", "A");
-      if (!raw) throw new Error("Confirmación cancelada.");
-      const v = raw.trim().toUpperCase();
-      let dest = "acopio";
-
-      if (v === "A") {
-        dest = "acopio";
+      if (nextMode === "acopio") {
         window.alert("Tendrá una instancia para poder aplicar cambios al presupuesto.");
-      } else if (v === "P") {
-        dest = "produccion";
+      } else if (nextMode === "produccion") {
         const ok = window.confirm("No podrá realizar cambio alguno al presupuesto, ¿desea continuar?");
         if (!ok) throw new Error("Confirmación cancelada.");
       } else {
-        throw new Error("Opción inválida. Usá 'A' o 'P'.");
+        throw new Error("Destino inválido.");
       }
 
-      return await confirmQuote(id, { fulfillment_mode: dest });
+      return await confirmQuote(id, { fulfillment_mode: nextMode });
     },
     onSuccess: (q) => {
+      setDestinationPickerOpen(false);
       setQuoteMeta({ quoteId: q.id, status: q.status, rejectionNotes: q.rejection_notes });
       qc.invalidateQueries({ queryKey: ["quotes", "mine"] });
       navigate(`/presupuestos/${q.id}`);
@@ -291,7 +287,17 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
           {user?.is_distribuidor ? <Button variant="secondary" onClick={onDownloadProforma}>PDF proforma</Button> : null}
           {canOpenDoor ? <Button variant="ghost" onClick={() => doorM.mutate()} disabled={doorM.isPending}>{doorM.isPending ? "Abriendo puerta..." : "Puerta"}</Button> : null}
           <Button onClick={() => saveM.mutate()} disabled={saveM.isPending}>{saveM.isPending ? "Guardando..." : "Guardar"}</Button>
-          <Button variant="primary" onClick={() => confirmM.mutate()} disabled={!canConfirm || confirmM.isPending}>
+          <Button
+            variant="primary"
+            onClick={() => {
+              if (isRevisionQuote) {
+                confirmM.mutate({ fulfillment_mode: buildPayloadForBack()?.fulfillment_mode || "acopio" });
+                return;
+              }
+              setDestinationPickerOpen(true);
+            }}
+            disabled={!canConfirm || confirmM.isPending}
+          >
             {confirmM.isPending ? "Confirmando..." : (isRevisionQuote ? "Enviar cotización final" : "Confirmar presupuesto")}
           </Button>
         </div>
@@ -331,6 +337,66 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
       {saveM.isError && <div style={{ color: "#d93025", fontSize: 13 }}>{saveM.error.message}</div>}
       {confirmM.isError && <div style={{ color: "#d93025", fontSize: 13 }}>{confirmM.error.message}</div>}
       {doorM.isError && <div style={{ color: "#d93025", fontSize: 13 }}>{doorM.error.message}</div>}
+
+      {destinationPickerOpen && !isRevisionQuote && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(17, 24, 39, 0.4)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 16,
+            zIndex: 1000,
+          }}
+        >
+          <div className="card" style={{ width: "100%", maxWidth: 560 }}>
+            <h3 style={{ marginTop: 0, marginBottom: 8 }}>Confirmar presupuesto</h3>
+            <div className="muted">Elegí si el portón queda en Acopio o pasa directamente a Producción.</div>
+
+            <div className="spacer" />
+
+            <div style={{ display: "grid", gap: 12 }}>
+              <div style={{ border: "1px solid #e5e7eb", borderRadius: 14, padding: 14 }}>
+                <div style={{ fontWeight: 900, marginBottom: 6 }}>Acopio</div>
+                <div className="muted">El presupuesto queda editable y después vas a poder solicitar su paso a Producción.</div>
+                <div className="spacer" />
+                <Button
+                  onClick={() => {
+                    setDestinationPickerOpen(false);
+                    confirmM.mutate({ fulfillment_mode: "acopio" });
+                  }}
+                  disabled={confirmM.isPending}
+                >
+                  Confirmar Acopio
+                </Button>
+              </div>
+
+              <div style={{ border: "1px solid #e5e7eb", borderRadius: 14, padding: 14 }}>
+                <div style={{ fontWeight: 900, marginBottom: 6 }}>Producción</div>
+                <div className="muted">El presupuesto sigue su circuito sin instancia de cambios posteriores.</div>
+                <div className="spacer" />
+                <Button
+                  variant="primary"
+                  onClick={() => {
+                    setDestinationPickerOpen(false);
+                    confirmM.mutate({ fulfillment_mode: "produccion" });
+                  }}
+                  disabled={confirmM.isPending}
+                >
+                  Confirmar Producción
+                </Button>
+              </div>
+            </div>
+
+            <div className="spacer" />
+            <Button variant="ghost" onClick={() => setDestinationPickerOpen(false)} disabled={confirmM.isPending}>
+              Cancelar
+            </Button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

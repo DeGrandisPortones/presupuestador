@@ -26,21 +26,23 @@ export async function updateQuote(id, payload) {
   return data.quote;
 }
 
-export async function submitQuote(id) {
-  const { data } = await http.post(`/api/quotes/${id}/submit`);
+export async function submitQuote(id, payload = {}) {
+  const body = payload && typeof payload === "object" ? payload : {};
+  const { data } = await http.post(`/api/quotes/${id}/submit`, body);
   if (!data?.ok) throw new Error(data?.error || "No se pudo enviar a aprobación");
   return data.quote;
 }
 
-export async function confirmQuote(id) {
+export async function confirmQuote(id, payload = {}) {
+  const body = payload && typeof payload === "object" ? payload : {};
   try {
-    const { data } = await http.post(`/api/quotes/${id}/confirm`);
+    const { data } = await http.post(`/api/quotes/${id}/confirm`, body);
     if (!data?.ok) throw new Error(data?.error || "No se pudo confirmar el presupuesto");
     return data.quote;
   } catch (e) {
     const msg = String(e?.message || "").toLowerCase();
     if (msg.includes("not found") || msg.includes("404") || msg.includes("cannot post")) {
-      return await submitQuote(id);
+      return await submitQuote(id, body);
     }
     throw e;
   }
@@ -72,13 +74,13 @@ export async function requestProductionFromAcopio(id, { notes } = {}) {
 
 export async function moveToProduccion(id, { notes } = {}) {
   try {
-    const { data } = await http.post(`/api/quotes/${id}/move_to_produccion`, { notes });
-    if (!data?.ok) throw new Error(data?.error || "No se pudo mover a Producción");
-    return data.quote;
+    return await requestProductionFromAcopio(id, { notes });
   } catch (e) {
     const msg = String(e?.message || "").toLowerCase();
     if (msg.includes("not found") || msg.includes("404") || msg.includes("cannot post")) {
-      return await requestProductionFromAcopio(id, { notes });
+      const { data } = await http.post(`/api/quotes/${id}/move_to_produccion`, { notes });
+      if (!data?.ok) throw new Error(data?.error || "No se pudo mover a Producción");
+      return data.quote;
     }
     throw e;
   }

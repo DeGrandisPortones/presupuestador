@@ -49,6 +49,14 @@ function buildDoorCodeFromQuote(quote) {
   if (odooName) return normalizeDoorBaseCode(odooName);
   return buildFallbackDoorCode(String(quote.id || "").slice(0, 8));
 }
+function buildLinkedPortonLabel(quote) {
+  if (!quote) return "";
+  const odooName = safeText(quote.odoo_sale_order_name);
+  if (odooName) return odooName;
+  const id = safeText(quote.id);
+  if (id) return `Presupuesto ${id.slice(0, 8)}`;
+  return "";
+}
 function buildStandaloneDoorCode(id) {
   const n = Number(id || 0);
   return `P${String(n).padStart(5, "0")}`;
@@ -114,7 +122,7 @@ function buildInitialDoorRecord({ quote = null, user }) {
     proveedor_condiciones: "",
     fecha: nowDate(),
     nv_proveedor: "",
-    asociado_porton: safeText(quote?.odoo_sale_order_name),
+    asociado_porton: buildLinkedPortonLabel(quote),
     sentido_apertura: "ADENTRO",
     mano_bisagras: "IZQUIERDA",
     angulo_apertura: "90",
@@ -179,7 +187,12 @@ async function getDoorHydratedById(id) {
   const resolvedDoorCode = row.linked_quote_odoo_name
     ? buildDoorCodeFromQuote({ id: row.linked_quote_id, odoo_sale_order_name: row.linked_quote_odoo_name })
     : (row.door_code || buildStandaloneDoorCode(row.id));
-  return { ...row, door_code: resolvedDoorCode };
+  const record = row.record && typeof row.record === "object" ? { ...row.record } : {};
+  const linkedPortonLabel = buildLinkedPortonLabel({ id: row.linked_quote_id, odoo_sale_order_name: row.linked_quote_odoo_name });
+  if (!safeText(record.asociado_porton) && linkedPortonLabel) {
+    record.asociado_porton = linkedPortonLabel;
+  }
+  return { ...row, door_code: resolvedDoorCode, record };
 }
 async function resolveProductInfo(odoo, rawId) {
   const id = Number(rawId);
@@ -581,7 +594,11 @@ export function buildDoorsRouter(odooArg) {
       let linkedQuote = null;
       if (cur.linked_quote_id) linkedQuote = await getQuoteOwnedBySeller(cur.linked_quote_id, req.user.user_id);
       const nextDoorCode = linkedQuote ? (buildDoorCodeFromQuote(linkedQuote) || cur.door_code) : (cur.door_code || buildStandaloneDoorCode(id));
-      const core = extractDoorCore(record);
+      const nextRecord = {
+        ...record,
+        asociado_porton: linkedQuote ? buildLinkedPortonLabel(linkedQuote) : safeText(record?.asociado_porton),
+      };
+      const core = extractDoorCore(nextRecord);
 
       await dbQuery(
         `
@@ -594,7 +611,7 @@ export function buildDoorsRouter(odooArg) {
             updated_at = now()
         where id = $1
         `,
-        [id, JSON.stringify(record), nextDoorCode, core.supplierId, core.saleAmount || null, core.purchaseAmount || null]
+        [id, JSON.stringify(nextRecord), nextDoorCode, core.supplierId, core.saleAmount || null, core.purchaseAmount || null]
       );
 
       const door = await getDoorHydratedById(id);
