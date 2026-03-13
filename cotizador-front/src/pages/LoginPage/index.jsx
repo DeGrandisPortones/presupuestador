@@ -49,7 +49,7 @@ export default function LoginPage() {
   return (
     <div className="container" style={{ display: "flex", justifyContent: "center", paddingTop: 64 }}>
       <div className="card" style={{ width: 420 }}>
-        <h2 className="login-title" style={{ marginTop: 0 }}>Ingresar</h2>
+        <h2 className="login-title" style={{ marginTop: 0 }}></h2>
         <div className={`login-logos ${shake ? "shake" : ""}`} aria-label="Marcas">
           <img className="login-logo" src="/brands/dflex.png" alt="Dflex" />
           <img className="login-logo" src="/brands/degrandis.png" alt="DeGrandis Portones" />
