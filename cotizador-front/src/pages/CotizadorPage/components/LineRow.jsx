@@ -3,9 +3,7 @@ import { useQuoteStore } from "../../../domain/quote/store";
 
 export default function LineRow({ line, finalUnit, total, formatARS }) {
   const { setQty, removeLine } = useQuoteStore();
-  const rawName = String(line.raw_name || "").trim();
-  const visibleName = String(line.name || rawName || `Producto ${line.product_id}`).trim();
-  const showRawName = rawName && rawName !== visibleName;
+  const visibleName = String(line.name || line.raw_name || `Producto ${line.product_id}`).trim();
 
   return (
     <tr>
@@ -14,11 +12,6 @@ export default function LineRow({ line, finalUnit, total, formatARS }) {
         <div className="muted">
           ID: {line.product_id} {line.code ? `| ${line.code}` : ""}
         </div>
-        {showRawName ? (
-          <div className="muted" style={{ fontSize: 12 }}>
-            Nombre interno: {rawName}
-          </div>
-        ) : null}
       </td>
 
       <td className="right">
