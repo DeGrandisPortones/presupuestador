@@ -69,7 +69,7 @@ export default function HeaderBar({ pricelists, loadingPricelists, showMargin })
           </div>
         )}
 
-        <div style={{ flex: 1 }}>
+        <div style={{ flex: 1, minWidth: 220 }}>
           <div className="muted">Cliente final (nombre)</div>
           <Input
             value={endCustomer.name}
@@ -79,23 +79,43 @@ export default function HeaderBar({ pricelists, loadingPricelists, showMargin })
           />
         </div>
 
+        <div style={{ flex: 1, minWidth: 220 }}>
+          <div className="muted">Localidad</div>
+          <Input
+            value={endCustomer.city || ""}
+            onChange={(v) => setEndCustomer({ city: v })}
+            placeholder="Localidad"
+            style={{ width: "100%" }}
+          />
+        </div>
+
         <div style={{ flex: 1, minWidth: 260 }}>
           <div className="muted">Dirección</div>
           <Input
             value={endCustomer.address}
             onChange={(v) => setEndCustomer({ address: v })}
-            placeholder="Calle y altura, localidad"
+            placeholder="Calle y altura"
             style={{ width: "100%" }}
           />
         </div>
 
-        <div>
+        <div style={{ minWidth: 170 }}>
           <div className="muted">Teléfono</div>
           <Input
             value={endCustomer.phone}
             onChange={(v) => setEndCustomer({ phone: v })}
-            placeholder="Tel."
+            placeholder="Sin 0 y sin 15"
             style={{ minWidth: 160 }}
+          />
+        </div>
+
+        <div style={{ flex: 1, minWidth: 220 }}>
+          <div className="muted">Correo</div>
+          <Input
+            value={endCustomer.email || ""}
+            onChange={(v) => setEndCustomer({ email: v })}
+            placeholder="cliente@correo.com"
+            style={{ width: "100%" }}
           />
         </div>
 

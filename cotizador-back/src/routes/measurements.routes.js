@@ -6,8 +6,10 @@ import { ensureQuotesMeasurementColumns } from "../quotesSchema.js";
 
 const MEASUREMENT_PRODUCT_ID = Number(process.env.ODOO_MEASUREMENT_PRODUCT_ID || 2865);
 
-function requireMedidor(req, res, next) {
-  if (!req.user?.is_medidor) return res.status(403).json({ ok: false, error: "No autorizado" });
+function requireMeasurementEditor(req, res, next) {
+  if (!req.user?.is_medidor && !req.user?.is_rev_tecnica) {
+    return res.status(403).json({ ok: false, error: "No autorizado" });
+  }
   next();
 }
 
@@ -52,6 +54,68 @@ function isUuid(v) {
 
 function makeShareToken() {
   return crypto.randomBytes(24).toString("hex");
+}
+
+function onlyDigits(v) {
+  return String(v || "").replace(/\D/g, "");
+}
+
+function validatePhone(phone, { required = false } = {}) {
+  const raw = String(phone || "").trim();
+  if (!raw) return required ? "Falta end_customer.phone" : null;
+  const digits = onlyDigits(raw);
+  if (!digits) return required ? "Falta end_customer.phone" : null;
+  if (digits.startsWith("54")) return "El teléfono debe guardarse sin 54, sin 0 y sin 15";
+  if (digits.startsWith("0")) return "El teléfono debe guardarse sin 0 en la característica";
+  if (![10, 11].includes(digits.length)) return "El teléfono debe guardarse sin 0 y sin 15";
+  return null;
+}
+
+function validateEmail(email) {
+  const raw = String(email || "").trim();
+  if (!raw) return null;
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(raw) ? null : "Correo inválido";
+}
+
+function validateMaps(url, { required = false } = {}) {
+  const raw = String(url || "").trim();
+  if (!raw) return required ? "Falta end_customer.maps_url" : null;
+
+  try {
+    const parsed = new URL(raw);
+    const host = String(parsed.hostname || "").toLowerCase();
+    const path = String(parsed.pathname || "").toLowerCase();
+    if (["maps.app.goo.gl", "www.google.com", "google.com", "maps.google.com", "g.page"].includes(host)) return null;
+    if (host.endsWith(".google.com") && path.includes("maps")) return null;
+  } catch {}
+
+  return "Google Maps inválido";
+}
+
+function mergeEndCustomer(current, patch) {
+  if (!patch || typeof patch !== "object") return current || {};
+  return {
+    ...(current || {}),
+    name: patch.name ?? current?.name ?? "",
+    phone: patch.phone ?? current?.phone ?? "",
+    email: patch.email ?? current?.email ?? "",
+    address: patch.address ?? current?.address ?? "",
+    city: patch.city ?? current?.city ?? "",
+    maps_url: patch.maps_url ?? current?.maps_url ?? "",
+  };
+}
+
+function validateEndCustomerForMeasurement(endCustomer, { requireWhatsapp = false } = {}) {
+  const phoneErr = validatePhone(endCustomer?.phone, { required: requireWhatsapp });
+  if (phoneErr) return phoneErr;
+
+  const emailErr = validateEmail(endCustomer?.email);
+  if (emailErr) return emailErr;
+
+  const mapsErr = validateMaps(endCustomer?.maps_url, { required: false });
+  if (mapsErr) return mapsErr;
+
+  return null;
 }
 
 export function buildMeasurementsRouter() {
@@ -220,7 +284,7 @@ export function buildMeasurementsRouter() {
     }
   });
 
-  router.put("/:id", requireMedidor, async (req, res, next) => {
+  router.put("/:id", requireMeasurementEditor, async (req, res, next) => {
     try {
       const u = req.user;
       const id = String(req.params.id || "").trim();
@@ -231,6 +295,7 @@ export function buildMeasurementsRouter() {
       if (!form || typeof form !== "object") return res.status(400).json({ ok: false, error: "Falta form (objeto)" });
 
       const submit = body.submit === true;
+      const endCustomer = body.end_customer ?? null;
 
       const cur = await dbQuery(`select * from public.presupuestador_quotes where id=$1 limit 1`, [id]);
       const quote = cur.rows?.[0];
@@ -240,48 +305,86 @@ export function buildMeasurementsRouter() {
         return res.status(400).json({ ok: false, error: "Este presupuesto no requiere medición" });
       }
 
-      const st = quote.measurement_status || "none";
-      if (st === "approved") return res.status(409).json({ ok: false, error: "La medición ya fue aprobada" });
-      if (st === "submitted" && !quote.measurement_review_notes) {
-        return res.status(409).json({ ok: false, error: "La medición ya fue enviada. Esperá la revisión." });
-      }
-      if (st === "submitted" && quote.measurement_status !== "needs_fix") {
-        return res.status(409).json({ ok: false, error: "La medición ya fue enviada. Esperá la revisión." });
+      const currentStatus = String(quote.measurement_status || "none").toLowerCase().trim();
+      if (!u?.is_rev_tecnica) {
+        if (currentStatus === "approved") {
+          return res.status(409).json({ ok: false, error: "La medición ya fue aprobada" });
+        }
+        if (currentStatus === "submitted") {
+          return res.status(409).json({ ok: false, error: "La medición ya fue enviada. Esperá la revisión técnica." });
+        }
       }
 
-      const nextStatus = submit ? "submitted" : "pending";
-      const nextShareToken = submit ? String(quote.measurement_share_token || makeShareToken()) : null;
+      const nextCustomer = mergeEndCustomer(quote.end_customer || {}, endCustomer);
+      const customerErr = validateEndCustomerForMeasurement(nextCustomer, { requireWhatsapp: submit && !!u?.is_rev_tecnica });
+      if (customerErr) return res.status(400).json({ ok: false, error: customerErr });
 
+      if (u?.is_rev_tecnica) {
+        if (submit) {
+          const shareToken = String(quote.measurement_share_token || makeShareToken());
+          const upd = await dbQuery(
+            `
+            update public.presupuestador_quotes
+            set requires_measurement = true,
+                end_customer = $2::jsonb,
+                measurement_form = $3::jsonb,
+                measurement_status = 'approved',
+                measurement_review_notes = null,
+                measurement_review_by_user_id = $4,
+                measurement_review_at = now(),
+                measurement_share_token = coalesce($5, measurement_share_token),
+                measurement_share_enabled_at = coalesce(measurement_share_enabled_at, now())
+            where id = $1
+            returning *
+            `,
+            [id, JSON.stringify(nextCustomer), JSON.stringify(form), Number(u.user_id), shareToken]
+          );
+          return res.json({ ok: true, quote: upd.rows?.[0] || null });
+        }
+
+        const statusToKeep = currentStatus === "none" ? "submitted" : currentStatus;
+        const upd = await dbQuery(
+          `
+          update public.presupuestador_quotes
+          set requires_measurement = true,
+              end_customer = $2::jsonb,
+              measurement_form = $3::jsonb,
+              measurement_status = $4
+          where id = $1
+          returning *
+          `,
+          [id, JSON.stringify(nextCustomer), JSON.stringify(form), statusToKeep]
+        );
+        return res.json({ ok: true, quote: upd.rows?.[0] || null });
+      }
+
+      const nextStatus = submit ? "submitted" : (currentStatus === "needs_fix" ? "needs_fix" : "pending");
       const upd = await dbQuery(
         `
         update public.presupuestador_quotes
         set requires_measurement = true,
-            measurement_form = $2::jsonb,
-            measurement_status = $3,
+            end_customer = $2::jsonb,
+            measurement_form = $3::jsonb,
+            measurement_status = $4,
             measurement_review_notes = null,
             measurement_review_by_user_id = null,
             measurement_review_at = null,
-            measurement_assigned_to_user_id = coalesce(measurement_assigned_to_user_id, $4),
-            measurement_by_user_id = $4,
-            measurement_at = now(),
-            measurement_share_token = coalesce($5, measurement_share_token),
-            measurement_share_enabled_at = case
-              when $6::boolean = true then coalesce(measurement_share_enabled_at, now())
-              else measurement_share_enabled_at
-            end
+            measurement_assigned_to_user_id = coalesce(measurement_assigned_to_user_id, $5),
+            measurement_by_user_id = $5,
+            measurement_at = now()
         where id = $1
         returning *
         `,
-        [id, JSON.stringify(form), nextStatus, Number(u.user_id), nextShareToken, submit]
+        [id, JSON.stringify(nextCustomer), JSON.stringify(form), nextStatus, Number(u.user_id)]
       );
 
-      res.json({ ok: true, quote: upd.rows?.[0] || null });
+      return res.json({ ok: true, quote: upd.rows?.[0] || null });
     } catch (e) {
       next(e);
     }
   });
 
-  router.post("/:id/review", async (req, res, next) => {
+  router.post("/:id/review", requireTechnicalReviewer, async (req, res, next) => {
     try {
       const u = req.user;
       const id = String(req.params.id || "").trim();
@@ -295,26 +398,25 @@ export function buildMeasurementsRouter() {
       const quote = cur.rows?.[0];
       if (!quote) return res.status(404).json({ ok: false, error: "Presupuesto no encontrado" });
 
-      const isOwner = String(quote.created_by_user_id) === String(u.user_id);
-      const isSeller = !!(u.is_vendedor || u.is_distribuidor);
-      if (!isOwner || !isSeller) return res.status(403).json({ ok: false, error: "No autorizado" });
-
-      if (quote.measurement_status !== "submitted") {
+      if (!["submitted", "approved"].includes(String(quote.measurement_status || "").toLowerCase())) {
         return res.status(409).json({ ok: false, error: "La medición no está lista para revisar" });
       }
 
       if (act === "approve") {
+        const shareToken = String(quote.measurement_share_token || makeShareToken());
         const upd = await dbQuery(
           `
           update public.presupuestador_quotes
           set measurement_status = 'approved',
               measurement_review_by_user_id = $2,
               measurement_review_at = now(),
-              measurement_review_notes = null
+              measurement_review_notes = null,
+              measurement_share_token = coalesce($3, measurement_share_token),
+              measurement_share_enabled_at = coalesce(measurement_share_enabled_at, now())
           where id = $1
           returning *
           `,
-          [id, Number(u.user_id)]
+          [id, Number(u.user_id), shareToken]
         );
         return res.json({ ok: true, quote: upd.rows?.[0] || null });
       }

@@ -1,15 +1,28 @@
-Parche de corrección para presupuestador
+PATCH - localidad + corrección de contacto en medición + revisión técnica previa a WhatsApp
 
-Archivos incluidos:
-- cotizador-front/src/api/quotes.js
+Incluye:
+- Localidad en presupuestos (end_customer.city)
+- Campo de correo visible en presupuesto
+- Validaciones front para teléfono AR, correo y Google Maps
+- Localidad visible en listados de Presupuestos y Mediciones
+- En Medición se pueden corregir teléfono / correo / Google Maps
+- Nuevo flujo:
+  Medidor completa -> envía a Técnica
+  Técnica revisa / puede editar la planilla -> aprueba y abre WhatsApp
+  Técnica también puede devolver a corregir
+
+Archivos:
+- cotizador-front/src/utils/contactValidation.js
+- cotizador-front/src/domain/quote/store.js
+- cotizador-front/src/pages/CotizadorPage/components/HeaderBar.jsx
 - cotizador-front/src/pages/CotizadorPage/index.jsx
 - cotizador-front/src/pages/PresupuestosPage/index.jsx
-- cotizador-back/src/routes/doors.routes.js
+- cotizador-front/src/pages/MedicionesPage/index.jsx
+- cotizador-front/src/pages/MedicionDetailPage/index.jsx
+- cotizador-front/src/pages/AprobacionTecnicaPage/index.jsx
+- cotizador-front/src/api/measurements.js
+- cotizador-back/src/routes/measurements.routes.js
 
-Qué corrige:
-1. Reemplaza el prompt A/P por un selector visual con botones Acopio / Producción.
-2. Envía realmente fulfillment_mode al backend al confirmar.
-3. Hace que “Pasar a Producción” desde Acopio solicite el cambio en vez de moverlo directo.
-4. Mantiene visible el portón vinculado en la puerta aunque todavía no exista NV de Odoo.
-
-Copiar estos archivos sobre el repo y reconstruir front/back según su flujo habitual.
+Nota:
+- Este patch deja endurecida la validación del flujo de mediciones en backend.
+- La validación estricta del submit de presupuestos quedó implementada en frontend (UI), y la localidad se persiste en end_customer.city.

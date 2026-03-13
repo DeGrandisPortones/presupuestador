@@ -10,7 +10,7 @@ const PAGE_SIZE = 25;
 function labelMeasurementStatus(q) {
   const s = q?.measurement_status || "none";
   if (s === "pending") return "Pendiente";
-  if (s === "submitted") return "Enviada";
+  if (s === "submitted") return "A revisión técnica";
   if (s === "needs_fix") return "A corregir";
   if (s === "approved") return "Aprobada";
   if (s === "none") return "—";
@@ -42,9 +42,13 @@ function labelStatus(q) {
   return s;
 }
 
+function localityLabel(q) {
+  return q?.end_customer?.city || "—";
+}
+
 export default function PresupuestosPage() {
   const navigate = useNavigate();
-  const [filter, setFilter] = useState("all"); // all | saved | pending | rejected | acopio | produccion | mediciones
+  const [filter, setFilter] = useState("all");
   const [searchCustomer, setSearchCustomer] = useState("");
   const [page, setPage] = useState(1);
 
@@ -175,6 +179,7 @@ export default function PresupuestosPage() {
                 <tr>
                   <th>Fecha</th>
                   <th>Cliente</th>
+                  <th>Localidad</th>
                   <th>Estado</th>
                   <th>Destino</th>
                   {filter === "mediciones" ? <th>Medición</th> : null}
@@ -186,6 +191,7 @@ export default function PresupuestosPage() {
                   <tr key={r.id}>
                     <td>{fmtDate(r.created_at)}</td>
                     <td>{r.end_customer?.name || <span className="muted">(sin nombre)</span>}</td>
+                    <td>{localityLabel(r)}</td>
                     <td>{labelStatus(r)}</td>
                     <td>{r.fulfillment_mode === "acopio" ? "Acopio" : "Producción"}</td>
                     {filter === "mediciones" ? <td>{labelMeasurementStatus(r)}</td> : null}

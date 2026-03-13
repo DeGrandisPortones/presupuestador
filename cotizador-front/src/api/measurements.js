@@ -28,8 +28,8 @@ export async function getMeasurement(id) {
   return res.data?.quote;
 }
 
-export async function saveMeasurement(id, { form, submit = false } = {}) {
-  const res = await http.put(`/api/measurements/${id}`, { form, submit });
+export async function saveMeasurement(id, { form, submit = false, endCustomer = null } = {}) {
+  const res = await http.put(`/api/measurements/${id}`, { form, submit, end_customer: endCustomer });
   return res.data?.quote;
 }
 

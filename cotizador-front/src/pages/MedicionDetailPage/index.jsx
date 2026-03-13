@@ -6,11 +6,16 @@ import { getMedicionPublicPdfUrl } from "../../api/pdf.js";
 import Button from "../../ui/Button.jsx";
 import Input from "../../ui/Input.jsx";
 import { useAuthStore } from "../../domain/auth/store.js";
-import { getMeasurement, saveMeasurement } from "../../api/measurements.js";
+import { getMeasurement, reviewMeasurement, saveMeasurement } from "../../api/measurements.js";
 import {
   buildMeasurementWhatsappMessage,
   buildWhatsappUrl,
 } from "../../utils/whatsapp.js";
+import {
+  validateArgentinaPhone,
+  validateEmailAddress,
+  validateGoogleMapsUrl,
+} from "../../utils/contactValidation.js";
 
 function todayISO() {
   const d = new Date();
@@ -37,6 +42,18 @@ function deriveEnAcopio(quote) {
   if (st && st !== "none") return true;
   if (quote?.acopio_to_produccion_requested_at) return true;
   return false;
+}
+
+function makeEditableCustomer(quote) {
+  const endCustomer = quote?.end_customer || {};
+  return {
+    name: String(endCustomer.name || "").trim(),
+    phone: String(endCustomer.phone || "").trim(),
+    email: String(endCustomer.email || "").trim(),
+    address: String(endCustomer.address || "").trim(),
+    city: String(endCustomer.city || "").trim(),
+    maps_url: String(endCustomer.maps_url || "").trim(),
+  };
 }
 
 const SCHEME_RECT_PCTS = {
@@ -90,18 +107,10 @@ function normalizeMeasurementForm(raw, quote) {
     if (f.ancho_mm && !f.esquema.ancho[1]) f.esquema.ancho[1] = String(f.ancho_mm);
   }
 
-  if (f.estructura_metalica !== undefined && typeof f.estructura_metalica !== "boolean") {
-    f.estructura_metalica = isYes(f.estructura_metalica);
-  }
-  if (f.lucera !== undefined && typeof f.lucera !== "boolean") {
-    f.lucera = isYes(f.lucera);
-  }
-  if (f.traslado !== undefined && typeof f.traslado !== "boolean") {
-    f.traslado = isYes(f.traslado);
-  }
-  if (f.relevamiento !== undefined && typeof f.relevamiento !== "boolean") {
-    f.relevamiento = isYes(f.relevamiento);
-  }
+  if (f.estructura_metalica !== undefined && typeof f.estructura_metalica !== "boolean") f.estructura_metalica = isYes(f.estructura_metalica);
+  if (f.lucera !== undefined && typeof f.lucera !== "boolean") f.lucera = isYes(f.lucera);
+  if (f.traslado !== undefined && typeof f.traslado !== "boolean") f.traslado = isYes(f.traslado);
+  if (f.relevamiento !== undefined && typeof f.relevamiento !== "boolean") f.relevamiento = isYes(f.relevamiento);
 
   if (f.color_revestimiento !== "Otros") {
     f.color_revestimiento_otro = f.color_revestimiento_otro || "";
@@ -183,6 +192,14 @@ function Select({ value, onChange, options, placeholder = "—" }) {
   );
 }
 
+function measurementStatusLabel(s) {
+  if (s === "pending") return "Pendiente";
+  if (s === "submitted") return "Pendiente revisión técnica";
+  if (s === "needs_fix") return "A corregir";
+  if (s === "approved") return "Aprobada";
+  return s || "—";
+}
+
 export default function MedicionDetailPage() {
   const { id } = useParams();
   const quoteId = id ? String(id) : null;
@@ -197,10 +214,14 @@ export default function MedicionDetailPage() {
   });
 
   const quote = q.data;
-  const endCustomer = quote?.end_customer || {};
 
   const [form, setForm] = useState(null);
+  const [customer, setCustomer] = useState(null);
   const [shareInfo, setShareInfo] = useState(null);
+
+  const isMedidor = !!user?.is_medidor;
+  const isTechnical = !!user?.is_rev_tecnica;
+  const canEdit = isMedidor || isTechnical;
 
   function openPendingWhatsappWindow() {
     try {
@@ -283,12 +304,24 @@ export default function MedicionDetailPage() {
     }
   }
 
+  function validateCustomerData(nextCustomer, { requireWhatsapp = false } = {}) {
+    const phoneErr = validateArgentinaPhone(nextCustomer?.phone, { required: requireWhatsapp });
+    if (phoneErr) throw new Error(phoneErr);
+
+    const emailErr = validateEmailAddress(nextCustomer?.email, { required: false });
+    if (emailErr) throw new Error(emailErr);
+
+    const mapsErr = validateGoogleMapsUrl(nextCustomer?.maps_url, { required: false });
+    if (mapsErr) throw new Error(mapsErr);
+  }
+
   useEffect(() => {
     if (!quote) return;
     const f = quote.measurement_form
       ? normalizeMeasurementForm(quote.measurement_form, quote)
       : makeEmptyForm(quote);
     setForm(f);
+    setCustomer(makeEditableCustomer(quote));
   }, [quote]);
 
   useEffect(() => {
@@ -298,13 +331,25 @@ export default function MedicionDetailPage() {
   }, []);
 
   const mSave = useMutation({
-    mutationFn: ({ submit }) => saveMeasurement(quoteId, { form, submit }),
+    mutationFn: ({ submit }) => {
+      validateCustomerData(customer, { requireWhatsapp: submit && isTechnical });
+      return saveMeasurement(quoteId, { form, submit, endCustomer: customer });
+    },
     onMutate: () => setShareInfo(null),
     onSuccess: async (savedQuote, variables) => {
       await q.refetch();
 
       if (!variables?.submit) {
-        setShareInfo({ tone: "success", message: "Medición guardada." });
+        setShareInfo({ tone: "success", message: isTechnical ? "Cambios guardados." : "Medición guardada." });
+        return;
+      }
+
+      if (isMedidor) {
+        closePendingWhatsappWindow();
+        setShareInfo({
+          tone: "success",
+          message: "Medición enviada a Técnica para revisión.",
+        });
         return;
       }
 
@@ -312,7 +357,7 @@ export default function MedicionDetailPage() {
       const publicPdfUrl = getMedicionPublicPdfUrl(token);
       const whatsappText = buildMeasurementWhatsappMessage(publicPdfUrl);
       const whatsappUrl = buildWhatsappUrl(
-        savedQuote?.end_customer?.phone || endCustomer.phone,
+        savedQuote?.end_customer?.phone || customer?.phone,
         whatsappText
       );
 
@@ -321,8 +366,8 @@ export default function MedicionDetailPage() {
         setShareInfo({
           tone: opened ? "success" : "warning",
           message: opened
-            ? "Medición enviada. Se abrió WhatsApp con el mensaje listo para el cliente."
-            : "Medición enviada. No se pudo abrir WhatsApp automáticamente, pero el mensaje quedó listo.",
+            ? "Medición aprobada. Se abrió WhatsApp con el mensaje listo para el cliente."
+            : "Medición aprobada. No se pudo abrir WhatsApp automáticamente, pero el mensaje quedó listo.",
           whatsappUrl,
           publicPdfUrl,
         });
@@ -332,7 +377,7 @@ export default function MedicionDetailPage() {
       closePendingWhatsappWindow();
       setShareInfo({
         tone: "warning",
-        message: "Medición enviada, pero falta el teléfono del cliente para abrir WhatsApp.",
+        message: "Medición aprobada, pero falta un teléfono válido para abrir WhatsApp.",
         publicPdfUrl,
       });
     },
@@ -340,12 +385,27 @@ export default function MedicionDetailPage() {
       closePendingWhatsappWindow();
       setShareInfo({
         tone: "warning",
-        message: error?.message || "No se pudo enviar la medición.",
+        message: error?.message || "No se pudo guardar la medición.",
       });
     },
   });
 
-  const canEdit = !!user?.is_medidor;
+  const rejectM = useMutation({
+    mutationFn: (notes) => reviewMeasurement(quoteId, { action: "reject", notes }),
+    onSuccess: async () => {
+      await q.refetch();
+      setShareInfo({
+        tone: "warning",
+        message: "Medición devuelta al medidor para corregir.",
+      });
+    },
+    onError: (error) => {
+      setShareInfo({
+        tone: "warning",
+        message: error?.message || "No se pudo devolver la medición.",
+      });
+    },
+  });
 
   const leftRightOptions = useMemo(
     () => ([
@@ -365,12 +425,12 @@ export default function MedicionDetailPage() {
 
   const setYesNoBool = (key, v) => setForm({ ...form, [key]: v === "si" });
 
-  if (!user?.is_medidor) {
+  if (!isMedidor && !isTechnical) {
     return (
       <div className="container">
         <div className="card">
           <h2 style={{ marginTop: 0 }}>Medición</h2>
-          <div className="muted">No tenés permisos (solo Medidor).</div>
+          <div className="muted">No tenés permisos.</div>
           <div className="spacer" />
           <Button variant="ghost" onClick={() => navigate("/menu")}>Volver</Button>
         </div>
@@ -384,11 +444,20 @@ export default function MedicionDetailPage() {
         <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
           <div>
             <h2 style={{ margin: 0 }}>Medición · Presupuesto #{quoteId}</h2>
-            <div className="muted">Completar y luego “Aceptar” para enviar la medición y abrir el WhatsApp del cliente.</div>
+            <div className="muted">
+              {isTechnical
+                ? "Revisar la planilla, corregir si hace falta y aprobar para enviar WhatsApp al cliente."
+                : "Completar la planilla y enviarla a Técnica para revisión."}
+            </div>
+            {quote ? (
+              <div className="muted" style={{ marginTop: 6 }}>
+                Estado: <b>{measurementStatusLabel(quote.measurement_status)}</b>
+              </div>
+            ) : null}
           </div>
 
           <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
-            <Button variant="ghost" onClick={() => navigate("/mediciones")}>Volver</Button>
+            <Button variant="ghost" onClick={() => navigate(isTechnical ? "/aprobacion/tecnica" : "/mediciones")}>Volver</Button>
           </div>
         </div>
 
@@ -405,20 +474,45 @@ export default function MedicionDetailPage() {
           <Section title="Membrete">
             <Row>
               <Field label="Cliente">
-                <div style={{ fontWeight: 800 }}>{endCustomer.name || "(sin nombre)"}</div>
+                <Input value={customer?.name || ""} onChange={() => {}} disabled style={{ width: "100%", opacity: 0.9 }} />
+              </Field>
+              <Field label="Localidad">
+                <Input value={customer?.city || ""} onChange={() => {}} disabled style={{ width: "100%", opacity: 0.9 }} />
               </Field>
               <Field label="Teléfono">
-                <div>{endCustomer.phone || "—"}</div>
+                <Input
+                  value={customer?.phone || ""}
+                  onChange={(v) => setCustomer((prev) => ({ ...(prev || {}), phone: v }))}
+                  placeholder="Sin 0 y sin 15"
+                  style={{ width: "100%" }}
+                  disabled={!canEdit}
+                />
               </Field>
               <Field label="Dirección">
-                <div>{endCustomer.address || "—"}</div>
+                <Input value={customer?.address || ""} onChange={() => {}} disabled style={{ width: "100%", opacity: 0.9 }} />
+              </Field>
+            </Row>
+
+            <div className="spacer" />
+
+            <Row>
+              <Field label="Correo">
+                <Input
+                  value={customer?.email || ""}
+                  onChange={(v) => setCustomer((prev) => ({ ...(prev || {}), email: v }))}
+                  placeholder="cliente@correo.com"
+                  style={{ width: "100%" }}
+                  disabled={!canEdit}
+                />
               </Field>
               <Field label="Maps">
-                {endCustomer.maps_url ? (
-                  <a href={endCustomer.maps_url} target="_blank" rel="noreferrer">Abrir</a>
-                ) : (
-                  <span className="muted">—</span>
-                )}
+                <Input
+                  value={customer?.maps_url || ""}
+                  onChange={(v) => setCustomer((prev) => ({ ...(prev || {}), maps_url: v }))}
+                  placeholder="https://maps.app.goo.gl/..."
+                  style={{ width: "100%" }}
+                  disabled={!canEdit}
+                />
               </Field>
             </Row>
 
@@ -444,16 +538,16 @@ export default function MedicionDetailPage() {
               <Section title="Datos generales">
                 <Row>
                   <Field label="Fecha">
-                    <Input type="date" value={form.fecha || ""} onChange={(v) => setForm({ ...form, fecha: v })} style={{ width: "100%" }} />
+                    <Input type="date" value={form.fecha || ""} onChange={(v) => setForm({ ...form, fecha: v })} style={{ width: "100%" }} disabled={!canEdit} />
                   </Field>
                   <Field label="Distribuidor">
-                    <Input value={form.distribuidor || ""} onChange={(v) => setForm({ ...form, distribuidor: v })} style={{ width: "100%" }} />
+                    <Input value={form.distribuidor || ""} onChange={(v) => setForm({ ...form, distribuidor: v })} style={{ width: "100%" }} disabled={!canEdit} />
                   </Field>
                   <Field label="Cliente">
-                    <Input value={endCustomer.name || ""} onChange={() => {}} disabled style={{ width: "100%", opacity: 0.9 }} />
+                    <Input value={customer?.name || ""} onChange={() => {}} disabled style={{ width: "100%", opacity: 0.9 }} />
                   </Field>
                   <Field label="N° de portón (Nota de venta)">
-                    <Input value={form.nro_porton || ""} onChange={(v) => setForm({ ...form, nro_porton: v })} style={{ width: "100%" }} />
+                    <Input value={form.nro_porton || ""} onChange={(v) => setForm({ ...form, nro_porton: v })} style={{ width: "100%" }} disabled={!canEdit} />
                   </Field>
                 </Row>
               </Section>
@@ -461,7 +555,7 @@ export default function MedicionDetailPage() {
               <Section title="Parantes / Laterales">
                 <Row>
                   <Field label="Parantes (Cant)">
-                    <Input type="number" value={form.parantes?.cant || ""} onChange={(v) => setForm({ ...form, parantes: { ...(form.parantes || {}), cant: v } })} style={{ width: "100%" }} />
+                    <Input type="number" value={form.parantes?.cant || ""} onChange={(v) => setForm({ ...form, parantes: { ...(form.parantes || {}), cant: v } })} style={{ width: "100%" }} disabled={!canEdit} />
                   </Field>
                   <Field label="Lado de la puerta">
                     <Select value={form.lado_puerta || ""} onChange={(v) => setForm({ ...form, lado_puerta: v })} options={leftRightOptions} />
@@ -545,6 +639,7 @@ export default function MedicionDetailPage() {
                               setForm({ ...form, esquema: next });
                             }}
                             style={{ width: "100%" }}
+                            disabled={!canEdit}
                           />
                         </Field>
                       ))}
@@ -568,6 +663,7 @@ export default function MedicionDetailPage() {
                               setForm({ ...form, esquema: next });
                             }}
                             style={{ width: "100%" }}
+                            disabled={!canEdit}
                           />
                         </Field>
                       ))}
@@ -620,10 +716,10 @@ export default function MedicionDetailPage() {
                     <Select value={form.estructura_metalica ? "si" : "no"} onChange={(v) => setYesNoBool("estructura_metalica", v)} options={yesNoOptions} />
                   </Field>
                   <Field label="Rebaje lateral (mm)">
-                    <Input type="number" value={form.rebaje_lateral_mm || ""} onChange={(v) => setForm({ ...form, rebaje_lateral_mm: v })} style={{ width: "100%" }} />
+                    <Input type="number" value={form.rebaje_lateral_mm || ""} onChange={(v) => setForm({ ...form, rebaje_lateral_mm: v })} style={{ width: "100%" }} disabled={!canEdit} />
                   </Field>
                   <Field label="Rebaje inferior (mm)">
-                    <Input type="number" value={form.rebaje_inferior_mm || ""} onChange={(v) => setForm({ ...form, rebaje_inferior_mm: v })} style={{ width: "100%" }} />
+                    <Input type="number" value={form.rebaje_inferior_mm || ""} onChange={(v) => setForm({ ...form, rebaje_inferior_mm: v })} style={{ width: "100%" }} disabled={!canEdit} />
                   </Field>
                   <Field label="Anclaje de fijación">
                     <Select
@@ -745,7 +841,7 @@ export default function MedicionDetailPage() {
 
                   {form.color_revestimiento === "Otros" && (
                     <Field label="Otros (especificar)">
-                      <Input value={form.color_revestimiento_otro || ""} onChange={(v) => setForm({ ...form, color_revestimiento_otro: v })} style={{ width: "100%" }} />
+                      <Input value={form.color_revestimiento_otro || ""} onChange={(v) => setForm({ ...form, color_revestimiento_otro: v })} style={{ width: "100%" }} disabled={!canEdit} />
                     </Field>
                   )}
                 </Row>
@@ -766,12 +862,12 @@ export default function MedicionDetailPage() {
 
                   {form.lucera && (
                     <Field label="Cantidad (Lucera)">
-                      <Input type="number" value={form.lucera_cantidad || ""} onChange={(v) => setForm({ ...form, lucera_cantidad: v })} style={{ width: "100%" }} />
+                      <Input type="number" value={form.lucera_cantidad || ""} onChange={(v) => setForm({ ...form, lucera_cantidad: v })} style={{ width: "100%" }} disabled={!canEdit} />
                     </Field>
                   )}
 
                   <Field label="Peso del revestimiento a colocar">
-                    <Input type="number" value={form.peso_revestimiento || ""} onChange={(v) => setForm({ ...form, peso_revestimiento: v })} style={{ width: "100%" }} />
+                    <Input type="number" value={form.peso_revestimiento || ""} onChange={(v) => setForm({ ...form, peso_revestimiento: v })} style={{ width: "100%" }} disabled={!canEdit} />
                   </Field>
                 </Row>
               </Section>
@@ -794,10 +890,11 @@ export default function MedicionDetailPage() {
                       value={form.contacto_obra_nombre || ""}
                       onChange={(e) => setForm({ ...form, contacto_obra_nombre: e.target.value })}
                       style={{ width: "100%", minHeight: 64, padding: 10, borderRadius: 10, border: "1px solid #ddd", resize: "vertical" }}
+                      disabled={!canEdit}
                     />
                   </Field>
                   <Field label="Teléfono de contacto en obra">
-                    <Input type="tel" value={form.contacto_obra_tel || ""} onChange={(v) => setForm({ ...form, contacto_obra_tel: v })} style={{ width: "100%" }} />
+                    <Input type="tel" value={form.contacto_obra_tel || ""} onChange={(v) => setForm({ ...form, contacto_obra_tel: v })} style={{ width: "100%" }} disabled={!canEdit} />
                   </Field>
                 </Row>
               </Section>
@@ -807,6 +904,7 @@ export default function MedicionDetailPage() {
                   value={form.observaciones || ""}
                   onChange={(e) => setForm({ ...form, observaciones: e.target.value })}
                   style={{ width: "100%", minHeight: 100, padding: 10, borderRadius: 10, border: "1px solid #ddd", resize: "vertical" }}
+                  disabled={!canEdit}
                 />
               </Section>
 
@@ -815,9 +913,9 @@ export default function MedicionDetailPage() {
                   <Button
                     variant="secondary"
                     onClick={() => mSave.mutate({ submit: false })}
-                    disabled={!canEdit || mSave.isPending}
+                    disabled={!canEdit || mSave.isPending || rejectM.isPending}
                   >
-                    {mSave.isPending ? "Guardando…" : "Guardar"}
+                    {mSave.isPending ? "Guardando…" : (isTechnical ? "Guardar cambios" : "Guardar")}
                   </Button>
 
                   <Button
@@ -826,9 +924,9 @@ export default function MedicionDetailPage() {
                       const token = String(quote?.measurement_share_token || "").trim();
                       const publicPdfUrl = getMedicionPublicPdfUrl(token);
                       const whatsappText = buildMeasurementWhatsappMessage(publicPdfUrl);
-                      const whatsappUrl = buildWhatsappUrl(endCustomer.phone, whatsappText);
+                      const whatsappUrl = buildWhatsappUrl(customer?.phone, whatsappText);
 
-                      if (st === "submitted" || st === "approved") {
+                      if (isTechnical && st === "approved") {
                         if (whatsappUrl) {
                           window.open(whatsappUrl, "_blank", "noopener,noreferrer");
                           setShareInfo({
@@ -842,25 +940,43 @@ export default function MedicionDetailPage() {
 
                         setShareInfo({
                           tone: "warning",
-                          message: "La medición ya fue enviada, pero falta el teléfono del cliente para abrir WhatsApp.",
+                          message: "La medición ya fue aprobada, pero falta un teléfono válido para abrir WhatsApp.",
                           publicPdfUrl,
                         });
                         return;
                       }
 
-                      openPendingWhatsappWindow();
+                      if (isTechnical) openPendingWhatsappWindow();
                       mSave.mutate({ submit: true });
                     }}
-                    disabled={!canEdit || mSave.isPending}
+                    disabled={!canEdit || mSave.isPending || rejectM.isPending}
                   >
-                    {mSave.isPending ? "Enviando…" : "Aceptar (Enviar)"}
+                    {mSave.isPending
+                      ? (isTechnical ? "Aprobando…" : "Enviando…")
+                      : (isTechnical ? "Aprobar y enviar WhatsApp" : "Enviar a Técnica")}
                   </Button>
+
+                  {isTechnical && quote.measurement_status === "submitted" && (
+                    <Button
+                      variant="ghost"
+                      disabled={rejectM.isPending || mSave.isPending}
+                      onClick={() => {
+                        const msg = window.prompt("Motivo de la corrección:", quote.measurement_review_notes || "");
+                        if (msg === null) return;
+                        rejectM.mutate(msg);
+                      }}
+                    >
+                      {rejectM.isPending ? "Devolviendo…" : "Devolver para corregir"}
+                    </Button>
+                  )}
                 </div>
 
-                {mSave.isError && (
+                {(mSave.isError || rejectM.isError) && (
                   <>
                     <div className="spacer" />
-                    <div style={{ color: "#d93025", fontSize: 13 }}>{mSave.error.message}</div>
+                    <div style={{ color: "#d93025", fontSize: 13 }}>
+                      {mSave.error?.message || rejectM.error?.message}
+                    </div>
                   </>
                 )}
 
@@ -876,7 +992,7 @@ export default function MedicionDetailPage() {
                       }}
                     >
                       <div style={{ fontWeight: 900, marginBottom: 6 }}>
-                        {shareInfo.tone === "warning" ? "WhatsApp pendiente" : "WhatsApp preparado"}
+                        {shareInfo.tone === "warning" ? "Atención" : "Correcto"}
                       </div>
                       <div>{shareInfo.message}</div>
 

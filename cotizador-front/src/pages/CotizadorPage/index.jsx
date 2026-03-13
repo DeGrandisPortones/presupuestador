@@ -12,6 +12,11 @@ import toast from "react-hot-toast";
 import { useQuoteStore } from "../../domain/quote/store";
 import { IVA_RATE_DEFAULT } from "../../domain/quote/defaults";
 import { calcTotals } from "../../domain/quote/pricing";
+import {
+  validateArgentinaPhone,
+  validateEmailAddress,
+  validateGoogleMapsUrl,
+} from "../../utils/contactValidation.js";
 
 import Button from "../../ui/Button.jsx";
 
@@ -46,7 +51,6 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
   } = useQuoteStore();
 
   const [ivaRate] = useState(IVA_RATE_DEFAULT);
-  const [destinationPickerOpen, setDestinationPickerOpen] = useState(false);
 
   useEffect(() => {
     if (!idParam) {
@@ -105,12 +109,28 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
     };
   }
 
+  function validateCustomerContact(customer, { requirePhone = false, requireMaps = false, requireCity = false } = {}) {
+    const c = customer || {};
+    const city = String(c.city || "").trim();
+    if (requireCity && !city) throw new Error("Completá la localidad del cliente.");
+
+    const phoneErr = validateArgentinaPhone(c.phone, { required: requirePhone });
+    if (phoneErr) throw new Error(phoneErr);
+
+    const emailErr = validateEmailAddress(c.email, { required: false });
+    if (emailErr) throw new Error(emailErr);
+
+    const mapsErr = validateGoogleMapsUrl(c.maps_url, { required: requireMaps });
+    if (mapsErr) throw new Error(mapsErr);
+  }
+
   function validateDraft(payload) {
     const c = payload?.end_customer || {};
     const errs = [];
     if (!String(c.name || "").trim()) errs.push("Completá el nombre del cliente.");
     if (!Array.isArray(payload?.lines) || payload.lines.length === 0) errs.push("Agregá al menos un producto.");
     if (errs.length) throw new Error(errs[0]);
+    validateCustomerContact(c, { requirePhone: false, requireMaps: false, requireCity: false });
   }
 
   function validateConfirm(payload) {
@@ -118,14 +138,15 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
     const p = payload?.payload || {};
     const errs = [];
     if (!String(c.name || "").trim()) errs.push("Completá el nombre del cliente.");
-    if (!String(c.phone || "").trim()) errs.push("Completá el teléfono del cliente.");
     if (!String(c.address || "").trim()) errs.push("Completá la dirección del cliente.");
-    if (!String(c.maps_url || "").trim()) errs.push("Completá el URL de Google Maps del cliente.");
+    if (!String(c.city || "").trim()) errs.push("Completá la localidad del cliente.");
     if (!String(p.payment_method || "").trim()) errs.push("Seleccioná la forma de pago.");
     if ((catalogKind || "porton") === "porton" && !String(p.porton_type || "").trim()) errs.push("Seleccioná el tipo/sistema del portón.");
     if (String(p.condition_mode || "") === "special" && !String(p.condition_text || "").trim()) errs.push("Completá la condición especial.");
     if (!Array.isArray(payload?.lines) || payload.lines.length === 0) errs.push("Agregá al menos un producto.");
     if (errs.length) throw new Error(errs[0]);
+
+    validateCustomerContact(c, { requirePhone: true, requireMaps: true, requireCity: true });
   }
 
   function buildStandaloneDoorRecordSeed(baseRecord, payload) {
@@ -139,6 +160,7 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
       phone: String(payloadCustomer.phone || currentCustomer.phone || "").trim(),
       email: String(payloadCustomer.email || currentCustomer.email || "").trim(),
       address: String(payloadCustomer.address || currentCustomer.address || "").trim(),
+      city: String(payloadCustomer.city || currentCustomer.city || "").trim(),
       maps_url: String(payloadCustomer.maps_url || currentCustomer.maps_url || "").trim(),
     };
     record.obra_cliente = String(record.end_customer.name || record.obra_cliente || "").trim();
@@ -162,12 +184,11 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
   });
 
   const confirmM = useMutation({
-    mutationFn: async ({ fulfillment_mode } = {}) => {
-      const nextMode = String(fulfillment_mode || buildPayloadForBack()?.fulfillment_mode || "acopio").trim();
+    mutationFn: async () => {
       const payload = {
         ...buildPayloadForBack(),
         catalog_kind: catalogKind,
-        fulfillment_mode: nextMode,
+        fulfillment_mode: buildPayloadForBack()?.fulfillment_mode || "acopio",
       };
       validateConfirm(payload);
 
@@ -184,19 +205,18 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
         return await submitFinalQuote(id);
       }
 
-      if (nextMode === "acopio") {
-        window.alert("Tendrá una instancia para poder aplicar cambios al presupuesto.");
-      } else if (nextMode === "produccion") {
-        const ok = window.confirm("No podrá realizar cambio alguno al presupuesto, ¿desea continuar?");
-        if (!ok) throw new Error("Confirmación cancelada.");
+      const dest = String(payload.fulfillment_mode || "acopio").trim();
+
+      if (dest === "acopio") {
+        window.alert("El presupuesto quedará en Acopio y luego podrá solicitarse su paso a Producción.");
       } else {
-        throw new Error("Destino inválido.");
+        const ok = window.confirm("El presupuesto irá directo a Producción y no podrá modificarse. ¿Deseás continuar?");
+        if (!ok) throw new Error("Confirmación cancelada.");
       }
 
-      return await confirmQuote(id, { fulfillment_mode: nextMode });
+      return await confirmQuote(id, { fulfillment_mode: dest });
     },
     onSuccess: (q) => {
-      setDestinationPickerOpen(false);
       setQuoteMeta({ quoteId: q.id, status: q.status, rejectionNotes: q.rejection_notes });
       qc.invalidateQueries({ queryKey: ["quotes", "mine"] });
       navigate(`/presupuestos/${q.id}`);
@@ -287,17 +307,7 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
           {user?.is_distribuidor ? <Button variant="secondary" onClick={onDownloadProforma}>PDF proforma</Button> : null}
           {canOpenDoor ? <Button variant="ghost" onClick={() => doorM.mutate()} disabled={doorM.isPending}>{doorM.isPending ? "Abriendo puerta..." : "Puerta"}</Button> : null}
           <Button onClick={() => saveM.mutate()} disabled={saveM.isPending}>{saveM.isPending ? "Guardando..." : "Guardar"}</Button>
-          <Button
-            variant="primary"
-            onClick={() => {
-              if (isRevisionQuote) {
-                confirmM.mutate({ fulfillment_mode: buildPayloadForBack()?.fulfillment_mode || "acopio" });
-                return;
-              }
-              setDestinationPickerOpen(true);
-            }}
-            disabled={!canConfirm || confirmM.isPending}
-          >
+          <Button variant="primary" onClick={() => confirmM.mutate()} disabled={!canConfirm || confirmM.isPending}>
             {confirmM.isPending ? "Confirmando..." : (isRevisionQuote ? "Enviar cotización final" : "Confirmar presupuesto")}
           </Button>
         </div>
@@ -337,66 +347,6 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
       {saveM.isError && <div style={{ color: "#d93025", fontSize: 13 }}>{saveM.error.message}</div>}
       {confirmM.isError && <div style={{ color: "#d93025", fontSize: 13 }}>{confirmM.error.message}</div>}
       {doorM.isError && <div style={{ color: "#d93025", fontSize: 13 }}>{doorM.error.message}</div>}
-
-      {destinationPickerOpen && !isRevisionQuote && (
-        <div
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(17, 24, 39, 0.4)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            padding: 16,
-            zIndex: 1000,
-          }}
-        >
-          <div className="card" style={{ width: "100%", maxWidth: 560 }}>
-            <h3 style={{ marginTop: 0, marginBottom: 8 }}>Confirmar presupuesto</h3>
-            <div className="muted">Elegí si el portón queda en Acopio o pasa directamente a Producción.</div>
-
-            <div className="spacer" />
-
-            <div style={{ display: "grid", gap: 12 }}>
-              <div style={{ border: "1px solid #e5e7eb", borderRadius: 14, padding: 14 }}>
-                <div style={{ fontWeight: 900, marginBottom: 6 }}>Acopio</div>
-                <div className="muted">El presupuesto queda editable y después vas a poder solicitar su paso a Producción.</div>
-                <div className="spacer" />
-                <Button
-                  onClick={() => {
-                    setDestinationPickerOpen(false);
-                    confirmM.mutate({ fulfillment_mode: "acopio" });
-                  }}
-                  disabled={confirmM.isPending}
-                >
-                  Confirmar Acopio
-                </Button>
-              </div>
-
-              <div style={{ border: "1px solid #e5e7eb", borderRadius: 14, padding: 14 }}>
-                <div style={{ fontWeight: 900, marginBottom: 6 }}>Producción</div>
-                <div className="muted">El presupuesto sigue su circuito sin instancia de cambios posteriores.</div>
-                <div className="spacer" />
-                <Button
-                  variant="primary"
-                  onClick={() => {
-                    setDestinationPickerOpen(false);
-                    confirmM.mutate({ fulfillment_mode: "produccion" });
-                  }}
-                  disabled={confirmM.isPending}
-                >
-                  Confirmar Producción
-                </Button>
-              </div>
-            </div>
-
-            <div className="spacer" />
-            <Button variant="ghost" onClick={() => setDestinationPickerOpen(false)} disabled={confirmM.isPending}>
-              Cancelar
-            </Button>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

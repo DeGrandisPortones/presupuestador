@@ -22,7 +22,6 @@ function buildWhatsappUrl(phone) {
   let digits = raw.replace(/\D/g, "");
   if (!digits) return null;
 
-  // Normalización rápida AR (decisión por defecto)
   if (digits.startsWith("0")) digits = digits.slice(1);
   if (digits.startsWith("15")) digits = digits.slice(2);
   if (!digits.startsWith("54")) digits = `54${digits}`;
@@ -32,16 +31,20 @@ function buildWhatsappUrl(phone) {
 function labelMeasurementStatus(s) {
   if (s === "pending") return "Pendiente";
   if (s === "needs_fix") return "Corregir";
-  if (s === "submitted") return "Enviada";
+  if (s === "submitted") return "A revisión técnica";
   if (s === "approved") return "Aprobada";
   return s || "—";
+}
+
+function localityLabel(r) {
+  return r?.end_customer?.city || "—";
 }
 
 export default function MedicionesPage() {
   const user = useAuthStore((s) => s.user);
   const navigate = useNavigate();
 
-  const [status, setStatus] = useState("pending"); // pending | needs_fix | submitted | approved | all
+  const [status, setStatus] = useState("pending");
   const [q, setQ] = useState("");
   const [page, setPage] = useState(1);
 
@@ -105,7 +108,7 @@ export default function MedicionesPage() {
             A corregir
           </Button>
           <Button variant={status === "submitted" ? "primary" : "ghost"} onClick={() => setStatus("submitted")}>
-            Enviadas
+            En revisión técnica
           </Button>
           <Button variant={status === "approved" ? "primary" : "ghost"} onClick={() => setStatus("approved")}>
             Aprobadas
@@ -139,6 +142,7 @@ export default function MedicionesPage() {
                   <th>Fecha visita</th>
                   <th>Alta</th>
                   <th>Cliente</th>
+                  <th>Localidad</th>
                   <th>Dirección</th>
                   <th>Teléfono</th>
                   <th>Maps</th>
@@ -152,6 +156,7 @@ export default function MedicionesPage() {
                     <td>{fmtDate(r.measurement_scheduled_for)}</td>
                     <td>{fmtDate(r.created_at)}</td>
                     <td style={{ fontWeight: 800 }}>{r.end_customer?.name || "(sin nombre)"}</td>
+                    <td>{localityLabel(r)}</td>
                     <td>{r.end_customer?.address || "—"}</td>
                     <td>
                       {(() => {
