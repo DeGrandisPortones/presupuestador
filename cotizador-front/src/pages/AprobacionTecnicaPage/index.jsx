@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import Button from "../../ui/Button.jsx";
 import Input from "../../ui/Input.jsx";
 import PaginationControls from "../../ui/PaginationControls.jsx";
@@ -10,6 +10,7 @@ import { listMeasurements, scheduleMeasurement } from "../../api/measurements.js
 import { useAuthStore } from "../../domain/auth/store.js";
 
 const PAGE_SIZE = 25;
+const VALID_TABS = ["mediciones", "aprobaciones_portones", "aprobaciones_puertas", "aprobaciones_mediciones", "acopio"];
 
 function acopioReqLabel(r) {
   const c = r?.acopio_to_produccion_commercial_decision || "pending";
@@ -51,26 +52,37 @@ function measurementStatusLabel(s) {
 function localityLabel(r) {
   return r?.end_customer?.city || r?.end_customer?.address || "—";
 }
+function normalizeTab(raw) {
+  const tab = String(raw || "").trim();
+  return VALID_TABS.includes(tab) ? tab : "aprobaciones_portones";
+}
 
 export default function AprobacionTecnicaPage() {
   const navigate = useNavigate();
   const user = useAuthStore((s) => s.user);
-  const [tab, setTab] = useState("aprobaciones");
+  const [searchParams, setSearchParams] = useSearchParams();
+  const initialTab = normalizeTab(searchParams.get("tab"));
+  const [tab, setTab] = useState(initialTab);
   const [filter, setFilter] = useState("all");
-  const [measurementStatus, setMeasurementStatus] = useState("pending");
+  const [measurementStatus, setMeasurementStatus] = useState(initialTab === "aprobaciones_mediciones" ? "submitted" : "pending");
   const [measurementDates, setMeasurementDates] = useState({});
   const [pageAprobaciones, setPageAprobaciones] = useState(1);
   const [pageMediciones, setPageMediciones] = useState(1);
   const [pageAcopio, setPageAcopio] = useState(1);
   const [pagePuertas, setPagePuertas] = useState(1);
 
+  useEffect(() => {
+    const nextTab = normalizeTab(searchParams.get("tab"));
+    setTab((prev) => (prev === nextTab ? prev : nextTab));
+  }, [searchParams]);
+
   const q = useQuery({ queryKey: ["quotes", "technical_inbox"], queryFn: () => listQuotes({ scope: "technical_inbox" }), enabled: !!user?.is_rev_tecnica });
   const acopioQ = useQuery({ queryKey: ["quotes", "technical_acopio"], queryFn: () => listQuotes({ scope: "technical_acopio" }), enabled: tab === "acopio" && !!user?.is_rev_tecnica });
-  const doorsQ = useQuery({ queryKey: ["doors", "technical_inbox"], queryFn: () => listDoors({ scope: "technical_inbox" }), enabled: tab === "puertas" && !!user?.is_rev_tecnica });
+  const doorsQ = useQuery({ queryKey: ["doors", "technical_inbox"], queryFn: () => listDoors({ scope: "technical_inbox" }), enabled: tab === "aprobaciones_puertas" && !!user?.is_rev_tecnica });
   const measQ = useQuery({
-    queryKey: ["measurements", "tecnica", measurementStatus],
+    queryKey: ["measurements", "tecnica", tab, measurementStatus],
     queryFn: () => listMeasurements({ status: measurementStatus, viewer: "tecnica" }),
-    enabled: tab === "mediciones" && !!user?.is_rev_tecnica,
+    enabled: (tab === "mediciones" || tab === "aprobaciones_mediciones") && !!user?.is_rev_tecnica,
   });
 
   const acopioM = useMutation({ mutationFn: ({ id, action, notes }) => reviewAcopioTechnical(id, { action, notes }), onSuccess: () => acopioQ.refetch() });
@@ -79,6 +91,18 @@ export default function AprobacionTecnicaPage() {
     mutationFn: ({ id, scheduledFor }) => scheduleMeasurement(id, { scheduledFor }),
     onSuccess: () => measQ.refetch(),
   });
+
+  function goToTab(nextTab) {
+    const normalized = normalizeTab(nextTab);
+    setTab(normalized);
+    setSearchParams({ tab: normalized });
+    if (normalized === "mediciones" && ["submitted", "approved"].includes(measurementStatus)) {
+      setMeasurementStatus("pending");
+    }
+    if (normalized === "aprobaciones_mediciones" && ["pending", "needs_fix"].includes(measurementStatus)) {
+      setMeasurementStatus("submitted");
+    }
+  }
 
   useEffect(() => { setPageAprobaciones(1); }, [filter]);
   useEffect(() => { setPageMediciones(1); }, [measurementStatus]);
@@ -136,18 +160,19 @@ export default function AprobacionTecnicaPage() {
   return (
     <div className="container">
       <div className="card">
-        <h2 style={{ margin: 0 }}>Revisión Técnica</h2>
-        <div className="muted">Presupuestos, portones a medir y puertas pendientes de tu decisión.</div>
+        <h2 style={{ margin: 0 }}>Técnica</h2>
+        <div className="muted">Mediciones, aprobaciones de portones, puertas y mediciones terminadas.</div>
 
         <div className="spacer" />
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <Button variant={tab === "aprobaciones" ? "primary" : "ghost"} onClick={() => setTab("aprobaciones")}>Aprobaciones</Button>
-          <Button variant={tab === "mediciones" ? "primary" : "ghost"} onClick={() => setTab("mediciones")}>Mediciones</Button>
-          <Button variant={tab === "acopio" ? "primary" : "ghost"} onClick={() => setTab("acopio")}>Acopio → Producción</Button>
-          <Button variant={tab === "puertas" ? "primary" : "ghost"} onClick={() => setTab("puertas")}>Puertas</Button>
+          <Button variant={tab === "mediciones" ? "primary" : "ghost"} onClick={() => goToTab("mediciones")}>Mediciones</Button>
+          <Button variant={tab === "aprobaciones_portones" ? "primary" : "ghost"} onClick={() => goToTab("aprobaciones_portones")}>Aprobaciones Portones</Button>
+          <Button variant={tab === "aprobaciones_puertas" ? "primary" : "ghost"} onClick={() => goToTab("aprobaciones_puertas")}>Aprobaciones Puertas</Button>
+          <Button variant={tab === "aprobaciones_mediciones" ? "primary" : "ghost"} onClick={() => goToTab("aprobaciones_mediciones")}>Aprobaciones Mediciones</Button>
+          <Button variant={tab === "acopio" ? "primary" : "ghost"} onClick={() => goToTab("acopio")}>Acopio → Producción</Button>
         </div>
 
-        {tab === "aprobaciones" && (
+        {tab === "aprobaciones_portones" && (
           <>
             <div className="spacer" />
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
@@ -164,6 +189,15 @@ export default function AprobacionTecnicaPage() {
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
               <Button variant={measurementStatus === "pending" ? "primary" : "ghost"} onClick={() => setMeasurementStatus("pending")}>Pendientes</Button>
               <Button variant={measurementStatus === "needs_fix" ? "primary" : "ghost"} onClick={() => setMeasurementStatus("needs_fix")}>A corregir</Button>
+              <Button variant={measurementStatus === "all" ? "primary" : "ghost"} onClick={() => setMeasurementStatus("all")}>Todas</Button>
+            </div>
+          </>
+        )}
+
+        {tab === "aprobaciones_mediciones" && (
+          <>
+            <div className="spacer" />
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
               <Button variant={measurementStatus === "submitted" ? "primary" : "ghost"} onClick={() => setMeasurementStatus("submitted")}>Pendiente revisión</Button>
               <Button variant={measurementStatus === "approved" ? "primary" : "ghost"} onClick={() => setMeasurementStatus("approved")}>Aprobadas</Button>
               <Button variant={measurementStatus === "all" ? "primary" : "ghost"} onClick={() => setMeasurementStatus("all")}>Todas</Button>
@@ -175,7 +209,7 @@ export default function AprobacionTecnicaPage() {
       <div className="spacer" />
 
       <div className="card">
-        {tab === "aprobaciones" && (
+        {tab === "aprobaciones_portones" && (
           <>
             {q.isLoading && <div className="muted">Cargando...</div>}
             {q.isError && <div style={{ color: "#d93025", fontSize: 13 }}>{q.error.message}</div>}
@@ -191,7 +225,7 @@ export default function AprobacionTecnicaPage() {
           </>
         )}
 
-        {tab === "mediciones" && (
+        {(tab === "mediciones" || tab === "aprobaciones_mediciones") && (
           <>
             {measQ.isLoading && <div className="muted">Cargando...</div>}
             {measQ.isError && <div style={{ color: "#d93025", fontSize: 13 }}>{measQ.error.message}</div>}
@@ -271,7 +305,7 @@ export default function AprobacionTecnicaPage() {
           </>
         )}
 
-        {tab === "puertas" && (
+        {tab === "aprobaciones_puertas" && (
           <>
             {doorsQ.isLoading && <div className="muted">Cargando...</div>}
             {doorsQ.isError && <div style={{ color: "#d93025", fontSize: 13 }}>{doorsQ.error.message}</div>}

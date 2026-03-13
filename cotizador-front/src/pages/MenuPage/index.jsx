@@ -85,11 +85,35 @@ export default function MenuPage() {
         )}
 
         {showTechInbox && (
-          <div className="card menu-card">
-            <div className="menu-title">Revisión Técnica</div>
-            <div className="spacer" />
-            <Button variant="secondary" onClick={() => navigate("/aprobacion/tecnica")}>Ir a revisión</Button>
-          </div>
+          <>
+            <div className="card menu-card">
+              <div className="menu-title">Mediciones</div>
+              <div className="muted">Asignación y seguimiento de portones a medir.</div>
+              <div className="spacer" />
+              <Button variant="secondary" onClick={() => navigate("/aprobacion/tecnica?tab=mediciones")}>Abrir mediciones</Button>
+            </div>
+
+            <div className="card menu-card">
+              <div className="menu-title">Aprobaciones Portones</div>
+              <div className="muted">Revisión técnica de presupuestos de portones.</div>
+              <div className="spacer" />
+              <Button variant="secondary" onClick={() => navigate("/aprobacion/tecnica?tab=aprobaciones_portones")}>Abrir portones</Button>
+            </div>
+
+            <div className="card menu-card">
+              <div className="menu-title">Aprobaciones Puertas</div>
+              <div className="muted">Revisión técnica de puertas.</div>
+              <div className="spacer" />
+              <Button variant="secondary" onClick={() => navigate("/aprobacion/tecnica?tab=aprobaciones_puertas")}>Abrir puertas</Button>
+            </div>
+
+            <div className="card menu-card">
+              <div className="menu-title">Aprobaciones Mediciones</div>
+              <div className="muted">Revisión técnica de mediciones terminadas.</div>
+              <div className="spacer" />
+              <Button variant="secondary" onClick={() => navigate("/aprobacion/tecnica?tab=aprobaciones_mediciones")}>Abrir aprobaciones</Button>
+            </div>
+          </>
         )}
       </div>
     </div>
