@@ -15,7 +15,7 @@ export function buildAuthRouter() {
       // Aseguramos columnas nuevas (full_name/is_active)
       await ensureUsersAdminColumns();
 
-      // Validación con pgcrypto: password_hash = crypt(password, password_hash)
+      // Login case-insensitive para username + validación con pgcrypto
       const q = await dbQuery(
         `
         select id, username, full_name,
@@ -25,7 +25,7 @@ export function buildAuthRouter() {
                default_maps_url,
                coalesce(is_active, true) as is_active
         from public.presupuestador_users
-        where username = $1
+        where lower(username) = lower($1)
           and password_hash = crypt($2, password_hash)
         limit 1
         `,
