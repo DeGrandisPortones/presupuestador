@@ -10,8 +10,6 @@ export default function HeaderBar({ pricelists, loadingPricelists, showMargin })
     setPricelist,
     setMarginPercentInput,
     commitMarginPercentInput,
-    fulfillmentMode,
-    setFulfillmentMode,
     conditionMode,
     setConditionMode,
     conditionText,
@@ -129,32 +127,9 @@ export default function HeaderBar({ pricelists, loadingPricelists, showMargin })
           />
         </div>
 
-        <div style={{ minWidth: 240 }}>
-          <div className="muted">Forma de Pago</div>
-          <select
-            value={paymentMethod || ""}
-            onChange={(e) => setPaymentMethod(e.target.value)}
-            style={{ padding: "8px 10px", borderRadius: 8, border: "1px solid #ddd", minWidth: 220 }}
-          >
-            <option value="">Seleccione Forma de Pago</option>
-            {PAYMENT_METHODS.map((x) => (
-              <option key={x} value={x}>{x}</option>
-            ))}
-          </select>
-        </div>
-
         <div>
-          <div className="muted">Destino</div>
+          <div className="muted">Condición</div>
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-            <select
-              value={fulfillmentMode || ""}
-              onChange={(e) => setFulfillmentMode(e.target.value)}
-              style={{ padding: "8px 10px", borderRadius: 8, border: "1px solid #ddd", minWidth: 170 }}
-            >
-              <option value="produccion">Producción</option>
-              <option value="acopio">Acopio</option>
-            </select>
-
             <select
               value={conditionMode || "cond1"}
               onChange={(e) => setConditionMode(e.target.value)}
