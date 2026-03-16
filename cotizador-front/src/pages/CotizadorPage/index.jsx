@@ -51,6 +51,7 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
   } = useQuoteStore();
 
   const [ivaRate] = useState(IVA_RATE_DEFAULT);
+  const [confirmChoiceOpen, setConfirmChoiceOpen] = useState(false);
 
   useEffect(() => {
     if (!idParam) {
@@ -101,12 +102,26 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
     run().catch(console.error);
   }, [pricelistId, partnerId, linesKey, lines.length, applyBasePrices]);
 
-  function getDraftPayload() {
+  function resolveCreatedByRole() {
+    if (user?.is_superuser) return "vendedor";
+    if (user?.is_vendedor && user?.is_distribuidor) return "vendedor";
+    if (user?.is_distribuidor && !user?.is_vendedor) return "distribuidor";
+    return "vendedor";
+  }
+
+  function withCreatorRole(payload) {
     return {
+      ...(payload || {}),
+      created_by_role: resolveCreatedByRole(),
+    };
+  }
+
+  function getDraftPayload() {
+    return withCreatorRole({
       ...buildPayloadForBack(),
       catalog_kind: catalogKind,
       fulfillment_mode: buildPayloadForBack()?.fulfillment_mode || "acopio",
-    };
+    });
   }
 
   function validateCustomerContact(customer, { requirePhone = false, requireMaps = false, requireCity = false } = {}) {
@@ -195,12 +210,13 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
   });
 
   const confirmM = useMutation({
-    mutationFn: async () => {
-      const payload = {
+    mutationFn: async (variables) => {
+      const chosenMode = String(variables?.fulfillmentMode || buildPayloadForBack()?.fulfillment_mode || "acopio").trim();
+      const payload = withCreatorRole({
         ...buildPayloadForBack(),
         catalog_kind: catalogKind,
-        fulfillment_mode: buildPayloadForBack()?.fulfillment_mode || "acopio",
-      };
+        fulfillment_mode: chosenMode,
+      });
       validateConfirm(payload);
 
       let id = quoteId || idParam;
@@ -216,18 +232,16 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
         return await submitFinalQuote(id);
       }
 
-      const dest = String(payload.fulfillment_mode || "acopio").trim();
-
-      if (dest === "acopio") {
-        window.alert("El presupuesto quedará en Acopio y luego podrá solicitarse su paso a Producción.");
+      if (chosenMode === "acopio") {
+        window.alert("El presupuesto quedará en Acopio. Se seguirá gestionando desde Acopio → Producción.");
       } else {
-        const ok = window.confirm("El presupuesto irá directo a Producción y no podrá modificarse. ¿Deseás continuar?");
-        if (!ok) throw new Error("Confirmación cancelada.");
+        window.alert("El presupuesto irá a Producción. Ya no podrá editarse desde Presupuestos; si tiene medición comprada, la corrección seguirá desde Mediciones.");
       }
 
-      return await confirmQuote(id, { fulfillment_mode: dest });
+      return await confirmQuote(id, { fulfillment_mode: chosenMode });
     },
     onSuccess: (q) => {
+      setConfirmChoiceOpen(false);
       setQuoteMeta({ quoteId: q.id, status: q.status, rejectionNotes: q.rejection_notes });
       qc.invalidateQueries({ queryKey: ["quotes", "mine"] });
       navigate(`/presupuestos/${q.id}`);
@@ -270,7 +284,7 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
 
   const onDownloadPresupuesto = async () => {
     try {
-      const payload = { ...buildPayloadForBack(), catalog_kind: catalogKind };
+      const payload = withCreatorRole({ ...buildPayloadForBack(), catalog_kind: catalogKind });
       validatePdfDownload(payload);
       await downloadPresupuestoPdf(payload);
     } catch (e) {
@@ -280,7 +294,7 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
 
   const onDownloadProforma = async () => {
     try {
-      const payload = { ...buildPayloadForBack(), catalog_kind: catalogKind };
+      const payload = withCreatorRole({ ...buildPayloadForBack(), catalog_kind: catalogKind });
       validatePdfDownload(payload);
       await downloadProformaPdf(payload);
     } catch (e) {
@@ -291,7 +305,7 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
   const canConfirm = isRevisionQuote
     ? ["", "draft", "rejected"].includes(finalStatus || "")
     : ["draft", "rejected_commercial", "rejected_technical"].includes(status);
-  const canOpenDoor = !!(user?.is_vendedor && (catalogKind || "porton") === "porton" && !isRevisionQuote);
+  const canOpenDoor = !!((user?.is_vendedor || user?.is_superuser) && (catalogKind || "porton") === "porton" && !isRevisionQuote);
 
   return (
     <div className="container">
@@ -318,7 +332,17 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
           {user?.is_distribuidor ? <Button variant="secondary" onClick={onDownloadProforma}>PDF proforma</Button> : null}
           {canOpenDoor ? <Button variant="ghost" onClick={() => doorM.mutate()} disabled={doorM.isPending}>{doorM.isPending ? "Abriendo puerta..." : "Puerta"}</Button> : null}
           <Button onClick={() => saveM.mutate()} disabled={saveM.isPending}>{saveM.isPending ? "Guardando..." : "Guardar"}</Button>
-          <Button variant="primary" onClick={() => confirmM.mutate()} disabled={!canConfirm || confirmM.isPending}>
+          <Button
+            variant="primary"
+            onClick={() => {
+              if (isRevisionQuote) {
+                confirmM.mutate({});
+                return;
+              }
+              setConfirmChoiceOpen(true);
+            }}
+            disabled={!canConfirm || confirmM.isPending}
+          >
             {confirmM.isPending ? "Confirmando..." : (isRevisionQuote ? "Enviar cotización final" : "Confirmar presupuesto")}
           </Button>
         </div>
@@ -331,6 +355,29 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
             <div style={{ fontWeight: 900, marginBottom: 6 }}>Cotización final a Odoo</div>
             <div className="muted">
               Esta instancia editable genera la nueva cotización detallada en Odoo y descuenta la seña ya enviada del presupuesto original.
+            </div>
+          </div>
+        </>
+      )}
+
+      {!isRevisionQuote && confirmChoiceOpen && (
+        <>
+          <div className="spacer" />
+          <div className="card" style={{ background: "#fafafa", border: "1px solid #ddd" }}>
+            <div style={{ fontWeight: 900, marginBottom: 6 }}>¿A dónde querés enviar este presupuesto?</div>
+            <div className="muted" style={{ marginBottom: 12 }}>
+              Elegí si va a <b>Acopio</b> o a <b>Producción</b>.
+            </div>
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+              <Button onClick={() => confirmM.mutate({ fulfillmentMode: "acopio" })} disabled={confirmM.isPending}>
+                {confirmM.isPending ? "Confirmando..." : "Enviar a Acopio"}
+              </Button>
+              <Button variant="primary" onClick={() => confirmM.mutate({ fulfillmentMode: "produccion" })} disabled={confirmM.isPending}>
+                {confirmM.isPending ? "Confirmando..." : "Enviar a Producción"}
+              </Button>
+              <Button variant="ghost" onClick={() => setConfirmChoiceOpen(false)} disabled={confirmM.isPending}>
+                Cancelar
+              </Button>
             </div>
           </div>
         </>

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import Button from "../../ui/Button.jsx";
+import Input from "../../ui/Input.jsx";
 import PaginationControls from "../../ui/PaginationControls.jsx";
 import { listQuotes, reviewAcopioCommercial } from "../../api/quotes.js";
 import { listDoors, reviewDoorCommercial } from "../../api/doors.js";
@@ -16,6 +17,7 @@ function acopioReqLabel(r) {
   const tL = t === "approved" ? "OK" : t === "rejected" ? "NO" : "Pend.";
   return `C:${cL} · T:${tL}`;
 }
+
 function rowLabel(r) {
   if (r.status === "pending_approvals") {
     if (r.commercial_decision === "pending") return "Pendiente tu decisión";
@@ -28,16 +30,25 @@ function rowLabel(r) {
   if (r.status === "syncing_odoo") return "Sincronizando…";
   return r.status;
 }
+
 function fmtDate(iso) {
   if (!iso) return "—";
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "—";
   return d.toLocaleDateString("es-AR");
 }
+
 function createdByLabel(r) {
   const name = r?.created_by_full_name || r?.created_by_username || (r?.created_by_user_id ? `#${r.created_by_user_id}` : "—");
   const role = r?.created_by_role ? ` (${r.created_by_role})` : "";
   return `${name}${role}`;
+}
+
+function matchesSearch(values, searchText) {
+  const s = String(searchText || "").trim().toLowerCase();
+  if (!s) return true;
+  const haystack = values.filter(Boolean).join(" ").toLowerCase();
+  return haystack.includes(s);
 }
 
 export default function AprobacionComercialPage() {
@@ -46,6 +57,7 @@ export default function AprobacionComercialPage() {
 
   const [tab, setTab] = useState("aprobaciones");
   const [filter, setFilter] = useState("all");
+  const [searchText, setSearchText] = useState("");
   const [pageAprobaciones, setPageAprobaciones] = useState(1);
   const [pageAcopio, setPageAcopio] = useState(1);
   const [pagePuertas, setPagePuertas] = useState(1);
@@ -66,58 +78,65 @@ export default function AprobacionComercialPage() {
     enabled: tab === "puertas" && !!user?.is_enc_comercial,
   });
 
-  const acopioM = useMutation({
-    mutationFn: ({ id, action, notes }) => reviewAcopioCommercial(id, { action, notes }),
-    onSuccess: () => acopioQ.refetch(),
-  });
-  const doorM = useMutation({
-    mutationFn: ({ id, action, notes }) => reviewDoorCommercial(id, { action, notes }),
-    onSuccess: () => doorsQ.refetch(),
-  });
+  const acopioM = useMutation({ mutationFn: ({ id, action, notes }) => reviewAcopioCommercial(id, { action, notes }), onSuccess: () => acopioQ.refetch() });
+  const doorM = useMutation({ mutationFn: ({ id, action, notes }) => reviewDoorCommercial(id, { action, notes }), onSuccess: () => doorsQ.refetch() });
 
   const rows = useMemo(() => {
     const arr = q.data || [];
-    if (filter === "pending") return arr.filter((x) => x.status === "pending_approvals" && x.commercial_decision === "pending");
-    if (filter === "rejected") return arr.filter((x) => x.status === "draft" && x.technical_decision === "rejected");
-    return arr;
-  }, [q.data, filter]);
+    let out = arr;
+    if (filter === "pending") out = arr.filter((x) => x.status === "pending_approvals" && x.commercial_decision === "pending");
+    if (filter === "rejected") out = arr.filter((x) => x.status === "draft" && x.technical_decision === "rejected");
+    return out.filter((r) => matchesSearch([
+      createdByLabel(r),
+      r?.end_customer?.name,
+      r?.end_customer?.city,
+      r?.end_customer?.address,
+      rowLabel(r),
+    ], searchText));
+  }, [q.data, filter, searchText]);
 
-  const acopioRows = useMemo(() => acopioQ.data || [], [acopioQ.data]);
-  const doorRows = useMemo(() => doorsQ.data || [], [doorsQ.data]);
+  const acopioRows = useMemo(() => {
+    return (acopioQ.data || []).filter((r) => matchesSearch([
+      createdByLabel(r),
+      r?.end_customer?.name,
+      r?.end_customer?.city,
+      r?.end_customer?.address,
+      r?.acopio_to_produccion_notes,
+      acopioReqLabel(r),
+    ], searchText));
+  }, [acopioQ.data, searchText]);
 
-  useEffect(() => {
-    setPageAprobaciones(1);
-  }, [filter]);
+  const doorRows = useMemo(() => {
+    return (doorsQ.data || []).filter((d) => matchesSearch([
+      d?.door_code,
+      d?.record?.end_customer?.name,
+      d?.record?.obra_cliente,
+      d?.linked_quote_odoo_name,
+      d?.record?.asociado_porton,
+      d?.status,
+    ], searchText));
+  }, [doorsQ.data, searchText]);
+
+  useEffect(() => { setPageAprobaciones(1); }, [filter, searchText]);
+  useEffect(() => { setPageAcopio(1); }, [searchText]);
+  useEffect(() => { setPagePuertas(1); }, [searchText]);
 
   useEffect(() => {
     const totalPages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
     if (pageAprobaciones > totalPages) setPageAprobaciones(totalPages);
   }, [rows.length, pageAprobaciones]);
-
   useEffect(() => {
     const totalPages = Math.max(1, Math.ceil(acopioRows.length / PAGE_SIZE));
     if (pageAcopio > totalPages) setPageAcopio(totalPages);
   }, [acopioRows.length, pageAcopio]);
-
   useEffect(() => {
     const totalPages = Math.max(1, Math.ceil(doorRows.length / PAGE_SIZE));
     if (pagePuertas > totalPages) setPagePuertas(totalPages);
   }, [doorRows.length, pagePuertas]);
 
-  const visibleRows = useMemo(() => {
-    const start = (pageAprobaciones - 1) * PAGE_SIZE;
-    return rows.slice(start, start + PAGE_SIZE);
-  }, [rows, pageAprobaciones]);
-
-  const visibleAcopioRows = useMemo(() => {
-    const start = (pageAcopio - 1) * PAGE_SIZE;
-    return acopioRows.slice(start, start + PAGE_SIZE);
-  }, [acopioRows, pageAcopio]);
-
-  const visibleDoorRows = useMemo(() => {
-    const start = (pagePuertas - 1) * PAGE_SIZE;
-    return doorRows.slice(start, start + PAGE_SIZE);
-  }, [doorRows, pagePuertas]);
+  const visibleRows = useMemo(() => rows.slice((pageAprobaciones - 1) * PAGE_SIZE, pageAprobaciones * PAGE_SIZE), [rows, pageAprobaciones]);
+  const visibleAcopioRows = useMemo(() => acopioRows.slice((pageAcopio - 1) * PAGE_SIZE, pageAcopio * PAGE_SIZE), [acopioRows, pageAcopio]);
+  const visibleDoorRows = useMemo(() => doorRows.slice((pagePuertas - 1) * PAGE_SIZE, pagePuertas * PAGE_SIZE), [doorRows, pagePuertas]);
 
   if (!user?.is_enc_comercial) {
     return <div className="container"><div className="card">No autorizado (falta rol Enc. Comercial).</div></div>;
@@ -146,6 +165,9 @@ export default function AprobacionComercialPage() {
             </div>
           </>
         )}
+
+        <div className="spacer" />
+        <Input value={searchText} onChange={setSearchText} placeholder="Buscar por cliente, localidad, dirección, usuario, código o estado…" style={{ width: "100%" }} />
       </div>
 
       <div className="spacer" />
@@ -159,16 +181,7 @@ export default function AprobacionComercialPage() {
             {!!rows.length && (
               <>
                 <table>
-                  <thead>
-                    <tr>
-                      <th>Fecha</th>
-                      <th>Vendedor/Distribuidor</th>
-                      <th>Cliente</th>
-                      <th>Dirección</th>
-                      <th>Estado</th>
-                      <th></th>
-                    </tr>
-                  </thead>
+                  <thead><tr><th>Fecha</th><th>Vendedor/Distribuidor</th><th>Cliente</th><th>Dirección</th><th>Estado</th><th></th></tr></thead>
                   <tbody>
                     {visibleRows.map((r) => (
                       <tr key={r.id}>
@@ -182,13 +195,7 @@ export default function AprobacionComercialPage() {
                     ))}
                   </tbody>
                 </table>
-
-                <PaginationControls
-                  page={pageAprobaciones}
-                  totalItems={rows.length}
-                  pageSize={PAGE_SIZE}
-                  onPageChange={setPageAprobaciones}
-                />
+                <PaginationControls page={pageAprobaciones} totalItems={rows.length} pageSize={PAGE_SIZE} onPageChange={setPageAprobaciones} />
               </>
             )}
           </>
@@ -202,17 +209,7 @@ export default function AprobacionComercialPage() {
             {!!acopioRows.length && (
               <>
                 <table>
-                  <thead>
-                    <tr>
-                      <th>Fecha</th>
-                      <th>Vendedor/Distribuidor</th>
-                      <th>Cliente</th>
-                      <th>Dirección</th>
-                      <th>Solicitud</th>
-                      <th>Decisiones</th>
-                      <th></th>
-                    </tr>
-                  </thead>
+                  <thead><tr><th>Fecha</th><th>Vendedor/Distribuidor</th><th>Cliente</th><th>Dirección</th><th>Solicitud</th><th>Decisiones</th><th></th></tr></thead>
                   <tbody>
                     {visibleAcopioRows.map((r) => {
                       const canAct = (r.acopio_to_produccion_commercial_decision || "pending") === "pending";
@@ -238,13 +235,7 @@ export default function AprobacionComercialPage() {
                     })}
                   </tbody>
                 </table>
-
-                <PaginationControls
-                  page={pageAcopio}
-                  totalItems={acopioRows.length}
-                  pageSize={PAGE_SIZE}
-                  onPageChange={setPageAcopio}
-                />
+                <PaginationControls page={pageAcopio} totalItems={acopioRows.length} pageSize={PAGE_SIZE} onPageChange={setPageAcopio} />
               </>
             )}
           </>
@@ -258,16 +249,7 @@ export default function AprobacionComercialPage() {
             {!!doorRows.length && (
               <>
                 <table>
-                  <thead>
-                    <tr>
-                      <th>Código</th>
-                      <th>Cliente</th>
-                      <th>Portón vinculado</th>
-                      <th>Venta</th>
-                      <th>Compra</th>
-                      <th></th>
-                    </tr>
-                  </thead>
+                  <thead><tr><th>Código</th><th>Cliente</th><th>Portón vinculado</th><th>Venta</th><th>Compra</th><th></th></tr></thead>
                   <tbody>
                     {visibleDoorRows.map((d) => (
                       <tr key={d.id}>
@@ -285,13 +267,7 @@ export default function AprobacionComercialPage() {
                     ))}
                   </tbody>
                 </table>
-
-                <PaginationControls
-                  page={pagePuertas}
-                  totalItems={doorRows.length}
-                  pageSize={PAGE_SIZE}
-                  onPageChange={setPagePuertas}
-                />
+                <PaginationControls page={pagePuertas} totalItems={doorRows.length} pageSize={PAGE_SIZE} onPageChange={setPagePuertas} />
               </>
             )}
           </>

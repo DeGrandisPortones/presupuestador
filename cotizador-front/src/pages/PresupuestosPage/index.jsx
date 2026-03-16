@@ -46,10 +46,27 @@ function localityLabel(q) {
   return q?.end_customer?.city || "—";
 }
 
+function matchesSearch(q, searchText) {
+  const s = String(searchText || "").trim().toLowerCase();
+  if (!s) return true;
+  const haystack = [
+    q?.end_customer?.name,
+    q?.end_customer?.city,
+    q?.end_customer?.address,
+    q?.end_customer?.phone,
+    labelStatus(q),
+    q?.fulfillment_mode === "acopio" ? "acopio" : "produccion",
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+  return haystack.includes(s);
+}
+
 export default function PresupuestosPage() {
   const navigate = useNavigate();
   const [filter, setFilter] = useState("all");
-  const [searchCustomer, setSearchCustomer] = useState("");
+  const [searchText, setSearchText] = useState("");
   const [page, setPage] = useState(1);
 
   const q = useQuery({
@@ -66,7 +83,7 @@ export default function PresupuestosPage() {
 
   useEffect(() => {
     setPage(1);
-  }, [filter, searchCustomer]);
+  }, [filter, searchText]);
 
   function fmtDate(iso) {
     if (!iso) return "—";
@@ -105,13 +122,8 @@ export default function PresupuestosPage() {
       out = out.filter((x) => x.fulfillment_mode === "produccion" && x.status !== "draft" && x.requires_measurement === true);
     }
 
-    const sq = (searchCustomer || "").toString().trim().toLowerCase();
-    if (sq) {
-      out = out.filter((x) => (x.end_customer?.name || "").toString().toLowerCase().includes(sq));
-    }
-
-    return out;
-  }, [q.data, filter, searchCustomer]);
+    return out.filter((item) => matchesSearch(item, searchText));
+  }, [q.data, filter, searchText]);
 
   useEffect(() => {
     const totalPages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
@@ -132,34 +144,20 @@ export default function PresupuestosPage() {
         <div className="spacer" />
 
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <Button variant={filter === "all" ? "primary" : "ghost"} onClick={() => setFilter("all")}>
-            Todos
-          </Button>
-          <Button variant={filter === "saved" ? "primary" : "ghost"} onClick={() => setFilter("saved")}>
-            Guardados
-          </Button>
-          <Button variant={filter === "pending" ? "primary" : "ghost"} onClick={() => setFilter("pending")}>
-            Pendientes
-          </Button>
-          <Button variant={filter === "rejected" ? "primary" : "ghost"} onClick={() => setFilter("rejected")}>
-            Rechazados
-          </Button>
-          <Button variant={filter === "acopio" ? "primary" : "ghost"} onClick={() => setFilter("acopio")}>
-            Portones en Acopio
-          </Button>
-          <Button variant={filter === "produccion" ? "primary" : "ghost"} onClick={() => setFilter("produccion")}>
-            Portones en Producción
-          </Button>
-          <Button variant={filter === "mediciones" ? "primary" : "ghost"} onClick={() => setFilter("mediciones")}>
-            Portones en Medición
-          </Button>
+          <Button variant={filter === "all" ? "primary" : "ghost"} onClick={() => setFilter("all")}>Todos</Button>
+          <Button variant={filter === "saved" ? "primary" : "ghost"} onClick={() => setFilter("saved")}>Guardados</Button>
+          <Button variant={filter === "pending" ? "primary" : "ghost"} onClick={() => setFilter("pending")}>Pendientes</Button>
+          <Button variant={filter === "rejected" ? "primary" : "ghost"} onClick={() => setFilter("rejected")}>Rechazados</Button>
+          <Button variant={filter === "acopio" ? "primary" : "ghost"} onClick={() => setFilter("acopio")}>Portones en Acopio</Button>
+          <Button variant={filter === "produccion" ? "primary" : "ghost"} onClick={() => setFilter("produccion")}>Portones en Producción</Button>
+          <Button variant={filter === "mediciones" ? "primary" : "ghost"} onClick={() => setFilter("mediciones")}>Portones en Medición</Button>
         </div>
 
         <div className="spacer" />
         <input
-          value={searchCustomer}
-          onChange={(e) => setSearchCustomer(e.target.value)}
-          placeholder="Buscar por cliente…"
+          value={searchText}
+          onChange={(e) => setSearchText(e.target.value)}
+          placeholder="Buscar por cliente, localidad, dirección, teléfono o estado…"
           style={{ width: "100%", padding: 10, borderRadius: 12, border: "1px solid #ddd" }}
         />
       </div>
@@ -169,7 +167,6 @@ export default function PresupuestosPage() {
       <div className="card">
         {q.isLoading && <div className="muted">Cargando...</div>}
         {q.isError && <div style={{ color: "#d93025", fontSize: 13 }}>{q.error.message}</div>}
-
         {!q.isLoading && !rows.length && <div className="muted">Sin presupuestos</div>}
 
         {!!rows.length && (
@@ -214,12 +211,7 @@ export default function PresupuestosPage() {
               </tbody>
             </table>
 
-            <PaginationControls
-              page={page}
-              totalItems={rows.length}
-              pageSize={PAGE_SIZE}
-              onPageChange={setPage}
-            />
+            <PaginationControls page={page} totalItems={rows.length} pageSize={PAGE_SIZE} onPageChange={setPage} />
           </>
         )}
       </div>

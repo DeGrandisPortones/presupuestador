@@ -1,21 +1,15 @@
-Copiar y pegar estos archivos sobre tu repo:
+Reemplazar estos archivos directamente en el repo:
 
-- cotizador-back/src/auth.js
-- cotizador-back/src/routes/auth.routes.js
-- cotizador-front/src/layouts/AppLayout.jsx
-- cotizador-front/src/pages/MenuPage/index.jsx
+- cotizador-front/src/pages/CotizadorPage/index.jsx
+- cotizador-front/src/pages/PresupuestosPage/index.jsx
+- cotizador-front/src/pages/MedicionesPage/index.jsx
+- cotizador-front/src/pages/AprobacionComercialPage/index.jsx
+- cotizador-front/src/pages/AprobacionTecnicaPage/index.jsx
+- cotizador-front/src/pages/PuertasPage/index.jsx
 
-Importante:
-1) Reemplazá los archivos.
-2) Reiniciá backend y frontend.
-3) Cerrá sesión y volvé a entrar con el superusuario.
+Luego reiniciar frontend.
 
-Este fix hace que el superusuario tenga permisos efectivos de:
-- vendedor
-- distribuidor
-- encargado comercial
-- revisión técnica
-- medidor
-- logística
-
-Y además muestra los accesos completos en el menú y en la barra superior.
+Notas:
+- Restaura la elección Acopio / Producción al confirmar.
+- Cuando el usuario tiene ambos roles o es superusuario, el cotizador crea el presupuesto como vendedor para que entre a Aprobación Comercial y no falle el flujo de Odoo por partner faltante.
+- Amplía la búsqueda en listados y mantiene paginado de 25.

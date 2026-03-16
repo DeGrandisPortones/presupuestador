@@ -21,7 +21,6 @@ function buildWhatsappUrl(phone) {
   const raw = (phone || "").toString();
   let digits = raw.replace(/\D/g, "");
   if (!digits) return null;
-
   if (digits.startsWith("0")) digits = digits.slice(1);
   if (digits.startsWith("15")) digits = digits.slice(2);
   if (!digits.startsWith("54")) digits = `54${digits}`;
@@ -40,25 +39,41 @@ function localityLabel(r) {
   return r?.end_customer?.city || "—";
 }
 
+function matchesSearch(r, searchText) {
+  const s = String(searchText || "").trim().toLowerCase();
+  if (!s) return true;
+  const haystack = [
+    r?.end_customer?.name,
+    r?.end_customer?.city,
+    r?.end_customer?.address,
+    r?.end_customer?.phone,
+    labelMeasurementStatus(r?.measurement_status),
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+  return haystack.includes(s);
+}
+
 export default function MedicionesPage() {
   const user = useAuthStore((s) => s.user);
   const navigate = useNavigate();
 
   const [status, setStatus] = useState("pending");
-  const [q, setQ] = useState("");
+  const [searchText, setSearchText] = useState("");
   const [page, setPage] = useState(1);
 
   const enabled = !!user?.is_medidor;
 
   const measQ = useQuery({
-    queryKey: ["measurements", status, q],
-    queryFn: () => listMeasurements({ status, q }),
+    queryKey: ["measurements", status],
+    queryFn: () => listMeasurements({ status }),
     enabled,
   });
 
   useEffect(() => {
     setPage(1);
-  }, [status, q]);
+  }, [status, searchText]);
 
   const rows = useMemo(() => {
     const arr = (measQ.data || []).slice();
@@ -68,8 +83,8 @@ export default function MedicionesPage() {
       if (ta !== tb) return ta - tb;
       return (a?.created_at ? new Date(a.created_at).getTime() : 0) - (b?.created_at ? new Date(b.created_at).getTime() : 0);
     });
-    return arr;
-  }, [measQ.data]);
+    return arr.filter((item) => matchesSearch(item, searchText));
+  }, [measQ.data, searchText]);
 
   useEffect(() => {
     const totalPages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
@@ -101,29 +116,16 @@ export default function MedicionesPage() {
         <div className="spacer" />
 
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <Button variant={status === "pending" ? "primary" : "ghost"} onClick={() => setStatus("pending")}>
-            Pendientes
-          </Button>
-          <Button variant={status === "needs_fix" ? "primary" : "ghost"} onClick={() => setStatus("needs_fix")}>
-            A corregir
-          </Button>
-          <Button variant={status === "submitted" ? "primary" : "ghost"} onClick={() => setStatus("submitted")}>
-            En revisión técnica
-          </Button>
-          <Button variant={status === "approved" ? "primary" : "ghost"} onClick={() => setStatus("approved")}>
-            Aprobadas
-          </Button>
-          <Button variant={status === "all" ? "primary" : "ghost"} onClick={() => setStatus("all")}>
-            Todas
-          </Button>
-          <Button variant="ghost" onClick={() => measQ.refetch()} disabled={measQ.isFetching}>
-            ↻
-          </Button>
+          <Button variant={status === "pending" ? "primary" : "ghost"} onClick={() => setStatus("pending")}>Pendientes</Button>
+          <Button variant={status === "needs_fix" ? "primary" : "ghost"} onClick={() => setStatus("needs_fix")}>A corregir</Button>
+          <Button variant={status === "submitted" ? "primary" : "ghost"} onClick={() => setStatus("submitted")}>En revisión técnica</Button>
+          <Button variant={status === "approved" ? "primary" : "ghost"} onClick={() => setStatus("approved")}>Aprobadas</Button>
+          <Button variant={status === "all" ? "primary" : "ghost"} onClick={() => setStatus("all")}>Todas</Button>
+          <Button variant="ghost" onClick={() => measQ.refetch()} disabled={measQ.isFetching}>↻</Button>
         </div>
 
         <div className="spacer" />
-
-        <Input value={q} onChange={setQ} placeholder="Filtrar por cliente…" style={{ width: "100%" }} />
+        <Input value={searchText} onChange={setSearchText} placeholder="Buscar por cliente, localidad, dirección o teléfono…" style={{ width: "100%" }} />
       </div>
 
       <div className="spacer" />
@@ -131,7 +133,6 @@ export default function MedicionesPage() {
       <div className="card">
         {measQ.isLoading && <div className="muted">Cargando…</div>}
         {measQ.isError && <div style={{ color: "#d93025", fontSize: 13 }}>{measQ.error.message}</div>}
-
         {!measQ.isLoading && !rows.length && <div className="muted">Sin resultados</div>}
 
         {!!rows.length && (
@@ -162,37 +163,22 @@ export default function MedicionesPage() {
                       {(() => {
                         const ph = r.end_customer?.phone || "";
                         const w = buildWhatsappUrl(ph);
-                        return w ? (
-                          <a href={w} target="_blank" rel="noreferrer">{ph}</a>
-                        ) : (
-                          (ph || "—")
-                        );
+                        return w ? <a href={w} target="_blank" rel="noreferrer">{ph}</a> : (ph || "—");
                       })()}
                     </td>
                     <td>
                       {r.end_customer?.maps_url ? (
-                        <a href={r.end_customer.maps_url} target="_blank" rel="noreferrer">
-                          📍 Abrir
-                        </a>
-                      ) : (
-                        "—"
-                      )}
+                        <a href={r.end_customer.maps_url} target="_blank" rel="noreferrer">📍 Abrir</a>
+                      ) : "—"}
                     </td>
                     <td>{labelMeasurementStatus(r.measurement_status)}</td>
-                    <td className="right">
-                      <Button onClick={() => navigate(`/mediciones/${r.id}`)}>Formulario</Button>
-                    </td>
+                    <td className="right"><Button onClick={() => navigate(`/mediciones/${r.id}`)}>Formulario</Button></td>
                   </tr>
                 ))}
               </tbody>
             </table>
 
-            <PaginationControls
-              page={page}
-              totalItems={rows.length}
-              pageSize={PAGE_SIZE}
-              onPageChange={setPage}
-            />
+            <PaginationControls page={page} totalItems={rows.length} pageSize={PAGE_SIZE} onPageChange={setPage} />
           </>
         )}
       </div>
