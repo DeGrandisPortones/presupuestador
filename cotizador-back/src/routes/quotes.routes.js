@@ -669,8 +669,24 @@ export function buildQuotesRouter(odoo) {
       const reqMeas = hasMeasurementLine(quote.lines);
       const nextMeasStatus = fm === "produccion" && reqMeas ? "pending" : "none";
       const upd = await dbQuery(
-        `update public.presupuestador_quotes set status='pending_approvals', fulfillment_mode=$3, confirmed_at=now(), requires_measurement=$6, measurement_status=$7, commercial_decision=$4, technical_decision=$5, commercial_by_user_id=null, commercial_at=null, technical_by_user_id=null, technical_at=null, commercial_notes = case when $4='approved' and created_by_role='distribuidor' then 'AUTO: distribuidor' else null end, technical_notes=null, rejection_notes=null where id=$1 returning *`,
-        [id, "pending_approvals", fm, isDistributor ? "approved" : "pending", "pending", reqMeas, nextMeasStatus]
+        `update public.presupuestador_quotes
+         set status='pending_approvals',
+             fulfillment_mode=$2,
+             confirmed_at=now(),
+             requires_measurement=$5,
+             measurement_status=$6,
+             commercial_decision=$3,
+             technical_decision=$4,
+             commercial_by_user_id=null,
+             commercial_at=null,
+             technical_by_user_id=null,
+             technical_at=null,
+             commercial_notes = case when $3='approved' and created_by_role='distribuidor' then 'AUTO: distribuidor' else null end,
+             technical_notes=null,
+             rejection_notes=null
+         where id=$1
+         returning *`,
+        [id, fm, isDistributor ? "approved" : "pending", "pending", reqMeas, nextMeasStatus]
       );
       const confirmed = upd.rows?.[0] || quote;
       try {
