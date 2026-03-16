@@ -1,8 +1,5 @@
-Reemplazar este archivo en el repo:
-- cotizador-front/src/pages/CotizadorPage/index.jsx
+Archivos completos listos para copiar y pegar en el repo.
 
-Cambio incluido:
-- popup centrado para elegir Acopio o Produccion al confirmar
-- leyenda explicativa para cada destino
-- Acopio deja el presupuesto editable
-- Produccion no permite edicion desde Presupuestos
+Reemplazar:
+- cotizador-front/src/pages/MedicionDetailPage/index.jsx
+- cotizador-front/src/pages/AprobacionTecnicaPage/index.jsx

@@ -346,10 +346,8 @@ export default function MedicionDetailPage() {
 
       if (isMedidor) {
         closePendingWhatsappWindow();
-        setShareInfo({
-          tone: "success",
-          message: "Medición enviada a Técnica para revisión.",
-        });
+        window.alert("La medición se ha enviado correctamente.");
+        navigate("/mediciones");
         return;
       }
 
@@ -953,7 +951,7 @@ export default function MedicionDetailPage() {
                   >
                     {mSave.isPending
                       ? (isTechnical ? "Aprobando…" : "Enviando…")
-                      : (isTechnical ? "Aprobar y enviar WhatsApp" : "Enviar a Técnica")}
+                      : (isTechnical ? "Aprobar y enviar" : "Enviar a Técnica")}
                   </Button>
 
                   {isTechnical && quote.measurement_status === "submitted" && (

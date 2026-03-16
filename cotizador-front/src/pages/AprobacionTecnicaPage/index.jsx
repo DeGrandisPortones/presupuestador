@@ -45,7 +45,7 @@ function createdByLabel(r) {
 function measurementStatusLabel(s) {
   if (s === "pending") return "Pendiente";
   if (s === "needs_fix") return "A corregir";
-  if (s === "submitted") return "Pendiente revisión";
+  if (s === "submitted") return "A corregir";
   if (s === "approved") return "Aprobada";
   return s || "—";
 }
@@ -56,12 +56,6 @@ function normalizeTab(raw) {
   const tab = String(raw || "").trim();
   return VALID_TABS.includes(tab) ? tab : "aprobaciones_portones";
 }
-function matchesSearch(values, searchText) {
-  const s = String(searchText || "").trim().toLowerCase();
-  if (!s) return true;
-  const haystack = values.filter(Boolean).join(" ").toLowerCase();
-  return haystack.includes(s);
-}
 
 export default function AprobacionTecnicaPage() {
   const navigate = useNavigate();
@@ -70,9 +64,8 @@ export default function AprobacionTecnicaPage() {
   const initialTab = normalizeTab(searchParams.get("tab"));
   const [tab, setTab] = useState(initialTab);
   const [filter, setFilter] = useState("all");
-  const [measurementStatus, setMeasurementStatus] = useState(initialTab === "aprobaciones_mediciones" ? "submitted" : "pending");
+  const [measurementStatus, setMeasurementStatus] = useState(initialTab === "aprobaciones_mediciones" ? "por_controlar" : "pending");
   const [measurementDates, setMeasurementDates] = useState({});
-  const [searchText, setSearchText] = useState("");
   const [pageAprobaciones, setPageAprobaciones] = useState(1);
   const [pageMediciones, setPageMediciones] = useState(1);
   const [pageAcopio, setPageAcopio] = useState(1);
@@ -88,106 +81,103 @@ export default function AprobacionTecnicaPage() {
   const doorsQ = useQuery({ queryKey: ["doors", "technical_inbox"], queryFn: () => listDoors({ scope: "technical_inbox" }), enabled: tab === "aprobaciones_puertas" && !!user?.is_rev_tecnica });
   const measQ = useQuery({
     queryKey: ["measurements", "tecnica", tab, measurementStatus],
-    queryFn: () => listMeasurements({ status: measurementStatus, viewer: "tecnica" }),
+    queryFn: () => {
+      const status = tab === "aprobaciones_mediciones" ? "all" : measurementStatus;
+      return listMeasurements({ status, viewer: "tecnica" });
+    },
     enabled: (tab === "mediciones" || tab === "aprobaciones_mediciones") && !!user?.is_rev_tecnica,
   });
 
   const acopioM = useMutation({ mutationFn: ({ id, action, notes }) => reviewAcopioTechnical(id, { action, notes }), onSuccess: () => acopioQ.refetch() });
   const doorM = useMutation({ mutationFn: ({ id, action, notes }) => reviewDoorTechnical(id, { action, notes }), onSuccess: () => doorsQ.refetch() });
-  const scheduleM = useMutation({ mutationFn: ({ id, scheduledFor }) => scheduleMeasurement(id, { scheduledFor }), onSuccess: () => measQ.refetch() });
+  const scheduleM = useMutation({
+    mutationFn: ({ id, scheduledFor }) => scheduleMeasurement(id, { scheduledFor }),
+    onSuccess: () => measQ.refetch(),
+  });
 
   function goToTab(nextTab) {
     const normalized = normalizeTab(nextTab);
     setTab(normalized);
     setSearchParams({ tab: normalized });
-    setSearchText("");
-    if (normalized === "mediciones" && ["submitted", "approved"].includes(measurementStatus)) setMeasurementStatus("pending");
-    if (normalized === "aprobaciones_mediciones" && ["pending", "needs_fix"].includes(measurementStatus)) setMeasurementStatus("submitted");
+    if (normalized === "mediciones") {
+      setMeasurementStatus("pending");
+    }
+    if (normalized === "aprobaciones_mediciones") {
+      setMeasurementStatus("por_controlar");
+    }
   }
 
-  useEffect(() => { setPageAprobaciones(1); }, [filter, searchText]);
-  useEffect(() => { setPageMediciones(1); }, [measurementStatus, searchText]);
-  useEffect(() => { setPageAcopio(1); }, [searchText]);
-  useEffect(() => { setPagePuertas(1); }, [searchText]);
+  useEffect(() => { setPageAprobaciones(1); }, [filter]);
+  useEffect(() => { setPageMediciones(1); }, [measurementStatus]);
 
   const rows = useMemo(() => {
     const arr = q.data || [];
-    let out = arr;
-    if (filter === "pending") out = arr.filter((x) => x.status === "pending_approvals" && x.technical_decision === "pending");
-    if (filter === "rejected") out = arr.filter((x) => x.status === "draft" && x.commercial_decision === "rejected");
-    return out.filter((r) => matchesSearch([
-      createdByLabel(r),
-      r?.end_customer?.name,
-      r?.end_customer?.city,
-      r?.end_customer?.address,
-      rowLabel(r),
-    ], searchText));
-  }, [q.data, filter, searchText]);
+    if (filter === "pending") return arr.filter((x) => x.status === "pending_approvals" && x.technical_decision === "pending");
+    if (filter === "rejected") return arr.filter((x) => x.status === "draft" && x.commercial_decision === "rejected");
+    return arr;
+  }, [q.data, filter]);
 
   const measurementRows = useMemo(() => {
-    const arr = (measQ.data || []).slice();
+    let arr = (measQ.data || []).slice();
+
+    if (tab === "mediciones") {
+      if (measurementStatus === "pending") {
+        arr = arr.filter((x) => String(x?.measurement_status || "") === "pending");
+      } else if (measurementStatus === "needs_fix") {
+        arr = arr.filter((x) => ["submitted", "needs_fix"].includes(String(x?.measurement_status || "")));
+      }
+    }
+
+    if (tab === "aprobaciones_mediciones") {
+      if (measurementStatus === "por_realizar") {
+        arr = arr.filter((x) => ["pending", "needs_fix"].includes(String(x?.measurement_status || "")));
+      } else if (measurementStatus === "por_controlar") {
+        arr = arr.filter((x) => String(x?.measurement_status || "") === "submitted");
+      } else if (measurementStatus === "approved") {
+        arr = arr.filter((x) => String(x?.measurement_status || "") === "approved");
+      }
+    }
+
     arr.sort((a, b) => {
       const ta = a?.measurement_scheduled_for ? new Date(`${a.measurement_scheduled_for}T00:00:00`).getTime() : Number.MAX_SAFE_INTEGER;
       const tb = b?.measurement_scheduled_for ? new Date(`${b.measurement_scheduled_for}T00:00:00`).getTime() : Number.MAX_SAFE_INTEGER;
       if (ta !== tb) return ta - tb;
       return String(a?.end_customer?.name || "").localeCompare(String(b?.end_customer?.name || ""), "es");
     });
-    return arr.filter((r) => matchesSearch([
-      r?.end_customer?.name,
-      r?.end_customer?.city,
-      r?.end_customer?.address,
-      r?.end_customer?.phone,
-      measurementStatusLabel(r?.measurement_status),
-    ], searchText));
-  }, [measQ.data, searchText]);
+    return arr;
+  }, [measQ.data, tab, measurementStatus]);
 
-  const acopioRows = useMemo(() => {
-    return (acopioQ.data || []).filter((r) => matchesSearch([
-      createdByLabel(r),
-      r?.end_customer?.name,
-      r?.end_customer?.city,
-      r?.end_customer?.address,
-      r?.acopio_to_produccion_notes,
-      acopioReqLabel(r),
-    ], searchText));
-  }, [acopioQ.data, searchText]);
-
-  const doorRows = useMemo(() => {
-    return (doorsQ.data || []).filter((d) => matchesSearch([
-      d?.door_code,
-      d?.record?.end_customer?.name,
-      d?.record?.obra_cliente,
-      d?.linked_quote_odoo_name,
-      d?.record?.asociado_porton,
-      d?.status,
-    ], searchText));
-  }, [doorsQ.data, searchText]);
-
-  const paged = (arr, page) => arr.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  function paged(arr, page) {
+    const start = (page - 1) * PAGE_SIZE;
+    return arr.slice(start, start + PAGE_SIZE);
+  }
 
   useEffect(() => {
     const total = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
     if (pageAprobaciones > total) setPageAprobaciones(total);
   }, [rows.length, pageAprobaciones]);
+
   useEffect(() => {
     const total = Math.max(1, Math.ceil(measurementRows.length / PAGE_SIZE));
     if (pageMediciones > total) setPageMediciones(total);
   }, [measurementRows.length, pageMediciones]);
+
   useEffect(() => {
-    const total = Math.max(1, Math.ceil(acopioRows.length / PAGE_SIZE));
+    const total = Math.max(1, Math.ceil((acopioQ.data || []).length / PAGE_SIZE));
     if (pageAcopio > total) setPageAcopio(total);
-  }, [acopioRows.length, pageAcopio]);
+  }, [acopioQ.data, pageAcopio]);
+
   useEffect(() => {
-    const total = Math.max(1, Math.ceil(doorRows.length / PAGE_SIZE));
+    const total = Math.max(1, Math.ceil((doorsQ.data || []).length / PAGE_SIZE));
     if (pagePuertas > total) setPagePuertas(total);
-  }, [doorRows.length, pagePuertas]);
+  }, [doorsQ.data, pagePuertas]);
 
   if (!user?.is_rev_tecnica) return <div className="container"><div className="card">No autorizado (falta rol Rev. Técnica).</div></div>;
 
   const visibleRows = paged(rows, pageAprobaciones);
   const visibleMeasurements = paged(measurementRows, pageMediciones);
-  const visibleAcopio = paged(acopioRows, pageAcopio);
-  const visibleDoors = paged(doorRows, pagePuertas);
+  const visibleAcopio = paged(acopioQ.data || [], pageAcopio);
+  const visibleDoors = paged(doorsQ.data || [], pagePuertas);
 
   return (
     <div className="container">
@@ -230,15 +220,13 @@ export default function AprobacionTecnicaPage() {
           <>
             <div className="spacer" />
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              <Button variant={measurementStatus === "submitted" ? "primary" : "ghost"} onClick={() => setMeasurementStatus("submitted")}>Pendientes por controlar</Button>
+              <Button variant={measurementStatus === "por_realizar" ? "primary" : "ghost"} onClick={() => setMeasurementStatus("por_realizar")}>Pendientes por realizar</Button>
+              <Button variant={measurementStatus === "por_controlar" ? "primary" : "ghost"} onClick={() => setMeasurementStatus("por_controlar")}>Pendientes por controlar</Button>
               <Button variant={measurementStatus === "approved" ? "primary" : "ghost"} onClick={() => setMeasurementStatus("approved")}>Aprobadas</Button>
               <Button variant={measurementStatus === "all" ? "primary" : "ghost"} onClick={() => setMeasurementStatus("all")}>Todas</Button>
             </div>
           </>
         )}
-
-        <div className="spacer" />
-        <Input value={searchText} onChange={setSearchText} placeholder="Buscar por cliente, localidad, dirección, usuario, código o estado…" style={{ width: "100%" }} />
       </div>
 
       <div className="spacer" />
@@ -268,7 +256,17 @@ export default function AprobacionTecnicaPage() {
             {!!measurementRows.length && (
               <>
                 <table>
-                  <thead><tr><th>Cliente</th><th>Localidad</th><th>Dirección</th><th>Estado</th><th>Fecha visita</th><th>Asignar fecha</th><th></th></tr></thead>
+                  <thead>
+                    <tr>
+                      <th>Cliente</th>
+                      <th>Localidad</th>
+                      <th>Dirección</th>
+                      <th>Estado</th>
+                      <th>Fecha visita</th>
+                      <th>Asignar fecha</th>
+                      <th></th>
+                    </tr>
+                  </thead>
                   <tbody>
                     {visibleMeasurements.map((r) => {
                       const dateValue = measurementDates[r.id] ?? r.measurement_scheduled_for ?? "";
@@ -281,11 +279,25 @@ export default function AprobacionTecnicaPage() {
                           <td>{fmtDate(r.measurement_scheduled_for)}</td>
                           <td style={{ minWidth: 220 }}>
                             <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                              <Input type="date" value={dateValue} onChange={(v) => setMeasurementDates((prev) => ({ ...prev, [r.id]: v }))} style={{ width: "100%" }} />
-                              <Button disabled={scheduleM.isPending || !dateValue} onClick={() => scheduleM.mutate({ id: r.id, scheduledFor: dateValue })}>Guardar</Button>
+                              <Input
+                                type="date"
+                                value={dateValue}
+                                onChange={(v) => setMeasurementDates((prev) => ({ ...prev, [r.id]: v }))}
+                                style={{ width: "100%" }}
+                              />
+                              <Button
+                                disabled={scheduleM.isPending || !dateValue}
+                                onClick={() => scheduleM.mutate({ id: r.id, scheduledFor: dateValue })}
+                              >
+                                Guardar
+                              </Button>
                             </div>
                           </td>
-                          <td className="right"><Button variant="ghost" onClick={() => navigate(`/mediciones/${r.id}`)}>{r.measurement_status === "submitted" ? "Revisar" : "Abrir"}</Button></td>
+                          <td className="right">
+                            <Button variant="ghost" onClick={() => navigate(`/mediciones/${r.id}`)}>
+                              {r.measurement_status === "submitted" ? "Revisar" : "Abrir"}
+                            </Button>
+                          </td>
                         </tr>
                       );
                     })}
@@ -301,8 +313,8 @@ export default function AprobacionTecnicaPage() {
           <>
             {acopioQ.isLoading && <div className="muted">Cargando...</div>}
             {acopioQ.isError && <div style={{ color: "#d93025", fontSize: 13 }}>{acopioQ.error.message}</div>}
-            {!acopioQ.isLoading && !acopioRows.length && <div className="muted">Sin solicitudes</div>}
-            {!!acopioRows.length && (
+            {!acopioQ.isLoading && !(acopioQ.data || []).length && <div className="muted">Sin solicitudes</div>}
+            {!!(acopioQ.data || []).length && (
               <>
                 <table><thead><tr><th>Fecha</th><th>Vendedor/Distribuidor</th><th>Cliente</th><th>Dirección</th><th>Solicitud</th><th>Decisiones</th><th></th></tr></thead><tbody>
                   {visibleAcopio.map((r) => {
@@ -310,7 +322,7 @@ export default function AprobacionTecnicaPage() {
                     return <tr key={r.id}><td>{fmtDate(r.acopio_to_produccion_requested_at || r.created_at)}</td><td>{createdByLabel(r)}</td><td>{r.end_customer?.name || <span className="muted">(sin nombre)</span>}</td><td>{r.end_customer?.address || "—"}</td><td>{r.acopio_to_produccion_notes || <span className="muted">(sin nota)</span>}</td><td>{acopioReqLabel(r)}</td><td className="right" style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}><Button variant="ghost" onClick={() => navigate(`/presupuestos/${r.id}`)}>Abrir</Button>{canAct ? <><Button disabled={acopioM.isPending} onClick={() => acopioM.mutate({ id: r.id, action: "approve", notes: null })}>OK</Button><Button variant="ghost" disabled={acopioM.isPending} onClick={() => { const msg = window.prompt("Motivo del rechazo:", ""); if (msg !== null) acopioM.mutate({ id: r.id, action: "reject", notes: msg }); }}>Rechazar</Button></> : <span className="muted">Ya decidiste</span>}</td></tr>;
                   })}
                 </tbody></table>
-                <PaginationControls page={pageAcopio} totalItems={acopioRows.length} pageSize={PAGE_SIZE} onPageChange={setPageAcopio} />
+                <PaginationControls page={pageAcopio} totalItems={(acopioQ.data || []).length} pageSize={PAGE_SIZE} onPageChange={setPageAcopio} />
               </>
             )}
           </>
@@ -320,13 +332,13 @@ export default function AprobacionTecnicaPage() {
           <>
             {doorsQ.isLoading && <div className="muted">Cargando...</div>}
             {doorsQ.isError && <div style={{ color: "#d93025", fontSize: 13 }}>{doorsQ.error.message}</div>}
-            {!doorsQ.isLoading && !doorRows.length && <div className="muted">Sin puertas pendientes</div>}
-            {!!doorRows.length && (
+            {!doorsQ.isLoading && !(doorsQ.data || []).length && <div className="muted">Sin puertas pendientes</div>}
+            {!!(doorsQ.data || []).length && (
               <>
                 <table><thead><tr><th>Código</th><th>Cliente</th><th>Portón vinculado</th><th>Venta</th><th>Compra</th><th></th></tr></thead><tbody>
                   {visibleDoors.map((d) => <tr key={d.id}><td>{d.door_code}</td><td>{d.record?.end_customer?.name || d.record?.obra_cliente || "—"}</td><td>{d.linked_quote_odoo_name || d.record?.asociado_porton || "—"}</td><td>{d.sale_amount ? `$ ${Number(d.sale_amount).toLocaleString("es-AR")}` : "—"}</td><td>{d.purchase_amount ? `$ ${Number(d.purchase_amount).toLocaleString("es-AR")}` : "—"}</td><td className="right" style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}><Button variant="ghost" onClick={() => navigate(`/puertas/${d.id}`)}>Abrir</Button><Button disabled={doorM.isPending} onClick={() => doorM.mutate({ id: d.id, action: "approve", notes: null })}>OK</Button><Button variant="ghost" disabled={doorM.isPending} onClick={() => { const msg = window.prompt("Motivo del rechazo:", ""); if (msg !== null) doorM.mutate({ id: d.id, action: "reject", notes: msg }); }}>Rechazar</Button></td></tr>)}
                 </tbody></table>
-                <PaginationControls page={pagePuertas} totalItems={doorRows.length} pageSize={PAGE_SIZE} onPageChange={setPagePuertas} />
+                <PaginationControls page={pagePuertas} totalItems={(doorsQ.data || []).length} pageSize={PAGE_SIZE} onPageChange={setPagePuertas} />
               </>
             )}
           </>
