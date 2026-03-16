@@ -6,21 +6,19 @@ import { ensureUsersAdminColumns } from "../usersDb.js";
 export function buildAuthRouter() {
   const router = express.Router();
 
-  // LOGIN
   router.post("/login", async (req, res, next) => {
     try {
       const { username, password } = req.body || {};
       if (!username || !password) throw new Error("Falta username/password");
 
-      // Aseguramos columnas nuevas (full_name/is_active)
       await ensureUsersAdminColumns();
 
-      // Login case-insensitive para username + validación con pgcrypto
       const q = await dbQuery(
         `
         select id, username, full_name,
+               is_superuser,
                is_distribuidor, is_vendedor,
-               is_enc_comercial, is_rev_tecnica, is_medidor,
+               is_enc_comercial, is_rev_tecnica, is_medidor, is_logistica,
                odoo_partner_id,
                default_maps_url,
                coalesce(is_active, true) as is_active
@@ -43,7 +41,6 @@ export function buildAuthRouter() {
     }
   });
 
-  // ME
   router.get("/me", requireAuth, async (req, res) => {
     res.json({ ok: true, user: req.user });
   });

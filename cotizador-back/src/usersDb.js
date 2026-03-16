@@ -5,23 +5,13 @@ let ensured = false;
 export async function ensureUsersAdminColumns() {
   if (ensured) return;
 
-  // full_name: nombre visible
   await dbQuery(`alter table public.presupuestador_users add column if not exists full_name text null;`);
-
-  // is_active: habilitar/inhabilitar login y uso del sistema
   await dbQuery(`alter table public.presupuestador_users add column if not exists is_active boolean not null default true;`);
-
-  // default_maps_url: URL sugerida para Google Maps (prefill en cotizador)
   await dbQuery(`alter table public.presupuestador_users add column if not exists default_maps_url text null;`);
-
-  // is_medidor: usuario técnico que carga mediciones
   await dbQuery(`alter table public.presupuestador_users add column if not exists is_medidor boolean not null default false;`);
-
-  // is_logistica: usuario para aprobación logística (post-medición)
   await dbQuery(`alter table public.presupuestador_users add column if not exists is_logistica boolean not null default false;`);
+  await dbQuery(`alter table public.presupuestador_users add column if not exists is_superuser boolean not null default false;`);
 
-  // ✅ Fix: el esquema original tenía un CHECK que exige que el usuario tenga al menos un rol.
-  // Al agregar is_medidor / is_logistica, el CHECK viejo no lo contempla.
   try {
     await dbQuery(`alter table public.presupuestador_users drop constraint if exists presupuestador_users_role_check;`);
   } catch {
@@ -37,6 +27,7 @@ export async function ensureUsersAdminColumns() {
          or coalesce(is_rev_tecnica,false)
          or coalesce(is_medidor,false)
          or coalesce(is_logistica,false)
+         or coalesce(is_superuser,false)
        ) not valid;`
     );
   } catch {
@@ -48,7 +39,9 @@ export async function ensureUsersAdminColumns() {
 
 function normRole(role) {
   const r = String(role || "all").toLowerCase().trim();
-  if (!["all", "vendedor", "distribuidor", "medidor", "logistica"].includes(r)) throw new Error("role inválido");
+  if (!["all", "vendedor", "distribuidor", "medidor", "logistica", "superuser"].includes(r)) {
+    throw new Error("role inválido");
+  }
   return r;
 }
 
@@ -70,13 +63,13 @@ export async function listUsers({ role = "all", q = "", active = "all" } = {}) {
   const where = [];
   const params = [];
 
-  // Solo usuarios operativos del presupuestador
-  where.push("(is_vendedor = true or is_distribuidor = true or is_medidor = true or is_logistica = true)");
+  where.push("(is_vendedor = true or is_distribuidor = true or is_medidor = true or is_logistica = true or is_superuser = true)");
 
   if (roleN === "vendedor") where.push("is_vendedor = true");
   if (roleN === "distribuidor") where.push("is_distribuidor = true");
   if (roleN === "medidor") where.push("is_medidor = true");
   if (roleN === "logistica") where.push("is_logistica = true");
+  if (roleN === "superuser") where.push("is_superuser = true");
 
   if (activeN === "true") where.push("is_active = true");
   if (activeN === "false") where.push("is_active = false");
@@ -89,7 +82,7 @@ export async function listUsers({ role = "all", q = "", active = "all" } = {}) {
 
   const sql = `
     select id, username, full_name,
-           is_distribuidor, is_vendedor, is_medidor, is_logistica,
+           is_distribuidor, is_vendedor, is_medidor, is_logistica, is_superuser,
            is_enc_comercial, is_rev_tecnica,
            is_active,
            odoo_partner_id,
@@ -113,6 +106,7 @@ export async function createUser({
   is_vendedor = false,
   is_medidor = false,
   is_logistica = false,
+  is_superuser = false,
   odoo_partner_id = null,
   default_maps_url = null,
   is_active = true,
@@ -130,7 +124,8 @@ export async function createUser({
   const vend = !!is_vendedor;
   const med = !!is_medidor;
   const log = !!is_logistica;
-  if (!dist && !vend && !med && !log) throw new Error("El usuario debe tener al menos un rol");
+  const sup = !!is_superuser;
+  if (!dist && !vend && !med && !log && !sup) throw new Error("El usuario debe tener al menos un rol");
 
   const pid = odoo_partner_id ? Number(odoo_partner_id) : null;
 
@@ -138,20 +133,20 @@ export async function createUser({
     `
     insert into public.presupuestador_users
       (username, password_hash, full_name, is_active,
-       is_distribuidor, is_vendedor, is_medidor, is_logistica,
+       is_distribuidor, is_vendedor, is_medidor, is_logistica, is_superuser,
        is_enc_comercial, is_rev_tecnica,
        odoo_partner_id, default_maps_url)
     values
       ($1, crypt($2, gen_salt('bf')), $3, $4,
-       $5, $6, $7, $8,
+       $5, $6, $7, $8, $9,
        false, false,
-       $9, $10)
+       $10, $11)
     returning id, username, full_name,
-              is_distribuidor, is_vendedor, is_medidor, is_logistica,
+              is_distribuidor, is_vendedor, is_medidor, is_logistica, is_superuser,
               is_enc_comercial, is_rev_tecnica,
               is_active, odoo_partner_id, default_maps_url, created_at, updated_at
     `,
-    [u, p, name, !!is_active, dist, vend, med, log, pid, (default_maps_url ? String(default_maps_url).trim() : null)]
+    [u, p, name, !!is_active, dist, vend, med, log, sup, pid, (default_maps_url ? String(default_maps_url).trim() : null)]
   );
 
   return r.rows?.[0] || null;
@@ -164,6 +159,7 @@ export async function updateUser(id, {
   is_vendedor,
   is_medidor,
   is_logistica,
+  is_superuser,
   odoo_partner_id,
   default_maps_url,
   is_active,
@@ -174,7 +170,7 @@ export async function updateUser(id, {
   if (!userId) throw new Error("id inválido");
 
   const cur = await dbQuery(
-    `select id, is_distribuidor, is_vendedor, is_medidor, is_logistica, is_active, full_name, odoo_partner_id, default_maps_url
+    `select id, is_distribuidor, is_vendedor, is_medidor, is_logistica, is_superuser, is_active, full_name, odoo_partner_id, default_maps_url
        from public.presupuestador_users where id=$1 limit 1`,
     [userId]
   );
@@ -185,7 +181,8 @@ export async function updateUser(id, {
   const vend = is_vendedor !== undefined ? !!is_vendedor : !!current.is_vendedor;
   const med = is_medidor !== undefined ? !!is_medidor : !!current.is_medidor;
   const log = is_logistica !== undefined ? !!is_logistica : !!current.is_logistica;
-  if (!dist && !vend && !med && !log) throw new Error("El usuario debe tener al menos un rol");
+  const sup = is_superuser !== undefined ? !!is_superuser : !!current.is_superuser;
+  if (!dist && !vend && !med && !log && !sup) throw new Error("El usuario debe tener al menos un rol");
 
   const active = is_active !== undefined ? !!is_active : !!current.is_active;
   const name = full_name !== undefined ? (full_name === null ? null : String(full_name).trim()) : current.full_name;
@@ -203,17 +200,18 @@ export async function updateUser(id, {
         is_vendedor = $5,
         is_medidor = $6,
         is_logistica = $7,
-        odoo_partner_id = $8,
-        default_maps_url = $9,
-        password_hash = case when $10::text is null or $10::text = '' then password_hash else crypt($10::text, gen_salt('bf')) end,
+        is_superuser = $8,
+        odoo_partner_id = $9,
+        default_maps_url = $10,
+        password_hash = case when $11::text is null or $11::text = '' then password_hash else crypt($11::text, gen_salt('bf')) end,
         updated_at = now()
     where id = $1
     returning id, username, full_name,
-              is_distribuidor, is_vendedor, is_medidor, is_logistica,
+              is_distribuidor, is_vendedor, is_medidor, is_logistica, is_superuser,
               is_enc_comercial, is_rev_tecnica,
               is_active, odoo_partner_id, default_maps_url, created_at, updated_at
     `,
-    [userId, name, active, dist, vend, med, log, pid, mapsUrl, pass]
+    [userId, name, active, dist, vend, med, log, sup, pid, mapsUrl, pass]
   );
 
   return r.rows?.[0] || null;

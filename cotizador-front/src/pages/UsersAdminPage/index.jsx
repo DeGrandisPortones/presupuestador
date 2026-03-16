@@ -10,19 +10,14 @@ import { adminCreateUser, adminListUsers, adminUpdateUser } from "../../api/admi
 
 const PAGE_SIZE = 25;
 
-function norm(s) {
-  return String(s || "").toLowerCase().trim();
-}
-
 export default function UsersAdminPage() {
   const user = useAuthStore((s) => s.user);
   const qc = useQueryClient();
 
-  const [roleTab, setRoleTab] = useState("all"); // all | vendedor | distribuidor | medidor
+  const [roleTab, setRoleTab] = useState("all");
   const [q, setQ] = useState("");
-  const [activeFilter, setActiveFilter] = useState("all"); // all | true | false
+  const [activeFilter, setActiveFilter] = useState("all");
   const [page, setPage] = useState(1);
-
   const [selectedId, setSelectedId] = useState(null);
 
   const usersQ = useQuery({
@@ -33,19 +28,14 @@ export default function UsersAdminPage() {
 
   const users = usersQ.data || [];
 
-  const selected = useMemo(() => {
-    if (!selectedId) return null;
-    return users.find((u) => String(u.id) === String(selectedId)) || null;
-  }, [users, selectedId]);
-
-  // Form state (create/edit)
-  const [mode, setMode] = useState("create"); // create | edit
+  const [mode, setMode] = useState("create");
   const [fUsername, setFUsername] = useState("");
   const [fFullName, setFFullName] = useState("");
   const [fPassword, setFPassword] = useState("");
   const [fIsVendedor, setFIsVendedor] = useState(true);
   const [fIsDistribuidor, setFIsDistribuidor] = useState(false);
   const [fIsMedidor, setFIsMedidor] = useState(false);
+  const [fIsSuperuser, setFIsSuperuser] = useState(false);
   const [fOdooPartnerId, setFOdooPartnerId] = useState("");
   const [fDefaultMapsUrl, setFDefaultMapsUrl] = useState("");
   const [fIsActive, setFIsActive] = useState(true);
@@ -56,9 +46,10 @@ export default function UsersAdminPage() {
     setFUsername("");
     setFFullName("");
     setFPassword("");
-    setFIsVendedor(roleTab !== "distribuidor" && roleTab !== "medidor");
+    setFIsVendedor(roleTab !== "distribuidor" && roleTab !== "medidor" && roleTab !== "superuser");
     setFIsDistribuidor(roleTab === "distribuidor");
     setFIsMedidor(roleTab === "medidor");
+    setFIsSuperuser(roleTab === "superuser");
     setFOdooPartnerId("");
     setFDefaultMapsUrl("");
     setFIsActive(true);
@@ -69,10 +60,11 @@ export default function UsersAdminPage() {
     setSelectedId(u.id);
     setFUsername(u.username);
     setFFullName(u.full_name || "");
-    setFPassword(""); // vacío => no cambia
+    setFPassword("");
     setFIsVendedor(!!u.is_vendedor);
     setFIsDistribuidor(!!u.is_distribuidor);
     setFIsMedidor(!!u.is_medidor);
+    setFIsSuperuser(!!u.is_superuser);
     setFOdooPartnerId(u.odoo_partner_id ? String(u.odoo_partner_id) : "");
     setFDefaultMapsUrl(u.default_maps_url ? String(u.default_maps_url) : "");
     setFIsActive(!!u.is_active);
@@ -87,6 +79,7 @@ export default function UsersAdminPage() {
         is_vendedor: fIsVendedor,
         is_distribuidor: fIsDistribuidor,
         is_medidor: fIsMedidor,
+        is_superuser: fIsSuperuser,
         odoo_partner_id: fOdooPartnerId ? Number(fOdooPartnerId) : null,
         default_maps_url: fDefaultMapsUrl ? String(fDefaultMapsUrl) : null,
         is_active: fIsActive,
@@ -103,10 +96,11 @@ export default function UsersAdminPage() {
     mutationFn: () =>
       adminUpdateUser(selectedId, {
         full_name: fFullName,
-        password: fPassword ? fPassword : "", // vacío => no cambia
+        password: fPassword ? fPassword : "",
         is_vendedor: fIsVendedor,
         is_distribuidor: fIsDistribuidor,
         is_medidor: fIsMedidor,
+        is_superuser: fIsSuperuser,
         odoo_partner_id: fOdooPartnerId ? Number(fOdooPartnerId) : null,
         default_maps_url: fDefaultMapsUrl ? String(fDefaultMapsUrl) : null,
         is_active: fIsActive,
@@ -114,7 +108,6 @@ export default function UsersAdminPage() {
     onSuccess: () => {
       toast.success("Usuario actualizado");
       qc.invalidateQueries({ queryKey: ["adminUsers"] });
-      // refrescar selección
     },
     onError: (e) => toast.error(e.message),
   });
@@ -153,6 +146,14 @@ export default function UsersAdminPage() {
     return filtered.slice(start, start + PAGE_SIZE);
   }, [filtered, page]);
 
+  function ensureAtLeastOneRole() {
+    if (!fIsVendedor && !fIsDistribuidor && !fIsMedidor && !fIsSuperuser) {
+      toast.error("Elegí Vendedor / Distribuidor / Medidor / Superusuario");
+      return false;
+    }
+    return true;
+  }
+
   return (
     <div className="container">
       <div className="spacer" />
@@ -163,18 +164,11 @@ export default function UsersAdminPage() {
         </div>
 
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <Button variant={roleTab === "all" ? "primary" : "ghost"} onClick={() => { setRoleTab("all"); resetCreate(); }}>
-            Todos
-          </Button>
-          <Button variant={roleTab === "vendedor" ? "primary" : "ghost"} onClick={() => { setRoleTab("vendedor"); resetCreate(); }}>
-            Vendedores
-          </Button>
-          <Button variant={roleTab === "distribuidor" ? "primary" : "ghost"} onClick={() => { setRoleTab("distribuidor"); resetCreate(); }}>
-            Distribuidores
-          </Button>
-          <Button variant={roleTab === "medidor" ? "primary" : "ghost"} onClick={() => { setRoleTab("medidor"); resetCreate(); }}>
-            Medidores
-          </Button>
+          <Button variant={roleTab === "all" ? "primary" : "ghost"} onClick={() => { setRoleTab("all"); resetCreate(); }}>Todos</Button>
+          <Button variant={roleTab === "vendedor" ? "primary" : "ghost"} onClick={() => { setRoleTab("vendedor"); resetCreate(); }}>Vendedores</Button>
+          <Button variant={roleTab === "distribuidor" ? "primary" : "ghost"} onClick={() => { setRoleTab("distribuidor"); resetCreate(); }}>Distribuidores</Button>
+          <Button variant={roleTab === "medidor" ? "primary" : "ghost"} onClick={() => { setRoleTab("medidor"); resetCreate(); }}>Medidores</Button>
+          <Button variant={roleTab === "superuser" ? "primary" : "ghost"} onClick={() => { setRoleTab("superuser"); resetCreate(); }}>Superusuarios</Button>
         </div>
       </div>
 
@@ -210,7 +204,6 @@ export default function UsersAdminPage() {
 
           {usersQ.isLoading && <div className="muted">Cargando…</div>}
           {usersQ.isError && <div style={{ color: "#d93025", fontSize: 13 }}>{usersQ.error.message}</div>}
-
           {!usersQ.isLoading && !filtered.length && <div className="muted">Sin usuarios</div>}
 
           {!!filtered.length && (
@@ -219,6 +212,12 @@ export default function UsersAdminPage() {
                 {visibleUsers.map((u) => {
                   const active = !!u.is_active;
                   const isSel = String(u.id) === String(selectedId);
+                  const roles = [];
+                  if (u.is_superuser) roles.push("Superusuario");
+                  if (u.is_vendedor) roles.push("Vendedor");
+                  if (u.is_distribuidor) roles.push("Distribuidor");
+                  if (u.is_medidor) roles.push("Medidor");
+
                   return (
                     <div
                       key={u.id}
@@ -239,6 +238,11 @@ export default function UsersAdminPage() {
                         {u.full_name || "(sin nombre)"}
                         {u.odoo_partner_id ? ` · Odoo partner: ${u.odoo_partner_id}` : ""}
                       </div>
+                      {!!roles.length && (
+                        <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>
+                          {roles.join(" · ")}
+                        </div>
+                      )}
 
                       <div style={{ marginTop: 8, display: "flex", gap: 8, justifyContent: "flex-end" }}>
                         <Button
@@ -257,12 +261,7 @@ export default function UsersAdminPage() {
                 })}
               </div>
 
-              <PaginationControls
-                page={page}
-                totalItems={filtered.length}
-                pageSize={PAGE_SIZE}
-                onPageChange={setPage}
-              />
+              <PaginationControls page={page} totalItems={filtered.length} pageSize={PAGE_SIZE} onPageChange={setPage} />
             </>
           )}
         </div>
@@ -275,13 +274,7 @@ export default function UsersAdminPage() {
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
             <div>
               <div className="muted" style={{ marginBottom: 6 }}>Usuario</div>
-              <Input
-                value={fUsername}
-                onChange={setFUsername}
-                placeholder="usuario"
-                style={{ width: "100%" }}
-                disabled={mode === "edit"}
-              />
+              <Input value={fUsername} onChange={setFUsername} placeholder="usuario" style={{ width: "100%" }} disabled={mode === "edit"} />
             </div>
 
             <div>
@@ -326,6 +319,10 @@ export default function UsersAdminPage() {
               <input type="checkbox" checked={fIsMedidor} onChange={(e) => setFIsMedidor(e.target.checked)} />
               Medidor
             </label>
+            <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <input type="checkbox" checked={fIsSuperuser} onChange={(e) => setFIsSuperuser(e.target.checked)} />
+              Superusuario
+            </label>
             <label style={{ display: "flex", gap: 8, alignItems: "center", marginLeft: 10 }}>
               <input type="checkbox" checked={fIsActive} onChange={(e) => setFIsActive(e.target.checked)} />
               Activo
@@ -341,7 +338,7 @@ export default function UsersAdminPage() {
                 onClick={() => {
                   if (!fUsername.trim()) return toast.error("Falta username");
                   if (!fPassword) return toast.error("Falta password");
-                  if (!fIsVendedor && !fIsDistribuidor && !fIsMedidor) return toast.error("Elegí Vendedor / Distribuidor / Medidor");
+                  if (!ensureAtLeastOneRole()) return;
                   createM.mutate();
                 }}
                 disabled={createM.isPending}
@@ -352,7 +349,7 @@ export default function UsersAdminPage() {
               <Button
                 variant="primary"
                 onClick={() => {
-                  if (!fIsVendedor && !fIsDistribuidor && !fIsMedidor) return toast.error("Elegí Vendedor / Distribuidor / Medidor");
+                  if (!ensureAtLeastOneRole()) return;
                   updateM.mutate();
                 }}
                 disabled={updateM.isPending}
