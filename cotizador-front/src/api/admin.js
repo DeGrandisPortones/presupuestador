@@ -18,6 +18,18 @@ export async function adminSaveFinalSettings(payload) {
   return data.settings || { tolerance_percent: 0 };
 }
 
+export async function adminGetMeasurementMappings() {
+  const { data } = await http.get(`/api/admin/measurement-mappings`);
+  if (!data?.ok) throw new Error(data?.error || "No se pudo cargar el mapeo de medición");
+  return data.settings || { rules: [] };
+}
+
+export async function adminSaveMeasurementMappings(payload) {
+  const { data } = await http.put(`/api/admin/measurement-mappings`, payload || {});
+  if (!data?.ok) throw new Error(data?.error || "No se pudo guardar el mapeo de medición");
+  return data.settings || { rules: [] };
+}
+
 export async function adminCreateSection(kind = "porton", { name, position = 100 }) {
   const { data } = await http.post(`/api/admin/sections?kind=${encodeURIComponent(kind)}`, { name, position });
   if (!data?.ok) throw new Error(data?.error || "No se pudo guardar la sección");

@@ -4,7 +4,12 @@ import { loadCatalogBootstrap, clearCatalogBootstrapCache } from "../catalogBoot
 import { normKind, createSection, deleteSection, setTagSection, setProductAlias, getTypeSectionsMap, setTypeSections } from "../catalogDb.js";
 import { dbQuery } from "../db.js";
 import { listUsers, createUser, updateUser } from "../usersDb.js";
-import { getCommercialFinalQuoteSettings, setCommercialFinalQuoteSettings } from "../settingsDb.js";
+import {
+  getCommercialFinalQuoteSettings,
+  setCommercialFinalQuoteSettings,
+  getMeasurementProductMappings,
+  setMeasurementProductMappings,
+} from "../settingsDb.js";
 
 function requireEncComercial(req, res, next) {
   if (!req.user?.is_enc_comercial) return res.status(403).json({ ok: false, error: "No autorizado" });
@@ -40,6 +45,24 @@ export function buildAdminRouter(odoo) {
   router.put("/final-settings", requireAuth, requireEncComercial, async (req, res, next) => {
     try {
       const settings = await setCommercialFinalQuoteSettings(req.body || {});
+      res.json({ ok: true, settings });
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  router.get("/measurement-mappings", requireAuth, requireEncComercial, async (_req, res, next) => {
+    try {
+      const settings = await getMeasurementProductMappings();
+      res.json({ ok: true, settings });
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  router.put("/measurement-mappings", requireAuth, requireEncComercial, async (req, res, next) => {
+    try {
+      const settings = await setMeasurementProductMappings(req.body || {});
       res.json({ ok: true, settings });
     } catch (e) {
       next(e);
