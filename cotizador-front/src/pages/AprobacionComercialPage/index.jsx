@@ -51,6 +51,13 @@ function matchesSearch(values, searchText) {
   return haystack.includes(s);
 }
 
+function toTimeDesc(value) {
+  if (!value) return 0;
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return 0;
+  return d.getTime();
+}
+
 export default function AprobacionComercialPage() {
   const navigate = useNavigate();
   const user = useAuthStore((s) => s.user);
@@ -82,7 +89,7 @@ export default function AprobacionComercialPage() {
   const doorM = useMutation({ mutationFn: ({ id, action, notes }) => reviewDoorCommercial(id, { action, notes }), onSuccess: () => doorsQ.refetch() });
 
   const rows = useMemo(() => {
-    const arr = q.data || [];
+    const arr = (q.data || []).slice().sort((a, b) => toTimeDesc(b?.created_at) - toTimeDesc(a?.created_at));
     let out = arr;
     if (filter === "pending") out = arr.filter((x) => x.status === "pending_approvals" && x.commercial_decision === "pending");
     if (filter === "rejected") out = arr.filter((x) => x.status === "draft" && x.technical_decision === "rejected");
@@ -96,25 +103,31 @@ export default function AprobacionComercialPage() {
   }, [q.data, filter, searchText]);
 
   const acopioRows = useMemo(() => {
-    return (acopioQ.data || []).filter((r) => matchesSearch([
-      createdByLabel(r),
-      r?.end_customer?.name,
-      r?.end_customer?.city,
-      r?.end_customer?.address,
-      r?.acopio_to_produccion_notes,
-      acopioReqLabel(r),
-    ], searchText));
+    return (acopioQ.data || [])
+      .slice()
+      .sort((a, b) => toTimeDesc(b?.acopio_to_produccion_requested_at || b?.created_at) - toTimeDesc(a?.acopio_to_produccion_requested_at || a?.created_at))
+      .filter((r) => matchesSearch([
+        createdByLabel(r),
+        r?.end_customer?.name,
+        r?.end_customer?.city,
+        r?.end_customer?.address,
+        r?.acopio_to_produccion_notes,
+        acopioReqLabel(r),
+      ], searchText));
   }, [acopioQ.data, searchText]);
 
   const doorRows = useMemo(() => {
-    return (doorsQ.data || []).filter((d) => matchesSearch([
-      d?.door_code,
-      d?.record?.end_customer?.name,
-      d?.record?.obra_cliente,
-      d?.linked_quote_odoo_name,
-      d?.record?.asociado_porton,
-      d?.status,
-    ], searchText));
+    return (doorsQ.data || [])
+      .slice()
+      .sort((a, b) => toTimeDesc(b?.created_at) - toTimeDesc(a?.created_at))
+      .filter((d) => matchesSearch([
+        d?.door_code,
+        d?.record?.end_customer?.name,
+        d?.record?.obra_cliente,
+        d?.linked_quote_odoo_name,
+        d?.record?.asociado_porton,
+        d?.status,
+      ], searchText));
   }, [doorsQ.data, searchText]);
 
   useEffect(() => { setPageAprobaciones(1); }, [filter, searchText]);
@@ -190,7 +203,7 @@ export default function AprobacionComercialPage() {
                         <td>{r.end_customer?.name || <span className="muted">(sin nombre)</span>}</td>
                         <td>{r.end_customer?.address || "—"}</td>
                         <td>{rowLabel(r)}</td>
-                        <td className="right"><Button onClick={() => navigate(`/presupuestos/${r.id}`)}>Abrir</Button></td>
+                        <td className="right"><Button onClick={() => navigate(`/presupuestos/${r.id}`, { state: { from: "/aprobacion/comercial" } })}>Abrir</Button></td>
                       </tr>
                     ))}
                   </tbody>
@@ -222,7 +235,7 @@ export default function AprobacionComercialPage() {
                           <td>{r.acopio_to_produccion_notes || <span className="muted">(sin nota)</span>}</td>
                           <td>{acopioReqLabel(r)}</td>
                           <td className="right" style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
-                            <Button variant="ghost" onClick={() => navigate(`/presupuestos/${r.id}`)}>Abrir</Button>
+                            <Button variant="ghost" onClick={() => navigate(`/presupuestos/${r.id}`, { state: { from: "/aprobacion/comercial" } })}>Abrir</Button>
                             {canAct ? (
                               <>
                                 <Button disabled={acopioM.isPending} onClick={() => acopioM.mutate({ id: r.id, action: "approve", notes: null })}>OK</Button>

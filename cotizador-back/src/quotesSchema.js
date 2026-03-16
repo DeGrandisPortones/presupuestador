@@ -8,34 +8,34 @@ export async function ensureQuotesMeasurementColumns() {
 
   await dbQuery(`alter table public.presupuestador_quotes add column if not exists quote_kind text not null default 'original';`);
   await dbQuery(`alter table public.presupuestador_quotes add column if not exists parent_quote_id uuid null;`);
-  await dbQuery(`alter table public.presupuestador_quotes add column if not exists confirmed_at timestamptz null;`);
-
   await dbQuery(`
     do $$
     begin
       if exists (
         select 1
         from information_schema.columns
-        where table_schema='public'
-          and table_name='presupuestador_quotes'
-          and column_name='parent_quote_id'
-          and data_type <> 'uuid'
+        where table_schema = 'public'
+          and table_name = 'presupuestador_quotes'
+          and column_name = 'parent_quote_id'
+          and udt_name <> 'uuid'
       ) then
-        begin
+        execute '
           alter table public.presupuestador_quotes
           alter column parent_quote_id type uuid
-          using case
-            when parent_quote_id is null then null
-            else nullif(parent_quote_id::text, '')::uuid
-          end;
-        exception when others then
-          raise notice 'No se pudo convertir parent_quote_id a uuid: %', sqlerrm;
-        end;
+          using (
+            case
+              when parent_quote_id is null then null
+              when parent_quote_id::text ~* ''^[0-9a-fA-F-]{36}$'' then parent_quote_id::text::uuid
+              else null
+            end
+          )
+        ';
       end if;
     end $$;
   `);
-
+  await dbQuery(`alter table public.presupuestador_quotes add column if not exists confirmed_at timestamptz null;`);
   await dbQuery(`alter table public.presupuestador_quotes add column if not exists deposit_amount numeric(16,2) null;`);
+
   await dbQuery(`alter table public.presupuestador_quotes add column if not exists requires_measurement boolean not null default false;`);
   await dbQuery(`alter table public.presupuestador_quotes add column if not exists measurement_status text not null default 'none';`);
   await dbQuery(`alter table public.presupuestador_quotes add column if not exists measurement_form jsonb null;`);
@@ -50,6 +50,7 @@ export async function ensureQuotesMeasurementColumns() {
   await dbQuery(`alter table public.presupuestador_quotes add column if not exists measurement_review_notes text null;`);
   await dbQuery(`alter table public.presupuestador_quotes add column if not exists measurement_share_token text null;`);
   await dbQuery(`alter table public.presupuestador_quotes add column if not exists measurement_share_enabled_at timestamptz null;`);
+
   await dbQuery(`alter table public.presupuestador_quotes add column if not exists final_status text null;`);
   await dbQuery(`alter table public.presupuestador_quotes add column if not exists final_technical_decision text null;`);
   await dbQuery(`alter table public.presupuestador_quotes add column if not exists final_logistics_decision text null;`);

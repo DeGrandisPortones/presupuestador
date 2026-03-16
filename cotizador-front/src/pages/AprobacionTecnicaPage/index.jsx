@@ -56,6 +56,18 @@ function normalizeTab(raw) {
   const tab = String(raw || "").trim();
   return VALID_TABS.includes(tab) ? tab : "aprobaciones_portones";
 }
+function matchesSearch(values, searchText) {
+  const s = String(searchText || "").trim().toLowerCase();
+  if (!s) return true;
+  const haystack = values.filter(Boolean).join(" ").toLowerCase();
+  return haystack.includes(s);
+}
+function toTimeDesc(value) {
+  if (!value) return 0;
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return 0;
+  return d.getTime();
+}
 
 export default function AprobacionTecnicaPage() {
   const navigate = useNavigate();
@@ -64,6 +76,7 @@ export default function AprobacionTecnicaPage() {
   const initialTab = normalizeTab(searchParams.get("tab"));
   const [tab, setTab] = useState(initialTab);
   const [filter, setFilter] = useState("all");
+  const [searchText, setSearchText] = useState("");
   const [measurementStatus, setMeasurementStatus] = useState(initialTab === "aprobaciones_mediciones" ? "por_controlar" : "all");
   const [measurementDates, setMeasurementDates] = useState({});
   const [pageAprobaciones, setPageAprobaciones] = useState(1);
@@ -101,15 +114,24 @@ export default function AprobacionTecnicaPage() {
     }
   }
 
-  useEffect(() => { setPageAprobaciones(1); }, [filter]);
-  useEffect(() => { setPageMediciones(1); }, [measurementStatus]);
+  useEffect(() => { setPageAprobaciones(1); }, [filter, searchText]);
+  useEffect(() => { setPageMediciones(1); }, [measurementStatus, searchText]);
+  useEffect(() => { setPageAcopio(1); }, [searchText]);
+  useEffect(() => { setPagePuertas(1); }, [searchText]);
 
   const rows = useMemo(() => {
-    const arr = q.data || [];
-    if (filter === "pending") return arr.filter((x) => x.status === "pending_approvals" && x.technical_decision === "pending");
-    if (filter === "rejected") return arr.filter((x) => x.status === "draft" && x.commercial_decision === "rejected");
-    return arr;
-  }, [q.data, filter]);
+    const arr = (q.data || []).slice().sort((a, b) => toTimeDesc(b?.created_at) - toTimeDesc(a?.created_at));
+    let out = arr;
+    if (filter === "pending") out = arr.filter((x) => x.status === "pending_approvals" && x.technical_decision === "pending");
+    if (filter === "rejected") out = arr.filter((x) => x.status === "draft" && x.commercial_decision === "rejected");
+    return out.filter((r) => matchesSearch([
+      createdByLabel(r),
+      r?.end_customer?.name,
+      r?.end_customer?.city,
+      r?.end_customer?.address,
+      rowLabel(r),
+    ], searchText));
+  }, [q.data, filter, searchText]);
 
   const measurementRows = useMemo(() => {
     let arr = (measQ.data || []).slice();
@@ -122,14 +144,48 @@ export default function AprobacionTecnicaPage() {
       arr = arr.filter((x) => String(x?.measurement_status || "") === "approved");
     }
 
-    arr.sort((a, b) => {
-      const ta = a?.measurement_scheduled_for ? new Date(`${a.measurement_scheduled_for}T00:00:00`).getTime() : Number.MAX_SAFE_INTEGER;
-      const tb = b?.measurement_scheduled_for ? new Date(`${b.measurement_scheduled_for}T00:00:00`).getTime() : Number.MAX_SAFE_INTEGER;
-      if (ta !== tb) return ta - tb;
-      return String(a?.end_customer?.name || "").localeCompare(String(b?.end_customer?.name || ""), "es");
-    });
-    return arr;
-  }, [measQ.data, measurementStatus]);
+    return arr
+      .filter((r) => matchesSearch([
+        r?.end_customer?.name,
+        r?.end_customer?.city,
+        r?.end_customer?.address,
+        measurementStatusLabel(r?.measurement_status),
+        createdByLabel(r),
+      ], searchText))
+      .sort((a, b) => {
+        const ta = toTimeDesc(a?.measurement_scheduled_for || a?.created_at);
+        const tb = toTimeDesc(b?.measurement_scheduled_for || b?.created_at);
+        return tb - ta;
+      });
+  }, [measQ.data, measurementStatus, searchText]);
+
+  const acopioRows = useMemo(() => {
+    return (acopioQ.data || [])
+      .slice()
+      .sort((a, b) => toTimeDesc(b?.acopio_to_produccion_requested_at || b?.created_at) - toTimeDesc(a?.acopio_to_produccion_requested_at || a?.created_at))
+      .filter((r) => matchesSearch([
+        createdByLabel(r),
+        r?.end_customer?.name,
+        r?.end_customer?.city,
+        r?.end_customer?.address,
+        r?.acopio_to_produccion_notes,
+        acopioReqLabel(r),
+      ], searchText));
+  }, [acopioQ.data, searchText]);
+
+  const doorRows = useMemo(() => {
+    return (doorsQ.data || [])
+      .slice()
+      .sort((a, b) => toTimeDesc(b?.created_at) - toTimeDesc(a?.created_at))
+      .filter((d) => matchesSearch([
+        d?.door_code,
+        d?.record?.end_customer?.name,
+        d?.record?.obra_cliente,
+        d?.linked_quote_odoo_name,
+        d?.record?.asociado_porton,
+        d?.status,
+      ], searchText));
+  }, [doorsQ.data, searchText]);
 
   function paged(arr, page) {
     const start = (page - 1) * PAGE_SIZE;
@@ -147,21 +203,21 @@ export default function AprobacionTecnicaPage() {
   }, [measurementRows.length, pageMediciones]);
 
   useEffect(() => {
-    const total = Math.max(1, Math.ceil((acopioQ.data || []).length / PAGE_SIZE));
+    const total = Math.max(1, Math.ceil(acopioRows.length / PAGE_SIZE));
     if (pageAcopio > total) setPageAcopio(total);
-  }, [acopioQ.data, pageAcopio]);
+  }, [acopioRows.length, pageAcopio]);
 
   useEffect(() => {
-    const total = Math.max(1, Math.ceil((doorsQ.data || []).length / PAGE_SIZE));
+    const total = Math.max(1, Math.ceil(doorRows.length / PAGE_SIZE));
     if (pagePuertas > total) setPagePuertas(total);
-  }, [doorsQ.data, pagePuertas]);
+  }, [doorRows.length, pagePuertas]);
 
   if (!user?.is_rev_tecnica) return <div className="container"><div className="card">No autorizado (falta rol Rev. Técnica).</div></div>;
 
   const visibleRows = paged(rows, pageAprobaciones);
   const visibleMeasurements = paged(measurementRows, pageMediciones);
-  const visibleAcopio = paged(acopioQ.data || [], pageAcopio);
-  const visibleDoors = paged(doorsQ.data || [], pagePuertas);
+  const visibleAcopio = paged(acopioRows, pageAcopio);
+  const visibleDoors = paged(doorRows, pagePuertas);
 
   return (
     <div className="container">
@@ -199,6 +255,9 @@ export default function AprobacionTecnicaPage() {
             </div>
           </>
         )}
+
+        <div className="spacer" />
+        <Input value={searchText} onChange={setSearchText} placeholder="Buscar por cliente, localidad, dirección, usuario, código o estado…" style={{ width: "100%" }} />
       </div>
 
       <div className="spacer" />
@@ -212,7 +271,7 @@ export default function AprobacionTecnicaPage() {
             {!!rows.length && (
               <>
                 <table><thead><tr><th>Fecha</th><th>Vendedor/Distribuidor</th><th>Cliente</th><th>Dirección</th><th>Estado</th><th></th></tr></thead><tbody>
-                  {visibleRows.map((r) => <tr key={r.id}><td>{fmtDate(r.created_at)}</td><td>{createdByLabel(r)}</td><td>{r.end_customer?.name || <span className="muted">(sin nombre)</span>}</td><td>{r.end_customer?.address || "—"}</td><td>{rowLabel(r)}</td><td className="right"><Button onClick={() => navigate(`/presupuestos/${r.id}`)}>Abrir</Button></td></tr>)}
+                  {visibleRows.map((r) => <tr key={r.id}><td>{fmtDate(r.created_at)}</td><td>{createdByLabel(r)}</td><td>{r.end_customer?.name || <span className="muted">(sin nombre)</span>}</td><td>{r.end_customer?.address || "—"}</td><td>{rowLabel(r)}</td><td className="right"><Button onClick={() => navigate(`/presupuestos/${r.id}`, { state: { from: "/aprobacion/tecnica" } })}>Abrir</Button></td></tr>)}
                 </tbody></table>
                 <PaginationControls page={pageAprobaciones} totalItems={rows.length} pageSize={PAGE_SIZE} onPageChange={setPageAprobaciones} />
               </>
@@ -285,16 +344,16 @@ export default function AprobacionTecnicaPage() {
           <>
             {acopioQ.isLoading && <div className="muted">Cargando...</div>}
             {acopioQ.isError && <div style={{ color: "#d93025", fontSize: 13 }}>{acopioQ.error.message}</div>}
-            {!acopioQ.isLoading && !(acopioQ.data || []).length && <div className="muted">Sin solicitudes</div>}
-            {!!(acopioQ.data || []).length && (
+            {!acopioQ.isLoading && !acopioRows.length && <div className="muted">Sin solicitudes</div>}
+            {!!acopioRows.length && (
               <>
                 <table><thead><tr><th>Fecha</th><th>Vendedor/Distribuidor</th><th>Cliente</th><th>Dirección</th><th>Solicitud</th><th>Decisiones</th><th></th></tr></thead><tbody>
                   {visibleAcopio.map((r) => {
                     const canAct = (r.acopio_to_produccion_technical_decision || "pending") === "pending";
-                    return <tr key={r.id}><td>{fmtDate(r.acopio_to_produccion_requested_at || r.created_at)}</td><td>{createdByLabel(r)}</td><td>{r.end_customer?.name || <span className="muted">(sin nombre)</span>}</td><td>{r.end_customer?.address || "—"}</td><td>{r.acopio_to_produccion_notes || <span className="muted">(sin nota)</span>}</td><td>{acopioReqLabel(r)}</td><td className="right" style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}><Button variant="ghost" onClick={() => navigate(`/presupuestos/${r.id}`)}>Abrir</Button>{canAct ? <><Button disabled={acopioM.isPending} onClick={() => acopioM.mutate({ id: r.id, action: "approve", notes: null })}>OK</Button><Button variant="ghost" disabled={acopioM.isPending} onClick={() => { const msg = window.prompt("Motivo del rechazo:", ""); if (msg !== null) acopioM.mutate({ id: r.id, action: "reject", notes: msg }); }}>Rechazar</Button></> : <span className="muted">Ya decidiste</span>}</td></tr>;
+                    return <tr key={r.id}><td>{fmtDate(r.acopio_to_produccion_requested_at || r.created_at)}</td><td>{createdByLabel(r)}</td><td>{r.end_customer?.name || <span className="muted">(sin nombre)</span>}</td><td>{r.end_customer?.address || "—"}</td><td>{r.acopio_to_produccion_notes || <span className="muted">(sin nota)</span>}</td><td>{acopioReqLabel(r)}</td><td className="right" style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}><Button variant="ghost" onClick={() => navigate(`/presupuestos/${r.id}`, { state: { from: "/aprobacion/tecnica" } })}>Abrir</Button>{canAct ? <><Button disabled={acopioM.isPending} onClick={() => acopioM.mutate({ id: r.id, action: "approve", notes: null })}>OK</Button><Button variant="ghost" disabled={acopioM.isPending} onClick={() => { const msg = window.prompt("Motivo del rechazo:", ""); if (msg !== null) acopioM.mutate({ id: r.id, action: "reject", notes: msg }); }}>Rechazar</Button></> : <span className="muted">Ya decidiste</span>}</td></tr>;
                   })}
                 </tbody></table>
-                <PaginationControls page={pageAcopio} totalItems={(acopioQ.data || []).length} pageSize={PAGE_SIZE} onPageChange={setPageAcopio} />
+                <PaginationControls page={pageAcopio} totalItems={acopioRows.length} pageSize={PAGE_SIZE} onPageChange={setPageAcopio} />
               </>
             )}
           </>
@@ -304,13 +363,13 @@ export default function AprobacionTecnicaPage() {
           <>
             {doorsQ.isLoading && <div className="muted">Cargando...</div>}
             {doorsQ.isError && <div style={{ color: "#d93025", fontSize: 13 }}>{doorsQ.error.message}</div>}
-            {!doorsQ.isLoading && !(doorsQ.data || []).length && <div className="muted">Sin puertas pendientes</div>}
-            {!!(doorsQ.data || []).length && (
+            {!doorsQ.isLoading && !doorRows.length && <div className="muted">Sin puertas pendientes</div>}
+            {!!doorRows.length && (
               <>
                 <table><thead><tr><th>Código</th><th>Cliente</th><th>Portón vinculado</th><th>Venta</th><th>Compra</th><th></th></tr></thead><tbody>
                   {visibleDoors.map((d) => <tr key={d.id}><td>{d.door_code}</td><td>{d.record?.end_customer?.name || d.record?.obra_cliente || "—"}</td><td>{d.linked_quote_odoo_name || d.record?.asociado_porton || "—"}</td><td>{d.sale_amount ? `$ ${Number(d.sale_amount).toLocaleString("es-AR")}` : "—"}</td><td>{d.purchase_amount ? `$ ${Number(d.purchase_amount).toLocaleString("es-AR")}` : "—"}</td><td className="right" style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}><Button variant="ghost" onClick={() => navigate(`/puertas/${d.id}`)}>Abrir</Button><Button disabled={doorM.isPending} onClick={() => doorM.mutate({ id: d.id, action: "approve", notes: null })}>OK</Button><Button variant="ghost" disabled={doorM.isPending} onClick={() => { const msg = window.prompt("Motivo del rechazo:", ""); if (msg !== null) doorM.mutate({ id: d.id, action: "reject", notes: msg }); }}>Rechazar</Button></td></tr>)}
                 </tbody></table>
-                <PaginationControls page={pagePuertas} totalItems={(doorsQ.data || []).length} pageSize={PAGE_SIZE} onPageChange={setPagePuertas} />
+                <PaginationControls page={pagePuertas} totalItems={doorRows.length} pageSize={PAGE_SIZE} onPageChange={setPagePuertas} />
               </>
             )}
           </>
