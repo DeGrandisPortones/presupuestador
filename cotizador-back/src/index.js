@@ -53,7 +53,6 @@ app.use("/api/quotes", buildQuotesRouter(odoo));
 app.use("/api/doors", buildDoorsRouter(odoo));
 
 // Measurements
-// IMPORTANTE: el flujo Medidor -> Tecnica -> Odoo -> WhatsApp necesita el cliente Odoo.
 app.use("/api/measurements", buildMeasurementsRouter(odoo));
 
 // Catalog

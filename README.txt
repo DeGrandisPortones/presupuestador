@@ -1,11 +1,5 @@
-Reemplazar estos archivos en el repo:
-
-- cotizador-front/src/pages/PresupuestosPage/index.jsx
-- cotizador-front/src/pages/QuoteDetailPage/index.jsx
-
-Qué agrega:
-- cuando un portón ya pasó de Acopio a Producción y NO requiere medición,
-  el vendedor/distribuidor puede abrir la cotización final detallada con el botón
-  "Editar final"
-- eso reutiliza la copia/ajuste existente para que luego se envíe a Odoo
-  descontando el anticipo inicial
+Copiar y reemplazar estos archivos en el repo.
+1) Reiniciar backend y frontend.
+2) El router de mediciones ahora recibe Odoo.
+3) La cotización final por medición guarda referencia NV en origin/client_order_ref y marca la copia como synced_odoo.
+4) Desde Presupuestos y desde el detalle del original se puede abrir/consultar el presupuesto final.

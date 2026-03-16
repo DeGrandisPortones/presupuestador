@@ -63,14 +63,21 @@ function matchesSearch(q, searchText) {
   return haystack.includes(s);
 }
 
-function canEditFinalQuote(q) {
-  if (!q) return false;
-  return (
-    (q.quote_kind || "original") === "original" &&
-    q.status === "synced_odoo" &&
-    q.fulfillment_mode === "produccion" &&
-    q.requires_measurement !== true
-  );
+function canOpenFinalFromRow(q) {
+  const fromMeasurement =
+    q?.status === "synced_odoo" &&
+    (q?.quote_kind || "original") === "original" &&
+    ["submitted", "needs_fix", "approved"].includes(String(q?.measurement_status || "none"));
+
+  const fromAcopioWithoutMeasurement =
+    q?.status === "synced_odoo" &&
+    (q?.quote_kind || "original") === "original" &&
+    q?.fulfillment_mode === "produccion" &&
+    q?.acopio_to_produccion_status === "approved" &&
+    !q?.requires_measurement &&
+    String(q?.measurement_status || "none") === "none";
+
+  return fromMeasurement || fromAcopioWithoutMeasurement;
 }
 
 export default function PresupuestosPage() {
@@ -91,7 +98,7 @@ export default function PresupuestosPage() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["quotes", "mine"] }),
   });
 
-  const revisionM = useMutation({
+  const finalM = useMutation({
     mutationFn: (id) => createRevisionQuote(id),
     onSuccess: (newQuote) => {
       qc.invalidateQueries({ queryKey: ["quotes", "mine"] });
@@ -216,22 +223,21 @@ export default function PresupuestosPage() {
                       {r.status === "draft" && (
                         <Button onClick={() => navigate(r.catalog_kind === "ipanel" ? `/cotizador/ipanel/${r.id}` : `/cotizador/${r.id}`)}>Editar</Button>
                       )}
-                      {canEditFinalQuote(r) && (
-                        <Button
-                          variant="secondary"
-                          disabled={revisionM.isPending}
-                          onClick={() => revisionM.mutate(r.id)}
-                          title="Editar el presupuesto final detallado que se enviará a Odoo"
-                        >
-                          {revisionM.isPending ? "Abriendo..." : "Editar final"}
-                        </Button>
-                      )}
                       {filter === "acopio" && (
                         <Button
                           disabled={moveM.isPending || r.acopio_to_produccion_status === "pending"}
                           onClick={() => moveM.mutate(r.id)}
                         >
                           {r.acopio_to_produccion_status === "pending" ? "Solicitud en revisión" : "Solicitar paso a Producción"}
+                        </Button>
+                      )}
+                      {canOpenFinalFromRow(r) && (
+                        <Button
+                          variant="secondary"
+                          disabled={finalM.isPending}
+                          onClick={() => finalM.mutate(r.id)}
+                        >
+                          {finalM.isPending ? "Abriendo…" : "Ver final"}
                         </Button>
                       )}
                     </td>

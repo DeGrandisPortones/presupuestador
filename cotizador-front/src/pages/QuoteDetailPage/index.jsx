@@ -24,17 +24,29 @@ function measurementStatusLabel(s) {
 function hasMeasurementForPdf(q) {
   return !!q?.measurement_form || !!q?.measurement_source_quote_id || ["submitted", "needs_fix", "approved"].includes(q?.measurement_status);
 }
+function canOpenFinalFromOriginal(q) {
+  if (!q || (q.quote_kind || "original") !== "original") return false;
+  if (q.status !== "synced_odoo") return false;
+  const fromMeasurement = hasMeasurementForPdf(q);
+  const fromAcopioWithoutMeasurement =
+    q.fulfillment_mode === "produccion" &&
+    q.acopio_to_produccion_status === "approved" &&
+    !q.requires_measurement &&
+    String(q.measurement_status || "none") === "none";
+  return fromMeasurement || fromAcopioWithoutMeasurement;
+}
+function finalButtonLabel(q) {
+  const fromAcopioWithoutMeasurement =
+    q?.fulfillment_mode === "produccion" &&
+    q?.acopio_to_produccion_status === "approved" &&
+    !q?.requires_measurement &&
+    String(q?.measurement_status || "none") === "none";
+  return fromAcopioWithoutMeasurement ? "Ver final" : "Ver presupuesto final";
+}
 function decisionLabel(d) {
   if (d === "approved") return "Aprobado";
   if (d === "rejected") return "Rechazado";
   return "Pendiente";
-}
-function canOpenFinalQuoteFromOriginal(q) {
-  if (!q) return false;
-  return (q.quote_kind || "original") === "original"
-    && q.status === "synced_odoo"
-    && q.fulfillment_mode === "produccion"
-    && q.requires_measurement !== true;
 }
 
 export default function QuoteDetailPage() {
@@ -77,11 +89,6 @@ export default function QuoteDetailPage() {
     if (quote.technical_decision === "rejected") arr.push({ title: "Rechazo Técnica", body: quote.technical_notes || "(sin motivo)" });
     return arr;
   }, [quote]);
-
-  const ownerCanOpenFinal = !isRevision
-    && (user?.is_vendedor || user?.is_distribuidor)
-    && String(quote?.created_by_user_id) === String(user?.user_id)
-    && canOpenFinalQuoteFromOriginal(quote);
 
   return (
     <div className="container">
@@ -131,23 +138,13 @@ export default function QuoteDetailPage() {
                 <div className="muted">Observaciones</div>
                 <div>{quote.note || <span className="muted">(sin notas)</span>}</div>
                 {isRevision && typeof quote.final_difference_amount === "number" ? <div className="muted" style={{ marginTop: 8 }}>Diferencia final: <b>{formatARS(quote.final_difference_amount)}</b></div> : null}
-                {ownerCanOpenFinal ? (
-                  <div className="muted" style={{ marginTop: 8 }}>
-                    Este portón pasó de <b>Acopio</b> a <b>Producción</b> <u>sin medición</u>. Ahora debés editar la <b>cotización final detallada</b> antes de enviarla a Odoo.
-                  </div>
-                ) : null}
               </div>
 
-              <div style={{ display: "flex", gap: 8, alignItems: "flex-end", flexWrap: "wrap" }}>
+              <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
                 {((!isRevision && quote.status === "draft") || (isRevision && !["syncing_odoo", "synced_odoo"].includes(quote.final_status || ""))) && <Button onClick={() => navigate((quote.catalog_kind || "porton") === "ipanel" ? `/cotizador/ipanel/${quote.id}` : `/cotizador/${quote.id}`)}>Editar</Button>}
-                {ownerCanOpenFinal && (
-                  <Button variant="secondary" disabled={revisionM.isPending} onClick={() => revisionM.mutate()}>
-                    {revisionM.isPending ? "Abriendo…" : "Editar final"}
-                  </Button>
-                )}
-                {((user?.is_vendedor || user?.is_distribuidor) && String(quote.created_by_user_id) === String(user.user_id) && !isRevision && quote.status === "synced_odoo" && hasMeasurementForPdf(quote)) && (
-                  <Button variant="ghost" disabled={revisionM.isPending} onClick={() => revisionM.mutate()} title="Crear un nuevo presupuesto (ajuste) referenciado a este">
-                    {revisionM.isPending ? "Creando…" : "Crear ajuste"}
+                {((user?.is_vendedor || user?.is_distribuidor) && String(quote.created_by_user_id) === String(user.user_id) && canOpenFinalFromOriginal(quote)) && (
+                  <Button variant="ghost" disabled={revisionM.isPending} onClick={() => revisionM.mutate()} title="Abrir la cotización final referenciada a este presupuesto">
+                    {revisionM.isPending ? "Abriendo…" : finalButtonLabel(quote)}
                   </Button>
                 )}
                 {isRevision && quote.parent_quote_id ? <Button variant="ghost" onClick={() => navigate(`/presupuestos/${quote.parent_quote_id}`)}>Ver original</Button> : null}
