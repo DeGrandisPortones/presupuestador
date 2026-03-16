@@ -162,21 +162,30 @@ export default function DashboardPage() {
     return <div className="container"><div className="spacer" /><div className="card"><h2 style={{ marginTop: 0 }}>Dashboard</h2><div className="muted">No tenés permisos (solo Encargado Comercial).</div></div></div>;
   }
 
-  const onRefresh = async () => {
+  const invalidateCatalog = async () => {
     await adminRefreshCatalog();
     qc.invalidateQueries({ queryKey: ["adminCatalog", catalogKind] });
   };
+
+  const onRefresh = async () => {
+    await invalidateCatalog();
+    window.alert("Catálogo actualizado correctamente.");
+  };
+
   const onCreateSection = async () => {
     await adminCreateSection(catalogKind, { name: newSectionName, position: Number(newSectionPos || 100) });
     setNewSectionName("");
-    qc.invalidateQueries({ queryKey: ["adminCatalog", catalogKind] });
+    await invalidateCatalog();
+    window.alert("Sección guardada correctamente.");
   };
+
   const onSaveTolerance = async () => {
     setSavingTolerance(true);
     try {
       const saved = await adminSaveFinalSettings({ tolerance_percent: tolerancePercent });
       setTolerancePercent(String(saved.tolerance_percent ?? 0));
       qc.invalidateQueries({ queryKey: ["adminFinalSettings"] });
+      window.alert(`Tolerancia guardada correctamente: ${saved.tolerance_percent ?? 0}%`);
     } finally {
       setSavingTolerance(false);
     }
@@ -232,14 +241,49 @@ export default function DashboardPage() {
                 </div>
                 <div className="spacer" />
                 <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                  {sections.map((s) => <div key={s.id} style={{ display: "flex", justifyContent: "space-between", gap: 8, border: "1px solid #eee", padding: 10, borderRadius: 10 }}><div><div style={{ fontWeight: 800 }}>{s.name}</div><div className="muted">Posición: {s.position}</div></div><Button variant="ghost" onClick={async () => { if (!window.confirm(`Borrar sección \"${s.name}\"?`)) return; await adminDeleteSection(catalogKind, s.id); qc.invalidateQueries({ queryKey: ["adminCatalog", catalogKind] }); }}>🗑</Button></div>)}
+                  {sections.map((s) => (
+                    <div key={s.id} style={{ display: "flex", justifyContent: "space-between", gap: 8, border: "1px solid #eee", padding: 10, borderRadius: 10 }}>
+                      <div>
+                        <div style={{ fontWeight: 800 }}>{s.name}</div>
+                        <div className="muted">Posición: {s.position}</div>
+                      </div>
+                      <Button
+                        variant="ghost"
+                        onClick={async () => {
+                          if (!window.confirm(`Borrar sección "${s.name}"?`)) return;
+                          await adminDeleteSection(catalogKind, s.id);
+                          await invalidateCatalog();
+                          window.alert("Sección borrada correctamente.");
+                        }}
+                      >
+                        🗑
+                      </Button>
+                    </div>
+                  ))}
                 </div>
               </div>
               <div className="card" style={{ flex: 2, minWidth: 520 }}>
                 <h3 style={{ marginTop: 0 }}>Asignar sección por etiqueta</h3>
                 <div className="spacer" />
                 <div style={{ display: "flex", flexDirection: "column", gap: 8, maxHeight: 560, overflow: "auto", paddingRight: 6 }}>
-                  {tags.map((t) => <div key={t.id} style={{ display: "flex", justifyContent: "space-between", gap: 8, border: "1px solid #eee", padding: 10, borderRadius: 10, alignItems: "center" }}><div style={{ fontWeight: 700 }}>{t.name}</div><select value={t.section_id || ""} onChange={async (e) => { const v = e.target.value ? Number(e.target.value) : null; await adminSetTagSection(catalogKind, t.id, v); qc.invalidateQueries({ queryKey: ["adminCatalog", catalogKind] }); }} style={{ padding: 8, borderRadius: 10, border: "1px solid #ddd", minWidth: 220 }}><option value="">(sin sección)</option>{sections.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select></div>)}
+                  {tags.map((t) => (
+                    <div key={t.id} style={{ display: "flex", justifyContent: "space-between", gap: 8, border: "1px solid #eee", padding: 10, borderRadius: 10, alignItems: "center" }}>
+                      <div style={{ fontWeight: 700 }}>{t.name}</div>
+                      <select
+                        value={t.section_id || ""}
+                        onChange={async (e) => {
+                          const v = e.target.value ? Number(e.target.value) : null;
+                          await adminSetTagSection(catalogKind, t.id, v);
+                          await invalidateCatalog();
+                          window.alert("Asignación de etiqueta guardada correctamente.");
+                        }}
+                        style={{ padding: 8, borderRadius: 10, border: "1px solid #ddd", minWidth: 220 }}
+                      >
+                        <option value="">(sin sección)</option>
+                        {sections.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                      </select>
+                    </div>
+                  ))}
                 </div>
               </div>
             </div>
@@ -248,13 +292,26 @@ export default function DashboardPage() {
           {tab === "aliases" && (
             <div className="row">
               <div className="card" style={{ flex: 1, minWidth: 320 }}><h3 style={{ marginTop: 0 }}>Alias visibles</h3><div className="spacer" /><Input value={productQuery} onChange={setProductQuery} placeholder="Buscar producto…" style={{ width: "100%" }} /></div>
-              <div className="card" style={{ flex: 2, minWidth: 520 }}><h3 style={{ marginTop: 0 }}>Productos</h3><div className="spacer" /><div style={{ display: "flex", flexDirection: "column", gap: 8, maxHeight: 620, overflow: "auto", paddingRight: 6 }}>{filteredProductsByQuery.slice(0, 400).map((p) => <AliasRow key={p.id} product={p} onSave={async (alias) => { await adminSetProductAlias(catalogKind, p.id, alias); qc.invalidateQueries({ queryKey: ["adminCatalog", catalogKind] }); }} />)}</div></div>
+              <div className="card" style={{ flex: 2, minWidth: 520 }}><h3 style={{ marginTop: 0 }}>Productos</h3><div className="spacer" /><div style={{ display: "flex", flexDirection: "column", gap: 8, maxHeight: 620, overflow: "auto", paddingRight: 6 }}>{filteredProductsByQuery.slice(0, 400).map((p) => <AliasRow key={p.id} product={p} onSave={async (alias) => { await adminSetProductAlias(catalogKind, p.id, alias); await invalidateCatalog(); window.alert("Alias guardado correctamente."); }} />)}</div></div>
             </div>
           )}
 
-          {tab === "types" && <div className="row"><TypesSectionsCard catalogKind={catalogKind} sections={sections} typeSections={typeSections} onSave={async (typeKey, sectionIds) => { await adminSetTypeSections(catalogKind, typeKey, sectionIds); qc.invalidateQueries({ queryKey: ["adminCatalog", catalogKind] }); }} /></div>}
+          {tab === "types" && (
+            <div className="row">
+              <TypesSectionsCard
+                catalogKind={catalogKind}
+                sections={sections}
+                typeSections={typeSections}
+                onSave={async (typeKey, sectionIds) => {
+                  await adminSetTypeSections(catalogKind, typeKey, sectionIds);
+                  await invalidateCatalog();
+                  window.alert("Asignación de secciones visibles guardada correctamente.");
+                }}
+              />
+            </div>
+          )}
 
-          {tab === "medicion" && <MeasurementMappingsCard products={products} mappings={normalizeMeasurementMappings(measurementMappingsQ.data)} loading={measurementMappingsQ.isLoading} error={measurementMappingsQ.error} onSave={async (payload) => { await adminSaveMeasurementProductMappings(payload); qc.invalidateQueries({ queryKey: ["adminMeasurementProductMappings"] }); }} />}
+          {tab === "medicion" && <MeasurementMappingsCard products={products} mappings={normalizeMeasurementMappings(measurementMappingsQ.data)} loading={measurementMappingsQ.isLoading} error={measurementMappingsQ.error} onSave={async (payload) => { await adminSaveMeasurementProductMappings(payload); qc.invalidateQueries({ queryKey: ["adminMeasurementProductMappings"] }); window.alert("Asignaciones de medición guardadas correctamente."); }} />}
 
           {tab === "data" && (
             <div className="row">
