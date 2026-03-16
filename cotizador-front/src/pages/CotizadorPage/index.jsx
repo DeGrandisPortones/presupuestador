@@ -232,12 +232,6 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
         return await submitFinalQuote(id);
       }
 
-      if (chosenMode === "acopio") {
-        window.alert("El presupuesto quedará en Acopio. Se seguirá gestionando desde Acopio → Producción.");
-      } else {
-        window.alert("El presupuesto irá a Producción. Ya no podrá editarse desde Presupuestos; si tiene medición comprada, la corrección seguirá desde Mediciones.");
-      }
-
       return await confirmQuote(id, { fulfillment_mode: chosenMode });
     },
     onSuccess: (q) => {
@@ -361,26 +355,92 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
       )}
 
       {!isRevisionQuote && confirmChoiceOpen && (
-        <>
-          <div className="spacer" />
-          <div className="card" style={{ background: "#fafafa", border: "1px solid #ddd" }}>
-            <div style={{ fontWeight: 900, marginBottom: 6 }}>¿A dónde querés enviar este presupuesto?</div>
-            <div className="muted" style={{ marginBottom: 12 }}>
-              Elegí si va a <b>Acopio</b> o a <b>Producción</b>.
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0, 0, 0, 0.45)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 20,
+            zIndex: 1000,
+          }}
+          onClick={() => {
+            if (!confirmM.isPending) setConfirmChoiceOpen(false);
+          }}
+        >
+          <div
+            className="card"
+            style={{
+              width: "100%",
+              maxWidth: 880,
+              background: "#fff",
+              border: "1px solid #ddd",
+              boxShadow: "0 20px 60px rgba(0,0,0,0.18)",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ fontWeight: 900, fontSize: 22, marginBottom: 6 }}>
+              Elegí el destino del presupuesto
             </div>
-            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-              <Button onClick={() => confirmM.mutate({ fulfillmentMode: "acopio" })} disabled={confirmM.isPending}>
-                {confirmM.isPending ? "Confirmando..." : "Enviar a Acopio"}
-              </Button>
-              <Button variant="primary" onClick={() => confirmM.mutate({ fulfillmentMode: "produccion" })} disabled={confirmM.isPending}>
-                {confirmM.isPending ? "Confirmando..." : "Enviar a Producción"}
-              </Button>
+            <div className="muted" style={{ marginBottom: 18 }}>
+              Esta decisión cambia cómo sigue el circuito del portón después de confirmar.
+            </div>
+
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 14 }}>
+              <div
+                style={{
+                  border: "1px solid #d9e5f7",
+                  background: "#f7fbff",
+                  borderRadius: 14,
+                  padding: 16,
+                }}
+              >
+                <div style={{ fontWeight: 900, fontSize: 18, marginBottom: 8 }}>Acopio</div>
+                <div className="muted" style={{ marginBottom: 14 }}>
+                  El portón queda en espera. Se podrá seguir gestionando desde <b>Acopio → Producción</b> y mantiene una instancia de edición.
+                </div>
+                <div style={{ fontSize: 13, lineHeight: 1.45, marginBottom: 16 }}>
+                  <div>• Ideal cuando la fabricación se hará más adelante.</div>
+                  <div>• El presupuesto queda editable.</div>
+                  <div>• Después se solicita el paso a Producción.</div>
+                </div>
+                <Button onClick={() => confirmM.mutate({ fulfillmentMode: "acopio" })} disabled={confirmM.isPending}>
+                  {confirmM.isPending ? "Confirmando..." : "Confirmar en Acopio"}
+                </Button>
+              </div>
+
+              <div
+                style={{
+                  border: "1px solid #f2d3bf",
+                  background: "#fff8f3",
+                  borderRadius: 14,
+                  padding: 16,
+                }}
+              >
+                <div style={{ fontWeight: 900, fontSize: 18, marginBottom: 8 }}>Producción</div>
+                <div className="muted" style={{ marginBottom: 14 }}>
+                  El portón entra directo en circuito productivo. Ya no podrá editarse desde <b>Presupuestos</b>.
+                </div>
+                <div style={{ fontSize: 13, lineHeight: 1.45, marginBottom: 16 }}>
+                  <div>• Ideal cuando debe avanzar de inmediato.</div>
+                  <div>• No permite edición posterior desde Presupuestos.</div>
+                  <div>• Si tiene medición comprada, la continuidad y correcciones siguen desde Mediciones.</div>
+                </div>
+                <Button variant="primary" onClick={() => confirmM.mutate({ fulfillmentMode: "produccion" })} disabled={confirmM.isPending}>
+                  {confirmM.isPending ? "Confirmando..." : "Confirmar en Producción"}
+                </Button>
+              </div>
+            </div>
+
+            <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 16 }}>
               <Button variant="ghost" onClick={() => setConfirmChoiceOpen(false)} disabled={confirmM.isPending}>
                 Cancelar
               </Button>
             </div>
           </div>
-        </>
+        </div>
       )}
 
       <div className="spacer" />
