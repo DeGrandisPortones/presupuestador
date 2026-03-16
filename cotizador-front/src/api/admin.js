@@ -18,16 +18,16 @@ export async function adminSaveFinalSettings(payload) {
   return data.settings || { tolerance_percent: 0 };
 }
 
-export async function adminGetMeasurementMappings() {
-  const { data } = await http.get(`/api/admin/measurement-mappings`);
-  if (!data?.ok) throw new Error(data?.error || "No se pudo cargar el mapeo de medición");
-  return data.settings || { rules: [] };
+export async function adminGetMeasurementProductMappings() {
+  const { data } = await http.get(`/api/admin/measurement-product-mappings`);
+  if (!data?.ok) throw new Error(data?.error || "No se pudieron cargar las asignaciones de medición");
+  return data.mappings || { rules: [] };
 }
 
-export async function adminSaveMeasurementMappings(payload) {
-  const { data } = await http.put(`/api/admin/measurement-mappings`, payload || {});
-  if (!data?.ok) throw new Error(data?.error || "No se pudo guardar el mapeo de medición");
-  return data.settings || { rules: [] };
+export async function adminSaveMeasurementProductMappings(payload) {
+  const { data } = await http.put(`/api/admin/measurement-product-mappings`, payload || {});
+  if (!data?.ok) throw new Error(data?.error || "No se pudieron guardar las asignaciones de medición");
+  return data.mappings || { rules: [] };
 }
 
 export async function adminCreateSection(kind = "porton", { name, position = 100 }) {

@@ -1,7 +1,10 @@
-Reemplazar:
-- cotizador-back/src/index.js
+Copiar y pegar sobre el repo:
 
-Este ajuste hace que el flujo de medicion use el cliente Odoo real:
-Medidor guarda -> Tecnica aprueba -> se genera/envía la cotizacion final a Odoo -> luego se dispara WhatsApp.
+- cotizador-back/src/settingsDb.js
+- cotizador-back/src/routes/admin.routes.js
+- cotizador-back/src/measurementFinalization.js
+- cotizador-front/src/api/admin.js
+- cotizador-front/src/pages/DashboardPage/index.jsx
 
-Despues de copiar, reiniciar backend.
+Este paquete cambia las asignaciones de Medición -> Productos para que cada regla sea por campo,
+y dentro de cada campo se agrupen varios valores con su producto asignado.

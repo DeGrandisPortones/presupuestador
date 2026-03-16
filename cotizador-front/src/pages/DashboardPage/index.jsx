@@ -17,196 +17,63 @@ import {
   adminGetQuotes,
   adminGetFinalSettings,
   adminSaveFinalSettings,
-  adminGetMeasurementMappings,
-  adminSaveMeasurementMappings,
+  adminGetMeasurementProductMappings,
+  adminSaveMeasurementProductMappings,
 } from "../../api/admin.js";
+
+const MEASUREMENT_FIELDS = [
+  { field_key: "colocacion", field_label: "Tipo de colocación", field_mode: "enum", values: [
+    { value: "dentro_vano", label: "Por dentro del vano" },
+    { value: "detras_vano", label: "Por detrás del vano" },
+  ]},
+  { field_key: "accionamiento", field_label: "Tipo de accionamiento", field_mode: "enum", values: [
+    { value: "manual", label: "Manual" },
+    { value: "automatico", label: "Automático" },
+  ]},
+  { field_key: "levadizo", field_label: "Sistema levadizo", field_mode: "enum", values: [
+    { value: "coplanar", label: "Coplanar" },
+    { value: "comun", label: "Común" },
+  ]},
+  { field_key: "anclaje", field_label: "Anclaje de fijación", field_mode: "enum", values: [
+    { value: "lateral", label: "Lateral" },
+    { value: "frontal", label: "Frontal" },
+    { value: "sin", label: "Sin Anclajes" },
+  ]},
+  { field_key: "parantes.cant", field_label: "Cantidad de parantes", field_mode: "integer", values: [] },
+  { field_key: "lucera_cantidad", field_label: "Cantidad de luceras", field_mode: "integer", values: [] },
+  { field_key: "traslado", field_label: "Servicio de traslado", field_mode: "boolean", values: [
+    { value: "si", label: "Sí" },
+    { value: "no", label: "No" },
+  ]},
+  { field_key: "relevamiento", field_label: "Servicio de relevamiento de medidas", field_mode: "boolean", values: [
+    { value: "si", label: "Sí" },
+    { value: "no", label: "No" },
+  ]},
+  { field_key: "estructura_metalica", field_label: "Estructura metálica para puerta", field_mode: "boolean", values: [
+    { value: "si", label: "Sí" },
+    { value: "no", label: "No" },
+  ]},
+];
 
 function norm(x) {
   return (x || "").toString().trim().toLowerCase();
 }
 
-const MEASUREMENT_FIELDS = [
-  {
-    key: "colocacion",
-    label: "Tipo de colocación",
-    type: "select",
-    options: [
-      { value: "dentro_vano", label: "Por dentro del vano" },
-      { value: "detras_vano", label: "Por detrás del vano" },
-    ],
-  },
-  {
-    key: "accionamiento",
-    label: "Tipo de accionamiento",
-    type: "select",
-    options: [
-      { value: "manual", label: "Manual" },
-      { value: "automatico", label: "Automático" },
-    ],
-  },
-  {
-    key: "levadizo",
-    label: "Sistema levadizo",
-    type: "select",
-    options: [
-      { value: "coplanar", label: "Coplanar" },
-      { value: "comun", label: "Común" },
-    ],
-  },
-  {
-    key: "anclaje",
-    label: "Anclaje de fijación",
-    type: "select",
-    options: [
-      { value: "lateral", label: "Lateral" },
-      { value: "frontal", label: "Frontal" },
-      { value: "sin", label: "Sin anclajes" },
-    ],
-  },
-  {
-    key: "color_sistema",
-    label: "Color de sistema",
-    type: "select",
-    options: [
-      { value: "Blanco", label: "Blanco" },
-      { value: "Gris topo", label: "Gris topo" },
-      { value: "Negro texturado Brillante", label: "Negro texturado Brillante" },
-      { value: "Negro Semi Mate", label: "Negro Semi Mate" },
-      { value: "Negro Textourado mate", label: "Negro Textourado mate" },
-      { value: "Bronce colonial", label: "Bronce colonial" },
-    ],
-  },
-  {
-    key: "tipo_revestimiento",
-    label: "Tipo de revestimiento",
-    type: "select",
-    options: [
-      { value: "lamas", label: "Lamas" },
-      { value: "varillado_inyectado", label: "Varillado Inyectado" },
-      { value: "varillado_simple", label: "Varillado Simple" },
-    ],
-  },
-  {
-    key: "orientacion_revestimiento",
-    label: "Orientación del revestimiento",
-    type: "select",
-    options: [
-      { value: "lamas_horizontales", label: "Lamas Horizontales" },
-      { value: "lamas_verticales", label: "Lamas Verticales" },
-      { value: "varillado_vertical", label: "Varillado Vertical" },
-    ],
-  },
-  {
-    key: "revestimiento",
-    label: "Revestimiento",
-    type: "select",
-    options: [
-      { value: "Apto Aluminio", label: "Apto Aluminio" },
-      { value: "Simil madera Clásico Simil", label: "Simil madera Clásico Simil" },
-      { value: "Simil Aluminio Clásico", label: "Simil Aluminio Clásico" },
-      { value: "Apto PVC", label: "Apto PVC" },
-      { value: "Simil madera doble inyectado", label: "Simil madera doble inyectado" },
-      { value: "Simil aluminio doble inyectado", label: "Simil aluminio doble inyectado" },
-      { value: "Varillado", label: "Varillado" },
-    ],
-  },
-  {
-    key: "color_revestimiento",
-    label: "Color de revestimiento",
-    type: "select",
-    options: [
-      { value: "Roble", label: "Roble" },
-      { value: "Negro Texturado", label: "Negro Texturado" },
-      { value: "Negro Semi mate", label: "Negro Semi mate" },
-      { value: "Blanco", label: "Blanco" },
-      { value: "Bronce Colonial", label: "Bronce Colonial" },
-      { value: "Negro Micro", label: "Negro Micro" },
-      { value: "Nogal", label: "Nogal" },
-      { value: "Gris Topo", label: "Gris Topo" },
-      { value: "Otros", label: "Otros" },
-    ],
-  },
-  {
-    key: "estructura_metalica",
-    label: "Estructura metálica para puerta",
-    type: "select",
-    options: [
-      { value: "si", label: "Sí" },
-      { value: "no", label: "No" },
-    ],
-  },
-  {
-    key: "lucera",
-    label: "Lucera con vidrios",
-    type: "select",
-    options: [
-      { value: "si", label: "Sí" },
-      { value: "no", label: "No" },
-    ],
-  },
-  {
-    key: "traslado",
-    label: "Servicio de traslado",
-    type: "select",
-    options: [
-      { value: "si", label: "Sí" },
-      { value: "no", label: "No" },
-    ],
-  },
-  {
-    key: "relevamiento",
-    label: "Servicio de relevamiento de medidas",
-    type: "select",
-    options: [
-      { value: "si", label: "Sí" },
-      { value: "no", label: "No" },
-    ],
-  },
-  { key: "parantes.cant", label: "Cantidad de parantes", type: "integer" },
-  { key: "lucera_cantidad", label: "Cantidad lucera", type: "integer" },
-  { key: "peso_revestimiento", label: "Peso del revestimiento", type: "integer" },
-];
-
-const MEASUREMENT_FIELD_MAP = new Map(MEASUREMENT_FIELDS.map((field) => [field.key, field]));
-
-function getMeasurementField(key) {
-  return MEASUREMENT_FIELD_MAP.get(String(key || "").trim()) || null;
-}
-
-function createRuleLabel(fieldKey, expectedValue) {
-  const field = getMeasurementField(fieldKey);
-  if (!field) return "";
-  const value = String(expectedValue || "").trim();
-  if (!value) return field.label;
-  const optionLabel = field.options?.find((opt) => String(opt.value) === value)?.label;
-  return `${field.label} · ${optionLabel || value}`;
-}
-
-function makeRulePatchForField(fieldKey, patch = {}) {
-  const field = getMeasurementField(fieldKey);
-  const next = { ...patch, field_key: fieldKey };
-  if (field?.type === "select") {
-    next.expected_value = patch.expected_value ?? "";
-  } else if (field?.type === "integer") {
-    next.expected_value = patch.expected_value ?? "1";
-  }
-  if (!(patch.label && String(patch.label).trim())) {
-    next.label = createRuleLabel(fieldKey, next.expected_value || "");
-  }
-  return next;
-}
-
-function createEmptyRule(index = 0) {
+function normalizeMeasurementMappings(raw) {
+  const rules = Array.isArray(raw?.rules) ? raw.rules : [];
   return {
-    id: `new_${index + 1}`,
-    label: "",
-    field_key: "",
-    expected_value: "",
-    product_id: "",
-    qty_mode: "fixed",
-    qty_value: "1",
-    qty_field_key: "",
-    active: true,
+    rules: rules.map((rule) => ({
+      field_key: String(rule?.field_key || "").trim(),
+      field_label: String(rule?.field_label || rule?.field_key || "").trim(),
+      field_mode: String(rule?.field_mode || "enum").trim(),
+      active: rule?.active !== false,
+      values: Array.isArray(rule?.values)
+        ? rule.values.map((entry) => ({
+            expected_value: String(entry?.expected_value ?? entry?.value ?? "").trim(),
+            product_id: Number(entry?.product_id || 0) || "",
+          })).filter((entry) => entry.expected_value)
+        : [],
+    })).filter((rule) => rule.field_key),
   };
 }
 
@@ -216,62 +83,29 @@ export default function DashboardPage() {
 
   const [tab, setTab] = useState("tags");
   const [catalogKind, setCatalogKind] = useState("porton");
-
-  const catalogQ = useQuery({
-    queryKey: ["adminCatalog", catalogKind],
-    queryFn: () => adminGetCatalog(catalogKind),
-    enabled: !!user?.is_enc_comercial,
-  });
-
-  const quotesQ = useQuery({
-    queryKey: ["adminQuotes", catalogKind],
-    queryFn: () => adminGetQuotes(catalogKind, 200),
-    enabled: !!user?.is_enc_comercial && tab === "data",
-  });
-
-  const finalSettingsQ = useQuery({
-    queryKey: ["adminFinalSettings"],
-    queryFn: adminGetFinalSettings,
-    enabled: !!user?.is_enc_comercial,
-  });
-
-  const measurementMappingsQ = useQuery({
-    queryKey: ["adminMeasurementMappings"],
-    queryFn: adminGetMeasurementMappings,
-    enabled: !!user?.is_enc_comercial && tab === "measurement_mappings",
-  });
-
   const [tolerancePercent, setTolerancePercent] = useState("0");
   const [savingTolerance, setSavingTolerance] = useState(false);
-  const [savingMappings, setSavingMappings] = useState(false);
-  const [mappingRules, setMappingRules] = useState([createEmptyRule(0)]);
-  const [mappingProductQuery, setMappingProductQuery] = useState("");
-
-  useEffect(() => {
-    if (!finalSettingsQ.data) return;
-    setTolerancePercent(String(finalSettingsQ.data.tolerance_percent ?? 0));
-  }, [finalSettingsQ.data]);
-
-  useEffect(() => {
-    const rules = Array.isArray(measurementMappingsQ.data?.rules) ? measurementMappingsQ.data.rules : [];
-    setMappingRules(rules.length ? rules.map((r, i) => ({ ...r, product_id: String(r.product_id || ""), qty_value: String(r.qty_value || 1) })) : [createEmptyRule(0)]);
-  }, [measurementMappingsQ.data]);
-
   const [newSectionName, setNewSectionName] = useState("");
   const [newSectionPos, setNewSectionPos] = useState("100");
   const [productQuery, setProductQuery] = useState("");
   const [sectionFilter, setSectionFilter] = useState("all");
   const [tagFilter, setTagFilter] = useState("all");
 
+  const catalogQ = useQuery({ queryKey: ["adminCatalog", catalogKind], queryFn: () => adminGetCatalog(catalogKind), enabled: !!user?.is_enc_comercial });
+  const quotesQ = useQuery({ queryKey: ["adminQuotes", catalogKind], queryFn: () => adminGetQuotes(catalogKind, 200), enabled: !!user?.is_enc_comercial && tab === "data" });
+  const finalSettingsQ = useQuery({ queryKey: ["adminFinalSettings"], queryFn: adminGetFinalSettings, enabled: !!user?.is_enc_comercial });
+  const measurementMappingsQ = useQuery({ queryKey: ["adminMeasurementProductMappings"], queryFn: adminGetMeasurementProductMappings, enabled: !!user?.is_enc_comercial && tab === "medicion" });
+
+  useEffect(() => {
+    if (!finalSettingsQ.data) return;
+    setTolerancePercent(String(finalSettingsQ.data.tolerance_percent ?? 0));
+  }, [finalSettingsQ.data]);
+
   const catalog = catalogQ.data;
   const sections = Array.isArray(catalog?.sections) ? catalog.sections : [];
   const tags = Array.isArray(catalog?.tags) ? catalog.tags : [];
   const products = Array.isArray(catalog?.products) ? catalog.products : [];
   const typeSections = catalog?.type_sections || {};
-
-  const mappingFieldOptions = useMemo(() => MEASUREMENT_FIELDS, []);
-  const mappingQtyFields = useMemo(() => MEASUREMENT_FIELDS.filter((field) => field.type === "integer"), []);
-
 
   const productById = useMemo(() => new Map(products.map((p) => [Number(p.id), p])), [products]);
   const tagById = useMemo(() => new Map(tags.map((t) => [Number(t.id), t])), [tags]);
@@ -286,17 +120,6 @@ export default function DashboardPage() {
       return dn.includes(q) || raw.includes(q) || code.includes(q);
     });
   }, [products, productQuery]);
-
-  const filteredProductsForMappings = useMemo(() => {
-    const q = norm(mappingProductQuery);
-    if (!q) return products;
-    return products.filter((p) => {
-      const dn = norm(p.display_name || p.name);
-      const raw = norm(p.name);
-      const code = norm(p.code);
-      return dn.includes(q) || raw.includes(q) || code.includes(q);
-    });
-  }, [products, mappingProductQuery]);
 
   const computedQuotes = useMemo(() => {
     const arr = Array.isArray(quotesQ.data) ? quotesQ.data : [];
@@ -336,28 +159,18 @@ export default function DashboardPage() {
   }, [products, sectionFilter, tagFilter]);
 
   if (!user?.is_enc_comercial) {
-    return (
-      <div className="container">
-        <div className="spacer" />
-        <div className="card">
-          <h2 style={{ marginTop: 0 }}>Dashboard</h2>
-          <div className="muted">No tenés permisos (solo Encargado Comercial).</div>
-        </div>
-      </div>
-    );
+    return <div className="container"><div className="spacer" /><div className="card"><h2 style={{ marginTop: 0 }}>Dashboard</h2><div className="muted">No tenés permisos (solo Encargado Comercial).</div></div></div>;
   }
 
   const onRefresh = async () => {
     await adminRefreshCatalog();
     qc.invalidateQueries({ queryKey: ["adminCatalog", catalogKind] });
   };
-
   const onCreateSection = async () => {
     await adminCreateSection(catalogKind, { name: newSectionName, position: Number(newSectionPos || 100) });
     setNewSectionName("");
     qc.invalidateQueries({ queryKey: ["adminCatalog", catalogKind] });
   };
-
   const onSaveTolerance = async () => {
     setSavingTolerance(true);
     try {
@@ -369,70 +182,35 @@ export default function DashboardPage() {
     }
   };
 
-  const onSaveMappings = async () => {
-    setSavingMappings(true);
-    try {
-      const payload = {
-        rules: mappingRules.map((r) => ({
-          ...r,
-          product_id: Number(r.product_id || 0),
-          qty_value: Number(String(r.qty_value || 1).replace(",", ".")) || 1,
-        })),
-      };
-      await adminSaveMeasurementMappings(payload);
-      qc.invalidateQueries({ queryKey: ["adminMeasurementMappings"] });
-    } finally {
-      setSavingMappings(false);
-    }
-  };
-
   return (
     <div className="container">
       <div className="spacer" />
-
-      <div className="card" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
-        <div>
-          <h2 style={{ margin: 0 }}>Dashboard del Presupuestador</h2>
-          <div className="muted">Secciones, alias, medición → productos y data</div>
-        </div>
-
+      <div className="card" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+        <div><h2 style={{ margin: 0 }}>Dashboard del Presupuestador</h2><div className="muted">Configuración de catálogo, medición y cotización final</div></div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           <Button variant={catalogKind === "porton" ? "primary" : "ghost"} onClick={() => setCatalogKind("porton")}>Portones</Button>
           <Button variant={catalogKind === "ipanel" ? "primary" : "ghost"} onClick={() => setCatalogKind("ipanel")}>Ipanel</Button>
         </div>
-
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <Button variant="ghost" onClick={onRefresh} disabled={catalogQ.isLoading}>Refrescar catálogo</Button>
-        </div>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}><Button variant="ghost" onClick={onRefresh} disabled={catalogQ.isLoading}>Refrescar catálogo</Button></div>
       </div>
 
       <div className="spacer" />
-
       <div className="card" style={{ background: "#fafafa" }}>
         <h3 style={{ marginTop: 0 }}>Tolerancia comercial para cotización final</h3>
-        <div className="muted" style={{ marginBottom: 10 }}>
-          Si la diferencia entre el presupuesto detallado final y la seña ya enviada es menor o igual a este porcentaje,
-          el sistema descuenta lo necesario para que la nueva cotización en Odoo quede en <b>$0</b>.
-        </div>
+        <div className="muted" style={{ marginBottom: 10 }}>Si la diferencia entre el presupuesto detallado final y la seña ya enviada es menor o igual a este porcentaje, el sistema descuenta lo necesario para que la nueva cotización en Odoo quede en <b>$0</b>.</div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-end" }}>
-          <div style={{ minWidth: 220 }}>
-            <div className="muted">Tolerancia %</div>
-            <Input value={tolerancePercent} onChange={setTolerancePercent} placeholder="0" style={{ width: "100%" }} />
-          </div>
-          <Button variant="primary" onClick={onSaveTolerance} disabled={savingTolerance || finalSettingsQ.isLoading}>
-            {savingTolerance ? "Guardando..." : "Guardar tolerancia"}
-          </Button>
+          <div style={{ minWidth: 220 }}><div className="muted">Tolerancia %</div><Input value={tolerancePercent} onChange={setTolerancePercent} placeholder="0" style={{ width: "100%" }} /></div>
+          <Button variant="primary" onClick={onSaveTolerance} disabled={savingTolerance || finalSettingsQ.isLoading}>{savingTolerance ? "Guardando..." : "Guardar tolerancia"}</Button>
           {finalSettingsQ.isError ? <div style={{ color: "#d93025" }}>{finalSettingsQ.error.message}</div> : null}
         </div>
       </div>
 
       <div className="spacer" />
-
       <div className="card" style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
         <button className={tab === "tags" ? "navlink active" : "navlink"} type="button" onClick={() => setTab("tags")}>Etiquetas → Secciones</button>
         <button className={tab === "aliases" ? "navlink active" : "navlink"} type="button" onClick={() => setTab("aliases")}>Alias de productos</button>
         <button className={tab === "types" ? "navlink active" : "navlink"} type="button" onClick={() => setTab("types")}>Tipos → Secciones</button>
-        <button className={tab === "measurement_mappings" ? "navlink active" : "navlink"} type="button" onClick={() => setTab("measurement_mappings")}>Medición → Productos</button>
+        <button className={tab === "medicion" ? "navlink active" : "navlink"} type="button" onClick={() => setTab("medicion")}>Medición → Productos</button>
         <button className={tab === "data" ? "navlink active" : "navlink"} type="button" onClick={() => setTab("data")}>Data</button>
       </div>
 
@@ -442,118 +220,10 @@ export default function DashboardPage() {
 
       {!catalogQ.isLoading && !catalogQ.isError && (
         <>
-          {tab === "measurement_mappings" && (
-            <div className="row">
-              <div className="card" style={{ flex: 1, minWidth: 320 }}>
-                <h3 style={{ marginTop: 0 }}>Reglas del formulario de medición</h3>
-                <div className="muted">Cada opción del formulario se mapea con su propio producto. En campos de opciones, creá una regla por cada valor posible. En campos numéricos, cada entero exacto también lleva su propia regla.</div>
-                <div className="spacer" />
-                <Input value={mappingProductQuery} onChange={setMappingProductQuery} placeholder="Buscar producto…" style={{ width: "100%" }} />
-                <div className="spacer" />
-                <Button variant="secondary" onClick={() => setMappingRules((prev) => [...prev, createEmptyRule(prev.length)])}>Agregar regla manual</Button>
-                <div className="spacer" />
-                <div className="muted" style={{ fontSize: 12, marginBottom: 8 }}>Ejemplo: para <b>Tipo de colocación</b> cargás una regla con valor <b>Por dentro del vano</b> y otra con <b>Por detrás del vano</b>, cada una con su producto. Para <b>Cantidad de parantes</b>, una regla por cada entero que quieras transformar en producto.</div>
-                <Button variant="primary" onClick={onSaveMappings} disabled={savingMappings}>{savingMappings ? "Guardando..." : "Guardar reglas"}</Button>
-                {measurementMappingsQ.isError ? <div style={{ color: "#d93025", marginTop: 10 }}>{measurementMappingsQ.error.message}</div> : null}
-              </div>
-
-              <div className="card" style={{ flex: 2, minWidth: 520 }}>
-                <h3 style={{ marginTop: 0 }}>Asignaciones</h3>
-                <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                  {mappingRules.map((rule, idx) => {
-                    const fieldMeta = getMeasurementField(rule.field_key);
-                    const optionCount = Array.isArray(fieldMeta?.options) ? fieldMeta.options.length : 0;
-                    return (
-                    <div key={rule.id || idx} style={{ border: "1px solid #eee", borderRadius: 12, padding: 12 }}>
-                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-                        <div>
-                          <div className="muted">Etiqueta de la regla</div>
-                          <Input value={rule.label || ""} onChange={(v) => setMappingRules((prev) => prev.map((x, i) => i === idx ? { ...x, label: v } : x))} style={{ width: "100%" }} />
-                        </div>
-                        <div>
-                          <div className="muted">Campo del formulario</div>
-                          <select value={rule.field_key || ""} onChange={(e) => setMappingRules((prev) => prev.map((x, i) => i === idx ? { ...x, ...makeRulePatchForField(e.target.value) } : x))} style={{ padding: 10, borderRadius: 10, border: "1px solid #ddd", width: "100%" }}>
-                            <option value="">Seleccionar</option>
-                            {mappingFieldOptions.map((f) => <option key={f.key} value={f.key}>{f.label}</option>)}
-                          </select>
-                        </div>
-                        <div>
-                          <div className="muted">Valor esperado</div>
-                          {fieldMeta?.type === "select" ? (
-                            <>
-                              <select
-                                value={rule.expected_value || ""}
-                                onChange={(e) => setMappingRules((prev) => prev.map((x, i) => i === idx ? { ...x, expected_value: e.target.value, label: createRuleLabel(x.field_key, e.target.value) } : x))}
-                                style={{ padding: 10, borderRadius: 10, border: "1px solid #ddd", width: "100%" }}
-                              >
-                                <option value="">Seleccionar opción</option>
-                                {(fieldMeta.options || []).map((opt) => <option key={opt.value} value={String(opt.value)}>{opt.label}</option>)}
-                              </select>
-                              {!!optionCount && <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>Este campo tiene {optionCount} opciones. Creá una regla por cada opción que deba agregar un producto.</div>}
-                            </>
-                          ) : fieldMeta?.type === "integer" ? (
-                            <>
-                              <Input
-                                type="number"
-                                value={rule.expected_value || ""}
-                                onChange={(v) => setMappingRules((prev) => prev.map((x, i) => i === idx ? { ...x, expected_value: v, label: createRuleLabel(x.field_key, v) } : x))}
-                                placeholder="Ej: 1 / 2 / 3"
-                                style={{ width: "100%" }}
-                              />
-                              <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>Se compara por valor entero exacto. Ejemplo: si el usuario marca 3 parantes, aplicará la regla con valor esperado 3.</div>
-                            </>
-                          ) : (
-                            <Input value={rule.expected_value || ""} onChange={(v) => setMappingRules((prev) => prev.map((x, i) => i === idx ? { ...x, expected_value: v, label: createRuleLabel(x.field_key, v) } : x))} placeholder="Valor exacto" style={{ width: "100%" }} />
-                          )}
-                        </div>
-                        <div>
-                          <div className="muted">Producto</div>
-                          <select value={rule.product_id || ""} onChange={(e) => setMappingRules((prev) => prev.map((x, i) => i === idx ? { ...x, product_id: e.target.value } : x))} style={{ padding: 10, borderRadius: 10, border: "1px solid #ddd", width: "100%" }}>
-                            <option value="">Seleccionar producto</option>
-                            {filteredProductsForMappings.map((p) => <option key={p.id} value={String(p.id)}>{p.display_name || p.name}</option>)}
-                          </select>
-                        </div>
-                        <div>
-                          <div className="muted">Modo cantidad</div>
-                          <select value={rule.qty_mode || "fixed"} onChange={(e) => setMappingRules((prev) => prev.map((x, i) => i === idx ? { ...x, qty_mode: e.target.value } : x))} style={{ padding: 10, borderRadius: 10, border: "1px solid #ddd", width: "100%" }}>
-                            <option value="fixed">Fija</option>
-                            <option value="field">Desde otro campo</option>
-                          </select>
-                        </div>
-                        {rule.qty_mode === "field" ? (
-                          <div>
-                            <div className="muted">Campo cantidad</div>
-                            <select value={rule.qty_field_key || ""} onChange={(e) => setMappingRules((prev) => prev.map((x, i) => i === idx ? { ...x, qty_field_key: e.target.value } : x))} style={{ padding: 10, borderRadius: 10, border: "1px solid #ddd", width: "100%" }}>
-                              <option value="">Seleccionar</option>
-                              {mappingQtyFields.map((f) => <option key={f.key} value={f.key}>{f.label}</option>)}
-                            </select>
-                          </div>
-                        ) : (
-                          <div>
-                            <div className="muted">Cantidad fija</div>
-                            <Input value={rule.qty_value || "1"} onChange={(v) => setMappingRules((prev) => prev.map((x, i) => i === idx ? { ...x, qty_value: v } : x))} style={{ width: "100%" }} />
-                          </div>
-                        )}
-                      </div>
-                      <div style={{ display: "flex", justifyContent: "space-between", gap: 10, marginTop: 10 }}>
-                        <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                          <input type="checkbox" checked={rule.active !== false} onChange={(e) => setMappingRules((prev) => prev.map((x, i) => i === idx ? { ...x, active: e.target.checked } : x))} />
-                          Activa
-                        </label>
-                        <Button variant="ghost" onClick={() => setMappingRules((prev) => prev.filter((_, i) => i !== idx).length ? prev.filter((_, i) => i !== idx) : [createEmptyRule(0)])}>Quitar</Button>
-                      </div>
-                    </div>
-                  );})}
-                </div>
-              </div>
-            </div>
-          )}
-
           {tab === "tags" && (
             <div className="row">
               <div className="card" style={{ flex: 1, minWidth: 320 }}>
                 <h3 style={{ marginTop: 0 }}>Secciones</h3>
-                <div className="muted">Ordená por <b>posición</b> (menor = más arriba)</div>
                 <div className="spacer" />
                 <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                   <Input value={newSectionName} onChange={setNewSectionName} placeholder="Nueva sección…" style={{ flex: 1, minWidth: 180 }} />
@@ -562,46 +232,14 @@ export default function DashboardPage() {
                 </div>
                 <div className="spacer" />
                 <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                  {sections.map((s) => (
-                    <div key={s.id} style={{ display: "flex", justifyContent: "space-between", gap: 8, border: "1px solid #eee", padding: 10, borderRadius: 10 }}>
-                      <div style={{ minWidth: 0 }}>
-                        <div style={{ fontWeight: 800 }}>{s.name}</div>
-                        <div className="muted">Posición: {s.position}</div>
-                      </div>
-                      <Button variant="ghost" onClick={async () => {
-                        if (!confirm(`Borrar sección "${s.name}"?`)) return;
-                        await adminDeleteSection(catalogKind, s.id);
-                        qc.invalidateQueries({ queryKey: ["adminCatalog", catalogKind] });
-                      }}>🗑</Button>
-                    </div>
-                  ))}
-                  {!sections.length && <div className="muted">Todavía no hay secciones.</div>}
+                  {sections.map((s) => <div key={s.id} style={{ display: "flex", justifyContent: "space-between", gap: 8, border: "1px solid #eee", padding: 10, borderRadius: 10 }}><div><div style={{ fontWeight: 800 }}>{s.name}</div><div className="muted">Posición: {s.position}</div></div><Button variant="ghost" onClick={async () => { if (!window.confirm(`Borrar sección \"${s.name}\"?`)) return; await adminDeleteSection(catalogKind, s.id); qc.invalidateQueries({ queryKey: ["adminCatalog", catalogKind] }); }}>🗑</Button></div>)}
                 </div>
               </div>
-
               <div className="card" style={{ flex: 2, minWidth: 520 }}>
                 <h3 style={{ marginTop: 0 }}>Asignar sección por etiqueta</h3>
-                <div className="muted">Ej: <b>Motor</b> → <b>Automatización</b>.</div>
                 <div className="spacer" />
                 <div style={{ display: "flex", flexDirection: "column", gap: 8, maxHeight: 560, overflow: "auto", paddingRight: 6 }}>
-                  {tags.map((t) => (
-                    <div key={t.id} style={{ display: "flex", justifyContent: "space-between", gap: 8, border: "1px solid #eee", padding: 10, borderRadius: 10, alignItems: "center" }}>
-                      <div style={{ fontWeight: 700, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" }}>{t.name}</div>
-                      <select
-                        value={t.section_id || ""}
-                        onChange={async (e) => {
-                          const v = e.target.value ? Number(e.target.value) : null;
-                          await adminSetTagSection(catalogKind, t.id, v);
-                          qc.invalidateQueries({ queryKey: ["adminCatalog", catalogKind] });
-                        }}
-                        style={{ padding: 8, borderRadius: 10, border: "1px solid #ddd", minWidth: 220 }}
-                      >
-                        <option value="">(sin sección)</option>
-                        {sections.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-                      </select>
-                    </div>
-                  ))}
-                  {!tags.length && <div className="muted">No hay etiquetas en Odoo.</div>}
+                  {tags.map((t) => <div key={t.id} style={{ display: "flex", justifyContent: "space-between", gap: 8, border: "1px solid #eee", padding: 10, borderRadius: 10, alignItems: "center" }}><div style={{ fontWeight: 700 }}>{t.name}</div><select value={t.section_id || ""} onChange={async (e) => { const v = e.target.value ? Number(e.target.value) : null; await adminSetTagSection(catalogKind, t.id, v); qc.invalidateQueries({ queryKey: ["adminCatalog", catalogKind] }); }} style={{ padding: 8, borderRadius: 10, border: "1px solid #ddd", minWidth: 220 }}><option value="">(sin sección)</option>{sections.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select></div>)}
                 </div>
               </div>
             </div>
@@ -609,111 +247,26 @@ export default function DashboardPage() {
 
           {tab === "aliases" && (
             <div className="row">
-              <div className="card" style={{ flex: 1, minWidth: 320 }}>
-                <h3 style={{ marginTop: 0 }}>Alias visibles</h3>
-                <div className="muted">Esto <b>no cambia Odoo</b>.</div>
-                <div className="spacer" />
-                <Input value={productQuery} onChange={setProductQuery} placeholder="Buscar producto…" style={{ width: "100%" }} />
-                <div className="spacer" />
-                <div className="muted">Resultados: {filteredProductsByQuery.length}</div>
-              </div>
-
-              <div className="card" style={{ flex: 2, minWidth: 520 }}>
-                <h3 style={{ marginTop: 0 }}>Productos</h3>
-                <div className="spacer" />
-                <div style={{ display: "flex", flexDirection: "column", gap: 8, maxHeight: 620, overflow: "auto", paddingRight: 6 }}>
-                  {filteredProductsByQuery.slice(0, 400).map((p) => (
-                    <AliasRow key={p.id} product={p} onSave={async (alias) => {
-                      await adminSetProductAlias(catalogKind, p.id, alias);
-                      qc.invalidateQueries({ queryKey: ["adminCatalog", catalogKind] });
-                    }} />
-                  ))}
-                </div>
-              </div>
+              <div className="card" style={{ flex: 1, minWidth: 320 }}><h3 style={{ marginTop: 0 }}>Alias visibles</h3><div className="spacer" /><Input value={productQuery} onChange={setProductQuery} placeholder="Buscar producto…" style={{ width: "100%" }} /></div>
+              <div className="card" style={{ flex: 2, minWidth: 520 }}><h3 style={{ marginTop: 0 }}>Productos</h3><div className="spacer" /><div style={{ display: "flex", flexDirection: "column", gap: 8, maxHeight: 620, overflow: "auto", paddingRight: 6 }}>{filteredProductsByQuery.slice(0, 400).map((p) => <AliasRow key={p.id} product={p} onSave={async (alias) => { await adminSetProductAlias(catalogKind, p.id, alias); qc.invalidateQueries({ queryKey: ["adminCatalog", catalogKind] }); }} />)}</div></div>
             </div>
           )}
 
-          {tab === "types" && (
-            <div className="row">
-              <TypesSectionsCard
-                catalogKind={catalogKind}
-                sections={sections}
-                typeSections={typeSections}
-                onSave={async (typeKey, sectionIds) => {
-                  await adminSetTypeSections(catalogKind, typeKey, sectionIds);
-                  qc.invalidateQueries({ queryKey: ["adminCatalog", catalogKind] });
-                }}
-              />
-            </div>
-          )}
+          {tab === "types" && <div className="row"><TypesSectionsCard catalogKind={catalogKind} sections={sections} typeSections={typeSections} onSave={async (typeKey, sectionIds) => { await adminSetTypeSections(catalogKind, typeKey, sectionIds); qc.invalidateQueries({ queryKey: ["adminCatalog", catalogKind] }); }} /></div>}
+
+          {tab === "medicion" && <MeasurementMappingsCard products={products} mappings={normalizeMeasurementMappings(measurementMappingsQ.data)} loading={measurementMappingsQ.isLoading} error={measurementMappingsQ.error} onSave={async (payload) => { await adminSaveMeasurementProductMappings(payload); qc.invalidateQueries({ queryKey: ["adminMeasurementProductMappings"] }); }} />}
 
           {tab === "data" && (
             <div className="row">
               <div className="card" style={{ flex: 1, minWidth: 320 }}>
                 <h3 style={{ marginTop: 0 }}>Filtros</h3>
                 <div className="muted">Sección</div>
-                <select value={sectionFilter} onChange={(e) => setSectionFilter(e.target.value)} style={{ padding: 8, borderRadius: 10, border: "1px solid #ddd", width: "100%" }}>
-                  <option value="all">(todas)</option>
-                  {sections.map((s) => <option key={s.id} value={String(s.id)}>{s.name}</option>)}
-                </select>
+                <select value={sectionFilter} onChange={(e) => setSectionFilter(e.target.value)} style={{ padding: 8, borderRadius: 10, border: "1px solid #ddd", width: "100%" }}><option value="all">(todas)</option>{sections.map((s) => <option key={s.id} value={String(s.id)}>{s.name}</option>)}</select>
                 <div className="spacer" />
                 <div className="muted">Etiqueta</div>
-                <select value={tagFilter} onChange={(e) => setTagFilter(e.target.value)} style={{ padding: 8, borderRadius: 10, border: "1px solid #ddd", width: "100%" }}>
-                  <option value="all">(todas)</option>
-                  {tags.map((t) => <option key={t.id} value={String(t.id)}>{t.name}</option>)}
-                </select>
-                <div className="spacer" />
-                <Button onClick={() => qc.invalidateQueries({ queryKey: ["adminQuotes", catalogKind] })} disabled={quotesQ.isLoading}>
-                  {quotesQ.isLoading ? "Cargando…" : "Refrescar"}
-                </Button>
-                <div className="spacer" />
-                <div className="muted">Cotizaciones: <b>{filteredQuotes.length}</b></div>
-                <div className="muted">Productos (catálogo): <b>{filteredProductsForData.length}</b></div>
+                <select value={tagFilter} onChange={(e) => setTagFilter(e.target.value)} style={{ padding: 8, borderRadius: 10, border: "1px solid #ddd", width: "100%" }}><option value="all">(todas)</option>{tags.map((t) => <option key={t.id} value={String(t.id)}>{t.name}</option>)}</select>
               </div>
-
-              <div style={{ flex: 2, minWidth: 520, display: "flex", flexDirection: "column", gap: 16 }}>
-                <div className="card">
-                  <h3 style={{ marginTop: 0 }}>Últimas cotizaciones</h3>
-                  {quotesQ.isError && <div style={{ color: "#d93025" }}>{quotesQ.error.message}</div>}
-                  <div className="spacer" />
-                  <div style={{ display: "flex", flexDirection: "column", gap: 8, maxHeight: 360, overflow: "auto", paddingRight: 6 }}>
-                    {filteredQuotes.map((q) => (
-                      <div key={q.id} style={{ border: "1px solid #eee", padding: 10, borderRadius: 10 }}>
-                        <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
-                          <div style={{ fontWeight: 800 }}>#{String(q.id).slice(0, 8)}</div>
-                          <div className="muted">{q.final_status || q.status}</div>
-                        </div>
-                        <div className="muted" style={{ fontSize: 12 }}>{q.created_at ? new Date(q.created_at).toLocaleString() : ""} · {q.created_by_role}</div>
-                        {q.final_sale_order_name ? <div className="muted" style={{ marginTop: 6 }}>Odoo final: <b>{q.final_sale_order_name}</b></div> : null}
-                        {typeof q.final_difference_amount === "number" ? <div className="muted" style={{ marginTop: 6 }}>Diferencia final: <b>${q.final_difference_amount.toFixed(2)}</b>{q.final_absorbed_by_company ? " · absorbida" : ""}</div> : null}
-                        {!!(q.tags || []).length && <div className="muted" style={{ marginTop: 6 }}>Tags: {(q.tags || []).slice(0, 12).join(", ")}{(q.tags || []).length > 12 ? "…" : ""}</div>}
-                      </div>
-                    ))}
-                    {!filteredQuotes.length && <div className="muted">Sin resultados.</div>}
-                  </div>
-                </div>
-
-                <div className="card">
-                  <h3 style={{ marginTop: 0 }}>Productos del catálogo</h3>
-                  <div className="muted" style={{ marginBottom: 10 }}>
-                    Esto es para validar el mapeo <b>Etiqueta → Sección</b>.
-                  </div>
-                  <div className="muted">Mostrando: <b>{filteredProductsForData.length}</b></div>
-                  <div className="spacer" />
-                  <div style={{ display: "flex", flexDirection: "column", gap: 8, maxHeight: 360, overflow: "auto", paddingRight: 6 }}>
-                    {filteredProductsForData.map((p) => (
-                      <div key={p.id} style={{ border: "1px solid #eee", padding: 10, borderRadius: 10 }}>
-                        <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "baseline" }}>
-                          <div style={{ fontWeight: 800, minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{p.display_name || p.name}</div>
-                          <div className="muted" style={{ whiteSpace: "nowrap" }}>{typeof p.price === "number" ? `$${p.price.toFixed(2)}` : ""}</div>
-                        </div>
-                        <div className="muted" style={{ fontSize: 12 }}>ID: {p.id}{p.code ? ` · ${p.code}` : ""}{p.alias ? ` · alias: ${p.alias}` : ""}</div>
-                      </div>
-                    ))}
-                    {!filteredProductsForData.length && <div className="muted">Sin resultados.</div>}
-                  </div>
-                </div>
-              </div>
+              <div className="card" style={{ flex: 2, minWidth: 520 }}><h3 style={{ marginTop: 0 }}>Últimas cotizaciones</h3><div style={{ display: "flex", flexDirection: "column", gap: 8, maxHeight: 360, overflow: "auto", paddingRight: 6 }}>{filteredQuotes.map((q) => <div key={q.id} style={{ border: "1px solid #eee", padding: 10, borderRadius: 10 }}><div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}><div style={{ fontWeight: 800 }}>#{String(q.id).slice(0, 8)}</div><div className="muted">{q.final_status || q.status}</div></div></div>)}</div></div>
             </div>
           )}
         </>
@@ -722,75 +275,76 @@ export default function DashboardPage() {
   );
 }
 
+function MeasurementMappingsCard({ products, mappings, loading, error, onSave }) {
+  const [draft, setDraft] = useState({ rules: [] });
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => { setDraft(mappings || { rules: [] }); }, [mappings]);
+
+  const productOptions = useMemo(() => (Array.isArray(products) ? products : []).map((p) => ({ id: Number(p.id), label: `${p.display_name || p.name}${p.code ? ` · ${p.code}` : ""}` })), [products]);
+  const mergedRules = useMemo(() => {
+    const byKey = new Map((draft.rules || []).map((rule) => [rule.field_key, rule]));
+    return MEASUREMENT_FIELDS.map((field) => ({
+      ...field,
+      ...(byKey.get(field.field_key) || {}),
+      values: (byKey.get(field.field_key)?.values || []).map((entry) => ({ expected_value: String(entry.expected_value || "").trim(), product_id: Number(entry.product_id || 0) || "" })),
+    }));
+  }, [draft]);
+
+  function setFieldValues(fieldKey, values, fieldMeta) {
+    setDraft((prev) => ({ rules: [ ...(prev.rules || []).filter((r) => r.field_key !== fieldKey), { field_key: fieldKey, field_label: fieldMeta.field_label, field_mode: fieldMeta.field_mode, active: true, values } ] }));
+  }
+
+  async function handleSave() {
+    setSaving(true);
+    try {
+      await onSave({ rules: mergedRules.map((rule) => ({ field_key: rule.field_key, field_label: rule.field_label, field_mode: rule.field_mode, active: true, values: (rule.values || []).map((entry) => ({ expected_value: String(entry.expected_value || "").trim(), product_id: Number(entry.product_id || 0) || null })).filter((entry) => entry.expected_value && entry.product_id) })) });
+    } finally { setSaving(false); }
+  }
+
+  return (
+    <div className="card" style={{ width: "100%" }}>
+      <h3 style={{ marginTop: 0 }}>Medición → Productos</h3>
+      <div className="muted" style={{ marginBottom: 10 }}>Cada regla es <b>un campo</b>. Dentro de esa regla cargás los <b>valores posibles</b> y el producto que corresponde a cada uno.</div>
+      {loading && <div className="muted">Cargando asignaciones…</div>}
+      {error ? <div style={{ color: "#d93025", marginBottom: 10 }}>{error.message}</div> : null}
+      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        {mergedRules.map((rule) => <div key={rule.field_key} style={{ border: "1px solid #eee", borderRadius: 12, padding: 12 }}><div style={{ fontWeight: 800 }}>{rule.field_label}</div><div className="muted" style={{ fontSize: 12, marginBottom: 10 }}>Campo: {rule.field_key}</div>{rule.field_mode === "integer" ? <IntegerFieldMappings rule={rule} productOptions={productOptions} onChange={(values) => setFieldValues(rule.field_key, values, rule)} /> : <PresetFieldMappings rule={rule} productOptions={productOptions} onChange={(values) => setFieldValues(rule.field_key, values, rule)} />}</div>)}
+      </div>
+      <div className="spacer" />
+      <Button variant="primary" onClick={handleSave} disabled={saving}>{saving ? "Guardando..." : "Guardar asignaciones"}</Button>
+    </div>
+  );
+}
+
+function PresetFieldMappings({ rule, productOptions, onChange }) {
+  const field = MEASUREMENT_FIELDS.find((item) => item.field_key === rule.field_key);
+  const rows = (field?.values || []).map((opt) => {
+    const existing = (rule.values || []).find((entry) => String(entry.expected_value) === String(opt.value));
+    return { expected_value: opt.value, label: opt.label, product_id: existing?.product_id || "" };
+  });
+  return <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>{rows.map((entry) => <div key={entry.expected_value} style={{ display: "grid", gridTemplateColumns: "260px 1fr", gap: 10, alignItems: "center" }}><div className="muted">{entry.label}</div><select value={entry.product_id || ""} onChange={(e) => { const next = rows.map((item) => item.expected_value === entry.expected_value ? { ...item, product_id: e.target.value ? Number(e.target.value) : "" } : item); onChange(next); }} style={{ padding: 8, borderRadius: 10, border: "1px solid #ddd", width: "100%" }}><option value="">(sin producto)</option>{productOptions.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}</select></div>)}</div>;
+}
+
+function IntegerFieldMappings({ rule, productOptions, onChange }) {
+  const rows = Array.isArray(rule.values) ? rule.values : [];
+  return <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>{rows.map((entry, idx) => <div key={`${rule.field_key}-${idx}`} style={{ display: "grid", gridTemplateColumns: "120px 1fr 52px", gap: 10, alignItems: "center" }}><Input value={entry.expected_value || ""} onChange={(value) => { const next = rows.map((item, i) => i === idx ? { ...item, expected_value: value.replace(/[^0-9]/g, "") } : item); onChange(next); }} placeholder="Valor" style={{ width: "100%" }} /><select value={entry.product_id || ""} onChange={(e) => { const next = rows.map((item, i) => i === idx ? { ...item, product_id: e.target.value ? Number(e.target.value) : "" } : item); onChange(next); }} style={{ padding: 8, borderRadius: 10, border: "1px solid #ddd", width: "100%" }}><option value="">(sin producto)</option>{productOptions.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}</select><Button variant="ghost" onClick={() => onChange(rows.filter((_, i) => i !== idx))}>✕</Button></div>)}<Button variant="ghost" onClick={() => onChange([...(rows || []), { expected_value: "", product_id: "" }])}>+ Agregar valor entero</Button></div>;
+}
+
 function TypesSectionsCard({ catalogKind, sections, typeSections, onSave }) {
   const [selectedType, setSelectedType] = useState(PORTON_TYPES?.[0]?.key || "");
   const [selectedSectionIds, setSelectedSectionIds] = useState([]);
   const canUse = (catalogKind || "porton") === "porton";
 
-  useEffect(() => {
-    const arr = canUse && selectedType ? (typeSections?.[selectedType] || []) : [];
-    setSelectedSectionIds((arr || []).map((x) => Number(x)));
-  }, [selectedType, catalogKind, canUse, typeSections]);
-
-  if (!canUse) {
-    return <div className="card" style={{ flex: 1 }}><h3 style={{ marginTop: 0 }}>Tipos → Secciones</h3><div className="muted">Esto aplica solo a Portones.</div></div>;
-  }
-
+  useEffect(() => { const arr = canUse && selectedType ? (typeSections?.[selectedType] || []) : []; setSelectedSectionIds((arr || []).map((x) => Number(x))); }, [selectedType, catalogKind, canUse, typeSections]);
+  if (!canUse) return <div className="card" style={{ flex: 1 }}><h3 style={{ marginTop: 0 }}>Tipos → Secciones</h3><div className="muted">Esto aplica solo a Portones.</div></div>;
   const sectionSet = new Set(selectedSectionIds.map((x) => Number(x)));
-  return (
-    <>
-      <div className="card" style={{ flex: 1, minWidth: 320 }}>
-        <h3 style={{ marginTop: 0 }}>Tipos / Sistemas</h3>
-        <div className="muted">Seleccioná un tipo y marcá qué secciones deben aparecer.</div>
-        <div className="spacer" />
-        <select value={selectedType} onChange={(e) => setSelectedType(e.target.value)} style={{ padding: 10, borderRadius: 10, border: "1px solid #ddd", width: "100%" }}>
-          {PORTON_TYPES.map((t) => <option key={t.key} value={t.key}>{t.label}</option>)}
-        </select>
-        <div className="spacer" />
-        <Button variant="primary" onClick={async () => onSave(selectedType, selectedSectionIds)}>Guardar asignación</Button>
-      </div>
-
-      <div className="card" style={{ flex: 2, minWidth: 520 }}>
-        <h3 style={{ marginTop: 0 }}>Secciones visibles</h3>
-        <div className="spacer" />
-        <div style={{ display: "flex", flexDirection: "column", gap: 8, maxHeight: 620, overflow: "auto", paddingRight: 6 }}>
-          {sections.map((s) => {
-            const sid = Number(s.id);
-            const checked = sectionSet.has(sid);
-            return (
-              <label key={sid} style={{ display: "flex", gap: 10, alignItems: "center", border: "1px solid #eee", padding: 10, borderRadius: 10 }}>
-                <input type="checkbox" checked={checked} onChange={(e) => {
-                  const next = new Set(sectionSet);
-                  if (e.target.checked) next.add(sid); else next.delete(sid);
-                  setSelectedSectionIds([...next]);
-                }} />
-                <div style={{ fontWeight: 700 }}>{s.name}</div>
-                <div className="muted" style={{ marginLeft: "auto" }}>Pos: {s.position}</div>
-              </label>
-            );
-          })}
-        </div>
-      </div>
-    </>
-  );
+  return <><div className="card" style={{ flex: 1, minWidth: 320 }}><h3 style={{ marginTop: 0 }}>Tipos / Sistemas</h3><div className="spacer" /><select value={selectedType} onChange={(e) => setSelectedType(e.target.value)} style={{ padding: 10, borderRadius: 10, border: "1px solid #ddd", width: "100%" }}>{PORTON_TYPES.map((t) => <option key={t.key} value={t.key}>{t.label}</option>)}</select><div className="spacer" /><Button variant="primary" onClick={async () => onSave(selectedType, selectedSectionIds)}>Guardar asignación</Button></div><div className="card" style={{ flex: 2, minWidth: 520 }}><h3 style={{ marginTop: 0 }}>Secciones visibles</h3><div className="spacer" /><div style={{ display: "flex", flexDirection: "column", gap: 8, maxHeight: 620, overflow: "auto", paddingRight: 6 }}>{sections.map((s) => { const sid = Number(s.id); const checked = sectionSet.has(sid); return <label key={sid} style={{ display: "flex", gap: 10, alignItems: "center", border: "1px solid #eee", padding: 10, borderRadius: 10 }}><input type="checkbox" checked={checked} onChange={(e) => { const next = new Set(sectionSet); if (e.target.checked) next.add(sid); else next.delete(sid); setSelectedSectionIds([...next]); }} /><div style={{ fontWeight: 700 }}>{s.name}</div><div className="muted" style={{ marginLeft: "auto" }}>Pos: {s.position}</div></label>; })}</div></div></>;
 }
 
 function AliasRow({ product, onSave }) {
   const [value, setValue] = useState(product.alias || "");
   const [saving, setSaving] = useState(false);
   const changed = value.trim() !== (product.alias || "");
-
-  return (
-    <div style={{ display: "grid", gridTemplateColumns: "1fr 260px 90px", gap: 10, border: "1px solid #eee", padding: 10, borderRadius: 10, alignItems: "center" }}>
-      <div style={{ minWidth: 0 }}>
-        <div style={{ fontWeight: 800, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{product.name}</div>
-        <div className="muted" style={{ fontSize: 12 }}>ID: {product.id}{product.code ? ` · ${product.code}` : ""}</div>
-      </div>
-      <Input value={value} onChange={setValue} placeholder="Nombre visible…" style={{ width: "100%" }} />
-      <Button variant="primary" disabled={!changed || saving} onClick={async () => {
-        setSaving(true);
-        try { await onSave(value); } finally { setSaving(false); }
-      }}>{saving ? "…" : "Guardar"}</Button>
-    </div>
-  );
+  return <div style={{ display: "grid", gridTemplateColumns: "1fr 260px 90px", gap: 10, border: "1px solid #eee", padding: 10, borderRadius: 10, alignItems: "center" }}><div style={{ minWidth: 0 }}><div style={{ fontWeight: 800, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{product.name}</div><div className="muted" style={{ fontSize: 12 }}>ID: {product.id}{product.code ? ` · ${product.code}` : ""}</div></div><Input value={value} onChange={setValue} placeholder="Nombre visible…" style={{ width: "100%" }} /><Button variant="primary" disabled={!changed || saving} onClick={async () => { setSaving(true); try { await onSave(value); } finally { setSaving(false); } }}>{saving ? "…" : "Guardar"}</Button></div>;
 }

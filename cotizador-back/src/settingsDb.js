@@ -44,21 +44,92 @@ function normalizeTolerancePercent(value) {
   return Math.round(n * 100) / 100;
 }
 
-function normalizeMeasurementRule(raw, index = 0) {
-  const productId = Number(raw?.product_id || 0);
-  const qtyMode = String(raw?.qty_mode || "fixed").toLowerCase().trim() === "field" ? "field" : "fixed";
-  const fixedQty = Number(String(raw?.qty_value ?? 1).replace(",", "."));
+function normalizeText(value) {
+  return String(value ?? "").trim();
+}
+
+function normalizeFieldMode(value) {
+  const v = String(value || "enum").trim().toLowerCase();
+  if (["enum", "integer", "boolean", "text"].includes(v)) return v;
+  return "enum";
+}
+
+function normalizeGroupedRule(rule = {}) {
+  const fieldKey = normalizeText(rule.field_key);
+  const fieldLabel = normalizeText(rule.field_label || fieldKey);
+  const fieldMode = normalizeFieldMode(rule.field_mode || rule.mode);
+  const rawValues = Array.isArray(rule.values)
+    ? rule.values
+    : Array.isArray(rule.mappings)
+      ? rule.mappings
+      : [];
+
+  const values = rawValues
+    .map((entry) => ({
+      expected_value: normalizeText(entry?.expected_value ?? entry?.value),
+      product_id: Number(entry?.product_id || 0) || null,
+      product_label: normalizeText(entry?.product_label || entry?.label || ""),
+      active: entry?.active !== false,
+      position: Number(entry?.position || 0) || 0,
+    }))
+    .filter((entry) => entry.expected_value && entry.product_id)
+    .sort((a, b) => (a.position - b.position) || a.expected_value.localeCompare(b.expected_value, "es"));
+
+  if (!fieldKey) return null;
+
   return {
-    id: String(raw?.id || `rule_${index + 1}`),
-    label: String(raw?.label || raw?.field_key || `Regla ${index + 1}`).trim(),
-    field_key: String(raw?.field_key || "").trim(),
-    expected_value: String(raw?.expected_value ?? "").trim(),
-    product_id: Number.isFinite(productId) ? productId : 0,
-    qty_mode: qtyMode,
-    qty_value: Number.isFinite(fixedQty) && fixedQty > 0 ? Math.round(fixedQty * 1000) / 1000 : 1,
-    qty_field_key: String(raw?.qty_field_key || "").trim(),
-    active: raw?.active !== false,
+    field_key: fieldKey,
+    field_label: fieldLabel || fieldKey,
+    field_mode: fieldMode,
+    active: rule?.active !== false,
+    values,
   };
+}
+
+function groupFlatRules(flatRules = []) {
+  const byField = new Map();
+  for (const raw of flatRules) {
+    const fieldKey = normalizeText(raw?.field_key);
+    if (!fieldKey) continue;
+
+    if (!byField.has(fieldKey)) {
+      byField.set(fieldKey, {
+        field_key: fieldKey,
+        field_label: normalizeText(raw?.field_label || fieldKey),
+        field_mode: normalizeFieldMode(raw?.field_mode || raw?.mode),
+        active: raw?.active !== false,
+        values: [],
+      });
+    }
+
+    const grouped = byField.get(fieldKey);
+    grouped.values.push({
+      expected_value: normalizeText(raw?.expected_value ?? raw?.value),
+      product_id: Number(raw?.product_id || 0) || null,
+      product_label: normalizeText(raw?.product_label || raw?.label || ""),
+      active: raw?.active !== false,
+      position: Number(raw?.position || 0) || 0,
+    });
+  }
+
+  return [...byField.values()]
+    .map((rule) => normalizeGroupedRule(rule))
+    .filter(Boolean);
+}
+
+function normalizeMeasurementProductMappings(raw = {}) {
+  const source = raw && typeof raw === "object" ? raw : {};
+  const rules = Array.isArray(source.rules)
+    ? source.rules
+    : Array.isArray(source.mappings)
+      ? source.mappings
+      : [];
+
+  const groupedRules = rules.some((rule) => Array.isArray(rule?.values) || Array.isArray(rule?.mappings))
+    ? rules.map((rule) => normalizeGroupedRule(rule)).filter(Boolean)
+    : groupFlatRules(rules);
+
+  return { rules: groupedRules };
 }
 
 export async function getCommercialFinalQuoteSettings() {
@@ -108,16 +179,12 @@ export async function getMeasurementProductMappings() {
     [MEASUREMENT_PRODUCT_MAPPINGS_KEY]
   );
 
-  const raw = r.rows?.[0]?.value_json || {};
-  const rules = Array.isArray(raw?.rules) ? raw.rules.map((x, i) => normalizeMeasurementRule(x, i)) : [];
-  return { rules };
+  return normalizeMeasurementProductMappings(r.rows?.[0]?.value_json || {});
 }
 
-export async function setMeasurementProductMappings({ rules }) {
+export async function setMeasurementProductMappings(payload = {}) {
   await ensureSettingsTable();
-  const normalized = {
-    rules: Array.isArray(rules) ? rules.map((x, i) => normalizeMeasurementRule(x, i)).filter((x) => x.field_key && x.product_id) : [],
-  };
+  const normalized = normalizeMeasurementProductMappings(payload);
 
   await dbQuery(
     `

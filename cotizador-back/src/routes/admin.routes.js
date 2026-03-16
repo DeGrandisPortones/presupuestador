@@ -51,19 +51,19 @@ export function buildAdminRouter(odoo) {
     }
   });
 
-  router.get("/measurement-mappings", requireAuth, requireEncComercial, async (_req, res, next) => {
+  router.get("/measurement-product-mappings", requireAuth, requireEncComercial, async (_req, res, next) => {
     try {
-      const settings = await getMeasurementProductMappings();
-      res.json({ ok: true, settings });
+      const mappings = await getMeasurementProductMappings();
+      res.json({ ok: true, mappings });
     } catch (e) {
       next(e);
     }
   });
 
-  router.put("/measurement-mappings", requireAuth, requireEncComercial, async (req, res, next) => {
+  router.put("/measurement-product-mappings", requireAuth, requireEncComercial, async (req, res, next) => {
     try {
-      const settings = await setMeasurementProductMappings(req.body || {});
-      res.json({ ok: true, settings });
+      const mappings = await setMeasurementProductMappings(req.body || {});
+      res.json({ ok: true, mappings });
     } catch (e) {
       next(e);
     }

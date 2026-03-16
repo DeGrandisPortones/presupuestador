@@ -21,9 +21,6 @@ function toText(v) {
 function round2(n) {
   return Math.round(Number(n || 0) * 100) / 100;
 }
-function onlyDigits(v) {
-  return String(v || "").replace(/\D/g, "");
-}
 function normalizeBoolish(v) {
   const s = String(v ?? "").toLowerCase().trim();
   if (["true", "1", "si", "sí", "yes"].includes(s)) return "si";
@@ -44,33 +41,25 @@ function normalizeValue(v) {
   if (v === null || v === undefined) return "";
   return normalizeBoolish(String(v).trim().toLowerCase());
 }
-function buildMeasurementLinesFromRules(form, rules) {
+function buildMeasurementLinesFromRules(form, groupedRules) {
   const out = [];
-  for (const rule of Array.isArray(rules) ? rules : []) {
-    if (!rule?.active || !rule?.field_key || !rule?.product_id) continue;
+  for (const rule of Array.isArray(groupedRules) ? groupedRules : []) {
+    if (!rule?.active || !rule?.field_key) continue;
     const current = getByPath(form, rule.field_key);
     const currentNorm = normalizeValue(current);
-    const expectedNorm = normalizeValue(rule.expected_value || "");
-    const matches = expectedNorm ? currentNorm === expectedNorm : !!currentNorm;
-    if (!matches) continue;
-
-    let qty = 1;
-    if (rule.qty_mode === "field" && rule.qty_field_key) {
-      const qv = Number(String(getByPath(form, rule.qty_field_key) ?? "").replace(",", "."));
-      qty = Number.isFinite(qv) && qv > 0 ? qv : 1;
-    } else {
-      const qv = Number(rule.qty_value || 1);
-      qty = Number.isFinite(qv) && qv > 0 ? qv : 1;
+    for (const valueRule of Array.isArray(rule.values) ? rule.values : []) {
+      if (!valueRule?.product_id) continue;
+      const expectedNorm = normalizeValue(valueRule.expected_value || "");
+      if (!expectedNorm || currentNorm !== expectedNorm) continue;
+      out.push({
+        product_id: Number(valueRule.product_id),
+        qty: 1,
+        name: `${rule.field_label || rule.field_key}: ${valueRule.expected_value}`,
+        raw_name: `${rule.field_label || rule.field_key}: ${valueRule.expected_value}`,
+        code: null,
+        basePrice: 0,
+      });
     }
-
-    out.push({
-      product_id: Number(rule.product_id),
-      qty,
-      name: String(rule.label || rule.field_key || `Producto ${rule.product_id}`).trim(),
-      raw_name: String(rule.label || rule.field_key || `Producto ${rule.product_id}`).trim(),
-      code: null,
-      basePrice: 0,
-    });
   }
   return out;
 }
@@ -91,13 +80,10 @@ async function findOrCreateCustomerPartner(odoo, customer) {
     const ids = await odoo.executeKw("res.partner", "search", [[["email", "=", email]]], { limit: 1 });
     if (ids?.[0]) return toIntId(ids[0]);
   }
-
   const name = toText(customer?.name);
   if (!name) throw new Error("Falta end_customer.name");
-
   const ids2 = await odoo.executeKw("res.partner", "search", [[["name", "=", name]]], { limit: 1 });
   if (ids2?.[0]) return toIntId(ids2[0]);
-
   const created = await odoo.executeKw("res.partner", "create", [{
     name,
     email: email || false,
@@ -106,7 +92,6 @@ async function findOrCreateCustomerPartner(odoo, customer) {
     city: toText(customer?.city) || false,
     customer_rank: 1,
   }]);
-
   const id = toIntId(created);
   if (!id) throw new Error("No se pudo crear partner en Odoo");
   return id;
@@ -120,23 +105,8 @@ async function getOrCreateRevisionQuote(originalQuote, finalLines) {
   const copy = existing.rows?.[0];
   if (copy) {
     const upd = await dbQuery(
-      `
-      update public.presupuestador_quotes
-      set lines=$2::jsonb,
-          end_customer=$3::jsonb,
-          payload=$4::jsonb,
-          note=$5,
-          final_status='draft'
-      where id=$1
-      returning *
-      `,
-      [
-        copy.id,
-        JSON.stringify(finalLines),
-        JSON.stringify(originalQuote.end_customer || {}),
-        JSON.stringify(originalQuote.payload || {}),
-        originalQuote.note || null,
-      ]
+      `update public.presupuestador_quotes set lines=$2::jsonb, end_customer=$3::jsonb, payload=$4::jsonb, note=$5, final_status='draft' where id=$1 returning *`,
+      [copy.id, JSON.stringify(finalLines), JSON.stringify(originalQuote.end_customer || {}), JSON.stringify(originalQuote.payload || {}), originalQuote.note || null]
     );
     return upd.rows?.[0] || copy;
   }
@@ -144,21 +114,10 @@ async function getOrCreateRevisionQuote(originalQuote, finalLines) {
   const ins = await dbQuery(
     `
     insert into public.presupuestador_quotes
-      (quote_kind, parent_quote_id,
-       created_by_user_id, created_by_role,
-       fulfillment_mode, pricelist_id, bill_to_odoo_partner_id,
-       end_customer, lines, payload, note,
-       catalog_kind,
-       status, commercial_decision, technical_decision,
-       final_status)
+      (quote_kind, parent_quote_id, created_by_user_id, created_by_role, fulfillment_mode, pricelist_id, bill_to_odoo_partner_id,
+       end_customer, lines, payload, note, catalog_kind, status, commercial_decision, technical_decision, final_status)
     values
-      ('copy', $1,
-       $2, $3,
-       $4, $5, $6,
-       $7::jsonb, $8::jsonb, $9::jsonb, $10,
-       $11,
-       'draft', 'pending', 'pending',
-       'draft')
+      ('copy', $1, $2, $3, $4, $5, $6, $7::jsonb, $8::jsonb, $9::jsonb, $10, $11, 'draft', 'pending', 'pending', 'draft')
     returning *
     `,
     [
@@ -188,7 +147,6 @@ function calcDetailedUnitWithIva(line, payload) {
 
 async function syncFinalQuoteToOdoo({ odoo, revisionQuote, originalQuote, approverUser }) {
   const pricelistId = toIntId(revisionQuote?.pricelist_id) || toIntId(originalQuote?.pricelist_id) || 1;
-
   let partnerId = null;
   if (originalQuote.created_by_role === "distribuidor") {
     partnerId = toIntId(originalQuote?.bill_to_odoo_partner_id) || await getCreatorOdooPartnerId(originalQuote.created_by_user_id) || toIntId(approverUser?.odoo_partner_id);
@@ -208,26 +166,16 @@ async function syncFinalQuoteToOdoo({ odoo, revisionQuote, originalQuote, approv
 
   const orderLines = [];
   let detailedTotal = 0;
-
   for (const l of lines) {
     const productId = Number(l.product_id);
     const qty = Number(l.qty || 1) || 1;
     const p = byId.get(productId);
     if (!p) throw new Error(`Producto no encontrado: ${productId}`);
-
     const uomId = toIntId(p?.uom_id);
     if (!uomId) throw new Error(`Producto sin uom_id: ${productId}`);
-
     const priceUnit = calcDetailedUnitWithIva(l, revisionQuote.payload || originalQuote.payload || {});
     detailedTotal = round2(detailedTotal + (qty * priceUnit));
-
-    orderLines.push([0, 0, {
-      product_id: productId,
-      product_uom_qty: qty,
-      product_uom: uomId,
-      name: p.name,
-      price_unit: priceUnit,
-    }]);
+    orderLines.push([0, 0, { product_id: productId, product_uom_qty: qty, product_uom: uomId, name: p.name, price_unit: priceUnit }]);
   }
 
   const depositAmount = round2(Number(originalQuote.deposit_amount || 0) || 0);
@@ -237,12 +185,8 @@ async function syncFinalQuoteToOdoo({ odoo, revisionQuote, originalQuote, approv
 
   let absorbedByCompany = false;
   let advanceToDiscount = 0;
-
   if (depositAmount > 0) {
-    if (detailedTotal <= depositAmount) {
-      absorbedByCompany = true;
-      advanceToDiscount = detailedTotal;
-    } else if (rawDifference <= toleranceAmount) {
+    if (detailedTotal <= depositAmount || rawDifference <= toleranceAmount) {
       absorbedByCompany = true;
       advanceToDiscount = detailedTotal;
     } else {
@@ -254,7 +198,6 @@ async function syncFinalQuoteToOdoo({ odoo, revisionQuote, originalQuote, approv
     const ph = byId.get(Number(PLACEHOLDER_PRODUCT_ID));
     const uomId = toIntId(ph?.uom_id);
     if (!uomId) throw new Error(`Producto anticipo sin uom_id: ${PLACEHOLDER_PRODUCT_ID}`);
-
     orderLines.push([0, 0, {
       product_id: Number(PLACEHOLDER_PRODUCT_ID),
       product_uom_qty: 1,
@@ -277,19 +220,10 @@ async function syncFinalQuoteToOdoo({ odoo, revisionQuote, originalQuote, approv
     + (absorbedByCompany ? `\nAbsorbido por la empresa: SI` : `\nAbsorbido por la empresa: NO`)
     + `\nImporte final a facturar: ${finalAmountToCharge}`;
 
-  const createdOrderId = await odoo.executeKw("sale.order", "create", [{
-    partner_id: partnerId,
-    pricelist_id: pricelistId,
-    order_line: orderLines,
-    note,
-  }]);
+  const createdOrderId = await odoo.executeKw("sale.order", "create", [{ partner_id: partnerId, pricelist_id: pricelistId, order_line: orderLines, note }]);
   const orderId = toIntId(createdOrderId);
   if (!orderId) throw new Error("No se pudo crear sale.order final en Odoo");
-
-  const [order] = await odoo.executeKw("sale.order", "read", [[orderId]], {
-    fields: ["id", "name", "amount_total", "partner_id", "state", "pricelist_id"],
-  });
-
+  const [order] = await odoo.executeKw("sale.order", "read", [[orderId]], { fields: ["id", "name", "amount_total", "partner_id", "state", "pricelist_id"] });
   return {
     order,
     metrics: {
@@ -311,64 +245,22 @@ export async function finalizeMeasurementToRevisionQuote({ odoo, originalQuote, 
   if (!finalLines.length) {
     return { revisionQuote: null, generated_lines: [], synced: false, reason: "Sin reglas aplicables" };
   }
-
   const revisionQuote = await getOrCreateRevisionQuote(originalQuote, finalLines);
   if (!revisionQuote || !odoo) {
     return { revisionQuote, generated_lines: finalLines, synced: false, reason: !odoo ? "Odoo no disponible" : "No se pudo crear la copia" };
   }
 
   const updSync = await dbQuery(
-    `
-    update public.presupuestador_quotes
-    set final_status='syncing_odoo',
-        final_technical_decision='approved',
-        final_logistics_decision='approved',
-        final_technical_notes=null,
-        final_logistics_notes=null
-    where id=$1
-    returning *
-    `,
+    `update public.presupuestador_quotes set final_status='syncing_odoo', final_technical_decision='approved', final_logistics_decision='approved', final_technical_notes=null, final_logistics_notes=null where id=$1 returning *`,
     [revisionQuote.id]
   );
   const qSync = updSync.rows?.[0] || revisionQuote;
-
-  const { order, metrics } = await syncFinalQuoteToOdoo({
-    odoo,
-    revisionQuote: qSync,
-    originalQuote,
-    approverUser,
-  });
+  const { order, metrics } = await syncFinalQuoteToOdoo({ odoo, revisionQuote: qSync, originalQuote, approverUser });
 
   const updFinal = await dbQuery(
-    `
-    update public.presupuestador_quotes
-    set final_status='synced_odoo',
-        final_sale_order_id=$2,
-        final_sale_order_name=$3,
-        final_synced_at=now(),
-        final_tolerance_percent=$4,
-        final_tolerance_amount=$5,
-        final_difference_amount=$6,
-        final_absorbed_by_company=$7
-    where id=$1
-    returning *
-    `,
-    [
-      qSync.id,
-      Number(order.id),
-      order.name,
-      metrics.tolerance_percent,
-      metrics.tolerance_amount,
-      metrics.difference_amount,
-      metrics.absorbed_by_company,
-    ]
+    `update public.presupuestador_quotes set final_status='synced_odoo', final_sale_order_id=$2, final_sale_order_name=$3, final_synced_at=now(), final_tolerance_percent=$4, final_tolerance_amount=$5, final_difference_amount=$6, final_absorbed_by_company=$7 where id=$1 returning *`,
+    [qSync.id, Number(order.id), order.name, metrics.tolerance_percent, metrics.tolerance_amount, metrics.difference_amount, metrics.absorbed_by_company]
   );
 
-  return {
-    revisionQuote: updFinal.rows?.[0] || qSync,
-    generated_lines: finalLines,
-    synced: true,
-    order,
-    metrics,
-  };
+  return { revisionQuote: updFinal.rows?.[0] || qSync, generated_lines: finalLines, synced: true, order, metrics };
 }
