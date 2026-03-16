@@ -3,9 +3,24 @@ import { dbQuery } from "../db.js";
 import { signToken, requireAuth } from "../auth.js";
 import { ensureUsersAdminColumns } from "../usersDb.js";
 
+function withEffectiveRoles(user) {
+  const isSuperuser = !!user?.is_superuser;
+  return {
+    ...user,
+    is_superuser: isSuperuser,
+    is_distribuidor: isSuperuser || !!user?.is_distribuidor,
+    is_vendedor: isSuperuser || !!user?.is_vendedor,
+    is_enc_comercial: isSuperuser || !!user?.is_enc_comercial,
+    is_rev_tecnica: isSuperuser || !!user?.is_rev_tecnica,
+    is_medidor: isSuperuser || !!user?.is_medidor,
+    is_logistica: isSuperuser || !!user?.is_logistica,
+  };
+}
+
 export function buildAuthRouter() {
   const router = express.Router();
 
+  // LOGIN
   router.post("/login", async (req, res, next) => {
     try {
       const { username, password } = req.body || {};
@@ -16,7 +31,7 @@ export function buildAuthRouter() {
       const q = await dbQuery(
         `
         select id, username, full_name,
-               is_superuser,
+               coalesce(is_superuser, false) as is_superuser,
                is_distribuidor, is_vendedor,
                is_enc_comercial, is_rev_tecnica, is_medidor, is_logistica,
                odoo_partner_id,
@@ -30,10 +45,11 @@ export function buildAuthRouter() {
         [String(username).trim(), String(password)]
       );
 
-      const user = q.rows?.[0];
-      if (!user) return res.status(401).json({ ok: false, error: "Credenciales inválidas" });
-      if (user.is_active === false) return res.status(403).json({ ok: false, error: "Usuario inhabilitado" });
+      const rawUser = q.rows?.[0];
+      if (!rawUser) return res.status(401).json({ ok: false, error: "Credenciales inválidas" });
+      if (rawUser.is_active === false) return res.status(403).json({ ok: false, error: "Usuario inhabilitado" });
 
+      const user = withEffectiveRoles(rawUser);
       const token = signToken(user);
       res.json({ ok: true, token, user });
     } catch (e) {
@@ -41,6 +57,7 @@ export function buildAuthRouter() {
     }
   });
 
+  // ME
   router.get("/me", requireAuth, async (req, res) => {
     res.json({ ok: true, user: req.user });
   });

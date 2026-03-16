@@ -7,20 +7,25 @@ export default function AppLayout() {
   const logout = useAuthStore((s) => s.logout);
   const navigate = useNavigate();
 
+  const isSuperuser = !!user?.is_superuser;
+
   const roles = [];
+  if (isSuperuser) roles.push("Superusuario");
   if (user?.is_distribuidor) roles.push("Distribuidor");
   if (user?.is_vendedor) roles.push("Vendedor");
   if (user?.is_enc_comercial) roles.push("Enc. Comercial");
   if (user?.is_rev_tecnica) roles.push("Rev. Técnica");
   if (user?.is_medidor) roles.push("Medidor");
+  if (user?.is_logistica) roles.push("Logística");
 
   const roleText = roles.length ? roles.join(" / ") : "Cargando sesión...";
 
-  // ✅ Dashboard solo para Enc. Comercial (el distribuidor NO lo ve)
-  const showDashboard = !!user?.is_enc_comercial;
-
-  // ✅ Cotizadores + Mis presupuestos solo para vendedor/distribuidor
-  const canQuote = !!(user?.is_vendedor || user?.is_distribuidor);
+  const showDashboard = !!(isSuperuser || user?.is_enc_comercial);
+  const showUsers = !!(isSuperuser || user?.is_enc_comercial);
+  const canQuote = !!(isSuperuser || user?.is_vendedor || user?.is_distribuidor);
+  const showMediciones = !!(isSuperuser || user?.is_medidor);
+  const showCommercial = !!(isSuperuser || user?.is_enc_comercial);
+  const showTechnical = !!(isSuperuser || user?.is_rev_tecnica);
 
   return (
     <div>
@@ -69,13 +74,13 @@ export default function AppLayout() {
             </>
           )}
 
-          {user?.is_medidor && (
+          {showMediciones && (
             <NavLink className={({ isActive }) => (isActive ? "navlink active" : "navlink")} to="/mediciones">
               Mediciones
             </NavLink>
           )}
 
-          {user?.is_enc_comercial && (
+          {showCommercial && (
             <NavLink className={({ isActive }) => (isActive ? "navlink active" : "navlink")} to="/aprobacion/comercial">
               Aprobación Comercial
             </NavLink>
@@ -87,13 +92,13 @@ export default function AppLayout() {
             </NavLink>
           )}
 
-          {user?.is_enc_comercial && (
+          {showUsers && (
             <NavLink className={({ isActive }) => (isActive ? "navlink active" : "navlink")} to="/usuarios">
               Gestor de usuarios
             </NavLink>
           )}
 
-          {user?.is_rev_tecnica && (
+          {showTechnical && (
             <NavLink className={({ isActive }) => (isActive ? "navlink active" : "navlink")} to="/aprobacion/tecnica">
               Revisión Técnica
             </NavLink>

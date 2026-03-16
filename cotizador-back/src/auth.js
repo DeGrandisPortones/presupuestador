@@ -3,37 +3,37 @@ import { dbQuery } from "./db.js";
 import { ensureUsersAdminColumns } from "./usersDb.js";
 
 function withEffectiveRoles(user) {
-  const isSuper = !!user?.is_superuser;
+  const isSuperuser = !!user?.is_superuser;
   return {
     ...user,
-    is_superuser: isSuper,
-    is_distribuidor: isSuper || !!user?.is_distribuidor,
-    is_vendedor: isSuper || !!user?.is_vendedor,
-    is_enc_comercial: isSuper || !!user?.is_enc_comercial,
-    is_rev_tecnica: isSuper || !!user?.is_rev_tecnica,
-    is_medidor: isSuper || !!user?.is_medidor,
-    is_logistica: isSuper || !!user?.is_logistica,
+    is_superuser: isSuperuser,
+    is_distribuidor: isSuperuser || !!user?.is_distribuidor,
+    is_vendedor: isSuperuser || !!user?.is_vendedor,
+    is_enc_comercial: isSuperuser || !!user?.is_enc_comercial,
+    is_rev_tecnica: isSuperuser || !!user?.is_rev_tecnica,
+    is_medidor: isSuperuser || !!user?.is_medidor,
+    is_logistica: isSuperuser || !!user?.is_logistica,
   };
 }
 
 export function signToken(user) {
-  const effective = withEffectiveRoles(user || {});
+  const u = withEffectiveRoles(user);
   const payload = {
-    user_id: effective.id,
-    username: effective.username,
+    user_id: u.id,
+    username: u.username,
 
-    is_superuser: !!effective.is_superuser,
-    is_distribuidor: !!effective.is_distribuidor,
-    is_vendedor: !!effective.is_vendedor,
-    is_enc_comercial: !!effective.is_enc_comercial,
-    is_rev_tecnica: !!effective.is_rev_tecnica,
-    is_medidor: !!effective.is_medidor,
-    is_logistica: !!effective.is_logistica,
+    is_superuser: !!u.is_superuser,
+    is_distribuidor: !!u.is_distribuidor,
+    is_vendedor: !!u.is_vendedor,
+    is_enc_comercial: !!u.is_enc_comercial,
+    is_rev_tecnica: !!u.is_rev_tecnica,
+    is_medidor: !!u.is_medidor,
+    is_logistica: !!u.is_logistica,
 
-    odoo_partner_id: effective.odoo_partner_id ?? null,
+    odoo_partner_id: u.odoo_partner_id ?? null,
 
-    full_name: effective.full_name ?? null,
-    default_maps_url: effective.default_maps_url ?? null,
+    full_name: u.full_name ?? null,
+    default_maps_url: u.default_maps_url ?? null,
   };
 
   return jwt.sign(payload, process.env.JWT_SECRET, {
@@ -41,6 +41,7 @@ export function signToken(user) {
   });
 }
 
+// Refresca roles/partner desde DB para evitar tokens viejos.
 export async function requireAuth(req, res, next) {
   const h = req.headers.authorization || "";
   const m = h.match(/^Bearer\s+(.+)$/i);
@@ -60,7 +61,7 @@ export async function requireAuth(req, res, next) {
       const r = await dbQuery(
         `
         select id, username, full_name,
-               is_superuser,
+               coalesce(is_superuser, false) as is_superuser,
                is_distribuidor, is_vendedor,
                is_enc_comercial, is_rev_tecnica, is_medidor, is_logistica,
                odoo_partner_id,
@@ -77,10 +78,11 @@ export async function requireAuth(req, res, next) {
       fresh = null;
     }
 
-    const rawUser = fresh
-      ? {
+    const u = fresh
+      ? withEffectiveRoles({
           ...decoded,
           user_id: fresh.id,
+          id: fresh.id,
           username: fresh.username,
           full_name: fresh.full_name ?? null,
           is_superuser: !!fresh.is_superuser,
@@ -93,16 +95,14 @@ export async function requireAuth(req, res, next) {
           odoo_partner_id: fresh.odoo_partner_id ?? null,
           default_maps_url: fresh.default_maps_url ?? null,
           is_active: !!fresh.is_active,
-        }
-      : { ...decoded, is_active: decoded.is_active ?? true };
+        })
+      : withEffectiveRoles({ ...decoded, is_active: decoded.is_active ?? true });
 
-    const effectiveUser = withEffectiveRoles(rawUser);
-
-    if (effectiveUser.is_active === false) {
+    if (u.is_active === false) {
       return res.status(403).json({ ok: false, error: "Usuario inhabilitado" });
     }
 
-    req.user = effectiveUser;
+    req.user = u;
     next();
   } catch {
     return res.status(401).json({ ok: false, error: "Token inválido/expirado" });

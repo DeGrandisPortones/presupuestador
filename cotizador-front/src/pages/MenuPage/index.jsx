@@ -6,13 +6,15 @@ export default function MenuPage() {
   const navigate = useNavigate();
   const user = useAuthStore((s) => s.user);
 
-  const canQuote = !!(user?.is_vendedor || user?.is_distribuidor);
+  const isSuperuser = !!user?.is_superuser;
 
-  const showDashboard = !!user?.is_enc_comercial;
-  const showCommercialInbox = !!user?.is_enc_comercial;
-  const showUsers = !!user?.is_enc_comercial;
-  const showTechInbox = !!user?.is_rev_tecnica;
-  const showDoors = !!user?.is_vendedor;
+  const canQuote = !!(isSuperuser || user?.is_vendedor || user?.is_distribuidor);
+  const showDashboard = !!(isSuperuser || user?.is_enc_comercial);
+  const showCommercialInbox = !!(isSuperuser || user?.is_enc_comercial);
+  const showUsers = !!(isSuperuser || user?.is_enc_comercial);
+  const showTechInbox = !!(isSuperuser || user?.is_rev_tecnica);
+  const showDoors = !!(isSuperuser || user?.is_vendedor);
+  const showMediciones = !!(isSuperuser || user?.is_medidor);
 
   return (
     <div className="container">
@@ -57,6 +59,14 @@ export default function MenuPage() {
             <div className="menu-title">Mis presupuestos</div>
             <div className="spacer" />
             <Button variant="secondary" onClick={() => navigate("/presupuestos")}>Ver mis presupuestos</Button>
+          </div>
+        )}
+
+        {showMediciones && (
+          <div className="card menu-card">
+            <div className="menu-title">Mediciones</div>
+            <div className="spacer" />
+            <Button variant="secondary" onClick={() => navigate("/mediciones")}>Abrir mediciones</Button>
           </div>
         )}
 
