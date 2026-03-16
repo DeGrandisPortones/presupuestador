@@ -34,40 +34,16 @@ const odoo = createOdooClient({
   companyId: process.env.ODOO_COMPANY_ID || null,
 });
 
-const info = odoo?._debugInfo ? odoo._debugInfo() : null;
-console.log("ODOO_URL:", process.env.ODOO_URL);
-console.log("ODOO_DB :", process.env.ODOO_DB);
-if (info?.jsonrpcUrl) console.log("JSONRPC :", info.jsonrpcUrl);
-console.log("Odoo client executeKw type:", typeof odoo?.executeKw);
-
-// Auth
 app.use("/api/auth", buildAuthRouter());
-
-// Odoo API
 app.use("/api/odoo", buildOdooRouter(odoo));
-
-// Quotes
 app.use("/api/quotes", buildQuotesRouter(odoo));
-
-// Doors
 app.use("/api/doors", buildDoorsRouter(odoo));
-
-// Measurements
 app.use("/api/measurements", buildMeasurementsRouter(odoo));
-
-// Catalog
 app.use("/api/catalog", buildCatalogRouter(odoo));
-
-// Admin
 app.use("/api/admin", buildAdminRouter(odoo));
-
-// PDF
 app.use("/api/pdf", buildPdfRouter());
-
-// Health
 app.get("/health", (_req, res) => res.json({ ok: true }));
 
-// Error handler
 app.use((err, _req, res, _next) => {
   const status = err.status || 400;
   const msg = err?.message || "Error";

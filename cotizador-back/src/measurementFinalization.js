@@ -123,13 +123,7 @@ async function getOrCreateRevisionQuote(originalQuote, finalLines) {
       where id=$1
       returning *
       `,
-      [
-        copy.id,
-        JSON.stringify(finalLines),
-        JSON.stringify(originalQuote.end_customer || {}),
-        JSON.stringify(originalQuote.payload || {}),
-        originalQuote.note || null,
-      ]
+      [copy.id, JSON.stringify(finalLines), JSON.stringify(originalQuote.end_customer || {}), JSON.stringify(originalQuote.payload || {}), originalQuote.note || null]
     );
     return upd.rows?.[0] || copy;
   }
@@ -285,19 +279,7 @@ async function syncFinalQuoteToOdoo({ odoo, revisionQuote, originalQuote, approv
     fields: ["id", "name", "amount_total", "partner_id", "state", "pricelist_id", "origin", "client_order_ref"],
   });
 
-  return {
-    order,
-    metrics: {
-      detailed_total: detailedTotal,
-      advance_discounted_amount: round2(advanceToDiscount),
-      tolerance_percent: tolerancePercent,
-      tolerance_amount: toleranceAmount,
-      difference_amount: rawDifference,
-      absorbed_by_company: absorbedByCompany,
-      final_amount_to_charge: finalAmountToCharge,
-      reference_nv: referenceNv,
-    },
-  };
+  return { order, metrics: { detailed_total: detailedTotal, advance_discounted_amount: round2(advanceToDiscount), tolerance_percent: tolerancePercent, tolerance_amount: toleranceAmount, difference_amount: rawDifference, absorbed_by_company: absorbedByCompany, final_amount_to_charge: finalAmountToCharge, reference_nv: referenceNv } };
 }
 
 export async function finalizeMeasurementToRevisionQuote({ odoo, originalQuote, measurementForm, approverUser }) {
@@ -328,12 +310,7 @@ export async function finalizeMeasurementToRevisionQuote({ odoo, originalQuote, 
   );
   const qSync = updSync.rows?.[0] || revisionQuote;
 
-  const { order, metrics } = await syncFinalQuoteToOdoo({
-    odoo,
-    revisionQuote: qSync,
-    originalQuote,
-    approverUser,
-  });
+  const { order, metrics } = await syncFinalQuoteToOdoo({ odoo, revisionQuote: qSync, originalQuote, approverUser });
 
   const updFinal = await dbQuery(
     `
@@ -350,22 +327,8 @@ export async function finalizeMeasurementToRevisionQuote({ odoo, originalQuote, 
     where id=$1
     returning *
     `,
-    [
-      qSync.id,
-      Number(order.id),
-      order.name,
-      metrics.tolerance_percent,
-      metrics.tolerance_amount,
-      metrics.difference_amount,
-      metrics.absorbed_by_company,
-    ]
+    [qSync.id, Number(order.id), order.name, metrics.tolerance_percent, metrics.tolerance_amount, metrics.difference_amount, metrics.absorbed_by_company]
   );
 
-  return {
-    revisionQuote: updFinal.rows?.[0] || qSync,
-    generated_lines: finalLines,
-    synced: true,
-    order,
-    metrics,
-  };
+  return { revisionQuote: updFinal.rows?.[0] || qSync, generated_lines: finalLines, synced: true, order, metrics };
 }

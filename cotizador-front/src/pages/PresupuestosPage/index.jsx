@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import Button from "../../ui/Button.jsx";
 import PaginationControls from "../../ui/PaginationControls.jsx";
-import { createRevisionQuote, listQuotes, requestProductionFromAcopio } from "../../api/quotes.js";
+import { listQuotes, requestProductionFromAcopio, createRevisionQuote } from "../../api/quotes.js";
 
 const PAGE_SIZE = 25;
 
@@ -16,18 +16,15 @@ function labelMeasurementStatus(q) {
   if (s === "none") return "—";
   return s;
 }
-
 function labelStatus(q) {
   const s = q?.status;
   const c = q?.commercial_decision;
   const t = q?.technical_decision;
-
   if (s === "draft") {
     if (c === "rejected" || t === "rejected") return "Rechazado (corregir)";
     if (c === "pending" && t === "pending") return "Guardado";
     return "Borrador";
   }
-
   if (s === "pending_approvals") {
     if (c === "pending" && t === "pending") return "Pendiente Comercial y Técnica";
     if (c === "approved" && t === "pending") return "Pendiente Técnica";
@@ -35,49 +32,18 @@ function labelStatus(q) {
     if (c === "approved" && t === "approved") return "Listo para Odoo";
     return "En aprobación";
   }
-
   if (s === "syncing_odoo") return "Sincronizando a Odoo";
   if (s === "synced_odoo") return "Enviado a Odoo";
-
   return s;
 }
-
 function localityLabel(q) {
   return q?.end_customer?.city || "—";
 }
-
 function matchesSearch(q, searchText) {
   const s = String(searchText || "").trim().toLowerCase();
   if (!s) return true;
-  const haystack = [
-    q?.end_customer?.name,
-    q?.end_customer?.city,
-    q?.end_customer?.address,
-    q?.end_customer?.phone,
-    labelStatus(q),
-    q?.fulfillment_mode === "acopio" ? "acopio" : "produccion",
-  ]
-    .filter(Boolean)
-    .join(" ")
-    .toLowerCase();
+  const haystack = [q?.end_customer?.name, q?.end_customer?.city, q?.end_customer?.address, q?.end_customer?.phone, labelStatus(q), q?.fulfillment_mode === "acopio" ? "acopio" : "produccion"].filter(Boolean).join(" ").toLowerCase();
   return haystack.includes(s);
-}
-
-function canOpenFinalFromRow(q) {
-  const fromMeasurement =
-    q?.status === "synced_odoo" &&
-    (q?.quote_kind || "original") === "original" &&
-    ["submitted", "needs_fix", "approved"].includes(String(q?.measurement_status || "none"));
-
-  const fromAcopioWithoutMeasurement =
-    q?.status === "synced_odoo" &&
-    (q?.quote_kind || "original") === "original" &&
-    q?.fulfillment_mode === "produccion" &&
-    q?.acopio_to_produccion_status === "approved" &&
-    !q?.requires_measurement &&
-    String(q?.measurement_status || "none") === "none";
-
-  return fromMeasurement || fromAcopioWithoutMeasurement;
 }
 
 export default function PresupuestosPage() {
@@ -85,32 +51,18 @@ export default function PresupuestosPage() {
   const [filter, setFilter] = useState("all");
   const [searchText, setSearchText] = useState("");
   const [page, setPage] = useState(1);
-
-  const q = useQuery({
-    queryKey: ["quotes", "mine"],
-    queryFn: () => listQuotes({ scope: "mine" }),
-  });
-
+  const q = useQuery({ queryKey: ["quotes", "mine"], queryFn: () => listQuotes({ scope: "mine" }) });
   const qc = useQueryClient();
-
-  const moveM = useMutation({
-    mutationFn: (id) => requestProductionFromAcopio(id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["quotes", "mine"] }),
-  });
-
+  const moveM = useMutation({ mutationFn: (id) => requestProductionFromAcopio(id), onSuccess: () => qc.invalidateQueries({ queryKey: ["quotes", "mine"] }) });
   const finalM = useMutation({
     mutationFn: (id) => createRevisionQuote(id),
     onSuccess: (newQuote) => {
-      qc.invalidateQueries({ queryKey: ["quotes", "mine"] });
       if (!newQuote?.id) return;
       navigate(newQuote.catalog_kind === "ipanel" ? `/cotizador/ipanel/${newQuote.id}` : `/cotizador/${newQuote.id}`);
     },
   });
 
-  useEffect(() => {
-    setPage(1);
-  }, [filter, searchText]);
-
+  useEffect(() => { setPage(1); }, [filter, searchText]);
   function fmtDate(iso) {
     if (!iso) return "—";
     const d = new Date(iso);
@@ -119,35 +71,18 @@ export default function PresupuestosPage() {
   }
 
   const rows = useMemo(() => {
-    const arr = (q.data || []).slice();
-    arr.sort((a, b) => {
+    const arr = (q.data || []).slice().sort((a, b) => {
       const ta = a?.created_at ? new Date(a.created_at).getTime() : 0;
       const tb = b?.created_at ? new Date(b.created_at).getTime() : 0;
       return tb - ta;
     });
-
     let out = arr;
-
-    if (filter === "saved") {
-      out = out.filter(
-        (x) => x.status === "draft" && x.commercial_decision === "pending" && x.technical_decision === "pending"
-      );
-    } else if (filter === "pending") {
-      out = out.filter(
-        (x) => x.status === "pending_approvals" && (x.commercial_decision === "pending" || x.technical_decision === "pending")
-      );
-    } else if (filter === "rejected") {
-      out = out.filter(
-        (x) => x.status === "draft" && (x.commercial_decision === "rejected" || x.technical_decision === "rejected")
-      );
-    } else if (filter === "acopio") {
-      out = out.filter((x) => x.fulfillment_mode === "acopio" && x.status !== "draft");
-    } else if (filter === "produccion") {
-      out = out.filter((x) => x.fulfillment_mode === "produccion" && x.status !== "draft");
-    } else if (filter === "mediciones") {
-      out = out.filter((x) => x.fulfillment_mode === "produccion" && x.status !== "draft" && x.requires_measurement === true);
-    }
-
+    if (filter === "saved") out = out.filter((x) => x.status === "draft" && x.commercial_decision === "pending" && x.technical_decision === "pending");
+    else if (filter === "pending") out = out.filter((x) => x.status === "pending_approvals" && (x.commercial_decision === "pending" || x.technical_decision === "pending"));
+    else if (filter === "rejected") out = out.filter((x) => x.status === "draft" && (x.commercial_decision === "rejected" || x.technical_decision === "rejected"));
+    else if (filter === "acopio") out = out.filter((x) => x.fulfillment_mode === "acopio" && x.status !== "draft");
+    else if (filter === "produccion") out = out.filter((x) => x.fulfillment_mode === "produccion" && x.status !== "draft");
+    else if (filter === "mediciones") out = out.filter((x) => x.fulfillment_mode === "produccion" && x.status !== "draft" && x.requires_measurement === true);
     return out.filter((item) => matchesSearch(item, searchText));
   }, [q.data, filter, searchText]);
 
@@ -166,9 +101,7 @@ export default function PresupuestosPage() {
       <div className="card">
         <h2 style={{ margin: 0 }}>Mis presupuestos</h2>
         <div className="muted">Guardados, confirmados, en aprobación, acopio, producción y mediciones</div>
-
         <div className="spacer" />
-
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           <Button variant={filter === "all" ? "primary" : "ghost"} onClick={() => setFilter("all")}>Todos</Button>
           <Button variant={filter === "saved" ? "primary" : "ghost"} onClick={() => setFilter("saved")}>Guardados</Button>
@@ -178,37 +111,18 @@ export default function PresupuestosPage() {
           <Button variant={filter === "produccion" ? "primary" : "ghost"} onClick={() => setFilter("produccion")}>Portones en Producción</Button>
           <Button variant={filter === "mediciones" ? "primary" : "ghost"} onClick={() => setFilter("mediciones")}>Portones en Medición</Button>
         </div>
-
         <div className="spacer" />
-        <input
-          value={searchText}
-          onChange={(e) => setSearchText(e.target.value)}
-          placeholder="Buscar por cliente, localidad, dirección, teléfono o estado…"
-          style={{ width: "100%", padding: 10, borderRadius: 12, border: "1px solid #ddd" }}
-        />
+        <input value={searchText} onChange={(e) => setSearchText(e.target.value)} placeholder="Buscar por cliente, localidad, dirección, teléfono o estado…" style={{ width: "100%", padding: 10, borderRadius: 12, border: "1px solid #ddd" }} />
       </div>
-
       <div className="spacer" />
-
       <div className="card">
         {q.isLoading && <div className="muted">Cargando...</div>}
         {q.isError && <div style={{ color: "#d93025", fontSize: 13 }}>{q.error.message}</div>}
         {!q.isLoading && !rows.length && <div className="muted">Sin presupuestos</div>}
-
         {!!rows.length && (
           <>
             <table>
-              <thead>
-                <tr>
-                  <th>Fecha</th>
-                  <th>Cliente</th>
-                  <th>Localidad</th>
-                  <th>Estado</th>
-                  <th>Destino</th>
-                  {filter === "mediciones" ? <th>Medición</th> : null}
-                  <th></th>
-                </tr>
-              </thead>
+              <thead><tr><th>Fecha</th><th>Cliente</th><th>Localidad</th><th>Estado</th><th>Destino</th>{filter === "mediciones" ? <th>Medición</th> : null}<th></th></tr></thead>
               <tbody>
                 {visibleRows.map((r) => (
                   <tr key={r.id}>
@@ -220,32 +134,14 @@ export default function PresupuestosPage() {
                     {filter === "mediciones" ? <td>{labelMeasurementStatus(r)}</td> : null}
                     <td className="right" style={{ display: "flex", justifyContent: "flex-end", gap: 8, flexWrap: "wrap" }}>
                       <Button variant="ghost" onClick={() => navigate(`/presupuestos/${r.id}`)}>Ver</Button>
-                      {r.status === "draft" && (
-                        <Button onClick={() => navigate(r.catalog_kind === "ipanel" ? `/cotizador/ipanel/${r.id}` : `/cotizador/${r.id}`)}>Editar</Button>
-                      )}
-                      {filter === "acopio" && (
-                        <Button
-                          disabled={moveM.isPending || r.acopio_to_produccion_status === "pending"}
-                          onClick={() => moveM.mutate(r.id)}
-                        >
-                          {r.acopio_to_produccion_status === "pending" ? "Solicitud en revisión" : "Solicitar paso a Producción"}
-                        </Button>
-                      )}
-                      {canOpenFinalFromRow(r) && (
-                        <Button
-                          variant="secondary"
-                          disabled={finalM.isPending}
-                          onClick={() => finalM.mutate(r.id)}
-                        >
-                          {finalM.isPending ? "Abriendo…" : "Ver final"}
-                        </Button>
-                      )}
+                      {r.status === "draft" && <Button onClick={() => navigate(r.catalog_kind === "ipanel" ? `/cotizador/ipanel/${r.id}` : `/cotizador/${r.id}`)}>Editar</Button>}
+                      {r.status === "synced_odoo" && r.fulfillment_mode === "produccion" && <Button variant="secondary" disabled={finalM.isPending} onClick={() => finalM.mutate(r.id)}>{finalM.isPending ? "Abriendo…" : "Ver / editar final"}</Button>}
+                      {filter === "acopio" && <Button disabled={moveM.isPending || r.acopio_to_produccion_status === "pending"} onClick={() => moveM.mutate(r.id)}>{r.acopio_to_produccion_status === "pending" ? "Solicitud en revisión" : "Solicitar paso a Producción"}</Button>}
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
-
             <PaginationControls page={page} totalItems={rows.length} pageSize={PAGE_SIZE} onPageChange={setPage} />
           </>
         )}
