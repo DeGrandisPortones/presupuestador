@@ -26,22 +26,175 @@ function norm(x) {
 }
 
 const MEASUREMENT_FIELDS = [
-  { key: "accionamiento", label: "Tipo de accionamiento" },
-  { key: "levadizo", label: "Sistema levadizo" },
-  { key: "anclaje", label: "Anclaje" },
-  { key: "color_sistema", label: "Color de sistema" },
-  { key: "tipo_revestimiento", label: "Tipo de revestimiento" },
-  { key: "orientacion_revestimiento", label: "Orientación revestimiento" },
-  { key: "revestimiento", label: "Revestimiento" },
-  { key: "color_revestimiento", label: "Color de revestimiento" },
-  { key: "estructura_metalica", label: "Estructura metálica" },
-  { key: "lucera", label: "Lucera" },
-  { key: "traslado", label: "Traslado" },
-  { key: "relevamiento", label: "Relevamiento" },
-  { key: "parantes.cant", label: "Cantidad de parantes" },
-  { key: "lucera_cantidad", label: "Cantidad lucera" },
-  { key: "peso_revestimiento", label: "Peso del revestimiento" },
+  {
+    key: "colocacion",
+    label: "Tipo de colocación",
+    type: "select",
+    options: [
+      { value: "dentro_vano", label: "Por dentro del vano" },
+      { value: "detras_vano", label: "Por detrás del vano" },
+    ],
+  },
+  {
+    key: "accionamiento",
+    label: "Tipo de accionamiento",
+    type: "select",
+    options: [
+      { value: "manual", label: "Manual" },
+      { value: "automatico", label: "Automático" },
+    ],
+  },
+  {
+    key: "levadizo",
+    label: "Sistema levadizo",
+    type: "select",
+    options: [
+      { value: "coplanar", label: "Coplanar" },
+      { value: "comun", label: "Común" },
+    ],
+  },
+  {
+    key: "anclaje",
+    label: "Anclaje de fijación",
+    type: "select",
+    options: [
+      { value: "lateral", label: "Lateral" },
+      { value: "frontal", label: "Frontal" },
+      { value: "sin", label: "Sin anclajes" },
+    ],
+  },
+  {
+    key: "color_sistema",
+    label: "Color de sistema",
+    type: "select",
+    options: [
+      { value: "Blanco", label: "Blanco" },
+      { value: "Gris topo", label: "Gris topo" },
+      { value: "Negro texturado Brillante", label: "Negro texturado Brillante" },
+      { value: "Negro Semi Mate", label: "Negro Semi Mate" },
+      { value: "Negro Textourado mate", label: "Negro Textourado mate" },
+      { value: "Bronce colonial", label: "Bronce colonial" },
+    ],
+  },
+  {
+    key: "tipo_revestimiento",
+    label: "Tipo de revestimiento",
+    type: "select",
+    options: [
+      { value: "lamas", label: "Lamas" },
+      { value: "varillado_inyectado", label: "Varillado Inyectado" },
+      { value: "varillado_simple", label: "Varillado Simple" },
+    ],
+  },
+  {
+    key: "orientacion_revestimiento",
+    label: "Orientación del revestimiento",
+    type: "select",
+    options: [
+      { value: "lamas_horizontales", label: "Lamas Horizontales" },
+      { value: "lamas_verticales", label: "Lamas Verticales" },
+      { value: "varillado_vertical", label: "Varillado Vertical" },
+    ],
+  },
+  {
+    key: "revestimiento",
+    label: "Revestimiento",
+    type: "select",
+    options: [
+      { value: "Apto Aluminio", label: "Apto Aluminio" },
+      { value: "Simil madera Clásico Simil", label: "Simil madera Clásico Simil" },
+      { value: "Simil Aluminio Clásico", label: "Simil Aluminio Clásico" },
+      { value: "Apto PVC", label: "Apto PVC" },
+      { value: "Simil madera doble inyectado", label: "Simil madera doble inyectado" },
+      { value: "Simil aluminio doble inyectado", label: "Simil aluminio doble inyectado" },
+      { value: "Varillado", label: "Varillado" },
+    ],
+  },
+  {
+    key: "color_revestimiento",
+    label: "Color de revestimiento",
+    type: "select",
+    options: [
+      { value: "Roble", label: "Roble" },
+      { value: "Negro Texturado", label: "Negro Texturado" },
+      { value: "Negro Semi mate", label: "Negro Semi mate" },
+      { value: "Blanco", label: "Blanco" },
+      { value: "Bronce Colonial", label: "Bronce Colonial" },
+      { value: "Negro Micro", label: "Negro Micro" },
+      { value: "Nogal", label: "Nogal" },
+      { value: "Gris Topo", label: "Gris Topo" },
+      { value: "Otros", label: "Otros" },
+    ],
+  },
+  {
+    key: "estructura_metalica",
+    label: "Estructura metálica para puerta",
+    type: "select",
+    options: [
+      { value: "si", label: "Sí" },
+      { value: "no", label: "No" },
+    ],
+  },
+  {
+    key: "lucera",
+    label: "Lucera con vidrios",
+    type: "select",
+    options: [
+      { value: "si", label: "Sí" },
+      { value: "no", label: "No" },
+    ],
+  },
+  {
+    key: "traslado",
+    label: "Servicio de traslado",
+    type: "select",
+    options: [
+      { value: "si", label: "Sí" },
+      { value: "no", label: "No" },
+    ],
+  },
+  {
+    key: "relevamiento",
+    label: "Servicio de relevamiento de medidas",
+    type: "select",
+    options: [
+      { value: "si", label: "Sí" },
+      { value: "no", label: "No" },
+    ],
+  },
+  { key: "parantes.cant", label: "Cantidad de parantes", type: "integer" },
+  { key: "lucera_cantidad", label: "Cantidad lucera", type: "integer" },
+  { key: "peso_revestimiento", label: "Peso del revestimiento", type: "integer" },
 ];
+
+const MEASUREMENT_FIELD_MAP = new Map(MEASUREMENT_FIELDS.map((field) => [field.key, field]));
+
+function getMeasurementField(key) {
+  return MEASUREMENT_FIELD_MAP.get(String(key || "").trim()) || null;
+}
+
+function createRuleLabel(fieldKey, expectedValue) {
+  const field = getMeasurementField(fieldKey);
+  if (!field) return "";
+  const value = String(expectedValue || "").trim();
+  if (!value) return field.label;
+  const optionLabel = field.options?.find((opt) => String(opt.value) === value)?.label;
+  return `${field.label} · ${optionLabel || value}`;
+}
+
+function makeRulePatchForField(fieldKey, patch = {}) {
+  const field = getMeasurementField(fieldKey);
+  const next = { ...patch, field_key: fieldKey };
+  if (field?.type === "select") {
+    next.expected_value = patch.expected_value ?? "";
+  } else if (field?.type === "integer") {
+    next.expected_value = patch.expected_value ?? "1";
+  }
+  if (!(patch.label && String(patch.label).trim())) {
+    next.label = createRuleLabel(fieldKey, next.expected_value || "");
+  }
+  return next;
+}
 
 function createEmptyRule(index = 0) {
   return {
@@ -115,6 +268,10 @@ export default function DashboardPage() {
   const tags = Array.isArray(catalog?.tags) ? catalog.tags : [];
   const products = Array.isArray(catalog?.products) ? catalog.products : [];
   const typeSections = catalog?.type_sections || {};
+
+  const mappingFieldOptions = useMemo(() => MEASUREMENT_FIELDS, []);
+  const mappingQtyFields = useMemo(() => MEASUREMENT_FIELDS.filter((field) => field.type === "integer"), []);
+
 
   const productById = useMemo(() => new Map(products.map((p) => [Number(p.id), p])), [products]);
   const tagById = useMemo(() => new Map(tags.map((t) => [Number(t.id), t])), [tags]);
@@ -289,12 +446,13 @@ export default function DashboardPage() {
             <div className="row">
               <div className="card" style={{ flex: 1, minWidth: 320 }}>
                 <h3 style={{ marginTop: 0 }}>Reglas del formulario de medición</h3>
-                <div className="muted">Cada regla agrega un producto al presupuesto final cuando el campo elegido coincide con el valor esperado.</div>
+                <div className="muted">Cada opción del formulario se mapea con su propio producto. En campos de opciones, creá una regla por cada valor posible. En campos numéricos, cada entero exacto también lleva su propia regla.</div>
                 <div className="spacer" />
                 <Input value={mappingProductQuery} onChange={setMappingProductQuery} placeholder="Buscar producto…" style={{ width: "100%" }} />
                 <div className="spacer" />
-                <Button variant="secondary" onClick={() => setMappingRules((prev) => [...prev, createEmptyRule(prev.length)])}>Agregar regla</Button>
+                <Button variant="secondary" onClick={() => setMappingRules((prev) => [...prev, createEmptyRule(prev.length)])}>Agregar regla manual</Button>
                 <div className="spacer" />
+                <div className="muted" style={{ fontSize: 12, marginBottom: 8 }}>Ejemplo: para <b>Tipo de colocación</b> cargás una regla con valor <b>Por dentro del vano</b> y otra con <b>Por detrás del vano</b>, cada una con su producto. Para <b>Cantidad de parantes</b>, una regla por cada entero que quieras transformar en producto.</div>
                 <Button variant="primary" onClick={onSaveMappings} disabled={savingMappings}>{savingMappings ? "Guardando..." : "Guardar reglas"}</Button>
                 {measurementMappingsQ.isError ? <div style={{ color: "#d93025", marginTop: 10 }}>{measurementMappingsQ.error.message}</div> : null}
               </div>
@@ -302,7 +460,10 @@ export default function DashboardPage() {
               <div className="card" style={{ flex: 2, minWidth: 520 }}>
                 <h3 style={{ marginTop: 0 }}>Asignaciones</h3>
                 <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                  {mappingRules.map((rule, idx) => (
+                  {mappingRules.map((rule, idx) => {
+                    const fieldMeta = getMeasurementField(rule.field_key);
+                    const optionCount = Array.isArray(fieldMeta?.options) ? fieldMeta.options.length : 0;
+                    return (
                     <div key={rule.id || idx} style={{ border: "1px solid #eee", borderRadius: 12, padding: 12 }}>
                       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
                         <div>
@@ -311,14 +472,39 @@ export default function DashboardPage() {
                         </div>
                         <div>
                           <div className="muted">Campo del formulario</div>
-                          <select value={rule.field_key || ""} onChange={(e) => setMappingRules((prev) => prev.map((x, i) => i === idx ? { ...x, field_key: e.target.value } : x))} style={{ padding: 10, borderRadius: 10, border: "1px solid #ddd", width: "100%" }}>
+                          <select value={rule.field_key || ""} onChange={(e) => setMappingRules((prev) => prev.map((x, i) => i === idx ? { ...x, ...makeRulePatchForField(e.target.value) } : x))} style={{ padding: 10, borderRadius: 10, border: "1px solid #ddd", width: "100%" }}>
                             <option value="">Seleccionar</option>
-                            {MEASUREMENT_FIELDS.map((f) => <option key={f.key} value={f.key}>{f.label}</option>)}
+                            {mappingFieldOptions.map((f) => <option key={f.key} value={f.key}>{f.label}</option>)}
                           </select>
                         </div>
                         <div>
                           <div className="muted">Valor esperado</div>
-                          <Input value={rule.expected_value || ""} onChange={(v) => setMappingRules((prev) => prev.map((x, i) => i === idx ? { ...x, expected_value: v } : x))} placeholder="Ej: automatico / si / blanco" style={{ width: "100%" }} />
+                          {fieldMeta?.type === "select" ? (
+                            <>
+                              <select
+                                value={rule.expected_value || ""}
+                                onChange={(e) => setMappingRules((prev) => prev.map((x, i) => i === idx ? { ...x, expected_value: e.target.value, label: createRuleLabel(x.field_key, e.target.value) } : x))}
+                                style={{ padding: 10, borderRadius: 10, border: "1px solid #ddd", width: "100%" }}
+                              >
+                                <option value="">Seleccionar opción</option>
+                                {(fieldMeta.options || []).map((opt) => <option key={opt.value} value={String(opt.value)}>{opt.label}</option>)}
+                              </select>
+                              {!!optionCount && <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>Este campo tiene {optionCount} opciones. Creá una regla por cada opción que deba agregar un producto.</div>}
+                            </>
+                          ) : fieldMeta?.type === "integer" ? (
+                            <>
+                              <Input
+                                type="number"
+                                value={rule.expected_value || ""}
+                                onChange={(v) => setMappingRules((prev) => prev.map((x, i) => i === idx ? { ...x, expected_value: v, label: createRuleLabel(x.field_key, v) } : x))}
+                                placeholder="Ej: 1 / 2 / 3"
+                                style={{ width: "100%" }}
+                              />
+                              <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>Se compara por valor entero exacto. Ejemplo: si el usuario marca 3 parantes, aplicará la regla con valor esperado 3.</div>
+                            </>
+                          ) : (
+                            <Input value={rule.expected_value || ""} onChange={(v) => setMappingRules((prev) => prev.map((x, i) => i === idx ? { ...x, expected_value: v, label: createRuleLabel(x.field_key, v) } : x))} placeholder="Valor exacto" style={{ width: "100%" }} />
+                          )}
                         </div>
                         <div>
                           <div className="muted">Producto</div>
@@ -339,7 +525,7 @@ export default function DashboardPage() {
                             <div className="muted">Campo cantidad</div>
                             <select value={rule.qty_field_key || ""} onChange={(e) => setMappingRules((prev) => prev.map((x, i) => i === idx ? { ...x, qty_field_key: e.target.value } : x))} style={{ padding: 10, borderRadius: 10, border: "1px solid #ddd", width: "100%" }}>
                               <option value="">Seleccionar</option>
-                              {MEASUREMENT_FIELDS.map((f) => <option key={f.key} value={f.key}>{f.label}</option>)}
+                              {mappingQtyFields.map((f) => <option key={f.key} value={f.key}>{f.label}</option>)}
                             </select>
                           </div>
                         ) : (
@@ -357,7 +543,7 @@ export default function DashboardPage() {
                         <Button variant="ghost" onClick={() => setMappingRules((prev) => prev.filter((_, i) => i !== idx).length ? prev.filter((_, i) => i !== idx) : [createEmptyRule(0)])}>Quitar</Button>
                       </div>
                     </div>
-                  ))}
+                  );})}
                 </div>
               </div>
             </div>
