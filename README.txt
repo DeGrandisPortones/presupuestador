@@ -1,10 +1,11 @@
-Copiar y pegar sobre el repo:
+Reemplazar estos archivos en el repo:
 
-- cotizador-back/src/settingsDb.js
-- cotizador-back/src/routes/admin.routes.js
-- cotizador-back/src/measurementFinalization.js
-- cotizador-front/src/api/admin.js
-- cotizador-front/src/pages/DashboardPage/index.jsx
+- cotizador-front/src/pages/PresupuestosPage/index.jsx
+- cotizador-front/src/pages/QuoteDetailPage/index.jsx
 
-Este paquete cambia las asignaciones de Medición -> Productos para que cada regla sea por campo,
-y dentro de cada campo se agrupen varios valores con su producto asignado.
+Qué agrega:
+- cuando un portón ya pasó de Acopio a Producción y NO requiere medición,
+  el vendedor/distribuidor puede abrir la cotización final detallada con el botón
+  "Editar final"
+- eso reutiliza la copia/ajuste existente para que luego se envíe a Odoo
+  descontando el anticipo inicial

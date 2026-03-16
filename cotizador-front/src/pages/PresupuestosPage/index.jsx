@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import Button from "../../ui/Button.jsx";
 import PaginationControls from "../../ui/PaginationControls.jsx";
-import { listQuotes, requestProductionFromAcopio } from "../../api/quotes.js";
+import { createRevisionQuote, listQuotes, requestProductionFromAcopio } from "../../api/quotes.js";
 
 const PAGE_SIZE = 25;
 
@@ -63,6 +63,16 @@ function matchesSearch(q, searchText) {
   return haystack.includes(s);
 }
 
+function canEditFinalQuote(q) {
+  if (!q) return false;
+  return (
+    (q.quote_kind || "original") === "original" &&
+    q.status === "synced_odoo" &&
+    q.fulfillment_mode === "produccion" &&
+    q.requires_measurement !== true
+  );
+}
+
 export default function PresupuestosPage() {
   const navigate = useNavigate();
   const [filter, setFilter] = useState("all");
@@ -79,6 +89,15 @@ export default function PresupuestosPage() {
   const moveM = useMutation({
     mutationFn: (id) => requestProductionFromAcopio(id),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["quotes", "mine"] }),
+  });
+
+  const revisionM = useMutation({
+    mutationFn: (id) => createRevisionQuote(id),
+    onSuccess: (newQuote) => {
+      qc.invalidateQueries({ queryKey: ["quotes", "mine"] });
+      if (!newQuote?.id) return;
+      navigate(newQuote.catalog_kind === "ipanel" ? `/cotizador/ipanel/${newQuote.id}` : `/cotizador/${newQuote.id}`);
+    },
   });
 
   useEffect(() => {
@@ -192,10 +211,20 @@ export default function PresupuestosPage() {
                     <td>{labelStatus(r)}</td>
                     <td>{r.fulfillment_mode === "acopio" ? "Acopio" : "Producción"}</td>
                     {filter === "mediciones" ? <td>{labelMeasurementStatus(r)}</td> : null}
-                    <td className="right" style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+                    <td className="right" style={{ display: "flex", justifyContent: "flex-end", gap: 8, flexWrap: "wrap" }}>
                       <Button variant="ghost" onClick={() => navigate(`/presupuestos/${r.id}`)}>Ver</Button>
                       {r.status === "draft" && (
                         <Button onClick={() => navigate(r.catalog_kind === "ipanel" ? `/cotizador/ipanel/${r.id}` : `/cotizador/${r.id}`)}>Editar</Button>
+                      )}
+                      {canEditFinalQuote(r) && (
+                        <Button
+                          variant="secondary"
+                          disabled={revisionM.isPending}
+                          onClick={() => revisionM.mutate(r.id)}
+                          title="Editar el presupuesto final detallado que se enviará a Odoo"
+                        >
+                          {revisionM.isPending ? "Abriendo..." : "Editar final"}
+                        </Button>
                       )}
                       {filter === "acopio" && (
                         <Button
