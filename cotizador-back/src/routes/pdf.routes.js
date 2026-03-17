@@ -617,6 +617,8 @@ function renderPdf({ title, payload, useBasePrice }) {
   const colQty = innerW * 0.12;
   const colUnit = innerW * 0.15;
   const colTot = innerW * 0.15;
+  const SAFE_BOTTOM_GAP = 56;
+  const TOTAL_ROW_H = 36;
 
   function drawTableHeader() {
     drawRow(doc, {
@@ -637,12 +639,11 @@ function renderPdf({ title, payload, useBasePrice }) {
   }
 
   function pageBottom() {
-    return doc.page.height - margin - 30;
+    return doc.page.height - margin - SAFE_BOTTOM_GAP;
   }
 
   function ensureSpace(h) {
     if (tableY + h <= pageBottom()) return;
-
     doc.addPage();
     tableY = margin + 20;
     drawTableHeader();
@@ -677,12 +678,13 @@ function renderPdf({ title, payload, useBasePrice }) {
     tableY += rowH;
   }
 
-  ensureSpace(32);
+  ensureSpace(TOTAL_ROW_H + 8);
+  const totalRowY = tableY;
   drawRow(doc, {
     x: tableX,
-    y: tableY,
+    y: totalRowY,
     w: innerW,
-    h: 32,
+    h: TOTAL_ROW_H,
     cols: [
       { w: colDesc + colQty + colUnit, text: "TOTAL", align: "right" },
       { w: colTot, text: `$ ${formatMoney(grandTotal)}`, align: "right" },
@@ -690,6 +692,18 @@ function renderPdf({ title, payload, useBasePrice }) {
     fill: "#F3F4F6",
     textStyle: { font: "Helvetica-Bold", size: 11, color: "#111827", pad: 8 },
   });
+
+  doc.save();
+  doc.font("Helvetica-Bold").fontSize(11).fillColor("#111827");
+  doc.text("TOTAL", tableX + 8, totalRowY + 11, {
+    width: colDesc + colQty + colUnit - 16,
+    align: "right",
+  });
+  doc.text(`$ ${formatMoney(grandTotal)}`, tableX + colDesc + colQty + colUnit + 8, totalRowY + 11, {
+    width: colTot - 16,
+    align: "right",
+  });
+  doc.restore();
 
   doc.addPage();
   doc.x = margin;
