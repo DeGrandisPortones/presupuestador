@@ -120,13 +120,34 @@ function normalizeForm(raw, user) {
   record.end_customer = record.end_customer && typeof record.end_customer === "object"
     ? { ...record.end_customer }
     : { name: "", phone: "", email: "", address: "", maps_url: "", city: "" };
+  record.end_customer.city = record.end_customer.city || "";
   record.obra_cliente = record.obra_cliente || record.end_customer.name || "";
   record.fecha = record.fecha || todayISO();
   record.responsable = record.responsable || user?.full_name || user?.username || "";
+  record.nv = record.nv || "";
+  record.tipo = record.tipo || "Puerta principal";
+  record.vista = record.vista || "Exterior";
+  record.proveedor = record.proveedor || "";
+  record.proveedor_condiciones = record.proveedor_condiciones || "";
+  record.nv_proveedor = record.nv_proveedor || "";
+  record.sentido_apertura = record.sentido_apertura || "ADENTRO";
+  record.mano_bisagras = record.mano_bisagras || "IZQUIERDA";
+  record.angulo_apertura = record.angulo_apertura || "90";
+  record.angulo_otro = record.angulo_otro || "";
+  record.motivo_no_estandar = record.motivo_no_estandar || "";
+  record.interferencias = record.interferencias || "Ninguna";
+  record.accesorios = record.accesorios || "Ninguno";
+  record.tipo_marco = record.tipo_marco || "";
+  record.tipo_hoja = record.tipo_hoja || "";
+  record.lado_cerradura = record.lado_cerradura || "";
   record.ancho_marco_mm = record.ancho_marco_mm || "";
   record.alto_marco_mm = record.alto_marco_mm || "";
   record.ipanel_quote_id = record.ipanel_quote_id || "";
   record.ipanel_quote_label = record.ipanel_quote_label || "";
+  record.observaciones = record.observaciones || "";
+  record.sale_amount = record.sale_amount || "";
+  record.purchase_amount = record.purchase_amount || "";
+  record.supplier_odoo_partner_id = record.supplier_odoo_partner_id || "";
   record.checklist = Array.isArray(record.checklist) ? record.checklist.map((row) => ({
     ...row,
     status: row.status || "Pendiente",
@@ -305,19 +326,122 @@ export default function PuertaChecklistPage() {
             </div>
           </Section>
 
+          <Section title="Cliente">
+            <Row>
+              <Field label="Nombre">
+                <Input
+                  value={form.end_customer?.name || ""}
+                  onChange={(v) => setForm({ ...form, end_customer: { ...(form.end_customer || {}), name: v }, obra_cliente: v })}
+                  style={{ width: "100%" }}
+                  disabled={!canSellerEdit}
+                />
+              </Field>
+              <Field label="Teléfono">
+                <Input
+                  value={form.end_customer?.phone || ""}
+                  onChange={(v) => setForm({ ...form, end_customer: { ...(form.end_customer || {}), phone: v } })}
+                  style={{ width: "100%" }}
+                  disabled={!canSellerEdit}
+                />
+              </Field>
+              <Field label="Email">
+                <Input
+                  value={form.end_customer?.email || ""}
+                  onChange={(v) => setForm({ ...form, end_customer: { ...(form.end_customer || {}), email: v } })}
+                  style={{ width: "100%" }}
+                  disabled={!canSellerEdit}
+                />
+              </Field>
+            </Row>
+
+            <div className="spacer" />
+
+            <Row>
+              <Field label="Dirección">
+                <Input
+                  value={form.end_customer?.address || ""}
+                  onChange={(v) => setForm({ ...form, end_customer: { ...(form.end_customer || {}), address: v } })}
+                  style={{ width: "100%" }}
+                  disabled={!canSellerEdit}
+                />
+              </Field>
+              <Field label="Localidad">
+                <Input
+                  value={form.end_customer?.city || ""}
+                  onChange={(v) => setForm({ ...form, end_customer: { ...(form.end_customer || {}), city: v } })}
+                  style={{ width: "100%" }}
+                  disabled={!canSellerEdit}
+                />
+              </Field>
+              <Field label="Maps URL">
+                <Input
+                  value={form.end_customer?.maps_url || ""}
+                  onChange={(v) => setForm({ ...form, end_customer: { ...(form.end_customer || {}), maps_url: v } })}
+                  style={{ width: "100%" }}
+                  disabled={!canSellerEdit}
+                />
+              </Field>
+            </Row>
+          </Section>
+
+          <Section title="Datos del registro">
+            <Row>
+              <Field label="Obra / Cliente">
+                <Input value={form.obra_cliente || ""} onChange={(v) => setForm({ ...form, obra_cliente: v })} style={{ width: "100%" }} disabled={!canSellerEdit} />
+              </Field>
+              <Field label="NV">
+                <Input value={form.nv || ""} onChange={(v) => setForm({ ...form, nv: v })} style={{ width: "100%" }} disabled={!canSellerEdit} />
+              </Field>
+              <Field label="Asociado a portón">
+                <Input value={form.asociado_porton || ""} onChange={(v) => setForm({ ...form, asociado_porton: v })} style={{ width: "100%" }} disabled />
+              </Field>
+            </Row>
+
+            <div className="spacer" />
+
+            <Row>
+              <Field label="Tipo">
+                <Input value={form.tipo || ""} onChange={(v) => setForm({ ...form, tipo: v })} style={{ width: "100%" }} disabled={!canSellerEdit} />
+              </Field>
+              <Field label="Vista">
+                <Input value={form.vista || ""} onChange={(v) => setForm({ ...form, vista: v })} style={{ width: "100%" }} disabled={!canSellerEdit} />
+              </Field>
+              <Field label="Fecha">
+                <Input type="date" value={form.fecha || ""} onChange={(v) => setForm({ ...form, fecha: v })} style={{ width: "100%" }} disabled={!canSellerEdit} />
+              </Field>
+            </Row>
+          </Section>
+
           <Section title="Ipanel + Marco de puerta">
             <Row>
               <Field label="Ipanel vinculado">
-                <Input value={form.ipanel_quote_label || ipanelQ.data?.odoo_sale_order_name || form.ipanel_quote_id || ""} onChange={(v) => setForm({ ...form, ipanel_quote_label: v })} style={{ width: "100%" }} disabled />
+                <Input
+                  value={form.ipanel_quote_label || ipanelQ.data?.odoo_sale_order_name || form.ipanel_quote_id || ""}
+                  onChange={(v) => setForm({ ...form, ipanel_quote_label: v })}
+                  style={{ width: "100%" }}
+                  disabled
+                />
               </Field>
               <Field label="Ancho marco (mm)">
-                <Input value={form.ancho_marco_mm || ""} onChange={(v) => setForm({ ...form, ancho_marco_mm: v })} style={{ width: "100%" }} disabled={!canSellerEdit} />
+                <Input
+                  value={form.ancho_marco_mm || ""}
+                  onChange={(v) => setForm({ ...form, ancho_marco_mm: v })}
+                  style={{ width: "100%" }}
+                  disabled={!canSellerEdit}
+                />
               </Field>
               <Field label="Alto marco (mm)">
-                <Input value={form.alto_marco_mm || ""} onChange={(v) => setForm({ ...form, alto_marco_mm: v })} style={{ width: "100%" }} disabled={!canSellerEdit} />
+                <Input
+                  value={form.alto_marco_mm || ""}
+                  onChange={(v) => setForm({ ...form, alto_marco_mm: v })}
+                  style={{ width: "100%" }}
+                  disabled={!canSellerEdit}
+                />
               </Field>
             </Row>
+
             <div className="spacer" />
+
             {summaryQ.data ? (
               <div style={{ border: "1px solid #eee", padding: 12, borderRadius: 12, background: "#fff" }}>
                 <div style={{ fontWeight: 900, marginBottom: 8 }}>Cálculo presupuesto puerta</div>
@@ -350,13 +474,199 @@ export default function PuertaChecklistPage() {
                   disabled={!canSellerEdit}
                 />
               </Field>
+              <Field label="Nombre proveedor">
+                <Input value={form.proveedor || ""} onChange={(v) => setForm({ ...form, proveedor: v })} style={{ width: "100%" }} disabled />
+              </Field>
+              <Field label="NV proveedor">
+                <Input value={form.nv_proveedor || ""} onChange={(v) => setForm({ ...form, nv_proveedor: v })} style={{ width: "100%" }} disabled={!canSellerEdit} />
+              </Field>
+            </Row>
+
+            <div className="spacer" />
+
+            <Row>
               <Field label="Importe venta marco">
                 <Input value={form.sale_amount || ""} onChange={(v) => setForm({ ...form, sale_amount: v })} style={{ width: "100%" }} disabled={!canSellerEdit} />
               </Field>
               <Field label="Importe compra marco">
                 <Input value={form.purchase_amount || ""} onChange={(v) => setForm({ ...form, purchase_amount: v })} style={{ width: "100%" }} disabled={!canSellerEdit} />
               </Field>
+              <Field label="Condiciones proveedor">
+                <Input value={form.proveedor_condiciones || ""} onChange={(v) => setForm({ ...form, proveedor_condiciones: v })} style={{ width: "100%" }} disabled={!canSellerEdit} />
+              </Field>
             </Row>
+          </Section>
+
+          <Section title="Definición técnica (desde exterior)">
+            <Row>
+              <Field label="Sentido de apertura">
+                <Select value={form.sentido_apertura || ""} onChange={(v) => setForm({ ...form, sentido_apertura: v })} options={GIRO_OPTIONS} disabled={!canSellerEdit} />
+              </Field>
+              <Field label="Mano (bisagras)">
+                <Select value={form.mano_bisagras || ""} onChange={(v) => setForm({ ...form, mano_bisagras: v })} options={MANO_OPTIONS} disabled={!canSellerEdit} />
+              </Field>
+              <Field label="Ángulo de apertura">
+                <Select value={form.angulo_apertura || ""} onChange={(v) => setForm({ ...form, angulo_apertura: v })} options={ANGULO_OPTIONS} disabled={!canSellerEdit} />
+              </Field>
+            </Row>
+
+            <div className="spacer" />
+
+            <Row>
+              <Field label="Ángulo (si elegiste Otro)">
+                <Input value={form.angulo_otro || ""} onChange={(v) => setForm({ ...form, angulo_otro: v })} style={{ width: "100%" }} disabled={!canSellerEdit} />
+              </Field>
+              <Field label="Interferencias">
+                <Select value={form.interferencias || ""} onChange={(v) => setForm({ ...form, interferencias: v })} options={INTERFERENCIA_OPTIONS} disabled={!canSellerEdit} />
+              </Field>
+              <Field label="Accesorios">
+                <Select value={form.accesorios || ""} onChange={(v) => setForm({ ...form, accesorios: v })} options={ACCESORIO_OPTIONS} disabled={!canSellerEdit} />
+              </Field>
+            </Row>
+
+            <div className="spacer" />
+
+            <Row>
+              <Field label="Motivo / condición no estándar">
+                <textarea
+                  value={form.motivo_no_estandar || ""}
+                  onChange={(e) => setForm({ ...form, motivo_no_estandar: e.target.value })}
+                  style={{ width: "100%", minHeight: 64, padding: 10, borderRadius: 10, border: "1px solid #ddd", resize: "vertical" }}
+                  disabled={!canSellerEdit}
+                />
+              </Field>
+            </Row>
+
+            <div className="spacer" />
+
+            <Row>
+              <Field label="Tipo de marco">
+                <Input value={form.tipo_marco || ""} onChange={(v) => setForm({ ...form, tipo_marco: v })} style={{ width: "100%" }} disabled={!canSellerEdit} />
+              </Field>
+              <Field label="Tipo de hoja">
+                <Input value={form.tipo_hoja || ""} onChange={(v) => setForm({ ...form, tipo_hoja: v })} style={{ width: "100%" }} disabled={!canSellerEdit} />
+              </Field>
+              <Field label="Lado de cerradura (desde exterior)">
+                <Input value={form.lado_cerradura || ""} onChange={(v) => setForm({ ...form, lado_cerradura: v })} style={{ width: "100%" }} disabled={!canSellerEdit} />
+              </Field>
+            </Row>
+          </Section>
+
+          <Section title="Checklist de verificación">
+            <div style={{ overflowX: "auto" }}>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Sección</th>
+                    <th>Ítem</th>
+                    <th>Estado</th>
+                    <th>Notas / Evidencia</th>
+                    <th>Responsable</th>
+                    <th>Fecha</th>
+                    <th>OK</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {form.checklist.map((row, idx) => (
+                    <tr key={`${row.section}-${idx}`}>
+                      <td>{row.section}</td>
+                      <td style={{ minWidth: 320 }}>{row.item}</td>
+                      <td style={{ minWidth: 140 }}>
+                        <Select
+                          value={row.status}
+                          onChange={(v) => {
+                            const next = form.checklist.slice();
+                            next[idx] = { ...row, status: v, ok: v === "OK" };
+                            setForm({ ...form, checklist: next });
+                          }}
+                          options={STATUS_OPTIONS}
+                          placeholder="Estado"
+                          disabled={!canSellerEdit}
+                        />
+                      </td>
+                      <td style={{ minWidth: 260 }}>
+                        <textarea
+                          value={row.notes || ""}
+                          onChange={(e) => {
+                            const next = form.checklist.slice();
+                            next[idx] = { ...row, notes: e.target.value };
+                            setForm({ ...form, checklist: next });
+                          }}
+                          style={{ width: "100%", minHeight: 48, padding: 10, borderRadius: 10, border: "1px solid #ddd", resize: "vertical" }}
+                          disabled={!canSellerEdit}
+                        />
+                      </td>
+                      <td style={{ minWidth: 180 }}>
+                        <Input
+                          value={row.responsible || ""}
+                          onChange={(v) => {
+                            const next = form.checklist.slice();
+                            next[idx] = { ...row, responsible: v };
+                            setForm({ ...form, checklist: next });
+                          }}
+                          style={{ width: "100%" }}
+                          disabled={!canSellerEdit}
+                        />
+                      </td>
+                      <td style={{ minWidth: 160 }}>
+                        <Input
+                          type="date"
+                          value={row.date || ""}
+                          onChange={(v) => {
+                            const next = form.checklist.slice();
+                            next[idx] = { ...row, date: v };
+                            setForm({ ...form, checklist: next });
+                          }}
+                          style={{ width: "100%" }}
+                          disabled={!canSellerEdit}
+                        />
+                      </td>
+                      <td style={{ textAlign: "center", minWidth: 80 }}>
+                        <input
+                          type="checkbox"
+                          checked={!!row.ok}
+                          disabled={!canSellerEdit}
+                          onChange={(e) => {
+                            const checked = e.target.checked;
+                            const next = form.checklist.slice();
+                            next[idx] = { ...row, ok: checked, status: checked ? "OK" : (row.status === "OK" ? "Pendiente" : row.status) };
+                            setForm({ ...form, checklist: next });
+                          }}
+                        />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </Section>
+
+          <Section title="Resumen">
+            <Row>
+              <Field label="Código de puerta" minWidth={260}>
+                <Input value={door.door_code || ""} onChange={() => {}} disabled style={{ width: "100%", opacity: 0.9 }} />
+              </Field>
+              <Field label="Total ítems" minWidth={180}>
+                <Input value={String(summary.total)} onChange={() => {}} disabled style={{ width: "100%", opacity: 0.9 }} />
+              </Field>
+              <Field label="OK" minWidth={180}>
+                <Input value={String(summary.ok)} onChange={() => {}} disabled style={{ width: "100%", opacity: 0.9 }} />
+              </Field>
+              <Field label="Listo para fabricación / compra" minWidth={240}>
+                <Input value={summary.ready ? "SI" : "NO"} onChange={() => {}} disabled style={{ width: "100%", opacity: 0.9 }} />
+              </Field>
+            </Row>
+          </Section>
+
+          <Section title="Registro final (copiar / pegar)">
+            <Field label="Texto estándar" minWidth={500}>
+              <textarea
+                value={summary.standardText}
+                onChange={() => {}}
+                readOnly
+                style={{ width: "100%", minHeight: 80, padding: 10, borderRadius: 10, border: "1px solid #ddd", resize: "vertical", background: "#fff" }}
+              />
+            </Field>
           </Section>
 
           <Section title="Observaciones">
@@ -400,7 +710,9 @@ export default function PuertaChecklistPage() {
               {canSellerEdit && (
                 <>
                   <Button onClick={() => saveM.mutate()} disabled={saveM.isPending || submitM.isPending}>Guardar</Button>
-                  <Button variant="primary" onClick={() => submitM.mutate()} disabled={submitM.isPending || saveM.isPending || door.status === "pending_approvals" || door.status === "synced_odoo"}>Enviar a aprobación</Button>
+                  <Button variant="primary" onClick={() => submitM.mutate()} disabled={submitM.isPending || saveM.isPending || door.status === "pending_approvals" || door.status === "synced_odoo"}>
+                    Enviar a aprobación
+                  </Button>
                 </>
               )}
               <Button variant="secondary" onClick={() => handleDoorPdf("presupuesto")}>Imprimir presupuesto puerta</Button>
