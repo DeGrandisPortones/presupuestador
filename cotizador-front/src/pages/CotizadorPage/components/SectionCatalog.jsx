@@ -5,6 +5,10 @@ import Input from "../../../ui/Input";
 import Button from "../../../ui/Button";
 import { getCatalogBootstrap } from "../../../api/catalog.js";
 
+const COPLANAR_SYSTEM_PRODUCT_ID = 3008;
+const STANDARD_SYSTEM_PRODUCT_ID = 3009;
+const AUTO_SYSTEM_PRODUCT_IDS = new Set([COPLANAR_SYSTEM_PRODUCT_ID, STANDARD_SYSTEM_PRODUCT_ID]);
+
 function normalize(s) {
   return (s || "").toString().trim().toLowerCase();
 }
@@ -13,8 +17,16 @@ function getProductLabel(product) {
   return product?.display_name || product?.alias || product?.name || "";
 }
 
+function resolveSystemProductId(portonType) {
+  const key = String(portonType || "").trim().toLowerCase();
+  if (!key) return null;
+  return key.includes("coplanar") ? COPLANAR_SYSTEM_PRODUCT_ID : STANDARD_SYSTEM_PRODUCT_ID;
+}
+
 export default function SectionCatalog({ kind = "porton" }) {
   const addLine = useQuoteStore((s) => s.addLine);
+  const removeLine = useQuoteStore((s) => s.removeLine);
+  const setQty = useQuoteStore((s) => s.setQty);
   const lines = useQuoteStore((s) => s.lines);
   const portonType = useQuoteStore((s) => s.portonType);
 
@@ -73,6 +85,43 @@ export default function SectionCatalog({ kind = "porton" }) {
     };
   }, [autoloadAttempted, kind]);
 
+  const productById = useMemo(() => new Map(products.map((p) => [Number(p.id), p])), [products]);
+  const desiredSystemProductId = useMemo(
+    () => ((kind || "porton") === "porton" ? resolveSystemProductId(portonType) : null),
+    [kind, portonType]
+  );
+
+  useEffect(() => {
+    if ((kind || "porton") !== "porton") return;
+
+    const currentSystemLines = (lines || []).filter((l) => AUTO_SYSTEM_PRODUCT_IDS.has(Number(l.product_id)));
+
+    if (!desiredSystemProductId) {
+      currentSystemLines.forEach((line) => removeLine(line.product_id));
+      return;
+    }
+
+    currentSystemLines
+      .filter((line) => Number(line.product_id) !== Number(desiredSystemProductId))
+      .forEach((line) => removeLine(line.product_id));
+
+    const desiredLine = currentSystemLines.find((line) => Number(line.product_id) === Number(desiredSystemProductId));
+    if (desiredLine) {
+      if (Number(desiredLine.qty || 0) !== 1) setQty(desiredSystemProductId, 1);
+      return;
+    }
+
+    const product = productById.get(Number(desiredSystemProductId));
+    if (!product) return;
+
+    addLine({
+      ...product,
+      name: getProductLabel(product),
+      raw_name: product.name,
+    });
+    setQty(desiredSystemProductId, 1);
+  }, [kind, desiredSystemProductId, lines, productById, addLine, removeLine, setQty]);
+
   const sectionList = useMemo(() => {
     const ordered = [...sections].sort(
       (a, b) =>
@@ -94,6 +143,7 @@ export default function SectionCatalog({ kind = "porton" }) {
     const map = new Map();
     for (const s of sectionList) map.set(Number(s.id), []);
     for (const p of products) {
+      if (AUTO_SYSTEM_PRODUCT_IDS.has(Number(p.id))) continue;
       const sids = Array.isArray(p.section_ids) ? p.section_ids : [];
       for (const sid of sids) {
         const key = Number(sid);
@@ -188,13 +238,13 @@ export default function SectionCatalog({ kind = "porton" }) {
         <div className="dg-row dg-row--between dg-row--center">
           <h3 className="dg-h3">Características del portón</h3>
           <Button variant="ghost" disabled={refreshing} onClick={refreshCatalog}>
-            {refreshing ? "Cargando…" : "Actualizar catálogo"}
+            {refreshing ? "Cargando..." : "Actualizar catálogo"}
           </Button>
         </div>
         <div className="spacer" />
         <div className="muted">
           {refreshing
-            ? "Cargando catálogo automáticamente…"
+            ? "Cargando catálogo automáticamente..."
             : "No se pudo cargar el catálogo automáticamente. Podés reintentar con el botón de actualizar."}
         </div>
       </div>
@@ -206,7 +256,7 @@ export default function SectionCatalog({ kind = "porton" }) {
       <div className="dg-row dg-row--between dg-row--center">
         <h3 className="dg-h3">Características del portón</h3>
         <Button variant="ghost" disabled={refreshing} onClick={refreshCatalog}>
-          {refreshing ? "Actualizando…" : "Actualizar catálogo"}
+          {refreshing ? "Actualizando..." : "Actualizar catálogo"}
         </Button>
       </div>
 
@@ -273,7 +323,7 @@ export default function SectionCatalog({ kind = "porton" }) {
                     <Input
                       value={q}
                       onChange={(v) => setQueryBySection((prev) => ({ ...prev, [sid]: v }))}
-                      placeholder="Buscar dentro de esta sección (alias, nombre o código)…"
+                      placeholder="Buscar dentro de esta sección (alias, nombre o código)..."
                       style={{ width: "100%" }}
                     />
 

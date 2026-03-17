@@ -1,14 +1,10 @@
-Reemplazar este archivo en el repo:
-- cotizador-back/src/routes/quotes.routes.js
+Reemplazar estos archivos en el repo:
+- cotizador-front/src/domain/quote/store.js
+- cotizador-front/src/pages/CotizadorPage/components/SectionCatalog.jsx
 
-Cambio aplicado:
-- Corrige el bug de placeholders en POST /api/quotes/:id/submit que disparaba:
-  could not determine data type of parameter $2
-
-Nuevo mapeo correcto de parametros en la query:
-- $1 id
-- $2 fulfillment_mode
-- $3 commercial_decision
-- $4 technical_decision
-- $5 requires_measurement
-- $6 measurement_status
+Qué hace:
+- El sistema agrega automáticamente el producto 3008 si el tipo contiene 'coplanar'.
+- El sistema agrega automáticamente el producto 3009 si el tipo NO contiene 'coplanar'.
+- Los productos 3008/3009 ya no se muestran en el catálogo para que vendedor/distribuidor no los elijan manualmente.
+- Si cambia el tipo, reemplaza automáticamente 3008 por 3009 o viceversa.
+- Mantiene cantidad 1 para ese ítem automático.

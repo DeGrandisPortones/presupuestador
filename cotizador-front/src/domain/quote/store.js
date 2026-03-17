@@ -20,35 +20,31 @@ function parseMargin(v) {
 }
 
 export const useQuoteStore = create((set, get) => ({
-  // meta
   quoteId: null,
   status: "draft",
   rejectionNotes: null,
 
-  // config
   pricelistId: null,
   pricelistName: "",
-  marginPercent: 0,          // número (para cálculos)
-  marginPercentInput: "",    // string (para permitir escribir '-' etc)
+  marginPercent: 0,
+  marginPercentInput: "",
   partnerId: null,
 
-  fulfillmentMode: "produccion", // "produccion" | "acopio"
-  conditionMode: "cond1",        // "cond1" | "cond2" | "special"
-  conditionText: "",          // solo si conditionMode === "special"
-  paymentMethod: "",          // forma de pago
+  fulfillmentMode: "produccion",
+  conditionMode: "cond1",
+  conditionText: "",
+  paymentMethod: "",
   note: "",
 
-  portonType: "",             // tipo/sistema de portón (solo catalog_kind=porton)
+  portonType: "",
 
   endCustomer: { ...EMPTY_CUSTOMER },
 
-  // configuración del portón (por ahora sólo medidas)
   dimensions: {
-    width: "", // metros
-    height: "", // metros
+    width: "",
+    height: "",
   },
 
-  // { product_id, name, raw_name, code, qty, basePrice }
   lines: [],
 
   reset() {
@@ -95,7 +91,6 @@ export const useQuoteStore = create((set, get) => ({
       pricelistName: "",
 
       marginPercent: m,
-      // Si es 0 (o viene vacío), mostramos vacío para que el usuario no tenga que borrar "0"
       marginPercentInput: m === 0 ? "" : String(payload?.margin_percent_ui ?? m),
 
       fulfillmentMode: q.fulfillment_mode || "produccion",
@@ -150,10 +145,8 @@ export const useQuoteStore = create((set, get) => ({
     });
   },
 
-  // Permite negativos y estados intermedios ('-')
   setMarginPercentInput(v) {
     const raw = String(v ?? "");
-    // Si el usuario lo vacía, interpretamos 0 pero dejamos el input vacío
     if (raw.trim() === "") {
       set({ marginPercentInput: "", marginPercent: 0 });
       return;
@@ -167,7 +160,6 @@ export const useQuoteStore = create((set, get) => ({
     set({ marginPercentInput: raw, marginPercent: parsed });
   },
 
-  // Para usar en onBlur: si quedó inválido, lo normaliza a 0
   commitMarginPercentInput() {
     const s = get();
     const parsed = parseMargin(s.marginPercentInput);
@@ -175,7 +167,6 @@ export const useQuoteStore = create((set, get) => ({
       set({ marginPercent: 0, marginPercentInput: "" });
       return;
     }
-    // 0 => vacío (mejor UX). Si no, normalizamos formato: punto y sin espacios.
     if (parsed === 0) {
       set({ marginPercent: 0, marginPercentInput: "" });
       return;
@@ -183,7 +174,6 @@ export const useQuoteStore = create((set, get) => ({
     set({ marginPercent: parsed, marginPercentInput: String(parsed) });
   },
 
-  // setter numérico (por compat)
   setMarginPercent(v) {
     const n = Number(v || 0);
     const safe = Number.isFinite(n) ? n : 0;
@@ -203,7 +193,6 @@ export const useQuoteStore = create((set, get) => ({
   setConditionMode(v) {
     const mode = String(v || "").trim();
     if (!["cond1", "cond2", "special"].includes(mode)) return;
-    // si sale de special, limpiamos texto
     set((s) => ({ conditionMode: mode, conditionText: mode === "special" ? s.conditionText : "" }));
   },
 
