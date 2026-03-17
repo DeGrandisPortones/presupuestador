@@ -36,6 +36,18 @@ export async function getDoor(id) {
   return data.door;
 }
 
+export async function getDoorQuoteSummary(id, mode = "presupuesto") {
+  const { data } = await http.get(`/api/doors/${id}/quote-summary?mode=${encodeURIComponent(mode)}`);
+  if (!data?.ok) throw new Error(data?.error || "No se pudo calcular el presupuesto de puerta");
+  return data.summary;
+}
+
+export async function getDoorQuotePdfPayload(id, mode = "presupuesto") {
+  const { data } = await http.get(`/api/doors/${id}/quote-pdf-payload?mode=${encodeURIComponent(mode)}`);
+  if (!data?.ok) throw new Error(data?.error || "No se pudo preparar el PDF de puerta");
+  return data.payload;
+}
+
 export async function updateDoor(id, payload) {
   const { data } = await http.put(`/api/doors/${id}`, payload);
   if (!data?.ok) throw new Error(data?.error || "No se pudo guardar la puerta");

@@ -3,9 +3,12 @@ import { requireAuth } from "../auth.js";
 import { dbQuery } from "../db.js";
 import { ensureDoorsSchema } from "../doorsSchema.js";
 import { createOdooClient } from "../odoo.js";
+import { getDoorQuoteSettings } from "../settingsDb.js";
+import { evaluateDoorQuoteFormula } from "../doorQuoteFormula.js";
 
 const ODOO_DOOR_PRODUCT_ID = Number(process.env.ODOO_DOOR_PRODUCT_ID || 3226);
 const ODOO_DOOR_SUPPLIER_TAG_NAME = String(process.env.ODOO_DOOR_SUPPLIER_TAG_NAME || "Puerta").trim();
+const IVA_RATE = 0.21;
 
 function requireSeller(req, res, next) {
   if (!req.user?.is_vendedor) return res.status(403).json({ ok: false, error: "No autorizado" });
@@ -85,6 +88,7 @@ function customerFromQuote(quote) {
     email: safeText(quote?.end_customer?.email),
     address: safeText(quote?.end_customer?.address),
     maps_url: safeText(quote?.end_customer?.maps_url),
+    city: safeText(quote?.end_customer?.city),
   };
 }
 function buildChecklist(responsible = "") {
@@ -110,7 +114,7 @@ function buildChecklist(responsible = "") {
 }
 function buildInitialDoorRecord({ quote = null, user }) {
   const responsible = safeText(user?.full_name || user?.username);
-  const endCustomer = quote ? customerFromQuote(quote) : { name: "", phone: "", email: "", address: "", maps_url: "" };
+  const endCustomer = quote ? customerFromQuote(quote) : { name: "", phone: "", email: "", address: "", maps_url: "", city: "" };
   return {
     end_customer: endCustomer,
     obra_cliente: endCustomer.name || "",
@@ -133,6 +137,10 @@ function buildInitialDoorRecord({ quote = null, user }) {
     tipo_marco: "",
     tipo_hoja: "",
     lado_cerradura: "",
+    ancho_marco_mm: "",
+    alto_marco_mm: "",
+    ipanel_quote_id: "",
+    ipanel_quote_label: "",
     observaciones: "",
     sale_amount: "",
     purchase_amount: "",
@@ -243,10 +251,6 @@ async function listSuppliersByTag(odoo, query = "") {
     { limit: 20 }
   );
   const ids = Array.isArray(tagIds) ? tagIds.map(Number).filter(Boolean) : [];
-
-  // Regla funcional: alcanza con que el contacto tenga el tag "Puerta".
-  // No exigimos supplier_rank porque en Odoo pueden existir terceros válidos
-  // para compra que todavía no fueron usados como proveedor formal.
   if (!ids.length) return [];
 
   const domain = [["category_id", "in", ids]];
@@ -278,8 +282,13 @@ function extractDoorCore(record) {
       email: safeText(endCustomer?.email),
       address: safeText(endCustomer?.address),
       maps_url: safeText(endCustomer?.maps_url),
+      city: safeText(endCustomer?.city),
     },
     proveedorCondiciones: safeText(record?.proveedor_condiciones),
+    anchoMarcoMm: safeText(record?.ancho_marco_mm),
+    altoMarcoMm: safeText(record?.alto_marco_mm),
+    ipanelQuoteId: safeText(record?.ipanel_quote_id),
+    ipanelQuoteLabel: safeText(record?.ipanel_quote_label),
   };
 }
 function validateDoorForSubmit(door, record) {
@@ -288,9 +297,99 @@ function validateDoorForSubmit(door, record) {
   if (!core.customer.phone) throw new Error("Completá el teléfono del cliente.");
   if (!core.customer.address) throw new Error("Completá la dirección del cliente.");
   if (!core.supplierId) throw new Error("Seleccioná un proveedor.");
-  if (core.saleAmount <= 0) throw new Error("Completá el importe de venta de la puerta.");
-  if (core.purchaseAmount <= 0) throw new Error("Completá el importe de compra de la puerta.");
+  if (core.saleAmount <= 0) throw new Error("Completá el importe de venta del marco de puerta.");
+  if (core.purchaseAmount <= 0) throw new Error("Completá el importe de compra del marco de puerta.");
   return core;
+}
+function calcQuoteSubtotal({ lines, payload }) {
+  const arr = Array.isArray(lines) ? lines : [];
+  const m = Number(payload?.margin_percent_ui || 0) || 0;
+  return round2(arr.reduce((acc, l) => {
+    const qty = Number(l?.qty || 0) || 0;
+    const base = Number(l?.basePrice ?? l?.base_price ?? l?.price ?? 0) || 0;
+    const unit = base * (1 + m / 100);
+    return acc + (qty * unit);
+  }, 0));
+}
+function calcQuoteTotalWithIva({ lines, payload }) {
+  const subtotal = calcQuoteSubtotal({ lines, payload });
+  return round2(subtotal + round2(subtotal * IVA_RATE));
+}
+function calcQuoteBaseTotalWithIva({ lines }) {
+  const arr = Array.isArray(lines) ? lines : [];
+  const subtotal = round2(arr.reduce((acc, l) => {
+    const qty = Number(l?.qty || 0) || 0;
+    const base = Number(l?.basePrice ?? l?.base_price ?? l?.price ?? 0) || 0;
+    return acc + (qty * base);
+  }, 0));
+  return round2(subtotal + round2(subtotal * IVA_RATE));
+}
+async function buildDoorQuoteSummary(door, mode = "presupuesto") {
+  const record = door?.record || {};
+  const core = extractDoorCore(record);
+  let ipanelQuote = null;
+  let precioIpanel = 0;
+  if (core.ipanelQuoteId && isUuid(core.ipanelQuoteId)) {
+    const qr = await dbQuery(`select * from public.presupuestador_quotes where id=$1 limit 1`, [core.ipanelQuoteId]);
+    const q = qr.rows?.[0] || null;
+    if (q && String(q.catalog_kind || "").toLowerCase() === "ipanel") {
+      ipanelQuote = q;
+      precioIpanel = mode === "proforma"
+        ? calcQuoteBaseTotalWithIva({ lines: q.lines })
+        : calcQuoteTotalWithIva({ lines: q.lines, payload: q.payload || {} });
+    }
+  }
+
+  const settings = await getDoorQuoteSettings();
+  const variables = {
+    precio_ipanel: round2(precioIpanel),
+    precio_compra_marco: round2(core.purchaseAmount),
+    precio_venta_marco: round2(core.saleAmount),
+  };
+  const total = evaluateDoorQuoteFormula(settings.formula, variables);
+  const marcoDims = [core.anchoMarcoMm ? `${core.anchoMarcoMm} mm` : "", core.altoMarcoMm ? `${core.altoMarcoMm} mm` : ""].filter(Boolean).join(" x ");
+
+  const lines = [
+    { product_id: 0, qty: 1, raw_name: `Ipanel vinculado${ipanelQuote?.odoo_sale_order_name ? ` · ${ipanelQuote.odoo_sale_order_name}` : ""}`, basePrice: variables.precio_ipanel },
+    { product_id: 0, qty: 1, raw_name: "Marco de puerta", basePrice: variables.precio_venta_marco },
+  ];
+  const delta = round2(total - variables.precio_ipanel - variables.precio_venta_marco);
+  if (Math.abs(delta) >= 0.01) {
+    lines.push({ product_id: 0, qty: 1, raw_name: "Ajuste por fórmula puerta", basePrice: delta });
+  }
+
+  const noteLines = [
+    core.ipanelQuoteLabel || ipanelQuote?.odoo_sale_order_name ? `Ipanel: ${core.ipanelQuoteLabel || ipanelQuote?.odoo_sale_order_name}` : "Ipanel: no vinculado",
+    `Marco de puerta${marcoDims ? ` · Medida ${marcoDims}` : ""}`,
+    `Fórmula: ${settings.formula}`,
+    `Variables → precio_ipanel=${variables.precio_ipanel} · precio_compra_marco=${variables.precio_compra_marco} · precio_venta_marco=${variables.precio_venta_marco}`,
+  ].filter(Boolean);
+
+  const payload = {
+    quote_number: door?.door_code || `P${door?.id || ""}`,
+    created_by_role: "vendedor",
+    fulfillment_mode: "produccion",
+    end_customer: record?.end_customer || {},
+    lines,
+    payload: {
+      margin_percent_ui: 0,
+      payment_method: ipanelQuote?.payload?.payment_method || "",
+      condition_mode: ipanelQuote?.payload?.condition_mode || "",
+      condition_text: ipanelQuote?.payload?.condition_text || "",
+    },
+    note: noteLines.join("\n"),
+  };
+
+  return {
+    mode,
+    formula: settings.formula,
+    variables,
+    total,
+    ipanel_quote_id: ipanelQuote?.id || null,
+    ipanel_quote_label: ipanelQuote?.odoo_sale_order_name || core.ipanelQuoteLabel || "",
+    marco_dimensions_label: marcoDims,
+    payload,
+  };
 }
 async function syncDoorToOdoo({ odoo, door }) {
   const record = door.record || {};
@@ -308,7 +407,7 @@ async function syncDoorToOdoo({ odoo, door }) {
       price_unit: core.saleAmount,
     }]],
     note:
-      `PUERTA PRESUPUESTADOR: ${door.door_code}`
+      `MARCO DE PUERTA PRESUPUESTADOR: ${door.door_code}`
       + (door.linked_quote_id ? `\nPortón vinculado: ${door.linked_quote_id}` : "")
       + (safeText(record?.asociado_porton) ? `\nNV portón: ${safeText(record.asociado_porton)}` : "")
       + (core.proveedorCondiciones ? `\nCondiciones proveedor: ${core.proveedorCondiciones}` : ""),
@@ -329,7 +428,7 @@ async function syncDoorToOdoo({ odoo, door }) {
       date_planned: nowDateTime(),
     }]],
     notes:
-      `PUERTA TERCERIZADA: ${door.door_code}`
+      `MARCO DE PUERTA TERCERIZADO: ${door.door_code}`
       + (door.linked_quote_id ? `\nPortón vinculado: ${door.linked_quote_id}` : "")
       + (core.proveedorCondiciones ? `\nCondiciones: ${core.proveedorCondiciones}` : ""),
   }]);
@@ -574,6 +673,36 @@ export function buildDoorsRouter(odooArg) {
       if (!door) return res.status(404).json({ ok: false, error: "Puerta no encontrada" });
       if (!canReadDoor(req.user, door)) return res.status(403).json({ ok: false, error: "No autorizado" });
       return res.json({ ok: true, door });
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  router.get("/:id/quote-summary", async (req, res, next) => {
+    try {
+      const id = Number(req.params.id);
+      if (!Number.isFinite(id)) return res.status(400).json({ ok: false, error: "id inválido" });
+      const door = await getDoorHydratedById(id);
+      if (!door) return res.status(404).json({ ok: false, error: "Puerta no encontrada" });
+      if (!canReadDoor(req.user, door)) return res.status(403).json({ ok: false, error: "No autorizado" });
+      const mode = String(req.query.mode || "presupuesto").toLowerCase() === "proforma" ? "proforma" : "presupuesto";
+      const summary = await buildDoorQuoteSummary(door, mode);
+      return res.json({ ok: true, summary });
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  router.get("/:id/quote-pdf-payload", async (req, res, next) => {
+    try {
+      const id = Number(req.params.id);
+      if (!Number.isFinite(id)) return res.status(400).json({ ok: false, error: "id inválido" });
+      const door = await getDoorHydratedById(id);
+      if (!door) return res.status(404).json({ ok: false, error: "Puerta no encontrada" });
+      if (!canReadDoor(req.user, door)) return res.status(403).json({ ok: false, error: "No autorizado" });
+      const mode = String(req.query.mode || "presupuesto").toLowerCase() === "proforma" ? "proforma" : "presupuesto";
+      const summary = await buildDoorQuoteSummary(door, mode);
+      return res.json({ ok: true, payload: summary.payload, summary });
     } catch (e) {
       next(e);
     }

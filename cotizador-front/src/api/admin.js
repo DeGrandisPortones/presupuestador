@@ -18,6 +18,18 @@ export async function adminSaveFinalSettings(payload) {
   return data.settings || { tolerance_percent: 0 };
 }
 
+export async function adminGetDoorQuoteSettings() {
+  const { data } = await http.get(`/api/admin/door-quote-settings`);
+  if (!data?.ok) throw new Error(data?.error || "No se pudo cargar la fórmula de puerta");
+  return data.settings || { formula: "precio_ipanel + precio_venta_marco" };
+}
+
+export async function adminSaveDoorQuoteSettings(payload) {
+  const { data } = await http.put(`/api/admin/door-quote-settings`, payload || {});
+  if (!data?.ok) throw new Error(data?.error || "No se pudo guardar la fórmula de puerta");
+  return data.settings || { formula: "precio_ipanel + precio_venta_marco" };
+}
+
 export async function adminGetMeasurementProductMappings() {
   const { data } = await http.get(`/api/admin/measurement-product-mappings`);
   if (!data?.ok) throw new Error(data?.error || "No se pudieron cargar las asignaciones de medición");
@@ -63,13 +75,6 @@ export async function adminSetProductAlias(kind = "porton", productId, alias) {
 export async function adminSetProductVisibility(kind = "porton", productId, payload = {}) {
   const { data } = await http.put(`/api/admin/products/${productId}/visibility?kind=${encodeURIComponent(kind)}`, payload || {});
   if (!data?.ok) throw new Error(data?.error || "No se pudo guardar la visibilidad");
-  return data.visibility;
-}
-
-export async function adminSetTypeVisibility(kind = "porton", typeKey, payload = {}) {
-  const key = encodeURIComponent(String(typeKey || ""));
-  const { data } = await http.put(`/api/admin/types/${key}/visibility?kind=${encodeURIComponent(kind)}`, payload || {});
-  if (!data?.ok) throw new Error(data?.error || "No se pudo guardar la visibilidad del tipo");
   return data.visibility;
 }
 

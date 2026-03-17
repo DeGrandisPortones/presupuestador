@@ -1,21 +1,17 @@
-Bloque 1 - Puertas separadas en Ipanel + Marco de puerta
+BLOQUE 2 - Puerta combinada (Ipanel + Marco)
 
-Archivos incluidos:
-- cotizador-front/src/pages/CotizadorPage/index.jsx
-- cotizador-front/src/pages/PuertaChecklistPage/index.jsx
-- cotizador-front/src/pages/PuertasPage/index.jsx
+Incluye:
+- backend para guardar la formula comercial de puerta
+- endpoint para calcular resumen de puerta
+- endpoint para armar el payload del PDF de puerta
+- ficha de Marco de puerta con:
+  * Ipanel vinculado
+  * ancho/alto del marco
+  * calculo total por formula
+  * impresion de presupuesto/proforma puerta
 
-Qué hace:
-- El botón "Puerta" del cotizador de portones abre un popup con dos opciones:
-  - Presupuesto Ipanel
-  - Marco de puerta
-- Presupuesto Ipanel:
-  - crea o reutiliza un presupuesto de tipo ipanel
-  - lo deja vinculado dentro del record del marco de puerta
-  - abre el cotizador Ipanel normal
-- Marco de puerta:
-  - abre la ficha actual de puerta, renombrada visualmente como Marco de puerta
-- La ficha de Marco de puerta ahora muestra y permite abrir el Ipanel vinculado si ya existe.
-- El listado /puertas pasa a mostrarse como Marcos de puerta.
-
-Después de copiar, reiniciar el frontend.
+Pendiente visual del Dashboard:
+- El backend y la API del dashboard ya quedaron preparados con:
+  GET/PUT /api/admin/door-quote-settings
+- No incluí reemplazo de DashboardPage para no pisar tu dashboard actual del repo con una version desfasada.
+- Si querés, en el proximo zip te paso solo el dashboard visual apoyado sobre estos endpoints.

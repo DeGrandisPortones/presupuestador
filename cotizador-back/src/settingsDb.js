@@ -1,7 +1,9 @@
 import { dbQuery } from "./db.js";
+import { DEFAULT_FORMULA, normalizeDoorQuoteFormula } from "./doorQuoteFormula.js";
 
 const FINAL_QUOTE_SETTINGS_KEY = "commercial_final_quote";
 const MEASUREMENT_PRODUCT_MAPPINGS_KEY = "measurement_product_mappings";
+const DOOR_QUOTE_SETTINGS_KEY = "door_quote_formula";
 let ensured = false;
 
 export async function ensureSettingsTable() {
@@ -31,6 +33,15 @@ export async function ensureSettingsTable() {
     on conflict (key) do nothing
     `,
     [MEASUREMENT_PRODUCT_MAPPINGS_KEY, JSON.stringify({ rules: [] })]
+  );
+
+  await dbQuery(
+    `
+    insert into public.presupuestador_settings (key, value_json)
+    values ($1, $2::jsonb)
+    on conflict (key) do nothing
+    `,
+    [DOOR_QUOTE_SETTINGS_KEY, JSON.stringify({ formula: DEFAULT_FORMULA })]
   );
 
   ensured = true;
@@ -196,5 +207,30 @@ export async function setMeasurementProductMappings(payload = {}) {
     [MEASUREMENT_PRODUCT_MAPPINGS_KEY, JSON.stringify(normalized)]
   );
 
+  return normalized;
+}
+
+export async function getDoorQuoteSettings() {
+  await ensureSettingsTable();
+  const r = await dbQuery(
+    `select value_json from public.presupuestador_settings where key=$1 limit 1`,
+    [DOOR_QUOTE_SETTINGS_KEY]
+  );
+  const raw = r.rows?.[0]?.value_json || {};
+  return { formula: normalizeDoorQuoteFormula(raw?.formula || DEFAULT_FORMULA) };
+}
+
+export async function setDoorQuoteSettings(payload = {}) {
+  await ensureSettingsTable();
+  const normalized = { formula: normalizeDoorQuoteFormula(payload?.formula || DEFAULT_FORMULA) };
+  await dbQuery(
+    `
+    insert into public.presupuestador_settings (key, value_json, updated_at)
+    values ($1, $2::jsonb, now())
+    on conflict (key)
+    do update set value_json=excluded.value_json, updated_at=now()
+    `,
+    [DOOR_QUOTE_SETTINGS_KEY, JSON.stringify(normalized)]
+  );
   return normalized;
 }
