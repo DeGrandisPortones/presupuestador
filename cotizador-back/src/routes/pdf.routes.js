@@ -693,18 +693,6 @@ function renderPdf({ title, payload, useBasePrice }) {
     textStyle: { font: "Helvetica-Bold", size: 11, color: "#111827", pad: 8 },
   });
 
-  doc.save();
-  doc.font("Helvetica-Bold").fontSize(11).fillColor("#111827");
-  doc.text("TOTAL", tableX + 8, totalRowY + 11, {
-    width: colDesc + colQty + colUnit - 16,
-    align: "right",
-  });
-  doc.text(`$ ${formatMoney(grandTotal)}`, tableX + colDesc + colQty + colUnit + 8, totalRowY + 11, {
-    width: colTot - 16,
-    align: "right",
-  });
-  doc.restore();
-
   doc.addPage();
   doc.x = margin;
   doc.y = margin + 10;
