@@ -1,17 +1,15 @@
-BLOQUE 2 - Puerta combinada (Ipanel + Marco)
+Este zip contiene una parte segura del cambio pedido:
 
-Incluye:
-- backend para guardar la formula comercial de puerta
-- endpoint para calcular resumen de puerta
-- endpoint para armar el payload del PDF de puerta
-- ficha de Marco de puerta con:
-  * Ipanel vinculado
-  * ancho/alto del marco
-  * calculo total por formula
-  * impresion de presupuesto/proforma puerta
+- cotizador-back/src/settingsDb.js
+  Agrega settings para la fórmula comercial de puerta.
 
-Pendiente visual del Dashboard:
-- El backend y la API del dashboard ya quedaron preparados con:
-  GET/PUT /api/admin/door-quote-settings
-- No incluí reemplazo de DashboardPage para no pisar tu dashboard actual del repo con una version desfasada.
-- Si querés, en el proximo zip te paso solo el dashboard visual apoyado sobre estos endpoints.
+- cotizador-back/src/routes/admin.routes.js
+  Expone GET/PUT /api/admin/door-quote-settings.
+
+- cotizador-front/src/pages/CotizadorPage/components/PortonDimensions.jsx
+  Oculta el selector de Tipo/Sistema cuando el cotizador es Ipanel.
+
+Lo que no quedó cerrado en este paquete, para no romper el repo actual:
+- la UI completa del Dashboard para editar la fórmula
+- el nuevo flujo completo de puerta (Ipanel + Marco) con compra sin venta y venta al confirmar el portón
+
