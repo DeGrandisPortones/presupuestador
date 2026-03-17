@@ -20,6 +20,7 @@ function matchesSearch(d, searchText) {
     d?.record?.obra_cliente,
     d?.linked_quote_odoo_name,
     d?.record?.asociado_porton,
+    d?.record?.ipanel_quote_id,
     d?.status,
   ]
     .filter(Boolean)
@@ -43,10 +44,10 @@ export default function PuertasPage() {
   const createM = useMutation({
     mutationFn: () => createStandaloneDoor(),
     onSuccess: (door) => {
-      toast.success("Puerta creada.");
+      toast.success("Marco de puerta creado.");
       navigate(`/puertas/${door.id}`);
     },
-    onError: (e) => toast.error(e?.message || "No se pudo crear la puerta"),
+    onError: (e) => toast.error(e?.message || "No se pudo crear el marco de puerta"),
   });
 
   const rows = useMemo(() => (q.data || []).filter((d) => matchesSearch(d, searchText)), [q.data, searchText]);
@@ -74,12 +75,12 @@ export default function PuertasPage() {
     <div className="container">
       <div className="card" style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
         <div>
-          <h2 style={{ margin: 0 }}>Puertas</h2>
-          <div className="muted">Puertas aisladas o vinculadas a un presupuesto de portón.</div>
+          <h2 style={{ margin: 0 }}>Marcos de puerta</h2>
+          <div className="muted">Marcos de puerta aislados o vinculados a un presupuesto de portón.</div>
         </div>
 
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <Button onClick={() => createM.mutate()} disabled={createM.isPending}>{createM.isPending ? "Creando..." : "Nueva puerta"}</Button>
+          <Button onClick={() => createM.mutate()} disabled={createM.isPending}>{createM.isPending ? "Creando..." : "Nuevo marco de puerta"}</Button>
           <Button variant="ghost" onClick={() => navigate("/menu")}>Volver</Button>
         </div>
       </div>
@@ -87,27 +88,28 @@ export default function PuertasPage() {
       <div className="spacer" />
 
       <div className="card">
-        <Input value={searchText} onChange={setSearchText} placeholder="Buscar por código, cliente, portón vinculado o estado…" style={{ width: "100%" }} />
+        <Input value={searchText} onChange={setSearchText} placeholder="Buscar por código, cliente, portón vinculado, Ipanel o estado…" style={{ width: "100%" }} />
         <div className="spacer" />
 
         {q.isLoading && <div className="muted">Cargando...</div>}
         {q.isError && <div style={{ color: "#d93025", fontSize: 13 }}>{q.error.message}</div>}
-        {!q.isLoading && !rows.length && <div className="muted">No tenés puertas cargadas.</div>}
+        {!q.isLoading && !rows.length && <div className="muted">No tenés marcos de puerta cargados.</div>}
 
         {!!rows.length && (
           <>
             <table>
-              <thead><tr><th>Código</th><th>Cliente</th><th>Vinculada a portón</th><th>Estado</th><th>Venta</th><th>Compra</th><th></th></tr></thead>
+              <thead><tr><th>Código</th><th>Cliente</th><th>Vinculada a portón</th><th>Ipanel</th><th>Estado</th><th>Venta</th><th>Compra</th><th></th></tr></thead>
               <tbody>
                 {visibleRows.map((d) => (
                   <tr key={d.id}>
                     <td><div style={{ fontWeight: 800 }}>{d.door_code}</div><div className="muted">#{d.id}</div></td>
                     <td>{d.record?.end_customer?.name || d.record?.obra_cliente || "—"}</td>
                     <td>{d.linked_quote_odoo_name || d.record?.asociado_porton || "—"}</td>
+                    <td>{d.record?.ipanel_quote_id ? `#${d.record.ipanel_quote_id}` : "—"}</td>
                     <td>{d.status}</td>
                     <td>{d.sale_amount ? `$ ${Number(d.sale_amount).toLocaleString("es-AR")}` : "—"}</td>
                     <td>{d.purchase_amount ? `$ ${Number(d.purchase_amount).toLocaleString("es-AR")}` : "—"}</td>
-                    <td className="right"><Button onClick={() => navigate(`/puertas/${d.id}`)}>Abrir</Button></td>
+                    <td className="right"><Button onClick={() => navigate(`/puertas/${d.id}`)}>Abrir marco</Button></td>
                   </tr>
                 ))}
               </tbody>

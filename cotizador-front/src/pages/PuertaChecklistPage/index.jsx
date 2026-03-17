@@ -106,7 +106,7 @@ function buildStandardText(form) {
   const interferencias = textOrDash(form.interferencias);
   const accesorios = textOrDash(form.accesorios);
 
-  return `Puerta principal (vista exterior): ${mano}, abre hacia ${sentido}, apertura ${angulo}, interferencias: ${interferencias}, accesorios: ${accesorios}.`;
+  return `Marco de puerta principal (vista exterior): ${mano}, abre hacia ${sentido}, apertura ${angulo}, interferencias: ${interferencias}, accesorios: ${accesorios}.`;
 }
 function buildReadyForManufacturing(form) {
   return form.checklist.every((row) => row.status === "OK" || row.status === "N/A");
@@ -166,15 +166,16 @@ export default function PuertaChecklistPage() {
   const canSellerEdit = !!user?.is_vendedor && authUserId === doorOwnerId;
   const canCommercialAct = !!user?.is_enc_comercial && door?.status === "pending_approvals" && door?.commercial_decision === "pending";
   const canTechAct = !!user?.is_rev_tecnica && door?.status === "pending_approvals" && door?.technical_decision === "pending";
+  const linkedIpanelId = String(form?.ipanel_quote_id || "").trim();
 
   const saveM = useMutation({
     mutationFn: () => updateDoor(id, { record: form }),
     onSuccess: (saved) => {
       setForm(normalizeForm(saved.record, user));
-      toast.success("Puerta guardada.");
+      toast.success("Marco de puerta guardado.");
       q.refetch();
     },
-    onError: (e) => toast.error(e?.message || "No se pudo guardar la puerta"),
+    onError: (e) => toast.error(e?.message || "No se pudo guardar el marco de puerta"),
   });
 
   const submitM = useMutation({
@@ -184,10 +185,10 @@ export default function PuertaChecklistPage() {
       return await submitDoor(id);
     },
     onSuccess: () => {
-      toast.success("Puerta enviada a aprobación.");
+      toast.success("Marco de puerta enviado a aprobación.");
       q.refetch();
     },
-    onError: (e) => toast.error(e?.message || "No se pudo enviar la puerta"),
+    onError: (e) => toast.error(e?.message || "No se pudo enviar el marco de puerta"),
   });
 
   const commercialM = useMutation({
@@ -226,14 +227,19 @@ export default function PuertaChecklistPage() {
       <div className="card">
         <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
           <div>
-            <h2 style={{ margin: 0 }}>Puerta · {door?.door_code || "—"}</h2>
+            <h2 style={{ margin: 0 }}>Marco de puerta · {door?.door_code || "—"}</h2>
             <div className="muted">
-              Producto independiente o vinculado a portón.
+              Marco de puerta independiente o vinculado a portón.
               {door?.linked_quote_odoo_name ? ` · Portón: ${door.linked_quote_odoo_name}` : ""}
             </div>
           </div>
 
           <div style={{ display: "flex", gap: 8, alignItems: "flex-end", flexWrap: "wrap" }}>
+            {linkedIpanelId ? (
+              <Button variant="ghost" onClick={() => navigate(`/cotizador/ipanel/${linkedIpanelId}`)}>
+                Abrir Ipanel
+              </Button>
+            ) : null}
             {door?.linked_quote_id ? (
               <Button variant="ghost" onClick={() => navigate(`/presupuestos/${door.linked_quote_id}`)}>
                 Ver presupuesto portón
@@ -258,6 +264,7 @@ export default function PuertaChecklistPage() {
               <span>Estado: <b>{door.status}</b></span>
               <span>Comercial: <b>{decisionLabel(door.commercial_decision)}</b></span>
               <span>Técnica: <b>{decisionLabel(door.technical_decision)}</b></span>
+              <span>Ipanel: <b>{linkedIpanelId ? "Cargado" : "Pendiente"}</b></span>
               {door.odoo_sale_order_name ? <span>Venta Odoo: <b>{door.odoo_sale_order_name}</b></span> : null}
               {door.odoo_purchase_order_name ? <span>Compra Odoo: <b>{door.odoo_purchase_order_name}</b></span> : null}
             </div>
@@ -503,8 +510,11 @@ export default function PuertaChecklistPage() {
 
           <Section title="Resumen">
             <Row>
-              <Field label="Código de puerta" minWidth={260}>
+              <Field label="Código de marco" minWidth={260}>
                 <Input value={door.door_code || ""} onChange={() => {}} disabled style={{ width: "100%", opacity: 0.9 }} />
+              </Field>
+              <Field label="Ipanel vinculado" minWidth={260}>
+                <Input value={linkedIpanelId || "Pendiente"} onChange={() => {}} disabled style={{ width: "100%", opacity: 0.9 }} />
               </Field>
               <Field label="Total ítems" minWidth={180}>
                 <Input value={String(summary.total)} onChange={() => {}} disabled style={{ width: "100%", opacity: 0.9 }} />
@@ -588,6 +598,11 @@ export default function PuertaChecklistPage() {
                   </Button>
                 </>
               )}
+              {linkedIpanelId ? (
+                <Button variant="ghost" onClick={() => navigate(`/cotizador/ipanel/${linkedIpanelId}`)}>
+                  Abrir Ipanel
+                </Button>
+              ) : null}
               {door?.linked_quote_id ? (
                 <Button variant="secondary" onClick={() => navigate(`/presupuestos/${door.linked_quote_id}`)}>
                   Volver al portón
