@@ -10,7 +10,9 @@ import {
   setProductAlias,
   setProductVisibility,
   getTypeSectionsMap,
-  setTypeSections
+  getTypeVisibilityMap,
+  setTypeSections,
+  setTypeVisibility,
 } from "../catalogDb.js";
 import { dbQuery } from "../db.js";
 import { listUsers, createUser, updateUser } from "../usersDb.js";
@@ -37,7 +39,8 @@ export function buildAdminRouter(odoo) {
       const map = new Map((q.rows || []).map((r) => [Number(r.tag_id), Number(r.section_id)]));
       const tags = (data.tags || []).map((t) => ({ ...t, section_id: map.get(Number(t.id)) || null }));
       const type_sections = await getTypeSectionsMap(kind);
-      res.json({ ...data, tags, type_sections });
+      const type_visibility = await getTypeVisibilityMap(kind);
+      res.json({ ...data, tags, type_sections, type_visibility });
     } catch (e) {
       next(e);
     }
@@ -140,6 +143,17 @@ export function buildAdminRouter(odoo) {
     try {
       const kind = normKind(req.query.kind || req.body?.kind || "porton");
       const saved = await setProductVisibility(kind, req.params.productId, req.body || {});
+      clearCatalogBootstrapCache();
+      res.json({ ok: true, visibility: saved });
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  router.put("/types/:typeKey/visibility", requireAuth, requireEncComercial, async (req, res, next) => {
+    try {
+      const kind = normKind(req.query.kind || req.body?.kind || "porton");
+      const saved = await setTypeVisibility(kind, req.params.typeKey, req.body || {});
       clearCatalogBootstrapCache();
       res.json({ ok: true, visibility: saved });
     } catch (e) {

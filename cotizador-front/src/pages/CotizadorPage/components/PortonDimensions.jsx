@@ -1,6 +1,9 @@
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { useQuoteStore } from "../../../domain/quote/store";
+import { useAuthStore } from "../../../domain/auth/store.js";
 import { PORTON_TYPES } from "../../../domain/quote/portonConstants.js";
+import { getCatalogBootstrap } from "../../../api/catalog.js";
 import Input from "../../../ui/Input";
 
 function toNumber(v) {
@@ -9,8 +12,20 @@ function toNumber(v) {
 }
 
 function normalizeDecimal(v) {
-  // Dejamos solo dígitos y separadores decimales.
   return String(v ?? "").replace(/[^0-9.,]/g, "");
+}
+
+function isTypeVisibleForUser(flags, user) {
+  if (user?.is_superuser) return true;
+  const disableForVendedor = !!flags?.disable_for_vendedor;
+  const disableForDistribuidor = !!flags?.disable_for_distribuidor;
+
+  if (user?.is_vendedor && user?.is_distribuidor) {
+    return !(disableForVendedor && disableForDistribuidor);
+  }
+  if (user?.is_distribuidor) return !disableForDistribuidor;
+  if (user?.is_vendedor) return !disableForVendedor;
+  return true;
 }
 
 export default function PortonDimensions() {
@@ -18,6 +33,26 @@ export default function PortonDimensions() {
   const setDimensions = useQuoteStore((s) => s.setDimensions);
   const portonType = useQuoteStore((s) => s.portonType);
   const setPortonType = useQuoteStore((s) => s.setPortonType);
+  const user = useAuthStore((s) => s.user);
+
+  const catalogQ = useQuery({
+    queryKey: ["catalog-bootstrap-porton-type-select"],
+    queryFn: () => getCatalogBootstrap("porton"),
+    staleTime: 60 * 1000,
+  });
+
+  const typeVisibility = catalogQ.data?.type_visibility || {};
+
+  const visibleTypes = useMemo(() => {
+    return PORTON_TYPES.filter((t) => isTypeVisibleForUser(typeVisibility[t.key], user));
+  }, [typeVisibility, user]);
+
+  useEffect(() => {
+    if (!portonType) return;
+    if (!visibleTypes.some((t) => t.key === portonType)) {
+      setPortonType("");
+    }
+  }, [portonType, visibleTypes, setPortonType]);
 
   const width = useMemo(() => toNumber(dimensions?.width), [dimensions?.width]);
   const height = useMemo(() => toNumber(dimensions?.height), [dimensions?.height]);
@@ -35,7 +70,7 @@ export default function PortonDimensions() {
         style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #ddd", width: "100%" }}
       >
         <option value="">Seleccione un sistema</option>
-        {PORTON_TYPES.map((t) => (
+        {visibleTypes.map((t) => (
           <option key={t.key} value={t.key}>{t.label}</option>
         ))}
       </select>

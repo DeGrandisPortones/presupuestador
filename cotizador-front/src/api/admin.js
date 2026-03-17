@@ -66,6 +66,13 @@ export async function adminSetProductVisibility(kind = "porton", productId, payl
   return data.visibility;
 }
 
+export async function adminSetTypeVisibility(kind = "porton", typeKey, payload = {}) {
+  const key = encodeURIComponent(String(typeKey || ""));
+  const { data } = await http.put(`/api/admin/types/${key}/visibility?kind=${encodeURIComponent(kind)}`, payload || {});
+  if (!data?.ok) throw new Error(data?.error || "No se pudo guardar la visibilidad del tipo");
+  return data.visibility;
+}
+
 export async function adminRefreshCatalog() {
   const { data } = await http.post("/api/admin/refresh", {});
   if (!data?.ok) throw new Error(data?.error || "No se pudo refrescar");

@@ -6,6 +6,7 @@ import {
   getProductAliasMap,
   getTypeSectionsMap,
   getProductVisibilityMap,
+  getTypeVisibilityMap,
 } from "./catalogDb.js";
 
 let cacheByKind = new Map();
@@ -27,6 +28,7 @@ export async function loadCatalogBootstrap(odoo, kind="porton") {
   const aliasMap = await getProductAliasMap(k);
   const typeSections = await getTypeSectionsMap(k);
   const visibilityMap = await getProductVisibilityMap(k);
+  const typeVisibility = await getTypeVisibilityMap(k);
 
   const tags = Array.isArray(odooBoot?.tags) ? odooBoot.tags : [];
   const productsRaw = Array.isArray(odooBoot?.products) ? odooBoot.products : [];
@@ -71,6 +73,7 @@ export async function loadCatalogBootstrap(odoo, kind="porton") {
     generated_at: new Date().toISOString(),
     sections,
     type_sections: typeSections,
+    type_visibility: typeVisibility,
     tags,
     products,
   };

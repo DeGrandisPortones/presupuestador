@@ -15,6 +15,7 @@ import {
   adminSetProductAlias,
   adminSetProductVisibility,
   adminSetTypeSections,
+  adminSetTypeVisibility,
   adminRefreshCatalog,
   adminGetQuotes,
   adminGetFinalSettings,
@@ -79,13 +80,19 @@ function normalizeMeasurementMappings(raw) {
   };
 }
 
-function visibilityModeFromProduct(product) {
-  const dv = !!product?.disable_for_vendedor;
-  const dd = !!product?.disable_for_distribuidor;
-  if (dv && dd) return "both";
-  if (dv) return "vendedor";
-  if (dd) return "distribuidor";
+function visibilityModeFromFlags(disableForVendedor, disableForDistribuidor) {
+  if (disableForVendedor && disableForDistribuidor) return "both";
+  if (disableForVendedor) return "vendedor";
+  if (disableForDistribuidor) return "distribuidor";
   return "none";
+}
+
+function visibilityModeFromProduct(product) {
+  return visibilityModeFromFlags(!!product?.disable_for_vendedor, !!product?.disable_for_distribuidor);
+}
+
+function visibilityModeFromTypeEntry(entry) {
+  return visibilityModeFromFlags(!!entry?.disable_for_vendedor, !!entry?.disable_for_distribuidor);
 }
 
 export default function DashboardPage() {
@@ -118,6 +125,7 @@ export default function DashboardPage() {
   const tags = Array.isArray(catalog?.tags) ? catalog.tags : [];
   const products = Array.isArray(catalog?.products) ? catalog.products : [];
   const typeSections = catalog?.type_sections || {};
+  const typeVisibility = catalog?.type_visibility || {};
 
   const productById = useMemo(() => new Map(products.map((p) => [Number(p.id), p])), [products]);
   const tagById = useMemo(() => new Map(tags.map((t) => [Number(t.id), t])), [tags]);
@@ -179,6 +187,7 @@ export default function DashboardPage() {
     qc.invalidateQueries({ queryKey: ["adminCatalog", catalogKind] });
     alert("Catálogo actualizado.");
   };
+
   const onCreateSection = async () => {
     await adminCreateSection(catalogKind, { name: newSectionName, position: Number(newSectionPos || 100), use_surface_qty: newSectionUseSurface });
     setNewSectionName("");
@@ -186,6 +195,7 @@ export default function DashboardPage() {
     qc.invalidateQueries({ queryKey: ["adminCatalog", catalogKind] });
     alert("Sección creada.");
   };
+
   const onSaveTolerance = async () => {
     setSavingTolerance(true);
     try {
@@ -259,7 +269,7 @@ export default function DashboardPage() {
                           <div style={{ fontWeight: 800 }}>{s.name}</div>
                           <div className="muted">Posición: {s.position}</div>
                         </div>
-                        <Button variant="ghost" onClick={async () => { if (!window.confirm(`Borrar sección "${s.name}"?`)) return; await adminDeleteSection(catalogKind, s.id); qc.invalidateQueries({ queryKey: ["adminCatalog", catalogKind] }); alert("Sección borrada."); }}>🗑</Button>
+                        <Button variant="ghost" onClick={async () => { if (!window.confirm(`Borrar sección \"${s.name}\"?`)) return; await adminDeleteSection(catalogKind, s.id); qc.invalidateQueries({ queryKey: ["adminCatalog", catalogKind] }); alert("Sección borrada."); }}>🗑</Button>
                       </div>
                       <div className="spacer" />
                       <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
@@ -302,6 +312,7 @@ export default function DashboardPage() {
                 <h3 style={{ marginTop: 0 }}>Alias y visibilidad</h3>
                 <div className="spacer" />
                 <Input value={productQuery} onChange={setProductQuery} placeholder="Buscar producto…" style={{ width: "100%" }} />
+                <div className="muted" style={{ marginTop: 8 }}>Hacé click en el nombre del producto para ver el nombre completo que viene desde Odoo.</div>
               </div>
               <div className="card" style={{ flex: 2, minWidth: 520 }}>
                 <h3 style={{ marginTop: 0 }}>Productos</h3>
@@ -333,11 +344,16 @@ export default function DashboardPage() {
                 catalogKind={catalogKind}
                 sections={sections}
                 typeSections={typeSections}
-                onSave={async (typeKey, sectionIds) => {
+                typeVisibility={typeVisibility}
+                onSave={async (typeKey, sectionIds, visibilityMode) => {
                   await adminSetTypeSections(catalogKind, typeKey, sectionIds);
+                  await adminSetTypeVisibility(catalogKind, typeKey, {
+                    disable_for_vendedor: visibilityMode === "vendedor" || visibilityMode === "both",
+                    disable_for_distribuidor: visibilityMode === "distribuidor" || visibilityMode === "both",
+                  });
                   await adminRefreshCatalog();
                   qc.invalidateQueries({ queryKey: ["adminCatalog", catalogKind] });
-                  alert("Secciones del tipo guardadas.");
+                  alert("Configuración del tipo guardada.");
                 }}
               />
             </div>
@@ -466,15 +482,58 @@ function IntegerFieldMappings({ rule, productOptions, onChange }) {
   return <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>{rows.map((entry, idx) => <div key={`${rule.field_key}-${idx}`} style={{ display: "grid", gridTemplateColumns: "120px 1fr 52px", gap: 10, alignItems: "center" }}><Input value={entry.expected_value || ""} onChange={(value) => { const next = rows.map((item, i) => i === idx ? { ...item, expected_value: value.replace(/[^0-9]/g, "") } : item); onChange(next); }} placeholder="Valor" style={{ width: "100%" }} /><select value={entry.product_id || ""} onChange={(e) => { const next = rows.map((item, i) => i === idx ? { ...item, product_id: e.target.value ? Number(e.target.value) : "" } : item); onChange(next); }} style={{ padding: 8, borderRadius: 10, border: "1px solid #ddd", width: "100%" }}><option value="">(sin producto)</option>{productOptions.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}</select><Button variant="ghost" onClick={() => onChange(rows.filter((_, i) => i !== idx))}>✕</Button></div>)}<Button variant="ghost" onClick={() => onChange([...(rows || []), { expected_value: "", product_id: "" }])}>+ Agregar valor entero</Button></div>;
 }
 
-function TypesSectionsCard({ catalogKind, sections, typeSections, onSave }) {
+function TypesSectionsCard({ catalogKind, sections, typeSections, typeVisibility, onSave }) {
   const [selectedType, setSelectedType] = useState(PORTON_TYPES?.[0]?.key || "");
   const [selectedSectionIds, setSelectedSectionIds] = useState([]);
+  const [visibilityMode, setVisibilityMode] = useState("none");
   const canUse = (catalogKind || "porton") === "porton";
 
-  useEffect(() => { const arr = canUse && selectedType ? (typeSections?.[selectedType] || []) : []; setSelectedSectionIds((arr || []).map((x) => Number(x))); }, [selectedType, catalogKind, canUse, typeSections]);
+  useEffect(() => {
+    const arr = canUse && selectedType ? (typeSections?.[selectedType] || []) : [];
+    setSelectedSectionIds((arr || []).map((x) => Number(x)));
+    setVisibilityMode(visibilityModeFromTypeEntry(typeVisibility?.[selectedType] || {}));
+  }, [selectedType, catalogKind, canUse, typeSections, typeVisibility]);
+
   if (!canUse) return <div className="card" style={{ flex: 1 }}><h3 style={{ marginTop: 0 }}>Tipos → Secciones</h3><div className="muted">Esto aplica solo a Portones.</div></div>;
   const sectionSet = new Set(selectedSectionIds.map((x) => Number(x)));
-  return <><div className="card" style={{ flex: 1, minWidth: 320 }}><h3 style={{ marginTop: 0 }}>Tipos / Sistemas</h3><div className="spacer" /><select value={selectedType} onChange={(e) => setSelectedType(e.target.value)} style={{ padding: 10, borderRadius: 10, border: "1px solid #ddd", width: "100%" }}>{PORTON_TYPES.map((t) => <option key={t.key} value={t.key}>{t.label}</option>)}</select><div className="spacer" /><Button variant="primary" onClick={async () => onSave(selectedType, selectedSectionIds)}>Guardar asignación</Button></div><div className="card" style={{ flex: 2, minWidth: 520 }}><h3 style={{ marginTop: 0 }}>Secciones visibles</h3><div className="spacer" /><div style={{ display: "flex", flexDirection: "column", gap: 8, maxHeight: 620, overflow: "auto", paddingRight: 6 }}>{sections.map((s) => { const sid = Number(s.id); const checked = sectionSet.has(sid); return <label key={sid} style={{ display: "flex", gap: 10, alignItems: "center", border: "1px solid #eee", padding: 10, borderRadius: 10 }}><input type="checkbox" checked={checked} onChange={(e) => { const next = new Set(sectionSet); if (e.target.checked) next.add(sid); else next.delete(sid); setSelectedSectionIds([...next]); }} /><div style={{ fontWeight: 700 }}>{s.name}</div><div className="muted" style={{ marginLeft: "auto" }}>Pos: {s.position}</div></label>; })}</div></div></>;
+  return (
+    <>
+      <div className="card" style={{ flex: 1, minWidth: 320 }}>
+        <h3 style={{ marginTop: 0 }}>Tipos / Sistemas</h3>
+        <div className="spacer" />
+        <select value={selectedType} onChange={(e) => setSelectedType(e.target.value)} style={{ padding: 10, borderRadius: 10, border: "1px solid #ddd", width: "100%" }}>
+          {PORTON_TYPES.map((t) => <option key={t.key} value={t.key}>{t.label}</option>)}
+        </select>
+        <div className="spacer" />
+        <div className="muted">Visibilidad del tipo</div>
+        <select value={visibilityMode} onChange={(e) => setVisibilityMode(e.target.value)} style={{ padding: 10, borderRadius: 10, border: "1px solid #ddd", width: "100%" }}>
+          <option value="none">Habilitado para todos</option>
+          <option value="vendedor">Oculto solo para vendedores</option>
+          <option value="distribuidor">Oculto solo para distribuidores</option>
+          <option value="both">Oculto para ambos</option>
+        </select>
+        <div className="spacer" />
+        <Button variant="primary" onClick={async () => onSave(selectedType, selectedSectionIds, visibilityMode)}>Guardar configuración</Button>
+      </div>
+      <div className="card" style={{ flex: 2, minWidth: 520 }}>
+        <h3 style={{ marginTop: 0 }}>Secciones visibles</h3>
+        <div className="spacer" />
+        <div style={{ display: "flex", flexDirection: "column", gap: 8, maxHeight: 620, overflow: "auto", paddingRight: 6 }}>
+          {sections.map((s) => {
+            const sid = Number(s.id);
+            const checked = sectionSet.has(sid);
+            return (
+              <label key={sid} style={{ display: "flex", gap: 10, alignItems: "center", border: "1px solid #eee", padding: 10, borderRadius: 10 }}>
+                <input type="checkbox" checked={checked} onChange={(e) => { const next = new Set(sectionSet); if (e.target.checked) next.add(sid); else next.delete(sid); setSelectedSectionIds([...next]); }} />
+                <div style={{ fontWeight: 700 }}>{s.name}</div>
+                <div className="muted" style={{ marginLeft: "auto" }}>Pos: {s.position}</div>
+              </label>
+            );
+          })}
+        </div>
+      </div>
+    </>
+  );
 }
 
 function AliasRow({ product, onSave }) {
@@ -486,7 +545,14 @@ function AliasRow({ product, onSave }) {
   return (
     <div style={{ display: "grid", gridTemplateColumns: "1fr 240px 220px 90px", gap: 10, border: "1px solid #eee", padding: 10, borderRadius: 10, alignItems: "center" }}>
       <div style={{ minWidth: 0 }}>
-        <div style={{ fontWeight: 800, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{product.name}</div>
+        <button
+          type="button"
+          onClick={() => window.alert(product.name || product.display_name || "")}
+          style={{ fontWeight: 800, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", border: 0, padding: 0, background: "transparent", cursor: "pointer", textAlign: "left", width: "100%" }}
+          title="Ver nombre completo de Odoo"
+        >
+          {product.name}
+        </button>
         <div className="muted" style={{ fontSize: 12 }}>ID: {product.id}{product.code ? ` · ${product.code}` : ""}{product.uses_surface_quantity ? " · superficie" : ""}</div>
       </div>
       <Input value={value} onChange={setValue} placeholder="Nombre visible…" style={{ width: "100%" }} />

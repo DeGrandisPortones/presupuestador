@@ -32,6 +32,18 @@ async function ensureCatalogControls() {
     );
   `);
 
+  await dbQuery(`
+    create table if not exists public.presupuestador_type_visibility (
+      catalog_kind text not null,
+      type_key text not null,
+      disable_for_vendedor boolean not null default false,
+      disable_for_distribuidor boolean not null default false,
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now(),
+      primary key (catalog_kind, type_key)
+    );
+  `);
+
   catalogControlsEnsured = true;
 }
 
@@ -230,6 +242,54 @@ export async function setProductVisibility(kind, productId, patch = {}) {
   return {
     catalog_kind: k,
     product_id: pid,
+    disable_for_vendedor: disableForVendedor,
+    disable_for_distribuidor: disableForDistribuidor,
+  };
+}
+
+export async function getTypeVisibilityMap(kind) {
+  await ensureCatalogControls();
+  const k = normKind(kind);
+  const q = await dbQuery(
+    `select type_key, disable_for_vendedor, disable_for_distribuidor
+       from public.presupuestador_type_visibility
+      where catalog_kind = $1`,
+    [k]
+  );
+  const out = {};
+  for (const r of (q.rows || [])) {
+    out[String(r.type_key || "")] = {
+      disable_for_vendedor: !!r.disable_for_vendedor,
+      disable_for_distribuidor: !!r.disable_for_distribuidor,
+    };
+  }
+  return out;
+}
+
+export async function setTypeVisibility(kind, typeKey, patch = {}) {
+  await ensureCatalogControls();
+  const k = normKind(kind);
+  const key = String(typeKey || "").trim();
+  if (!key) throw new Error("typeKey inválido");
+
+  const disableForVendedor = !!patch.disable_for_vendedor;
+  const disableForDistribuidor = !!patch.disable_for_distribuidor;
+
+  await dbQuery(
+    `insert into public.presupuestador_type_visibility
+       (catalog_kind, type_key, disable_for_vendedor, disable_for_distribuidor)
+     values ($1, $2, $3, $4)
+     on conflict (catalog_kind, type_key)
+     do update set
+       disable_for_vendedor = excluded.disable_for_vendedor,
+       disable_for_distribuidor = excluded.disable_for_distribuidor,
+       updated_at = now()`,
+    [k, key, disableForVendedor, disableForDistribuidor]
+  );
+
+  return {
+    catalog_kind: k,
+    type_key: key,
     disable_for_vendedor: disableForVendedor,
     disable_for_distribuidor: disableForDistribuidor,
   };
