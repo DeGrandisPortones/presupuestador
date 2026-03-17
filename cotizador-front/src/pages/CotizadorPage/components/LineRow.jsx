@@ -1,9 +1,12 @@
 import Button from "../../../ui/Button";
 import { useQuoteStore } from "../../../domain/quote/store";
 
+const SYSTEM_PRODUCT_IDS = new Set([3008, 3009]);
+
 export default function LineRow({ line, finalUnit, total, formatARS }) {
   const { setQty, removeLine } = useQuoteStore();
   const visibleName = String(line.name || line.raw_name || `Producto ${line.product_id}`).trim();
+  const isProtectedLine = !!line.auto_system_item || !!line.surface_quantity || SYSTEM_PRODUCT_IDS.has(Number(line.product_id));
 
   return (
     <tr>
@@ -11,6 +14,8 @@ export default function LineRow({ line, finalUnit, total, formatARS }) {
         <div style={{ fontWeight: 600 }}>{visibleName}</div>
         <div className="muted">
           ID: {line.product_id} {line.code ? `| ${line.code}` : ""}
+          {line.auto_system_item ? " · Auto por sistema y superficie" : ""}
+          {!line.auto_system_item && line.surface_quantity ? " · Cantidad por superficie" : ""}
         </div>
       </td>
 
@@ -18,9 +23,18 @@ export default function LineRow({ line, finalUnit, total, formatARS }) {
         <input
           type="number"
           value={line.qty}
-          min={1}
+          min={0}
+          step="0.01"
+          disabled={isProtectedLine}
           onChange={(e) => setQty(line.product_id, e.target.value)}
-          style={{ width: 90, padding: "6px 8px", borderRadius: 8, border: "1px solid #ddd", textAlign: "right" }}
+          style={{
+            width: 90,
+            padding: "6px 8px",
+            borderRadius: 8,
+            border: "1px solid #ddd",
+            textAlign: "right",
+            opacity: isProtectedLine ? 0.7 : 1,
+          }}
         />
       </td>
 
@@ -29,7 +43,11 @@ export default function LineRow({ line, finalUnit, total, formatARS }) {
       <td className="right" style={{ fontWeight: 700 }}>{formatARS(total)}</td>
 
       <td className="right">
-        <Button variant="danger" onClick={() => removeLine(line.product_id)}>🗑️</Button>
+        {isProtectedLine ? (
+          <span className="muted">Auto</span>
+        ) : (
+          <Button variant="danger" onClick={() => removeLine(line.product_id)}>🗑️</Button>
+        )}
       </td>
     </tr>
   );

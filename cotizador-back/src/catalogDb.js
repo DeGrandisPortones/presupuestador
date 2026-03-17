@@ -1,9 +1,14 @@
 import { dbQuery } from "./db.js";
 
+let catalogControlsEnsured = false;
+async function ensureCatalogControls() {
+  if (catalogControlsEnsured) return;
 
-let typeSectionsEnsured = false;
-async function ensureTypeSectionsTable() {
-  if (typeSectionsEnsured) return;
+  await dbQuery(`
+    alter table public.presupuestador_sections
+      add column if not exists use_surface_qty boolean not null default false;
+  `);
+
   await dbQuery(`
     create table if not exists public.presupuestador_type_sections (
       catalog_kind text not null,
@@ -14,10 +19,23 @@ async function ensureTypeSectionsTable() {
       primary key (catalog_kind, type_key, section_id)
     );
   `);
-  typeSectionsEnsured = true;
+
+  await dbQuery(`
+    create table if not exists public.presupuestador_product_visibility (
+      catalog_kind text not null,
+      product_id integer not null,
+      disable_for_vendedor boolean not null default false,
+      disable_for_distribuidor boolean not null default false,
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now(),
+      primary key (catalog_kind, product_id)
+    );
+  `);
+
+  catalogControlsEnsured = true;
 }
 
-const KINDS = new Set(["porton","ipanel"]);
+const KINDS = new Set(["porton", "ipanel"]);
 export function normKind(kind) {
   const k = String(kind || "porton").toLowerCase().trim();
   if (!KINDS.has(k)) throw new Error('kind inválido (usar "porton" o "ipanel")');
@@ -25,9 +43,10 @@ export function normKind(kind) {
 }
 
 export async function listSections(kind) {
+  await ensureCatalogControls();
   const k = normKind(kind);
   const q = await dbQuery(
-    `select id, name, position, catalog_kind
+    `select id, name, position, catalog_kind, use_surface_qty
        from public.presupuestador_sections
       where catalog_kind = $1
       order by position asc, name asc`,
@@ -36,18 +55,52 @@ export async function listSections(kind) {
   return q.rows || [];
 }
 
-export async function createSection(kind, { name, position = 100 }) {
+export async function createSection(kind, { name, position = 100, use_surface_qty = false }) {
+  await ensureCatalogControls();
   const k = normKind(kind);
   const q = await dbQuery(
-    `insert into public.presupuestador_sections (name, position, catalog_kind)
-     values ($1, $2, $3)
-     returning id, name, position, catalog_kind`,
-    [String(name || "").trim(), Number(position || 100), k]
+    `insert into public.presupuestador_sections (name, position, catalog_kind, use_surface_qty)
+     values ($1, $2, $3, $4)
+     returning id, name, position, catalog_kind, use_surface_qty`,
+    [String(name || "").trim(), Number(position || 100), k, !!use_surface_qty]
   );
   return q.rows?.[0];
 }
 
+export async function updateSection(kind, id, patch = {}) {
+  await ensureCatalogControls();
+  const k = normKind(kind);
+  const sid = Number(id);
+  if (!sid) throw new Error("sectionId inválido");
+
+  const currentQ = await dbQuery(
+    `select id, name, position, catalog_kind, use_surface_qty
+       from public.presupuestador_sections
+      where id = $1 and catalog_kind = $2
+      limit 1`,
+    [sid, k]
+  );
+  const current = currentQ.rows?.[0];
+  if (!current) throw new Error("Sección no encontrada");
+
+  const nextName = patch.name !== undefined ? String(patch.name || "").trim() : current.name;
+  const nextPosition = patch.position !== undefined ? Number(patch.position || 0) : Number(current.position || 0);
+  const nextUseSurface = patch.use_surface_qty !== undefined ? !!patch.use_surface_qty : !!current.use_surface_qty;
+
+  const q = await dbQuery(
+    `update public.presupuestador_sections
+        set name = $3,
+            position = $4,
+            use_surface_qty = $5
+      where id = $1 and catalog_kind = $2
+      returning id, name, position, catalog_kind, use_surface_qty`,
+    [sid, k, nextName, nextPosition, nextUseSurface]
+  );
+  return q.rows?.[0] || current;
+}
+
 export async function deleteSection(kind, id) {
+  await ensureCatalogControls();
   const k = normKind(kind);
   await dbQuery(
     `delete from public.presupuestador_sections
@@ -78,7 +131,6 @@ export async function setTagSection(kind, tagId, sectionId) {
   if (!tid) throw new Error("tagId inválido");
 
   if (!sid) {
-    // borrar mapeo
     await dbQuery(
       `delete from public.presupuestador_tag_sections
         where catalog_kind=$1 and tag_id=$2`,
@@ -135,9 +187,56 @@ export async function setProductAlias(kind, productId, alias) {
   return { catalog_kind: k, product_id: pid, alias: a };
 }
 
+export async function getProductVisibilityMap(kind) {
+  await ensureCatalogControls();
+  const k = normKind(kind);
+  const q = await dbQuery(
+    `select product_id, disable_for_vendedor, disable_for_distribuidor
+       from public.presupuestador_product_visibility
+      where catalog_kind = $1`,
+    [k]
+  );
+  const map = new Map();
+  for (const r of (q.rows || [])) {
+    map.set(Number(r.product_id), {
+      disable_for_vendedor: !!r.disable_for_vendedor,
+      disable_for_distribuidor: !!r.disable_for_distribuidor,
+    });
+  }
+  return map;
+}
+
+export async function setProductVisibility(kind, productId, patch = {}) {
+  await ensureCatalogControls();
+  const k = normKind(kind);
+  const pid = Number(productId);
+  if (!pid) throw new Error("productId inválido");
+
+  const disableForVendedor = !!patch.disable_for_vendedor;
+  const disableForDistribuidor = !!patch.disable_for_distribuidor;
+
+  await dbQuery(
+    `insert into public.presupuestador_product_visibility
+       (catalog_kind, product_id, disable_for_vendedor, disable_for_distribuidor)
+     values ($1, $2, $3, $4)
+     on conflict (catalog_kind, product_id)
+     do update set
+       disable_for_vendedor = excluded.disable_for_vendedor,
+       disable_for_distribuidor = excluded.disable_for_distribuidor,
+       updated_at = now()`,
+    [k, pid, disableForVendedor, disableForDistribuidor]
+  );
+
+  return {
+    catalog_kind: k,
+    product_id: pid,
+    disable_for_vendedor: disableForVendedor,
+    disable_for_distribuidor: disableForDistribuidor,
+  };
+}
 
 export async function getTypeSectionsMap(kind) {
-  await ensureTypeSectionsTable();
+  await ensureCatalogControls();
   const k = normKind(kind);
   const q = await dbQuery(
     `select type_key, section_id
@@ -157,7 +256,7 @@ export async function getTypeSectionsMap(kind) {
 }
 
 export async function setTypeSections(kind, typeKey, sectionIds) {
-  await ensureTypeSectionsTable();
+  await ensureCatalogControls();
   const k = normKind(kind);
   const key = String(typeKey || "").trim();
   if (!key) throw new Error("typeKey inválido");

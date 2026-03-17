@@ -9,9 +9,11 @@ import Input from "../../ui/Input.jsx";
 import {
   adminGetCatalog,
   adminCreateSection,
+  adminUpdateSection,
   adminDeleteSection,
   adminSetTagSection,
   adminSetProductAlias,
+  adminSetProductVisibility,
   adminSetTypeSections,
   adminRefreshCatalog,
   adminGetQuotes,
@@ -77,6 +79,15 @@ function normalizeMeasurementMappings(raw) {
   };
 }
 
+function visibilityModeFromProduct(product) {
+  const dv = !!product?.disable_for_vendedor;
+  const dd = !!product?.disable_for_distribuidor;
+  if (dv && dd) return "both";
+  if (dv) return "vendedor";
+  if (dd) return "distribuidor";
+  return "none";
+}
+
 export default function DashboardPage() {
   const user = useAuthStore((s) => s.user);
   const qc = useQueryClient();
@@ -87,6 +98,7 @@ export default function DashboardPage() {
   const [savingTolerance, setSavingTolerance] = useState(false);
   const [newSectionName, setNewSectionName] = useState("");
   const [newSectionPos, setNewSectionPos] = useState("100");
+  const [newSectionUseSurface, setNewSectionUseSurface] = useState(false);
   const [productQuery, setProductQuery] = useState("");
   const [sectionFilter, setSectionFilter] = useState("all");
   const [tagFilter, setTagFilter] = useState("all");
@@ -162,30 +174,25 @@ export default function DashboardPage() {
     return <div className="container"><div className="spacer" /><div className="card"><h2 style={{ marginTop: 0 }}>Dashboard</h2><div className="muted">No tenés permisos (solo Encargado Comercial).</div></div></div>;
   }
 
-  const invalidateCatalog = async () => {
+  const onRefresh = async () => {
     await adminRefreshCatalog();
     qc.invalidateQueries({ queryKey: ["adminCatalog", catalogKind] });
+    alert("Catálogo actualizado.");
   };
-
-  const onRefresh = async () => {
-    await invalidateCatalog();
-    window.alert("Catálogo actualizado correctamente.");
-  };
-
   const onCreateSection = async () => {
-    await adminCreateSection(catalogKind, { name: newSectionName, position: Number(newSectionPos || 100) });
+    await adminCreateSection(catalogKind, { name: newSectionName, position: Number(newSectionPos || 100), use_surface_qty: newSectionUseSurface });
     setNewSectionName("");
-    await invalidateCatalog();
-    window.alert("Sección guardada correctamente.");
+    setNewSectionUseSurface(false);
+    qc.invalidateQueries({ queryKey: ["adminCatalog", catalogKind] });
+    alert("Sección creada.");
   };
-
   const onSaveTolerance = async () => {
     setSavingTolerance(true);
     try {
       const saved = await adminSaveFinalSettings({ tolerance_percent: tolerancePercent });
       setTolerancePercent(String(saved.tolerance_percent ?? 0));
       qc.invalidateQueries({ queryKey: ["adminFinalSettings"] });
-      window.alert(`Tolerancia guardada correctamente: ${saved.tolerance_percent ?? 0}%`);
+      alert("Tolerancia guardada correctamente.");
     } finally {
       setSavingTolerance(false);
     }
@@ -217,7 +224,7 @@ export default function DashboardPage() {
       <div className="spacer" />
       <div className="card" style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
         <button className={tab === "tags" ? "navlink active" : "navlink"} type="button" onClick={() => setTab("tags")}>Etiquetas → Secciones</button>
-        <button className={tab === "aliases" ? "navlink active" : "navlink"} type="button" onClick={() => setTab("aliases")}>Alias de productos</button>
+        <button className={tab === "aliases" ? "navlink active" : "navlink"} type="button" onClick={() => setTab("aliases")}>Alias y visibilidad</button>
         <button className={tab === "types" ? "navlink active" : "navlink"} type="button" onClick={() => setTab("types")}>Tipos → Secciones</button>
         <button className={tab === "medicion" ? "navlink active" : "navlink"} type="button" onClick={() => setTab("medicion")}>Medición → Productos</button>
         <button className={tab === "data" ? "navlink active" : "navlink"} type="button" onClick={() => setTab("data")}>Data</button>
@@ -237,27 +244,36 @@ export default function DashboardPage() {
                 <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                   <Input value={newSectionName} onChange={setNewSectionName} placeholder="Nueva sección…" style={{ flex: 1, minWidth: 180 }} />
                   <Input value={newSectionPos} onChange={setNewSectionPos} placeholder="Posición" style={{ width: 110 }} />
+                  <label style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 180 }}>
+                    <input type="checkbox" checked={newSectionUseSurface} onChange={(e) => setNewSectionUseSurface(e.target.checked)} />
+                    <span className="muted">Cantidad = superficie</span>
+                  </label>
                   <Button variant="primary" disabled={!newSectionName.trim()} onClick={onCreateSection}>Crear</Button>
                 </div>
                 <div className="spacer" />
                 <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                   {sections.map((s) => (
-                    <div key={s.id} style={{ display: "flex", justifyContent: "space-between", gap: 8, border: "1px solid #eee", padding: 10, borderRadius: 10 }}>
-                      <div>
-                        <div style={{ fontWeight: 800 }}>{s.name}</div>
-                        <div className="muted">Posición: {s.position}</div>
+                    <div key={s.id} style={{ border: "1px solid #eee", padding: 10, borderRadius: 10 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+                        <div>
+                          <div style={{ fontWeight: 800 }}>{s.name}</div>
+                          <div className="muted">Posición: {s.position}</div>
+                        </div>
+                        <Button variant="ghost" onClick={async () => { if (!window.confirm(`Borrar sección "${s.name}"?`)) return; await adminDeleteSection(catalogKind, s.id); qc.invalidateQueries({ queryKey: ["adminCatalog", catalogKind] }); alert("Sección borrada."); }}>🗑</Button>
                       </div>
-                      <Button
-                        variant="ghost"
-                        onClick={async () => {
-                          if (!window.confirm(`Borrar sección "${s.name}"?`)) return;
-                          await adminDeleteSection(catalogKind, s.id);
-                          await invalidateCatalog();
-                          window.alert("Sección borrada correctamente.");
-                        }}
-                      >
-                        🗑
-                      </Button>
+                      <div className="spacer" />
+                      <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                        <input
+                          type="checkbox"
+                          checked={!!s.use_surface_qty}
+                          onChange={async (e) => {
+                            await adminUpdateSection(catalogKind, s.id, { use_surface_qty: e.target.checked });
+                            qc.invalidateQueries({ queryKey: ["adminCatalog", catalogKind] });
+                            alert("Sección actualizada.");
+                          }}
+                        />
+                        <span className="muted">Tomar cantidad por superficie siempre</span>
+                      </label>
                     </div>
                   ))}
                 </div>
@@ -269,16 +285,7 @@ export default function DashboardPage() {
                   {tags.map((t) => (
                     <div key={t.id} style={{ display: "flex", justifyContent: "space-between", gap: 8, border: "1px solid #eee", padding: 10, borderRadius: 10, alignItems: "center" }}>
                       <div style={{ fontWeight: 700 }}>{t.name}</div>
-                      <select
-                        value={t.section_id || ""}
-                        onChange={async (e) => {
-                          const v = e.target.value ? Number(e.target.value) : null;
-                          await adminSetTagSection(catalogKind, t.id, v);
-                          await invalidateCatalog();
-                          window.alert("Asignación de etiqueta guardada correctamente.");
-                        }}
-                        style={{ padding: 8, borderRadius: 10, border: "1px solid #ddd", minWidth: 220 }}
-                      >
+                      <select value={t.section_id || ""} onChange={async (e) => { const v = e.target.value ? Number(e.target.value) : null; await adminSetTagSection(catalogKind, t.id, v); qc.invalidateQueries({ queryKey: ["adminCatalog", catalogKind] }); alert("Etiqueta actualizada."); }} style={{ padding: 8, borderRadius: 10, border: "1px solid #ddd", minWidth: 220 }}>
                         <option value="">(sin sección)</option>
                         {sections.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
                       </select>
@@ -291,8 +298,32 @@ export default function DashboardPage() {
 
           {tab === "aliases" && (
             <div className="row">
-              <div className="card" style={{ flex: 1, minWidth: 320 }}><h3 style={{ marginTop: 0 }}>Alias visibles</h3><div className="spacer" /><Input value={productQuery} onChange={setProductQuery} placeholder="Buscar producto…" style={{ width: "100%" }} /></div>
-              <div className="card" style={{ flex: 2, minWidth: 520 }}><h3 style={{ marginTop: 0 }}>Productos</h3><div className="spacer" /><div style={{ display: "flex", flexDirection: "column", gap: 8, maxHeight: 620, overflow: "auto", paddingRight: 6 }}>{filteredProductsByQuery.slice(0, 400).map((p) => <AliasRow key={p.id} product={p} onSave={async (alias) => { await adminSetProductAlias(catalogKind, p.id, alias); await invalidateCatalog(); window.alert("Alias guardado correctamente."); }} />)}</div></div>
+              <div className="card" style={{ flex: 1, minWidth: 320 }}>
+                <h3 style={{ marginTop: 0 }}>Alias y visibilidad</h3>
+                <div className="spacer" />
+                <Input value={productQuery} onChange={setProductQuery} placeholder="Buscar producto…" style={{ width: "100%" }} />
+              </div>
+              <div className="card" style={{ flex: 2, minWidth: 520 }}>
+                <h3 style={{ marginTop: 0 }}>Productos</h3>
+                <div className="spacer" />
+                <div style={{ display: "flex", flexDirection: "column", gap: 8, maxHeight: 620, overflow: "auto", paddingRight: 6 }}>
+                  {filteredProductsByQuery.slice(0, 400).map((p) => (
+                    <AliasRow
+                      key={p.id}
+                      product={p}
+                      onSave={async ({ alias, visibilityMode }) => {
+                        await adminSetProductAlias(catalogKind, p.id, alias);
+                        await adminSetProductVisibility(catalogKind, p.id, {
+                          disable_for_vendedor: visibilityMode === "vendedor" || visibilityMode === "both",
+                          disable_for_distribuidor: visibilityMode === "distribuidor" || visibilityMode === "both",
+                        });
+                        qc.invalidateQueries({ queryKey: ["adminCatalog", catalogKind] });
+                        alert("Producto actualizado.");
+                      }}
+                    />
+                  ))}
+                </div>
+              </div>
             </div>
           )}
 
@@ -304,26 +335,73 @@ export default function DashboardPage() {
                 typeSections={typeSections}
                 onSave={async (typeKey, sectionIds) => {
                   await adminSetTypeSections(catalogKind, typeKey, sectionIds);
-                  await invalidateCatalog();
-                  window.alert("Asignación de secciones visibles guardada correctamente.");
+                  await adminRefreshCatalog();
+                  qc.invalidateQueries({ queryKey: ["adminCatalog", catalogKind] });
+                  alert("Secciones del tipo guardadas.");
                 }}
               />
             </div>
           )}
 
-          {tab === "medicion" && <MeasurementMappingsCard products={products} mappings={normalizeMeasurementMappings(measurementMappingsQ.data)} loading={measurementMappingsQ.isLoading} error={measurementMappingsQ.error} onSave={async (payload) => { await adminSaveMeasurementProductMappings(payload); qc.invalidateQueries({ queryKey: ["adminMeasurementProductMappings"] }); window.alert("Asignaciones de medición guardadas correctamente."); }} />}
+          {tab === "medicion" && (
+            <MeasurementMappingsCard
+              products={products}
+              mappings={normalizeMeasurementMappings(measurementMappingsQ.data)}
+              loading={measurementMappingsQ.isLoading}
+              error={measurementMappingsQ.error}
+              onSave={async (payload) => {
+                await adminSaveMeasurementProductMappings(payload);
+                qc.invalidateQueries({ queryKey: ["adminMeasurementProductMappings"] });
+                alert("Asignaciones de medición guardadas.");
+              }}
+            />
+          )}
 
           {tab === "data" && (
             <div className="row">
               <div className="card" style={{ flex: 1, minWidth: 320 }}>
                 <h3 style={{ marginTop: 0 }}>Filtros</h3>
                 <div className="muted">Sección</div>
-                <select value={sectionFilter} onChange={(e) => setSectionFilter(e.target.value)} style={{ padding: 8, borderRadius: 10, border: "1px solid #ddd", width: "100%" }}><option value="all">(todas)</option>{sections.map((s) => <option key={s.id} value={String(s.id)}>{s.name}</option>)}</select>
+                <select value={sectionFilter} onChange={(e) => setSectionFilter(e.target.value)} style={{ padding: 8, borderRadius: 10, border: "1px solid #ddd", width: "100%" }}>
+                  <option value="all">(todas)</option>
+                  {sections.map((s) => <option key={s.id} value={String(s.id)}>{s.name}</option>)}
+                </select>
                 <div className="spacer" />
                 <div className="muted">Etiqueta</div>
-                <select value={tagFilter} onChange={(e) => setTagFilter(e.target.value)} style={{ padding: 8, borderRadius: 10, border: "1px solid #ddd", width: "100%" }}><option value="all">(todas)</option>{tags.map((t) => <option key={t.id} value={String(t.id)}>{t.name}</option>)}</select>
+                <select value={tagFilter} onChange={(e) => setTagFilter(e.target.value)} style={{ padding: 8, borderRadius: 10, border: "1px solid #ddd", width: "100%" }}>
+                  <option value="all">(todas)</option>
+                  {tags.map((t) => <option key={t.id} value={String(t.id)}>{t.name}</option>)}
+                </select>
               </div>
-              <div className="card" style={{ flex: 2, minWidth: 520 }}><h3 style={{ marginTop: 0 }}>Últimas cotizaciones</h3><div style={{ display: "flex", flexDirection: "column", gap: 8, maxHeight: 360, overflow: "auto", paddingRight: 6 }}>{filteredQuotes.map((q) => <div key={q.id} style={{ border: "1px solid #eee", padding: 10, borderRadius: 10 }}><div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}><div style={{ fontWeight: 800 }}>#{String(q.id).slice(0, 8)}</div><div className="muted">{q.final_status || q.status}</div></div></div>)}</div></div>
+              <div className="card" style={{ flex: 1, minWidth: 420 }}>
+                <h3 style={{ marginTop: 0 }}>Productos filtrados</h3>
+                <div style={{ display: "flex", flexDirection: "column", gap: 8, maxHeight: 360, overflow: "auto", paddingRight: 6 }}>
+                  {filteredProductsForData.map((p) => (
+                    <div key={p.id} style={{ border: "1px solid #eee", padding: 10, borderRadius: 10 }}>
+                      <div style={{ fontWeight: 800 }}>{p.display_name || p.name}</div>
+                      <div className="muted" style={{ fontSize: 12 }}>
+                        ID: {p.id} {p.code ? `· ${p.code}` : ""} {p.uses_surface_quantity ? "· Cantidad por superficie" : ""}
+                      </div>
+                      <div className="muted" style={{ fontSize: 12 }}>{(p.sections || []).join(", ") || "(sin secciones)"}</div>
+                    </div>
+                  ))}
+                  {!filteredProductsForData.length && <div className="muted">Sin productos para ese filtro.</div>}
+                </div>
+              </div>
+              <div className="card" style={{ flex: 1, minWidth: 420 }}>
+                <h3 style={{ marginTop: 0 }}>Últimas cotizaciones</h3>
+                <div style={{ display: "flex", flexDirection: "column", gap: 8, maxHeight: 360, overflow: "auto", paddingRight: 6 }}>
+                  {filteredQuotes.map((q) => (
+                    <div key={q.id} style={{ border: "1px solid #eee", padding: 10, borderRadius: 10 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+                        <div style={{ fontWeight: 800 }}>#{String(q.id).slice(0, 8)}</div>
+                        <div className="muted">{q.final_status || q.status}</div>
+                      </div>
+                    </div>
+                  ))}
+                  {!filteredQuotes.length && <div className="muted">Sin cotizaciones para ese filtro.</div>}
+                </div>
+              </div>
             </div>
           )}
         </>
@@ -401,7 +479,24 @@ function TypesSectionsCard({ catalogKind, sections, typeSections, onSave }) {
 
 function AliasRow({ product, onSave }) {
   const [value, setValue] = useState(product.alias || "");
+  const [visibilityMode, setVisibilityMode] = useState(visibilityModeFromProduct(product));
   const [saving, setSaving] = useState(false);
-  const changed = value.trim() !== (product.alias || "");
-  return <div style={{ display: "grid", gridTemplateColumns: "1fr 260px 90px", gap: 10, border: "1px solid #eee", padding: 10, borderRadius: 10, alignItems: "center" }}><div style={{ minWidth: 0 }}><div style={{ fontWeight: 800, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{product.name}</div><div className="muted" style={{ fontSize: 12 }}>ID: {product.id}{product.code ? ` · ${product.code}` : ""}</div></div><Input value={value} onChange={setValue} placeholder="Nombre visible…" style={{ width: "100%" }} /><Button variant="primary" disabled={!changed || saving} onClick={async () => { setSaving(true); try { await onSave(value); } finally { setSaving(false); } }}>{saving ? "…" : "Guardar"}</Button></div>;
+  const changed = value.trim() !== (product.alias || "") || visibilityMode !== visibilityModeFromProduct(product);
+
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "1fr 240px 220px 90px", gap: 10, border: "1px solid #eee", padding: 10, borderRadius: 10, alignItems: "center" }}>
+      <div style={{ minWidth: 0 }}>
+        <div style={{ fontWeight: 800, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{product.name}</div>
+        <div className="muted" style={{ fontSize: 12 }}>ID: {product.id}{product.code ? ` · ${product.code}` : ""}{product.uses_surface_quantity ? " · superficie" : ""}</div>
+      </div>
+      <Input value={value} onChange={setValue} placeholder="Nombre visible…" style={{ width: "100%" }} />
+      <select value={visibilityMode} onChange={(e) => setVisibilityMode(e.target.value)} style={{ padding: 8, borderRadius: 10, border: "1px solid #ddd", width: "100%" }}>
+        <option value="none">Habilitado para todos</option>
+        <option value="vendedor">Deshabilitado solo para vendedores</option>
+        <option value="distribuidor">Deshabilitado solo para distribuidores</option>
+        <option value="both">Deshabilitado para ambos</option>
+      </select>
+      <Button variant="primary" disabled={!changed || saving} onClick={async () => { setSaving(true); try { await onSave({ alias: value, visibilityMode }); } finally { setSaving(false); } }}>{saving ? "…" : "Guardar"}</Button>
+    </div>
+  );
 }

@@ -1,7 +1,17 @@
 import express from "express";
 import { requireAuth } from "../auth.js";
 import { loadCatalogBootstrap, clearCatalogBootstrapCache } from "../catalogBootstrap.js";
-import { normKind, createSection, deleteSection, setTagSection, setProductAlias, getTypeSectionsMap, setTypeSections } from "../catalogDb.js";
+import {
+  normKind,
+  createSection,
+  updateSection,
+  deleteSection,
+  setTagSection,
+  setProductAlias,
+  setProductVisibility,
+  getTypeSectionsMap,
+  setTypeSections
+} from "../catalogDb.js";
 import { dbQuery } from "../db.js";
 import { listUsers, createUser, updateUser } from "../usersDb.js";
 import {
@@ -72,8 +82,20 @@ export function buildAdminRouter(odoo) {
   router.post("/sections", requireAuth, requireEncComercial, async (req, res, next) => {
     try {
       const kind = normKind(req.query.kind || req.body?.kind || "porton");
-      const { name, position } = req.body || {};
-      const section = await createSection(kind, { name, position });
+      const { name, position, use_surface_qty } = req.body || {};
+      const section = await createSection(kind, { name, position, use_surface_qty });
+      clearCatalogBootstrapCache();
+      res.json({ ok: true, section });
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  router.put("/sections/:id", requireAuth, requireEncComercial, async (req, res, next) => {
+    try {
+      const kind = normKind(req.query.kind || req.body?.kind || "porton");
+      const section = await updateSection(kind, req.params.id, req.body || {});
+      clearCatalogBootstrapCache();
       res.json({ ok: true, section });
     } catch (e) {
       next(e);
@@ -84,6 +106,7 @@ export function buildAdminRouter(odoo) {
     try {
       const kind = normKind(req.query.kind || "porton");
       await deleteSection(kind, req.params.id);
+      clearCatalogBootstrapCache();
       res.json({ ok: true });
     } catch (e) {
       next(e);
@@ -94,6 +117,7 @@ export function buildAdminRouter(odoo) {
     try {
       const kind = normKind(req.query.kind || req.body?.kind || "porton");
       const mapping = await setTagSection(kind, req.params.tagId, req.body?.section_id ?? null);
+      clearCatalogBootstrapCache();
       res.json({ ok: true, mapping });
     } catch (e) {
       next(e);
@@ -105,7 +129,19 @@ export function buildAdminRouter(odoo) {
       const kind = normKind(req.query.kind || req.body?.kind || "porton");
       const alias = req.body?.alias ?? "";
       const saved = await setProductAlias(kind, req.params.productId, alias);
+      clearCatalogBootstrapCache();
       res.json({ ok: true, alias: saved.alias });
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  router.put("/products/:productId/visibility", requireAuth, requireEncComercial, async (req, res, next) => {
+    try {
+      const kind = normKind(req.query.kind || req.body?.kind || "porton");
+      const saved = await setProductVisibility(kind, req.params.productId, req.body || {});
+      clearCatalogBootstrapCache();
+      res.json({ ok: true, visibility: saved });
     } catch (e) {
       next(e);
     }
@@ -176,6 +212,7 @@ export function buildAdminRouter(odoo) {
       const typeKey = req.params.typeKey;
       const section_ids = Array.isArray(req.body?.section_ids) ? req.body.section_ids : [];
       const mapping = await setTypeSections(kind, typeKey, section_ids);
+      clearCatalogBootstrapCache();
       res.json({ ok: true, mapping });
     } catch (e) {
       next(e);

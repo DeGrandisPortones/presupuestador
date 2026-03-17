@@ -8,6 +8,10 @@ const EMPTY_CUSTOMER = {
   maps_url: "",
 };
 
+const SYSTEM_STANDARD_PRODUCT_ID = 3009;
+const SYSTEM_COPLANAR_PRODUCT_ID = 3008;
+const SYSTEM_PRODUCT_IDS = new Set([SYSTEM_STANDARD_PRODUCT_ID, SYSTEM_COPLANAR_PRODUCT_ID]);
+
 function normMarginInput(v) {
   return String(v ?? "").replace(",", ".").trim();
 }
@@ -17,6 +21,77 @@ function parseMargin(v) {
   if (!s || s === "-" || s === "." || s === "-.") return null;
   const n = Number(s);
   return Number.isFinite(n) ? n : null;
+}
+
+function round2(n) {
+  return Math.round(Number(n || 0) * 100) / 100;
+}
+
+function parseDimensionNumber(v) {
+  const n = Number(String(v ?? "").replace(",", "."));
+  return Number.isFinite(n) ? n : 0;
+}
+
+function isSystemProductId(productId) {
+  return SYSTEM_PRODUCT_IDS.has(Number(productId));
+}
+
+function getSystemProductId(portonType) {
+  const key = String(portonType || "").trim().toLowerCase();
+  if (!key) return null;
+  return key.includes("coplanar") ? SYSTEM_COPLANAR_PRODUCT_ID : SYSTEM_STANDARD_PRODUCT_ID;
+}
+
+function getSystemProductName(productId) {
+  return Number(productId) === SYSTEM_COPLANAR_PRODUCT_ID
+    ? "Sistema coplanar"
+    : "Sistema estándar";
+}
+
+function getSurfaceQuantity(dimensions) {
+  return round2(parseDimensionNumber(dimensions?.width) * parseDimensionNumber(dimensions?.height));
+}
+
+function buildSystemLine(productId, area, existing = null) {
+  const safeArea = Math.max(0, round2(area));
+  const visibleName = getSystemProductName(productId);
+  return {
+    product_id: Number(productId),
+    name: String(existing?.name || visibleName),
+    raw_name: String(existing?.raw_name || visibleName),
+    code: existing?.code || null,
+    qty: safeArea,
+    basePrice: Number(existing?.basePrice ?? existing?.base_price ?? existing?.price ?? 0) || 0,
+    auto_system_item: true,
+    surface_quantity: true,
+  };
+}
+
+function syncSurfaceLines(lines, dimensions) {
+  const currentLines = Array.isArray(lines) ? lines : [];
+  const area = getSurfaceQuantity(dimensions);
+  return currentLines.map((line) => {
+    if (!line?.surface_quantity) return line;
+    return { ...line, qty: area };
+  });
+}
+
+function syncSystemLine(lines, portonType, dimensions) {
+  const targetProductId = getSystemProductId(portonType);
+  const area = getSurfaceQuantity(dimensions);
+
+  const currentLines = Array.isArray(lines) ? lines : [];
+  const kept = currentLines.filter((line) => !isSystemProductId(line?.product_id));
+
+  if (!targetProductId) return kept;
+
+  const existingTarget = currentLines.find((line) => Number(line?.product_id) === Number(targetProductId));
+  return [...kept, buildSystemLine(targetProductId, area, existingTarget)];
+}
+
+function applyDerivedLines(lines, portonType, dimensions) {
+  const withSurface = syncSurfaceLines(lines, dimensions);
+  return syncSystemLine(withSurface, portonType, dimensions);
 }
 
 export const useQuoteStore = create((set, get) => ({
@@ -82,52 +157,59 @@ export const useQuoteStore = create((set, get) => ({
     const pay = String(payload?.payment_method || "");
     const portonType = String(payload?.porton_type || "");
 
+    const mappedLines = lines.map((l) => {
+      const rawName = l.raw_name || l.rawName || l.raw || l.name || "";
+      const visibleName = l.name || l.display_name || l.alias || rawName || `Producto ${l.product_id}`;
+
+      return {
+        product_id: Number(l.product_id),
+        name: visibleName,
+        raw_name: rawName,
+        code: l.code || null,
+        qty: Number(l.qty || 1),
+        basePrice: Number(l.basePrice ?? l.base_price ?? l.price ?? 0) || 0,
+        auto_system_item: !!l.auto_system_item || isSystemProductId(l.product_id),
+        surface_quantity: !!l.surface_quantity || isSystemProductId(l.product_id),
+      };
+    });
+
     set({
       quoteId: q.id ?? null,
       status: q.status || "draft",
       rejectionNotes: q.rejection_notes || null,
-
       pricelistId: q.pricelist_id ?? null,
       pricelistName: "",
-
       marginPercent: m,
       marginPercentInput: m === 0 ? "" : String(payload?.margin_percent_ui ?? m),
-
       fulfillmentMode: q.fulfillment_mode || "produccion",
       conditionMode: cond === "cond2" ? "cond2" : (cond === "special" ? "special" : "cond1"),
       conditionText: condText,
       paymentMethod: pay,
       portonType: portonType,
       note: q.note || "",
-
       endCustomer: {
         ...EMPTY_CUSTOMER,
         ...(end || {}),
       },
-
       dimensions: {
         width: dims?.width ?? "",
         height: dims?.height ?? "",
       },
-
-      lines: lines.map((l) => {
-        const rawName = l.raw_name || l.rawName || l.raw || l.name || "";
-        const visibleName = l.name || l.display_name || l.alias || rawName || `Producto ${l.product_id}`;
-
-        return {
-          product_id: Number(l.product_id),
-          name: visibleName,
-          raw_name: rawName,
-          code: l.code || null,
-          qty: Number(l.qty || 1),
-          basePrice: Number(l.basePrice ?? l.base_price ?? l.price ?? 0) || 0,
-        };
+      lines: applyDerivedLines(mappedLines, portonType, {
+        width: dims?.width ?? "",
+        height: dims?.height ?? "",
       }),
     });
   },
 
   setDimensions(patch) {
-    set((s) => ({ dimensions: { ...s.dimensions, ...(patch || {}) } }));
+    set((s) => {
+      const nextDimensions = { ...s.dimensions, ...(patch || {}) };
+      return {
+        dimensions: nextDimensions,
+        lines: applyDerivedLines(s.lines, s.portonType, nextDimensions),
+      };
+    });
   },
 
   setQuoteMeta({ quoteId, status, rejectionNotes }) {
@@ -205,7 +287,11 @@ export const useQuoteStore = create((set, get) => ({
   },
 
   setPortonType(v) {
-    set({ portonType: String(v || "") });
+    const nextPortonType = String(v || "");
+    set((s) => ({
+      portonType: nextPortonType,
+      lines: applyDerivedLines(s.lines, nextPortonType, s.dimensions),
+    }));
   },
 
   setNote(v) {
@@ -219,11 +305,21 @@ export const useQuoteStore = create((set, get) => ({
   addLine(product) {
     const p = product || {};
     const id = Number(p.id);
-    if (!id) return;
+    if (!id || isSystemProductId(id)) return;
 
     set((s) => {
       const existing = s.lines.find((l) => l.product_id === id);
+      const isSurfaceQuantity = !!p.uses_surface_quantity;
+      const surfaceQty = getSurfaceQuantity(s.dimensions);
+
       if (existing) {
+        if (existing.surface_quantity) {
+          return {
+            lines: s.lines.map((l) =>
+              l.product_id === id ? { ...l, qty: surfaceQty } : l
+            ),
+          };
+        }
         return {
           lines: s.lines.map((l) =>
             l.product_id === id ? { ...l, qty: Number(l.qty || 0) + 1 } : l
@@ -239,7 +335,7 @@ export const useQuoteStore = create((set, get) => ({
             name: p.display_name || p.alias || p.name || "",
             raw_name: p.raw_name || p.rawName || p.original_name || p.name || "",
             code: p.code || null,
-            qty: 1,
+            qty: isSurfaceQuantity ? surfaceQty : 1,
             basePrice: Number(
               p.price ??
               p.basePrice ??
@@ -250,6 +346,7 @@ export const useQuoteStore = create((set, get) => ({
               p.price_list ??
               0
             ) || 0,
+            surface_quantity: isSurfaceQuantity,
           },
         ],
       };
@@ -258,11 +355,15 @@ export const useQuoteStore = create((set, get) => ({
 
   removeLine(product_id) {
     const id = Number(product_id);
+    const current = get().lines.find((line) => Number(line?.product_id) === id);
+    if (isSystemProductId(id) || current?.surface_quantity) return;
     set((s) => ({ lines: s.lines.filter((l) => l.product_id !== id) }));
   },
 
   setQty(product_id, qty) {
     const id = Number(product_id);
+    const current = get().lines.find((line) => Number(line?.product_id) === id);
+    if (isSystemProductId(id) || current?.surface_quantity) return;
     const q = Math.max(0, Number(qty || 0));
     set((s) => ({
       lines: s.lines
@@ -286,10 +387,7 @@ export const useQuoteStore = create((set, get) => ({
 
   buildPayloadForBack() {
     const s = get();
-
-    const width = Number(String(s.dimensions?.width || "").replace(",", ".")) || 0;
-    const height = Number(String(s.dimensions?.height || "").replace(",", ".")) || 0;
-    const area_m2 = Number.isFinite(width * height) ? width * height : 0;
+    const area_m2 = getSurfaceQuantity(s.dimensions);
 
     const lines = s.lines.map((l) => ({
       product_id: l.product_id,
@@ -298,6 +396,8 @@ export const useQuoteStore = create((set, get) => ({
       raw_name: l.raw_name || null,
       code: l.code,
       basePrice: l.basePrice,
+      auto_system_item: !!l.auto_system_item,
+      surface_quantity: !!l.surface_quantity,
     }));
 
     return {

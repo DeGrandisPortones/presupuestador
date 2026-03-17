@@ -30,9 +30,15 @@ export async function adminSaveMeasurementProductMappings(payload) {
   return data.mappings || { rules: [] };
 }
 
-export async function adminCreateSection(kind = "porton", { name, position = 100 }) {
-  const { data } = await http.post(`/api/admin/sections?kind=${encodeURIComponent(kind)}`, { name, position });
+export async function adminCreateSection(kind = "porton", { name, position = 100, use_surface_qty = false }) {
+  const { data } = await http.post(`/api/admin/sections?kind=${encodeURIComponent(kind)}`, { name, position, use_surface_qty });
   if (!data?.ok) throw new Error(data?.error || "No se pudo guardar la sección");
+  return data.section;
+}
+
+export async function adminUpdateSection(kind = "porton", id, payload = {}) {
+  const { data } = await http.put(`/api/admin/sections/${id}?kind=${encodeURIComponent(kind)}`, payload || {});
+  if (!data?.ok) throw new Error(data?.error || "No se pudo actualizar la sección");
   return data.section;
 }
 
@@ -52,6 +58,12 @@ export async function adminSetProductAlias(kind = "porton", productId, alias) {
   const { data } = await http.put(`/api/admin/products/${productId}/alias?kind=${encodeURIComponent(kind)}`, { alias });
   if (!data?.ok) throw new Error(data?.error || "No se pudo guardar el alias");
   return data.alias;
+}
+
+export async function adminSetProductVisibility(kind = "porton", productId, payload = {}) {
+  const { data } = await http.put(`/api/admin/products/${productId}/visibility?kind=${encodeURIComponent(kind)}`, payload || {});
+  if (!data?.ok) throw new Error(data?.error || "No se pudo guardar la visibilidad");
+  return data.visibility;
 }
 
 export async function adminRefreshCatalog() {

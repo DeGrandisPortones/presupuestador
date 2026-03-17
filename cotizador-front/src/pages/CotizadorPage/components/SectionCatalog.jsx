@@ -1,13 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { getOdooBootstrap, setOdooBootstrap } from "../../../domain/odoo/bootstrap.js";
 import { useQuoteStore } from "../../../domain/quote/store";
+import { useAuthStore } from "../../../domain/auth/store.js";
 import Input from "../../../ui/Input";
 import Button from "../../../ui/Button";
 import { getCatalogBootstrap } from "../../../api/catalog.js";
 
-const COPLANAR_SYSTEM_PRODUCT_ID = 3008;
-const STANDARD_SYSTEM_PRODUCT_ID = 3009;
-const AUTO_SYSTEM_PRODUCT_IDS = new Set([COPLANAR_SYSTEM_PRODUCT_ID, STANDARD_SYSTEM_PRODUCT_ID]);
+const SYSTEM_PRODUCT_IDS = new Set([3008, 3009]);
 
 function normalize(s) {
   return (s || "").toString().trim().toLowerCase();
@@ -17,18 +16,20 @@ function getProductLabel(product) {
   return product?.display_name || product?.alias || product?.name || "";
 }
 
-function resolveSystemProductId(portonType) {
-  const key = String(portonType || "").trim().toLowerCase();
-  if (!key) return null;
-  return key.includes("coplanar") ? COPLANAR_SYSTEM_PRODUCT_ID : STANDARD_SYSTEM_PRODUCT_ID;
+function isDisabledForUser(product, user) {
+  if (!product || !user) return false;
+  const disableForVendedor = !!product.disable_for_vendedor;
+  const disableForDistribuidor = !!product.disable_for_distribuidor;
+  if (user.is_vendedor && disableForVendedor) return true;
+  if (user.is_distribuidor && disableForDistribuidor) return true;
+  return false;
 }
 
 export default function SectionCatalog({ kind = "porton" }) {
   const addLine = useQuoteStore((s) => s.addLine);
-  const removeLine = useQuoteStore((s) => s.removeLine);
-  const setQty = useQuoteStore((s) => s.setQty);
   const lines = useQuoteStore((s) => s.lines);
   const portonType = useQuoteStore((s) => s.portonType);
+  const user = useAuthStore((s) => s.user);
 
   const [boot, setBoot] = useState(() => getOdooBootstrap(kind));
   const sections = Array.isArray(boot?.sections) ? boot.sections : [];
@@ -85,43 +86,6 @@ export default function SectionCatalog({ kind = "porton" }) {
     };
   }, [autoloadAttempted, kind]);
 
-  const productById = useMemo(() => new Map(products.map((p) => [Number(p.id), p])), [products]);
-  const desiredSystemProductId = useMemo(
-    () => ((kind || "porton") === "porton" ? resolveSystemProductId(portonType) : null),
-    [kind, portonType]
-  );
-
-  useEffect(() => {
-    if ((kind || "porton") !== "porton") return;
-
-    const currentSystemLines = (lines || []).filter((l) => AUTO_SYSTEM_PRODUCT_IDS.has(Number(l.product_id)));
-
-    if (!desiredSystemProductId) {
-      currentSystemLines.forEach((line) => removeLine(line.product_id));
-      return;
-    }
-
-    currentSystemLines
-      .filter((line) => Number(line.product_id) !== Number(desiredSystemProductId))
-      .forEach((line) => removeLine(line.product_id));
-
-    const desiredLine = currentSystemLines.find((line) => Number(line.product_id) === Number(desiredSystemProductId));
-    if (desiredLine) {
-      if (Number(desiredLine.qty || 0) !== 1) setQty(desiredSystemProductId, 1);
-      return;
-    }
-
-    const product = productById.get(Number(desiredSystemProductId));
-    if (!product) return;
-
-    addLine({
-      ...product,
-      name: getProductLabel(product),
-      raw_name: product.name,
-    });
-    setQty(desiredSystemProductId, 1);
-  }, [kind, desiredSystemProductId, lines, productById, addLine, removeLine, setQty]);
-
   const sectionList = useMemo(() => {
     const ordered = [...sections].sort(
       (a, b) =>
@@ -143,7 +107,7 @@ export default function SectionCatalog({ kind = "porton" }) {
     const map = new Map();
     for (const s of sectionList) map.set(Number(s.id), []);
     for (const p of products) {
-      if (AUTO_SYSTEM_PRODUCT_IDS.has(Number(p.id))) continue;
+      if (SYSTEM_PRODUCT_IDS.has(Number(p.id))) continue;
       const sids = Array.isArray(p.section_ids) ? p.section_ids : [];
       for (const sid of sids) {
         const key = Number(sid);
@@ -210,7 +174,9 @@ export default function SectionCatalog({ kind = "porton" }) {
   }, [sectionList, openSectionId, maxUnlockedIndex]);
 
   function getVisibleProducts(sectionId) {
-    const all = productsBySection.get(Number(sectionId)) || [];
+    const all = (productsBySection.get(Number(sectionId)) || []).filter(
+      (product) => !SYSTEM_PRODUCT_IDS.has(Number(product.id))
+    );
     const q = normalize(queryBySection[sectionId] || "");
     if (!q) return all;
 
@@ -238,13 +204,13 @@ export default function SectionCatalog({ kind = "porton" }) {
         <div className="dg-row dg-row--between dg-row--center">
           <h3 className="dg-h3">Características del portón</h3>
           <Button variant="ghost" disabled={refreshing} onClick={refreshCatalog}>
-            {refreshing ? "Cargando..." : "Actualizar catálogo"}
+            {refreshing ? "Cargando…" : "Actualizar catálogo"}
           </Button>
         </div>
         <div className="spacer" />
         <div className="muted">
           {refreshing
-            ? "Cargando catálogo automáticamente..."
+            ? "Cargando catálogo automáticamente…"
             : "No se pudo cargar el catálogo automáticamente. Podés reintentar con el botón de actualizar."}
         </div>
       </div>
@@ -256,7 +222,7 @@ export default function SectionCatalog({ kind = "porton" }) {
       <div className="dg-row dg-row--between dg-row--center">
         <h3 className="dg-h3">Características del portón</h3>
         <Button variant="ghost" disabled={refreshing} onClick={refreshCatalog}>
-          {refreshing ? "Actualizando..." : "Actualizar catálogo"}
+          {refreshing ? "Actualizando…" : "Actualizar catálogo"}
         </Button>
       </div>
 
@@ -294,7 +260,10 @@ export default function SectionCatalog({ kind = "porton" }) {
                   disabled={isLocked}
                   style={isLocked ? { opacity: 0.55, cursor: "not-allowed" } : undefined}
                 >
-                  <div className="dg-acc-title">{s.name}</div>
+                  <div className="dg-acc-title">
+                    {s.name}
+                    {s.use_surface_qty ? " · cantidad por superficie" : ""}
+                  </div>
                   <div className="dg-acc-meta">
                     {isLocked ? "Bloqueada" : isCompleted ? "Completada" : "Pendiente"} · {visible.length}/{all.length}
                   </div>
@@ -323,35 +292,47 @@ export default function SectionCatalog({ kind = "porton" }) {
                     <Input
                       value={q}
                       onChange={(v) => setQueryBySection((prev) => ({ ...prev, [sid]: v }))}
-                      placeholder="Buscar dentro de esta sección (alias, nombre o código)..."
+                      placeholder="Buscar dentro de esta sección (alias, nombre o código)…"
                       style={{ width: "100%" }}
                     />
 
                     <div className="spacer" />
 
                     <div className="dg-product-list">
-                      {visible.map((p) => (
-                        <div key={p.id} className="dg-product-card">
-                          <div className="dg-product-info">
-                            <div className="dg-product-name">{getProductLabel(p)}</div>
-                            <div className="muted" style={{ fontSize: 12 }}>
-                              {p.code ? `Código: ${p.code}` : `ID: ${p.id}`}
-                            </div>
-                          </div>
-
-                          <Button
-                            onClick={() =>
-                              addLine({
-                                ...p,
-                                name: getProductLabel(p),
-                                raw_name: p.name,
-                              })
-                            }
+                      {visible.map((p) => {
+                        const disabledForUser = isDisabledForUser(p, user);
+                        return (
+                          <div
+                            key={p.id}
+                            className="dg-product-card"
+                            style={disabledForUser ? { opacity: 0.55, background: "#f3f4f6" } : undefined}
                           >
-                            +
-                          </Button>
-                        </div>
-                      ))}
+                            <div className="dg-product-info">
+                              <div className="dg-product-name">
+                                {getProductLabel(p)}
+                                {p.uses_surface_quantity ? " · cantidad por superficie" : ""}
+                              </div>
+                              <div className="muted" style={{ fontSize: 12 }}>
+                                {p.code ? `Código: ${p.code}` : `ID: ${p.id}`}
+                                {disabledForUser ? " · No habilitado para tu rol" : ""}
+                              </div>
+                            </div>
+
+                            <Button
+                              disabled={disabledForUser}
+                              onClick={() =>
+                                addLine({
+                                  ...p,
+                                  name: getProductLabel(p),
+                                  raw_name: p.name,
+                                })
+                              }
+                            >
+                              +
+                            </Button>
+                          </div>
+                        );
+                      })}
                       {!visible.length && <div className="muted">Sin productos para mostrar en esta sección</div>}
                     </div>
 
