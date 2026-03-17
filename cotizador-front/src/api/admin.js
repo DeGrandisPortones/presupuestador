@@ -119,3 +119,10 @@ export async function adminSetTypeSections(kind = "porton", typeKey, section_ids
   if (!data?.ok) throw new Error(data?.error || "No se pudo asignar secciones al tipo");
   return data.mapping;
 }
+
+export async function adminSetTypeVisibility(kind = "porton", typeKey, payload = {}) {
+  const key = encodeURIComponent(String(typeKey || ""));
+  const { data } = await http.put(`/api/admin/types/${key}/visibility?kind=${encodeURIComponent(kind)}`, payload || {});
+  if (!data?.ok) throw new Error(data?.error || "No se pudo guardar la visibilidad del tipo");
+  return data.visibility;
+}
