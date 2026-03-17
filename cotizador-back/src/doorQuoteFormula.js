@@ -14,7 +14,7 @@ function injectVars(formula, vars) {
   let expr = ` ${formula} `;
   for (const name of ALLOWED_VARS) {
     const val = round2(vars?.[name] || 0);
-    expr = expr.replace(new RegExp(`\b${name}\b`, 'g'), `(${val})`);
+    expr = expr.replace(new RegExp(`\\b${name}\\b`, "g"), `(${val})`);
   }
   return expr;
 }
