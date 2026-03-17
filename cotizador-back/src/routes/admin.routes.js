@@ -10,9 +10,7 @@ import {
   setProductAlias,
   setProductVisibility,
   getTypeSectionsMap,
-  getTypeVisibilityMap,
-  setTypeSections,
-  setTypeVisibility,
+  setTypeSections
 } from "../catalogDb.js";
 import { dbQuery } from "../db.js";
 import { listUsers, createUser, updateUser } from "../usersDb.js";
@@ -39,8 +37,7 @@ export function buildAdminRouter(odoo) {
       const map = new Map((q.rows || []).map((r) => [Number(r.tag_id), Number(r.section_id)]));
       const tags = (data.tags || []).map((t) => ({ ...t, section_id: map.get(Number(t.id)) || null }));
       const type_sections = await getTypeSectionsMap(kind);
-      const type_visibility = await getTypeVisibilityMap(kind);
-      res.json({ ...data, tags, type_sections, type_visibility });
+      res.json({ ...data, tags, type_sections });
     } catch (e) {
       next(e);
     }
@@ -150,17 +147,6 @@ export function buildAdminRouter(odoo) {
     }
   });
 
-  router.put("/types/:typeKey/visibility", requireAuth, requireEncComercial, async (req, res, next) => {
-    try {
-      const kind = normKind(req.query.kind || req.body?.kind || "porton");
-      const saved = await setTypeVisibility(kind, req.params.typeKey, req.body || {});
-      clearCatalogBootstrapCache();
-      res.json({ ok: true, visibility: saved });
-    } catch (e) {
-      next(e);
-    }
-  });
-
   router.post("/refresh", requireAuth, requireEncComercial, async (_req, res, next) => {
     try {
       clearCatalogBootstrapCache();
@@ -177,7 +163,7 @@ export function buildAdminRouter(odoo) {
       const q = await dbQuery(
         `select id, created_at, created_by_role, status, final_status, fulfillment_mode, end_customer, lines, payload,
                 commercial_decision, technical_decision, rejection_notes, catalog_kind,
-                final_sale_order_name, final_difference_amount, final_absorbed_by_company
+                odoo_sale_order_name, final_sale_order_name, final_difference_amount, final_absorbed_by_company
            from public.presupuestador_quotes
           ${kind ? "where catalog_kind = $1" : ""}
           order by created_at desc
