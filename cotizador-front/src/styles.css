@@ -347,7 +347,7 @@ th, td {
 }
 .app-header .muted{ color: rgba(255,255,255,.72); }
 .brand-logo{
-  height: 34px;
+  height: 48px;
   width: auto;
   display: block;
 }
@@ -356,9 +356,16 @@ th, td {
   width: auto;
   display: block;
 }
+.menu-card-logo{
+  height: 48px;
+  width: auto;
+  display: block;
+  object-fit: contain;
+}
 @media (max-width: 520px){
-  .brand-logo{ height: 30px; }
-  .product-logo{ height: 34px; }
+  .brand-logo{ height: 40px; }
+  .product-logo{ height: 38px; }
+  .menu-card-logo{ height: 42px; }
 }
 
 /* Nav links contrast on dark header */
@@ -389,9 +396,43 @@ th, td {
   flex-direction: column;
   gap: 8px;
   align-items: flex-start;
+  transition: transform 160ms ease, box-shadow 160ms ease, border-color 160ms ease, background 160ms ease;
+  transform-origin: center center;
+}
+.menu-card:hover{
+  transform: translateY(-4px) scale(1.02);
+  border-color: rgba(1, 163, 159, 0.36);
+  box-shadow: 0 18px 36px rgba(0, 80, 96, 0.12);
+  background: linear-gradient(180deg, rgba(1, 163, 159, 0.04) 0%, rgba(255,255,255,1) 38%);
+}
+.menu-card-media{
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 54px;
+}
+.menu-card-icon{
+  width: 52px;
+  height: 52px;
+  border-radius: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(1, 163, 159, 0.10);
+  color: var(--dg-petrol);
+  border: 1px solid rgba(1, 163, 159, 0.18);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.75);
+}
+.menu-card-svg{
+  width: 24px;
+  height: 24px;
+  display: block;
 }
 .menu-title{
   font-weight: 900;
   color: var(--dg-petrol);
   letter-spacing: .2px;
+}
+.menu-description{
+  min-height: 32px;
 }

@@ -34,7 +34,7 @@ export default function AppLayout() {
           className="container"
           style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: 0 }}
         >
-          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
             <img className="brand-logo" src="/brands/dflex.png" alt="Dflex" />
             <div>
               <div style={{ fontWeight: 900 }}>Presupuestador</div>
