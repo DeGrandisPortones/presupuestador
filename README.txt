@@ -1,7 +1,13 @@
-Aplicar estos 2 archivos:
-- cotizador-front/src/api/admin.js
+Archivos incluidos:
 - cotizador-back/src/routes/admin.routes.js
+- cotizador-back/src/routes/doors.routes.js
+- cotizador-front/src/api/doors.js
+- cotizador-front/src/pages/CotizadorPage/index.jsx
+- cotizador-front/src/pages/DashboardPage/index.jsx
 
-Corrige:
-1) el build de Vercel por falta de export de adminSetTypeVisibility
-2) el endpoint backend para guardar visibilidad de tipos
+Qué cubre:
+- UI de fórmula comercial de puerta en Dashboard.
+- Endpoints admin GET/PUT /api/admin/door-quote-settings.
+- Marco de puerta genera compra en Odoo.
+- La venta de puerta se intenta sincronizar al confirmar el presupuesto del portón.
+- También se intenta sincronizar la venta si la compra del marco termina después y el portón ya estaba confirmado.

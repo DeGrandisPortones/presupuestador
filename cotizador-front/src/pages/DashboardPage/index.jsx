@@ -22,6 +22,8 @@ import {
   adminSaveFinalSettings,
   adminGetMeasurementProductMappings,
   adminSaveMeasurementProductMappings,
+  adminGetDoorQuoteSettings,
+  adminSaveDoorQuoteSettings,
 } from "../../api/admin.js";
 
 const MEASUREMENT_FIELDS = [
@@ -102,7 +104,9 @@ export default function DashboardPage() {
   const [tab, setTab] = useState("tags");
   const [catalogKind, setCatalogKind] = useState("porton");
   const [tolerancePercent, setTolerancePercent] = useState("0");
+  const [doorFormula, setDoorFormula] = useState("precio_ipanel + precio_venta_marco");
   const [savingTolerance, setSavingTolerance] = useState(false);
+  const [savingDoorFormula, setSavingDoorFormula] = useState(false);
   const [newSectionName, setNewSectionName] = useState("");
   const [newSectionPos, setNewSectionPos] = useState("100");
   const [newSectionUseSurface, setNewSectionUseSurface] = useState(false);
@@ -113,12 +117,18 @@ export default function DashboardPage() {
   const catalogQ = useQuery({ queryKey: ["adminCatalog", catalogKind], queryFn: () => adminGetCatalog(catalogKind), enabled: !!user?.is_enc_comercial });
   const quotesQ = useQuery({ queryKey: ["adminQuotes", catalogKind], queryFn: () => adminGetQuotes(catalogKind, 200), enabled: !!user?.is_enc_comercial && tab === "data" });
   const finalSettingsQ = useQuery({ queryKey: ["adminFinalSettings"], queryFn: adminGetFinalSettings, enabled: !!user?.is_enc_comercial });
+  const doorQuoteSettingsQ = useQuery({ queryKey: ["adminDoorQuoteSettings"], queryFn: adminGetDoorQuoteSettings, enabled: !!user?.is_enc_comercial });
   const measurementMappingsQ = useQuery({ queryKey: ["adminMeasurementProductMappings"], queryFn: adminGetMeasurementProductMappings, enabled: !!user?.is_enc_comercial && tab === "medicion" });
 
   useEffect(() => {
     if (!finalSettingsQ.data) return;
     setTolerancePercent(String(finalSettingsQ.data.tolerance_percent ?? 0));
   }, [finalSettingsQ.data]);
+
+  useEffect(() => {
+    if (!doorQuoteSettingsQ.data) return;
+    setDoorFormula(String(doorQuoteSettingsQ.data.formula || "precio_ipanel + precio_venta_marco"));
+  }, [doorQuoteSettingsQ.data]);
 
   const catalog = catalogQ.data;
   const sections = Array.isArray(catalog?.sections) ? catalog.sections : [];
@@ -208,6 +218,18 @@ export default function DashboardPage() {
     }
   };
 
+  const onSaveDoorFormula = async () => {
+    setSavingDoorFormula(true);
+    try {
+      const saved = await adminSaveDoorQuoteSettings({ formula: doorFormula });
+      setDoorFormula(String(saved.formula || "precio_ipanel + precio_venta_marco"));
+      qc.invalidateQueries({ queryKey: ["adminDoorQuoteSettings"] });
+      alert("Fórmula de puerta guardada correctamente.");
+    } finally {
+      setSavingDoorFormula(false);
+    }
+  };
+
   return (
     <div className="container">
       <div className="spacer" />
@@ -228,6 +250,26 @@ export default function DashboardPage() {
           <div style={{ minWidth: 220 }}><div className="muted">Tolerancia %</div><Input value={tolerancePercent} onChange={setTolerancePercent} placeholder="0" style={{ width: "100%" }} /></div>
           <Button variant="primary" onClick={onSaveTolerance} disabled={savingTolerance || finalSettingsQ.isLoading}>{savingTolerance ? "Guardando..." : "Guardar tolerancia"}</Button>
           {finalSettingsQ.isError ? <div style={{ color: "#d93025" }}>{finalSettingsQ.error.message}</div> : null}
+        </div>
+      </div>
+
+      <div className="spacer" />
+      <div className="card" style={{ background: "#fafafa" }}>
+        <h3 style={{ marginTop: 0 }}>Fórmula comercial de puerta</h3>
+        <div className="muted" style={{ marginBottom: 10 }}>
+          Variables disponibles: <b>precio_ipanel</b>, <b>precio_compra_marco</b>, <b>precio_venta_marco</b>. Podés usar <b>+ - * /</b> y paréntesis.
+        </div>
+        <textarea
+          value={doorFormula}
+          onChange={(e) => setDoorFormula(e.target.value)}
+          placeholder="Ej: precio_ipanel + precio_venta_marco"
+          style={{ width: "100%", minHeight: 72, padding: 10, borderRadius: 10, border: "1px solid #ddd", resize: "vertical" }}
+        />
+        <div className="spacer" />
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+          <Button variant="primary" onClick={onSaveDoorFormula} disabled={savingDoorFormula || doorQuoteSettingsQ.isLoading}>{savingDoorFormula ? "Guardando..." : "Guardar fórmula"}</Button>
+          <Button variant="ghost" onClick={() => setDoorFormula("precio_ipanel + precio_venta_marco")}>Usar fórmula base</Button>
+          {doorQuoteSettingsQ.isError ? <div style={{ color: "#d93025" }}>{doorQuoteSettingsQ.error.message}</div> : null}
         </div>
       </div>
 
@@ -273,15 +315,7 @@ export default function DashboardPage() {
                       </div>
                       <div className="spacer" />
                       <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                        <input
-                          type="checkbox"
-                          checked={!!s.use_surface_qty}
-                          onChange={async (e) => {
-                            await adminUpdateSection(catalogKind, s.id, { use_surface_qty: e.target.checked });
-                            qc.invalidateQueries({ queryKey: ["adminCatalog", catalogKind] });
-                            alert("Sección actualizada.");
-                          }}
-                        />
+                        <input type="checkbox" checked={!!s.use_surface_qty} onChange={async (e) => { await adminUpdateSection(catalogKind, s.id, { use_surface_qty: e.target.checked }); qc.invalidateQueries({ queryKey: ["adminCatalog", catalogKind] }); alert("Sección actualizada."); }} />
                         <span className="muted">Tomar cantidad por superficie siempre</span>
                       </label>
                     </div>
@@ -319,19 +353,15 @@ export default function DashboardPage() {
                 <div className="spacer" />
                 <div style={{ display: "flex", flexDirection: "column", gap: 8, maxHeight: 620, overflow: "auto", paddingRight: 6 }}>
                   {filteredProductsByQuery.slice(0, 400).map((p) => (
-                    <AliasRow
-                      key={p.id}
-                      product={p}
-                      onSave={async ({ alias, visibilityMode }) => {
-                        await adminSetProductAlias(catalogKind, p.id, alias);
-                        await adminSetProductVisibility(catalogKind, p.id, {
-                          disable_for_vendedor: visibilityMode === "vendedor" || visibilityMode === "both",
-                          disable_for_distribuidor: visibilityMode === "distribuidor" || visibilityMode === "both",
-                        });
-                        qc.invalidateQueries({ queryKey: ["adminCatalog", catalogKind] });
-                        alert("Producto actualizado.");
-                      }}
-                    />
+                    <AliasRow key={p.id} product={p} onSave={async ({ alias, visibilityMode }) => {
+                      await adminSetProductAlias(catalogKind, p.id, alias);
+                      await adminSetProductVisibility(catalogKind, p.id, {
+                        disable_for_vendedor: visibilityMode === "vendedor" || visibilityMode === "both",
+                        disable_for_distribuidor: visibilityMode === "distribuidor" || visibilityMode === "both",
+                      });
+                      qc.invalidateQueries({ queryKey: ["adminCatalog", catalogKind] });
+                      alert("Producto actualizado.");
+                    }} />
                   ))}
                 </div>
               </div>
@@ -360,17 +390,7 @@ export default function DashboardPage() {
           )}
 
           {tab === "medicion" && (
-            <MeasurementMappingsCard
-              products={products}
-              mappings={normalizeMeasurementMappings(measurementMappingsQ.data)}
-              loading={measurementMappingsQ.isLoading}
-              error={measurementMappingsQ.error}
-              onSave={async (payload) => {
-                await adminSaveMeasurementProductMappings(payload);
-                qc.invalidateQueries({ queryKey: ["adminMeasurementProductMappings"] });
-                alert("Asignaciones de medición guardadas.");
-              }}
-            />
+            <MeasurementMappingsCard products={products} mappings={normalizeMeasurementMappings(measurementMappingsQ.data)} loading={measurementMappingsQ.isLoading} error={measurementMappingsQ.error} onSave={async (payload) => { await adminSaveMeasurementProductMappings(payload); qc.invalidateQueries({ queryKey: ["adminMeasurementProductMappings"] }); alert("Asignaciones de medición guardadas."); }} />
           )}
 
           {tab === "data" && (
@@ -395,9 +415,7 @@ export default function DashboardPage() {
                   {filteredProductsForData.map((p) => (
                     <div key={p.id} style={{ border: "1px solid #eee", padding: 10, borderRadius: 10 }}>
                       <div style={{ fontWeight: 800 }}>{p.display_name || p.name}</div>
-                      <div className="muted" style={{ fontSize: 12 }}>
-                        ID: {p.id} {p.code ? `· ${p.code}` : ""} {p.uses_surface_quantity ? "· Cantidad por superficie" : ""}
-                      </div>
+                      <div className="muted" style={{ fontSize: 12 }}>ID: {p.id} {p.code ? `· ${p.code}` : ""} {p.uses_surface_quantity ? "· Cantidad por superficie" : ""}</div>
                       <div className="muted" style={{ fontSize: 12 }}>{(p.sections || []).join(", ") || "(sin secciones)"}</div>
                     </div>
                   ))}
@@ -410,7 +428,7 @@ export default function DashboardPage() {
                   {filteredQuotes.map((q) => (
                     <div key={q.id} style={{ border: "1px solid #eee", padding: 10, borderRadius: 10 }}>
                       <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
-                        <div style={{ fontWeight: 800 }}>#{String(q.id).slice(0, 8)}</div>
+                        <div style={{ fontWeight: 800 }}>{q.odoo_sale_order_name || q.final_sale_order_name || `#${String(q.id).slice(0, 8)}`}</div>
                         <div className="muted">{q.final_status || q.status}</div>
                       </div>
                     </div>
@@ -429,51 +447,20 @@ export default function DashboardPage() {
 function MeasurementMappingsCard({ products, mappings, loading, error, onSave }) {
   const [draft, setDraft] = useState({ rules: [] });
   const [saving, setSaving] = useState(false);
-
   useEffect(() => { setDraft(mappings || { rules: [] }); }, [mappings]);
-
   const productOptions = useMemo(() => (Array.isArray(products) ? products : []).map((p) => ({ id: Number(p.id), label: `${p.display_name || p.name}${p.code ? ` · ${p.code}` : ""}` })), [products]);
   const mergedRules = useMemo(() => {
     const byKey = new Map((draft.rules || []).map((rule) => [rule.field_key, rule]));
-    return MEASUREMENT_FIELDS.map((field) => ({
-      ...field,
-      ...(byKey.get(field.field_key) || {}),
-      values: (byKey.get(field.field_key)?.values || []).map((entry) => ({ expected_value: String(entry.expected_value || "").trim(), product_id: Number(entry.product_id || 0) || "" })),
-    }));
+    return MEASUREMENT_FIELDS.map((field) => ({ ...field, ...(byKey.get(field.field_key) || {}), values: (byKey.get(field.field_key)?.values || []).map((entry) => ({ expected_value: String(entry.expected_value || "").trim(), product_id: Number(entry.product_id || 0) || "" })) }));
   }, [draft]);
-
-  function setFieldValues(fieldKey, values, fieldMeta) {
-    setDraft((prev) => ({ rules: [ ...(prev.rules || []).filter((r) => r.field_key !== fieldKey), { field_key: fieldKey, field_label: fieldMeta.field_label, field_mode: fieldMeta.field_mode, active: true, values } ] }));
-  }
-
-  async function handleSave() {
-    setSaving(true);
-    try {
-      await onSave({ rules: mergedRules.map((rule) => ({ field_key: rule.field_key, field_label: rule.field_label, field_mode: rule.field_mode, active: true, values: (rule.values || []).map((entry) => ({ expected_value: String(entry.expected_value || "").trim(), product_id: Number(entry.product_id || 0) || null })).filter((entry) => entry.expected_value && entry.product_id) })) });
-    } finally { setSaving(false); }
-  }
-
-  return (
-    <div className="card" style={{ width: "100%" }}>
-      <h3 style={{ marginTop: 0 }}>Medición → Productos</h3>
-      <div className="muted" style={{ marginBottom: 10 }}>Cada regla es <b>un campo</b>. Dentro de esa regla cargás los <b>valores posibles</b> y el producto que corresponde a cada uno.</div>
-      {loading && <div className="muted">Cargando asignaciones…</div>}
-      {error ? <div style={{ color: "#d93025", marginBottom: 10 }}>{error.message}</div> : null}
-      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-        {mergedRules.map((rule) => <div key={rule.field_key} style={{ border: "1px solid #eee", borderRadius: 12, padding: 12 }}><div style={{ fontWeight: 800 }}>{rule.field_label}</div><div className="muted" style={{ fontSize: 12, marginBottom: 10 }}>Campo: {rule.field_key}</div>{rule.field_mode === "integer" ? <IntegerFieldMappings rule={rule} productOptions={productOptions} onChange={(values) => setFieldValues(rule.field_key, values, rule)} /> : <PresetFieldMappings rule={rule} productOptions={productOptions} onChange={(values) => setFieldValues(rule.field_key, values, rule)} />}</div>)}
-      </div>
-      <div className="spacer" />
-      <Button variant="primary" onClick={handleSave} disabled={saving}>{saving ? "Guardando..." : "Guardar asignaciones"}</Button>
-    </div>
-  );
+  function setFieldValues(fieldKey, values, fieldMeta) { setDraft((prev) => ({ rules: [ ...(prev.rules || []).filter((r) => r.field_key !== fieldKey), { field_key: fieldKey, field_label: fieldMeta.field_label, field_mode: fieldMeta.field_mode, active: true, values } ] })); }
+  async function handleSave() { setSaving(true); try { await onSave({ rules: mergedRules.map((rule) => ({ field_key: rule.field_key, field_label: rule.field_label, field_mode: rule.field_mode, active: true, values: (rule.values || []).map((entry) => ({ expected_value: String(entry.expected_value || "").trim(), product_id: Number(entry.product_id || 0) || null })).filter((entry) => entry.expected_value && entry.product_id) })) }); } finally { setSaving(false); } }
+  return <div className="card" style={{ width: "100%" }}><h3 style={{ marginTop: 0 }}>Medición → Productos</h3><div className="muted" style={{ marginBottom: 10 }}>Cada regla es <b>un campo</b>. Dentro de esa regla cargás los <b>valores posibles</b> y el producto que corresponde a cada uno.</div>{loading && <div className="muted">Cargando asignaciones…</div>}{error ? <div style={{ color: "#d93025", marginBottom: 10 }}>{error.message}</div> : null}<div style={{ display: "flex", flexDirection: "column", gap: 14 }}>{mergedRules.map((rule) => <div key={rule.field_key} style={{ border: "1px solid #eee", borderRadius: 12, padding: 12 }}><div style={{ fontWeight: 800 }}>{rule.field_label}</div><div className="muted" style={{ fontSize: 12, marginBottom: 10 }}>Campo: {rule.field_key}</div>{rule.field_mode === "integer" ? <IntegerFieldMappings rule={rule} productOptions={productOptions} onChange={(values) => setFieldValues(rule.field_key, values, rule)} /> : <PresetFieldMappings rule={rule} productOptions={productOptions} onChange={(values) => setFieldValues(rule.field_key, values, rule)} />}</div>)}</div><div className="spacer" /><Button variant="primary" onClick={handleSave} disabled={saving}>{saving ? "Guardando..." : "Guardar asignaciones"}</Button></div>;
 }
 
 function PresetFieldMappings({ rule, productOptions, onChange }) {
   const field = MEASUREMENT_FIELDS.find((item) => item.field_key === rule.field_key);
-  const rows = (field?.values || []).map((opt) => {
-    const existing = (rule.values || []).find((entry) => String(entry.expected_value) === String(opt.value));
-    return { expected_value: opt.value, label: opt.label, product_id: existing?.product_id || "" };
-  });
+  const rows = (field?.values || []).map((opt) => { const existing = (rule.values || []).find((entry) => String(entry.expected_value) === String(opt.value)); return { expected_value: opt.value, label: opt.label, product_id: existing?.product_id || "" }; });
   return <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>{rows.map((entry) => <div key={entry.expected_value} style={{ display: "grid", gridTemplateColumns: "260px 1fr", gap: 10, alignItems: "center" }}><div className="muted">{entry.label}</div><select value={entry.product_id || ""} onChange={(e) => { const next = rows.map((item) => item.expected_value === entry.expected_value ? { ...item, product_id: e.target.value ? Number(e.target.value) : "" } : item); onChange(next); }} style={{ padding: 8, borderRadius: 10, border: "1px solid #ddd", width: "100%" }}><option value="">(sin producto)</option>{productOptions.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}</select></div>)}</div>;
 }
 
@@ -487,53 +474,10 @@ function TypesSectionsCard({ catalogKind, sections, typeSections, typeVisibility
   const [selectedSectionIds, setSelectedSectionIds] = useState([]);
   const [visibilityMode, setVisibilityMode] = useState("none");
   const canUse = (catalogKind || "porton") === "porton";
-
-  useEffect(() => {
-    const arr = canUse && selectedType ? (typeSections?.[selectedType] || []) : [];
-    setSelectedSectionIds((arr || []).map((x) => Number(x)));
-    setVisibilityMode(visibilityModeFromTypeEntry(typeVisibility?.[selectedType] || {}));
-  }, [selectedType, catalogKind, canUse, typeSections, typeVisibility]);
-
+  useEffect(() => { const arr = canUse && selectedType ? (typeSections?.[selectedType] || []) : []; setSelectedSectionIds((arr || []).map((x) => Number(x))); setVisibilityMode(visibilityModeFromTypeEntry(typeVisibility?.[selectedType] || {})); }, [selectedType, catalogKind, canUse, typeSections, typeVisibility]);
   if (!canUse) return <div className="card" style={{ flex: 1 }}><h3 style={{ marginTop: 0 }}>Tipos → Secciones</h3><div className="muted">Esto aplica solo a Portones.</div></div>;
   const sectionSet = new Set(selectedSectionIds.map((x) => Number(x)));
-  return (
-    <>
-      <div className="card" style={{ flex: 1, minWidth: 320 }}>
-        <h3 style={{ marginTop: 0 }}>Tipos / Sistemas</h3>
-        <div className="spacer" />
-        <select value={selectedType} onChange={(e) => setSelectedType(e.target.value)} style={{ padding: 10, borderRadius: 10, border: "1px solid #ddd", width: "100%" }}>
-          {PORTON_TYPES.map((t) => <option key={t.key} value={t.key}>{t.label}</option>)}
-        </select>
-        <div className="spacer" />
-        <div className="muted">Visibilidad del tipo</div>
-        <select value={visibilityMode} onChange={(e) => setVisibilityMode(e.target.value)} style={{ padding: 10, borderRadius: 10, border: "1px solid #ddd", width: "100%" }}>
-          <option value="none">Habilitado para todos</option>
-          <option value="vendedor">Oculto solo para vendedores</option>
-          <option value="distribuidor">Oculto solo para distribuidores</option>
-          <option value="both">Oculto para ambos</option>
-        </select>
-        <div className="spacer" />
-        <Button variant="primary" onClick={async () => onSave(selectedType, selectedSectionIds, visibilityMode)}>Guardar configuración</Button>
-      </div>
-      <div className="card" style={{ flex: 2, minWidth: 520 }}>
-        <h3 style={{ marginTop: 0 }}>Secciones visibles</h3>
-        <div className="spacer" />
-        <div style={{ display: "flex", flexDirection: "column", gap: 8, maxHeight: 620, overflow: "auto", paddingRight: 6 }}>
-          {sections.map((s) => {
-            const sid = Number(s.id);
-            const checked = sectionSet.has(sid);
-            return (
-              <label key={sid} style={{ display: "flex", gap: 10, alignItems: "center", border: "1px solid #eee", padding: 10, borderRadius: 10 }}>
-                <input type="checkbox" checked={checked} onChange={(e) => { const next = new Set(sectionSet); if (e.target.checked) next.add(sid); else next.delete(sid); setSelectedSectionIds([...next]); }} />
-                <div style={{ fontWeight: 700 }}>{s.name}</div>
-                <div className="muted" style={{ marginLeft: "auto" }}>Pos: {s.position}</div>
-              </label>
-            );
-          })}
-        </div>
-      </div>
-    </>
-  );
+  return <><div className="card" style={{ flex: 1, minWidth: 320 }}><h3 style={{ marginTop: 0 }}>Tipos / Sistemas</h3><div className="spacer" /><select value={selectedType} onChange={(e) => setSelectedType(e.target.value)} style={{ padding: 10, borderRadius: 10, border: "1px solid #ddd", width: "100%" }}>{PORTON_TYPES.map((t) => <option key={t.key} value={t.key}>{t.label}</option>)}</select><div className="spacer" /><div className="muted">Visibilidad del tipo</div><select value={visibilityMode} onChange={(e) => setVisibilityMode(e.target.value)} style={{ padding: 10, borderRadius: 10, border: "1px solid #ddd", width: "100%" }}><option value="none">Habilitado para todos</option><option value="vendedor">Oculto solo para vendedores</option><option value="distribuidor">Oculto solo para distribuidores</option><option value="both">Oculto para ambos</option></select><div className="spacer" /><Button variant="primary" onClick={async () => onSave(selectedType, selectedSectionIds, visibilityMode)}>Guardar configuración</Button></div><div className="card" style={{ flex: 2, minWidth: 520 }}><h3 style={{ marginTop: 0 }}>Secciones visibles</h3><div className="spacer" /><div style={{ display: "flex", flexDirection: "column", gap: 8, maxHeight: 620, overflow: "auto", paddingRight: 6 }}>{sections.map((s) => { const sid = Number(s.id); const checked = sectionSet.has(sid); return <label key={sid} style={{ display: "flex", gap: 10, alignItems: "center", border: "1px solid #eee", padding: 10, borderRadius: 10 }}><input type="checkbox" checked={checked} onChange={(e) => { const next = new Set(sectionSet); if (e.target.checked) next.add(sid); else next.delete(sid); setSelectedSectionIds([...next]); }} /><div style={{ fontWeight: 700 }}>{s.name}</div><div className="muted" style={{ marginLeft: "auto" }}>Pos: {s.position}</div></label>; })}</div></div></>;
 }
 
 function AliasRow({ product, onSave }) {
@@ -541,28 +485,5 @@ function AliasRow({ product, onSave }) {
   const [visibilityMode, setVisibilityMode] = useState(visibilityModeFromProduct(product));
   const [saving, setSaving] = useState(false);
   const changed = value.trim() !== (product.alias || "") || visibilityMode !== visibilityModeFromProduct(product);
-
-  return (
-    <div style={{ display: "grid", gridTemplateColumns: "1fr 240px 220px 90px", gap: 10, border: "1px solid #eee", padding: 10, borderRadius: 10, alignItems: "center" }}>
-      <div style={{ minWidth: 0 }}>
-        <button
-          type="button"
-          onClick={() => window.alert(product.name || product.display_name || "")}
-          style={{ fontWeight: 800, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", border: 0, padding: 0, background: "transparent", cursor: "pointer", textAlign: "left", width: "100%" }}
-          title="Ver nombre completo de Odoo"
-        >
-          {product.name}
-        </button>
-        <div className="muted" style={{ fontSize: 12 }}>ID: {product.id}{product.code ? ` · ${product.code}` : ""}{product.uses_surface_quantity ? " · superficie" : ""}</div>
-      </div>
-      <Input value={value} onChange={setValue} placeholder="Nombre visible…" style={{ width: "100%" }} />
-      <select value={visibilityMode} onChange={(e) => setVisibilityMode(e.target.value)} style={{ padding: 8, borderRadius: 10, border: "1px solid #ddd", width: "100%" }}>
-        <option value="none">Habilitado para todos</option>
-        <option value="vendedor">Deshabilitado solo para vendedores</option>
-        <option value="distribuidor">Deshabilitado solo para distribuidores</option>
-        <option value="both">Deshabilitado para ambos</option>
-      </select>
-      <Button variant="primary" disabled={!changed || saving} onClick={async () => { setSaving(true); try { await onSave({ alias: value, visibilityMode }); } finally { setSaving(false); } }}>{saving ? "…" : "Guardar"}</Button>
-    </div>
-  );
+  return <div style={{ display: "grid", gridTemplateColumns: "1fr 240px 220px 90px", gap: 10, border: "1px solid #eee", padding: 10, borderRadius: 10, alignItems: "center" }}><div style={{ minWidth: 0 }}><button type="button" onClick={() => window.alert(product.name || product.display_name || "")} style={{ fontWeight: 800, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", border: 0, padding: 0, background: "transparent", cursor: "pointer", textAlign: "left", width: "100%" }} title="Ver nombre completo de Odoo">{product.name}</button><div className="muted" style={{ fontSize: 12 }}>ID: {product.id}{product.code ? ` · ${product.code}` : ""}{product.uses_surface_quantity ? " · superficie" : ""}</div></div><Input value={value} onChange={setValue} placeholder="Nombre visible…" style={{ width: "100%" }} /><select value={visibilityMode} onChange={(e) => setVisibilityMode(e.target.value)} style={{ padding: 8, borderRadius: 10, border: "1px solid #ddd", width: "100%" }}><option value="none">Habilitado para todos</option><option value="vendedor">Deshabilitado solo para vendedores</option><option value="distribuidor">Deshabilitado solo para distribuidores</option><option value="both">Deshabilitado para ambos</option></select><Button variant="primary" disabled={!changed || saving} onClick={async () => { setSaving(true); try { await onSave({ alias: value, visibilityMode }); } finally { setSaving(false); } }}>{saving ? "…" : "Guardar"}</Button></div>;
 }

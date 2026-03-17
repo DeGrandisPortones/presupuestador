@@ -11,7 +11,7 @@ import {
   setProductVisibility,
   getTypeSectionsMap,
   setTypeSections,
-  setTypeVisibility
+  setTypeVisibility,
 } from "../catalogDb.js";
 import { dbQuery } from "../db.js";
 import { listUsers, createUser, updateUser } from "../usersDb.js";
@@ -20,6 +20,8 @@ import {
   setCommercialFinalQuoteSettings,
   getMeasurementProductMappings,
   setMeasurementProductMappings,
+  getDoorQuoteSettings,
+  setDoorQuoteSettings,
 } from "../settingsDb.js";
 
 function requireEncComercial(req, res, next) {
@@ -56,6 +58,24 @@ export function buildAdminRouter(odoo) {
   router.put("/final-settings", requireAuth, requireEncComercial, async (req, res, next) => {
     try {
       const settings = await setCommercialFinalQuoteSettings(req.body || {});
+      res.json({ ok: true, settings });
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  router.get("/door-quote-settings", requireAuth, requireEncComercial, async (_req, res, next) => {
+    try {
+      const settings = await getDoorQuoteSettings();
+      res.json({ ok: true, settings });
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  router.put("/door-quote-settings", requireAuth, requireEncComercial, async (req, res, next) => {
+    try {
+      const settings = await setDoorQuoteSettings(req.body || {});
       res.json({ ok: true, settings });
     } catch (e) {
       next(e);
@@ -175,7 +195,7 @@ export function buildAdminRouter(odoo) {
       const q = await dbQuery(
         `select id, created_at, created_by_role, status, final_status, fulfillment_mode, end_customer, lines, payload,
                 commercial_decision, technical_decision, rejection_notes, catalog_kind,
-                final_sale_order_name, final_difference_amount, final_absorbed_by_company
+                odoo_sale_order_name, final_sale_order_name, final_difference_amount, final_absorbed_by_company
            from public.presupuestador_quotes
           ${kind ? "where catalog_kind = $1" : ""}
           order by created_at desc

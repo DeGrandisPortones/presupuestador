@@ -48,6 +48,12 @@ export async function getDoorQuotePdfPayload(id, mode = "presupuesto") {
   return data.payload;
 }
 
+export async function syncDoorSaleByQuote(quoteId) {
+  const { data } = await http.post(`/api/doors/by-quote/${quoteId}/sync-sale`, {});
+  if (!data?.ok) throw new Error(data?.error || "No se pudo sincronizar la venta de la puerta");
+  return data.door || null;
+}
+
 export async function updateDoor(id, payload) {
   const { data } = await http.put(`/api/doors/${id}`, payload);
   if (!data?.ok) throw new Error(data?.error || "No se pudo guardar la puerta");

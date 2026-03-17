@@ -5,7 +5,7 @@ import { useAuthStore } from "../../domain/auth/store.js";
 
 import { getPricelists, getPrices } from "../../api/odoo";
 import { createQuote, getQuote, confirmQuote, submitFinalQuote, updateQuote } from "../../api/quotes";
-import { createOrGetDoorFromQuote, createStandaloneDoor, updateDoor } from "../../api/doors.js";
+import { createOrGetDoorFromQuote, createStandaloneDoor, updateDoor, syncDoorSaleByQuote } from "../../api/doors.js";
 import { downloadPresupuestoPdf, downloadProformaPdf } from "../../api/pdf";
 import toast from "react-hot-toast";
 
@@ -85,7 +85,7 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
   }, [quoteQ.data, loadFromQuote, catalogKind, navigate]);
 
   const totals = useMemo(() => calcTotals(lines, marginPercent, ivaRate), [lines, marginPercent, ivaRate]);
-  const linesKey = useMemo(() => lines.map((l) => `${l.product_id}:${l.qty}`).join("|") , [lines]);
+  const linesKey = useMemo(() => lines.map((l) => `${l.product_id}:${l.qty}`).join("|"), [lines]);
   const isRevisionQuote = (quoteQ.data?.quote_kind || "original") === "copy";
   const finalStatus = String(quoteQ.data?.final_status || "");
 
@@ -129,13 +129,10 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
     const c = customer || {};
     const city = String(c.city || "").trim();
     if (requireCity && !city) throw new Error("Completá la localidad del cliente.");
-
     const phoneErr = validateArgentinaPhone(c.phone, { required: requirePhone });
     if (phoneErr) throw new Error(phoneErr);
-
     const emailErr = validateEmailAddress(c.email, { required: false });
     if (emailErr) throw new Error(emailErr);
-
     const mapsErr = validateGoogleMapsUrl(c.maps_url, { required: requireMaps });
     if (mapsErr) throw new Error(mapsErr);
   }
@@ -161,7 +158,6 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
     if (String(p.condition_mode || "") === "special" && !String(p.condition_text || "").trim()) errs.push("Completá la condición especial.");
     if (!Array.isArray(payload?.lines) || payload.lines.length === 0) errs.push("Agregá al menos un producto.");
     if (errs.length) throw new Error(errs[0]);
-
     validateCustomerContact(c, { requirePhone: true, requireMaps: true, requireCity: true });
   }
 
@@ -172,7 +168,6 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
     if (!String(c.phone || "").trim()) errs.push("Completá el teléfono del cliente.");
     if (!Array.isArray(payload?.lines) || payload.lines.length === 0) errs.push("Agregá al menos un producto.");
     if (errs.length) throw new Error(errs[0]);
-
     validateCustomerContact(c, { requirePhone: true, requireMaps: false, requireCity: false });
   }
 
@@ -180,7 +175,6 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
     const record = baseRecord && typeof baseRecord === "object" ? { ...baseRecord } : {};
     const currentCustomer = record.end_customer && typeof record.end_customer === "object" ? record.end_customer : {};
     const payloadCustomer = payload?.end_customer && typeof payload.end_customer === "object" ? payload.end_customer : {};
-
     record.end_customer = {
       ...currentCustomer,
       name: String(payloadCustomer.name || currentCustomer.name || "").trim(),
@@ -254,7 +248,6 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
     nextRecord.ipanel_catalog_kind = "ipanel";
     nextRecord.ipanel_linked_at = new Date().toISOString();
     const updatedDoor = await updateDoor(door.id, { record: nextRecord });
-
     return { door: updatedDoor, ipanelQuoteId: createdIpanel.id, reused: false };
   }
 
@@ -277,13 +270,8 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
   const confirmM = useMutation({
     mutationFn: async (variables) => {
       const chosenMode = String(variables?.fulfillmentMode || buildPayloadForBack()?.fulfillment_mode || "acopio").trim();
-      const payload = withCreatorRole({
-        ...buildPayloadForBack(),
-        catalog_kind: catalogKind,
-        fulfillment_mode: chosenMode,
-      });
+      const payload = withCreatorRole({ ...buildPayloadForBack(), catalog_kind: catalogKind, fulfillment_mode: chosenMode });
       validateConfirm(payload);
-
       let id = quoteId || idParam;
       if (id) {
         await updateQuote(id, payload);
@@ -292,17 +280,23 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
         id = created.id;
         setQuoteMeta({ quoteId: created.id, status: created.status, rejectionNotes: created.rejection_notes });
       }
-
-      if (isRevisionQuote) {
-        return await submitFinalQuote(id);
-      }
-
+      if (isRevisionQuote) return await submitFinalQuote(id);
       return await confirmQuote(id, { fulfillment_mode: chosenMode });
     },
-    onSuccess: (q) => {
+    onSuccess: async (q) => {
       setConfirmChoiceOpen(false);
       setQuoteMeta({ quoteId: q.id, status: q.status, rejectionNotes: q.rejection_notes });
       qc.invalidateQueries({ queryKey: ["quotes", "mine"] });
+      if (!isRevisionQuote && (catalogKind || "porton") === "porton") {
+        try {
+          const syncedDoor = await syncDoorSaleByQuote(q.id);
+          if (syncedDoor?.odoo_sale_order_name) {
+            toast.success(`Venta de puerta enviada a Odoo (${syncedDoor.odoo_sale_order_name}).`);
+          }
+        } catch (e) {
+          toast.error(e?.message || "No se pudo sincronizar la venta de la puerta.");
+        }
+      }
       navigate(`/presupuestos/${q.id}`);
       toast.success(isRevisionQuote ? "Cotización final enviada a Odoo." : "Presupuesto confirmado.");
     },
@@ -349,9 +343,7 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
     }
   };
 
-  const canConfirm = isRevisionQuote
-    ? ["", "draft", "rejected"].includes(finalStatus || "")
-    : ["draft", "rejected_commercial", "rejected_technical"].includes(status);
+  const canConfirm = isRevisionQuote ? ["", "draft", "rejected"].includes(finalStatus || "") : ["draft", "rejected_commercial", "rejected_technical"].includes(status);
   const canOpenDoor = !!((user?.is_vendedor || user?.is_superuser) && (catalogKind || "porton") === "porton" && !isRevisionQuote);
   const doorBusy = marcoDoorM.isPending || ipanelDoorM.isPending;
 
@@ -359,233 +351,61 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
     <div className="container">
       <div className="card" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <img
-            className="product-logo"
-            src={catalogKind === "ipanel" ? "/brands/ipanel.png" : "/brands/degrandis.png"}
-            alt={catalogKind === "ipanel" ? "Ipanel" : "DeGrandis Portones"}
-          />
+          <img className="product-logo" src={catalogKind === "ipanel" ? "/brands/ipanel.png" : "/brands/degrandis.png"} alt={catalogKind === "ipanel" ? "Ipanel" : "DeGrandis Portones"} />
           <div>
-            <h2 style={{ margin: 0 }}>
-              {quoteId ? `${isRevisionQuote ? "Ajuste" : "Presupuesto"} #${quoteId}` : "Nuevo presupuesto"}
-            </h2>
-            <div className="muted">
-              Estado: <b>{isRevisionQuote ? (finalStatus || status) : status}</b>
-              {isRevisionQuote && quoteQ.data?.parent_quote_id ? <> · Ref. original: <b>{String(quoteQ.data.parent_quote_id).slice(0, 8)}</b></> : null}
-            </div>
+            <h2 style={{ margin: 0 }}>{quoteId ? `${isRevisionQuote ? "Ajuste" : "Presupuesto"} #${quoteId}` : "Nuevo presupuesto"}</h2>
+            <div className="muted">Estado: <b>{isRevisionQuote ? (finalStatus || status) : status}</b>{isRevisionQuote && quoteQ.data?.parent_quote_id ? <> · Ref. original: <b>{String(quoteQ.data.parent_quote_id).slice(0, 8)}</b></> : null}</div>
           </div>
         </div>
-
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
           <Button variant="secondary" onClick={onDownloadPresupuesto}>PDF presupuesto</Button>
           {user?.is_distribuidor ? <Button variant="secondary" onClick={onDownloadProforma}>PDF proforma</Button> : null}
-          {canOpenDoor ? (
-            <Button variant="ghost" onClick={() => setDoorChoiceOpen(true)} disabled={doorBusy}>
-              {doorBusy ? "Abriendo..." : "Puerta"}
-            </Button>
-          ) : null}
+          {canOpenDoor ? <Button variant="ghost" onClick={() => setDoorChoiceOpen(true)} disabled={doorBusy}>{doorBusy ? "Abriendo..." : "Puerta"}</Button> : null}
           <Button onClick={() => saveM.mutate()} disabled={saveM.isPending}>{saveM.isPending ? "Guardando..." : "Guardar"}</Button>
-          <Button
-            variant="primary"
-            onClick={() => {
-              if (isRevisionQuote) {
-                confirmM.mutate({});
-                return;
-              }
-              setConfirmChoiceOpen(true);
-            }}
-            disabled={!canConfirm || confirmM.isPending}
-          >
-            {confirmM.isPending ? "Confirmando..." : (isRevisionQuote ? "Enviar cotización final" : "Confirmar presupuesto")}
-          </Button>
+          <Button variant="primary" onClick={() => { if (isRevisionQuote) { confirmM.mutate({}); return; } setConfirmChoiceOpen(true); }} disabled={!canConfirm || confirmM.isPending}>{confirmM.isPending ? "Confirmando..." : (isRevisionQuote ? "Enviar cotización final" : "Confirmar presupuesto")}</Button>
         </div>
       </div>
 
-      {isRevisionQuote && (
-        <>
-          <div className="spacer" />
-          <div className="card" style={{ background: "#fafafa" }}>
-            <div style={{ fontWeight: 900, marginBottom: 6 }}>Cotización final a Odoo</div>
-            <div className="muted">
-              Esta instancia editable genera la nueva cotización detallada en Odoo y descuenta la seña ya enviada del presupuesto original.
-            </div>
-          </div>
-        </>
-      )}
-
       {!isRevisionQuote && doorChoiceOpen && (
-        <div
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(0, 0, 0, 0.45)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            padding: 20,
-            zIndex: 1000,
-          }}
-          onClick={() => {
-            if (!doorBusy) setDoorChoiceOpen(false);
-          }}
-        >
-          <div
-            className="card"
-            style={{
-              width: "100%",
-              maxWidth: 880,
-              background: "#fff",
-              border: "1px solid #ddd",
-              boxShadow: "0 20px 60px rgba(0,0,0,0.18)",
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div style={{ fontWeight: 900, fontSize: 22, marginBottom: 6 }}>
-              Elegí el componente de la puerta
-            </div>
-            <div className="muted" style={{ marginBottom: 18 }}>
-              Podés cargar por separado el presupuesto de <b>Ipanel</b> y la ficha de <b>Marco de puerta</b>. Ambos quedan vinculados al mismo portón.
-            </div>
-
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0, 0, 0, 0.45)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20, zIndex: 1000 }} onClick={() => { if (!doorBusy) setDoorChoiceOpen(false); }}>
+          <div className="card" style={{ width: "100%", maxWidth: 880, background: "#fff", border: "1px solid #ddd", boxShadow: "0 20px 60px rgba(0,0,0,0.18)" }} onClick={(e) => e.stopPropagation()}>
+            <div style={{ fontWeight: 900, fontSize: 22, marginBottom: 6 }}>Elegí el componente de la puerta</div>
+            <div className="muted" style={{ marginBottom: 18 }}>Podés cargar por separado el presupuesto de <b>Ipanel</b> y la ficha de <b>Marco de puerta</b>. Ambos quedan vinculados al mismo portón.</div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 14 }}>
-              <div
-                style={{
-                  border: "1px solid #d9e5f7",
-                  background: "#f7fbff",
-                  borderRadius: 14,
-                  padding: 16,
-                }}
-              >
+              <div style={{ border: "1px solid #d9e5f7", background: "#f7fbff", borderRadius: 14, padding: 16 }}>
                 <div style={{ fontWeight: 900, fontSize: 18, marginBottom: 8 }}>Presupuesto Ipanel</div>
-                <div className="muted" style={{ marginBottom: 14 }}>
-                  Abre el cotizador de <b>Ipanel</b> con el cliente ya vinculado al portón para cargar ese componente por separado.
-                </div>
-                <div style={{ fontSize: 13, lineHeight: 1.45, marginBottom: 16 }}>
-                  <div>• Usa la configuración normal de Ipanel.</div>
-                  <div>• Queda vinculado al mismo portón.</div>
-                  <div>• Si ya existe, vuelve a abrir el mismo presupuesto Ipanel.</div>
-                </div>
-                <Button onClick={() => ipanelDoorM.mutate()} disabled={doorBusy}>
-                  {ipanelDoorM.isPending ? "Abriendo..." : "Abrir Ipanel"}
-                </Button>
+                <div className="muted" style={{ marginBottom: 14 }}>Abre el cotizador de <b>Ipanel</b> con el cliente ya vinculado al portón para cargar ese componente por separado.</div>
+                <Button onClick={() => ipanelDoorM.mutate()} disabled={doorBusy}>{ipanelDoorM.isPending ? "Abriendo..." : "Abrir Ipanel"}</Button>
               </div>
-
-              <div
-                style={{
-                  border: "1px solid #f2d3bf",
-                  background: "#fff8f3",
-                  borderRadius: 14,
-                  padding: 16,
-                }}
-              >
+              <div style={{ border: "1px solid #f2d3bf", background: "#fff8f3", borderRadius: 14, padding: 16 }}>
                 <div style={{ fontWeight: 900, fontSize: 18, marginBottom: 8 }}>Marco de puerta</div>
-                <div className="muted" style={{ marginBottom: 14 }}>
-                  Abre la ficha técnica y comercial actual, renombrada como <b>Marco de puerta</b>.
-                </div>
-                <div style={{ fontSize: 13, lineHeight: 1.45, marginBottom: 16 }}>
-                  <div>• Mantiene el formulario actual.</div>
-                  <div>• Sigue el circuito de guardado y aprobación actual.</div>
-                  <div>• Si ya existe, vuelve a abrir el mismo marco de puerta vinculado.</div>
-                </div>
-                <Button variant="primary" onClick={() => marcoDoorM.mutate()} disabled={doorBusy}>
-                  {marcoDoorM.isPending ? "Abriendo..." : "Abrir Marco de puerta"}
-                </Button>
+                <div className="muted" style={{ marginBottom: 14 }}>Abre la ficha técnica y comercial del marco de puerta vinculado al mismo portón.</div>
+                <Button variant="primary" onClick={() => marcoDoorM.mutate()} disabled={doorBusy}>{marcoDoorM.isPending ? "Abriendo..." : "Abrir Marco de puerta"}</Button>
               </div>
             </div>
-
-            <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 16 }}>
-              <Button variant="ghost" onClick={() => setDoorChoiceOpen(false)} disabled={doorBusy}>
-                Cancelar
-              </Button>
-            </div>
+            <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 16 }}><Button variant="ghost" onClick={() => setDoorChoiceOpen(false)} disabled={doorBusy}>Cancelar</Button></div>
           </div>
         </div>
       )}
 
       {!isRevisionQuote && confirmChoiceOpen && (
-        <div
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(0, 0, 0, 0.45)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            padding: 20,
-            zIndex: 1000,
-          }}
-          onClick={() => {
-            if (!confirmM.isPending) setConfirmChoiceOpen(false);
-          }}
-        >
-          <div
-            className="card"
-            style={{
-              width: "100%",
-              maxWidth: 880,
-              background: "#fff",
-              border: "1px solid #ddd",
-              boxShadow: "0 20px 60px rgba(0,0,0,0.18)",
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div style={{ fontWeight: 900, fontSize: 22, marginBottom: 6 }}>
-              Elegí el destino del presupuesto
-            </div>
-            <div className="muted" style={{ marginBottom: 18 }}>
-              Esta decisión cambia cómo sigue el circuito del portón después de confirmar.
-            </div>
-
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0, 0, 0, 0.45)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20, zIndex: 1000 }} onClick={() => { if (!confirmM.isPending) setConfirmChoiceOpen(false); }}>
+          <div className="card" style={{ width: "100%", maxWidth: 880, background: "#fff", border: "1px solid #ddd", boxShadow: "0 20px 60px rgba(0,0,0,0.18)" }} onClick={(e) => e.stopPropagation()}>
+            <div style={{ fontWeight: 900, fontSize: 22, marginBottom: 6 }}>Elegí el destino del presupuesto</div>
+            <div className="muted" style={{ marginBottom: 18 }}>Esta decisión cambia cómo sigue el circuito del portón después de confirmar.</div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 14 }}>
-              <div
-                style={{
-                  border: "1px solid #d9e5f7",
-                  background: "#f7fbff",
-                  borderRadius: 14,
-                  padding: 16,
-                }}
-              >
+              <div style={{ border: "1px solid #d9e5f7", background: "#f7fbff", borderRadius: 14, padding: 16 }}>
                 <div style={{ fontWeight: 900, fontSize: 18, marginBottom: 8 }}>Acopio</div>
-                <div className="muted" style={{ marginBottom: 14 }}>
-                  El portón queda en espera. Se podrá seguir gestionando desde <b>Acopio → Producción</b> y mantiene una instancia de edición.
-                </div>
-                <div style={{ fontSize: 13, lineHeight: 1.45, marginBottom: 16 }}>
-                  <div>• Ideal cuando la fabricación se hará más adelante.</div>
-                  <div>• El presupuesto queda editable.</div>
-                  <div>• Después se solicita el paso a Producción.</div>
-                </div>
-                <Button onClick={() => confirmM.mutate({ fulfillmentMode: "acopio" })} disabled={confirmM.isPending}>
-                  {confirmM.isPending ? "Confirmando..." : "Confirmar en Acopio"}
-                </Button>
+                <div className="muted" style={{ marginBottom: 14 }}>El portón queda en espera. Se podrá seguir gestionando desde <b>Acopio → Producción</b> y mantiene una instancia de edición.</div>
+                <Button onClick={() => confirmM.mutate({ fulfillmentMode: "acopio" })} disabled={confirmM.isPending}>{confirmM.isPending ? "Confirmando..." : "Confirmar en Acopio"}</Button>
               </div>
-
-              <div
-                style={{
-                  border: "1px solid #f2d3bf",
-                  background: "#fff8f3",
-                  borderRadius: 14,
-                  padding: 16,
-                }}
-              >
+              <div style={{ border: "1px solid #f2d3bf", background: "#fff8f3", borderRadius: 14, padding: 16 }}>
                 <div style={{ fontWeight: 900, fontSize: 18, marginBottom: 8 }}>Producción</div>
-                <div className="muted" style={{ marginBottom: 14 }}>
-                  El portón entra directo en circuito productivo. Ya no podrá editarse desde <b>Presupuestos</b>.
-                </div>
-                <div style={{ fontSize: 13, lineHeight: 1.45, marginBottom: 16 }}>
-                  <div>• Ideal cuando debe avanzar de inmediato.</div>
-                  <div>• No permite edición posterior desde Presupuestos.</div>
-                  <div>• Si tiene medición comprada, la continuidad y correcciones siguen desde Mediciones.</div>
-                </div>
-                <Button variant="primary" onClick={() => confirmM.mutate({ fulfillmentMode: "produccion" })} disabled={confirmM.isPending}>
-                  {confirmM.isPending ? "Confirmando..." : "Confirmar en Producción"}
-                </Button>
+                <div className="muted" style={{ marginBottom: 14 }}>El portón entra directo en circuito productivo. Ya no podrá editarse desde <b>Presupuestos</b>.</div>
+                <Button variant="primary" onClick={() => confirmM.mutate({ fulfillmentMode: "produccion" })} disabled={confirmM.isPending}>{confirmM.isPending ? "Confirmando..." : "Confirmar en Producción"}</Button>
               </div>
             </div>
-
-            <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 16 }}>
-              <Button variant="ghost" onClick={() => setConfirmChoiceOpen(false)} disabled={confirmM.isPending}>
-                Cancelar
-              </Button>
-            </div>
+            <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 16 }}><Button variant="ghost" onClick={() => setConfirmChoiceOpen(false)} disabled={confirmM.isPending}>Cancelar</Button></div>
           </div>
         </div>
       )}
@@ -593,21 +413,18 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
       <div className="spacer" />
       <HeaderBar pricelists={pricelistsQ.data || []} loadingPricelists={pricelistsQ.isLoading} showMargin />
       <div className="spacer" />
-
       <div className="row quote-row">
         <div className="card" style={{ flex: 1, minWidth: 320 }}>
           <PortonDimensions />
           <div className="spacer" />
           <SectionCatalog kind={catalogKind} />
         </div>
-
         <div className="card" style={{ flex: 2, minWidth: 520 }}>
           <LinesTable />
           <div className="spacer" />
           <SummaryBox totals={totals} />
         </div>
       </div>
-
       {(saveM.isError || confirmM.isError || marcoDoorM.isError || ipanelDoorM.isError) && <div className="spacer" />}
       {saveM.isError && <div style={{ color: "#d93025", fontSize: 13 }}>{saveM.error.message}</div>}
       {confirmM.isError && <div style={{ color: "#d93025", fontSize: 13 }}>{confirmM.error.message}</div>}
