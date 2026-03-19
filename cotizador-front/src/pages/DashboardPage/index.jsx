@@ -286,11 +286,14 @@ export default function DashboardPage() {
         </div>
         <textarea
           value={doorFormula}
-          onChange={(e) => setDoorFormula(e.target.value)}
+          readOnly
           placeholder="Ej: ( precio_venta * 2 ) + 1000 / 2"
-          style={{ width: "100%", minHeight: 72, padding: 10, borderRadius: 10, border: "1px solid #ddd", resize: "vertical" }}
+          style={{ width: "100%", minHeight: 72, padding: 10, borderRadius: 10, border: "1px solid #ddd", resize: "vertical", background: "#f6f7f8", color: "#111827", cursor: "default" }}
         />
-        <div className="muted" style={{ marginTop: 8 }}>Ejemplo válido: <b>( precio_venta * 2 ) + 1000 / 2</b></div>
+        <div className="muted" style={{ marginTop: 8 }}>
+          Esta fórmula se modifica solo con los botones y el campo <b>Valor fijo</b>.
+        </div>
+        <div className="muted" style={{ marginTop: 4 }}>Ejemplo válido: <b>( precio_venta * 2 ) + 1000 / 2</b></div>
         <div className="spacer" />
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
           <Button variant="primary" onClick={onSaveDoorFormula} disabled={savingDoorFormula || doorQuoteSettingsQ.isLoading}>{savingDoorFormula ? "Guardando..." : "Guardar fórmula"}</Button>
