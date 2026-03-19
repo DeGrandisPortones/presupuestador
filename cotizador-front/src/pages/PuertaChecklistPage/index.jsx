@@ -56,67 +56,6 @@ const ACCESORIO_OPTIONS = [
   { value: "Otro", label: "Otro" },
 ];
 
-const FULFILLMENT_OPTIONS = [
-  { value: "acopio", label: "Acopio" },
-  { value: "produccion", label: "Producción" },
-];
-
-const SAVE_REQUIRED_FIELDS = Object.freeze(["end_customer.name"]);
-const CONFIRM_REQUIRED_FIELDS = Object.freeze([
-  "end_customer.name",
-  "end_customer.phone",
-  "end_customer.address",
-  "ipanel_quote_id",
-  "supplier_odoo_partner_id",
-  "sale_amount",
-  "purchase_amount",
-  "fulfillment_mode",
-]);
-
-function isBlankValue(value) {
-  return String(value ?? "").trim() === "";
-}
-function parseAmount(value) {
-  const n = Number(String(value ?? "").replace(",", "."));
-  return Number.isFinite(n) ? n : 0;
-}
-function getDoorFieldValue(form, fieldKey) {
-  switch (fieldKey) {
-    case "end_customer.name":
-      return form?.end_customer?.name || "";
-    case "end_customer.phone":
-      return form?.end_customer?.phone || "";
-    case "end_customer.address":
-      return form?.end_customer?.address || "";
-    case "ipanel_quote_id":
-      return form?.ipanel_quote_id || "";
-    case "supplier_odoo_partner_id":
-      return form?.supplier_odoo_partner_id || "";
-    case "sale_amount":
-      return parseAmount(form?.sale_amount);
-    case "purchase_amount":
-      return parseAmount(form?.purchase_amount);
-    case "fulfillment_mode":
-      return String(form?.fulfillment_mode || "").trim().toLowerCase();
-    default:
-      return "";
-  }
-}
-function isDoorFieldMissing(form, fieldKey) {
-  const value = getDoorFieldValue(form, fieldKey);
-  if (fieldKey === "sale_amount" || fieldKey === "purchase_amount") return Number(value || 0) <= 0;
-  if (fieldKey === "fulfillment_mode") return !["acopio", "produccion"].includes(String(value || "").toLowerCase());
-  return isBlankValue(value);
-}
-function buildDoorValidationState(form) {
-  const saveMissing = SAVE_REQUIRED_FIELDS.filter((fieldKey) => isDoorFieldMissing(form, fieldKey));
-  const confirmMissing = CONFIRM_REQUIRED_FIELDS.filter((fieldKey) => isDoorFieldMissing(form, fieldKey));
-  return { saveMissing, confirmMissing };
-}
-function invalidFieldStyle(invalid) {
-  return invalid ? { border: "1px solid #d93025", background: "#fff5f5" } : {};
-}
-
 function todayISO() {
   const d = new Date();
   const y = d.getFullYear();
@@ -132,13 +71,13 @@ function parseAmount(v) {
   const n = Number(String(v ?? "").replace(",", "."));
   return Number.isFinite(n) ? n : 0;
 }
-function Select({ value, onChange, options, placeholder = "—", disabled = false }) {
+function Select({ value, onChange, options, placeholder = "—", disabled = false, style = {} }) {
   return (
     <select
       value={value ?? ""}
       onChange={(e) => onChange?.(e.target.value)}
       disabled={disabled}
-      style={{ padding: 10, borderRadius: 10, border: "1px solid #ddd", width: "100%" }}
+      style={{ padding: 10, borderRadius: 10, border: "1px solid #ddd", width: "100%", ...style }}
     >
       <option value="">{placeholder}</option>
       {options.map((o) => (
@@ -158,12 +97,10 @@ function Section({ title, children }) {
 function Row({ children }) {
   return <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>{children}</div>;
 }
-function Field({ label, children, minWidth = 220, required = false, invalid = false }) {
+function Field({ label, children, minWidth = 220 }) {
   return (
     <div style={{ flex: 1, minWidth }}>
-      <div className="muted" style={{ marginBottom: 6, color: invalid ? "#d93025" : undefined }}>
-        {label}{required ? <span style={{ color: "#d93025" }}> *</span> : null}
-      </div>
+      <div className="muted" style={{ marginBottom: 6 }}>{label}</div>
       {children}
     </div>
   );
@@ -231,6 +168,27 @@ function decisionLabel(v) {
   if (v === "rejected") return "Rechazado";
   return "Pendiente";
 }
+function requiredLabel(text) {
+  return <>{text} <span style={{ color: "#d93025" }}>*</span></>;
+}
+function getMissingConfirmFields(form) {
+  const missing = [];
+  if (!String(form?.end_customer?.name || "").trim()) missing.push("Nombre del cliente");
+  if (!String(form?.end_customer?.phone || "").trim()) missing.push("Teléfono del cliente");
+  if (!String(form?.end_customer?.address || "").trim()) missing.push("Dirección del cliente");
+  if (!String(form?.end_customer?.city || "").trim()) missing.push("Localidad del cliente");
+  if (!String(form?.ipanel_quote_id || "").trim()) missing.push("Ipanel vinculado");
+  if (!String(form?.supplier_odoo_partner_id || "").trim()) missing.push("Proveedor");
+  if (parseAmount(form?.sale_amount) <= 0) missing.push("Importe venta marco");
+  if (parseAmount(form?.purchase_amount) <= 0) missing.push("Importe compra marco");
+  if (!["acopio", "produccion"].includes(String(form?.fulfillment_mode || "").trim().toLowerCase())) missing.push("Destino");
+  return missing;
+}
+function getInputStyle(isMissing, extra = {}) {
+  return isMissing
+    ? { width: "100%", borderColor: "#d93025", boxShadow: "0 0 0 1px #d93025 inset", background: "#fff5f5", ...extra }
+    : { width: "100%", ...extra };
+}
 
 export default function PuertaChecklistPage() {
   const { id } = useParams();
@@ -283,19 +241,8 @@ export default function PuertaChecklistPage() {
   const canSellerEdit = !!user?.is_vendedor && authUserId === doorOwnerId;
   const canCommercialAct = !!user?.is_enc_comercial && door?.status === "pending_approvals" && door?.commercial_decision === "pending";
   const canTechAct = !!user?.is_rev_tecnica && door?.status === "pending_approvals" && door?.technical_decision === "pending";
-  const validationState = useMemo(() => buildDoorValidationState(form), [form]);
-  const pdfReady = validationState.confirmMissing.length === 0;
-  const highlightSaveField = canSellerEdit;
-  const confirmRequirementLabels = {
-    "end_customer.name": "Nombre del cliente",
-    "end_customer.phone": "Teléfono del cliente",
-    "end_customer.address": "Dirección del cliente",
-    "ipanel_quote_id": "Ipanel vinculado",
-    "supplier_odoo_partner_id": "Proveedor",
-    "sale_amount": "Importe venta marco",
-    "purchase_amount": "Importe compra marco",
-    "fulfillment_mode": "Destino",
-  };
+  const missingConfirmFields = useMemo(() => getMissingConfirmFields(form || {}), [form]);
+  const canGeneratePdf = missingConfirmFields.length === 0;
 
   function continueDoorWorkflow(savedDoor) {
     if (!returnToPanel) return false;
@@ -366,9 +313,8 @@ export default function PuertaChecklistPage() {
 
   async function handleDoorPdf(mode = "presupuesto") {
     try {
-      if (!pdfReady) {
-        toast.error("Completá Ipanel, proveedor, importes y destino para habilitar el PDF de la puerta.");
-        return;
+      if (!canGeneratePdf) {
+        throw new Error(`Faltan completar campos obligatorios: ${missingConfirmFields.join(", ")}`);
       }
       if (canSellerEdit) {
         await updateDoor(id, { record: form });
@@ -410,8 +356,8 @@ export default function PuertaChecklistPage() {
                 Ver Ipanel vinculado
               </Button>
             ) : null}
-            <Button variant="secondary" disabled={!pdfReady} onClick={() => handleDoorPdf("presupuesto")}>PDF puerta</Button>
-            {user?.is_distribuidor ? <Button variant="secondary" disabled={!pdfReady} onClick={() => handleDoorPdf("proforma")}>PDF proforma puerta</Button> : null}
+            <Button variant="secondary" onClick={() => handleDoorPdf("presupuesto")} disabled={!canGeneratePdf}>PDF puerta</Button>
+            {user?.is_distribuidor ? <Button variant="secondary" onClick={() => handleDoorPdf("proforma")} disabled={!canGeneratePdf}>PDF proforma puerta</Button> : null}
             <Button variant="ghost" onClick={() => navigate(`/puertas/${id}`)}>Volver a la puerta</Button>
           </div>
         </div>
@@ -426,6 +372,15 @@ export default function PuertaChecklistPage() {
         <>
           <div className="spacer" />
 
+          {missingConfirmFields.length > 0 && canSellerEdit ? (
+            <Section title="Pendientes para confirmar">
+              <div style={{ color: "#b3261e", fontWeight: 700, marginBottom: 8 }}>Completá estos campos obligatorios para poder confirmar / generar PDF:</div>
+              <ul style={{ margin: 0, paddingLeft: 18 }}>
+                {missingConfirmFields.map((item) => <li key={item}>{item}</li>)}
+              </ul>
+            </Section>
+          ) : null}
+
           <Section title="Estado">
             <div className="muted" style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
               <span>Estado: <b>{door.status}</b></span>
@@ -436,31 +391,21 @@ export default function PuertaChecklistPage() {
             </div>
           </Section>
 
-          {canSellerEdit && validationState.confirmMissing.length > 0 && (
-            <Section title="Pendientes para confirmar">
-              <div style={{ padding: 10, borderRadius: 10, border: "1px solid #f2c1be", background: "#fff5f5" }}>
-                {validationState.confirmMissing.map((fieldKey) => (
-                  <div key={fieldKey} style={{ color: "#b42318", marginBottom: 4 }}>• {confirmRequirementLabels[fieldKey] || fieldKey}</div>
-                ))}
-              </div>
-            </Section>
-          )}
-
           <Section title="Cliente">
             <Row>
-              <Field label="Nombre" required invalid={highlightSaveField && isDoorFieldMissing(form, "end_customer.name")}>
+              <Field label={requiredLabel("Nombre")}>
                 <Input
                   value={form.end_customer?.name || ""}
                   onChange={(v) => setForm({ ...form, end_customer: { ...(form.end_customer || {}), name: v }, obra_cliente: v })}
-                  style={{ width: "100%", ...invalidFieldStyle(highlightSaveField && isDoorFieldMissing(form, "end_customer.name")) }}
+                  style={getInputStyle(!String(form.end_customer?.name || "").trim())}
                   disabled={!canSellerEdit}
                 />
               </Field>
-              <Field label="Teléfono" required invalid={highlightSaveField && isDoorFieldMissing(form, "end_customer.phone")}>
+              <Field label={requiredLabel("Teléfono")}>
                 <Input
                   value={form.end_customer?.phone || ""}
                   onChange={(v) => setForm({ ...form, end_customer: { ...(form.end_customer || {}), phone: v } })}
-                  style={{ width: "100%", ...invalidFieldStyle(highlightSaveField && isDoorFieldMissing(form, "end_customer.phone")) }}
+                  style={getInputStyle(!String(form.end_customer?.phone || "").trim())}
                   disabled={!canSellerEdit}
                 />
               </Field>
@@ -477,19 +422,19 @@ export default function PuertaChecklistPage() {
             <div className="spacer" />
 
             <Row>
-              <Field label="Dirección" required invalid={highlightSaveField && isDoorFieldMissing(form, "end_customer.address")}>
+              <Field label={requiredLabel("Dirección")}>
                 <Input
                   value={form.end_customer?.address || ""}
                   onChange={(v) => setForm({ ...form, end_customer: { ...(form.end_customer || {}), address: v } })}
-                  style={{ width: "100%", ...invalidFieldStyle(highlightSaveField && isDoorFieldMissing(form, "end_customer.address")) }}
+                  style={getInputStyle(!String(form.end_customer?.address || "").trim())}
                   disabled={!canSellerEdit}
                 />
               </Field>
-              <Field label="Localidad">
+              <Field label={requiredLabel("Localidad")}>
                 <Input
                   value={form.end_customer?.city || ""}
                   onChange={(v) => setForm({ ...form, end_customer: { ...(form.end_customer || {}), city: v } })}
-                  style={{ width: "100%" }}
+                  style={getInputStyle(!String(form.end_customer?.city || "").trim())}
                   disabled={!canSellerEdit}
                 />
               </Field>
@@ -529,25 +474,16 @@ export default function PuertaChecklistPage() {
               <Field label="Fecha">
                 <Input type="date" value={form.fecha || ""} onChange={(v) => setForm({ ...form, fecha: v })} style={{ width: "100%" }} disabled={!canSellerEdit} />
               </Field>
-              <Field label="Destino" required invalid={highlightSaveField && isDoorFieldMissing(form, "fulfillment_mode")}>
-                <Select
-                  value={String(form.fulfillment_mode || "").trim().toLowerCase()}
-                  onChange={(v) => setForm({ ...form, fulfillment_mode: v })}
-                  options={FULFILLMENT_OPTIONS}
-                  placeholder="Seleccionar destino"
-                  disabled={!canSellerEdit}
-                />
-              </Field>
             </Row>
           </Section>
 
           <Section title="Ipanel + Marco de puerta">
             <Row>
-              <Field label="Ipanel vinculado" required invalid={highlightSaveField && isDoorFieldMissing(form, "ipanel_quote_id")}>
+              <Field label={requiredLabel("Ipanel vinculado")}>
                 <Input
                   value={form.ipanel_quote_label || ipanelQ.data?.quote_number || ipanelQ.data?.odoo_sale_order_name || form.ipanel_quote_id || ""}
                   onChange={(v) => setForm({ ...form, ipanel_quote_label: v })}
-                  style={{ width: "100%", ...invalidFieldStyle(highlightSaveField && isDoorFieldMissing(form, "ipanel_quote_id")) }}
+                  style={getInputStyle(!String(form.ipanel_quote_id || workflowIpanelQuoteId || "").trim())}
                   disabled
                 />
               </Field>
@@ -583,17 +519,11 @@ export default function PuertaChecklistPage() {
                 <div style={{ fontWeight: 900, fontSize: 18 }}>Total puerta: $ {Number(summaryQ.data.total || 0).toLocaleString("es-AR")}</div>
               </div>
             ) : <div className="muted">Calculando fórmula de puerta…</div>}
-
-            {!pdfReady ? (
-              <div className="muted" style={{ marginTop: 10 }}>
-                Completá Ipanel, proveedor, importes y destino para habilitar el PDF de la puerta.
-              </div>
-            ) : null}
           </Section>
 
           <Section title="Proveedor / costos del marco">
             <Row>
-              <Field label="Proveedor con tag Puerta" required invalid={highlightSaveField && isDoorFieldMissing(form, "supplier_odoo_partner_id")}>
+              <Field label={requiredLabel("Proveedor con tag Puerta")}>
                 <Select
                   value={String(form.supplier_odoo_partner_id || "")}
                   onChange={(v) => {
@@ -607,6 +537,7 @@ export default function PuertaChecklistPage() {
                   options={(suppliersQ.data || []).map((s) => ({ value: String(s.id), label: s.name }))}
                   placeholder={suppliersQ.isLoading ? "Cargando proveedores..." : "Seleccionar proveedor"}
                   disabled={!canSellerEdit}
+                  style={getInputStyle(!String(form.supplier_odoo_partner_id || "").trim())}
                 />
               </Field>
               <Field label="Nombre proveedor">
@@ -620,14 +551,32 @@ export default function PuertaChecklistPage() {
             <div className="spacer" />
 
             <Row>
-              <Field label="Importe venta marco" required invalid={highlightSaveField && isDoorFieldMissing(form, "sale_amount")}>
-                <Input value={form.sale_amount || ""} onChange={(v) => setForm({ ...form, sale_amount: v })} style={{ width: "100%", ...invalidFieldStyle(highlightSaveField && isDoorFieldMissing(form, "sale_amount")) }} disabled={!canSellerEdit} />
+              <Field label={requiredLabel("Importe venta marco")}>
+                <Input value={form.sale_amount || ""} onChange={(v) => setForm({ ...form, sale_amount: v })} style={getInputStyle(parseAmount(form.sale_amount) <= 0)} disabled={!canSellerEdit} />
               </Field>
-              <Field label="Importe compra marco" required invalid={highlightSaveField && isDoorFieldMissing(form, "purchase_amount")}>
-                <Input value={form.purchase_amount || ""} onChange={(v) => setForm({ ...form, purchase_amount: v })} style={{ width: "100%", ...invalidFieldStyle(highlightSaveField && isDoorFieldMissing(form, "purchase_amount")) }} disabled={!canSellerEdit} />
+              <Field label={requiredLabel("Importe compra marco")}>
+                <Input value={form.purchase_amount || ""} onChange={(v) => setForm({ ...form, purchase_amount: v })} style={getInputStyle(parseAmount(form.purchase_amount) <= 0)} disabled={!canSellerEdit} />
               </Field>
               <Field label="Condiciones proveedor">
                 <Input value={form.proveedor_condiciones || ""} onChange={(v) => setForm({ ...form, proveedor_condiciones: v })} style={{ width: "100%" }} disabled={!canSellerEdit} />
+              </Field>
+            </Row>
+
+            <div className="spacer" />
+
+            <Row>
+              <Field label={requiredLabel("Destino")}>
+                <Select
+                  value={String(form.fulfillment_mode || "")}
+                  onChange={(v) => setForm({ ...form, fulfillment_mode: v })}
+                  options={[
+                    { value: "acopio", label: "Acopio" },
+                    { value: "produccion", label: "Producción" },
+                  ]}
+                  placeholder="Seleccionar destino"
+                  disabled={!canSellerEdit}
+                  style={getInputStyle(!["acopio", "produccion"].includes(String(form.fulfillment_mode || "")))}
+                />
               </Field>
             </Row>
           </Section>
@@ -845,11 +794,11 @@ export default function PuertaChecklistPage() {
               {canSellerEdit && (
                 <>
                   <Button onClick={() => saveM.mutate()} disabled={saveM.isPending || submitM.isPending}>Guardar</Button>
-                  <Button variant="primary" onClick={() => submitM.mutate()} disabled={saveM.isPending || submitM.isPending || !pdfReady}>{submitM.isPending ? "Enviando..." : "Enviar a aprobación"}</Button>
+                  <Button variant="primary" onClick={() => submitM.mutate()} disabled={submitM.isPending || saveM.isPending || missingConfirmFields.length > 0}>Enviar a aprobación</Button>
                 </>
               )}
-              <Button variant="secondary" disabled={!pdfReady} onClick={() => handleDoorPdf("presupuesto")}>Imprimir presupuesto puerta</Button>
-              {user?.is_distribuidor ? <Button variant="secondary" disabled={!pdfReady} onClick={() => handleDoorPdf("proforma")}>Imprimir proforma puerta</Button> : null}
+              <Button variant="secondary" onClick={() => handleDoorPdf("presupuesto")} disabled={!canGeneratePdf}>Imprimir presupuesto puerta</Button>
+              {user?.is_distribuidor ? <Button variant="secondary" onClick={() => handleDoorPdf("proforma")} disabled={!canGeneratePdf}>Imprimir proforma puerta</Button> : null}
             </div>
           </div>
         </>
