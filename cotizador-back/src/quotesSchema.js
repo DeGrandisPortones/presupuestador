@@ -36,6 +36,12 @@ export async function ensureQuotesMeasurementColumns() {
   await dbQuery(`alter table public.presupuestador_quotes add column if not exists confirmed_at timestamptz null;`);
   await dbQuery(`alter table public.presupuestador_quotes add column if not exists deposit_amount numeric(16,2) null;`);
 
+  await dbQuery(`create sequence if not exists public.presupuestador_quote_number_seq start with 1000 increment by 1;`);
+  await dbQuery(`alter table public.presupuestador_quotes add column if not exists quote_number bigint null;`);
+  await dbQuery(`alter table public.presupuestador_quotes alter column quote_number set default nextval('public.presupuestador_quote_number_seq');`);
+  await dbQuery(`update public.presupuestador_quotes set quote_number = nextval('public.presupuestador_quote_number_seq') where quote_number is null;`);
+  await dbQuery(`create unique index if not exists presupuestador_quotes_quote_number_uidx on public.presupuestador_quotes (quote_number);`);
+
   await dbQuery(`alter table public.presupuestador_quotes add column if not exists requires_measurement boolean not null default false;`);
   await dbQuery(`alter table public.presupuestador_quotes add column if not exists measurement_status text not null default 'none';`);
   await dbQuery(`alter table public.presupuestador_quotes add column if not exists measurement_form jsonb null;`);

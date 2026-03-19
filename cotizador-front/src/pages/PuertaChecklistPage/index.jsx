@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useLocation } from "react-router-dom";
 import toast from "react-hot-toast";
 
 import {
@@ -167,7 +167,13 @@ function decisionLabel(v) {
 export default function PuertaChecklistPage() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const user = useAuthStore((s) => s.user);
+  const searchParams = useMemo(() => new URLSearchParams(location.search || ""), [location.search]);
+  const isDoorWorkflow = searchParams.get("door_workflow") === "1";
+  const workflowStage = String(searchParams.get("workflow_stage") || "").trim();
+  const workflowPortonId = String(searchParams.get("porton_id") || "").trim();
+  const workflowIpanelQuoteId = String(searchParams.get("ipanel_quote_id") || "").trim();
 
   const q = useQuery({
     queryKey: ["door", id],
@@ -190,7 +196,7 @@ export default function PuertaChecklistPage() {
     setForm(normalizeForm(door.record, user));
   }, [door, user]);
 
-  const ipanelQuoteId = String(form?.ipanel_quote_id || "").trim();
+  const ipanelQuoteId = String(form?.ipanel_quote_id || workflowIpanelQuoteId || "").trim();
   const ipanelQ = useQuery({
     queryKey: ["quote", "ipanel", ipanelQuoteId],
     queryFn: () => getQuote(ipanelQuoteId),
@@ -209,13 +215,31 @@ export default function PuertaChecklistPage() {
   const canCommercialAct = !!user?.is_enc_comercial && door?.status === "pending_approvals" && door?.commercial_decision === "pending";
   const canTechAct = !!user?.is_rev_tecnica && door?.status === "pending_approvals" && door?.technical_decision === "pending";
 
+  function continueDoorWorkflow(savedDoor) {
+    if (!isDoorWorkflow) return false;
+    const nextIpanelId = String(savedDoor?.record?.ipanel_quote_id || workflowIpanelQuoteId || ipanelQuoteId || "").trim();
+    if (workflowStage === "door_first" && nextIpanelId) {
+      navigate(`/cotizador/ipanel/${nextIpanelId}?door_workflow=1&workflow_stage=ipanel_final&door_id=${encodeURIComponent(id)}&porton_id=${encodeURIComponent(workflowPortonId || savedDoor?.linked_quote_id || "")}`);
+      return true;
+    }
+    if (workflowStage === "door_final" && (workflowPortonId || savedDoor?.linked_quote_id)) {
+      navigate(`/presupuestos/${workflowPortonId || savedDoor?.linked_quote_id}`);
+      return true;
+    }
+    return false;
+  }
+
   const saveM = useMutation({
     mutationFn: () => updateDoor(id, { record: form }),
     onSuccess: (saved) => {
       setForm(normalizeForm(saved.record, user));
-      toast.success("Marco de puerta guardado.");
       q.refetch();
       summaryQ.refetch();
+      if (continueDoorWorkflow(saved)) {
+        toast.success(workflowStage === "door_first" ? "Marco guardado. Seguimos con Ipanel." : "Puerta completa.");
+        return;
+      }
+      toast.success("Marco de puerta guardado.");
     },
     onError: (e) => toast.error(e?.message || "No se pudo guardar el marco de puerta"),
   });
@@ -226,9 +250,13 @@ export default function PuertaChecklistPage() {
       setForm(normalizeForm(saved.record, user));
       return await submitDoor(id);
     },
-    onSuccess: () => {
-      toast.success("Marco de puerta enviado a aprobación.");
+    onSuccess: (saved) => {
       q.refetch();
+      if (continueDoorWorkflow(saved)) {
+        toast.success(workflowStage === "door_first" ? "Marco enviado. Seguimos con Ipanel." : "Puerta completa.");
+        return;
+      }
+      toast.success("Marco de puerta enviado a aprobación.");
     },
     onError: (e) => toast.error(e?.message || "No se pudo enviar el marco de puerta"),
   });
@@ -268,8 +296,12 @@ export default function PuertaChecklistPage() {
         await updateDoor(id, { record: form });
       }
       const payload = await getDoorQuotePdfPayload(id, mode);
-      if (mode === "proforma") await downloadProformaPdf(payload);
-      else await downloadPresupuestoPdf(payload);
+      const payloadWithSeller = {
+        ...(payload || {}),
+        seller_name: user?.full_name || user?.username || "",
+      };
+      if (mode === "proforma") await downloadProformaPdf(payloadWithSeller);
+      else await downloadPresupuestoPdf(payloadWithSeller);
     } catch (e) {
       toast.error(e?.message || "No se pudo generar el PDF de puerta");
     }
@@ -416,7 +448,7 @@ export default function PuertaChecklistPage() {
             <Row>
               <Field label="Ipanel vinculado">
                 <Input
-                  value={form.ipanel_quote_label || ipanelQ.data?.odoo_sale_order_name || form.ipanel_quote_id || ""}
+                  value={form.ipanel_quote_label || ipanelQ.data?.quote_number || ipanelQ.data?.odoo_sale_order_name || form.ipanel_quote_id || ""}
                   onChange={(v) => setForm({ ...form, ipanel_quote_label: v })}
                   style={{ width: "100%" }}
                   disabled

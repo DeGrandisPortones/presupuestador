@@ -193,6 +193,17 @@ function getQuoteNumber(payload) {
   );
 }
 
+function getSellerName(payload) {
+  return safeStr(
+    payload?.seller_name ??
+      payload?.sellerName ??
+      payload?.created_by_full_name ??
+      payload?.created_by_username ??
+      payload?.payload?.seller_name ??
+      ""
+  );
+}
+
 function buildLines(payload, { useBasePrice }) {
   const coefPct = getMarginPct(payload);
   const coefFactor = 1 + coefPct / 100;
@@ -256,7 +267,7 @@ function drawMeasurementHeader(doc, { quote, form, margin, innerW, compact = fal
   const logoPath = getLogoPath();
   const title = "PLANILLA DE MEDICIÓN";
   const c = quote?.end_customer || {};
-  const quoteNo = safeStr(quote?.odoo_sale_order_name || quote?.id || "—");
+  const quoteNo = safeStr(quote?.odoo_sale_order_name || quote?.quote_number || quote?.id || "—");
 
   const headerH = compact ? 56 : 66;
   doc.save().strokeColor("#111827").lineWidth(1).moveTo(margin, margin + headerH).lineTo(margin + innerW, margin + headerH).stroke().restore();
@@ -510,6 +521,7 @@ function renderPdf({ title, payload, useBasePrice }) {
   const customerEmail = safeStr(endCustomer?.email);
   const customerAddress = safeStr(endCustomer?.address);
   const customerMaps = safeStr(endCustomer?.maps_url);
+  const sellerName = getSellerName(payload);
 
   const destinationRaw = safeStr(payload?.fulfillment_mode);
   const destination = destinationRaw === "acopio" ? "Acopio" : destinationRaw === "produccion" ? "Producción" : (destinationRaw || "—");
@@ -569,15 +581,17 @@ function renderPdf({ title, payload, useBasePrice }) {
 
   const cols1 = showDestination
     ? [
-        { w: rowW * 0.40, text: `Cliente\n${customerName}` },
-        { w: rowW * 0.22, text: `Teléfono\n${customerPhone || "—"}` },
-        { w: rowW * 0.24, text: `Email\n${customerEmail || "—"}` },
-        { w: rowW * 0.14, text: `Destino\n${destination || "—"}` },
+        { w: rowW * 0.35, text: `Cliente\n${customerName}` },
+        { w: rowW * 0.18, text: `Teléfono\n${customerPhone || "—"}` },
+        { w: rowW * 0.22, text: `Email\n${customerEmail || "—"}` },
+        { w: rowW * 0.13, text: `Destino\n${destination || "—"}` },
+        { w: rowW * 0.12, text: `Vendedor\n${sellerName || "—"}` },
       ]
     : [
-        { w: rowW * 0.45, text: `Cliente\n${customerName}` },
-        { w: rowW * 0.25, text: `Teléfono\n${customerPhone || "—"}` },
-        { w: rowW * 0.30, text: `Email\n${customerEmail || "—"}` },
+        { w: rowW * 0.38, text: `Cliente\n${customerName}` },
+        { w: rowW * 0.22, text: `Teléfono\n${customerPhone || "—"}` },
+        { w: rowW * 0.22, text: `Email\n${customerEmail || "—"}` },
+        { w: rowW * 0.18, text: `Vendedor\n${sellerName || "—"}` },
       ];
 
   drawRow(doc, {
@@ -595,6 +609,7 @@ function renderPdf({ title, payload, useBasePrice }) {
   const extraLines = [];
   if (customerAddress) extraLines.push(`Dirección: ${customerAddress}`);
   if (customerMaps) extraLines.push(`Maps: ${customerMaps}`);
+  if (sellerName) extraLines.push(`Vendedor: ${sellerName}`);
   if (paymentMethod) extraLines.push(`Forma de Pago: ${paymentMethod}`);
   if (conditionMode) {
     extraLines.push(`Condición: ${conditionMode}${conditionRaw === "special" && conditionText ? ` (${conditionText})` : ""}`);

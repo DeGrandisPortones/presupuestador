@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useLocation } from "react-router-dom";
 import { useAuthStore } from "../../domain/auth/store.js";
 
 import { getPricelists, getPrices } from "../../api/odoo";
 import { createQuote, getQuote, confirmQuote, submitFinalQuote, updateQuote } from "../../api/quotes";
-import { createOrGetDoorFromQuote, createStandaloneDoor, updateDoor, syncDoorSaleByQuote } from "../../api/doors.js";
+import { syncDoorSaleByQuote } from "../../api/doors.js";
 import { downloadPresupuestoPdf, downloadProformaPdf } from "../../api/pdf";
 import toast from "react-hot-toast";
 
@@ -28,11 +28,17 @@ import SummaryBox from "./components/SummaryBox";
 
 export default function CotizadorPage({ catalogKind = "porton" }) {
   const navigate = useNavigate();
+  const location = useLocation();
   const user = useAuthStore((s) => s.user);
   const params = useParams();
   const qc = useQueryClient();
 
   const idParam = params.id ? String(params.id) : null;
+  const searchParams = useMemo(() => new URLSearchParams(location.search || ""), [location.search]);
+  const isDoorWorkflow = searchParams.get("door_workflow") === "1";
+  const workflowStage = String(searchParams.get("workflow_stage") || "").trim();
+  const workflowDoorId = String(searchParams.get("door_id") || "").trim();
+  const workflowPortonId = String(searchParams.get("porton_id") || "").trim();
 
   const {
     quoteId,
@@ -52,7 +58,6 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
 
   const [ivaRate] = useState(IVA_RATE_DEFAULT);
   const [confirmChoiceOpen, setConfirmChoiceOpen] = useState(false);
-  const [doorChoiceOpen, setDoorChoiceOpen] = useState(false);
 
   useEffect(() => {
     if (!idParam) {
@@ -117,11 +122,23 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
     };
   }
 
+  function normalizeNoteWithSeller(note) {
+    const sellerLabel = String(user?.full_name || user?.username || "").trim();
+    const raw = String(note || "").trim();
+    if (!sellerLabel) return raw;
+    const lines = raw ? raw.split(/\r?\n/).filter(Boolean) : [];
+    const filtered = lines.filter((line) => !/^vendedor\s*:/i.test(String(line || "").trim()));
+    filtered.push(`Vendedor: ${sellerLabel}`);
+    return filtered.join("\n");
+  }
+
   function getDraftPayload() {
+    const base = buildPayloadForBack() || {};
     return withCreatorRole({
-      ...buildPayloadForBack(),
+      ...base,
       catalog_kind: catalogKind,
-      fulfillment_mode: buildPayloadForBack()?.fulfillment_mode || "acopio",
+      fulfillment_mode: base?.fulfillment_mode || "acopio",
+      note: normalizeNoteWithSeller(base?.note),
     });
   }
 
@@ -171,84 +188,34 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
     validateCustomerContact(c, { requirePhone: true, requireMaps: false, requireCity: false });
   }
 
-  function buildStandaloneDoorRecordSeed(baseRecord, payload) {
-    const record = baseRecord && typeof baseRecord === "object" ? { ...baseRecord } : {};
-    const currentCustomer = record.end_customer && typeof record.end_customer === "object" ? record.end_customer : {};
-    const payloadCustomer = payload?.end_customer && typeof payload.end_customer === "object" ? payload.end_customer : {};
-    record.end_customer = {
-      ...currentCustomer,
-      name: String(payloadCustomer.name || currentCustomer.name || "").trim(),
-      phone: String(payloadCustomer.phone || currentCustomer.phone || "").trim(),
-      email: String(payloadCustomer.email || currentCustomer.email || "").trim(),
-      address: String(payloadCustomer.address || currentCustomer.address || "").trim(),
-      city: String(payloadCustomer.city || currentCustomer.city || "").trim(),
-      maps_url: String(payloadCustomer.maps_url || currentCustomer.maps_url || "").trim(),
-    };
-    record.obra_cliente = String(record.end_customer.name || record.obra_cliente || "").trim();
-    return record;
-  }
-
-  async function ensureDoorBundle({ requireLinkedQuote = false } = {}) {
-    if ((catalogKind || "porton") !== "porton") throw new Error("Puerta solo disponible desde el cotizador de portones.");
+  async function persistDraftForPdf() {
     const payload = getDraftPayload();
-    const customerName = String(payload?.end_customer?.name || "").trim();
-    if (!customerName) throw new Error("Completá al menos el nombre del cliente.");
-
-    if (Array.isArray(payload?.lines) && payload.lines.length > 0) {
-      validateDraft(payload);
-      let linkedQuoteId = quoteId || idParam;
-      if (linkedQuoteId) {
-        await updateQuote(linkedQuoteId, payload);
-      } else {
-        const created = await createQuote(payload);
-        linkedQuoteId = created.id;
-        setQuoteMeta({ quoteId: created.id, status: created.status, rejectionNotes: created.rejection_notes });
-        qc.invalidateQueries({ queryKey: ["quotes", "mine"] });
-      }
-      return await createOrGetDoorFromQuote(linkedQuoteId);
+    validateDraft(payload);
+    let q = null;
+    if (quoteId) q = await updateQuote(quoteId, payload);
+    else q = await createQuote(payload);
+    setQuoteMeta({ quoteId: q.id, status: q.status, rejectionNotes: q.rejection_notes });
+    qc.invalidateQueries({ queryKey: ["quotes", "mine"] });
+    if (!quoteId) {
+      navigate(catalogKind === "ipanel" ? `/cotizador/ipanel/${q.id}${location.search || ""}` : `/cotizador/${q.id}${location.search || ""}`, { replace: true });
     }
-
-    if (requireLinkedQuote) {
-      throw new Error("Primero cargá al menos un producto en el presupuesto del portón para vincular Ipanel.");
-    }
-
-    const standaloneDoor = await createStandaloneDoor();
-    const nextRecord = buildStandaloneDoorRecordSeed(standaloneDoor?.record, payload);
-    return await updateDoor(standaloneDoor.id, { record: nextRecord });
+    return {
+      quote: q,
+      payload: {
+        ...payload,
+        id: q.id,
+        quote_id: q.id,
+        quote_number: q.quote_number || q.id,
+        seller_name: user?.full_name || user?.username || "",
+      },
+    };
   }
 
-  async function ensureLinkedIpanelQuote() {
-    const portonPayload = getDraftPayload();
-    const door = await ensureDoorBundle({ requireLinkedQuote: true });
-    const existingIpanelId = String(door?.record?.ipanel_quote_id || "").trim();
-    if (existingIpanelId) {
-      return { door, ipanelQuoteId: existingIpanelId, reused: true };
-    }
-
-    const sourcePayload = portonPayload?.payload || {};
-    const linkedLabel = String(door?.linked_quote_odoo_name || door?.record?.asociado_porton || door?.linked_quote_id || "").trim();
-    const ipanelPayload = withCreatorRole({
-      catalog_kind: "ipanel",
-      fulfillment_mode: "acopio",
-      pricelist_id: Number(pricelistId || portonPayload?.pricelist_id || 1),
-      bill_to_odoo_partner_id: portonPayload?.bill_to_odoo_partner_id || null,
-      end_customer: { ...(portonPayload?.end_customer || {}) },
-      lines: [],
-      payload: {
-        payment_method: String(sourcePayload?.payment_method || "").trim(),
-        condition_mode: String(sourcePayload?.condition_mode || "").trim(),
-        condition_text: String(sourcePayload?.condition_text || "").trim(),
-      },
-      note: linkedLabel ? `Ipanel vinculado a ${linkedLabel}` : "Ipanel vinculado a marco de puerta",
-    });
-
-    const createdIpanel = await createQuote(ipanelPayload);
-    const nextRecord = buildStandaloneDoorRecordSeed(door?.record, portonPayload);
-    nextRecord.ipanel_quote_id = createdIpanel.id;
-    nextRecord.ipanel_catalog_kind = "ipanel";
-    nextRecord.ipanel_linked_at = new Date().toISOString();
-    const updatedDoor = await updateDoor(door.id, { record: nextRecord });
-    return { door: updatedDoor, ipanelQuoteId: createdIpanel.id, reused: false };
+  function maybeContinueDoorWorkflow(savedQuote) {
+    if (!isDoorWorkflow || (catalogKind || "") !== "ipanel" || !workflowDoorId) return false;
+    const nextUrl = `/puertas/${workflowDoorId}?door_workflow=1&workflow_stage=${encodeURIComponent(workflowStage === "ipanel_first" ? "door_final" : workflowStage)}&ipanel_quote_id=${encodeURIComponent(savedQuote?.id || quoteId || idParam || "")}&porton_id=${encodeURIComponent(workflowPortonId || "")}`;
+    navigate(nextUrl);
+    return true;
   }
 
   const saveM = useMutation({
@@ -261,6 +228,10 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
     onSuccess: (q) => {
       setQuoteMeta({ quoteId: q.id, status: q.status, rejectionNotes: q.rejection_notes });
       qc.invalidateQueries({ queryKey: ["quotes", "mine"] });
+      if (maybeContinueDoorWorkflow(q)) {
+        toast.success("Ipanel guardado. Seguimos con el marco de puerta.");
+        return;
+      }
       navigate(catalogKind === "ipanel" ? `/cotizador/ipanel/${q.id}` : `/cotizador/${q.id}`);
       toast.success("Guardado.");
     },
@@ -270,7 +241,11 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
   const confirmM = useMutation({
     mutationFn: async (variables) => {
       const chosenMode = String(variables?.fulfillmentMode || buildPayloadForBack()?.fulfillment_mode || "acopio").trim();
-      const payload = withCreatorRole({ ...buildPayloadForBack(), catalog_kind: catalogKind, fulfillment_mode: chosenMode });
+      const payload = {
+        ...getDraftPayload(),
+        catalog_kind: catalogKind,
+        fulfillment_mode: chosenMode,
+      };
       validateConfirm(payload);
       let id = quoteId || idParam;
       if (id) {
@@ -287,6 +262,10 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
       setConfirmChoiceOpen(false);
       setQuoteMeta({ quoteId: q.id, status: q.status, rejectionNotes: q.rejection_notes });
       qc.invalidateQueries({ queryKey: ["quotes", "mine"] });
+      if (maybeContinueDoorWorkflow(q)) {
+        toast.success("Ipanel confirmado. Seguimos con el marco de puerta.");
+        return;
+      }
       if (!isRevisionQuote && (catalogKind || "porton") === "porton") {
         try {
           const syncedDoor = await syncDoorSaleByQuote(q.id);
@@ -303,29 +282,9 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
     onError: (e) => toast.error(e?.message || (isRevisionQuote ? "No se pudo enviar la cotización final" : "No se pudo confirmar")),
   });
 
-  const marcoDoorM = useMutation({
-    mutationFn: async () => await ensureDoorBundle({ requireLinkedQuote: false }),
-    onSuccess: (door) => {
-      setDoorChoiceOpen(false);
-      navigate(`/puertas/${door.id}`);
-      toast.success(door?.linked_quote_id ? "Marco de puerta vinculado listo." : "Marco de puerta aislado listo.");
-    },
-    onError: (e) => toast.error(e?.message || "No se pudo abrir el marco de puerta"),
-  });
-
-  const ipanelDoorM = useMutation({
-    mutationFn: async () => await ensureLinkedIpanelQuote(),
-    onSuccess: ({ ipanelQuoteId, reused }) => {
-      setDoorChoiceOpen(false);
-      navigate(`/cotizador/ipanel/${ipanelQuoteId}`);
-      toast.success(reused ? "Abriendo presupuesto Ipanel vinculado." : "Presupuesto Ipanel vinculado listo.");
-    },
-    onError: (e) => toast.error(e?.message || "No se pudo abrir el presupuesto Ipanel"),
-  });
-
   const onDownloadPresupuesto = async () => {
     try {
-      const payload = withCreatorRole({ ...buildPayloadForBack(), catalog_kind: catalogKind });
+      const { payload } = await persistDraftForPdf();
       validatePdfDownload(payload);
       await downloadPresupuestoPdf(payload);
     } catch (e) {
@@ -335,7 +294,7 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
 
   const onDownloadProforma = async () => {
     try {
-      const payload = withCreatorRole({ ...buildPayloadForBack(), catalog_kind: catalogKind });
+      const { payload } = await persistDraftForPdf();
       validatePdfDownload(payload);
       await downloadProformaPdf(payload);
     } catch (e) {
@@ -344,8 +303,6 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
   };
 
   const canConfirm = isRevisionQuote ? ["", "draft", "rejected"].includes(finalStatus || "") : ["draft", "rejected_commercial", "rejected_technical"].includes(status);
-  const canOpenDoor = !!((user?.is_vendedor || user?.is_superuser) && (catalogKind || "porton") === "porton" && !isRevisionQuote);
-  const doorBusy = marcoDoorM.isPending || ipanelDoorM.isPending;
 
   return (
     <div className="container">
@@ -360,33 +317,10 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
           <Button variant="secondary" onClick={onDownloadPresupuesto}>PDF presupuesto</Button>
           {user?.is_distribuidor ? <Button variant="secondary" onClick={onDownloadProforma}>PDF proforma</Button> : null}
-          {canOpenDoor ? <Button variant="ghost" onClick={() => setDoorChoiceOpen(true)} disabled={doorBusy}>{doorBusy ? "Abriendo..." : "Puerta"}</Button> : null}
           <Button onClick={() => saveM.mutate()} disabled={saveM.isPending}>{saveM.isPending ? "Guardando..." : "Guardar"}</Button>
           <Button variant="primary" onClick={() => { if (isRevisionQuote) { confirmM.mutate({}); return; } setConfirmChoiceOpen(true); }} disabled={!canConfirm || confirmM.isPending}>{confirmM.isPending ? "Confirmando..." : (isRevisionQuote ? "Enviar cotización final" : "Confirmar presupuesto")}</Button>
         </div>
       </div>
-
-      {!isRevisionQuote && doorChoiceOpen && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(0, 0, 0, 0.45)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20, zIndex: 1000 }} onClick={() => { if (!doorBusy) setDoorChoiceOpen(false); }}>
-          <div className="card" style={{ width: "100%", maxWidth: 880, background: "#fff", border: "1px solid #ddd", boxShadow: "0 20px 60px rgba(0,0,0,0.18)" }} onClick={(e) => e.stopPropagation()}>
-            <div style={{ fontWeight: 900, fontSize: 22, marginBottom: 6 }}>Elegí el componente de la puerta</div>
-            <div className="muted" style={{ marginBottom: 18 }}>Podés cargar por separado el presupuesto de <b>Ipanel</b> y la ficha de <b>Marco de puerta</b>. Ambos quedan vinculados al mismo portón.</div>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 14 }}>
-              <div style={{ border: "1px solid #d9e5f7", background: "#f7fbff", borderRadius: 14, padding: 16 }}>
-                <div style={{ fontWeight: 900, fontSize: 18, marginBottom: 8 }}>Presupuesto Ipanel</div>
-                <div className="muted" style={{ marginBottom: 14 }}>Abre el cotizador de <b>Ipanel</b> con el cliente ya vinculado al portón para cargar ese componente por separado.</div>
-                <Button onClick={() => ipanelDoorM.mutate()} disabled={doorBusy}>{ipanelDoorM.isPending ? "Abriendo..." : "Abrir Ipanel"}</Button>
-              </div>
-              <div style={{ border: "1px solid #f2d3bf", background: "#fff8f3", borderRadius: 14, padding: 16 }}>
-                <div style={{ fontWeight: 900, fontSize: 18, marginBottom: 8 }}>Marco de puerta</div>
-                <div className="muted" style={{ marginBottom: 14 }}>Abre la ficha técnica y comercial del marco de puerta vinculado al mismo portón.</div>
-                <Button variant="primary" onClick={() => marcoDoorM.mutate()} disabled={doorBusy}>{marcoDoorM.isPending ? "Abriendo..." : "Abrir Marco de puerta"}</Button>
-              </div>
-            </div>
-            <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 16 }}><Button variant="ghost" onClick={() => setDoorChoiceOpen(false)} disabled={doorBusy}>Cancelar</Button></div>
-          </div>
-        </div>
-      )}
 
       {!isRevisionQuote && confirmChoiceOpen && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0, 0, 0, 0.45)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20, zIndex: 1000 }} onClick={() => { if (!confirmM.isPending) setConfirmChoiceOpen(false); }}>
@@ -425,11 +359,9 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
           <SummaryBox totals={totals} />
         </div>
       </div>
-      {(saveM.isError || confirmM.isError || marcoDoorM.isError || ipanelDoorM.isError) && <div className="spacer" />}
+      {(saveM.isError || confirmM.isError) && <div className="spacer" />}
       {saveM.isError && <div style={{ color: "#d93025", fontSize: 13 }}>{saveM.error.message}</div>}
       {confirmM.isError && <div style={{ color: "#d93025", fontSize: 13 }}>{confirmM.error.message}</div>}
-      {marcoDoorM.isError && <div style={{ color: "#d93025", fontSize: 13 }}>{marcoDoorM.error.message}</div>}
-      {ipanelDoorM.isError && <div style={{ color: "#d93025", fontSize: 13 }}>{ipanelDoorM.error.message}</div>}
     </div>
   );
 }

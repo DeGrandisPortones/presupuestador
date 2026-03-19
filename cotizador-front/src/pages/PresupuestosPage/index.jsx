@@ -232,6 +232,10 @@ export default function PresupuestosPage() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["quotes", "mine"] }),
   });
 
+  const linkedDoorQuoteIds = useMemo(() => {
+    return new Set((doorsQ.data || []).map((d) => String(d?.linked_quote_id || "").trim()).filter(Boolean));
+  }, [doorsQ.data]);
+
   useEffect(() => {
     setPage(1);
   }, [filter, searchText]);
@@ -286,7 +290,7 @@ export default function PresupuestosPage() {
           item.rowKind === "quote"
           && item.raw?.fulfillment_mode === "produccion"
           && item.raw?.status !== "draft"
-          && item.raw?.requires_measurement === true
+          && item.raw?.requires_measurement === true,
       );
     }
 
@@ -388,6 +392,7 @@ export default function PresupuestosPage() {
                     && r.acopio_to_produccion_status !== "pending";
                   const hasFinal = !!r.final_copy_id;
                   const finalDraft = hasFinal && !["syncing_odoo", "synced_odoo"].includes(String(r.final_copy_status || ""));
+                  const canAddDoor = String(r?.catalog_kind || "porton").toLowerCase() === "porton" && r.status === "draft" && !linkedDoorQuoteIds.has(String(r.id));
 
                   return (
                     <tr key={r.id}>
@@ -404,6 +409,9 @@ export default function PresupuestosPage() {
                         {r.status === "draft" && (
                           <Button onClick={() => navigate(r.catalog_kind === "ipanel" ? `/cotizador/ipanel/${r.id}` : `/cotizador/${r.id}`)}>Editar</Button>
                         )}
+                        {canAddDoor ? (
+                          <Button variant="ghost" onClick={() => navigate(`/puertas/nuevo/${r.id}`)}>Agregar puerta</Button>
+                        ) : null}
                         {hasFinal ? (
                           <>
                             <Button variant="ghost" onClick={() => navigate(`/presupuestos/${r.final_copy_id}`)}>Ver final</Button>
