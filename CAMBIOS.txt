@@ -1,17 +1,14 @@
-Cambios preparados para presupuestador
+Cambios v2 (puertas)
+- PDF de puerta: se mantiene numeracion con prefijo P usando el codigo de puerta.
+- Venta/compra Odoo de puerta: flujo independiente del porton y compatible con puerta sin porton.
+- Marco de puerta:
+  - agrega campo Destino (Acopio/Produccion)
+  - muestra asterisco en campos requeridos para confirmar
+  - marca en rojo los campos obligatorios faltantes mientras se completa
+  - agrega listado de pendientes para confirmar
+  - agrega boton 'Enviar a aprobacion'
+  - mantiene PDF bloqueado hasta completar los datos obligatorios
 
-Archivos incluidos:
-- cotizador-back/src/routes/doors.routes.js
-- cotizador-front/src/pages/PuertaChecklistPage/index.jsx
-
-Resumen:
-1. El portón sigue con su flujo actual.
-2. La puerta se sincroniza a Odoo de forma independiente cuando Comercial y Técnica la aprueban.
-3. La venta de puerta ya no espera a que el portón tenga sale.order en Odoo.
-4. El PDF de puerta sale con una sola línea: "Puerta" y el monto final calculado por fórmula.
-5. El botón de PDF de puerta queda deshabilitado hasta completar Ipanel, proveedor, importes y destino.
-
-Aplicación:
-- Copiar cada archivo respetando la ruta.
-- Reiniciar front y back según su despliegue habitual.
-- Probar: guardar puerta, aprobar Comercial, aprobar Técnica, verificar creación de purchase.order y sale.order propias.
+Nota:
+- El origen del cliente desde el presupuesto del porton ya estaba contemplado en buildInitialDoorRecord/customerFromQuote del backend.
+- El PDF subido muestra solapamiento en el encabezado/observaciones. Ese ajuste puntual debe hacerse en cotizador-back/src/routes/pdf.routes.js si queres dejar el layout perfecto en esta misma tanda.

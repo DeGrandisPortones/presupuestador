@@ -292,7 +292,7 @@ async function buildDoorQuoteSummary(door, mode = "presupuesto") {
     `Total puerta=${round2(total)}`,
   ].filter(Boolean);
   const payload = {
-    quote_number: door?.door_code || `P${door?.id || ""}`,
+    quote_number: normalizeDoorBaseCode(door?.door_code || `P${door?.id || ""}`),
     created_by_role: "vendedor",
     seller_name: sellerName,
     fulfillment_mode: core.fulfillmentMode || "produccion",
@@ -331,7 +331,7 @@ async function syncDoorSaleToOdoo({ odoo, door, linkedQuote = null }) {
   const saleOrderId = await odoo.executeKw("sale.order", "create", [{
     partner_id: partnerId,
     order_line: [[0, 0, { product_id: productId, product_uom_qty: 1, product_uom: uomId, name: `${name} · ${door.door_code}`, price_unit: round2(summary.total) }]],
-    note: `PUERTA VINCULADA: ${door.door_code}` + (linkedQuote?.id ? `\nPresupuesto portón: ${linkedQuote.id}` : "") + (linkedQuote?.odoo_sale_order_name ? `\nNV portón: ${linkedQuote.odoo_sale_order_name}` : "") + (sellerName ? `\nVendedor: ${sellerName}` : "") + `\n${summary.payload.note || ""}`,
+    note: `${linkedQuote?.id ? "PUERTA VINCULADA" : "PUERTA"}: ${door.door_code}` + (linkedQuote?.id ? `\nPresupuesto portón: ${linkedQuote.id}` : "") + (linkedQuote?.odoo_sale_order_name ? `\nNV portón: ${linkedQuote.odoo_sale_order_name}` : "") + (sellerName ? `\nVendedor: ${sellerName}` : "") + `\n${summary.payload.note || ""}`,
   }]);
   const saleOrderReadId = Number(Array.isArray(saleOrderId) ? saleOrderId[0] : saleOrderId);
   await applySellerToSaleOrder(odoo, saleOrderReadId, sellerName);
