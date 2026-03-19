@@ -93,6 +93,20 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
   const linesKey = useMemo(() => lines.map((l) => `${l.product_id}:${l.qty}`).join("|"), [lines]);
   const isRevisionQuote = (quoteQ.data?.quote_kind || "original") === "copy";
   const finalStatus = String(quoteQ.data?.final_status || "");
+  const visibleQuoteNumber = String(
+    quoteQ.data?.quote_number ||
+    quoteQ.data?.odoo_sale_order_name ||
+    quoteId ||
+    idParam ||
+    ""
+  ).trim();
+  const visibleParentQuoteNumber = String(
+    quoteQ.data?.parent_quote_number ||
+    quoteQ.data?.parent_quote_quote_number ||
+    quoteQ.data?.parent_odoo_sale_order_name ||
+    quoteQ.data?.parent_quote_id ||
+    ""
+  ).trim();
 
   useEffect(() => {
     async function run() {
@@ -158,9 +172,10 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
     const c = payload?.end_customer || {};
     const errs = [];
     if (!String(c.name || "").trim()) errs.push("Completá el nombre del cliente.");
+    if (!String(c.phone || "").trim()) errs.push("Completá el teléfono del cliente.");
     if (!Array.isArray(payload?.lines) || payload.lines.length === 0) errs.push("Agregá al menos un producto.");
     if (errs.length) throw new Error(errs[0]);
-    validateCustomerContact(c, { requirePhone: false, requireMaps: false, requireCity: false });
+    validateCustomerContact(c, { requirePhone: true, requireMaps: false, requireCity: false });
   }
 
   function validateConfirm(payload) {
@@ -310,8 +325,8 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
           <img className="product-logo" src={catalogKind === "ipanel" ? "/brands/ipanel.png" : "/brands/degrandis.png"} alt={catalogKind === "ipanel" ? "Ipanel" : "DeGrandis Portones"} />
           <div>
-            <h2 style={{ margin: 0 }}>{quoteId ? `${isRevisionQuote ? "Ajuste" : "Presupuesto"} #${quoteId}` : "Nuevo presupuesto"}</h2>
-            <div className="muted">Estado: <b>{isRevisionQuote ? (finalStatus || status) : status}</b>{isRevisionQuote && quoteQ.data?.parent_quote_id ? <> · Ref. original: <b>{String(quoteQ.data.parent_quote_id).slice(0, 8)}</b></> : null}</div>
+            <h2 style={{ margin: 0 }}>{visibleQuoteNumber ? `${isRevisionQuote ? "Ajuste" : "Presupuesto"} #${visibleQuoteNumber}` : "Nuevo presupuesto"}</h2>
+            <div className="muted">Estado: <b>{isRevisionQuote ? (finalStatus || status) : status}</b>{isRevisionQuote && quoteQ.data?.parent_quote_id ? <> · Ref. original: <b>{visibleParentQuoteNumber || String(quoteQ.data.parent_quote_id).slice(0, 8)}</b></> : null}</div>
           </div>
         </div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>

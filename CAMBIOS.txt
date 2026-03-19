@@ -1,14 +1,20 @@
-Cambios v2 (puertas)
-- PDF de puerta: se mantiene numeracion con prefijo P usando el codigo de puerta.
-- Venta/compra Odoo de puerta: flujo independiente del porton y compatible con puerta sin porton.
-- Marco de puerta:
-  - agrega campo Destino (Acopio/Produccion)
-  - muestra asterisco en campos requeridos para confirmar
-  - marca en rojo los campos obligatorios faltantes mientras se completa
-  - agrega listado de pendientes para confirmar
-  - agrega boton 'Enviar a aprobacion'
-  - mantiene PDF bloqueado hasta completar los datos obligatorios
+Cambios incluidos:
 
-Nota:
-- El origen del cliente desde el presupuesto del porton ya estaba contemplado en buildInitialDoorRecord/customerFromQuote del backend.
-- El PDF subido muestra solapamiento en el encabezado/observaciones. Ese ajuste puntual debe hacerse en cotizador-back/src/routes/pdf.routes.js si queres dejar el layout perfecto en esta misma tanda.
+1) cotizador-front/src/pages/CotizadorPage/index.jsx
+- Guardar ahora exige nombre + telefono.
+- Imprimir mantiene nombre + telefono.
+- El titulo visible del presupuesto usa quote_number / numero de presupuesto en vez del UUID.
+
+2) cotizador-front/src/pages/PuertaChecklistPage/index.jsx
+- Corregido el error de build por doble declaracion de parseAmount.
+- Guardar en marco ahora exige nombre + telefono.
+- Confirmar / PDF de puerta ya no exige direccion del cliente.
+- Ajustado el mensaje de pendientes del PDF.
+
+3) cotizador-back/src/routes/doors.routes.js
+- El codigo de puerta vinculado toma el numero de presupuesto si existe.
+- La etiqueta de porton vinculado usa numero de presupuesto si existe.
+- Al guardar el marco, se fusiona el cliente entre marco + porton + ipanel.
+- Esa fusion se persiste en los presupuestos vinculados (porton e ipanel), para que si completas telefono en marco se replique.
+- El submit de puerta ya no exige direccion del cliente.
+- El PDF / venta de puerta usan cliente fusionado entre vinculados.

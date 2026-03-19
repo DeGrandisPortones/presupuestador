@@ -9,6 +9,7 @@ import { evaluateDoorQuoteFormula } from "../doorQuoteFormula.js";
 const ODOO_DOOR_PRODUCT_ID = Number(process.env.ODOO_DOOR_PRODUCT_ID || 3226);
 const ODOO_DOOR_SUPPLIER_TAG_NAME = String(process.env.ODOO_DOOR_SUPPLIER_TAG_NAME || "Puerta").trim();
 const IVA_RATE = 0.21;
+const CUSTOMER_KEYS = Object.freeze(["name", "phone", "email", "address", "maps_url", "city"]);
 
 function requireSeller(req, res, next) {
   if (!req.user?.is_vendedor) return res.status(403).json({ ok: false, error: "No autorizado" });
@@ -34,11 +35,44 @@ function nowDateTime() { const d = new Date(); const p = (n) => String(n).padSta
 function parseAmount(v) { const n = Number(String(v ?? "").replace(",", ".")); return Number.isFinite(n) ? round2(n) : 0; }
 function normalizeDoorBaseCode(value) { const raw = safeText(value).toUpperCase(); return raw ? (raw.startsWith("P") ? raw : `P${raw}`) : ""; }
 function buildFallbackDoorCode(seed) { const raw = safeText(seed).replace(/[^A-Za-z0-9]/g, "").toUpperCase(); return `P${raw || "PUERTA"}`; }
-function buildDoorCodeFromQuote(quote) { if (!quote) return ""; return quote.odoo_sale_order_name ? normalizeDoorBaseCode(quote.odoo_sale_order_name) : buildFallbackDoorCode(String(quote.id || "").slice(0, 8)); }
-function buildLinkedPortonLabel(quote) { if (!quote) return ""; return safeText(quote.odoo_sale_order_name) || (safeText(quote.id) ? `Presupuesto ${String(quote.id).slice(0, 8)}` : ""); }
+function buildDoorCodeFromQuote(quote) {
+  if (!quote) return "";
+  const base = safeText(quote.odoo_sale_order_name) || safeText(quote.quote_number) || String(quote.id || "").slice(0, 8);
+  return normalizeDoorBaseCode(base) || buildFallbackDoorCode(String(quote.id || "").slice(0, 8));
+}
+function buildLinkedPortonLabel(quote) {
+  if (!quote) return "";
+  return safeText(quote.odoo_sale_order_name) || safeText(quote.quote_number) || (safeText(quote.id) ? `Presupuesto ${String(quote.id).slice(0, 8)}` : "");
+}
 function buildStandaloneDoorCode(id) { return `P${String(Number(id || 0)).padStart(5, "0")}`; }
 function canReadDoor(user, door) { if (!user || !door) return false; const isOwner = String(door.created_by_user_id) === String(user.user_id); return isOwner || !!user.is_enc_comercial || !!user.is_rev_tecnica; }
 function customerFromQuote(quote) { return { name: safeText(quote?.end_customer?.name), phone: safeText(quote?.end_customer?.phone), email: safeText(quote?.end_customer?.email), address: safeText(quote?.end_customer?.address), maps_url: safeText(quote?.end_customer?.maps_url), city: safeText(quote?.end_customer?.city) }; }
+function emptyCustomer() { return { name: "", phone: "", email: "", address: "", maps_url: "", city: "" }; }
+function normalizeCustomer(value) {
+  const base = value && typeof value === "object" ? value : {};
+  return CUSTOMER_KEYS.reduce((acc, key) => {
+    acc[key] = safeText(base?.[key]);
+    return acc;
+  }, emptyCustomer());
+}
+function mergeCustomers(...sources) {
+  const merged = emptyCustomer();
+  for (const source of sources) {
+    const candidate = normalizeCustomer(source);
+    for (const key of CUSTOMER_KEYS) {
+      if (!merged[key] && candidate[key]) merged[key] = candidate[key];
+    }
+  }
+  return merged;
+}
+function overlayCustomer(existing, merged) {
+  const base = existing && typeof existing === "object" ? { ...existing } : {};
+  const normalized = normalizeCustomer(merged);
+  for (const key of CUSTOMER_KEYS) {
+    if (normalized[key]) base[key] = normalized[key];
+  }
+  return base;
+}
 function buildChecklist(responsible = "") { const date = nowDate(); const mk = (section, item) => ({ section, item, status: "Pendiente", notes: "", responsible, date, ok: false }); return [mk("A", "Confirmar que es puerta principal de acceso."), mk("B", "Definir sentido de giro."), mk("C", "Definir mano desde exterior."), mk("D", "Verificar interferencias y accesorios."), mk("E", "Definir tipo de marco y hoja."), mk("F", "Validar con obra/cliente antes de compra.")]; }
 function buildInitialDoorRecord({ quote = null, user }) {
   const responsible = safeText(user?.full_name || user?.username);
@@ -107,7 +141,6 @@ function validateDoorForSubmit(door, record) {
   const core = extractDoorCore(record);
   if (!core.customer.name) throw new Error("Completá el nombre del cliente.");
   if (!core.customer.phone) throw new Error("Completá el teléfono del cliente.");
-  if (!core.customer.address) throw new Error("Completá la dirección del cliente.");
   if (!core.ipanelQuoteId || !isUuid(core.ipanelQuoteId)) throw new Error("Vinculá el presupuesto Ipanel de la puerta.");
   if (!core.supplierId) throw new Error("Seleccioná un proveedor.");
   if (core.saleAmount <= 0) throw new Error("Completá el importe de venta del marco de puerta.");
@@ -136,9 +169,42 @@ async function getQuoteReadable(quoteId, user) {
   const canTech = !!user.is_rev_tecnica;
   return (isOwner || canCommercial || canTech) ? quote : null;
 }
+async function getQuoteById(quoteId) {
+  if (!quoteId) return null;
+  const r = await dbQuery(`select * from public.presupuestador_quotes where id=$1 limit 1`, [quoteId]);
+  return r.rows?.[0] || null;
+}
 async function getCreatorOdooPartnerId(createdByUserId) {
   const r = await dbQuery(`select odoo_partner_id from public.presupuestador_users where id=$1 limit 1`, [Number(createdByUserId)]);
   return toInt(r.rows?.[0]?.odoo_partner_id);
+}
+async function getLinkedQuoteForDoor(door) {
+  if (!door?.linked_quote_id) return null;
+  return await getQuoteById(door.linked_quote_id);
+}
+async function getIpanelQuoteForRecord(record) {
+  const ipanelQuoteId = safeText(record?.ipanel_quote_id);
+  if (!ipanelQuoteId || !isUuid(ipanelQuoteId)) return null;
+  return await getQuoteById(ipanelQuoteId);
+}
+function mergeDoorRecordWithCustomer(record, mergedCustomer) {
+  const nextRecord = {
+    ...(record || {}),
+    end_customer: normalizeCustomer(mergedCustomer),
+  };
+  if (!safeText(nextRecord.obra_cliente) || safeText(nextRecord.obra_cliente) === safeText(record?.end_customer?.name)) {
+    nextRecord.obra_cliente = nextRecord.end_customer.name || safeText(nextRecord.obra_cliente);
+  }
+  return nextRecord;
+}
+async function persistMergedCustomerOnLinkedQuotes({ linkedQuote = null, ipanelQuote = null, mergedCustomer }) {
+  const normalized = normalizeCustomer(mergedCustomer);
+  if (linkedQuote?.id) {
+    await dbQuery(`update public.presupuestador_quotes set end_customer=$2::jsonb, updated_at=now() where id=$1`, [linkedQuote.id, JSON.stringify(overlayCustomer(linkedQuote.end_customer, normalized))]);
+  }
+  if (ipanelQuote?.id) {
+    await dbQuery(`update public.presupuestador_quotes set end_customer=$2::jsonb, updated_at=now() where id=$1`, [ipanelQuote.id, JSON.stringify(overlayCustomer(ipanelQuote.end_customer, normalized))]);
+  }
 }
 
 function normalizeSellerDisplayName(value) {
@@ -204,7 +270,7 @@ async function applySellerToSaleOrder(odoo, orderId, sellerName) {
 async function getDoorHydratedById(id) {
   const r = await dbQuery(`
     select d.*, u.username as created_by_username, u.full_name as created_by_full_name,
-           q.odoo_sale_order_name as linked_quote_odoo_name, q.status as linked_quote_status, q.end_customer as linked_quote_end_customer
+           q.odoo_sale_order_name as linked_quote_odoo_name, q.quote_number as linked_quote_number, q.status as linked_quote_status, q.end_customer as linked_quote_end_customer
       from public.presupuestador_doors d
       left join public.presupuestador_users u on u.id = d.created_by_user_id
       left join public.presupuestador_quotes q on q.id = d.linked_quote_id
@@ -212,15 +278,12 @@ async function getDoorHydratedById(id) {
   const row = r.rows?.[0] || null;
   if (!row) return null;
   const record = row.record && typeof row.record === "object" ? { ...row.record } : {};
-  if (!safeText(record.asociado_porton) && row.linked_quote_id) record.asociado_porton = buildLinkedPortonLabel({ id: row.linked_quote_id, odoo_sale_order_name: row.linked_quote_odoo_name });
+  if (!safeText(record.asociado_porton) && row.linked_quote_id) record.asociado_porton = buildLinkedPortonLabel({ id: row.linked_quote_id, odoo_sale_order_name: row.linked_quote_odoo_name, quote_number: row.linked_quote_number });
   if (!safeText(record.fulfillment_mode) && row.linked_quote_id) record.fulfillment_mode = "";
-  const resolvedDoorCode = row.linked_quote_odoo_name ? buildDoorCodeFromQuote({ id: row.linked_quote_id, odoo_sale_order_name: row.linked_quote_odoo_name }) : (row.door_code || buildStandaloneDoorCode(row.id));
+  const resolvedDoorCode = row.linked_quote_odoo_name || row.linked_quote_number
+    ? buildDoorCodeFromQuote({ id: row.linked_quote_id, odoo_sale_order_name: row.linked_quote_odoo_name, quote_number: row.linked_quote_number })
+    : (row.door_code || buildStandaloneDoorCode(row.id));
   return { ...row, record, door_code: resolvedDoorCode };
-}
-async function getLinkedQuoteForDoor(door) {
-  if (!door?.linked_quote_id) return null;
-  const qr = await dbQuery(`select * from public.presupuestador_quotes where id=$1 limit 1`, [door.linked_quote_id]);
-  return qr.rows?.[0] || null;
 }
 async function resolveProductInfo(odoo, rawId) {
   const id = Number(rawId);
@@ -277,6 +340,8 @@ async function buildDoorQuoteSummary(door, mode = "presupuesto") {
   }
   ipanelQuote = q;
   precioIpanel = mode === "proforma" ? calcQuoteBaseTotalWithIva({ lines: q.lines }) : calcQuoteTotalWithIva({ lines: q.lines, payload: q.payload || {} });
+  const linkedQuote = await getLinkedQuoteForDoor(door);
+  const mergedCustomer = mergeCustomers(record?.end_customer, linkedQuote?.end_customer, ipanelQuote?.end_customer);
   const settings = await getDoorQuoteSettings();
   const variables = { precio_ipanel: round2(precioIpanel), precio_compra_marco: round2(core.purchaseAmount), precio_venta_marco: round2(core.saleAmount) };
   const total = evaluateDoorQuoteFormula(settings.formula, variables);
@@ -296,7 +361,7 @@ async function buildDoorQuoteSummary(door, mode = "presupuesto") {
     created_by_role: "vendedor",
     seller_name: sellerName,
     fulfillment_mode: core.fulfillmentMode || "produccion",
-    end_customer: record?.end_customer || {},
+    end_customer: mergedCustomer,
     lines,
     payload: { margin_percent_ui: 0, payment_method: ipanelQuote?.payload?.payment_method || "", condition_mode: ipanelQuote?.payload?.condition_mode || "", condition_text: ipanelQuote?.payload?.condition_text || "" },
     note: noteLines.join("\n"),
@@ -509,14 +574,17 @@ export function buildDoorsRouter(odooArg) {
       if (String(cur.created_by_user_id) !== String(req.user.user_id)) return res.status(403).json({ ok: false, error: "No autorizado" });
       const record = req.body?.record; if (!record || typeof record !== "object") return res.status(400).json({ ok: false, error: "Falta record (objeto)" });
       let linkedQuote = null; if (cur.linked_quote_id) linkedQuote = await getQuoteOwnedBySeller(cur.linked_quote_id, req.user.user_id);
+      const ipanelQuote = await getIpanelQuoteForRecord(record);
+      const mergedCustomer = mergeCustomers(record?.end_customer, linkedQuote?.end_customer, ipanelQuote?.end_customer);
       const nextDoorCode = linkedQuote ? (buildDoorCodeFromQuote(linkedQuote) || cur.door_code) : (cur.door_code || buildStandaloneDoorCode(id));
-      const nextRecord = {
+      const nextRecord = mergeDoorRecordWithCustomer({
         ...record,
         asociado_porton: linkedQuote ? buildLinkedPortonLabel(linkedQuote) : safeText(record?.asociado_porton),
         fulfillment_mode: safeText(record?.fulfillment_mode),
-      };
+      }, mergedCustomer);
       const core = extractDoorCore(nextRecord);
       await dbQuery(`update public.presupuestador_doors set record = $2::jsonb, door_code = $3, supplier_odoo_partner_id = $4, sale_amount = $5, purchase_amount = $6, updated_at = now() where id = $1`, [id, JSON.stringify(nextRecord), nextDoorCode, core.supplierId, core.saleAmount || null, core.purchaseAmount || null]);
+      await persistMergedCustomerOnLinkedQuotes({ linkedQuote, ipanelQuote, mergedCustomer });
       return res.json({ ok: true, door: await getDoorHydratedById(id) });
     } catch (e) { next(e); }
   });
