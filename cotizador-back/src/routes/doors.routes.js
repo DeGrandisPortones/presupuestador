@@ -105,6 +105,7 @@ function validateDoorForSubmit(door, record) {
   if (!core.customer.name) throw new Error("Completá el nombre del cliente.");
   if (!core.customer.phone) throw new Error("Completá el teléfono del cliente.");
   if (!core.customer.address) throw new Error("Completá la dirección del cliente.");
+  if (!core.ipanelQuoteId || !isUuid(core.ipanelQuoteId)) throw new Error("Vinculá el presupuesto Ipanel de la puerta.");
   if (!core.supplierId) throw new Error("Seleccioná un proveedor.");
   if (core.saleAmount <= 0) throw new Error("Completá el importe de venta del marco de puerta.");
   if (core.purchaseAmount <= 0) throw new Error("Completá el importe de compra del marco de puerta.");
@@ -135,6 +136,67 @@ async function getCreatorOdooPartnerId(createdByUserId) {
   const r = await dbQuery(`select odoo_partner_id from public.presupuestador_users where id=$1 limit 1`, [Number(createdByUserId)]);
   return toInt(r.rows?.[0]?.odoo_partner_id);
 }
+
+function normalizeSellerDisplayName(value) {
+  return String(value || "").trim();
+}
+const ODOO_SALE_ORDER_VENDOR_FIELD_CANDIDATES = Object.freeze([
+  "x_studio_vendedor",
+  "x_vendedor",
+  "x_vendedor_presupuestador",
+]);
+let saleOrderVendorFieldCache = undefined;
+async function resolveSaleOrderVendorFieldMeta(odoo) {
+  if (saleOrderVendorFieldCache !== undefined) return saleOrderVendorFieldCache;
+  const preferred = normalizeSellerDisplayName(process.env.ODOO_SALE_ORDER_VENDOR_FIELD);
+  const candidates = [preferred, ...ODOO_SALE_ORDER_VENDOR_FIELD_CANDIDATES].filter(Boolean);
+  try {
+    const fields = await odoo.executeKw("sale.order", "fields_get", [], { attributes: ["string", "type", "relation"] });
+    for (const fieldName of candidates) {
+      const meta = fields?.[fieldName];
+      if (!meta) continue;
+      saleOrderVendorFieldCache = {
+        name: fieldName,
+        type: String(meta.type || "").trim(),
+        relation: String(meta.relation || "").trim(),
+      };
+      return saleOrderVendorFieldCache;
+    }
+  } catch {}
+  saleOrderVendorFieldCache = null;
+  return saleOrderVendorFieldCache;
+}
+async function resolveEmployeeIdByName(odoo, employeeName) {
+  const name = normalizeSellerDisplayName(employeeName);
+  if (!name) return null;
+  try {
+    const exactIds = await odoo.executeKw("hr.employee", "search", [[["name", "=", name]]], { limit: 1 });
+    const exactId = toInt(exactIds?.[0]);
+    if (exactId) return exactId;
+  } catch {}
+  try {
+    const ilikeIds = await odoo.executeKw("hr.employee", "search", [[["name", "ilike", name]]], { limit: 1 });
+    return toInt(ilikeIds?.[0]);
+  } catch {
+    return null;
+  }
+}
+async function applySellerToSaleOrder(odoo, orderId, sellerName) {
+  const cleanName = normalizeSellerDisplayName(sellerName);
+  if (!orderId || !cleanName) return;
+  const fieldMeta = await resolveSaleOrderVendorFieldMeta(odoo);
+  if (!fieldMeta?.name) return;
+  try {
+    if (fieldMeta.type === "many2one" && ["hr.employee", "hr.employee.public"].includes(fieldMeta.relation)) {
+      const employeeId = await resolveEmployeeIdByName(odoo, cleanName);
+      if (!employeeId) return;
+      await odoo.executeKw("sale.order", "write", [[Number(orderId)], { [fieldMeta.name]: employeeId }]);
+      return;
+    }
+    await odoo.executeKw("sale.order", "write", [[Number(orderId)], { [fieldMeta.name]: cleanName }]);
+  } catch {}
+}
+
 async function getDoorHydratedById(id) {
   const r = await dbQuery(`
     select d.*, u.username as created_by_username, u.full_name as created_by_full_name,
@@ -189,16 +251,22 @@ async function listSuppliersByTag(odoo, query = "") {
 async function buildDoorQuoteSummary(door, mode = "presupuesto") {
   const record = door?.record || {};
   const core = extractDoorCore(record);
+  const sellerName = normalizeSellerDisplayName(door?.created_by_full_name || door?.created_by_username);
   let ipanelQuote = null;
   let precioIpanel = 0;
-  if (core.ipanelQuoteId && isUuid(core.ipanelQuoteId)) {
-    const qr = await dbQuery(`select * from public.presupuestador_quotes where id=$1 limit 1`, [core.ipanelQuoteId]);
-    const q = qr.rows?.[0] || null;
-    if (q && String(q.catalog_kind || "").toLowerCase() === "ipanel") {
-      ipanelQuote = q;
-      precioIpanel = mode === "proforma" ? calcQuoteBaseTotalWithIva({ lines: q.lines }) : calcQuoteTotalWithIva({ lines: q.lines, payload: q.payload || {} });
-    }
+  if (!core.ipanelQuoteId || !isUuid(core.ipanelQuoteId)) {
+    throw new Error("La puerta debe tener un presupuesto Ipanel vinculado.");
   }
+  const qr = await dbQuery(`select * from public.presupuestador_quotes where id=$1 limit 1`, [core.ipanelQuoteId]);
+  const q = qr.rows?.[0] || null;
+  if (!q || String(q.catalog_kind || "").toLowerCase() !== "ipanel") {
+    throw new Error("El Ipanel vinculado de la puerta es inválido.");
+  }
+  if (!Array.isArray(q.lines) || !q.lines.length) {
+    throw new Error("Completá el presupuesto Ipanel de la puerta.");
+  }
+  ipanelQuote = q;
+  precioIpanel = mode === "proforma" ? calcQuoteBaseTotalWithIva({ lines: q.lines }) : calcQuoteTotalWithIva({ lines: q.lines, payload: q.payload || {} });
   const settings = await getDoorQuoteSettings();
   const variables = { precio_ipanel: round2(precioIpanel), precio_compra_marco: round2(core.purchaseAmount), precio_venta_marco: round2(core.saleAmount) };
   const total = evaluateDoorQuoteFormula(settings.formula, variables);
@@ -210,7 +278,7 @@ async function buildDoorQuoteSummary(door, mode = "presupuesto") {
   const delta = round2(total - variables.precio_ipanel - variables.precio_venta_marco);
   if (Math.abs(delta) >= 0.01) lines.push({ product_id: 0, qty: 1, raw_name: "Ajuste por fórmula puerta", basePrice: delta });
   const noteLines = [core.ipanelQuoteLabel || ipanelQuote?.odoo_sale_order_name ? `Ipanel: ${core.ipanelQuoteLabel || ipanelQuote?.odoo_sale_order_name}` : "Ipanel: no vinculado", `Marco de puerta${marcoDims ? ` · Medida ${marcoDims}` : ""}`, `Fórmula: ${settings.formula}`, `Variables → precio_ipanel=${variables.precio_ipanel} · precio_compra_marco=${variables.precio_compra_marco} · precio_venta_marco=${variables.precio_venta_marco}`].filter(Boolean);
-  const payload = { quote_number: door?.door_code || `P${door?.id || ""}`, created_by_role: "vendedor", fulfillment_mode: "produccion", end_customer: record?.end_customer || {}, lines, payload: { margin_percent_ui: 0, payment_method: ipanelQuote?.payload?.payment_method || "", condition_mode: ipanelQuote?.payload?.condition_mode || "", condition_text: ipanelQuote?.payload?.condition_text || "" }, note: noteLines.join("\n") };
+  const payload = { quote_number: door?.door_code || `P${door?.id || ""}`, created_by_role: "vendedor", seller_name: sellerName, fulfillment_mode: "produccion", end_customer: record?.end_customer || {}, lines, payload: { margin_percent_ui: 0, payment_method: ipanelQuote?.payload?.payment_method || "", condition_mode: ipanelQuote?.payload?.condition_mode || "", condition_text: ipanelQuote?.payload?.condition_text || "" }, note: noteLines.join("\n") };
   return { mode, formula: settings.formula, variables, total, ipanel_quote_id: ipanelQuote?.id || null, ipanel_quote_label: ipanelQuote?.odoo_sale_order_name || core.ipanelQuoteLabel || "", marco_dimensions_label: marcoDims, payload };
 }
 async function syncDoorPurchaseToOdoo({ odoo, door }) {
@@ -229,6 +297,7 @@ async function syncDoorSaleToOdoo({ odoo, door, linkedQuote }) {
   if (door.odoo_sale_order_id) return null;
   const mode = linkedQuote?.created_by_role === "distribuidor" ? "proforma" : "presupuesto";
   const summary = await buildDoorQuoteSummary(door, mode);
+  const sellerName = normalizeSellerDisplayName(door?.created_by_full_name || door?.created_by_username || linkedQuote?.created_by_full_name || linkedQuote?.created_by_username);
   const { productId, name, uomId } = await resolveProductInfo(odoo, ODOO_DOOR_PRODUCT_ID);
   let partnerId = null;
   if (linkedQuote?.created_by_role === "distribuidor") {
@@ -240,9 +309,10 @@ async function syncDoorSaleToOdoo({ odoo, door, linkedQuote }) {
   const saleOrderId = await odoo.executeKw("sale.order", "create", [{
     partner_id: partnerId,
     order_line: [[0, 0, { product_id: productId, product_uom_qty: 1, product_uom: uomId, name: `${name} · ${door.door_code}`, price_unit: round2(summary.total) }]],
-    note: `PUERTA VINCULADA: ${door.door_code}` + (linkedQuote?.id ? `\nPresupuesto portón: ${linkedQuote.id}` : "") + (linkedQuote?.odoo_sale_order_name ? `\nNV portón: ${linkedQuote.odoo_sale_order_name}` : "") + `\n${summary.payload.note || ""}`,
+    note: `PUERTA VINCULADA: ${door.door_code}` + (linkedQuote?.id ? `\nPresupuesto portón: ${linkedQuote.id}` : "") + (linkedQuote?.odoo_sale_order_name ? `\nNV portón: ${linkedQuote.odoo_sale_order_name}` : "") + (sellerName ? `\nVendedor: ${sellerName}` : "") + `\n${summary.payload.note || ""}`,
   }]);
   const saleOrderReadId = Number(Array.isArray(saleOrderId) ? saleOrderId[0] : saleOrderId);
+  await applySellerToSaleOrder(odoo, saleOrderReadId, sellerName);
   const [saleOrder] = await odoo.executeKw("sale.order", "read", [[saleOrderReadId]], { fields: ["id", "name", "amount_total", "state", "partner_id"] });
   return { saleOrder, summary };
 }

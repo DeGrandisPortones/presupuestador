@@ -75,6 +75,32 @@ async function getCreatorOdooPartnerId(createdByUserId) {
   }
 }
 
+function normalizeSellerDisplayName(value) {
+  return String(value || "").trim();
+}
+async function getCreatorDisplayData(createdByUserId) {
+  try {
+    const r = await dbQuery(`select full_name, username from public.presupuestador_users where id=$1 limit 1`, [Number(createdByUserId)]);
+    const row = r.rows?.[0] || {};
+    return {
+      full_name: normalizeSellerDisplayName(row.full_name),
+      username: normalizeSellerDisplayName(row.username),
+    };
+  } catch {
+    return { full_name: "", username: "" };
+  }
+}
+async function resolveSellerDisplayNameForQuote(quote, fallbackUser = null) {
+  const directFullName = normalizeSellerDisplayName(quote?.created_by_full_name || quote?.seller_name || quote?.sellerName);
+  if (directFullName) return directFullName;
+  const directUsername = normalizeSellerDisplayName(quote?.created_by_username);
+  if (directUsername) return directUsername;
+  const created = await getCreatorDisplayData(quote?.created_by_user_id);
+  if (created.full_name) return created.full_name;
+  if (created.username) return created.username;
+  return normalizeSellerDisplayName(fallbackUser?.full_name || fallbackUser?.username || "");
+}
+
 async function findOrCreateCustomerPartner(odoo, customer) {
   const email = toText(customer?.email);
   if (email) {
@@ -199,6 +225,63 @@ async function renameOrderToReference(odoo, orderId, reference) {
   return order || null;
 }
 
+const ODOO_SALE_ORDER_VENDOR_FIELD_CANDIDATES = Object.freeze([
+  "x_studio_vendedor",
+  "x_vendedor",
+  "x_vendedor_presupuestador",
+]);
+let saleOrderVendorFieldCache = undefined;
+async function resolveSaleOrderVendorFieldMeta(odoo) {
+  if (saleOrderVendorFieldCache !== undefined) return saleOrderVendorFieldCache;
+  const preferred = normalizeSellerDisplayName(process.env.ODOO_SALE_ORDER_VENDOR_FIELD);
+  const candidates = [preferred, ...ODOO_SALE_ORDER_VENDOR_FIELD_CANDIDATES].filter(Boolean);
+  try {
+    const fields = await odoo.executeKw("sale.order", "fields_get", [], { attributes: ["string", "type", "relation"] });
+    for (const fieldName of candidates) {
+      const meta = fields?.[fieldName];
+      if (!meta) continue;
+      saleOrderVendorFieldCache = {
+        name: fieldName,
+        type: String(meta.type || "").trim(),
+        relation: String(meta.relation || "").trim(),
+      };
+      return saleOrderVendorFieldCache;
+    }
+  } catch {}
+  saleOrderVendorFieldCache = null;
+  return saleOrderVendorFieldCache;
+}
+async function resolveEmployeeIdByName(odoo, employeeName) {
+  const name = normalizeSellerDisplayName(employeeName);
+  if (!name) return null;
+  try {
+    const exactIds = await odoo.executeKw("hr.employee", "search", [[["name", "=", name]]], { limit: 1 });
+    const exactId = toIntId(exactIds?.[0]);
+    if (exactId) return exactId;
+  } catch {}
+  try {
+    const ilikeIds = await odoo.executeKw("hr.employee", "search", [[["name", "ilike", name]]], { limit: 1 });
+    return toIntId(ilikeIds?.[0]);
+  } catch {
+    return null;
+  }
+}
+async function applySellerToSaleOrder(odoo, orderId, sellerName) {
+  const cleanName = normalizeSellerDisplayName(sellerName);
+  if (!orderId || !cleanName) return;
+  const fieldMeta = await resolveSaleOrderVendorFieldMeta(odoo);
+  if (!fieldMeta?.name) return;
+  try {
+    if (fieldMeta.type === "many2one" && ["hr.employee", "hr.employee.public"].includes(fieldMeta.relation)) {
+      const employeeId = await resolveEmployeeIdByName(odoo, cleanName);
+      if (!employeeId) return;
+      await odoo.executeKw("sale.order", "write", [[Number(orderId)], { [fieldMeta.name]: employeeId }]);
+      return;
+    }
+    await odoo.executeKw("sale.order", "write", [[Number(orderId)], { [fieldMeta.name]: cleanName }]);
+  } catch {}
+}
+
 async function syncQuoteToOdoo({ odoo, quote, approverUser }) {
   const pricelistId = toIntId(quote?.pricelist_id) || 1;
   let partnerId = null;
@@ -212,6 +295,7 @@ async function syncQuoteToOdoo({ odoo, quote, approverUser }) {
   if (!partnerId) throw new Error("partner_id invalido para Odoo");
 
   const total = calcQuoteTotalWithIva({ lines: quote.lines, payload: quote.payload });
+  const sellerName = await resolveSellerDisplayNameForQuote(quote, approverUser);
   const requestedInitialProductId = getInitialOdooProductIdForQuote(quote);
   const initialProduct = await resolveInitialOdooProduct(odoo, requestedInitialProductId);
 
@@ -223,11 +307,12 @@ async function syncQuoteToOdoo({ odoo, quote, approverUser }) {
     price_unit: round2(total),
   }]];
 
-  const note = quote.created_by_role === "distribuidor"
+  const noteBase = quote.created_by_role === "distribuidor"
     ? buildDistributorNote({ quote })
     : `PRESUPUESTADOR QUOTE: ${quote.id}\nDestino: ${quote.fulfillment_mode === "acopio" ? "ACOPIO" : "PRODUCCION"}`
       + (quote?.end_customer?.maps_url ? `\nMaps: ${quote.end_customer.maps_url}` : "")
       + (quote.note ? `\n${quote.note}` : "");
+  const note = noteBase + (sellerName ? `\nVendedor: ${sellerName}` : "");
 
   const createdOrderId = await odoo.executeKw("sale.order", "create", [{
     partner_id: partnerId,
@@ -237,6 +322,7 @@ async function syncQuoteToOdoo({ odoo, quote, approverUser }) {
   }]);
   const orderId = toIntId(createdOrderId);
   if (!orderId) throw new Error("No se pudo crear sale.order en Odoo");
+  await applySellerToSaleOrder(odoo, orderId, sellerName);
 
   const [order] = await odoo.executeKw("sale.order", "read", [[orderId]], {
     fields: ["id", "name", "amount_total", "partner_id", "state", "pricelist_id"],
@@ -246,6 +332,7 @@ async function syncQuoteToOdoo({ odoo, quote, approverUser }) {
 
 async function syncFinalQuoteToOdoo({ odoo, revisionQuote, originalQuote, approverUser }) {
   const pricelistId = toIntId(revisionQuote?.pricelist_id) || toIntId(originalQuote?.pricelist_id) || 1;
+  const sellerName = await resolveSellerDisplayNameForQuote(originalQuote, approverUser);
   let partnerId = null;
   if (originalQuote.created_by_role === "distribuidor") {
     partnerId = toIntId(originalQuote?.bill_to_odoo_partner_id) || await getCreatorOdooPartnerId(originalQuote.created_by_user_id) || toIntId(approverUser?.odoo_partner_id);
@@ -320,7 +407,8 @@ async function syncFinalQuoteToOdoo({ odoo, revisionQuote, originalQuote, approv
     + `\nTolerancia comercial %: ${tolerancePercent}`
     + `\nTolerancia comercial monto: ${toleranceAmount}`
     + (absorbedByCompany ? `\nAbsorbido por la empresa: SI` : `\nAbsorbido por la empresa: NO`)
-    + `\nImporte final a facturar: ${finalAmountToCharge}`;
+    + `\nImporte final a facturar: ${finalAmountToCharge}`
+    + (sellerName ? `\nVendedor: ${sellerName}` : "");
 
   const createdOrderId = await odoo.executeKw("sale.order", "create", [{
     partner_id: partnerId,
@@ -332,6 +420,7 @@ async function syncFinalQuoteToOdoo({ odoo, revisionQuote, originalQuote, approv
   }]);
   const orderId = toIntId(createdOrderId);
   if (!orderId) throw new Error("No se pudo crear sale.order final en Odoo");
+  await applySellerToSaleOrder(odoo, orderId, sellerName);
   const order = await renameOrderToReference(odoo, orderId, referenceNv);
   if (!order?.id) throw new Error("No se pudo leer sale.order final en Odoo");
 
@@ -352,6 +441,7 @@ async function syncFinalQuoteToOdoo({ odoo, revisionQuote, originalQuote, approv
 
 async function syncDirectProductionFinalToOdoo({ odoo, quote, approverUser }) {
   const pricelistId = toIntId(quote?.pricelist_id) || 1;
+  const sellerName = await resolveSellerDisplayNameForQuote(quote, approverUser);
   let partnerId = null;
   if (quote.created_by_role === "distribuidor") {
     partnerId = toIntId(quote?.bill_to_odoo_partner_id) || await getCreatorOdooPartnerId(quote.created_by_user_id) || toIntId(approverUser?.odoo_partner_id);
@@ -394,7 +484,8 @@ async function syncDirectProductionFinalToOdoo({ odoo, quote, approverUser }) {
   const note = `PRESUPUESTADOR FINAL DIRECTO: ${quote.id}`
     + `\nDestino: PRODUCCION`
     + `\nPortón sin medición: se envía el detalle completo sin instancia adicional de edición.`
-    + (quote.note ? `\n${quote.note}` : "");
+    + (quote.note ? `\n${quote.note}` : "")
+    + (sellerName ? `\nVendedor: ${sellerName}` : "");
 
   const createdOrderId = await odoo.executeKw("sale.order", "create", [{
     partner_id: partnerId,
@@ -404,6 +495,7 @@ async function syncDirectProductionFinalToOdoo({ odoo, quote, approverUser }) {
   }]);
   const orderId = toIntId(createdOrderId);
   if (!orderId) throw new Error("No se pudo crear sale.order final directa en Odoo");
+  await applySellerToSaleOrder(odoo, orderId, sellerName);
   const [createdOrder] = await odoo.executeKw("sale.order", "read", [[orderId]], { fields: ["id", "name"] });
   const referenceNv = createdOrder?.name ? `NV${createdOrder.name}` : `NV${String(quote.id).slice(0, 8)}`;
   const order = await renameOrderToReference(odoo, orderId, referenceNv);

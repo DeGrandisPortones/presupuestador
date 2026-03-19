@@ -607,14 +607,7 @@ function renderPdf({ title, payload, useBasePrice }) {
   y += infoH + 10;
 
   const extraLines = [];
-  if (customerAddress) extraLines.push(`Dirección: ${customerAddress}`);
-  if (customerMaps) extraLines.push(`Maps: ${customerMaps}`);
   if (sellerName) extraLines.push(`Vendedor: ${sellerName}`);
-  if (paymentMethod) extraLines.push(`Forma de Pago: ${paymentMethod}`);
-  if (conditionMode) {
-    extraLines.push(`Condición: ${conditionMode}${conditionRaw === "special" && conditionText ? ` (${conditionText})` : ""}`);
-  }
-  if (!useBasePrice) extraLines.push(`Coeficiente: ${formatQty(coefPct)}%`);
   if (obs) extraLines.push(`Obs: ${obs}`);
 
   if (extraLines.length) {

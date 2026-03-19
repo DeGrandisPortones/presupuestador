@@ -6,12 +6,30 @@ const DEFAULT_FORMULA = "precio_ipanel + precio_venta_marco";
 const ALLOWED_VARS = ["precio_ipanel", "precio_compra_marco", "precio_venta_marco"];
 
 function normalizeFormula(value) {
-  const s = String(value || "").trim();
+  const s = String(value || "")
+    .replace(/\u00A0/g, " ")
+    .replace(/[–—]/g, "-")
+    .replace(/×/g, "*")
+    .replace(/÷/g, "/")
+    .replace(/\s+/g, " ")
+    .trim();
   return s || DEFAULT_FORMULA;
 }
 
+function validateFormulaTokens(formula) {
+  const normalized = normalizeFormula(formula);
+  const replaced = ALLOWED_VARS.reduce((acc, name) => {
+    return acc.replace(new RegExp(`\\b${name}\\b`, "g"), "1");
+  }, normalized);
+  if (!/^[0-9+\-*/().\s]+$/.test(replaced)) {
+    throw new Error('La fórmula de puerta contiene caracteres no permitidos.');
+  }
+  return normalized;
+}
+
 function injectVars(formula, vars) {
-  let expr = ` ${formula} `;
+  const safeFormula = validateFormulaTokens(formula);
+  let expr = ` ${safeFormula} `;
   for (const name of ALLOWED_VARS) {
     const val = round2(vars?.[name] || 0);
     expr = expr.replace(new RegExp(`\\b${name}\\b`, "g"), `(${val})`);
@@ -27,7 +45,7 @@ function validateFinalExpression(expr) {
 }
 
 export function evaluateDoorQuoteFormula(formula, vars = {}) {
-  const normalized = normalizeFormula(formula);
+  const normalized = validateFormulaTokens(formula);
   const expr = validateFinalExpression(injectVars(normalized, vars));
   let result = 0;
   try {
