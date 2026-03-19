@@ -67,6 +67,10 @@ function textOrDash(v) {
   const s = String(v ?? "").trim();
   return s || "—";
 }
+function parseAmount(v) {
+  const n = Number(String(v ?? "").replace(",", "."));
+  return Number.isFinite(n) ? n : 0;
+}
 function Select({ value, onChange, options, placeholder = "—", disabled = false }) {
   return (
     <select
@@ -130,6 +134,7 @@ function normalizeForm(raw, user) {
   record.proveedor = record.proveedor || "";
   record.proveedor_condiciones = record.proveedor_condiciones || "";
   record.nv_proveedor = record.nv_proveedor || "";
+  record.fulfillment_mode = record.fulfillment_mode || "";
   record.sentido_apertura = record.sentido_apertura || "ADENTRO";
   record.mano_bisagras = record.mano_bisagras || "IZQUIERDA";
   record.angulo_apertura = record.angulo_apertura || "90";
@@ -215,6 +220,14 @@ export default function PuertaChecklistPage() {
   const canSellerEdit = !!user?.is_vendedor && authUserId === doorOwnerId;
   const canCommercialAct = !!user?.is_enc_comercial && door?.status === "pending_approvals" && door?.commercial_decision === "pending";
   const canTechAct = !!user?.is_rev_tecnica && door?.status === "pending_approvals" && door?.technical_decision === "pending";
+  const pdfReady = useMemo(() => {
+    if (!form) return false;
+    const supplierId = String(form.supplier_odoo_partner_id || "").trim();
+    const saleAmount = parseAmount(form.sale_amount);
+    const purchaseAmount = parseAmount(form.purchase_amount);
+    const fulfillmentMode = String(form.fulfillment_mode || "").trim().toLowerCase();
+    return !!ipanelQuoteId && !!supplierId && saleAmount > 0 && purchaseAmount > 0 && ["acopio", "produccion"].includes(fulfillmentMode);
+  }, [form, ipanelQuoteId]);
 
   function continueDoorWorkflow(savedDoor) {
     if (!returnToPanel) return false;
@@ -285,6 +298,10 @@ export default function PuertaChecklistPage() {
 
   async function handleDoorPdf(mode = "presupuesto") {
     try {
+      if (!pdfReady) {
+        toast.error("Completá Ipanel, proveedor, importes y destino para habilitar el PDF de la puerta.");
+        return;
+      }
       if (canSellerEdit) {
         await updateDoor(id, { record: form });
       }
@@ -325,8 +342,8 @@ export default function PuertaChecklistPage() {
                 Ver Ipanel vinculado
               </Button>
             ) : null}
-            <Button variant="secondary" onClick={() => handleDoorPdf("presupuesto")}>PDF puerta</Button>
-            {user?.is_distribuidor ? <Button variant="secondary" onClick={() => handleDoorPdf("proforma")}>PDF proforma puerta</Button> : null}
+            <Button variant="secondary" disabled={!pdfReady} onClick={() => handleDoorPdf("presupuesto")}>PDF puerta</Button>
+            {user?.is_distribuidor ? <Button variant="secondary" disabled={!pdfReady} onClick={() => handleDoorPdf("proforma")}>PDF proforma puerta</Button> : null}
             <Button variant="ghost" onClick={() => navigate(`/puertas/${id}`)}>Volver a la puerta</Button>
           </div>
         </div>
@@ -479,6 +496,12 @@ export default function PuertaChecklistPage() {
                 <div style={{ fontWeight: 900, fontSize: 18 }}>Total puerta: $ {Number(summaryQ.data.total || 0).toLocaleString("es-AR")}</div>
               </div>
             ) : <div className="muted">Calculando fórmula de puerta…</div>}
+
+            {!pdfReady ? (
+              <div className="muted" style={{ marginTop: 10 }}>
+                Completá Ipanel, proveedor, importes y destino para habilitar el PDF de la puerta.
+              </div>
+            ) : null}
           </Section>
 
           <Section title="Proveedor / costos del marco">
@@ -737,8 +760,8 @@ export default function PuertaChecklistPage() {
                   <Button onClick={() => saveM.mutate()} disabled={saveM.isPending || submitM.isPending}>Guardar</Button>
                 </>
               )}
-              <Button variant="secondary" onClick={() => handleDoorPdf("presupuesto")}>Imprimir presupuesto puerta</Button>
-              {user?.is_distribuidor ? <Button variant="secondary" onClick={() => handleDoorPdf("proforma")}>Imprimir proforma puerta</Button> : null}
+              <Button variant="secondary" disabled={!pdfReady} onClick={() => handleDoorPdf("presupuesto")}>Imprimir presupuesto puerta</Button>
+              {user?.is_distribuidor ? <Button variant="secondary" disabled={!pdfReady} onClick={() => handleDoorPdf("proforma")}>Imprimir proforma puerta</Button> : null}
             </div>
           </div>
         </>

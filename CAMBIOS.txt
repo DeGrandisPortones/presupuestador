@@ -1,0 +1,17 @@
+Cambios preparados para presupuestador
+
+Archivos incluidos:
+- cotizador-back/src/routes/doors.routes.js
+- cotizador-front/src/pages/PuertaChecklistPage/index.jsx
+
+Resumen:
+1. El portón sigue con su flujo actual.
+2. La puerta se sincroniza a Odoo de forma independiente cuando Comercial y Técnica la aprueban.
+3. La venta de puerta ya no espera a que el portón tenga sale.order en Odoo.
+4. El PDF de puerta sale con una sola línea: "Puerta" y el monto final calculado por fórmula.
+5. El botón de PDF de puerta queda deshabilitado hasta completar Ipanel, proveedor, importes y destino.
+
+Aplicación:
+- Copiar cada archivo respetando la ruta.
+- Reiniciar front y back según su despliegue habitual.
+- Probar: guardar puerta, aprobar Comercial, aprobar Técnica, verificar creación de purchase.order y sale.order propias.

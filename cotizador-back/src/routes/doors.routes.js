@@ -217,6 +217,11 @@ async function getDoorHydratedById(id) {
   const resolvedDoorCode = row.linked_quote_odoo_name ? buildDoorCodeFromQuote({ id: row.linked_quote_id, odoo_sale_order_name: row.linked_quote_odoo_name }) : (row.door_code || buildStandaloneDoorCode(row.id));
   return { ...row, record, door_code: resolvedDoorCode };
 }
+async function getLinkedQuoteForDoor(door) {
+  if (!door?.linked_quote_id) return null;
+  const qr = await dbQuery(`select * from public.presupuestador_quotes where id=$1 limit 1`, [door.linked_quote_id]);
+  return qr.rows?.[0] || null;
+}
 async function resolveProductInfo(odoo, rawId) {
   const id = Number(rawId);
   const [prod] = await odoo.executeKw("product.product", "read", [[id]], { fields: ["id", "name", "uom_id"] });
@@ -277,16 +282,14 @@ async function buildDoorQuoteSummary(door, mode = "presupuesto") {
   const total = evaluateDoorQuoteFormula(settings.formula, variables);
   const marcoDims = [core.anchoMarcoMm ? `${core.anchoMarcoMm} mm` : "", core.altoMarcoMm ? `${core.altoMarcoMm} mm` : ""].filter(Boolean).join(" x ");
   const lines = [
-    { product_id: 0, qty: 1, raw_name: `Ipanel vinculado${ipanelQuote?.odoo_sale_order_name ? ` · ${ipanelQuote.odoo_sale_order_name}` : ""}`, basePrice: variables.precio_ipanel },
-    { product_id: 0, qty: 1, raw_name: "Marco de puerta", basePrice: variables.precio_venta_marco },
+    { product_id: 0, qty: 1, raw_name: "Puerta", basePrice: round2(total) },
   ];
-  const delta = round2(total - variables.precio_ipanel - variables.precio_venta_marco);
-  if (Math.abs(delta) >= 0.01) lines.push({ product_id: 0, qty: 1, raw_name: "Ajuste por fórmula puerta", basePrice: delta });
   const noteLines = [
     core.ipanelQuoteLabel || ipanelQuote?.odoo_sale_order_name ? `Ipanel: ${core.ipanelQuoteLabel || ipanelQuote?.odoo_sale_order_name}` : "Ipanel: no vinculado",
     `Marco de puerta${marcoDims ? ` · Medida ${marcoDims}` : ""}`,
     `Fórmula: ${settings.formula}`,
     `Variables → precio_ipanel=${variables.precio_ipanel} · precio_compra_marco=${variables.precio_compra_marco} · precio_venta_marco=${variables.precio_venta_marco}`,
+    `Total puerta=${round2(total)}`,
   ].filter(Boolean);
   const payload = {
     quote_number: door?.door_code || `P${door?.id || ""}`,
@@ -298,7 +301,7 @@ async function buildDoorQuoteSummary(door, mode = "presupuesto") {
     payload: { margin_percent_ui: 0, payment_method: ipanelQuote?.payload?.payment_method || "", condition_mode: ipanelQuote?.payload?.condition_mode || "", condition_text: ipanelQuote?.payload?.condition_text || "" },
     note: noteLines.join("\n"),
   };
-  return { mode, formula: settings.formula, variables, total, ipanel_quote_id: ipanelQuote?.id || null, ipanel_quote_label: ipanelQuote?.odoo_sale_order_name || core.ipanelQuoteLabel || "", marco_dimensions_label: marcoDims, payload };
+  return { mode, formula: settings.formula, variables, total: round2(total), ipanel_quote_id: ipanelQuote?.id || null, ipanel_quote_label: ipanelQuote?.odoo_sale_order_name || core.ipanelQuoteLabel || "", marco_dimensions_label: marcoDims, payload };
 }
 async function syncDoorPurchaseToOdoo({ odoo, door }) {
   const core = validateDoorForSubmit(door, door.record || {});
@@ -312,7 +315,7 @@ async function syncDoorPurchaseToOdoo({ odoo, door }) {
   const [purchaseOrder] = await odoo.executeKw("purchase.order", "read", [[purchaseOrderReadId]], { fields: ["id", "name", "state", "partner_id"] });
   return { purchaseOrder };
 }
-async function syncDoorSaleToOdoo({ odoo, door, linkedQuote }) {
+async function syncDoorSaleToOdoo({ odoo, door, linkedQuote = null }) {
   if (door.odoo_sale_order_id) return null;
   const mode = linkedQuote?.created_by_role === "distribuidor" ? "proforma" : "presupuesto";
   const summary = await buildDoorQuoteSummary(door, mode);
@@ -335,32 +338,45 @@ async function syncDoorSaleToOdoo({ odoo, door, linkedQuote }) {
   const [saleOrder] = await odoo.executeKw("sale.order", "read", [[saleOrderReadId]], { fields: ["id", "name", "amount_total", "state", "partner_id"] });
   return { saleOrder, summary };
 }
-async function trySyncDoorSaleIfQuoteReady({ odoo, doorId }) {
-  const door = await getDoorHydratedById(doorId);
-  if (!door || !door.linked_quote_id || door.odoo_sale_order_id || !door.odoo_purchase_order_id) return door;
-  if (door.commercial_decision !== "approved" || door.technical_decision !== "approved") return door;
-  const qr = await dbQuery(`select * from public.presupuestador_quotes where id=$1 limit 1`, [door.linked_quote_id]);
-  const linkedQuote = qr.rows?.[0] || null;
-  if (!linkedQuote?.odoo_sale_order_id) return door;
-  const { saleOrder } = await syncDoorSaleToOdoo({ odoo, door, linkedQuote });
-  if (!saleOrder?.id) return door;
-  await dbQuery(`update public.presupuestador_doors set odoo_sale_order_id=$2, odoo_sale_order_name=$3, updated_at=now() where id=$1`, [Number(door.id), Number(saleOrder.id), saleOrder.name]);
-  return await getDoorHydratedById(door.id);
-}
-async function trySyncIfReady({ odoo, id }) {
-  const door = await getDoorHydratedById(id);
+async function trySyncDoorOrders({ odoo, id }) {
+  let door = await getDoorHydratedById(id);
   if (!door) throw new Error("Puerta no encontrada");
-  if (door.status === "synced_odoo" || door.status === "syncing_odoo") return await trySyncDoorSaleIfQuoteReady({ odoo, doorId: id });
-  if (door.status !== "pending_approvals") return door;
+  if (!["pending_approvals", "syncing_odoo", "synced_odoo"].includes(String(door.status || ""))) return door;
   if (door.commercial_decision !== "approved" || door.technical_decision !== "approved") return door;
-  const r = await dbQuery(`update public.presupuestador_doors set status='syncing_odoo', updated_at=now() where id=$1 and status='pending_approvals' returning id`, [Number(id)]);
-  if (!r.rows?.[0]) return await getDoorHydratedById(id);
+
+  if (door.status === "pending_approvals") {
+    const r = await dbQuery(`update public.presupuestador_doors set status='syncing_odoo', updated_at=now() where id=$1 and status='pending_approvals' returning id`, [Number(id)]);
+    if (!r.rows?.[0]) return await getDoorHydratedById(id);
+    door = await getDoorHydratedById(id);
+  }
+
+  const linkedQuote = await getLinkedQuoteForDoor(door);
+
   try {
-    const { purchaseOrder } = await syncDoorPurchaseToOdoo({ odoo, door: await getDoorHydratedById(id) });
-    await dbQuery(`update public.presupuestador_doors set status='synced_odoo', odoo_purchase_order_id=$2, odoo_purchase_order_name=$3, synced_at=now(), updated_at=now() where id=$1`, [Number(id), Number(purchaseOrder.id), purchaseOrder.name]);
-    return await trySyncDoorSaleIfQuoteReady({ odoo, doorId: id });
+    if (!door.odoo_purchase_order_id) {
+      const { purchaseOrder } = await syncDoorPurchaseToOdoo({ odoo, door });
+      await dbQuery(`update public.presupuestador_doors set odoo_purchase_order_id=$2, odoo_purchase_order_name=$3, updated_at=now() where id=$1`, [Number(id), Number(purchaseOrder.id), purchaseOrder.name]);
+      door = await getDoorHydratedById(id);
+    }
+
+    if (!door.odoo_sale_order_id) {
+      const { saleOrder } = await syncDoorSaleToOdoo({ odoo, door, linkedQuote });
+      if (saleOrder?.id) {
+        await dbQuery(`update public.presupuestador_doors set odoo_sale_order_id=$2, odoo_sale_order_name=$3, updated_at=now() where id=$1`, [Number(id), Number(saleOrder.id), saleOrder.name]);
+        door = await getDoorHydratedById(id);
+      }
+    }
+
+    const finalDoor = await getDoorHydratedById(id);
+    if (finalDoor?.odoo_purchase_order_id && finalDoor?.odoo_sale_order_id) {
+      await dbQuery(`update public.presupuestador_doors set status='synced_odoo', synced_at=coalesce(synced_at, now()), updated_at=now() where id=$1`, [Number(id)]);
+      return await getDoorHydratedById(id);
+    }
+    return finalDoor;
   } catch (e) {
-    await dbQuery(`update public.presupuestador_doors set status='pending_approvals', updated_at=now() where id=$1`, [Number(id)]);
+    const currentDoor = await getDoorHydratedById(id);
+    const fallbackStatus = currentDoor?.odoo_purchase_order_id || currentDoor?.odoo_sale_order_id ? "syncing_odoo" : "pending_approvals";
+    await dbQuery(`update public.presupuestador_doors set status=$2, updated_at=now() where id=$1`, [Number(id), fallbackStatus]);
     throw e;
   }
 }
@@ -396,7 +412,7 @@ export function buildDoorsRouter(odooArg) {
       const r = await dbQuery(`select id from public.presupuestador_doors where linked_quote_id=$1 limit 1`, [quoteId]);
       const id = Number(r.rows?.[0]?.id || 0);
       if (!id) return res.json({ ok: true, door: null });
-      const door = await trySyncDoorSaleIfQuoteReady({ odoo, doorId: id });
+      const door = await trySyncDoorOrders({ odoo, id });
       return res.json({ ok: true, door });
     } catch (e) { next(e); }
   });
@@ -530,7 +546,7 @@ export function buildDoorsRouter(odooArg) {
         return res.json({ ok: true, door: await getDoorHydratedById(id) });
       }
       await dbQuery(`update public.presupuestador_doors set commercial_decision='approved', commercial_notes=$2, updated_at=now() where id=$1`, [id, notes || null]);
-      return res.json({ ok: true, door: await trySyncIfReady({ odoo, id }) });
+      return res.json({ ok: true, door: await trySyncDoorOrders({ odoo, id }) });
     } catch (e) { next(e); }
   });
 
@@ -547,7 +563,7 @@ export function buildDoorsRouter(odooArg) {
         return res.json({ ok: true, door: await getDoorHydratedById(id) });
       }
       await dbQuery(`update public.presupuestador_doors set technical_decision='approved', technical_notes=$2, updated_at=now() where id=$1`, [id, notes || null]);
-      return res.json({ ok: true, door: await trySyncIfReady({ odoo, id }) });
+      return res.json({ ok: true, door: await trySyncDoorOrders({ odoo, id }) });
     } catch (e) { next(e); }
   });
 
