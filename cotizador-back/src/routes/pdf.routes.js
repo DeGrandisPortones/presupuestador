@@ -204,6 +204,30 @@ function getSellerName(payload) {
   );
 }
 
+function sanitizeFilenamePart(value, fallback = "archivo") {
+  const normalized = String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^A-Za-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .trim();
+  return normalized || fallback;
+}
+
+function buildDownloadFilename(payload, fallbackPrefix = "presupuesto") {
+  const customerName = sanitizeFilenamePart(payload?.end_customer?.name, "cliente");
+  const quoteNo = sanitizeFilenamePart(getQuoteNumber(payload), fallbackPrefix);
+  return `${customerName}_${quoteNo}.pdf`;
+}
+
+function stripSellerLines(value) {
+  return String(value || "")
+    .split(/\r?\n/)
+    .map((line) => String(line || "").trim())
+    .filter((line) => line && !/^vendedor\s*:/i.test(line))
+    .join("\n");
+}
+
 function buildLines(payload, { useBasePrice }) {
   const coefPct = getMarginPct(payload);
   const coefFactor = 1 + coefPct / 100;
@@ -523,7 +547,7 @@ function renderPdf({ title, payload, useBasePrice }) {
   const destinationRaw = safeStr(payload?.fulfillment_mode);
   const destination = destinationRaw === "acopio" ? "Acopio" : destinationRaw === "produccion" ? "Producción" : (destinationRaw || "—");
   const showDestination = !!useBasePrice;
-  const obs = safeStr(payload?.note);
+  const obs = stripSellerLines(safeStr(payload?.note));
 
   const quoteNo = getQuoteNumber(payload);
   const { lines, grandTotal } = buildLines(payload, { useBasePrice });
@@ -586,7 +610,6 @@ function renderPdf({ title, payload, useBasePrice }) {
   y += infoH + 10;
 
   const extraLines = [];
-  if (sellerName) extraLines.push(`Vendedor: ${sellerName}`);
   if (obs) extraLines.push(`Obs: ${obs}`);
 
   if (extraLines.length) {
@@ -725,7 +748,7 @@ export function buildPdfRouter() {
       const payload = req.body || {};
       const pdf = await renderPdf({ title: "PRESUPUESTO", payload, useBasePrice: false });
       res.setHeader("Content-Type", "application/pdf");
-      res.setHeader("Content-Disposition", `attachment; filename="presupuesto_${Date.now()}.pdf"`);
+      res.setHeader("Content-Disposition", `attachment; filename="${buildDownloadFilename(payload, "presupuesto")}"`);
       res.send(pdf);
     } catch (e) { next(e); }
   });
@@ -772,7 +795,7 @@ export function buildPdfRouter() {
       const payload = req.body || {};
       const pdf = await renderPdf({ title: "PROFORMA", payload, useBasePrice: true });
       res.setHeader("Content-Type", "application/pdf");
-      res.setHeader("Content-Disposition", `attachment; filename="proforma_${Date.now()}.pdf"`);
+      res.setHeader("Content-Disposition", `attachment; filename="${buildDownloadFilename(payload, "proforma")}"`);
       res.send(pdf);
     } catch (e) { next(e); }
   });
