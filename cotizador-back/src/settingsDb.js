@@ -1,5 +1,5 @@
 import { dbQuery } from "./db.js";
-import { DEFAULT_FORMULA, normalizeDoorQuoteFormula } from "./doorQuoteFormula.js";
+import { normalizeDoorQuoteFormula } from "./doorQuoteFormula.js";
 
 const FINAL_QUOTE_SETTINGS_KEY = "commercial_final_quote";
 const MEASUREMENT_PRODUCT_MAPPINGS_KEY = "measurement_product_mappings";
@@ -27,7 +27,7 @@ export async function ensureSettingsTable() {
   );
   await dbQuery(
     `insert into public.presupuestador_settings (key, value_json) values ($1, $2::jsonb) on conflict (key) do nothing`,
-    [DOOR_QUOTE_SETTINGS_KEY, JSON.stringify({ formula: DEFAULT_FORMULA })]
+    [DOOR_QUOTE_SETTINGS_KEY, JSON.stringify({ formula: "precio_ipanel + precio_venta_marco" })]
   );
 
   ensured = true;
@@ -84,11 +84,9 @@ function normalizeMeasurementProductMappings(raw = {}) {
   return { rules: groupedRules };
 }
 function normalizeDoorFormula(formula) {
-  try {
-    return normalizeDoorQuoteFormula(formula);
-  } catch {
-    return DEFAULT_FORMULA;
-  }
+  const raw = String(formula ?? "").trim();
+  if (!raw) return "precio_ipanel + precio_venta_marco";
+  return normalizeDoorQuoteFormula(raw);
 }
 
 export async function getCommercialFinalQuoteSettings() {

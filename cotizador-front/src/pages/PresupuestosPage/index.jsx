@@ -295,15 +295,9 @@ export default function PresupuestosPage() {
       );
     }
 
-    if (typeFilter !== "all") {
-      filtered = filtered.filter((item) => {
-        if (typeFilter === "porton") return item.rowKind === "quote" && String(item.raw?.catalog_kind || "porton").toLowerCase() === "porton";
-        if (typeFilter === "ipanel") return item.rowKind === "quote" && String(item.raw?.catalog_kind || "porton").toLowerCase() === "ipanel";
-        if (typeFilter === "puerta") return item.rowKind === "door";
-        return true;
-      });
-    }
-
+    if (typeFilter === "porton") filtered = filtered.filter((item) => item.rowKind === "quote" && String(item.raw?.catalog_kind || "porton").toLowerCase() === "porton");
+    if (typeFilter === "ipanel") filtered = filtered.filter((item) => item.rowKind === "quote" && String(item.raw?.catalog_kind || "porton").toLowerCase() === "ipanel");
+    if (typeFilter === "door") filtered = filtered.filter((item) => item.rowKind === "door");
     return filtered.filter((item) => matchesRowSearch(item, searchText));
   }, [quotesQ.data, doorsQ.data, filter, typeFilter, searchText]);
 
@@ -340,21 +334,19 @@ export default function PresupuestosPage() {
 
         <div className="spacer" />
 
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
+          <Button variant={typeFilter === "all" ? "primary" : "ghost"} onClick={() => setTypeFilter("all")}>Todos los tipos</Button>
+          <Button variant={typeFilter === "porton" ? "primary" : "ghost"} onClick={() => setTypeFilter("porton")}>Portón</Button>
+          <Button variant={typeFilter === "ipanel" ? "primary" : "ghost"} onClick={() => setTypeFilter("ipanel")}>Ipanel</Button>
+          <Button variant={typeFilter === "door" ? "primary" : "ghost"} onClick={() => setTypeFilter("door")}>Puerta</Button>
+        </div>
+
         <input
           value={searchText}
           onChange={(e) => setSearchText(e.target.value)}
           placeholder="Buscar por tipo, cliente, localidad, dirección, teléfono, código o estado…"
           style={{ width: "100%", padding: 10, borderRadius: 12, border: "1px solid #ddd" }}
         />
-
-        <div className="spacer" />
-
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <Button variant={typeFilter === "all" ? "primary" : "ghost"} onClick={() => setTypeFilter("all")}>Todos los tipos</Button>
-          <Button variant={typeFilter === "porton" ? "primary" : "ghost"} onClick={() => setTypeFilter("porton")}>Portón</Button>
-          <Button variant={typeFilter === "ipanel" ? "primary" : "ghost"} onClick={() => setTypeFilter("ipanel")}>Ipanel</Button>
-          <Button variant={typeFilter === "puerta" ? "primary" : "ghost"} onClick={() => setTypeFilter("puerta")}>Puerta</Button>
-        </div>
       </div>
 
       <div className="spacer" />

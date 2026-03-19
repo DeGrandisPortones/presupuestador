@@ -174,6 +174,7 @@ export default function PuertaChecklistPage() {
   const workflowStage = String(searchParams.get("workflow_stage") || "").trim();
   const workflowPortonId = String(searchParams.get("porton_id") || "").trim();
   const workflowIpanelQuoteId = String(searchParams.get("ipanel_quote_id") || "").trim();
+  const returnToPanel = searchParams.get("return_to_panel") === "1" || isDoorWorkflow;
 
   const q = useQuery({
     queryKey: ["door", id],
@@ -216,17 +217,9 @@ export default function PuertaChecklistPage() {
   const canTechAct = !!user?.is_rev_tecnica && door?.status === "pending_approvals" && door?.technical_decision === "pending";
 
   function continueDoorWorkflow(savedDoor) {
-    if (!isDoorWorkflow) return false;
-    const nextIpanelId = String(savedDoor?.record?.ipanel_quote_id || workflowIpanelQuoteId || ipanelQuoteId || "").trim();
-    if (workflowStage === "door_first" && nextIpanelId) {
-      navigate(`/cotizador/ipanel/${nextIpanelId}?door_workflow=1&workflow_stage=ipanel_final&door_id=${encodeURIComponent(id)}&porton_id=${encodeURIComponent(workflowPortonId || savedDoor?.linked_quote_id || "")}`);
-      return true;
-    }
-    if (workflowStage === "door_final" && (workflowPortonId || savedDoor?.linked_quote_id)) {
-      navigate(`/presupuestos/${workflowPortonId || savedDoor?.linked_quote_id}`);
-      return true;
-    }
-    return false;
+    if (!returnToPanel) return false;
+    navigate(`/puertas/${savedDoor?.id || id}`);
+    return true;
   }
 
   const saveM = useMutation({
@@ -236,7 +229,7 @@ export default function PuertaChecklistPage() {
       q.refetch();
       summaryQ.refetch();
       if (continueDoorWorkflow(saved)) {
-        toast.success(workflowStage === "door_first" ? "Marco guardado. Seguimos con Ipanel." : "Puerta completa.");
+        toast.success("Marco guardado. Volviendo al panel de la puerta.");
         return;
       }
       toast.success("Marco de puerta guardado.");
@@ -253,7 +246,7 @@ export default function PuertaChecklistPage() {
     onSuccess: (saved) => {
       q.refetch();
       if (continueDoorWorkflow(saved)) {
-        toast.success(workflowStage === "door_first" ? "Marco enviado. Seguimos con Ipanel." : "Puerta completa.");
+        toast.success("Marco guardado. Volviendo al panel de la puerta.");
         return;
       }
       toast.success("Marco de puerta enviado a aprobación.");
@@ -334,7 +327,7 @@ export default function PuertaChecklistPage() {
             ) : null}
             <Button variant="secondary" onClick={() => handleDoorPdf("presupuesto")}>PDF puerta</Button>
             {user?.is_distribuidor ? <Button variant="secondary" onClick={() => handleDoorPdf("proforma")}>PDF proforma puerta</Button> : null}
-            <Button variant="ghost" onClick={() => navigate("/puertas")}>Volver</Button>
+            <Button variant="ghost" onClick={() => navigate(`/puertas/${id}`)}>Volver a la puerta</Button>
           </div>
         </div>
 
@@ -742,9 +735,6 @@ export default function PuertaChecklistPage() {
               {canSellerEdit && (
                 <>
                   <Button onClick={() => saveM.mutate()} disabled={saveM.isPending || submitM.isPending}>Guardar</Button>
-                  <Button variant="primary" onClick={() => submitM.mutate()} disabled={submitM.isPending || saveM.isPending || door.status === "pending_approvals" || door.status === "synced_odoo"}>
-                    Enviar a aprobación
-                  </Button>
                 </>
               )}
               <Button variant="secondary" onClick={() => handleDoorPdf("presupuesto")}>Imprimir presupuesto puerta</Button>

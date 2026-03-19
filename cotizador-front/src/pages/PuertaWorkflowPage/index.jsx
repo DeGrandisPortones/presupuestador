@@ -111,7 +111,7 @@ export default function PuertaWorkflowPage() {
   async function openMarcoFirst() {
     try {
       const { door, ipanelQuoteId } = await bundleM.mutateAsync();
-      navigate(`/puertas/${door.id}?door_workflow=1&workflow_stage=door_first&porton_id=${encodeURIComponent(quoteId)}&ipanel_quote_id=${encodeURIComponent(ipanelQuoteId)}`);
+      navigate(`/puertas/${door.id}/marco?door_workflow=1&return_to_panel=1&workflow_stage=door_first&porton_id=${encodeURIComponent(quoteId)}&ipanel_quote_id=${encodeURIComponent(ipanelQuoteId)}`);
     } catch (e) {
       toast.error(e?.message || "No se pudo abrir el marco de puerta");
     }
