@@ -519,21 +519,14 @@ function renderPdf({ title, payload, useBasePrice }) {
   const customerName = safeStr(endCustomer?.name) || "(sin nombre)";
   const customerPhone = safeStr(endCustomer?.phone);
   const customerEmail = safeStr(endCustomer?.email);
-  const customerAddress = safeStr(endCustomer?.address);
-  const customerMaps = safeStr(endCustomer?.maps_url);
   const sellerName = getSellerName(payload);
-
   const destinationRaw = safeStr(payload?.fulfillment_mode);
   const destination = destinationRaw === "acopio" ? "Acopio" : destinationRaw === "produccion" ? "Producción" : (destinationRaw || "—");
-  const conditionRaw = safeStr(payload?.payload?.condition_mode ?? payload?.condition_mode);
-  const conditionText = safeStr(payload?.payload?.condition_text ?? payload?.condition_text);
-  const conditionMode = conditionRaw === "cond2" ? "Condición 2" : conditionRaw === "cond1" ? "Condición 1" : conditionRaw === "special" ? "Especial" : (conditionRaw || "");
-  const paymentMethod = safeStr(payload?.payload?.payment_method ?? payload?.payment_method);
   const showDestination = !!useBasePrice;
   const obs = safeStr(payload?.note);
 
   const quoteNo = getQuoteNumber(payload);
-  const { lines, grandTotal, coefPct } = buildLines(payload, { useBasePrice });
+  const { lines, grandTotal } = buildLines(payload, { useBasePrice });
 
   doc.x = margin;
   doc.y = margin;
@@ -552,27 +545,13 @@ function renderPdf({ title, payload, useBasePrice }) {
     doc.font("Helvetica-Bold").fontSize(18).fillColor("white").text("DG", margin + 18, margin + 22);
   }
 
-  doc
-    .font("Helvetica-Bold")
-    .fillColor("#111827")
-    .fontSize(16)
-    .text(title, margin, margin + 18, { width: innerW, align: "center" });
-
-  doc
-    .font("Helvetica-Bold")
-    .fontSize(11)
-    .text(`NÚMERO ${quoteNo || "—"}`, margin, margin + 16, { width: innerW - 10, align: "right" });
+  doc.font("Helvetica-Bold").fillColor("#111827").fontSize(16).text(title, margin, margin + 18, { width: innerW, align: "center" });
+  doc.font("Helvetica-Bold").fontSize(11).text(`NÚMERO ${quoteNo || "—"}`, margin, margin + 16, { width: innerW - 10, align: "right" });
 
   let y = margin + headerH + 12;
 
   doc.font("Helvetica-Bold").fontSize(18).fillColor("#111827").text(customerName.toUpperCase(), margin + 8, y);
-
-  doc
-    .font("Helvetica")
-    .fontSize(10)
-    .fillColor("#111827")
-    .text(`Fecha ${dateStr}`, margin, y + 2, { width: innerW - 8, align: "right" })
-    .text(`Vigencia ${validStr}`, margin, y + 16, { width: innerW - 8, align: "right" });
+  doc.font("Helvetica").fontSize(10).fillColor("#111827").text(`Fecha ${dateStr}`, margin, y + 2, { width: innerW - 8, align: "right" }).text(`Vigencia ${validStr}`, margin, y + 16, { width: innerW - 8, align: "right" });
 
   y += 44;
 
@@ -687,10 +666,9 @@ function renderPdf({ title, payload, useBasePrice }) {
   }
 
   ensureSpace(TOTAL_ROW_H + 8);
-  const totalRowY = tableY;
   drawRow(doc, {
     x: tableX,
-    y: totalRowY,
+    y: tableY,
     w: innerW,
     h: TOTAL_ROW_H,
     cols: [
@@ -705,7 +683,7 @@ function renderPdf({ title, payload, useBasePrice }) {
   doc.x = margin;
   doc.y = margin + 10;
 
-  doc.font("Helvetica-Bold").fontSize(14).fillColor("#111827").text("Términos y Condiciones de Venta:", { underline: false });
+  doc.font("Helvetica-Bold").fontSize(14).fillColor("#111827").text("Términos y Condiciones de Venta:");
   doc.moveDown(0.8);
 
   const terms = [
@@ -745,18 +723,11 @@ export function buildPdfRouter() {
   router.post("/presupuesto", async (req, res, next) => {
     try {
       const payload = req.body || {};
-      const pdf = await renderPdf({
-        title: "PRESUPUESTO",
-        payload,
-        useBasePrice: false,
-      });
-
+      const pdf = await renderPdf({ title: "PRESUPUESTO", payload, useBasePrice: false });
       res.setHeader("Content-Type", "application/pdf");
       res.setHeader("Content-Disposition", `attachment; filename="presupuesto_${Date.now()}.pdf"`);
       res.send(pdf);
-    } catch (e) {
-      next(e);
-    }
+    } catch (e) { next(e); }
   });
 
   router.get("/medicion/public/:token", async (req, res, next) => {
@@ -764,30 +735,16 @@ export function buildPdfRouter() {
       await ensureQuotesMeasurementColumns();
       const token = String(req.params.token || "").trim();
       if (!isShareToken(token)) return res.status(400).json({ ok: false, error: "token inválido" });
-
-      const r = await dbQuery(
-        `
-        select *
-        from public.presupuestador_quotes
-        where measurement_share_token = $1
-          and measurement_share_enabled_at is not null
-        limit 1
-        `,
-        [token]
-      );
+      const r = await dbQuery(`select * from public.presupuestador_quotes where measurement_share_token = $1 and measurement_share_enabled_at is not null limit 1`, [token]);
       const quote = r.rows?.[0];
       if (!quote) return res.status(404).json({ ok: false, error: "Planilla no encontrada" });
-
       const form = await resolveMeasurementForm(quote);
       if (!form) return res.status(404).json({ ok: false, error: "Planilla no disponible" });
-
       const pdf = await renderMeasurementPdf({ quote, form });
       res.setHeader("Content-Type", "application/pdf");
       res.setHeader("Content-Disposition", `inline; filename="medicion_${quote.id}.pdf"`);
       res.send(pdf);
-    } catch (e) {
-      next(e);
-    }
+    } catch (e) { next(e); }
   });
 
   router.get("/medicion/:id", requireAuth, async (req, res, next) => {
@@ -795,44 +752,29 @@ export function buildPdfRouter() {
       await ensureQuotesMeasurementColumns();
       const id = String(req.params.id || "").trim();
       if (!isUuid(id)) return res.status(400).json({ ok: false, error: "id inválido" });
-
       const r = await dbQuery(`select * from public.presupuestador_quotes where id=$1 limit 1`, [id]);
       const quote = r.rows?.[0];
       if (!quote) return res.status(404).json({ ok: false, error: "Presupuesto no encontrado" });
-
       const isOwner = String(quote.created_by_user_id) === String(req.user.user_id);
       const can = isOwner || !!req.user.is_medidor || !!req.user.is_enc_comercial || !!req.user.is_rev_tecnica;
       if (!can) return res.status(403).json({ ok: false, error: "No autorizado" });
-
       const form = await resolveMeasurementForm(quote);
-      if (!form) {
-        return res.status(400).json({ ok: false, error: "Este presupuesto todavía no tiene medición cargada" });
-      }
-
+      if (!form) return res.status(400).json({ ok: false, error: "Este presupuesto todavía no tiene medición cargada" });
       const pdf = await renderMeasurementPdf({ quote, form });
       res.setHeader("Content-Type", "application/pdf");
       res.setHeader("Content-Disposition", `attachment; filename="medicion_${id}.pdf"`);
       res.send(pdf);
-    } catch (e) {
-      next(e);
-    }
+    } catch (e) { next(e); }
   });
 
   router.post("/proforma", async (req, res, next) => {
     try {
       const payload = req.body || {};
-      const pdf = await renderPdf({
-        title: "PROFORMA",
-        payload,
-        useBasePrice: true,
-      });
-
+      const pdf = await renderPdf({ title: "PROFORMA", payload, useBasePrice: true });
       res.setHeader("Content-Type", "application/pdf");
       res.setHeader("Content-Disposition", `attachment; filename="proforma_${Date.now()}.pdf"`);
       res.send(pdf);
-    } catch (e) {
-      next(e);
-    }
+    } catch (e) { next(e); }
   });
 
   return router;

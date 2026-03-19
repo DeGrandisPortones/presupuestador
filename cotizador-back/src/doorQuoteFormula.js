@@ -6,30 +6,19 @@ const DEFAULT_FORMULA = "precio_ipanel + precio_venta_marco";
 const ALLOWED_VARS = ["precio_ipanel", "precio_compra_marco", "precio_venta_marco"];
 
 function normalizeFormula(value) {
-  const s = String(value || "")
-    .replace(/\u00A0/g, " ")
-    .replace(/[–—]/g, "-")
-    .replace(/×/g, "*")
-    .replace(/÷/g, "/")
-    .replace(/\s+/g, " ")
+  const raw = String(value || "")
+    .normalize("NFKC")
+    .replace(/[\u200B-\u200D\uFEFF]/g, "")
+    .replace(/[\u00A0\u1680\u2000-\u200A\u202F\u205F\u3000]/g, " ")
+    .replace(/[−–—]/g, "-")
+    .replace(/[×✕]/g, "*")
+    .replace(/[÷]/g, "/")
     .trim();
-  return s || DEFAULT_FORMULA;
-}
-
-function validateFormulaTokens(formula) {
-  const normalized = normalizeFormula(formula);
-  const replaced = ALLOWED_VARS.reduce((acc, name) => {
-    return acc.replace(new RegExp(`\\b${name}\\b`, "g"), "1");
-  }, normalized);
-  if (!/^[0-9+\-*/().\s]+$/.test(replaced)) {
-    throw new Error('La fórmula de puerta contiene caracteres no permitidos.');
-  }
-  return normalized;
+  return raw || DEFAULT_FORMULA;
 }
 
 function injectVars(formula, vars) {
-  const safeFormula = validateFormulaTokens(formula);
-  let expr = ` ${safeFormula} `;
+  let expr = ` ${formula} `;
   for (const name of ALLOWED_VARS) {
     const val = round2(vars?.[name] || 0);
     expr = expr.replace(new RegExp(`\\b${name}\\b`, "g"), `(${val})`);
@@ -37,11 +26,28 @@ function injectVars(formula, vars) {
   return expr;
 }
 
-function validateFinalExpression(expr) {
-  if (!/^[0-9+\-*/().\s]+$/.test(expr)) {
-    throw new Error('La fórmula de puerta contiene caracteres no permitidos.');
+function validateFormulaTokens(formula) {
+  const normalized = normalizeFormula(formula);
+  const stripped = normalized
+    .replace(/\bprecio_ipanel\b/g, "")
+    .replace(/\bprecio_compra_marco\b/g, "")
+    .replace(/\bprecio_venta_marco\b/g, "");
+  if (!/^[0-9+\-*/().\s]*$/.test(stripped)) {
+    throw new Error("La fórmula de puerta contiene caracteres no permitidos.");
   }
-  return expr;
+  return normalized;
+}
+
+function validateFinalExpression(expr) {
+  const normalized = String(expr || "")
+    .normalize("NFKC")
+    .replace(/[\u200B-\u200D\uFEFF]/g, "")
+    .replace(/[\u00A0\u1680\u2000-\u200A\u202F\u205F\u3000]/g, " ")
+    .trim();
+  if (!/^[0-9+\-*/().\s]+$/.test(normalized)) {
+    throw new Error("La fórmula de puerta contiene caracteres no permitidos.");
+  }
+  return normalized;
 }
 
 export function evaluateDoorQuoteFormula(formula, vars = {}) {
@@ -51,14 +57,14 @@ export function evaluateDoorQuoteFormula(formula, vars = {}) {
   try {
     result = Function(`"use strict"; return (${expr});`)();
   } catch {
-    throw new Error('La fórmula de puerta es inválida.');
+    throw new Error("La fórmula de puerta es inválida.");
   }
-  if (!Number.isFinite(Number(result))) throw new Error('La fórmula de puerta devolvió un valor inválido.');
+  if (!Number.isFinite(Number(result))) throw new Error("La fórmula de puerta devolvió un valor inválido.");
   return round2(result);
 }
 
 export function normalizeDoorQuoteFormula(value) {
-  const normalized = normalizeFormula(value);
+  const normalized = validateFormulaTokens(value);
   evaluateDoorQuoteFormula(normalized, {
     precio_ipanel: 100,
     precio_compra_marco: 50,
@@ -69,9 +75,9 @@ export function normalizeDoorQuoteFormula(value) {
 
 export function getDoorQuoteFormulaVariablesHelp() {
   return [
-    { key: 'precio_ipanel', label: 'Precio Ipanel' },
-    { key: 'precio_compra_marco', label: 'Precio compra marco' },
-    { key: 'precio_venta_marco', label: 'Precio venta marco' },
+    { key: "precio_ipanel", label: "Precio Ipanel" },
+    { key: "precio_compra_marco", label: "Precio compra marco" },
+    { key: "precio_venta_marco", label: "Precio venta marco" },
   ];
 }
 
