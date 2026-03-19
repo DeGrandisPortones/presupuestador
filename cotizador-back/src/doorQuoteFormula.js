@@ -13,6 +13,9 @@ function normalizeFormula(value) {
     .replace(/[−–—]/g, "-")
     .replace(/[×✕]/g, "*")
     .replace(/[÷]/g, "/")
+    .replace(/(\d),(\d)/g, "$1.$2")
+    .replace(/[^A-Za-z0-9_+\-*/().\s]/g, " ")
+    .replace(/\s+/g, " ")
     .trim();
   return raw || DEFAULT_FORMULA;
 }
@@ -31,8 +34,10 @@ function validateFormulaTokens(formula) {
   const stripped = normalized
     .replace(/\bprecio_ipanel\b/g, "")
     .replace(/\bprecio_compra_marco\b/g, "")
-    .replace(/\bprecio_venta_marco\b/g, "");
-  if (!/^[0-9+\-*/().\s]*$/.test(stripped)) {
+    .replace(/\bprecio_venta_marco\b/g, "")
+    .replace(/[0-9]+(?:\.[0-9]+)?/g, "")
+    .replace(/[+\-*/().\s]/g, "");
+  if (stripped.trim()) {
     throw new Error("La fórmula de puerta contiene caracteres no permitidos.");
   }
   return normalized;
@@ -43,6 +48,7 @@ function validateFinalExpression(expr) {
     .normalize("NFKC")
     .replace(/[\u200B-\u200D\uFEFF]/g, "")
     .replace(/[\u00A0\u1680\u2000-\u200A\u202F\u205F\u3000]/g, " ")
+    .replace(/\s+/g, " ")
     .trim();
   if (!/^[0-9+\-*/().\s]+$/.test(normalized)) {
     throw new Error("La fórmula de puerta contiene caracteres no permitidos.");
@@ -50,8 +56,7 @@ function validateFinalExpression(expr) {
   return normalized;
 }
 
-export function evaluateDoorQuoteFormula(formula, vars = {}) {
-  const normalized = validateFormulaTokens(formula);
+function evaluateNormalizedFormula(normalized, vars = {}) {
   const expr = validateFinalExpression(injectVars(normalized, vars));
   let result = 0;
   try {
@@ -59,18 +64,35 @@ export function evaluateDoorQuoteFormula(formula, vars = {}) {
   } catch {
     throw new Error("La fórmula de puerta es inválida.");
   }
-  if (!Number.isFinite(Number(result))) throw new Error("La fórmula de puerta devolvió un valor inválido.");
+  if (!Number.isFinite(Number(result))) {
+    throw new Error("La fórmula de puerta devolvió un valor inválido.");
+  }
   return round2(result);
 }
 
+export function evaluateDoorQuoteFormula(formula, vars = {}) {
+  let normalized = DEFAULT_FORMULA;
+  try {
+    normalized = validateFormulaTokens(formula);
+  } catch {
+    normalized = DEFAULT_FORMULA;
+  }
+  return evaluateNormalizedFormula(normalized, vars);
+}
+
 export function normalizeDoorQuoteFormula(value) {
-  const normalized = validateFormulaTokens(value);
-  evaluateDoorQuoteFormula(normalized, {
-    precio_ipanel: 100,
-    precio_compra_marco: 50,
-    precio_venta_marco: 80,
-  });
-  return normalized;
+  let normalized = DEFAULT_FORMULA;
+  try {
+    normalized = validateFormulaTokens(value);
+    evaluateNormalizedFormula(normalized, {
+      precio_ipanel: 100,
+      precio_compra_marco: 50,
+      precio_venta_marco: 80,
+    });
+    return normalized;
+  } catch {
+    return DEFAULT_FORMULA;
+  }
 }
 
 export function getDoorQuoteFormulaVariablesHelp() {

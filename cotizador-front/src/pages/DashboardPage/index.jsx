@@ -60,6 +60,25 @@ const MEASUREMENT_FIELDS = [
   ]},
 ];
 
+const DOOR_FORMULA_VARIABLE_OPTIONS = [
+  { value: "precio_ipanel", label: "precio_ipanel" },
+  { value: "precio_compra_marco", label: "precio_compra_marco" },
+  { value: "precio_venta_marco", label: "precio_venta_marco" },
+];
+const DOOR_FORMULA_OPERATOR_OPTIONS = [
+  { value: "+", label: "+" },
+  { value: "-", label: "-" },
+  { value: "*", label: "*" },
+  { value: "/", label: "/" },
+];
+const DEFAULT_DOOR_FORMULA_BUILDER = {
+  leftMode: "variable",
+  leftValue: "precio_ipanel",
+  operator: "+",
+  rightMode: "variable",
+  rightValue: "precio_venta_marco",
+};
+
 function norm(x) {
   return (x || "").toString().trim().toLowerCase();
 }
@@ -97,6 +116,68 @@ function visibilityModeFromTypeEntry(entry) {
   return visibilityModeFromFlags(!!entry?.disable_for_vendedor, !!entry?.disable_for_distribuidor);
 }
 
+function normalizeDoorBuilderNumber(value) {
+  return String(value ?? "")
+    .replace(/,/g, ".")
+    .replace(/[^0-9.]/g, "")
+    .trim();
+}
+
+function buildDoorFormulaFromBuilder(builder) {
+  const left = builder?.leftMode === "number"
+    ? (normalizeDoorBuilderNumber(builder?.leftValue) || "0")
+    : String(builder?.leftValue || "precio_ipanel").trim();
+  const right = builder?.rightMode === "number"
+    ? (normalizeDoorBuilderNumber(builder?.rightValue) || "0")
+    : String(builder?.rightValue || "precio_venta_marco").trim();
+  const operator = ["+", "-", "*", "/"].includes(String(builder?.operator || "")) ? String(builder.operator) : "+";
+  return `${left} ${operator} ${right}`.trim();
+}
+
+function parseDoorFormulaBuilder(formula) {
+  const raw = String(formula || "").trim();
+  const match = raw.match(/^\s*(precio_ipanel|precio_compra_marco|precio_venta_marco|\d+(?:[.,]\d+)?)\s*([+\-*/])\s*(precio_ipanel|precio_compra_marco|precio_venta_marco|\d+(?:[.,]\d+)?)\s*$/i);
+  if (!match) return { ...DEFAULT_DOOR_FORMULA_BUILDER };
+  const [, leftToken, operator, rightToken] = match;
+  const isLeftNumber = /^\d+(?:[.,]\d+)?$/.test(leftToken);
+  const isRightNumber = /^\d+(?:[.,]\d+)?$/.test(rightToken);
+  return {
+    leftMode: isLeftNumber ? "number" : "variable",
+    leftValue: isLeftNumber ? normalizeDoorBuilderNumber(leftToken) : leftToken,
+    operator,
+    rightMode: isRightNumber ? "number" : "variable",
+    rightValue: isRightNumber ? normalizeDoorBuilderNumber(rightToken) : rightToken,
+  };
+}
+
+function FormulaOperandField({ label, mode, value, onModeChange, onValueChange }) {
+  return (
+    <div style={{ border: "1px solid #e5e7eb", borderRadius: 12, padding: 12, background: "#fff" }}>
+      <div className="muted" style={{ marginBottom: 8 }}>{label}</div>
+      <select
+        value={mode}
+        onChange={(e) => onModeChange(e.target.value)}
+        style={{ padding: 10, borderRadius: 10, border: "1px solid #ddd", width: "100%", marginBottom: 10 }}
+      >
+        <option value="variable">Variable</option>
+        <option value="number">Valor fijo</option>
+      </select>
+
+      {mode === "number" ? (
+        <Input value={value} onChange={onValueChange} placeholder="0" style={{ width: "100%" }} />
+      ) : (
+        <select
+          value={value}
+          onChange={(e) => onValueChange(e.target.value)}
+          style={{ padding: 10, borderRadius: 10, border: "1px solid #ddd", width: "100%" }}
+        >
+          {DOOR_FORMULA_VARIABLE_OPTIONS.map((opt) => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+        </select>
+      )}
+    </div>
+  );
+}
+
 export default function DashboardPage() {
   const user = useAuthStore((s) => s.user);
   const qc = useQueryClient();
@@ -104,7 +185,7 @@ export default function DashboardPage() {
   const [tab, setTab] = useState("tags");
   const [catalogKind, setCatalogKind] = useState("porton");
   const [tolerancePercent, setTolerancePercent] = useState("0");
-  const [doorFormula, setDoorFormula] = useState("precio_ipanel + precio_venta_marco");
+  const [doorFormulaBuilder, setDoorFormulaBuilder] = useState({ ...DEFAULT_DOOR_FORMULA_BUILDER });
   const [savingTolerance, setSavingTolerance] = useState(false);
   const [savingDoorFormula, setSavingDoorFormula] = useState(false);
   const [newSectionName, setNewSectionName] = useState("");
@@ -120,6 +201,8 @@ export default function DashboardPage() {
   const doorQuoteSettingsQ = useQuery({ queryKey: ["adminDoorQuoteSettings"], queryFn: adminGetDoorQuoteSettings, enabled: !!user?.is_enc_comercial });
   const measurementMappingsQ = useQuery({ queryKey: ["adminMeasurementProductMappings"], queryFn: adminGetMeasurementProductMappings, enabled: !!user?.is_enc_comercial && tab === "medicion" });
 
+  const doorFormula = useMemo(() => buildDoorFormulaFromBuilder(doorFormulaBuilder), [doorFormulaBuilder]);
+
   useEffect(() => {
     if (!finalSettingsQ.data) return;
     setTolerancePercent(String(finalSettingsQ.data.tolerance_percent ?? 0));
@@ -127,7 +210,7 @@ export default function DashboardPage() {
 
   useEffect(() => {
     if (!doorQuoteSettingsQ.data) return;
-    setDoorFormula(String(doorQuoteSettingsQ.data.formula || "precio_ipanel + precio_venta_marco"));
+    setDoorFormulaBuilder(parseDoorFormulaBuilder(doorQuoteSettingsQ.data.formula || "precio_ipanel + precio_venta_marco"));
   }, [doorQuoteSettingsQ.data]);
 
   const catalog = catalogQ.data;
@@ -222,7 +305,7 @@ export default function DashboardPage() {
     setSavingDoorFormula(true);
     try {
       const saved = await adminSaveDoorQuoteSettings({ formula: doorFormula });
-      setDoorFormula(String(saved.formula || "precio_ipanel + precio_venta_marco"));
+      setDoorFormulaBuilder(parseDoorFormulaBuilder(String(saved.formula || "precio_ipanel + precio_venta_marco")));
       qc.invalidateQueries({ queryKey: ["adminDoorQuoteSettings"] });
       alert("Fórmula de puerta guardada correctamente.");
     } finally {
@@ -257,18 +340,60 @@ export default function DashboardPage() {
       <div className="card" style={{ background: "#fafafa" }}>
         <h3 style={{ marginTop: 0 }}>Fórmula comercial de puerta</h3>
         <div className="muted" style={{ marginBottom: 10 }}>
-          Variables disponibles: <b>precio_ipanel</b>, <b>precio_compra_marco</b>, <b>precio_venta_marco</b>. Podés usar <b>+ - * /</b> y paréntesis.
+          Elegí los dos términos que forman la fórmula y el operador entre ellos. Así evitamos caracteres raros o fórmulas rotas.
         </div>
-        <textarea
-          value={doorFormula}
-          onChange={(e) => setDoorFormula(e.target.value)}
-          placeholder="Ej: precio_ipanel + precio_venta_marco"
-          style={{ width: "100%", minHeight: 72, padding: 10, borderRadius: 10, border: "1px solid #ddd", resize: "vertical" }}
-        />
+
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 12, alignItems: "end" }}>
+          <FormulaOperandField
+            label="Primer término"
+            mode={doorFormulaBuilder.leftMode}
+            value={doorFormulaBuilder.leftValue}
+            onModeChange={(nextMode) => setDoorFormulaBuilder((prev) => ({
+              ...prev,
+              leftMode: nextMode,
+              leftValue: nextMode === "number" ? normalizeDoorBuilderNumber(prev.leftValue) : "precio_ipanel",
+            }))}
+            onValueChange={(nextValue) => setDoorFormulaBuilder((prev) => ({
+              ...prev,
+              leftValue: prev.leftMode === "number" ? normalizeDoorBuilderNumber(nextValue) : nextValue,
+            }))}
+          />
+
+          <div style={{ border: "1px solid #e5e7eb", borderRadius: 12, padding: 12, background: "#fff" }}>
+            <div className="muted" style={{ marginBottom: 8 }}>Operador</div>
+            <select
+              value={doorFormulaBuilder.operator}
+              onChange={(e) => setDoorFormulaBuilder((prev) => ({ ...prev, operator: e.target.value }))}
+              style={{ padding: 10, borderRadius: 10, border: "1px solid #ddd", width: "100%" }}
+            >
+              {DOOR_FORMULA_OPERATOR_OPTIONS.map((opt) => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+            </select>
+          </div>
+
+          <FormulaOperandField
+            label="Segundo término"
+            mode={doorFormulaBuilder.rightMode}
+            value={doorFormulaBuilder.rightValue}
+            onModeChange={(nextMode) => setDoorFormulaBuilder((prev) => ({
+              ...prev,
+              rightMode: nextMode,
+              rightValue: nextMode === "number" ? normalizeDoorBuilderNumber(prev.rightValue) : "precio_venta_marco",
+            }))}
+            onValueChange={(nextValue) => setDoorFormulaBuilder((prev) => ({
+              ...prev,
+              rightValue: prev.rightMode === "number" ? normalizeDoorBuilderNumber(nextValue) : nextValue,
+            }))}
+          />
+        </div>
+
+        <div className="spacer" />
+        <div className="muted" style={{ marginBottom: 6 }}>Vista previa</div>
+        <div style={{ width: "100%", minHeight: 52, padding: 12, borderRadius: 10, border: "1px solid #ddd", background: "#fff", fontFamily: "monospace" }}>{doorFormula}</div>
+
         <div className="spacer" />
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
           <Button variant="primary" onClick={onSaveDoorFormula} disabled={savingDoorFormula || doorQuoteSettingsQ.isLoading}>{savingDoorFormula ? "Guardando..." : "Guardar fórmula"}</Button>
-          <Button variant="ghost" onClick={() => setDoorFormula("precio_ipanel + precio_venta_marco")}>Usar fórmula base</Button>
+          <Button variant="ghost" onClick={() => setDoorFormulaBuilder({ ...DEFAULT_DOOR_FORMULA_BUILDER })}>Usar fórmula base</Button>
           {doorQuoteSettingsQ.isError ? <div style={{ color: "#d93025" }}>{doorQuoteSettingsQ.error.message}</div> : null}
         </div>
       </div>

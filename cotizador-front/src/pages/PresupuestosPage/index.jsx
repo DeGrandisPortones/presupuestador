@@ -211,6 +211,7 @@ export default function PresupuestosPage() {
   const navigate = useNavigate();
   const user = useAuthStore((s) => s.user);
   const [filter, setFilter] = useState("all");
+  const [typeFilter, setTypeFilter] = useState("all");
   const [searchText, setSearchText] = useState("");
   const [page, setPage] = useState(1);
 
@@ -238,7 +239,7 @@ export default function PresupuestosPage() {
 
   useEffect(() => {
     setPage(1);
-  }, [filter, searchText]);
+  }, [filter, typeFilter, searchText]);
 
   const rows = useMemo(() => {
     const quoteRows = (quotesQ.data || []).map((q) => ({
@@ -294,8 +295,17 @@ export default function PresupuestosPage() {
       );
     }
 
+    if (typeFilter !== "all") {
+      filtered = filtered.filter((item) => {
+        if (typeFilter === "porton") return item.rowKind === "quote" && String(item.raw?.catalog_kind || "porton").toLowerCase() === "porton";
+        if (typeFilter === "ipanel") return item.rowKind === "quote" && String(item.raw?.catalog_kind || "porton").toLowerCase() === "ipanel";
+        if (typeFilter === "puerta") return item.rowKind === "door";
+        return true;
+      });
+    }
+
     return filtered.filter((item) => matchesRowSearch(item, searchText));
-  }, [quotesQ.data, doorsQ.data, filter, searchText]);
+  }, [quotesQ.data, doorsQ.data, filter, typeFilter, searchText]);
 
   useEffect(() => {
     const totalPages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
@@ -336,6 +346,15 @@ export default function PresupuestosPage() {
           placeholder="Buscar por tipo, cliente, localidad, dirección, teléfono, código o estado…"
           style={{ width: "100%", padding: 10, borderRadius: 12, border: "1px solid #ddd" }}
         />
+
+        <div className="spacer" />
+
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <Button variant={typeFilter === "all" ? "primary" : "ghost"} onClick={() => setTypeFilter("all")}>Todos los tipos</Button>
+          <Button variant={typeFilter === "porton" ? "primary" : "ghost"} onClick={() => setTypeFilter("porton")}>Portón</Button>
+          <Button variant={typeFilter === "ipanel" ? "primary" : "ghost"} onClick={() => setTypeFilter("ipanel")}>Ipanel</Button>
+          <Button variant={typeFilter === "puerta" ? "primary" : "ghost"} onClick={() => setTypeFilter("puerta")}>Puerta</Button>
+        </div>
       </div>
 
       <div className="spacer" />
