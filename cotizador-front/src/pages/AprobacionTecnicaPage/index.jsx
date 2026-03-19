@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useNavigate, useSearchParams } from "react-router-dom";
+import toast from "react-hot-toast";
 import Button from "../../ui/Button.jsx";
 import Input from "../../ui/Input.jsx";
 import PaginationControls from "../../ui/PaginationControls.jsx";
@@ -8,6 +9,7 @@ import { listQuotes, reviewAcopioTechnical } from "../../api/quotes.js";
 import { listDoors, reviewDoorTechnical } from "../../api/doors.js";
 import { listMeasurements, scheduleMeasurement } from "../../api/measurements.js";
 import { useAuthStore } from "../../domain/auth/store.js";
+import { downloadListingDoorPdf, downloadListingQuotePdf } from "../../utils/listingPdf.js";
 
 const PAGE_SIZE = 25;
 const VALID_TABS = ["aprobaciones_portones", "aprobaciones_puertas", "aprobaciones_mediciones", "acopio"];
@@ -68,6 +70,13 @@ function toTimeDesc(value) {
   if (Number.isNaN(d.getTime())) return 0;
   return d.getTime();
 }
+function PdfIconButton({ onClick, disabled = false }) {
+  return (
+    <Button variant="ghost" disabled={disabled} onClick={onClick} title="Descargar PDF">
+      📄
+    </Button>
+  );
+}
 
 export default function AprobacionTecnicaPage() {
   const navigate = useNavigate();
@@ -83,6 +92,7 @@ export default function AprobacionTecnicaPage() {
   const [pageMediciones, setPageMediciones] = useState(1);
   const [pageAcopio, setPageAcopio] = useState(1);
   const [pagePuertas, setPagePuertas] = useState(1);
+  const [downloadingPdfKey, setDownloadingPdfKey] = useState("");
 
   useEffect(() => {
     const nextTab = normalizeTab(searchParams.get("tab"));
@@ -104,6 +114,30 @@ export default function AprobacionTecnicaPage() {
     mutationFn: ({ id, scheduledFor }) => scheduleMeasurement(id, { scheduledFor }),
     onSuccess: () => measQ.refetch(),
   });
+
+  async function handleDownloadQuotePdf(id) {
+    const key = `quote-${id}`;
+    setDownloadingPdfKey(key);
+    try {
+      await downloadListingQuotePdf(id);
+    } catch (e) {
+      toast.error(e?.message || "No se pudo descargar el PDF");
+    } finally {
+      setDownloadingPdfKey("");
+    }
+  }
+
+  async function handleDownloadDoorPdf(id) {
+    const key = `door-${id}`;
+    setDownloadingPdfKey(key);
+    try {
+      await downloadListingDoorPdf(id);
+    } catch (e) {
+      toast.error(e?.message || "No se pudo descargar el PDF de puerta");
+    } finally {
+      setDownloadingPdfKey("");
+    }
+  }
 
   function goToTab(nextTab) {
     const normalized = normalizeTab(nextTab);
@@ -271,7 +305,10 @@ export default function AprobacionTecnicaPage() {
             {!!rows.length && (
               <>
                 <table><thead><tr><th>Fecha</th><th>Vendedor/Distribuidor</th><th>Cliente</th><th>Dirección</th><th>Estado</th><th></th></tr></thead><tbody>
-                  {visibleRows.map((r) => <tr key={r.id}><td>{fmtDate(r.created_at)}</td><td>{createdByLabel(r)}</td><td>{r.end_customer?.name || <span className="muted">(sin nombre)</span>}</td><td>{r.end_customer?.address || "—"}</td><td>{rowLabel(r)}</td><td className="right"><Button onClick={() => navigate(`/presupuestos/${r.id}`, { state: { from: "/aprobacion/tecnica" } })}>Abrir</Button></td></tr>)}
+                  {visibleRows.map((r) => {
+                    const pdfKey = `quote-${r.id}`;
+                    return <tr key={r.id}><td>{fmtDate(r.created_at)}</td><td>{createdByLabel(r)}</td><td>{r.end_customer?.name || <span className="muted">(sin nombre)</span>}</td><td>{r.end_customer?.address || "—"}</td><td>{rowLabel(r)}</td><td className="right" style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}><PdfIconButton disabled={downloadingPdfKey === pdfKey} onClick={() => handleDownloadQuotePdf(r.id)} /><Button onClick={() => navigate(`/presupuestos/${r.id}`, { state: { from: "/aprobacion/tecnica" } })}>Abrir</Button></td></tr>;
+                  })}
                 </tbody></table>
                 <PaginationControls page={pageAprobaciones} totalItems={rows.length} pageSize={PAGE_SIZE} onPageChange={setPageAprobaciones} />
               </>
@@ -301,6 +338,7 @@ export default function AprobacionTecnicaPage() {
                   <tbody>
                     {visibleMeasurements.map((r) => {
                       const dateValue = measurementDates[r.id] ?? r.measurement_scheduled_for ?? "";
+                      const pdfKey = `quote-${r.id}`;
                       return (
                         <tr key={r.id}>
                           <td style={{ fontWeight: 800 }}>{r.end_customer?.name || "(sin nombre)"}</td>
@@ -324,7 +362,8 @@ export default function AprobacionTecnicaPage() {
                               </Button>
                             </div>
                           </td>
-                          <td className="right">
+                          <td className="right" style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+                            <PdfIconButton disabled={downloadingPdfKey === pdfKey} onClick={() => handleDownloadQuotePdf(r.id)} />
                             <Button variant="ghost" onClick={() => navigate(`/mediciones/${r.id}`)}>
                               {r.measurement_status === "submitted" ? "Revisar" : "Abrir"}
                             </Button>
@@ -350,7 +389,8 @@ export default function AprobacionTecnicaPage() {
                 <table><thead><tr><th>Fecha</th><th>Vendedor/Distribuidor</th><th>Cliente</th><th>Dirección</th><th>Solicitud</th><th>Decisiones</th><th></th></tr></thead><tbody>
                   {visibleAcopio.map((r) => {
                     const canAct = (r.acopio_to_produccion_technical_decision || "pending") === "pending";
-                    return <tr key={r.id}><td>{fmtDate(r.acopio_to_produccion_requested_at || r.created_at)}</td><td>{createdByLabel(r)}</td><td>{r.end_customer?.name || <span className="muted">(sin nombre)</span>}</td><td>{r.end_customer?.address || "—"}</td><td>{r.acopio_to_produccion_notes || <span className="muted">(sin nota)</span>}</td><td>{acopioReqLabel(r)}</td><td className="right" style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}><Button variant="ghost" onClick={() => navigate(`/presupuestos/${r.id}`, { state: { from: "/aprobacion/tecnica" } })}>Abrir</Button>{canAct ? <><Button disabled={acopioM.isPending} onClick={() => acopioM.mutate({ id: r.id, action: "approve", notes: null })}>OK</Button><Button variant="ghost" disabled={acopioM.isPending} onClick={() => { const msg = window.prompt("Motivo del rechazo:", ""); if (msg !== null) acopioM.mutate({ id: r.id, action: "reject", notes: msg }); }}>Rechazar</Button></> : <span className="muted">Ya decidiste</span>}</td></tr>;
+                    const pdfKey = `quote-${r.id}`;
+                    return <tr key={r.id}><td>{fmtDate(r.acopio_to_produccion_requested_at || r.created_at)}</td><td>{createdByLabel(r)}</td><td>{r.end_customer?.name || <span className="muted">(sin nombre)</span>}</td><td>{r.end_customer?.address || "—"}</td><td>{r.acopio_to_produccion_notes || <span className="muted">(sin nota)</span>}</td><td>{acopioReqLabel(r)}</td><td className="right" style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}><PdfIconButton disabled={downloadingPdfKey === pdfKey} onClick={() => handleDownloadQuotePdf(r.id)} /><Button variant="ghost" onClick={() => navigate(`/presupuestos/${r.id}`, { state: { from: "/aprobacion/tecnica" } })}>Abrir</Button>{canAct ? <><Button disabled={acopioM.isPending} onClick={() => acopioM.mutate({ id: r.id, action: "approve", notes: null })}>OK</Button><Button variant="ghost" disabled={acopioM.isPending} onClick={() => { const msg = window.prompt("Motivo del rechazo:", ""); if (msg !== null) acopioM.mutate({ id: r.id, action: "reject", notes: msg }); }}>Rechazar</Button></> : <span className="muted">Ya decidiste</span>}</td></tr>;
                   })}
                 </tbody></table>
                 <PaginationControls page={pageAcopio} totalItems={acopioRows.length} pageSize={PAGE_SIZE} onPageChange={setPageAcopio} />
@@ -367,7 +407,10 @@ export default function AprobacionTecnicaPage() {
             {!!doorRows.length && (
               <>
                 <table><thead><tr><th>Código</th><th>Cliente</th><th>Portón vinculado</th><th>Venta</th><th>Compra</th><th></th></tr></thead><tbody>
-                  {visibleDoors.map((d) => <tr key={d.id}><td>{d.door_code}</td><td>{d.record?.end_customer?.name || d.record?.obra_cliente || "—"}</td><td>{d.linked_quote_odoo_name || d.record?.asociado_porton || "—"}</td><td>{d.sale_amount ? `$ ${Number(d.sale_amount).toLocaleString("es-AR")}` : "—"}</td><td>{d.purchase_amount ? `$ ${Number(d.purchase_amount).toLocaleString("es-AR")}` : "—"}</td><td className="right" style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}><Button variant="ghost" onClick={() => navigate(`/puertas/${d.id}`)}>Abrir</Button><Button disabled={doorM.isPending} onClick={() => doorM.mutate({ id: d.id, action: "approve", notes: null })}>OK</Button><Button variant="ghost" disabled={doorM.isPending} onClick={() => { const msg = window.prompt("Motivo del rechazo:", ""); if (msg !== null) doorM.mutate({ id: d.id, action: "reject", notes: msg }); }}>Rechazar</Button></td></tr>)}
+                  {visibleDoors.map((d) => {
+                    const pdfKey = `door-${d.id}`;
+                    return <tr key={d.id}><td>{d.door_code}</td><td>{d.record?.end_customer?.name || d.record?.obra_cliente || "—"}</td><td>{d.linked_quote_odoo_name || d.record?.asociado_porton || "—"}</td><td>{d.sale_amount ? `$ ${Number(d.sale_amount).toLocaleString("es-AR")}` : "—"}</td><td>{d.purchase_amount ? `$ ${Number(d.purchase_amount).toLocaleString("es-AR")}` : "—"}</td><td className="right" style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}><PdfIconButton disabled={downloadingPdfKey === pdfKey} onClick={() => handleDownloadDoorPdf(d.id)} /><Button variant="ghost" onClick={() => navigate(`/puertas/${d.id}`)}>Abrir</Button><Button disabled={doorM.isPending} onClick={() => doorM.mutate({ id: d.id, action: "approve", notes: null })}>OK</Button><Button variant="ghost" disabled={doorM.isPending} onClick={() => { const msg = window.prompt("Motivo del rechazo:", ""); if (msg !== null) doorM.mutate({ id: d.id, action: "reject", notes: msg }); }}>Rechazar</Button></td></tr>;
+                  })}
                 </tbody></table>
                 <PaginationControls page={pagePuertas} totalItems={doorRows.length} pageSize={PAGE_SIZE} onPageChange={setPagePuertas} />
               </>
