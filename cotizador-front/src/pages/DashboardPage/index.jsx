@@ -5,7 +5,6 @@ import { PORTON_TYPES } from "../../domain/quote/portonConstants.js";
 
 import Button from "../../ui/Button.jsx";
 import Input from "../../ui/Input.jsx";
-import DoorFormulaBuilder from "./DoorFormulaBuilder.jsx";
 
 import {
   adminGetCatalog,
@@ -61,6 +60,43 @@ const MEASUREMENT_FIELDS = [
   ]},
 ];
 
+function norm(x) {
+  return (x || "").toString().trim().toLowerCase();
+}
+
+function normalizeMeasurementMappings(raw) {
+  const rules = Array.isArray(raw?.rules) ? raw.rules : [];
+  return {
+    rules: rules.map((rule) => ({
+      field_key: String(rule?.field_key || "").trim(),
+      field_label: String(rule?.field_label || rule?.field_key || "").trim(),
+      field_mode: String(rule?.field_mode || "enum").trim(),
+      active: rule?.active !== false,
+      values: Array.isArray(rule?.values)
+        ? rule.values.map((entry) => ({
+            expected_value: String(entry?.expected_value ?? entry?.value ?? "").trim(),
+            product_id: Number(entry?.product_id || 0) || "",
+          })).filter((entry) => entry.expected_value)
+        : [],
+    })).filter((rule) => rule.field_key),
+  };
+}
+
+function visibilityModeFromFlags(disableForVendedor, disableForDistribuidor) {
+  if (disableForVendedor && disableForDistribuidor) return "both";
+  if (disableForVendedor) return "vendedor";
+  if (disableForDistribuidor) return "distribuidor";
+  return "none";
+}
+
+function visibilityModeFromProduct(product) {
+  return visibilityModeFromFlags(!!product?.disable_for_vendedor, !!product?.disable_for_distribuidor);
+}
+
+function visibilityModeFromTypeEntry(entry) {
+  return visibilityModeFromFlags(!!entry?.disable_for_vendedor, !!entry?.disable_for_distribuidor);
+}
+
 export default function DashboardPage() {
   const user = useAuthStore((s) => s.user);
   const qc = useQueryClient();
@@ -77,6 +113,7 @@ export default function DashboardPage() {
   const [productQuery, setProductQuery] = useState("");
   const [sectionFilter, setSectionFilter] = useState("all");
   const [tagFilter, setTagFilter] = useState("all");
+  const [fixedValueToInsert, setFixedValueToInsert] = useState("");
 
   const catalogQ = useQuery({ queryKey: ["adminCatalog", catalogKind], queryFn: () => adminGetCatalog(catalogKind), enabled: !!user?.is_enc_comercial });
   const quotesQ = useQuery({ queryKey: ["adminQuotes", catalogKind], queryFn: () => adminGetQuotes(catalogKind, 200), enabled: !!user?.is_enc_comercial && tab === "data" });
@@ -182,6 +219,16 @@ export default function DashboardPage() {
     }
   };
 
+  function appendFormulaToken(token) {
+    const next = String(token || "").trim();
+    if (!next) return;
+    setDoorFormula((prev) => {
+      const left = String(prev || "");
+      if (!left.trim()) return next;
+      return `${left} ${next}`;
+    });
+  }
+
   const onSaveDoorFormula = async () => {
     setSavingDoorFormula(true);
     try {
@@ -220,11 +267,34 @@ export default function DashboardPage() {
       <div className="spacer" />
       <div className="card" style={{ background: "#fafafa" }}>
         <h3 style={{ marginTop: 0 }}>Fórmula comercial de puerta</h3>
-        <div className="muted" style={{ marginBottom: 10 }}>Variables disponibles: <b>precio_ipanel</b>, <b>precio_compra_marco</b>, <b>precio_venta_marco</b> y sus alias <b>precio_compra</b> / <b>precio_venta</b>. Podés repetir variables, usar paréntesis y valores fijos.</div>
-        <DoorFormulaBuilder value={doorFormula} onChange={setDoorFormula} />
+        <div className="muted" style={{ marginBottom: 10 }}>
+          Variables disponibles: <b>precio_ipanel</b>, <b>precio_compra_marco</b>, <b>precio_venta_marco</b>.
+          También podés usar los alias <b>precio_compra</b> y <b>precio_venta</b>, repetir variables, agregar <b>paréntesis</b> y números fijos.
+        </div>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
+          <Button variant="ghost" onClick={() => appendFormulaToken("precio_ipanel")}>+ precio_ipanel</Button>
+          <Button variant="ghost" onClick={() => appendFormulaToken("precio_compra")}>+ precio_compra</Button>
+          <Button variant="ghost" onClick={() => appendFormulaToken("precio_venta")}>+ precio_venta</Button>
+          <Button variant="ghost" onClick={() => appendFormulaToken("(")}>(</Button>
+          <Button variant="ghost" onClick={() => appendFormulaToken(")")}> ) </Button>
+          <Button variant="ghost" onClick={() => appendFormulaToken("+")}>+</Button>
+          <Button variant="ghost" onClick={() => appendFormulaToken("-")}>-</Button>
+          <Button variant="ghost" onClick={() => appendFormulaToken("*")}>*</Button>
+          <Button variant="ghost" onClick={() => appendFormulaToken("/")}>/</Button>
+          <Input value={fixedValueToInsert} onChange={setFixedValueToInsert} placeholder="Valor fijo" style={{ width: 140 }} />
+          <Button variant="ghost" onClick={() => { appendFormulaToken(fixedValueToInsert); setFixedValueToInsert(""); }}>+ número</Button>
+        </div>
+        <textarea
+          value={doorFormula}
+          onChange={(e) => setDoorFormula(e.target.value)}
+          placeholder="Ej: ( precio_venta * 2 ) + 1000 / 2"
+          style={{ width: "100%", minHeight: 72, padding: 10, borderRadius: 10, border: "1px solid #ddd", resize: "vertical" }}
+        />
+        <div className="muted" style={{ marginTop: 8 }}>Ejemplo válido: <b>( precio_venta * 2 ) + 1000 / 2</b></div>
         <div className="spacer" />
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
           <Button variant="primary" onClick={onSaveDoorFormula} disabled={savingDoorFormula || doorQuoteSettingsQ.isLoading}>{savingDoorFormula ? "Guardando..." : "Guardar fórmula"}</Button>
+          <Button variant="ghost" onClick={() => setDoorFormula("precio_ipanel + precio_venta_marco")}>Usar fórmula base</Button>
           {doorQuoteSettingsQ.isError ? <div style={{ color: "#d93025" }}>{doorQuoteSettingsQ.error.message}</div> : null}
         </div>
       </div>
@@ -267,7 +337,7 @@ export default function DashboardPage() {
                           <div style={{ fontWeight: 800 }}>{s.name}</div>
                           <div className="muted">Posición: {s.position}</div>
                         </div>
-                        <Button variant="ghost" onClick={async () => { if (!window.confirm(`Borrar sección \"${s.name}\"?`)) return; await adminDeleteSection(catalogKind, s.id); qc.invalidateQueries({ queryKey: ["adminCatalog", catalogKind] }); alert("Sección borrada."); }}>🗑</Button>
+                        <Button variant="ghost" onClick={async () => { if (!window.confirm(`Borrar sección "${s.name}"?`)) return; await adminDeleteSection(catalogKind, s.id); qc.invalidateQueries({ queryKey: ["adminCatalog", catalogKind] }); alert("Sección borrada."); }}>🗑</Button>
                       </div>
                       <div className="spacer" />
                       <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
