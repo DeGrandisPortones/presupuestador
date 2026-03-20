@@ -270,7 +270,7 @@ async function applySellerToSaleOrder(odoo, orderId, sellerName) {
 async function getDoorHydratedById(id) {
   const r = await dbQuery(`
     select d.*, u.username as created_by_username, u.full_name as created_by_full_name,
-           q.odoo_sale_order_name as linked_quote_odoo_name, q.quote_number as linked_quote_number, q.status as linked_quote_status, q.end_customer as linked_quote_end_customer
+           q.odoo_sale_order_name as linked_quote_odoo_name, q.quote_number as linked_quote_number, q.status as linked_quote_status, q.fulfillment_mode as linked_quote_fulfillment_mode, q.end_customer as linked_quote_end_customer
       from public.presupuestador_doors d
       left join public.presupuestador_users u on u.id = d.created_by_user_id
       left join public.presupuestador_quotes q on q.id = d.linked_quote_id
@@ -279,7 +279,7 @@ async function getDoorHydratedById(id) {
   if (!row) return null;
   const record = row.record && typeof row.record === "object" ? { ...row.record } : {};
   if (!safeText(record.asociado_porton) && row.linked_quote_id) record.asociado_porton = buildLinkedPortonLabel({ id: row.linked_quote_id, odoo_sale_order_name: row.linked_quote_odoo_name, quote_number: row.linked_quote_number });
-  if (!safeText(record.fulfillment_mode) && row.linked_quote_id) record.fulfillment_mode = "";
+  if (row.linked_quote_id) record.fulfillment_mode = safeText(row.linked_quote_fulfillment_mode || record.fulfillment_mode);
   const resolvedDoorCode = row.linked_quote_odoo_name || row.linked_quote_number
     ? buildDoorCodeFromQuote({ id: row.linked_quote_id, odoo_sale_order_name: row.linked_quote_odoo_name, quote_number: row.linked_quote_number })
     : (row.door_code || buildStandaloneDoorCode(row.id));
@@ -580,7 +580,7 @@ export function buildDoorsRouter(odooArg) {
       const nextRecord = mergeDoorRecordWithCustomer({
         ...record,
         asociado_porton: linkedQuote ? buildLinkedPortonLabel(linkedQuote) : safeText(record?.asociado_porton),
-        fulfillment_mode: safeText(record?.fulfillment_mode),
+        fulfillment_mode: linkedQuote ? safeText(linkedQuote?.fulfillment_mode) : safeText(record?.fulfillment_mode),
       }, mergedCustomer);
       const core = extractDoorCore(nextRecord);
       await dbQuery(`update public.presupuestador_doors set record = $2::jsonb, door_code = $3, supplier_odoo_partner_id = $4, sale_amount = $5, purchase_amount = $6, updated_at = now() where id = $1`, [id, JSON.stringify(nextRecord), nextDoorCode, core.supplierId, core.saleAmount || null, core.purchaseAmount || null]);
@@ -594,6 +594,7 @@ export function buildDoorsRouter(odooArg) {
       const id = Number(req.params.id); if (!Number.isFinite(id)) return res.status(400).json({ ok: false, error: "id inválido" });
       const door = await getDoorHydratedById(id); if (!door) return res.status(404).json({ ok: false, error: "Puerta no encontrada" });
       if (String(door.created_by_user_id) !== String(req.user.user_id)) return res.status(403).json({ ok: false, error: "No autorizado" });
+      if (door.linked_quote_id) return res.status(409).json({ ok: false, error: "La puerta vinculada se envía a aprobación cuando confirmás el presupuesto del portón." });
       validateDoorForSubmit(door, door.record);
       await buildDoorQuoteSummary(door, "presupuesto");
       await dbQuery(`update public.presupuestador_doors set status='pending_approvals', commercial_decision='pending', technical_decision='pending', commercial_notes=null, technical_notes=null, updated_at=now() where id=$1`, [id]);

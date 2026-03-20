@@ -409,11 +409,9 @@ async function buildFinancingSaleOrderVals(odoo, paymentMethod) {
   if (!parsed) return empty;
 
   const planId = await resolveTacaTacaPlanId(odoo);
-  if (!planId) throw new Error(`No se encontro el plan de financiacion "${TACA_TACA_PLAN_NAME}" en Odoo`);
+  if (!planId) return empty;
   const rate = await resolveTacaTacaRate(odoo, { planId, cardType: parsed.cardType, installments: parsed.installments });
-  if (!rate?.id) {
-    throw new Error(`No se encontro una tasa Taca Taca para ${parsed.cardType} ${parsed.installments} cuotas`);
-  }
+  if (!rate?.id) return empty;
 
   const vals = { ...empty };
   if (fieldMeta.planField?.name) vals[fieldMeta.planField.name] = Number(planId);
@@ -427,6 +425,30 @@ async function buildFinancingSaleOrderVals(odoo, paymentMethod) {
       : Number(rawPercent);
   }
   return vals;
+}
+
+async function submitLinkedDoorsForQuote({ quote, isDistributor = false }) {
+  if (!quote?.id) return;
+  const r = await dbQuery(`select id, record from public.presupuestador_doors where linked_quote_id=$1`, [quote.id]);
+  for (const row of (r.rows || [])) {
+    const currentRecord = row.record && typeof row.record === "object" ? { ...row.record } : {};
+    const nextRecord = {
+      ...currentRecord,
+      fulfillment_mode: String(quote.fulfillment_mode || currentRecord.fulfillment_mode || "").trim(),
+    };
+    await dbQuery(
+      `update public.presupuestador_doors
+          set status='pending_approvals',
+              commercial_decision=$2,
+              technical_decision='pending',
+              commercial_notes=case when $2='approved' then 'AUTO: distribuidor' else null end,
+              technical_notes=null,
+              record=$3::jsonb,
+              updated_at=now()
+        where id=$1`,
+      [Number(row.id), isDistributor ? "approved" : "pending", JSON.stringify(nextRecord)]
+    );
+  }
 }
 
 function appendPaymentMethodToNote(note, paymentMethod) {
@@ -480,9 +502,10 @@ async function syncQuoteToOdoo({ odoo, quote, approverUser }) {
   if (!orderId) throw new Error("No se pudo crear sale.order en Odoo");
   await applySellerToSaleOrder(odoo, orderId, sellerName);
 
-  const [order] = await odoo.executeKw("sale.order", "read", [[orderId]], {
-    fields: ["id", "name", "amount_total", "partner_id", "state", "pricelist_id"],
-  });
+  const orderReference = quote?.quote_number ? `S${quote.quote_number}` : null;
+  const order = orderReference
+    ? (await renameOrderToReference(odoo, orderId, orderReference))
+    : (await odoo.executeKw("sale.order", "read", [[orderId]], { fields: ["id", "name", "amount_total", "partner_id", "state", "pricelist_id"] }))?.[0];
   return { order, deposit_amount: round2(total) };
 }
 
@@ -943,6 +966,7 @@ export function buildQuotesRouter(odoo) {
         [id, fm, isDistributor ? "approved" : "pending", "pending", reqMeas, nextMeasStatus]
       );
       const confirmed = upd.rows?.[0] || quote;
+      await submitLinkedDoorsForQuote({ quote: confirmed, isDistributor });
       try {
         if (fm === "acopio") {
           const exists = await getFinalCopyByParentId(id);

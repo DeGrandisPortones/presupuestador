@@ -614,8 +614,10 @@ function renderPdf({ title, payload, useBasePrice }) {
 
   if (extraLines.length) {
     const txt = extraLines.join("   ·   ");
-    doc.font("Helvetica").fontSize(10).fillColor("#111827").text(txt, margin + 2, y, { width: innerW - 4 });
-    y += 22;
+    const obsOptions = { width: innerW - 4, lineGap: 2 };
+    const obsHeight = doc.heightOfString(txt, obsOptions);
+    doc.font("Helvetica").fontSize(10).fillColor("#111827").text(txt, margin + 2, y, obsOptions);
+    y += obsHeight + 10;
   } else {
     y += 6;
   }

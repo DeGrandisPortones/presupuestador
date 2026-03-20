@@ -1,0 +1,18 @@
+Lote completo para reemplazo directo.
+
+Incluye:
+- cotizador-front/src/pages/QuoteDetailPage/index.jsx
+- cotizador-front/src/pages/PuertaPanelPage/index.jsx
+- cotizador-front/src/pages/PuertaChecklistPage/index.jsx
+- cotizador-back/src/routes/quotes.routes.js
+- cotizador-back/src/routes/doors.routes.js
+- cotizador-back/src/routes/pdf.routes.js
+
+Cambios principales:
+- puerta vinculada no se envía sola; se envía al confirmar el portón
+- puerta vinculada hereda destino del portón
+- detalle de presupuesto usa número de presupuesto en vez de UUID corto
+- PDF puerta corrige solapamiento del bloque de observaciones
+- ventas en Odoo renombran con S<numero_presupuesto>
+- si Taca Taca no existe, no rompe la venta
+- campo Vendedor/a en Odoo usa x_studio_vendedora si existe
