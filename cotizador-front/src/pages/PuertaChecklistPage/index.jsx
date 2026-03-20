@@ -234,8 +234,6 @@ export default function PuertaChecklistPage() {
   const user = useAuthStore((s) => s.user);
   const searchParams = useMemo(() => new URLSearchParams(location.search || ""), [location.search]);
   const isDoorWorkflow = searchParams.get("door_workflow") === "1";
-  const workflowStage = String(searchParams.get("workflow_stage") || "").trim();
-  const workflowPortonId = String(searchParams.get("porton_id") || "").trim();
   const workflowIpanelQuoteId = String(searchParams.get("ipanel_quote_id") || "").trim();
   const returnToPanel = searchParams.get("return_to_panel") === "1" || isDoorWorkflow;
 
@@ -252,6 +250,7 @@ export default function PuertaChecklistPage() {
   });
 
   const door = q.data;
+  const isLinkedDoor = !!door?.linked_quote_id;
   const [form, setForm] = useState(null);
   const [reviewNotes, setReviewNotes] = useState("");
 
@@ -427,6 +426,7 @@ export default function PuertaChecklistPage() {
               <span>Técnica: <b>{decisionLabel(door.technical_decision)}</b></span>
               {door.odoo_sale_order_name ? <span>Venta Odoo: <b>{door.odoo_sale_order_name}</b></span> : null}
               {door.odoo_purchase_order_name ? <span>Compra Odoo: <b>{door.odoo_purchase_order_name}</b></span> : null}
+              {isLinkedDoor ? <span>Puerta vinculada: <b>usa el mismo destino y confirmación del portón</b></span> : null}
             </div>
           </Section>
 
@@ -529,11 +529,12 @@ export default function PuertaChecklistPage() {
                   onChange={(v) => setForm({ ...form, fulfillment_mode: v })}
                   options={FULFILLMENT_OPTIONS}
                   placeholder="Seleccionar destino"
-                  disabled={!canSellerEdit}
+                  disabled={!canSellerEdit || isLinkedDoor}
                   style={invalidFieldStyle(highlightSaveField && isDoorFieldMissing(form, "fulfillment_mode"))}
                 />
               </Field>
             </Row>
+            {isLinkedDoor ? <div className="muted" style={{ marginTop: 8 }}>El destino de la puerta vinculada se toma del presupuesto del portón.</div> : null}
           </Section>
 
           <Section title="Ipanel + Marco de puerta">
@@ -841,12 +842,15 @@ export default function PuertaChecklistPage() {
               {canSellerEdit && (
                 <>
                   <Button onClick={() => saveM.mutate()} disabled={saveM.isPending || submitM.isPending}>Guardar</Button>
-                  <Button variant="primary" onClick={() => submitM.mutate()} disabled={saveM.isPending || submitM.isPending || !pdfReady}>{submitM.isPending ? "Enviando..." : "Enviar a aprobación"}</Button>
+                  {!isLinkedDoor ? (
+                    <Button variant="primary" onClick={() => submitM.mutate()} disabled={saveM.isPending || submitM.isPending || !pdfReady}>{submitM.isPending ? "Enviando..." : "Enviar a aprobación"}</Button>
+                  ) : null}
                 </>
               )}
               <Button variant="secondary" disabled={!pdfReady} onClick={() => handleDoorPdf("presupuesto")}>Imprimir presupuesto puerta</Button>
               {user?.is_distribuidor ? <Button variant="secondary" disabled={!pdfReady} onClick={() => handleDoorPdf("proforma")}>Imprimir proforma puerta</Button> : null}
             </div>
+            {isLinkedDoor ? <div className="muted" style={{ marginTop: 10 }}>La puerta vinculada se manda a aprobación cuando confirmás el presupuesto del portón.</div> : null}
           </div>
         </>
       )}

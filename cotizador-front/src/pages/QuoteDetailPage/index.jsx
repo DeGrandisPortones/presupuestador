@@ -29,6 +29,11 @@ function decisionLabel(d) {
   if (d === "rejected") return "Rechazado";
   return "Pendiente";
 }
+function displayQuoteNumber(quote, fallbackId = null) {
+  if (quote?.quote_number !== null && quote?.quote_number !== undefined && String(quote.quote_number).trim()) return String(quote.quote_number);
+  if (quote?.odoo_sale_order_name) return String(quote.odoo_sale_order_name);
+  return fallbackId ? String(fallbackId).slice(0, 8) : "—";
+}
 
 export default function QuoteDetailPage() {
   const params = useParams();
@@ -89,7 +94,7 @@ export default function QuoteDetailPage() {
   return (
     <div className="container">
       <div className="card">
-        <h2 style={{ margin: 0 }}>{isRevision ? "Ajuste" : "Presupuesto"} #{quoteId ? String(quoteId).slice(0, 8) : "—"}</h2>
+        <h2 style={{ margin: 0 }}>{isRevision ? "Ajuste" : "Presupuesto"} #{displayQuoteNumber(quote, quoteId)}</h2>
         {q.isLoading && <div className="muted">Cargando...</div>}
         {q.isError && <div style={{ color: "#d93025", fontSize: 13 }}>{q.error.message}</div>}
 
@@ -98,6 +103,7 @@ export default function QuoteDetailPage() {
             <div className="spacer" />
             <div className="muted" style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
               <span>Estado: <b>{isRevision ? (quote.final_status || quote.status) : quote.status}</b></span>
+              <span>· Número: <b>{displayQuoteNumber(quote, quoteId)}</b></span>
               <span>· Creado por: <b>{quote.created_by_role}</b></span>
               <span>· Destino: <b>{quote.fulfillment_mode === "acopio" ? "Acopio" : "Producción"}</b></span>
               {!isRevision && quote.status === "synced_odoo" && <span style={pillStyle("#e7f7ed", "#bfe6c8")}>En Odoo: {quote.odoo_sale_order_name || `SO#${quote.odoo_sale_order_id}`}</span>}
@@ -164,7 +170,7 @@ export default function QuoteDetailPage() {
                         <td>{d.status}</td>
                         <td>{d.odoo_sale_order_name || "—"}</td>
                         <td>{d.odoo_purchase_order_name || "—"}</td>
-                        <td className="right"><Button variant="ghost" onClick={() => navigate(`/puertas/${d.id}`)}>Abrir puerta</Button></td>
+                        <td className="right"><Button variant="ghost" onClick={() => navigate(`/puertas/${d.id}`)}>Ver puerta</Button></td>
                       </tr>
                     ))}
                   </tbody>

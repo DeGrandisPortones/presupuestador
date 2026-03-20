@@ -227,6 +227,7 @@ async function renameOrderToReference(odoo, orderId, reference) {
 }
 
 const ODOO_SALE_ORDER_VENDOR_FIELD_CANDIDATES = Object.freeze([
+  "x_studio_vendedora",
   "x_studio_vendedor",
   "x_vendedor",
   "x_vendedor_presupuestador",
@@ -281,54 +282,6 @@ async function applySellerToSaleOrder(odoo, orderId, sellerName) {
     }
     await odoo.executeKw("sale.order", "write", [[Number(orderId)], { [fieldMeta.name]: cleanName }]);
   } catch {}
-}
-
-const ODOO_SALE_ORDER_INTERNAL_NOTES_FIELD_CANDIDATES = Object.freeze([
-  "x_studio_notas_internas_1",
-]);
-let saleOrderInternalNotesFieldCache = undefined;
-async function resolveSaleOrderInternalNotesFieldMeta(odoo) {
-  if (saleOrderInternalNotesFieldCache !== undefined) return saleOrderInternalNotesFieldCache;
-  const preferred = normalizeSellerDisplayName(process.env.ODOO_SALE_ORDER_INTERNAL_NOTES_FIELD);
-  const candidates = [preferred, ...ODOO_SALE_ORDER_INTERNAL_NOTES_FIELD_CANDIDATES].filter(Boolean);
-  try {
-    const fields = await odoo.executeKw("sale.order", "fields_get", [], { attributes: ["string", "type"] });
-    for (const fieldName of candidates) {
-      const meta = fields?.[fieldName];
-      if (!meta) continue;
-      saleOrderInternalNotesFieldCache = {
-        name: fieldName,
-        type: String(meta.type || "").trim(),
-      };
-      return saleOrderInternalNotesFieldCache;
-    }
-  } catch {}
-  saleOrderInternalNotesFieldCache = null;
-  return saleOrderInternalNotesFieldCache;
-}
-function buildConditionInternalNote(payload) {
-  const mode = toText(payload?.condition_mode).toLowerCase();
-  if (!mode) return "";
-  if (mode === "special") {
-    const special = toText(payload?.condition_text);
-    return special ? `Condición: ${special}` : "Condición: Especial";
-  }
-  if (mode === "cond1") return "Condición: Condición 1";
-  if (mode === "cond2") return "Condición: Condición 2";
-  const rawText = toText(payload?.condition_text);
-  return rawText ? `Condición: ${rawText}` : `Condición: ${mode}`;
-}
-async function applyInternalNotesToOrderVals(odoo, orderVals, internalNote) {
-  const clean = toText(internalNote);
-  if (!clean) return orderVals;
-  const nextVals = { ...(orderVals || {}) };
-  const fieldMeta = await resolveSaleOrderInternalNotesFieldMeta(odoo);
-  if (fieldMeta?.name) {
-    nextVals[fieldMeta.name] = clean;
-    return nextVals;
-  }
-  nextVals.note = nextVals.note ? `${nextVals.note}\n${clean}` : clean;
-  return nextVals;
 }
 
 function normalizePaymentMethodKey(value) {
@@ -476,6 +429,11 @@ async function buildFinancingSaleOrderVals(odoo, paymentMethod) {
   return vals;
 }
 
+function appendPaymentMethodToNote(note, paymentMethod) {
+  const pm = toText(paymentMethod);
+  if (!pm) return note;
+  return `${note}\nForma de pago: ${pm}`;
+}
 
 async function syncQuoteToOdoo({ odoo, quote, approverUser }) {
   const pricelistId = toIntId(quote?.pricelist_id) || 1;
@@ -507,18 +465,17 @@ async function syncQuoteToOdoo({ odoo, quote, approverUser }) {
     : `PRESUPUESTADOR QUOTE: ${quote.id}\nDestino: ${quote.fulfillment_mode === "acopio" ? "ACOPIO" : "PRODUCCION"}`
       + (quote?.end_customer?.maps_url ? `\nMaps: ${quote.end_customer.maps_url}` : "")
       + (quote.note ? `\n${quote.note}` : "");
-  const note = noteBase + (sellerName ? `\nVendedor: ${sellerName}` : "");
+  let note = noteBase + (sellerName ? `\nVendedor: ${sellerName}` : "");
+  note = appendPaymentMethodToNote(note, quote?.payload?.payment_method);
 
   const financingVals = await buildFinancingSaleOrderVals(odoo, quote?.payload?.payment_method);
-  let orderVals = {
+  const createdOrderId = await odoo.executeKw("sale.order", "create", [{
     partner_id: partnerId,
     pricelist_id: pricelistId,
     order_line: orderLines,
     note,
     ...financingVals,
-  };
-  orderVals = await applyInternalNotesToOrderVals(odoo, orderVals, buildConditionInternalNote(quote?.payload));
-  const createdOrderId = await odoo.executeKw("sale.order", "create", [orderVals]);
+  }]);
   const orderId = toIntId(createdOrderId);
   if (!orderId) throw new Error("No se pudo crear sale.order en Odoo");
   await applySellerToSaleOrder(odoo, orderId, sellerName);
@@ -611,7 +568,7 @@ async function syncFinalQuoteToOdoo({ odoo, revisionQuote, originalQuote, approv
   note = appendPaymentMethodToNote(note, revisionQuote?.payload?.payment_method || originalQuote?.payload?.payment_method);
 
   const financingVals = await buildFinancingSaleOrderVals(odoo, revisionQuote?.payload?.payment_method || originalQuote?.payload?.payment_method);
-  let orderVals = {
+  const createdOrderId = await odoo.executeKw("sale.order", "create", [{
     partner_id: partnerId,
     pricelist_id: pricelistId,
     order_line: orderLines,
@@ -619,9 +576,7 @@ async function syncFinalQuoteToOdoo({ odoo, revisionQuote, originalQuote, approv
     client_order_ref: referenceNv,
     note,
     ...financingVals,
-  };
-  orderVals = await applyInternalNotesToOrderVals(odoo, orderVals, buildConditionInternalNote(revisionQuote?.payload || originalQuote?.payload));
-  const createdOrderId = await odoo.executeKw("sale.order", "create", [orderVals]);
+  }]);
   const orderId = toIntId(createdOrderId);
   if (!orderId) throw new Error("No se pudo crear sale.order final en Odoo");
   await applySellerToSaleOrder(odoo, orderId, sellerName);
@@ -685,26 +640,21 @@ async function syncDirectProductionFinalToOdoo({ odoo, quote, approverUser }) {
     orderLines.push([0, 0, { product_id: productId, product_uom_qty: qty, product_uom: uomId, name: p.name, price_unit: priceUnit }]);
   }
 
-  const note = `PRESUPUESTADOR FINAL DIRECTO: ${quote.id}`
-    + `
-Destino: PRODUCCION`
-    + `
-Portón sin medición: se envía el detalle completo sin instancia adicional de edición.`
-    + (quote.note ? `
-${quote.note}` : "")
-    + (sellerName ? `
-Vendedor: ${sellerName}` : "");
+  let note = `PRESUPUESTADOR FINAL DIRECTO: ${quote.id}`
+    + `\nDestino: PRODUCCION`
+    + `\nPortón sin medición: se envía el detalle completo sin instancia adicional de edición.`
+    + (quote.note ? `\n${quote.note}` : "")
+    + (sellerName ? `\nVendedor: ${sellerName}` : "");
+  note = appendPaymentMethodToNote(note, quote?.payload?.payment_method);
 
   const financingVals = await buildFinancingSaleOrderVals(odoo, quote?.payload?.payment_method);
-  let orderVals = {
+  const createdOrderId = await odoo.executeKw("sale.order", "create", [{
     partner_id: partnerId,
     pricelist_id: pricelistId,
     order_line: orderLines,
     note,
     ...financingVals,
-  };
-  orderVals = await applyInternalNotesToOrderVals(odoo, orderVals, buildConditionInternalNote(quote?.payload));
-  const createdOrderId = await odoo.executeKw("sale.order", "create", [orderVals]);
+  }]);
   const orderId = toIntId(createdOrderId);
   if (!orderId) throw new Error("No se pudo crear sale.order final directa en Odoo");
   await applySellerToSaleOrder(odoo, orderId, sellerName);
