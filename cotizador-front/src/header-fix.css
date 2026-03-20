@@ -45,7 +45,6 @@
   color: rgba(255,255,255,.72);
 }
 
-
 /* Coeficiente: verde si positivo, rojo si negativo */
 .coef-input {
   border-width: 2px !important;
@@ -57,4 +56,46 @@
 .coef-input.coef-positive {
   border-color: rgba(20, 160, 60, 0.85) !important;
   background: rgba(20, 160, 60, 0.10) !important;
+}
+
+/* Ajustes visuales solicitados */
+.brand-logo{
+  height: 62px !important;
+  width: auto;
+}
+
+.menu-card{
+  transition: transform 160ms ease, box-shadow 160ms ease, border-color 160ms ease, background 160ms ease;
+  transform-origin: center center;
+}
+
+.menu-card:hover{
+  transform: translateY(-4px) scale(1.02);
+  border-color: rgba(1, 163, 159, 0.36);
+  box-shadow: 0 18px 36px rgba(0, 80, 96, 0.12);
+  background: linear-gradient(180deg, rgba(1, 163, 159, 0.08) 0%, rgba(255,255,255,1) 38%);
+}
+
+.btn--primary:not(:disabled):hover,
+.btn--secondary:not(:disabled):hover,
+.btn--ghost:not(:disabled):hover{
+  transform: scale(1.03);
+}
+
+.btn--secondary:not(:disabled):hover,
+.btn--ghost:not(:disabled):hover{
+  background: rgba(1, 163, 159, 0.12);
+  border-color: rgba(1, 163, 159, 0.28);
+}
+
+.btn--primary:not(:disabled):hover{
+  background: rgba(1, 163, 159, 0.88);
+  border-color: rgba(1, 163, 159, 0.88);
+  box-shadow: 0 8px 22px rgba(1, 163, 159, 0.22);
+}
+
+@media (max-width: 520px){
+  .brand-logo{
+    height: 52px !important;
+  }
 }

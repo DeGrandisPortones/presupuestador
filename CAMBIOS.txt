@@ -1,3 +1,5 @@
 Cambios incluidos:
-- En Mis presupuestos, la columna Fecha ahora muestra fecha y hora.
-- El encabezado se cambio a 'Fecha y hora'.
+- Login: boton Entrar centrado.
+- Menu: titulo 'Menú' centrado.
+- Navbar: logo DFLEX mas grande.
+- Hover en cards del menu y botones/filtros: leve agrandado + verde acuarela.

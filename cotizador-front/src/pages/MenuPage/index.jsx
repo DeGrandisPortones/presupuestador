@@ -47,7 +47,7 @@ export default function MenuPage() {
       <div className="spacer" />
 
       <div className="card">
-        <h2 style={{ margin: 0 }}>Menú</h2>
+        <h2 style={{ margin: 0, textAlign: "center" }}>Menú</h2>
       </div>
 
       <div className="spacer" />
@@ -168,6 +168,20 @@ export default function MenuPage() {
 
         {showTechInbox && (
           <>
+            <MenuTile
+              title="Mediciones"
+              description="Asignación y seguimiento de portones a medir."
+              buttonText="Abrir mediciones"
+              onClick={() => navigate("/aprobacion/tecnica?tab=mediciones")}
+              icon={
+                <SvgIcon>
+                  <path d="M4 7l3-3 13 13-3 3z" />
+                  <path d="M12 5l7 7" />
+                  <path d="M2 22l5-1-4-4z" />
+                </SvgIcon>
+              }
+            />
+
             <MenuTile
               title="Aprobaciones Portones"
               description="Revisión técnica de presupuestos de portones."

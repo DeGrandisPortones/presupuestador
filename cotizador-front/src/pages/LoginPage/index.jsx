@@ -13,7 +13,6 @@ export default function LoginPage() {
   const setSession = useAuthStore((s) => s.setSession);
   const token = useAuthStore((s) => s.token);
 
-  // Si ya hay sesión, no tiene sentido quedarse en /login.
   if (token) return <Navigate to="/menu" replace />;
 
   const [username, setUsername] = useState("");
@@ -27,7 +26,6 @@ export default function LoginPage() {
   }, [shake]);
 
   const triggerShake = () => {
-    // Forzamos reinicio de la animación incluso si el usuario dispara 2 veces rápido.
     setShake(false);
     window.setTimeout(() => setShake(true), 0);
   };
@@ -36,12 +34,9 @@ export default function LoginPage() {
     mutationFn: () => login({ username, password }),
     onSuccess: (data) => {
       setSession({ token: data.token, user: data.user });
-
-      // Guardamos bootstrap (productos + listas) para que el cotizador arranque con data.
       if (data.bootstrap?.products?.length || data.bootstrap?.pricelists?.length) {
         setOdooBootstrap(data.bootstrap, "porton");
       }
-
       navigate("/menu", { replace: true });
     },
   });
@@ -61,8 +56,6 @@ export default function LoginPage() {
             e.preventDefault();
             if (m.isPending) return;
             if (!username || !password) return;
-
-            // Pequeño feedback visual al intentar ingresar.
             triggerShake();
             m.mutate();
           }}
@@ -79,9 +72,11 @@ export default function LoginPage() {
           {m.isError && <div style={{ color: "#d93025", fontSize: 13 }}>{m.error.message}</div>}
           <div className="spacer" />
 
-          <Button type="submit" disabled={m.isPending || !username || !password}>
-            {m.isPending ? "Ingresando..." : "Entrar"}
-          </Button>
+          <div style={{ display: "flex", justifyContent: "center" }}>
+            <Button type="submit" disabled={m.isPending || !username || !password}>
+              {m.isPending ? "Ingresando..." : "Entrar"}
+            </Button>
+          </div>
         </form>
       </div>
     </div>
