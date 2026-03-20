@@ -1,29 +1,12 @@
-Archivo incluido:
-- cotizador-back/src/routes/quotes.routes.js
-
-Que agrega:
-- mapeo de payload.payment_method del presupuestador a Taca Taca en Odoo
-- seteo de financing_plan_id, financing_card_type, financing_rate_id y financing_rate_percent cuando corresponda
-- limpieza de esos campos para formas de pago no financiadas
-- aplica tanto a:
-  - syncQuoteToOdoo
-  - syncFinalQuoteToOdoo
-  - syncDirectProductionFinalToOdoo
-
-Suposiciones usadas para Odoo:
-- plan: sale.financing.plan
-- tasa: sale.financing.rate
-- sale.order con campos:
-  - financing_plan_id
-  - financing_card_type
-  - financing_rate_id
-  - financing_rate_percent
-- nombre del plan: Taca Taca (configurable por env ODOO_TACA_TACA_PLAN_NAME)
-
-Mapeos:
-- CORDOBESA N CUOTAS -> cordobesa + N
-- NARANJA N CUOTAS -> naranja + N
-- OTRAS TC BANC N CUOTAS -> otras + N
-
-Si el modulo no esta instalado o los campos/modelos no existen, el codigo no rompe por fields_get/search y sigue sin financiamiento.
-Pero si encuentra el metodo financiado y no encuentra el plan o la tasa, devuelve error para que no salga una venta mal pegada.
+Cambio aplicado:
+- La condición comercial del presupuesto ahora se escribe en las notas internas del sale.order en Odoo.
+- Campo objetivo: x_studio_notas_internas_1
+- Si ese campo no existe en la base Odoo, hace fallback a note.
+- Se aplica en:
+  * venta original
+  * cotización final
+  * producción directa sin medición
+- La condición se arma así:
+  * cond1 -> "Condición: Condición 1"
+  * cond2 -> "Condición: Condición 2"
+  * special -> "Condición: <condition_text>"
