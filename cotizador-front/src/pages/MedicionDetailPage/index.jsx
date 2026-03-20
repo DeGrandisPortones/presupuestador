@@ -169,6 +169,12 @@ export default function MedicionDetailPage() {
   const isTechnical = !!user?.is_rev_tecnica;
   const canEdit = isMedidor || isTechnical;
   const measurementSuggestions = quote?.measurement_prefill || {};
+  const visibleQuoteNumber = String(
+    quote?.quote_number ||
+    quote?.odoo_sale_order_name ||
+    quoteId ||
+    ""
+  ).trim();
 
   function openPendingWhatsappWindow() {
     try {
@@ -261,7 +267,7 @@ export default function MedicionDetailPage() {
       <div className="card">
         <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
           <div>
-            <h2 style={{ margin: 0 }}>Medición · Presupuesto #{quoteId}</h2>
+            <h2 style={{ margin: 0 }}>Medición · Presupuesto #{visibleQuoteNumber || quoteId}</h2>
             <div className="muted">{isTechnical ? "Revisar la planilla, corregir si hace falta y aprobar para enviar al cliente." : "Completar la planilla y enviarla a Técnica para revisión."}</div>
             {quote ? <div className="muted" style={{ marginTop: 6 }}>Estado: <b>{measurementStatusLabel(quote.measurement_status)}</b></div> : null}
           </div>

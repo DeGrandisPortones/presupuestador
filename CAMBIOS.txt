@@ -1,12 +1,3 @@
-Lote directo para reemplazo.
-
-Incluye:
-- cotizador-back/src/routes/quotes.routes.js
-- cotizador-front/src/pages/CotizadorPage/index.jsx
-
-Corrige:
-1) En ventas de vendedor, el cliente en Odoo deja de reutilizar por nombre y prioriza email/telefono; si no existe, crea partner nuevo con los datos cargados.
-2) En ajustes de portones que estan en acopio, se oculta el boton de enviar cotizacion final desde el editor.
-3) En esos ajustes se muestra aviso para guardar y luego usar "Solicitar paso a Produccion".
-4) Cuando Comercial y Tecnica aprueban el paso de Acopio a Produccion, el backend sincroniza automaticamente la cotizacion final a Odoo (si no requiere medicion).
-5) Se mantiene el campo Vendedor/a con x_studio_vendedora.
+Cambios incluidos:
+- MedicionDetailPage: el titulo ahora muestra quote_number / numero visible en vez del UUID.
+- MenuPage: se saco la tarjeta duplicada 'Mediciones' del menu tecnico, dejando solo 'Aprobaciones Mediciones'.
