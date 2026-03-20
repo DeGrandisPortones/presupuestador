@@ -1,20 +1,29 @@
-Cambios incluidos:
+Archivo incluido:
+- cotizador-back/src/routes/quotes.routes.js
 
-1) cotizador-front/src/pages/CotizadorPage/index.jsx
-- Guardar ahora exige nombre + telefono.
-- Imprimir mantiene nombre + telefono.
-- El titulo visible del presupuesto usa quote_number / numero de presupuesto en vez del UUID.
+Que agrega:
+- mapeo de payload.payment_method del presupuestador a Taca Taca en Odoo
+- seteo de financing_plan_id, financing_card_type, financing_rate_id y financing_rate_percent cuando corresponda
+- limpieza de esos campos para formas de pago no financiadas
+- aplica tanto a:
+  - syncQuoteToOdoo
+  - syncFinalQuoteToOdoo
+  - syncDirectProductionFinalToOdoo
 
-2) cotizador-front/src/pages/PuertaChecklistPage/index.jsx
-- Corregido el error de build por doble declaracion de parseAmount.
-- Guardar en marco ahora exige nombre + telefono.
-- Confirmar / PDF de puerta ya no exige direccion del cliente.
-- Ajustado el mensaje de pendientes del PDF.
+Suposiciones usadas para Odoo:
+- plan: sale.financing.plan
+- tasa: sale.financing.rate
+- sale.order con campos:
+  - financing_plan_id
+  - financing_card_type
+  - financing_rate_id
+  - financing_rate_percent
+- nombre del plan: Taca Taca (configurable por env ODOO_TACA_TACA_PLAN_NAME)
 
-3) cotizador-back/src/routes/doors.routes.js
-- El codigo de puerta vinculado toma el numero de presupuesto si existe.
-- La etiqueta de porton vinculado usa numero de presupuesto si existe.
-- Al guardar el marco, se fusiona el cliente entre marco + porton + ipanel.
-- Esa fusion se persiste en los presupuestos vinculados (porton e ipanel), para que si completas telefono en marco se replique.
-- El submit de puerta ya no exige direccion del cliente.
-- El PDF / venta de puerta usan cliente fusionado entre vinculados.
+Mapeos:
+- CORDOBESA N CUOTAS -> cordobesa + N
+- NARANJA N CUOTAS -> naranja + N
+- OTRAS TC BANC N CUOTAS -> otras + N
+
+Si el modulo no esta instalado o los campos/modelos no existen, el codigo no rompe por fields_get/search y sigue sin financiamiento.
+Pero si encuentra el metodo financiado y no encuentra el plan o la tasa, devuelve error para que no salga una venta mal pegada.

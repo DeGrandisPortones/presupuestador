@@ -37,7 +37,7 @@ export default function AppLayout() {
           <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
             <img className="brand-logo" src="/brands/dflex.png" alt="Dflex" />
             <div>
-              <div style={{ fontWeight: 900 }}>Presupuestador</div>
+              
               <div className="muted">{user ? `${user.username} · ${roleText}` : roleText}</div>
             </div>
           </div>

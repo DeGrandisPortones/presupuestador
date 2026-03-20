@@ -7,6 +7,7 @@ import { getCommercialFinalTolerancePercent } from "../settingsDb.js";
 const MEASUREMENT_PRODUCT_ID = Number(process.env.ODOO_MEASUREMENT_PRODUCT_ID || 2865);
 const PLACEHOLDER_PRODUCT_ID = Number(process.env.ODOO_PLACEHOLDER_PRODUCT_ID || 2880);
 const IVA_RATE = 0.21;
+const TACA_TACA_PLAN_NAME = String(process.env.ODOO_TACA_TACA_PLAN_NAME || "Taca Taca").trim();
 
 const PORTON_TYPE_TO_ODOO_PRODUCT_ID = Object.freeze({
   acero_simil_aluminio_clasico: 3209,
@@ -177,7 +178,7 @@ function calcDetailedUnitWithIva(line, payload) {
 function normalizePortonTypeKey(value) {
   return String(value || "")
     .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")
+    .replace(/[\u0300-\u036f]/g, "")
     .toLowerCase()
     .trim()
     .replace(/[^a-z0-9]+/g, "_")
@@ -282,6 +283,157 @@ async function applySellerToSaleOrder(odoo, orderId, sellerName) {
   } catch {}
 }
 
+function normalizePaymentMethodKey(value) {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, " ")
+    .trim()
+    .replace(/\s+/g, " ");
+}
+function parseTacaTacaPaymentMethod(paymentMethod) {
+  const raw = toText(paymentMethod);
+  const normalized = normalizePaymentMethodKey(raw);
+  if (!normalized) return null;
+
+  let cardType = "";
+  if (normalized.startsWith("CORDOBESA")) cardType = "cordobesa";
+  else if (normalized.startsWith("NARANJA")) cardType = "naranja";
+  else if (normalized.startsWith("OTRAS TC BANC") || normalized.startsWith("OTRAS")) cardType = "otras";
+  if (!cardType) return null;
+
+  const installmentsMatch = normalized.match(/\b(\d{1,2})\b/);
+  const installments = installmentsMatch ? Number(installmentsMatch[1]) : null;
+  if (!Number.isFinite(installments) || installments <= 0) return null;
+  return { raw, normalized, cardType, installments };
+}
+
+function buildFinancingEmptyValue(fieldMeta) {
+  if (!fieldMeta?.type) return false;
+  if (["integer", "float", "monetary"].includes(fieldMeta.type)) return 0;
+  return false;
+}
+
+let saleOrderFinancingFieldCache = undefined;
+async function resolveSaleOrderFinancingFieldMeta(odoo) {
+  if (saleOrderFinancingFieldCache !== undefined) return saleOrderFinancingFieldCache;
+  try {
+    const fields = await odoo.executeKw("sale.order", "fields_get", [], { attributes: ["type", "relation", "selection"] });
+    const pick = (name) => fields?.[name] ? { name, type: String(fields[name].type || "").trim(), relation: String(fields[name].relation || "").trim() } : null;
+    saleOrderFinancingFieldCache = {
+      planField: pick("financing_plan_id"),
+      cardTypeField: pick("financing_card_type"),
+      rateField: pick("financing_rate_id"),
+      ratePercentField: pick("financing_rate_percent"),
+    };
+    return saleOrderFinancingFieldCache;
+  } catch {
+    saleOrderFinancingFieldCache = null;
+    return saleOrderFinancingFieldCache;
+  }
+}
+
+let financingRateFieldCache = undefined;
+async function resolveFinancingRateFieldMeta(odoo) {
+  if (financingRateFieldCache !== undefined) return financingRateFieldCache;
+  try {
+    const fields = await odoo.executeKw("sale.financing.rate", "fields_get", [], { attributes: ["type"] });
+    financingRateFieldCache = {
+      planField: fields?.plan_id ? "plan_id" : null,
+      cardTypeField: fields?.card_type ? "card_type" : null,
+      installmentsField: fields?.installments ? "installments" : (fields?.cuotas ? "cuotas" : null),
+      percentField: fields?.rate_percent ? "rate_percent" : (fields?.percent ? "percent" : null),
+      activeField: fields?.active ? "active" : null,
+    };
+    return financingRateFieldCache;
+  } catch {
+    financingRateFieldCache = null;
+    return financingRateFieldCache;
+  }
+}
+
+let tacaTacaPlanIdCache = undefined;
+async function resolveTacaTacaPlanId(odoo) {
+  if (tacaTacaPlanIdCache !== undefined) return tacaTacaPlanIdCache;
+  try {
+    let ids = await odoo.executeKw("sale.financing.plan", "search", [[["name", "=", TACA_TACA_PLAN_NAME]]], { limit: 1 });
+    let id = toIntId(ids?.[0]);
+    if (!id) {
+      ids = await odoo.executeKw("sale.financing.plan", "search", [[["name", "ilike", TACA_TACA_PLAN_NAME]]], { limit: 1 });
+      id = toIntId(ids?.[0]);
+    }
+    tacaTacaPlanIdCache = id || null;
+    return tacaTacaPlanIdCache;
+  } catch {
+    tacaTacaPlanIdCache = null;
+    return tacaTacaPlanIdCache;
+  }
+}
+
+async function resolveTacaTacaRate(odoo, { planId, cardType, installments }) {
+  const meta = await resolveFinancingRateFieldMeta(odoo);
+  if (!meta?.planField || !meta?.cardTypeField || !meta?.installmentsField) return null;
+  const baseDomain = [
+    [meta.planField, "=", Number(planId)],
+    [meta.cardTypeField, "=", String(cardType)],
+    [meta.installmentsField, "=", Number(installments)],
+  ];
+  const fields = ["id", meta.planField, meta.cardTypeField, meta.installmentsField, meta.percentField].filter(Boolean);
+  try {
+    let domain = baseDomain.slice();
+    if (meta.activeField) domain.push([meta.activeField, "=", true]);
+    let rows = await odoo.executeKw("sale.financing.rate", "search_read", [domain], { fields, limit: 1, order: "id desc" });
+    let rate = rows?.[0] || null;
+    if (!rate) {
+      rows = await odoo.executeKw("sale.financing.rate", "search_read", [baseDomain], { fields, limit: 1, order: "id desc" });
+      rate = rows?.[0] || null;
+    }
+    return rate;
+  } catch {
+    return null;
+  }
+}
+
+async function buildFinancingSaleOrderVals(odoo, paymentMethod) {
+  const fieldMeta = await resolveSaleOrderFinancingFieldMeta(odoo);
+  if (!fieldMeta) return {};
+
+  const empty = {};
+  for (const meta of [fieldMeta.planField, fieldMeta.cardTypeField, fieldMeta.rateField, fieldMeta.ratePercentField]) {
+    if (meta?.name) empty[meta.name] = buildFinancingEmptyValue(meta);
+  }
+
+  const parsed = parseTacaTacaPaymentMethod(paymentMethod);
+  if (!parsed) return empty;
+
+  const planId = await resolveTacaTacaPlanId(odoo);
+  if (!planId) throw new Error(`No se encontro el plan de financiacion "${TACA_TACA_PLAN_NAME}" en Odoo`);
+  const rate = await resolveTacaTacaRate(odoo, { planId, cardType: parsed.cardType, installments: parsed.installments });
+  if (!rate?.id) {
+    throw new Error(`No se encontro una tasa Taca Taca para ${parsed.cardType} ${parsed.installments} cuotas`);
+  }
+
+  const vals = { ...empty };
+  if (fieldMeta.planField?.name) vals[fieldMeta.planField.name] = Number(planId);
+  if (fieldMeta.cardTypeField?.name) vals[fieldMeta.cardTypeField.name] = String(parsed.cardType);
+  if (fieldMeta.rateField?.name) vals[fieldMeta.rateField.name] = Number(rate.id);
+  if (fieldMeta.ratePercentField?.name) {
+    const percentFieldName = (await resolveFinancingRateFieldMeta(odoo))?.percentField;
+    const rawPercent = percentFieldName ? rate?.[percentFieldName] : null;
+    vals[fieldMeta.ratePercentField.name] = rawPercent === null || rawPercent === undefined || rawPercent === ""
+      ? buildFinancingEmptyValue(fieldMeta.ratePercentField)
+      : Number(rawPercent);
+  }
+  return vals;
+}
+
+function appendPaymentMethodToNote(note, paymentMethod) {
+  const pm = toText(paymentMethod);
+  if (!pm) return note;
+  return `${note}\nForma de pago: ${pm}`;
+}
+
 async function syncQuoteToOdoo({ odoo, quote, approverUser }) {
   const pricelistId = toIntId(quote?.pricelist_id) || 1;
   let partnerId = null;
@@ -312,13 +464,16 @@ async function syncQuoteToOdoo({ odoo, quote, approverUser }) {
     : `PRESUPUESTADOR QUOTE: ${quote.id}\nDestino: ${quote.fulfillment_mode === "acopio" ? "ACOPIO" : "PRODUCCION"}`
       + (quote?.end_customer?.maps_url ? `\nMaps: ${quote.end_customer.maps_url}` : "")
       + (quote.note ? `\n${quote.note}` : "");
-  const note = noteBase + (sellerName ? `\nVendedor: ${sellerName}` : "");
+  let note = noteBase + (sellerName ? `\nVendedor: ${sellerName}` : "");
+  note = appendPaymentMethodToNote(note, quote?.payload?.payment_method);
 
+  const financingVals = await buildFinancingSaleOrderVals(odoo, quote?.payload?.payment_method);
   const createdOrderId = await odoo.executeKw("sale.order", "create", [{
     partner_id: partnerId,
     pricelist_id: pricelistId,
     order_line: orderLines,
     note,
+    ...financingVals,
   }]);
   const orderId = toIntId(createdOrderId);
   if (!orderId) throw new Error("No se pudo crear sale.order en Odoo");
@@ -398,7 +553,7 @@ async function syncFinalQuoteToOdoo({ odoo, revisionQuote, originalQuote, approv
 
   const finalAmountToCharge = round2(Math.max(0, detailedTotal - advanceToDiscount));
   const referenceNv = originalQuote.odoo_sale_order_name ? `NV${originalQuote.odoo_sale_order_name}` : `NV${String(originalQuote.id).slice(0, 8)}`;
-  const note = `PRESUPUESTADOR FINAL: COPY ${revisionQuote.id} (ORIG ${originalQuote.id})`
+  let note = `PRESUPUESTADOR FINAL: COPY ${revisionQuote.id} (ORIG ${originalQuote.id})`
     + `\nReferencia: ${referenceNv}`
     + `\nReferencia seña: ${originalQuote.odoo_sale_order_name || originalQuote.odoo_sale_order_id || "-"}`
     + `\nTotal detallado: ${detailedTotal}`
@@ -409,7 +564,9 @@ async function syncFinalQuoteToOdoo({ odoo, revisionQuote, originalQuote, approv
     + (absorbedByCompany ? `\nAbsorbido por la empresa: SI` : `\nAbsorbido por la empresa: NO`)
     + `\nImporte final a facturar: ${finalAmountToCharge}`
     + (sellerName ? `\nVendedor: ${sellerName}` : "");
+  note = appendPaymentMethodToNote(note, revisionQuote?.payload?.payment_method || originalQuote?.payload?.payment_method);
 
+  const financingVals = await buildFinancingSaleOrderVals(odoo, revisionQuote?.payload?.payment_method || originalQuote?.payload?.payment_method);
   const createdOrderId = await odoo.executeKw("sale.order", "create", [{
     partner_id: partnerId,
     pricelist_id: pricelistId,
@@ -417,6 +574,7 @@ async function syncFinalQuoteToOdoo({ odoo, revisionQuote, originalQuote, approv
     origin: referenceNv,
     client_order_ref: referenceNv,
     note,
+    ...financingVals,
   }]);
   const orderId = toIntId(createdOrderId);
   if (!orderId) throw new Error("No se pudo crear sale.order final en Odoo");
@@ -481,17 +639,20 @@ async function syncDirectProductionFinalToOdoo({ odoo, quote, approverUser }) {
     orderLines.push([0, 0, { product_id: productId, product_uom_qty: qty, product_uom: uomId, name: p.name, price_unit: priceUnit }]);
   }
 
-  const note = `PRESUPUESTADOR FINAL DIRECTO: ${quote.id}`
+  let note = `PRESUPUESTADOR FINAL DIRECTO: ${quote.id}`
     + `\nDestino: PRODUCCION`
     + `\nPortón sin medición: se envía el detalle completo sin instancia adicional de edición.`
     + (quote.note ? `\n${quote.note}` : "")
     + (sellerName ? `\nVendedor: ${sellerName}` : "");
+  note = appendPaymentMethodToNote(note, quote?.payload?.payment_method);
 
+  const financingVals = await buildFinancingSaleOrderVals(odoo, quote?.payload?.payment_method);
   const createdOrderId = await odoo.executeKw("sale.order", "create", [{
     partner_id: partnerId,
     pricelist_id: pricelistId,
     order_line: orderLines,
     note,
+    ...financingVals,
   }]);
   const orderId = toIntId(createdOrderId);
   if (!orderId) throw new Error("No se pudo crear sale.order final directa en Odoo");
