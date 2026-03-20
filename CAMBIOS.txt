@@ -1,3 +1,3 @@
 Cambios incluidos:
-- MedicionDetailPage: el titulo ahora muestra quote_number / numero visible en vez del UUID.
-- MenuPage: se saco la tarjeta duplicada 'Mediciones' del menu tecnico, dejando solo 'Aprobaciones Mediciones'.
+- En Mis presupuestos, la columna Fecha ahora muestra fecha y hora.
+- El encabezado se cambio a 'Fecha y hora'.

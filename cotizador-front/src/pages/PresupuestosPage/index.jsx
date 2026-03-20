@@ -175,6 +175,19 @@ function fmtDate(value) {
   return d.toLocaleDateString("es-AR");
 }
 
+function fmtDateTime(value) {
+  if (!value) return "—";
+  const raw = String(value);
+  const d = /^\d{4}-\d{2}-\d{2}$/.test(raw) ? new Date(`${raw}T00:00:00`) : new Date(raw);
+  if (Number.isNaN(d.getTime())) return "—";
+  const date = d.toLocaleDateString("es-AR");
+  const time = d.toLocaleTimeString("es-AR", {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+  return `${date} ${time}`;
+}
+
 function TypeBadge({ label }) {
   const isDoor = label === "Puerta";
   const isIpanel = label === "Ipanel";
@@ -396,7 +409,7 @@ export default function PresupuestosPage() {
             <table>
               <thead>
                 <tr>
-                  <th>Fecha</th>
+                  <th>Fecha y hora</th>
                   <th>Tipo</th>
                   <th>Cliente</th>
                   <th>Localidad</th>
@@ -414,7 +427,7 @@ export default function PresupuestosPage() {
                     const pdfKey = `door-${door.id}`;
                     return (
                       <tr key={`door-${door.id}`}>
-                        <td>{fmtDate(item.createdAt)}</td>
+                        <td>{fmtDateTime(item.createdAt)}</td>
                         <td><TypeBadge label={item.typeLabel} /></td>
                         <td>{item.clientName || <span className="muted">(sin nombre)</span>}</td>
                         <td>{item.locality}</td>
@@ -445,7 +458,7 @@ export default function PresupuestosPage() {
 
                   return (
                     <tr key={r.id}>
-                      <td>{fmtDate(r.created_at)}</td>
+                      <td>{fmtDateTime(r.created_at)}</td>
                       <td><TypeBadge label={item.typeLabel} /></td>
                       <td>{r.end_customer?.name || <span className="muted">(sin nombre)</span>}</td>
                       <td>{item.locality}</td>
