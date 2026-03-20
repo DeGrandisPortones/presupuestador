@@ -50,6 +50,7 @@ function toIntId(v) { const n = Number(toScalar(v)); return Number.isFinite(n) ?
 function toText(v) { const x = toScalar(v); return x === null || x === undefined ? "" : String(x).trim(); }
 function isUuid(v) { return /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(String(v || "").trim()); }
 function round2(n) { return Math.round(Number(n || 0) * 100) / 100; }
+function normalizePhoneForLookup(v) { return String(v || "").replace(/\D+/g, "").trim(); }
 
 function buildDistributorNote({ quote }) {
   const parts = [];
@@ -103,19 +104,37 @@ async function resolveSellerDisplayNameForQuote(quote, fallbackUser = null) {
 }
 
 async function findOrCreateCustomerPartner(odoo, customer) {
-  const email = toText(customer?.email);
+  const email = toText(customer?.email).toLowerCase();
   if (email) {
     const ids = await odoo.executeKw("res.partner", "search", [[["email", "=", email]]], { limit: 1 });
     if (ids?.[0]) return toIntId(ids[0]);
   }
+
+  const phone = toText(customer?.phone);
+  if (phone) {
+    try {
+      const idsPhone = await odoo.executeKw("res.partner", "search", [[["phone", "=", phone]]], { limit: 1 });
+      if (idsPhone?.[0]) return toIntId(idsPhone[0]);
+    } catch {}
+    try {
+      const idsMobile = await odoo.executeKw("res.partner", "search", [[["mobile", "=", phone]]], { limit: 1 });
+      if (idsMobile?.[0]) return toIntId(idsMobile[0]);
+    } catch {}
+  }
+
   const name = toText(customer?.name);
   if (!name) throw new Error("Falta end_customer.name (vendedor)");
-  const ids2 = await odoo.executeKw("res.partner", "search", [[["name", "=", name]]], { limit: 1 });
-  if (ids2?.[0]) return toIntId(ids2[0]);
+
+  const allowNameFallback = !email && !phone && !toText(customer?.address) && !toText(customer?.city);
+  if (allowNameFallback) {
+    const ids2 = await odoo.executeKw("res.partner", "search", [[["name", "=", name]]], { limit: 1 });
+    if (ids2?.[0]) return toIntId(ids2[0]);
+  }
+
   const created = await odoo.executeKw("res.partner", "create", [{
     name,
     email: email || false,
-    phone: toText(customer?.phone) || false,
+    phone: phone || false,
     street: toText(customer?.street) || toText(customer?.address) || false,
     city: toText(customer?.city) || false,
     customer_rank: 1,
@@ -742,6 +761,48 @@ async function ensureFinalCopyForAcopioToProduction(quote) {
   if (existing) return existing;
   return await createEditCopyFromQuote(quote.id);
 }
+async function syncLatestFinalCopyForApprovedAcopio({ originalQuote, approverUser, odoo }) {
+  if (!originalQuote?.id) return null;
+  const existing = await getFinalCopyByParentId(originalQuote.id);
+  if (!existing) return null;
+  if (existing.final_sale_order_id || ["syncing_odoo", "synced_odoo"].includes(String(existing.final_status || ""))) return existing;
+  const updSync = await dbQuery(
+    `update public.presupuestador_quotes
+        set final_status='syncing_odoo',
+            final_technical_decision='approved',
+            final_logistics_decision='approved',
+            final_technical_notes=null,
+            final_logistics_notes=null
+      where id=$1
+        and coalesce(final_sale_order_id, 0) = 0
+        and coalesce(final_status, 'draft') <> 'syncing_odoo'
+      returning *`,
+    [existing.id]
+  );
+  const qSync = updSync.rows?.[0] || existing;
+  if (qSync.final_sale_order_id) return qSync;
+  try {
+    const { order, metrics } = await syncFinalQuoteToOdoo({ odoo, revisionQuote: qSync, originalQuote, approverUser });
+    const updFinal = await dbQuery(
+      `update public.presupuestador_quotes
+          set final_status='synced_odoo',
+              final_sale_order_id=$2,
+              final_sale_order_name=$3,
+              final_synced_at=now(),
+              final_tolerance_percent=$4,
+              final_tolerance_amount=$5,
+              final_difference_amount=$6,
+              final_absorbed_by_company=$7
+        where id=$1
+        returning *`,
+      [qSync.id, Number(order.id), order.name, metrics.tolerance_percent, metrics.tolerance_amount, metrics.difference_amount, metrics.absorbed_by_company]
+    );
+    return updFinal.rows?.[0] || qSync;
+  } catch (e) {
+    await dbQuery(`update public.presupuestador_quotes set final_status='draft' where id=$1`, [qSync.id]);
+    throw e;
+  }
+}
 
 export function buildQuotesRouter(odoo) {
   const router = express.Router();
@@ -857,12 +918,12 @@ export function buildQuotesRouter(odoo) {
       const u = req.user;
       const id = req.params.id;
       const r = await dbQuery(
-        `select q.*, fc.final_copy_id, fc.final_copy_status, fc.final_copy_sale_order_name, fc.final_copy_quote_status
+        `select q.*, fc.final_copy_id, fc.final_copy_status, fc.final_sale_order_name, fc.final_copy_quote_status
          from public.presupuestador_quotes q
          left join lateral (
            select c.id as final_copy_id,
                   c.final_status as final_copy_status,
-                  c.final_sale_order_name as final_copy_sale_order_name,
+                  c.final_sale_order_name as final_sale_order_name,
                   c.status as final_copy_quote_status
            from public.presupuestador_quotes c
            where c.quote_kind = 'copy' and c.parent_quote_id = q.id
@@ -911,15 +972,29 @@ export function buildQuotesRouter(odoo) {
       const catalog_kind_locked = quote.catalog_kind || "porton";
       if (body.catalog_kind && normCatalogKind(body.catalog_kind) !== normCatalogKind(catalog_kind_locked)) return res.status(400).json({ ok: false, error: "No podes cambiar el tipo de cotizador (porton/ipanel)" });
       const catalog_kind = normCatalogKind(body.catalog_kind || catalog_kind_locked);
-      if (!["draft", "rejected_commercial", "rejected_technical"].includes(quote.status)) throw new Error("Solo se edita en borrador");
+      if (!["draft", "rejected_commercial", "rejected_technical", "synced_odoo"].includes(quote.status)) throw new Error("Solo se edita en borrador o en acopio ya enviado");
+      if (quote.status === "synced_odoo" && quote.fulfillment_mode !== "acopio") throw new Error("Solo se puede editar un presupuesto sincronizado si está en acopio");
       const nextEndCustomer = body.end_customer !== undefined ? body.end_customer : quote.end_customer;
       const custErr = validateEndCustomerDraft(nextEndCustomer);
       if (custErr) return res.status(400).json({ ok: false, error: custErr });
       const fulfillment_mode = body.fulfillment_mode ? String(body.fulfillment_mode) : quote.fulfillment_mode;
       if (!["produccion", "acopio"].includes(fulfillment_mode)) throw new Error("fulfillment_mode invalido");
+      const nextAcopioStatus = quote.status === "synced_odoo" && quote.fulfillment_mode === "acopio" ? (quote.acopio_to_produccion_status || null) : quote.acopio_to_produccion_status;
       const upd = await dbQuery(
-        `update public.presupuestador_quotes set fulfillment_mode=$2, pricelist_id=$3, bill_to_odoo_partner_id=$4, end_customer=$5::jsonb, lines=$6::jsonb, payload=$7::jsonb, note=$8, catalog_kind=$9, requires_measurement=$10 where id=$1 returning *`,
-        [id, fulfillment_mode, body.pricelist_id ? Number(body.pricelist_id) : quote.pricelist_id, body.bill_to_odoo_partner_id !== undefined ? (body.bill_to_odoo_partner_id ? Number(body.bill_to_odoo_partner_id) : null) : quote.bill_to_odoo_partner_id, JSON.stringify(body.end_customer !== undefined ? body.end_customer : quote.end_customer), JSON.stringify(body.lines !== undefined ? body.lines : quote.lines), JSON.stringify(body.payload !== undefined ? body.payload : quote.payload), body.note !== undefined ? body.note : quote.note, catalog_kind, hasMeasurementLine(body.lines !== undefined ? body.lines : quote.lines)]
+        `update public.presupuestador_quotes
+            set fulfillment_mode=$2,
+                pricelist_id=$3,
+                bill_to_odoo_partner_id=$4,
+                end_customer=$5::jsonb,
+                lines=$6::jsonb,
+                payload=$7::jsonb,
+                note=$8,
+                catalog_kind=$9,
+                requires_measurement=$10,
+                acopio_to_produccion_status=$11
+          where id=$1
+          returning *`,
+        [id, fulfillment_mode, body.pricelist_id ? Number(body.pricelist_id) : quote.pricelist_id, body.bill_to_odoo_partner_id !== undefined ? (body.bill_to_odoo_partner_id ? Number(body.bill_to_odoo_partner_id) : null) : quote.bill_to_odoo_partner_id, JSON.stringify(body.end_customer !== undefined ? body.end_customer : quote.end_customer), JSON.stringify(body.lines !== undefined ? body.lines : quote.lines), JSON.stringify(body.payload !== undefined ? body.payload : quote.payload), body.note !== undefined ? body.note : quote.note, catalog_kind, hasMeasurementLine(body.lines !== undefined ? body.lines : quote.lines), nextAcopioStatus]
       );
       res.json({ ok: true, quote: upd.rows[0] });
     } catch (e) { next(e); }
@@ -939,6 +1014,9 @@ export function buildQuotesRouter(odoo) {
       const bizErr = validateBusinessRequired(quote.payload || {}, quote.catalog_kind || "porton");
       if (bizErr) return res.status(400).json({ ok: false, error: bizErr });
       if (vendedorNeedsEndCustomerName(quote) && !getEndCustomerName(quote)) return res.status(400).json({ ok: false, error: "Falta end_customer.name (vendedor)" });
+      if (quote.status === "synced_odoo" && quote.fulfillment_mode === "acopio") {
+        return res.status(409).json({ ok: false, error: "Este presupuesto ya está en Acopio. Guardá los cambios y usá 'Solicitar paso a Producción'." });
+      }
       if (!["draft", "rejected_commercial", "rejected_technical"].includes(quote.status)) throw new Error("Solo confirmar desde borrador");
       const fm = String(fulfillment_mode || quote.fulfillment_mode || "acopio").trim();
       if (!["produccion", "acopio"].includes(fm)) return res.status(400).json({ ok: false, error: "fulfillment_mode invalido (usar 'acopio' o 'produccion')" });
@@ -1121,7 +1199,10 @@ export function buildQuotesRouter(odoo) {
       const upd1 = await dbQuery(`update public.presupuestador_quotes set acopio_to_produccion_commercial_decision='approved', acopio_to_produccion_commercial_by_user_id=$2, acopio_to_produccion_commercial_at=now(), acopio_to_produccion_commercial_notes=$3 where id=$1 and fulfillment_mode='acopio' and acopio_to_produccion_status='pending' and acopio_to_produccion_commercial_decision='pending' returning *`, [id, Number(u.user_id), notes ? String(notes) : null]);
       const q1 = upd1.rows?.[0] || quote;
       const qFinal = await finalizeAcopioToProduccionIfReady(id);
-      if (qFinal && !quoteNeedsMeasurement(qFinal)) await ensureFinalCopyForAcopioToProduction(qFinal);
+      if (qFinal && !quoteNeedsMeasurement(qFinal)) {
+        await ensureFinalCopyForAcopioToProduction(qFinal);
+        await syncLatestFinalCopyForApprovedAcopio({ originalQuote: qFinal, approverUser: u, odoo });
+      }
       return res.json({ ok: true, quote: qFinal || q1 });
     } catch (e) { next(e); }
   });
@@ -1146,7 +1227,10 @@ export function buildQuotesRouter(odoo) {
       const upd1 = await dbQuery(`update public.presupuestador_quotes set acopio_to_produccion_technical_decision='approved', acopio_to_produccion_technical_by_user_id=$2, acopio_to_produccion_technical_at=now(), acopio_to_produccion_technical_notes=$3 where id=$1 and fulfillment_mode='acopio' and acopio_to_produccion_status='pending' and acopio_to_produccion_technical_decision='pending' returning *`, [id, Number(u.user_id), notes ? String(notes) : null]);
       const q1 = upd1.rows?.[0] || quote;
       const qFinal = await finalizeAcopioToProduccionIfReady(id);
-      if (qFinal && !quoteNeedsMeasurement(qFinal)) await ensureFinalCopyForAcopioToProduction(qFinal);
+      if (qFinal && !quoteNeedsMeasurement(qFinal)) {
+        await ensureFinalCopyForAcopioToProduction(qFinal);
+        await syncLatestFinalCopyForApprovedAcopio({ originalQuote: qFinal, approverUser: u, odoo });
+      }
       return res.json({ ok: true, quote: qFinal || q1 });
     } catch (e) { next(e); }
   });
@@ -1178,6 +1262,7 @@ export function buildQuotesRouter(odoo) {
       if (!q) return res.status(404).json({ ok: false, error: "Presupuesto no encontrado" });
       if (q.quote_kind !== "copy") return res.status(400).json({ ok: false, error: "final/submit solo aplica a la COPIA" });
       if (String(q.created_by_user_id) !== String(u.user_id)) return res.status(403).json({ ok: false, error: "No sos dueño" });
+      if (q.fulfillment_mode === "acopio") return res.status(409).json({ ok: false, error: "Este ajuste corresponde a un presupuesto en acopio. Guardá los cambios y usá 'Solicitar paso a Producción'." });
       if (q.final_status === "synced_odoo" || q.final_status === "syncing_odoo") return res.json({ ok: true, quote: q });
       const custErr = validateEndCustomerRequired(q.end_customer);
       if (custErr) return res.status(400).json({ ok: false, error: custErr });

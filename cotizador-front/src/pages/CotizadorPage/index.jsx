@@ -93,6 +93,7 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
   const linesKey = useMemo(() => lines.map((l) => `${l.product_id}:${l.qty}`).join("|"), [lines]);
   const isRevisionQuote = (quoteQ.data?.quote_kind || "original") === "copy";
   const finalStatus = String(quoteQ.data?.final_status || "");
+  const isAcopioRevision = isRevisionQuote && String(quoteQ.data?.fulfillment_mode || "").trim() === "acopio";
   const visibleQuoteNumber = String(
     quoteQ.data?.quote_number ||
     quoteQ.data?.odoo_sale_order_name ||
@@ -140,8 +141,8 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
     const sellerLabel = String(user?.full_name || user?.username || "").trim();
     const raw = String(note || "").trim();
     if (!sellerLabel) return raw;
-    const lines = raw ? raw.split(/\r?\n/).filter(Boolean) : [];
-    const filtered = lines.filter((line) => !/^vendedor\s*:/i.test(String(line || "").trim()));
+    const rows = raw ? raw.split(/\r?\n/).filter(Boolean) : [];
+    const filtered = rows.filter((line) => !/^vendedor\s*:/i.test(String(line || "").trim()));
     filtered.push(`Vendedor: ${sellerLabel}`);
     return filtered.join("\n");
   }
@@ -317,7 +318,9 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
     }
   };
 
-  const canConfirm = isRevisionQuote ? ["", "draft", "rejected"].includes(finalStatus || "") : ["draft", "rejected_commercial", "rejected_technical"].includes(status);
+  const canConfirm = isAcopioRevision
+    ? false
+    : (isRevisionQuote ? ["", "draft", "rejected"].includes(finalStatus || "") : ["draft", "rejected_commercial", "rejected_technical"].includes(status));
 
   return (
     <div className="container">
@@ -333,9 +336,23 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
           <Button variant="secondary" onClick={onDownloadPresupuesto}>PDF presupuesto</Button>
           {user?.is_distribuidor ? <Button variant="secondary" onClick={onDownloadProforma}>PDF proforma</Button> : null}
           <Button onClick={() => saveM.mutate()} disabled={saveM.isPending}>{saveM.isPending ? "Guardando..." : "Guardar"}</Button>
-          <Button variant="primary" onClick={() => { if (isRevisionQuote) { confirmM.mutate({}); return; } setConfirmChoiceOpen(true); }} disabled={!canConfirm || confirmM.isPending}>{confirmM.isPending ? "Confirmando..." : (isRevisionQuote ? "Enviar cotización final" : "Confirmar presupuesto")}</Button>
+          {!isAcopioRevision ? (
+            <Button variant="primary" onClick={() => { if (isRevisionQuote) { confirmM.mutate({}); return; } setConfirmChoiceOpen(true); }} disabled={!canConfirm || confirmM.isPending}>{confirmM.isPending ? "Confirmando..." : (isRevisionQuote ? "Enviar cotización final" : "Confirmar presupuesto")}</Button>
+          ) : null}
         </div>
       </div>
+
+      {isAcopioRevision ? (
+        <div className="spacer" />
+      ) : null}
+      {isAcopioRevision ? (
+        <div className="card" style={{ background: "#fff8f3", border: "1px solid #f2d3bf" }}>
+          <div style={{ fontWeight: 900, marginBottom: 6 }}>Ajuste de presupuesto en Acopio</div>
+          <div className="muted">
+            Este ajuste no se envía desde acá. Guardá los cambios y luego usá <b>Solicitar paso a Producción</b> desde <b>Mis presupuestos</b>. Cuando Comercial y Técnica aprueben ese paso, el sistema enviará la venta final a Odoo.
+          </div>
+        </div>
+      ) : null}
 
       {!isRevisionQuote && confirmChoiceOpen && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0, 0, 0, 0.45)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20, zIndex: 1000 }} onClick={() => { if (!confirmM.isPending) setConfirmChoiceOpen(false); }}>

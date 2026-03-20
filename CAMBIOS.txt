@@ -1,18 +1,12 @@
-Lote completo para reemplazo directo.
+Lote directo para reemplazo.
 
 Incluye:
-- cotizador-front/src/pages/QuoteDetailPage/index.jsx
-- cotizador-front/src/pages/PuertaPanelPage/index.jsx
-- cotizador-front/src/pages/PuertaChecklistPage/index.jsx
 - cotizador-back/src/routes/quotes.routes.js
-- cotizador-back/src/routes/doors.routes.js
-- cotizador-back/src/routes/pdf.routes.js
+- cotizador-front/src/pages/CotizadorPage/index.jsx
 
-Cambios principales:
-- puerta vinculada no se envía sola; se envía al confirmar el portón
-- puerta vinculada hereda destino del portón
-- detalle de presupuesto usa número de presupuesto en vez de UUID corto
-- PDF puerta corrige solapamiento del bloque de observaciones
-- ventas en Odoo renombran con S<numero_presupuesto>
-- si Taca Taca no existe, no rompe la venta
-- campo Vendedor/a en Odoo usa x_studio_vendedora si existe
+Corrige:
+1) En ventas de vendedor, el cliente en Odoo deja de reutilizar por nombre y prioriza email/telefono; si no existe, crea partner nuevo con los datos cargados.
+2) En ajustes de portones que estan en acopio, se oculta el boton de enviar cotizacion final desde el editor.
+3) En esos ajustes se muestra aviso para guardar y luego usar "Solicitar paso a Produccion".
+4) Cuando Comercial y Tecnica aprueban el paso de Acopio a Produccion, el backend sincroniza automaticamente la cotizacion final a Odoo (si no requiere medicion).
+5) Se mantiene el campo Vendedor/a con x_studio_vendedora.
