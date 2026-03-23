@@ -47,9 +47,13 @@ function createdByLabel(r) {
 function measurementStatusLabel(s) {
   if (s === "pending") return "Pendiente";
   if (s === "needs_fix") return "A corregir";
-  if (s === "submitted") return "A corregir";
+  if (s === "submitted") return "Pendiente control";
   if (s === "approved") return "Aprobada";
   return s || "—";
+}
+function measurementSubtypeLabel(row) {
+  const subtype = String(row?.measurement_subtype || "normal").toLowerCase().trim();
+  return subtype === "sin_medicion" ? "Sin medición" : "Con medición";
 }
 function localityLabel(r) {
   return r?.end_customer?.city || r?.end_customer?.address || "—";
@@ -86,7 +90,7 @@ export default function AprobacionTecnicaPage() {
   const [tab, setTab] = useState(initialTab);
   const [filter, setFilter] = useState("all");
   const [searchText, setSearchText] = useState("");
-  const [measurementStatus, setMeasurementStatus] = useState(initialTab === "aprobaciones_mediciones" ? "por_controlar" : "all");
+  const [measurementStatus, setMeasurementStatus] = useState(initialTab === "aprobaciones_mediciones" ? "por_realizar" : "all");
   const [measurementDates, setMeasurementDates] = useState({});
   const [pageAprobaciones, setPageAprobaciones] = useState(1);
   const [pageMediciones, setPageMediciones] = useState(1);
@@ -144,7 +148,7 @@ export default function AprobacionTecnicaPage() {
     setTab(normalized);
     setSearchParams({ tab: normalized });
     if (normalized === "aprobaciones_mediciones") {
-      setMeasurementStatus("por_controlar");
+      setMeasurementStatus("por_realizar");
     }
   }
 
@@ -176,6 +180,8 @@ export default function AprobacionTecnicaPage() {
       arr = arr.filter((x) => String(x?.measurement_status || "") === "submitted");
     } else if (measurementStatus === "approved") {
       arr = arr.filter((x) => String(x?.measurement_status || "") === "approved");
+    } else if (measurementStatus === "sin_medicion") {
+      arr = arr.filter((x) => String(x?.measurement_subtype || "normal").toLowerCase().trim() === "sin_medicion");
     }
 
     return arr
@@ -184,6 +190,7 @@ export default function AprobacionTecnicaPage() {
         r?.end_customer?.city,
         r?.end_customer?.address,
         measurementStatusLabel(r?.measurement_status),
+        measurementSubtypeLabel(r),
         createdByLabel(r),
       ], searchText))
       .sort((a, b) => {
@@ -283,6 +290,7 @@ export default function AprobacionTecnicaPage() {
             <div className="spacer" />
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
               <Button variant={measurementStatus === "por_realizar" ? "primary" : "ghost"} onClick={() => setMeasurementStatus("por_realizar")}>Pendientes por realizar</Button>
+              <Button variant={measurementStatus === "sin_medicion" ? "primary" : "ghost"} onClick={() => setMeasurementStatus("sin_medicion")}>Portones sin medición</Button>
               <Button variant={measurementStatus === "por_controlar" ? "primary" : "ghost"} onClick={() => setMeasurementStatus("por_controlar")}>Pendientes por controlar</Button>
               <Button variant={measurementStatus === "approved" ? "primary" : "ghost"} onClick={() => setMeasurementStatus("approved")}>Aprobadas</Button>
               <Button variant={measurementStatus === "all" ? "primary" : "ghost"} onClick={() => setMeasurementStatus("all")}>Todas</Button>
@@ -327,6 +335,7 @@ export default function AprobacionTecnicaPage() {
                   <thead>
                     <tr>
                       <th>Cliente</th>
+                      <th>Tipo</th>
                       <th>Localidad</th>
                       <th>Dirección</th>
                       <th>Estado</th>
@@ -339,9 +348,11 @@ export default function AprobacionTecnicaPage() {
                     {visibleMeasurements.map((r) => {
                       const dateValue = measurementDates[r.id] ?? r.measurement_scheduled_for ?? "";
                       const pdfKey = `quote-${r.id}`;
+                      const isSinMedicion = String(r?.measurement_subtype || "normal").toLowerCase().trim() === "sin_medicion";
                       return (
                         <tr key={r.id}>
                           <td style={{ fontWeight: 800 }}>{r.end_customer?.name || "(sin nombre)"}</td>
+                          <td>{measurementSubtypeLabel(r)}</td>
                           <td>{localityLabel(r)}</td>
                           <td>{r.end_customer?.address || "—"}</td>
                           <td>{measurementStatusLabel(r.measurement_status)}</td>
@@ -365,7 +376,7 @@ export default function AprobacionTecnicaPage() {
                           <td className="right" style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
                             <PdfIconButton disabled={downloadingPdfKey === pdfKey} onClick={() => handleDownloadQuotePdf(r.id)} />
                             <Button variant="ghost" onClick={() => navigate(`/mediciones/${r.id}`)}>
-                              {r.measurement_status === "submitted" ? "Revisar" : "Abrir"}
+                              {isSinMedicion ? "Completar" : (r.measurement_status === "submitted" ? "Revisar" : "Abrir")}
                             </Button>
                           </td>
                         </tr>

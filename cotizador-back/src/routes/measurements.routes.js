@@ -23,7 +23,7 @@ function canReadMeasurement({ user, quote }) {
   if (isOwner) return true;
   if (user.is_enc_comercial) return true;
   if (user.is_rev_tecnica) return true;
-  if (user.is_medidor) return true;
+  if (user.is_medidor && !isTecnicaOnlyQuote(quote)) return true;
   return false;
 }
 function normalizeStatus(s) {
@@ -35,6 +35,14 @@ function normalizeViewer(v) {
   const s = String(v || "medidor").toLowerCase().trim();
   if (!["medidor", "tecnica"].includes(s)) return "medidor";
   return s;
+}
+function normalizeMeasurementMode(v) {
+  const s = String(v || "medidor").toLowerCase().trim();
+  return s === "tecnica_only" ? "tecnica_only" : "medidor";
+}
+function normalizeMeasurementSubtype(v) {
+  const s = String(v || "normal").toLowerCase().trim();
+  return s === "sin_medicion" ? "sin_medicion" : "normal";
 }
 function normalizeDateOnly(v) {
   const s = String(v || "").trim();
@@ -103,6 +111,43 @@ function validateEndCustomerForMeasurement(endCustomer, { requireWhatsapp = fals
 function normalizeText(v) {
   return String(v || "").trim().toLowerCase();
 }
+function hasMeasurementLine(lines) {
+  const arr = Array.isArray(lines) ? lines : [];
+  return arr.some((l) => Number(l?.product_id) === Number(MEASUREMENT_PRODUCT_ID));
+}
+function isTecnicaOnlyQuote(quote) {
+  return normalizeMeasurementMode(quote?.measurement_mode) === "tecnica_only"
+    || normalizeMeasurementSubtype(quote?.measurement_subtype) === "sin_medicion";
+}
+function isMeasurementReadyQuote(quote) {
+  const status = String(quote?.status || "").toLowerCase().trim();
+  if (status === "synced_odoo") return true;
+  return status === "pending_approvals"
+    && String(quote?.commercial_decision || "").toLowerCase().trim() === "approved"
+    && String(quote?.technical_decision || "").toLowerCase().trim() === "approved";
+}
+function quoteAllowsMeasurementWorkflow(quote) {
+  return String(quote?.catalog_kind || "").toLowerCase().trim() === "porton"
+    && String(quote?.fulfillment_mode || "").toLowerCase().trim() === "produccion"
+    && isMeasurementReadyQuote(quote)
+    && (
+      quote?.requires_measurement === true
+      || hasMeasurementLine(quote?.lines)
+      || isTecnicaOnlyQuote(quote)
+    );
+}
+function toNumberLike(v) {
+  const n = Number(String(v ?? "").replace(",", "."));
+  return Number.isFinite(n) ? n : null;
+}
+function extractBudgetDimensionMm(quote, key) {
+  const dims = quote?.payload?.dimensions || {};
+  const raw = key === "ancho" ? dims?.width : dims?.height;
+  const n = toNumberLike(raw);
+  if (!Number.isFinite(n)) return null;
+  if (n <= 0) return null;
+  return Math.round(n * 1000);
+}
 function deriveMeasurementPrefill(quote) {
   const payload = quote?.payload || {};
   const lines = Array.isArray(quote?.lines) ? quote.lines : [];
@@ -119,7 +164,52 @@ function deriveMeasurementPrefill(quote) {
   if (names.includes("negro")) out.color_sistema = "Negro Semi Mate";
   if (names.includes("roble")) out.color_revestimiento = "Roble";
   if (names.includes("nogal")) out.color_revestimiento = "Nogal";
+  const altoMm = extractBudgetDimensionMm(quote, "alto");
+  const anchoMm = extractBudgetDimensionMm(quote, "ancho");
+  if (altoMm) out.alto_mm = altoMm;
+  if (anchoMm) out.ancho_mm = anchoMm;
   return out;
+}
+function validateFinalDimensions(form) {
+  const altoFinal = String(form?.alto_final_mm || "").trim();
+  const anchoFinal = String(form?.ancho_final_mm || "").trim();
+  if (!altoFinal) return "Falta alto_final_mm";
+  if (!anchoFinal) return "Falta ancho_final_mm";
+  return null;
+}
+async function syncOriginalQuoteFromMeasurementFinalization(quoteId, finalization) {
+  const orderId = Number(finalization?.order?.id || 0) || null;
+  const orderName = String(finalization?.order?.name || "").trim();
+  if (!quoteId || !orderId || !orderName) return null;
+  const metrics = finalization?.metrics || {};
+  const upd = await dbQuery(
+    `update public.presupuestador_quotes
+        set status='synced_odoo',
+            odoo_sale_order_id=coalesce(odoo_sale_order_id, $2),
+            odoo_sale_order_name=coalesce(odoo_sale_order_name, $3),
+            deposit_amount=coalesce(deposit_amount, 0),
+            final_status='synced_odoo',
+            final_sale_order_id=coalesce(final_sale_order_id, $2),
+            final_sale_order_name=coalesce(final_sale_order_name, $3),
+            final_synced_at=coalesce(final_synced_at, now()),
+            final_tolerance_percent=coalesce($4, final_tolerance_percent),
+            final_tolerance_amount=coalesce($5, final_tolerance_amount),
+            final_difference_amount=coalesce($6, final_difference_amount),
+            final_absorbed_by_company=coalesce($7, final_absorbed_by_company)
+      where id=$1
+        and odoo_sale_order_id is null
+      returning *`,
+    [
+      quoteId,
+      orderId,
+      orderName,
+      metrics?.tolerance_percent ?? null,
+      metrics?.tolerance_amount ?? null,
+      metrics?.difference_amount ?? null,
+      typeof metrics?.absorbed_by_company === "boolean" ? metrics.absorbed_by_company : null,
+    ]
+  );
+  return upd.rows?.[0] || null;
 }
 
 export function buildMeasurementsRouter(odoo = null) {
@@ -149,13 +239,14 @@ export function buildMeasurementsRouter(odoo = null) {
 
       const where = [
         "q.catalog_kind = 'porton'",
-        "q.status = 'synced_odoo'",
         "q.fulfillment_mode = 'produccion'",
-        `(q.requires_measurement = true or exists (select 1 from jsonb_array_elements(coalesce(q.lines, '[]'::jsonb)) elem where (elem->>'product_id') = $1))`,
+        "(q.status = 'synced_odoo' or (q.status = 'pending_approvals' and q.commercial_decision = 'approved' and q.technical_decision = 'approved'))",
+        `(q.requires_measurement = true or coalesce(q.measurement_mode, 'medidor') = 'tecnica_only' or coalesce(q.measurement_subtype, 'normal') = 'sin_medicion' or exists (select 1 from jsonb_array_elements(coalesce(q.lines, '[]'::jsonb)) elem where (elem->>'product_id') = $1))`,
       ];
       const params = [String(MEASUREMENT_PRODUCT_ID)];
 
       if (viewer === "medidor") {
+        where.push(`coalesce(q.measurement_mode, 'medidor') <> 'tecnica_only'`);
         params.push(Number(u.user_id));
         where.push(`(q.measurement_assigned_to_user_id is null or q.measurement_assigned_to_user_id = $${params.length})`);
       }
@@ -222,7 +313,7 @@ export function buildMeasurementsRouter(odoo = null) {
       const cur = await dbQuery(`select * from public.presupuestador_quotes where id=$1 limit 1`, [id]);
       const quote = cur.rows?.[0];
       if (!quote) return res.status(404).json({ ok: false, error: "Presupuesto no encontrado" });
-      if (!(quote.catalog_kind === "porton" && quote.status === "synced_odoo" && quote.fulfillment_mode === "produccion")) return res.status(400).json({ ok: false, error: "Este presupuesto no requiere medición" });
+      if (!quoteAllowsMeasurementWorkflow(quote)) return res.status(400).json({ ok: false, error: "Este presupuesto no requiere medición" });
       const upd = await dbQuery(`update public.presupuestador_quotes set requires_measurement = true, measurement_status = case when measurement_status = 'none' then 'pending' else measurement_status end, measurement_scheduled_for = $2::date, measurement_scheduled_by_user_id = $3, measurement_scheduled_at = now() where id = $1 returning *`, [id, scheduledFor, Number(u.user_id)]);
       return res.json({ ok: true, quote: upd.rows?.[0] || null });
     } catch (e) { next(e); }
@@ -241,7 +332,10 @@ export function buildMeasurementsRouter(odoo = null) {
       const cur = await dbQuery(`select * from public.presupuestador_quotes where id=$1 limit 1`, [id]);
       const quote = cur.rows?.[0];
       if (!quote) return res.status(404).json({ ok: false, error: "Presupuesto no encontrado" });
-      if (!(quote.catalog_kind === "porton" && quote.status === "synced_odoo" && quote.fulfillment_mode === "produccion")) return res.status(400).json({ ok: false, error: "Este presupuesto no requiere medición" });
+      if (!quoteAllowsMeasurementWorkflow(quote)) return res.status(400).json({ ok: false, error: "Este presupuesto no requiere medición" });
+      if (!u?.is_rev_tecnica && isTecnicaOnlyQuote(quote)) {
+        return res.status(403).json({ ok: false, error: "Este portón sin medición solo puede completarlo Técnica" });
+      }
       const currentStatus = String(quote.measurement_status || "none").toLowerCase().trim();
       if (!u?.is_rev_tecnica) {
         if (currentStatus === "approved") return res.status(409).json({ ok: false, error: "La medición ya fue aprobada" });
@@ -253,12 +347,14 @@ export function buildMeasurementsRouter(odoo = null) {
 
       if (u?.is_rev_tecnica) {
         if (submit) {
+          const finalDimsErr = validateFinalDimensions(form);
+          if (finalDimsErr) return res.status(400).json({ ok: false, error: finalDimsErr });
           const shareToken = String(quote.measurement_share_token || makeShareToken());
           const upd = await dbQuery(
             `update public.presupuestador_quotes set requires_measurement = true, end_customer = $2::jsonb, measurement_form = $3::jsonb, measurement_status = 'approved', measurement_review_notes = null, measurement_review_by_user_id = $4, measurement_review_at = now(), measurement_share_token = coalesce($5, measurement_share_token), measurement_share_enabled_at = coalesce(measurement_share_enabled_at, now()) where id = $1 returning *`,
             [id, JSON.stringify(nextCustomer), JSON.stringify(form), Number(u.user_id), shareToken]
           );
-          const savedQuote = upd.rows?.[0] || null;
+          let savedQuote = upd.rows?.[0] || null;
           let finalization = null;
           try {
             finalization = await finalizeMeasurementToRevisionQuote({
@@ -267,12 +363,14 @@ export function buildMeasurementsRouter(odoo = null) {
               measurementForm: form,
               approverUser: u,
             });
+            const syncedOriginal = await syncOriginalQuoteFromMeasurementFinalization(id, finalization);
+            if (syncedOriginal) savedQuote = { ...savedQuote, ...syncedOriginal };
           } catch (e) {
             console.error("MEASUREMENT FINALIZATION ERROR:", e?.message || e);
           }
           return res.json({ ok: true, quote: savedQuote, finalization });
         }
-        const statusToKeep = currentStatus === "none" ? "submitted" : currentStatus;
+        const statusToKeep = currentStatus === "none" ? "pending" : currentStatus;
         const upd = await dbQuery(`update public.presupuestador_quotes set requires_measurement = true, end_customer = $2::jsonb, measurement_form = $3::jsonb, measurement_status = $4 where id = $1 returning *`, [id, JSON.stringify(nextCustomer), JSON.stringify(form), statusToKeep]);
         return res.json({ ok: true, quote: upd.rows?.[0] || null });
       }
@@ -294,12 +392,21 @@ export function buildMeasurementsRouter(odoo = null) {
       const cur = await dbQuery(`select * from public.presupuestador_quotes where id=$1 limit 1`, [id]);
       const quote = cur.rows?.[0];
       if (!quote) return res.status(404).json({ ok: false, error: "Presupuesto no encontrado" });
-      if (!["submitted", "approved"].includes(String(quote.measurement_status || "").toLowerCase())) return res.status(409).json({ ok: false, error: "La medición no está lista para revisar" });
+      if (!quoteAllowsMeasurementWorkflow(quote)) return res.status(400).json({ ok: false, error: "Este presupuesto no requiere medición" });
+      if (!isTecnicaOnlyQuote(quote) && !["submitted", "approved"].includes(String(quote.measurement_status || "").toLowerCase())) {
+        return res.status(409).json({ ok: false, error: "La medición no está lista para revisar" });
+      }
+      if (isTecnicaOnlyQuote(quote) && act === "reject") {
+        return res.status(409).json({ ok: false, error: "Los portones sin medición se corrigen directamente desde Técnica" });
+      }
 
       if (act === "approve") {
+        const form = quote?.measurement_form || {};
+        const finalDimsErr = validateFinalDimensions(form);
+        if (finalDimsErr) return res.status(400).json({ ok: false, error: finalDimsErr });
         const shareToken = String(quote.measurement_share_token || makeShareToken());
         const upd = await dbQuery(`update public.presupuestador_quotes set measurement_status = 'approved', measurement_review_by_user_id = $2, measurement_review_at = now(), measurement_review_notes = null, measurement_share_token = coalesce($3, measurement_share_token), measurement_share_enabled_at = coalesce(measurement_share_enabled_at, now()) where id = $1 returning *`, [id, Number(u.user_id), shareToken]);
-        const savedQuote = upd.rows?.[0] || null;
+        let savedQuote = upd.rows?.[0] || null;
         let finalization = null;
         try {
           finalization = await finalizeMeasurementToRevisionQuote({
@@ -308,6 +415,8 @@ export function buildMeasurementsRouter(odoo = null) {
             measurementForm: savedQuote?.measurement_form || {},
             approverUser: u,
           });
+          const syncedOriginal = await syncOriginalQuoteFromMeasurementFinalization(id, finalization);
+          if (syncedOriginal) savedQuote = { ...savedQuote, ...syncedOriginal };
         } catch (e) {
           console.error("MEASUREMENT FINALIZATION ERROR:", e?.message || e);
         }

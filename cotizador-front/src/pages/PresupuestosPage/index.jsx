@@ -8,6 +8,7 @@ import PaginationControls from "../../ui/PaginationControls.jsx";
 import { useAuthStore } from "../../domain/auth/store.js";
 import { listDoors } from "../../api/doors.js";
 import { listQuotes, requestProductionFromAcopio } from "../../api/quotes.js";
+import { getMedicionPublicPdfUrl } from "../../api/pdf.js";
 import { downloadListingDoorPdf, downloadListingQuotePdf } from "../../utils/listingPdf.js";
 
 const PAGE_SIZE = 25;
@@ -20,6 +21,14 @@ function labelMeasurementStatus(q) {
   if (s === "approved") return "Realizada";
   if (s === "none") return "—";
   return s;
+}
+
+function quoteWaitingMeasurement(q) {
+  return q?.status === "pending_approvals"
+    && q?.commercial_decision === "approved"
+    && q?.technical_decision === "approved"
+    && q?.requires_measurement === true
+    && String(q?.measurement_status || "none").toLowerCase() !== "approved";
 }
 
 function labelQuoteStatus(q) {
@@ -37,6 +46,7 @@ function labelQuoteStatus(q) {
     if (c === "pending" && t === "pending") return "Pendiente Comercial y Técnica";
     if (c === "approved" && t === "pending") return "Pendiente Técnica";
     if (c === "pending" && t === "approved") return "Pendiente Comercial";
+    if (quoteWaitingMeasurement(q)) return "Pendiente medición técnica";
     if (c === "approved" && t === "approved") return "Listo para Odoo";
     return "En aprobación";
   }
@@ -455,6 +465,7 @@ export default function PresupuestosPage() {
                   const hasFinal = !!r.final_copy_id;
                   const finalDraft = hasFinal && !["syncing_odoo", "synced_odoo"].includes(String(r.final_copy_status || ""));
                   const canAddDoor = String(r?.catalog_kind || "porton").toLowerCase() === "porton" && r.status === "draft" && !linkedDoorQuoteIds.has(String(r.id));
+                  const measurementPublicUrl = r?.measurement_status === "approved" ? getMedicionPublicPdfUrl(r?.measurement_share_token) : null;
 
                   return (
                     <tr key={r.id}>
@@ -469,6 +480,9 @@ export default function PresupuestosPage() {
                       <td className="right" style={{ display: "flex", justifyContent: "flex-end", gap: 8, flexWrap: "wrap" }}>
                         <PdfIconButton disabled={downloadingPdfKey === pdfKey} onClick={() => handleDownloadQuotePdf(r.id)} />
                         <Button variant="ghost" onClick={() => navigate(`/presupuestos/${r.id}`)}>Ver original</Button>
+                        {measurementPublicUrl ? (
+                          <Button variant="ghost" onClick={() => window.open(measurementPublicUrl, "_blank", "noopener,noreferrer")}>Ver medición</Button>
+                        ) : null}
                         {r.status === "draft" && (
                           <Button onClick={() => navigate(r.catalog_kind === "ipanel" ? `/cotizador/ipanel/${r.id}` : `/cotizador/${r.id}`)}>Editar</Button>
                         )}

@@ -44,6 +44,27 @@ function makeEditableCustomer(quote) {
     maps_url: String(endCustomer.maps_url || "").trim(),
   };
 }
+function normalizeMeasurementMode(v) {
+  return String(v || "medidor").toLowerCase().trim() === "tecnica_only" ? "tecnica_only" : "medidor";
+}
+function normalizeMeasurementSubtype(v) {
+  return String(v || "normal").toLowerCase().trim() === "sin_medicion" ? "sin_medicion" : "normal";
+}
+function isTecnicaOnlyQuote(quote) {
+  return normalizeMeasurementMode(quote?.measurement_mode) === "tecnica_only"
+    || normalizeMeasurementSubtype(quote?.measurement_subtype) === "sin_medicion";
+}
+function toNumberLike(v) {
+  const n = Number(String(v ?? "").replace(",", "."));
+  return Number.isFinite(n) ? n : null;
+}
+function extractBudgetDimensionMm(quote, key) {
+  const dims = quote?.payload?.dimensions || {};
+  const raw = key === "ancho" ? dims?.width : dims?.height;
+  const n = toNumberLike(raw);
+  if (!Number.isFinite(n) || n <= 0) return "";
+  return String(Math.round(n * 1000));
+}
 const SCHEME_RECT_PCTS = {
   alto: [
     { left: 9.22, top: 43.73, width: 14.4, height: 14.24 },
@@ -70,6 +91,8 @@ const schemeOverlayBaseStyle = {
 };
 function normalizeMeasurementForm(raw, quote) {
   const f = raw && typeof raw === "object" ? { ...raw } : {};
+  const suggestedAltoMm = extractBudgetDimensionMm(quote, "alto");
+  const suggestedAnchoMm = extractBudgetDimensionMm(quote, "ancho");
   if (!f.fecha) f.fecha = todayISO();
   if (!f.distribuidor) f.distribuidor = deriveDistribuidor(quote);
   if (f.en_acopio === undefined) f.en_acopio = deriveEnAcopio(quote);
@@ -84,10 +107,24 @@ function normalizeMeasurementForm(raw, quote) {
   esq.alto = alto;
   esq.ancho = ancho;
   f.esquema = esq;
-  if ((f.ancho_mm || f.alto_mm) && !raw?.esquema) {
-    if (f.alto_mm && !f.esquema.alto[1]) f.esquema.alto[1] = String(f.alto_mm);
-    if (f.ancho_mm && !f.esquema.ancho[1]) f.esquema.ancho[1] = String(f.ancho_mm);
+
+  if ((f.ancho_mm || f.alto_mm || suggestedAnchoMm || suggestedAltoMm) && !raw?.esquema) {
+    const baseAlto = String(f.alto_mm || suggestedAltoMm || "").trim();
+    const baseAncho = String(f.ancho_mm || suggestedAnchoMm || "").trim();
+    if (isTecnicaOnlyQuote(quote)) {
+      for (let i = 0; i < 3; i += 1) {
+        if (baseAlto && !f.esquema.alto[i]) f.esquema.alto[i] = baseAlto;
+        if (baseAncho && !f.esquema.ancho[i]) f.esquema.ancho[i] = baseAncho;
+      }
+      if (!f.alto_final_mm && baseAlto) f.alto_final_mm = baseAlto;
+      if (!f.ancho_final_mm && baseAncho) f.ancho_final_mm = baseAncho;
+    } else {
+      if (baseAlto && !f.esquema.alto[1]) f.esquema.alto[1] = baseAlto;
+      if (baseAncho && !f.esquema.ancho[1]) f.esquema.ancho[1] = baseAncho;
+    }
   }
+  if (f.alto_final_mm === undefined) f.alto_final_mm = "";
+  if (f.ancho_final_mm === undefined) f.ancho_final_mm = "";
   if (f.estructura_metalica !== undefined && typeof f.estructura_metalica !== "boolean") f.estructura_metalica = isYes(f.estructura_metalica);
   if (f.lucera !== undefined && typeof f.lucera !== "boolean") f.lucera = isYes(f.lucera);
   if (f.traslado !== undefined && typeof f.traslado !== "boolean") f.traslado = isYes(f.traslado);
@@ -96,6 +133,9 @@ function normalizeMeasurementForm(raw, quote) {
   return f;
 }
 function makeEmptyForm(quote) {
+  const suggestedAltoMm = extractBudgetDimensionMm(quote, "alto");
+  const suggestedAnchoMm = extractBudgetDimensionMm(quote, "ancho");
+  const isTecnicaOnly = isTecnicaOnlyQuote(quote);
   return {
     fecha: todayISO(),
     distribuidor: deriveDistribuidor(quote),
@@ -104,7 +144,12 @@ function makeEmptyForm(quote) {
     lado_puerta: "",
     lado_motor: "",
     toma_corriente: "",
-    esquema: { alto: ["", "", ""], ancho: ["", "", ""] },
+    esquema: {
+      alto: isTecnicaOnly && suggestedAltoMm ? [suggestedAltoMm, suggestedAltoMm, suggestedAltoMm] : ["", "", ""],
+      ancho: isTecnicaOnly && suggestedAnchoMm ? [suggestedAnchoMm, suggestedAnchoMm, suggestedAnchoMm] : ["", "", ""],
+    },
+    alto_final_mm: isTecnicaOnly ? suggestedAltoMm : "",
+    ancho_final_mm: isTecnicaOnly ? suggestedAnchoMm : "",
     observaciones: "",
     colocacion: "",
     en_acopio: deriveEnAcopio(quote),
@@ -137,8 +182,8 @@ function Row({ children }) { return <div style={{ display: "flex", gap: 12, flex
 function Field({ label, children }) {
   return <div style={{ flex: 1, minWidth: 220 }}><div className="muted" style={{ marginBottom: 6 }}>{label}</div>{children}</div>;
 }
-function Select({ value, onChange, options, placeholder = "—" }) {
-  return <select value={value ?? ""} onChange={(e) => onChange?.(e.target.value)} style={{ padding: 10, borderRadius: 10, border: "1px solid #ddd", width: "100%" }}><option value="">{placeholder}</option>{options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}</select>;
+function Select({ value, onChange, options, placeholder = "—", disabled = false }) {
+  return <select value={value ?? ""} onChange={(e) => onChange?.(e.target.value)} style={{ padding: 10, borderRadius: 10, border: "1px solid #ddd", width: "100%" }} disabled={disabled}><option value="">{placeholder}</option>{options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}</select>;
 }
 function measurementStatusLabel(s) {
   if (s === "pending") return "Pendiente";
@@ -150,6 +195,10 @@ function measurementStatusLabel(s) {
 function SuggestedHint({ value }) {
   if (!value) return null;
   return <div className="muted" style={{ fontSize: 12, color: "#6b7280", marginBottom: 6 }}>Sugerido: <b>{value}</b> · el medidor debe volver a seleccionarlo</div>;
+}
+function validateTechnicalFinalDimensions(form) {
+  if (!String(form?.alto_final_mm || "").trim()) throw new Error("Completá el Alto final antes de confirmar la medición.");
+  if (!String(form?.ancho_final_mm || "").trim()) throw new Error("Completá el Ancho final antes de confirmar la medición.");
 }
 
 export default function MedicionDetailPage() {
@@ -167,6 +216,7 @@ export default function MedicionDetailPage() {
 
   const isMedidor = !!user?.is_medidor;
   const isTechnical = !!user?.is_rev_tecnica;
+  const isTecnicaOnly = isTecnicaOnlyQuote(quote);
   const canEdit = isMedidor || isTechnical;
   const measurementSuggestions = quote?.measurement_prefill || {};
   const visibleQuoteNumber = String(
@@ -222,7 +272,11 @@ export default function MedicionDetailPage() {
   useEffect(() => () => closePendingWhatsappWindow(), []);
 
   const mSave = useMutation({
-    mutationFn: ({ submit }) => { validateCustomerData(customer, { requireWhatsapp: submit && isTechnical }); return saveMeasurement(quoteId, { form, submit, endCustomer: customer }); },
+    mutationFn: ({ submit }) => {
+      if (submit && isTechnical) validateTechnicalFinalDimensions(form);
+      validateCustomerData(customer, { requireWhatsapp: submit && isTechnical });
+      return saveMeasurement(quoteId, { form, submit, endCustomer: customer });
+    },
     onMutate: () => setShareInfo(null),
     onSuccess: async (savedQuote, variables) => {
       await q.refetch();
@@ -268,10 +322,10 @@ export default function MedicionDetailPage() {
         <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
           <div>
             <h2 style={{ margin: 0 }}>Medición · Presupuesto #{visibleQuoteNumber || quoteId}</h2>
-            <div className="muted">{isTechnical ? "Revisar la planilla, corregir si hace falta y aprobar para enviar al cliente." : "Completar la planilla y enviarla a Técnica para revisión."}</div>
-            {quote ? <div className="muted" style={{ marginTop: 6 }}>Estado: <b>{measurementStatusLabel(quote.measurement_status)}</b></div> : null}
+            <div className="muted">{isTechnical ? (isTecnicaOnly ? "Completá la planilla interna, definí Alto/Ancho final y confirmá para disparar Odoo." : "Revisar la planilla, corregir si hace falta y aprobar para enviar al cliente.") : "Completar la planilla y enviarla a Técnica para revisión."}</div>
+            {quote ? <div className="muted" style={{ marginTop: 6 }}>Estado: <b>{measurementStatusLabel(quote.measurement_status)}</b>{isTecnicaOnly ? <> · Tipo: <b>Portón sin medición</b></> : null}</div> : null}
           </div>
-          <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}><Button variant="ghost" onClick={() => navigate(isTechnical ? "/aprobacion/tecnica" : "/mediciones")}>Volver</Button></div>
+          <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}><Button variant="ghost" onClick={() => navigate(isTechnical ? "/aprobacion/tecnica?tab=aprobaciones_mediciones" : "/mediciones")}>Volver</Button></div>
         </div>
         {q.isLoading && <><div className="spacer" /><div className="muted">Cargando…</div></>}
         {q.isError && <><div className="spacer" /><div style={{ color: "#d93025", fontSize: 13 }}>{q.error.message}</div></>}
@@ -308,13 +362,18 @@ export default function MedicionDetailPage() {
           <Section title="Parantes / Laterales">
             <Row>
               <Field label="Parantes (Cant)"><Input type="number" value={form.parantes?.cant || ""} onChange={(v) => setForm({ ...form, parantes: { ...(form.parantes || {}), cant: v } })} style={{ width: "100%" }} disabled={!canEdit} /></Field>
-              <Field label="Lado de la puerta"><Select value={form.lado_puerta || ""} onChange={(v) => setForm({ ...form, lado_puerta: v })} options={leftRightOptions} /></Field>
-              <Field label="Lado de motor o soporte"><Select value={form.lado_motor || ""} onChange={(v) => setForm({ ...form, lado_motor: v })} options={leftRightOptions} /></Field>
-              <Field label="Toma Corriente"><Select value={form.toma_corriente || ""} onChange={(v) => setForm({ ...form, toma_corriente: v })} options={leftRightOptions} /></Field>
+              <Field label="Lado de la puerta"><Select value={form.lado_puerta || ""} onChange={(v) => setForm({ ...form, lado_puerta: v })} options={leftRightOptions} disabled={!canEdit} /></Field>
+              <Field label="Lado de motor o soporte"><Select value={form.lado_motor || ""} onChange={(v) => setForm({ ...form, lado_motor: v })} options={leftRightOptions} disabled={!canEdit} /></Field>
+              <Field label="Toma Corriente"><Select value={form.toma_corriente || ""} onChange={(v) => setForm({ ...form, toma_corriente: v })} options={leftRightOptions} disabled={!canEdit} /></Field>
             </Row>
           </Section>
 
           <Section title="Esquema (medidas)">
+            {isTecnicaOnly ? (
+              <div style={{ marginBottom: 10, padding: 10, borderRadius: 10, background: "#fff7e6", border: "1px solid #ffe3a3" }}>
+                Este portón no pasa por Medidor. Técnica completa la planilla usando como base las medidas declaradas en el presupuesto y confirma el <b>Alto final</b> y el <b>Ancho final</b>.
+              </div>
+            ) : null}
             <div style={{ display: "flex", gap: 14, flexWrap: "wrap", alignItems: "flex-start" }}>
               <div style={{ flex: 2, minWidth: 320 }}>
                 <div style={{ border: "1px solid #eee", borderRadius: 12, padding: 10, background: "#fff" }}>
@@ -340,43 +399,54 @@ export default function MedicionDetailPage() {
                 <div className="spacer" />
                 <div style={{ fontWeight: 900, marginBottom: 8 }}>Ancho</div>
                 <Row>{[0, 1, 2].map((i) => <Field key={`ancho-${i}`} label={`Ancho ${i + 1} (mm)`}><Input type="number" value={form.esquema?.ancho?.[i] ?? ""} onChange={(v) => { const next = { ...(form.esquema || {}) }; const arr = Array.isArray(next.ancho) ? next.ancho.slice(0, 3) : ["", "", ""]; while (arr.length < 3) arr.push(""); arr[i] = v; next.ancho = arr; setForm({ ...form, esquema: next }); }} style={{ width: "100%" }} disabled={!canEdit} /></Field>)}</Row>
+                <div className="spacer" />
+                <div style={{ fontWeight: 900, marginBottom: 8 }}>Medidas finales</div>
+                <Row>
+                  <Field label="Alto final (mm)">
+                    <Input type="number" value={form.alto_final_mm || ""} onChange={(v) => setForm({ ...form, alto_final_mm: v })} style={{ width: "100%" }} disabled={!isTechnical} />
+                  </Field>
+                  <Field label="Ancho final (mm)">
+                    <Input type="number" value={form.ancho_final_mm || ""} onChange={(v) => setForm({ ...form, ancho_final_mm: v })} style={{ width: "100%" }} disabled={!isTechnical} />
+                  </Field>
+                </Row>
+                <div className="muted" style={{ fontSize: 12, marginTop: 8 }}>Estos dos campos los define Técnica y son obligatorios antes de confirmar la medición.</div>
               </div>
             </div>
           </Section>
 
           <Section title="Instalación / Sistema">
             <Row>
-              <Field label="Tipo de colocación"><Select value={form.colocacion || ""} onChange={(v) => setForm({ ...form, colocacion: v })} options={[{ value: "dentro_vano", label: "Por dentro del vano" }, { value: "detras_vano", label: "Por detrás del vano" }]} /></Field>
+              <Field label="Tipo de colocación"><Select value={form.colocacion || ""} onChange={(v) => setForm({ ...form, colocacion: v })} options={[{ value: "dentro_vano", label: "Por dentro del vano" }, { value: "detras_vano", label: "Por detrás del vano" }]} disabled={!canEdit} /></Field>
               <Field label="Portón en acopio"><Input value={form.en_acopio ? "Sí" : "No"} onChange={() => {}} disabled style={{ width: "100%", opacity: 0.9 }} /></Field>
-              <Field label="Tipo de accionamiento"><SuggestedHint value={measurementSuggestions.accionamiento} /><Select value={form.accionamiento || ""} onChange={(v) => setForm({ ...form, accionamiento: v })} options={[{ value: "manual", label: "Manual" }, { value: "automatico", label: "Automático" }]} /></Field>
-              <Field label="Sistema levadizo"><SuggestedHint value={measurementSuggestions.levadizo} /><Select value={form.levadizo || ""} onChange={(v) => setForm({ ...form, levadizo: v })} options={[{ value: "coplanar", label: "Coplanar" }, { value: "comun", label: "Común" }]} /></Field>
+              <Field label="Tipo de accionamiento"><SuggestedHint value={measurementSuggestions.accionamiento} /><Select value={form.accionamiento || ""} onChange={(v) => setForm({ ...form, accionamiento: v })} options={[{ value: "manual", label: "Manual" }, { value: "automatico", label: "Automático" }]} disabled={!canEdit} /></Field>
+              <Field label="Sistema levadizo"><SuggestedHint value={measurementSuggestions.levadizo} /><Select value={form.levadizo || ""} onChange={(v) => setForm({ ...form, levadizo: v })} options={[{ value: "coplanar", label: "Coplanar" }, { value: "comun", label: "Común" }]} disabled={!canEdit} /></Field>
             </Row>
             <div className="spacer" />
             <Row>
-              <Field label="Estructura metálica para puerta"><SuggestedHint value={measurementSuggestions.estructura_metalica} /><Select value={form.estructura_metalica ? "si" : "no"} onChange={(v) => setYesNoBool("estructura_metalica", v)} options={yesNoOptions} /></Field>
+              <Field label="Estructura metálica para puerta"><SuggestedHint value={measurementSuggestions.estructura_metalica} /><Select value={form.estructura_metalica ? "si" : "no"} onChange={(v) => setYesNoBool("estructura_metalica", v)} options={yesNoOptions} disabled={!canEdit} /></Field>
               <Field label="Rebaje lateral (mm)"><Input type="number" value={form.rebaje_lateral_mm || ""} onChange={(v) => setForm({ ...form, rebaje_lateral_mm: v })} style={{ width: "100%" }} disabled={!canEdit} /></Field>
               <Field label="Rebaje inferior (mm)"><Input type="number" value={form.rebaje_inferior_mm || ""} onChange={(v) => setForm({ ...form, rebaje_inferior_mm: v })} style={{ width: "100%" }} disabled={!canEdit} /></Field>
-              <Field label="Anclaje de fijación"><SuggestedHint value={measurementSuggestions.anclaje} /><Select value={form.anclaje || ""} onChange={(v) => setForm({ ...form, anclaje: v })} options={[{ value: "lateral", label: "Lateral" }, { value: "frontal", label: "Frontal" }, { value: "sin", label: "Sin Anclajes" }]} /></Field>
+              <Field label="Anclaje de fijación"><SuggestedHint value={measurementSuggestions.anclaje} /><Select value={form.anclaje || ""} onChange={(v) => setForm({ ...form, anclaje: v })} options={[{ value: "lateral", label: "Lateral" }, { value: "frontal", label: "Frontal" }, { value: "sin", label: "Sin Anclajes" }]} disabled={!canEdit} /></Field>
             </Row>
             <div className="spacer" />
-            <Row><Field label="Color de sistema"><SuggestedHint value={measurementSuggestions.color_sistema} /><Select value={form.color_sistema || ""} onChange={(v) => setForm({ ...form, color_sistema: v })} options={[{ value: "Blanco", label: "Blanco" }, { value: "Gris topo", label: "Gris topo" }, { value: "Negro texturado Brillante", label: "Negro texturado Brillante" }, { value: "Negro Semi Mate", label: "Negro Semi Mate" }, { value: "Negro Textourado mate", label: "Negro Textourado mate" }, { value: "Bronce colonial", label: "Bronce colonial" }]} /></Field></Row>
+            <Row><Field label="Color de sistema"><SuggestedHint value={measurementSuggestions.color_sistema} /><Select value={form.color_sistema || ""} onChange={(v) => setForm({ ...form, color_sistema: v })} options={[{ value: "Blanco", label: "Blanco" }, { value: "Gris topo", label: "Gris topo" }, { value: "Negro texturado Brillante", label: "Negro texturado Brillante" }, { value: "Negro Semi Mate", label: "Negro Semi Mate" }, { value: "Negro Textourado mate", label: "Negro Textourado mate" }, { value: "Bronce colonial", label: "Bronce colonial" }]} disabled={!canEdit} /></Field></Row>
           </Section>
 
           <Section title="Revestimiento">
             <Row>
-              <Field label="Tipo de Revestimiento"><SuggestedHint value={measurementSuggestions.tipo_revestimiento} /><Select value={form.tipo_revestimiento || ""} onChange={(v) => { const next = { ...form, tipo_revestimiento: v }; if (!["varillado_inyectado", "varillado_simple"].includes(v)) next.varillado_medida = ""; setForm(next); }} options={[{ value: "lamas", label: "Lamas" }, { value: "varillado_inyectado", label: "Varillado Inyectado" }, { value: "varillado_simple", label: "Varillado Simple" }]} /></Field>
+              <Field label="Tipo de Revestimiento"><SuggestedHint value={measurementSuggestions.tipo_revestimiento} /><Select value={form.tipo_revestimiento || ""} onChange={(v) => { const next = { ...form, tipo_revestimiento: v }; if (!["varillado_inyectado", "varillado_simple"].includes(v)) next.varillado_medida = ""; setForm(next); }} options={[{ value: "lamas", label: "Lamas" }, { value: "varillado_inyectado", label: "Varillado Inyectado" }, { value: "varillado_simple", label: "Varillado Simple" }]} disabled={!canEdit} /></Field>
               {["varillado_inyectado", "varillado_simple"].includes(form.tipo_revestimiento) && <Field label="Medida (Varillado)"><Input value={form.varillado_medida || ""} onChange={(v) => setForm({ ...form, varillado_medida: v })} style={{ width: "100%" }} disabled={!canEdit} /></Field>}
-              <Field label="Orientación del revestimiento"><SuggestedHint value={measurementSuggestions.orientacion_revestimiento} /><Select value={form.orientacion_revestimiento || ""} onChange={(v) => setForm({ ...form, orientacion_revestimiento: v })} options={[{ value: "lamas_horizontales", label: "Lamas Horizontales" }, { value: "lamas_verticales", label: "Lamas Verticales" }, { value: "varillado_vertical", label: "Varillado Vertical" }]} /></Field>
+              <Field label="Orientación del revestimiento"><SuggestedHint value={measurementSuggestions.orientacion_revestimiento} /><Select value={form.orientacion_revestimiento || ""} onChange={(v) => setForm({ ...form, orientacion_revestimiento: v })} options={[{ value: "lamas_horizontales", label: "Lamas Horizontales" }, { value: "lamas_verticales", label: "Lamas Verticales" }, { value: "varillado_vertical", label: "Varillado Vertical" }]} disabled={!canEdit} /></Field>
             </Row>
             <div className="spacer" />
             <Row>
-              <Field label="Revestimiento"><SuggestedHint value={measurementSuggestions.revestimiento} /><Select value={form.revestimiento || ""} onChange={(v) => setForm({ ...form, revestimiento: v })} options={[{ value: "Apto Aluminio", label: "Apto Aluminio" }, { value: "Simil madera Clásico Simil", label: "Simil madera Clásico Simil" }, { value: "Simil Aluminio Clásico", label: "Simil Aluminio Clásico" }, { value: "Apto PVC", label: "Apto PVC" }, { value: "Simil madera doble inyectado", label: "Simil madera doble inyectado" }, { value: "Simil aluminio doble inyectado", label: "Simil aluminio doble inyectado" }, { value: "Varillado", label: "Varillado" }]} /></Field>
-              <Field label="Color de revestimiento"><SuggestedHint value={measurementSuggestions.color_revestimiento} /><Select value={form.color_revestimiento || ""} onChange={(v) => { const next = { ...form, color_revestimiento: v }; if (v !== "Otros") next.color_revestimiento_otro = ""; setForm(next); }} options={[{ value: "Roble", label: "Roble" }, { value: "Negro Texturado", label: "Negro Texturado" }, { value: "Negro Semi mate", label: "Negro Semi mate" }, { value: "Blanco", label: "Blanco" }, { value: "Bronce Colonial", label: "Bronce Colonial" }, { value: "Negro Micro", label: "Negro Micro" }, { value: "Nogal", label: "Nogal" }, { value: "Gris Topo", label: "Gris Topo" }, { value: "Otros", label: "Otros" }]} /></Field>
+              <Field label="Revestimiento"><SuggestedHint value={measurementSuggestions.revestimiento} /><Select value={form.revestimiento || ""} onChange={(v) => setForm({ ...form, revestimiento: v })} options={[{ value: "Apto Aluminio", label: "Apto Aluminio" }, { value: "Simil madera Clásico Simil", label: "Simil madera Clásico Simil" }, { value: "Simil Aluminio Clásico", label: "Simil Aluminio Clásico" }, { value: "Apto PVC", label: "Apto PVC" }, { value: "Simil madera doble inyectado", label: "Simil madera doble inyectado" }, { value: "Simil aluminio doble inyectado", label: "Simil aluminio doble inyectado" }, { value: "Varillado", label: "Varillado" }]} disabled={!canEdit} /></Field>
+              <Field label="Color de revestimiento"><SuggestedHint value={measurementSuggestions.color_revestimiento} /><Select value={form.color_revestimiento || ""} onChange={(v) => { const next = { ...form, color_revestimiento: v }; if (v !== "Otros") next.color_revestimiento_otro = ""; setForm(next); }} options={[{ value: "Roble", label: "Roble" }, { value: "Negro Texturado", label: "Negro Texturado" }, { value: "Negro Semi mate", label: "Negro Semi mate" }, { value: "Blanco", label: "Blanco" }, { value: "Bronce Colonial", label: "Bronce Colonial" }, { value: "Negro Micro", label: "Negro Micro" }, { value: "Nogal", label: "Nogal" }, { value: "Gris Topo", label: "Gris Topo" }, { value: "Otros", label: "Otros" }]} disabled={!canEdit} /></Field>
               {form.color_revestimiento === "Otros" && <Field label="Otros (especificar)"><Input value={form.color_revestimiento_otro || ""} onChange={(v) => setForm({ ...form, color_revestimiento_otro: v })} style={{ width: "100%" }} disabled={!canEdit} /></Field>}
             </Row>
             <div className="spacer" />
             <Row>
-              <Field label="Lucera con vidrios"><SuggestedHint value={measurementSuggestions.lucera} /><Select value={form.lucera ? "si" : "no"} onChange={(v) => { const yes = v === "si"; setForm({ ...form, lucera: yes, lucera_cantidad: yes ? (form.lucera_cantidad || "") : "" }); }} options={yesNoOptions} /></Field>
+              <Field label="Lucera con vidrios"><SuggestedHint value={measurementSuggestions.lucera} /><Select value={form.lucera ? "si" : "no"} onChange={(v) => { const yes = v === "si"; setForm({ ...form, lucera: yes, lucera_cantidad: yes ? (form.lucera_cantidad || "") : "" }); }} options={yesNoOptions} disabled={!canEdit} /></Field>
               {form.lucera && <Field label="Cantidad (Lucera)"><Input type="number" value={form.lucera_cantidad || ""} onChange={(v) => setForm({ ...form, lucera_cantidad: v })} style={{ width: "100%" }} disabled={!canEdit} /></Field>}
               <Field label="Peso del revestimiento a colocar"><Input type="number" value={form.peso_revestimiento || ""} onChange={(v) => setForm({ ...form, peso_revestimiento: v })} style={{ width: "100%" }} disabled={!canEdit} /></Field>
             </Row>
@@ -384,8 +454,8 @@ export default function MedicionDetailPage() {
 
           <Section title="Servicios / Contacto">
             <Row>
-              <Field label="Servicio de traslado"><SuggestedHint value={measurementSuggestions.traslado} /><Select value={form.traslado ? "si" : "no"} onChange={(v) => setYesNoBool("traslado", v)} options={yesNoOptions} /></Field>
-              <Field label="Servicio de relevamiento de medidas"><SuggestedHint value={measurementSuggestions.relevamiento} /><Select value={form.relevamiento ? "si" : "no"} onChange={(v) => setYesNoBool("relevamiento", v)} options={yesNoOptions} /></Field>
+              <Field label="Servicio de traslado"><SuggestedHint value={measurementSuggestions.traslado} /><Select value={form.traslado ? "si" : "no"} onChange={(v) => setYesNoBool("traslado", v)} options={yesNoOptions} disabled={!canEdit} /></Field>
+              <Field label="Servicio de relevamiento de medidas"><SuggestedHint value={measurementSuggestions.relevamiento} /><Select value={form.relevamiento ? "si" : "no"} onChange={(v) => setYesNoBool("relevamiento", v)} options={yesNoOptions} disabled={!canEdit} /></Field>
             </Row>
             <div className="spacer" />
             <Row>
@@ -400,6 +470,12 @@ export default function MedicionDetailPage() {
             <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
               <Button variant="secondary" onClick={() => mSave.mutate({ submit: false })} disabled={!canEdit || mSave.isPending || rejectM.isPending}>{mSave.isPending ? "Guardando…" : (isTechnical ? "Guardar cambios" : "Guardar")}</Button>
               <Button onClick={() => {
+                try {
+                  if (isTechnical) validateTechnicalFinalDimensions(form);
+                } catch (e) {
+                  setShareInfo({ tone: "warning", message: e?.message || "Faltan medidas finales." });
+                  return;
+                }
                 const st = String(quote?.measurement_status || "").toLowerCase().trim();
                 const token = String(quote?.measurement_share_token || "").trim();
                 const publicPdfUrl = getMedicionPublicPdfUrl(token);
@@ -417,9 +493,9 @@ export default function MedicionDetailPage() {
                 if (isTechnical) openPendingWhatsappWindow();
                 mSave.mutate({ submit: true });
               }} disabled={!canEdit || mSave.isPending || rejectM.isPending}>
-                {mSave.isPending ? (isTechnical ? "Aprobando…" : "Enviando…") : (isTechnical ? "Aprobar y enviar" : "Enviar a Técnica")}
+                {mSave.isPending ? (isTechnical ? "Confirmando…" : "Enviando…") : (isTechnical ? (isTecnicaOnly ? "Confirmar medición y enviar" : "Aprobar y enviar") : "Enviar a Técnica")}
               </Button>
-              {isTechnical && quote.measurement_status === "submitted" && <Button variant="ghost" disabled={rejectM.isPending || mSave.isPending} onClick={() => { const msg = window.prompt("Motivo de la corrección:", quote.measurement_review_notes || ""); if (msg === null) return; rejectM.mutate(msg); }}>{rejectM.isPending ? "Devolviendo…" : "Devolver para corregir"}</Button>}
+              {isTechnical && quote.measurement_status === "submitted" && !isTecnicaOnly && <Button variant="ghost" disabled={rejectM.isPending || mSave.isPending} onClick={() => { const msg = window.prompt("Motivo de la corrección:", quote.measurement_review_notes || ""); if (msg === null) return; rejectM.mutate(msg); }}>{rejectM.isPending ? "Devolviendo…" : "Devolver para corregir"}</Button>}
             </div>
             {(mSave.isError || rejectM.isError) && <><div className="spacer" /><div style={{ color: "#d93025", fontSize: 13 }}>{mSave.error?.message || rejectM.error?.message}</div></>}
             {shareInfo?.message && <><div className="spacer" /><div style={{ padding: 12, borderRadius: 10, border: shareInfo.tone === "warning" ? "1px solid #ffe3a3" : "1px solid #bfe6c8", background: shareInfo.tone === "warning" ? "#fff7e6" : "#e7f7ed" }}><div style={{ fontWeight: 900, marginBottom: 6 }}>{shareInfo.tone === "warning" ? "Atención" : "Correcto"}</div><div>{shareInfo.message}</div>{(shareInfo.whatsappUrl || shareInfo.publicPdfUrl) && <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>{shareInfo.whatsappUrl && <Button variant="secondary" onClick={() => window.open(shareInfo.whatsappUrl, "_blank", "noopener,noreferrer")}>Abrir WhatsApp</Button>}{shareInfo.publicPdfUrl && <Button variant="ghost" onClick={async () => { try { await navigator.clipboard.writeText(shareInfo.publicPdfUrl); setShareInfo((prev) => prev ? { ...prev, message: `${prev.message} Link copiado.` } : prev); } catch { window.open(shareInfo.publicPdfUrl, "_blank", "noopener,noreferrer"); } }}>Copiar link PDF</Button>}</div>}</div></>}

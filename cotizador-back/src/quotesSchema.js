@@ -44,6 +44,8 @@ export async function ensureQuotesMeasurementColumns() {
 
   await dbQuery(`alter table public.presupuestador_quotes add column if not exists requires_measurement boolean not null default false;`);
   await dbQuery(`alter table public.presupuestador_quotes add column if not exists measurement_status text not null default 'none';`);
+  await dbQuery(`alter table public.presupuestador_quotes add column if not exists measurement_mode text not null default 'medidor';`);
+  await dbQuery(`alter table public.presupuestador_quotes add column if not exists measurement_subtype text not null default 'normal';`);
   await dbQuery(`alter table public.presupuestador_quotes add column if not exists measurement_form jsonb null;`);
   await dbQuery(`alter table public.presupuestador_quotes add column if not exists measurement_assigned_to_user_id int null;`);
   await dbQuery(`alter table public.presupuestador_quotes add column if not exists measurement_scheduled_for date null;`);
@@ -74,6 +76,8 @@ export async function ensureQuotesMeasurementColumns() {
   await dbQuery(`
     update public.presupuestador_quotes
     set requires_measurement = true,
+        measurement_mode = 'medidor',
+        measurement_subtype = 'normal',
         measurement_status = case when measurement_status = 'none' then 'pending' else measurement_status end
     where catalog_kind = 'porton'
       and status = 'synced_odoo'
