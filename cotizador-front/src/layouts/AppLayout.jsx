@@ -23,7 +23,7 @@ export default function AppLayout() {
   const showDashboard = !!(isSuperuser || user?.is_enc_comercial);
   const showUsers = !!(isSuperuser || user?.is_enc_comercial);
   const canQuote = !!(isSuperuser || user?.is_vendedor || user?.is_distribuidor);
-  const showMediciones = !!(isSuperuser || user?.is_medidor);
+  const showMediciones = !!((isSuperuser || user?.is_medidor) && !user?.is_rev_tecnica);
   const showCommercial = !!(isSuperuser || user?.is_enc_comercial);
   const showTechnical = !!(isSuperuser || user?.is_rev_tecnica);
 
@@ -37,7 +37,7 @@ export default function AppLayout() {
           <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
             <img className="brand-logo" src="/brands/dflex.png" alt="Dflex" />
             <div>
-              
+
               <div className="muted">{user ? `${user.username} · ${roleText}` : roleText}</div>
             </div>
           </div>
