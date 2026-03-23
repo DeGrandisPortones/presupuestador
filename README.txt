@@ -1,21 +1,33 @@
-Ajuste solicitado
+Bundle de fix para PRESUPUESTADOR
 
-1. Mis presupuestos
-- Se elimina el botón/icono PDF en la grilla.
-- Para portones se conserva siempre el botón "Ver original".
-- Si la medición está aprobada, además aparece "Ver medición" y abre el PDF público.
-- Si no hay medición aprobada, el segundo botón queda como "Ver detalle técnico" y navega al detalle interno del presupuesto.
-- Si existe presupuesto final, se mantiene "Ver final".
-- Para puertas, también se elimina el icono PDF.
-
-2. Técnica
-- Se oculta el menú superior "Mediciones" cuando el usuario también tiene rol de revisión técnica, para usar la aprobación de mediciones desde Técnica.
-
-Archivos incluidos
+Archivos a reemplazar:
 - cotizador-front/src/pages/PresupuestosPage/index.jsx
 - cotizador-front/src/layouts/AppLayout.jsx
+- cotizador-front/src/pages/AprobacionTecnicaPage/index.jsx
+- cotizador-front/src/pages/MedicionDetailPage/index.jsx
+- cotizador-back/src/measurementFinalization.js
 
+Que corrige:
+1. Mis presupuestos:
+   - Ver Original descarga el PDF original.
+   - Ver Final descarga el PDF final.
+   - Ver medicion / Ver detalle tecnico abre la planilla de medicion.
+   - Se elimina el icono PDF en la grilla.
+2. Tecnica:
+   - En Portones sin medicion no aparece asignar fecha / visita del medidor.
+   - Se oculta el menu Mediciones cuando el usuario tambien es Rev. Tecnica.
+3. Planilla:
+   - El vendedor/distribuidor dueno del presupuesto puede verla en solo lectura.
+4. Odoo:
+   - Se restaura la carga de vendedor y forma de pago/financiacion en la venta final creada desde measurementFinalization.
 
-Corrección v3:
-- "Ver detalle técnico" ahora abre /mediciones/:id para mostrar la planilla completada por Técnica cuando el portón es sin medición.
-- Se mantienen "Ver original", "Ver final" y "Ver medición" (cuando hay PDF público aprobado).
+Pasos:
+1. Reemplazar estos archivos.
+2. Reiniciar front y back.
+3. Probar:
+   - presupuesto original -> Ver Original
+   - presupuesto con copia final -> Ver Final
+   - porton con medicion aprobada -> Ver medicion
+   - porton sin medicion -> Ver detalle tecnico
+   - Tecnica > Portones sin medicion: sin fecha de visita
+   - aprobacion de medicion -> validar vendedor y forma de pago en Odoo

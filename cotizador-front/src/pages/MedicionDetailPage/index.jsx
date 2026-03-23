@@ -216,8 +216,11 @@ export default function MedicionDetailPage() {
 
   const isMedidor = !!user?.is_medidor;
   const isTechnical = !!user?.is_rev_tecnica;
+  const isOwner = String(quote?.created_by_user_id || "") === String(user?.user_id || "");
+  const isCommercialViewer = !!user?.is_enc_comercial;
   const isTecnicaOnly = isTecnicaOnlyQuote(quote);
   const canEdit = isMedidor || isTechnical;
+  const canView = canEdit || isOwner || isCommercialViewer;
   const measurementSuggestions = quote?.measurement_prefill || {};
   const visibleQuoteNumber = String(
     quote?.quote_number ||
@@ -225,6 +228,7 @@ export default function MedicionDetailPage() {
     quoteId ||
     ""
   ).trim();
+  const backPath = isTechnical ? "/aprobacion/tecnica?tab=aprobaciones_mediciones" : (isMedidor ? "/mediciones" : "/presupuestos");
 
   function openPendingWhatsappWindow() {
     try {
@@ -314,24 +318,31 @@ export default function MedicionDetailPage() {
   const yesNoOptions = useMemo(() => ([{ value: "no", label: "No" }, { value: "si", label: "Sí" }]), []);
   const setYesNoBool = (key, v) => setForm({ ...form, [key]: v === "si" });
 
-  if (!isMedidor && !isTechnical) return <div className="container"><div className="card"><h2 style={{ marginTop: 0 }}>Medición</h2><div className="muted">No tenés permisos.</div><div className="spacer" /><Button variant="ghost" onClick={() => navigate("/menu")}>Volver</Button></div></div>;
-
   return (
     <div className="container">
       <div className="card">
         <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
           <div>
             <h2 style={{ margin: 0 }}>Medición · Presupuesto #{visibleQuoteNumber || quoteId}</h2>
-            <div className="muted">{isTechnical ? (isTecnicaOnly ? "Completá la planilla interna, definí Alto/Ancho final y confirmá para disparar Odoo." : "Revisar la planilla, corregir si hace falta y aprobar para enviar al cliente.") : "Completar la planilla y enviarla a Técnica para revisión."}</div>
+            <div className="muted">
+              {isTechnical
+                ? (isTecnicaOnly
+                  ? "Completá la planilla interna, definí Alto/Ancho final y confirmá para disparar Odoo."
+                  : "Revisar la planilla, corregir si hace falta y aprobar para enviar al cliente.")
+                : (isMedidor
+                  ? "Completar la planilla y enviarla a Técnica para revisión."
+                  : "Vista de la planilla de medición / detalle técnico del portón.")}
+            </div>
             {quote ? <div className="muted" style={{ marginTop: 6 }}>Estado: <b>{measurementStatusLabel(quote.measurement_status)}</b>{isTecnicaOnly ? <> · Tipo: <b>Portón sin medición</b></> : null}</div> : null}
           </div>
-          <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}><Button variant="ghost" onClick={() => navigate(isTechnical ? "/aprobacion/tecnica?tab=aprobaciones_mediciones" : "/mediciones")}>Volver</Button></div>
+          <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}><Button variant="ghost" onClick={() => navigate(backPath)}>Volver</Button></div>
         </div>
         {q.isLoading && <><div className="spacer" /><div className="muted">Cargando…</div></>}
         {q.isError && <><div className="spacer" /><div style={{ color: "#d93025", fontSize: 13 }}>{q.error.message}</div></>}
+        {q.isSuccess && !canView && <><div className="spacer" /><div className="muted">No tenés permisos para ver esta planilla.</div></>}
       </div>
 
-      {quote && <>
+      {quote && canView && <>
         <div className="spacer" />
         <Section title="Membrete">
           <Row>
@@ -466,40 +477,46 @@ export default function MedicionDetailPage() {
 
           <Section title="Observaciones"><textarea value={form.observaciones || ""} onChange={(e) => setForm({ ...form, observaciones: e.target.value })} style={{ width: "100%", minHeight: 100, padding: 10, borderRadius: 10, border: "1px solid #ddd", resize: "vertical" }} disabled={!canEdit} /></Section>
 
-          <div className="card">
-            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-              <Button variant="secondary" onClick={() => mSave.mutate({ submit: false })} disabled={!canEdit || mSave.isPending || rejectM.isPending}>{mSave.isPending ? "Guardando…" : (isTechnical ? "Guardar cambios" : "Guardar")}</Button>
-              <Button onClick={() => {
-                try {
-                  if (isTechnical) validateTechnicalFinalDimensions(form);
-                } catch (e) {
-                  setShareInfo({ tone: "warning", message: e?.message || "Faltan medidas finales." });
-                  return;
-                }
-                const st = String(quote?.measurement_status || "").toLowerCase().trim();
-                const token = String(quote?.measurement_share_token || "").trim();
-                const publicPdfUrl = getMedicionPublicPdfUrl(token);
-                const whatsappText = buildMeasurementWhatsappMessage(publicPdfUrl);
-                const whatsappUrl = buildWhatsappUrl(customer?.phone, whatsappText);
-                if (isTechnical && st === "approved") {
-                  if (whatsappUrl) {
-                    window.open(whatsappUrl, "_blank", "noopener,noreferrer");
-                    setShareInfo({ tone: "success", message: "Se abrió WhatsApp con el mensaje listo para el cliente.", whatsappUrl, publicPdfUrl });
+          {canEdit ? (
+            <div className="card">
+              <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                <Button variant="secondary" onClick={() => mSave.mutate({ submit: false })} disabled={!canEdit || mSave.isPending || rejectM.isPending}>{mSave.isPending ? "Guardando…" : (isTechnical ? "Guardar cambios" : "Guardar")}</Button>
+                <Button onClick={() => {
+                  try {
+                    if (isTechnical) validateTechnicalFinalDimensions(form);
+                  } catch (e) {
+                    setShareInfo({ tone: "warning", message: e?.message || "Faltan medidas finales." });
                     return;
                   }
-                  setShareInfo({ tone: "warning", message: "La medición ya fue aprobada, pero falta un teléfono válido para abrir WhatsApp.", publicPdfUrl });
-                  return;
-                }
-                if (isTechnical) openPendingWhatsappWindow();
-                mSave.mutate({ submit: true });
-              }} disabled={!canEdit || mSave.isPending || rejectM.isPending}>
-                {mSave.isPending ? (isTechnical ? "Confirmando…" : "Enviando…") : (isTechnical ? (isTecnicaOnly ? "Confirmar medición y enviar" : "Aprobar y enviar") : "Enviar a Técnica")}
-              </Button>
-              {isTechnical && quote.measurement_status === "submitted" && !isTecnicaOnly && <Button variant="ghost" disabled={rejectM.isPending || mSave.isPending} onClick={() => { const msg = window.prompt("Motivo de la corrección:", quote.measurement_review_notes || ""); if (msg === null) return; rejectM.mutate(msg); }}>{rejectM.isPending ? "Devolviendo…" : "Devolver para corregir"}</Button>}
+                  const st = String(quote?.measurement_status || "").toLowerCase().trim();
+                  const token = String(quote?.measurement_share_token || "").trim();
+                  const publicPdfUrl = getMedicionPublicPdfUrl(token);
+                  const whatsappText = buildMeasurementWhatsappMessage(publicPdfUrl);
+                  const whatsappUrl = buildWhatsappUrl(customer?.phone, whatsappText);
+                  if (isTechnical && st === "approved") {
+                    if (whatsappUrl) {
+                      window.open(whatsappUrl, "_blank", "noopener,noreferrer");
+                      setShareInfo({ tone: "success", message: "Se abrió WhatsApp con el mensaje listo para el cliente.", whatsappUrl, publicPdfUrl });
+                      return;
+                    }
+                    setShareInfo({ tone: "warning", message: "La medición ya fue aprobada, pero falta un teléfono válido para abrir WhatsApp.", publicPdfUrl });
+                    return;
+                  }
+                  if (isTechnical) openPendingWhatsappWindow();
+                  mSave.mutate({ submit: true });
+                }} disabled={!canEdit || mSave.isPending || rejectM.isPending}>
+                  {mSave.isPending ? (isTechnical ? "Confirmando…" : "Enviando…") : (isTechnical ? (isTecnicaOnly ? "Confirmar medición y enviar" : "Aprobar y enviar") : "Enviar a Técnica")}
+                </Button>
+                {isTechnical && quote.measurement_status === "submitted" && !isTecnicaOnly && <Button variant="ghost" disabled={rejectM.isPending || mSave.isPending} onClick={() => { const msg = window.prompt("Motivo de la corrección:", quote.measurement_review_notes || ""); if (msg === null) return; rejectM.mutate(msg); }}>{rejectM.isPending ? "Devolviendo…" : "Devolver para corregir"}</Button>}
+              </div>
+              {(mSave.isError || rejectM.isError) && <><div className="spacer" /><div style={{ color: "#d93025", fontSize: 13 }}>{mSave.error?.message || rejectM.error?.message}</div></>}
+              {shareInfo?.message && <><div className="spacer" /><div style={{ padding: 12, borderRadius: 10, border: shareInfo.tone === "warning" ? "1px solid #ffe3a3" : "1px solid #bfe6c8", background: shareInfo.tone === "warning" ? "#fff7e6" : "#e7f7ed" }}><div style={{ fontWeight: 900, marginBottom: 6 }}>{shareInfo.tone === "warning" ? "Atención" : "Correcto"}</div><div>{shareInfo.message}</div>{(shareInfo.whatsappUrl || shareInfo.publicPdfUrl) && <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>{shareInfo.whatsappUrl && <Button variant="secondary" onClick={() => window.open(shareInfo.whatsappUrl, "_blank", "noopener,noreferrer")}>Abrir WhatsApp</Button>}{shareInfo.publicPdfUrl && <Button variant="ghost" onClick={async () => { try { await navigator.clipboard.writeText(shareInfo.publicPdfUrl); setShareInfo((prev) => prev ? { ...prev, message: `${prev.message} Link copiado.` } : prev); } catch { window.open(shareInfo.publicPdfUrl, "_blank", "noopener,noreferrer"); } }}>Copiar link PDF</Button>}</div>}</div></>}
             </div>
-            {(mSave.isError || rejectM.isError) && <><div className="spacer" /><div style={{ color: "#d93025", fontSize: 13 }}>{mSave.error?.message || rejectM.error?.message}</div></>}
-            {shareInfo?.message && <><div className="spacer" /><div style={{ padding: 12, borderRadius: 10, border: shareInfo.tone === "warning" ? "1px solid #ffe3a3" : "1px solid #bfe6c8", background: shareInfo.tone === "warning" ? "#fff7e6" : "#e7f7ed" }}><div style={{ fontWeight: 900, marginBottom: 6 }}>{shareInfo.tone === "warning" ? "Atención" : "Correcto"}</div><div>{shareInfo.message}</div>{(shareInfo.whatsappUrl || shareInfo.publicPdfUrl) && <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>{shareInfo.whatsappUrl && <Button variant="secondary" onClick={() => window.open(shareInfo.whatsappUrl, "_blank", "noopener,noreferrer")}>Abrir WhatsApp</Button>}{shareInfo.publicPdfUrl && <Button variant="ghost" onClick={async () => { try { await navigator.clipboard.writeText(shareInfo.publicPdfUrl); setShareInfo((prev) => prev ? { ...prev, message: `${prev.message} Link copiado.` } : prev); } catch { window.open(shareInfo.publicPdfUrl, "_blank", "noopener,noreferrer"); } }}>Copiar link PDF</Button>}</div>}</div></>}
-          </div>
+          ) : (
+            <div className="card">
+              <div className="muted">Vista solo lectura. Desde Mis presupuestos, Ver medición / Ver detalle técnico abre esta planilla para consulta.</div>
+            </div>
+          )}
         </>}
       </>}
     </div>

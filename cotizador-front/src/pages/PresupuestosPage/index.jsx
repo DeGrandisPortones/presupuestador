@@ -1,13 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
+import toast from "react-hot-toast";
 
 import Button from "../../ui/Button.jsx";
 import PaginationControls from "../../ui/PaginationControls.jsx";
 import { useAuthStore } from "../../domain/auth/store.js";
 import { listDoors } from "../../api/doors.js";
 import { listQuotes, requestProductionFromAcopio } from "../../api/quotes.js";
-import { getMedicionPublicPdfUrl } from "../../api/pdf.js";
+import { downloadListingQuotePdf } from "../../utils/listingPdf.js";
 
 const PAGE_SIZE = 25;
 
@@ -237,6 +238,7 @@ export default function PresupuestosPage() {
   const [typeFilter, setTypeFilter] = useState("all");
   const [searchText, setSearchText] = useState("");
   const [page, setPage] = useState(1);
+  const [downloadingPdfKey, setDownloadingPdfKey] = useState("");
 
   const quotesQ = useQuery({
     queryKey: ["quotes", "mine"],
@@ -255,6 +257,18 @@ export default function PresupuestosPage() {
     mutationFn: (id) => requestProductionFromAcopio(id),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["quotes", "mine"] }),
   });
+
+  async function handleDownloadQuotePdf(quoteId) {
+    const key = `quote-${quoteId}`;
+    setDownloadingPdfKey(key);
+    try {
+      await downloadListingQuotePdf(quoteId);
+    } catch (e) {
+      toast.error(e?.message || "No se pudo descargar el PDF");
+    } finally {
+      setDownloadingPdfKey("");
+    }
+  }
 
   const linkedDoorQuoteIds = useMemo(() => {
     return new Set((doorsQ.data || []).map((d) => String(d?.linked_quote_id || "").trim()).filter(Boolean));
@@ -420,6 +434,8 @@ export default function PresupuestosPage() {
                   }
 
                   const r = item.raw;
+                  const originalPdfKey = `quote-${r.id}`;
+                  const finalPdfKey = r.final_copy_id ? `quote-${r.final_copy_id}` : "";
                   const canRequestProduction =
                     r.fulfillment_mode === "acopio"
                     && r.status === "synced_odoo"
@@ -427,7 +443,17 @@ export default function PresupuestosPage() {
                   const hasFinal = !!r.final_copy_id;
                   const finalDraft = hasFinal && !["syncing_odoo", "synced_odoo"].includes(String(r.final_copy_status || ""));
                   const canAddDoor = String(r?.catalog_kind || "porton").toLowerCase() === "porton" && r.status === "draft" && !linkedDoorQuoteIds.has(String(r.id));
-                  const measurementPublicUrl = r?.measurement_status === "approved" ? getMedicionPublicPdfUrl(r?.measurement_share_token) : null;
+                  const hasMeasurementDetail =
+                    String(r?.catalog_kind || "porton").toLowerCase() === "porton"
+                    && (
+                      r?.requires_measurement === true
+                      || String(r?.measurement_mode || "").toLowerCase() === "tecnica_only"
+                      || String(r?.measurement_subtype || "").toLowerCase() === "sin_medicion"
+                      || !["", "none"].includes(String(r?.measurement_status || "").toLowerCase())
+                    );
+                  const measurementLabel = String(r?.measurement_status || "").toLowerCase() === "approved"
+                    ? "Ver medición"
+                    : "Ver detalle técnico";
 
                   return (
                     <tr key={r.id}>
@@ -440,34 +466,37 @@ export default function PresupuestosPage() {
                       {filter === "mediciones" ? <td>{item.measurementDate}</td> : null}
                       {filter === "mediciones" ? <td>{item.measurementStatus}</td> : null}
                       <td className="right" style={{ display: "flex", justifyContent: "flex-end", gap: 8, flexWrap: "wrap" }}>
-                        <Button variant="ghost" onClick={() => navigate(`/presupuestos/${r.id}`)}>Ver original</Button>
                         <Button
                           variant="ghost"
-                          onClick={() => {
-                            if (measurementPublicUrl) {
-                              window.open(measurementPublicUrl, "_blank", "noopener,noreferrer");
-                              return;
-                            }
-                            navigate(`/mediciones/${r.id}`);
-                          }}
+                          disabled={downloadingPdfKey === originalPdfKey}
+                          onClick={() => handleDownloadQuotePdf(r.id)}
                         >
-                          {measurementPublicUrl ? "Ver medición" : "Ver detalle técnico"}
+                          Ver original
                         </Button>
+                        {hasFinal ? (
+                          <Button
+                            variant="ghost"
+                            disabled={downloadingPdfKey === finalPdfKey}
+                            onClick={() => handleDownloadQuotePdf(r.final_copy_id)}
+                          >
+                            Ver final
+                          </Button>
+                        ) : null}
+                        {hasMeasurementDetail ? (
+                          <Button variant="ghost" onClick={() => navigate(`/mediciones/${r.id}`)}>
+                            {measurementLabel}
+                          </Button>
+                        ) : null}
                         {r.status === "draft" && (
                           <Button onClick={() => navigate(r.catalog_kind === "ipanel" ? `/cotizador/ipanel/${r.id}` : `/cotizador/${r.id}`)}>Editar</Button>
                         )}
                         {canAddDoor ? (
                           <Button variant="ghost" onClick={() => navigate(`/puertas/nuevo/${r.id}`)}>Agregar puerta</Button>
                         ) : null}
-                        {hasFinal ? (
-                          <>
-                            <Button variant="ghost" onClick={() => navigate(`/presupuestos/${r.final_copy_id}`)}>Ver final</Button>
-                            {finalDraft ? (
-                              <Button onClick={() => navigate(r.catalog_kind === "ipanel" ? `/cotizador/ipanel/${r.final_copy_id}` : `/cotizador/${r.final_copy_id}`)}>
-                                Editar final
-                              </Button>
-                            ) : null}
-                          </>
+                        {hasFinal && finalDraft ? (
+                          <Button onClick={() => navigate(r.catalog_kind === "ipanel" ? `/cotizador/ipanel/${r.final_copy_id}` : `/cotizador/${r.final_copy_id}`)}>
+                            Editar final
+                          </Button>
                         ) : null}
                         {filter === "acopio" && (
                           <Button
