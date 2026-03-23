@@ -440,6 +440,7 @@ export default function PresupuestosPage() {
                       {filter === "mediciones" ? <td>{item.measurementDate}</td> : null}
                       {filter === "mediciones" ? <td>{item.measurementStatus}</td> : null}
                       <td className="right" style={{ display: "flex", justifyContent: "flex-end", gap: 8, flexWrap: "wrap" }}>
+                        <Button variant="ghost" onClick={() => navigate(`/presupuestos/${r.id}`)}>Ver original</Button>
                         <Button
                           variant="ghost"
                           onClick={() => {

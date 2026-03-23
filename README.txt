@@ -2,9 +2,10 @@ Ajuste solicitado
 
 1. Mis presupuestos
 - Se elimina el botón/icono PDF en la grilla.
-- Para portones:
-  - si la medición está aprobada, el botón queda como "Ver medición" y abre el PDF público.
-  - si no hay medición aprobada, el botón queda como "Ver detalle técnico" y navega al detalle interno del presupuesto.
+- Para portones se conserva siempre el botón "Ver original".
+- Si la medición está aprobada, además aparece "Ver medición" y abre el PDF público.
+- Si no hay medición aprobada, el segundo botón queda como "Ver detalle técnico" y navega al detalle interno del presupuesto.
+- Si existe presupuesto final, se mantiene "Ver final".
 - Para puertas, también se elimina el icono PDF.
 
 2. Técnica
