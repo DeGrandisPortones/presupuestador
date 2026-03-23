@@ -697,8 +697,8 @@ function renderPdf({ title, payload, useBasePrice }) {
     w: innerW,
     h: TOTAL_ROW_H,
     cols: [
-      { w: colDesc + colQty + colUnit, text: "TOTAL", align: "right" },
-      { w: colTot, text: `$ ${formatMoney(grandTotal)}`, align: "right" },
+      { w: innerW * 0.68, text: "TOTAL", align: "right" },
+      { w: innerW * 0.32, text: `$ ${formatMoney(grandTotal)}`, align: "right" },
     ],
     fill: "#F3F4F6",
     textStyle: { font: "Helvetica-Bold", size: 11, color: "#111827", pad: 8 },

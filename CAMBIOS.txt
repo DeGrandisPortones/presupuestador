@@ -1,5 +1,3 @@
 Cambios incluidos:
-- Login: boton Entrar centrado.
-- Menu: titulo 'Menú' centrado.
-- Navbar: logo DFLEX mas grande.
-- Hover en cards del menu y botones/filtros: leve agrandado + verde acuarela.
+- Se agranda la celda del TOTAL en el PDF para que no se corte en montos grandes.
+- La fila final TOTAL ahora usa 32% del ancho para el importe.
