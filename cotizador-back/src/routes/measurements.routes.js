@@ -211,6 +211,59 @@ async function syncOriginalQuoteFromMeasurementFinalization(quoteId, finalizatio
   );
   return upd.rows?.[0] || null;
 }
+function parseIntegradorNvFromOdooName(rawName) {
+  const digits = onlyDigits(rawName);
+  const nv = Number(digits);
+  return Number.isFinite(nv) && nv > 0 ? nv : null;
+}
+async function upsertIntegradorPortonMinimo({ savedQuote, finalization, measurementForm }) {
+  const orderName = String(
+    savedQuote?.odoo_sale_order_name
+    || finalization?.order?.name
+    || savedQuote?.final_sale_order_name
+    || ""
+  ).trim();
+
+  const nv = parseIntegradorNvFromOdooName(orderName);
+  if (!nv) {
+    return { ok: false, skipped: true, reason: "No se pudo resolver NV numérico desde Odoo" };
+  }
+
+  const alto = Number(String(measurementForm?.alto_final_mm || "").replace(",", "."));
+  const ancho = Number(String(measurementForm?.ancho_final_mm || "").replace(",", "."));
+
+  const payload = {
+    NV: nv,
+    Alto: Number.isFinite(alto) ? alto : null,
+    Ancho: Number.isFinite(ancho) ? ancho : null,
+    odoo_sale_order_name: orderName,
+    source: "presupuestador",
+    source_quote_id: savedQuote?.id || null,
+    source_quote_number: savedQuote?.quote_number || null,
+    measurement_status: "approved",
+    measurement_mode: normalizeMeasurementMode(savedQuote?.measurement_mode),
+    measurement_subtype: normalizeMeasurementSubtype(savedQuote?.measurement_subtype),
+    measurement_form: measurementForm || {},
+    updated_from_measurement_at: new Date().toISOString(),
+  };
+
+  const result = await dbQuery(
+    `insert into public.preproduccion_valores (id, nv, data)
+     values ($1, $2, $3::jsonb)
+     on conflict (nv)
+     do update set
+       data = coalesce(preproduccion_valores.data, '{}'::jsonb) || excluded.data,
+       updated_at = now()
+     returning nv, data`,
+    [nv, nv, JSON.stringify(payload)]
+  );
+
+  return {
+    ok: true,
+    nv,
+    row: result.rows?.[0] || null,
+  };
+}
 
 export function buildMeasurementsRouter(odoo = null) {
   const router = express.Router();
@@ -356,6 +409,7 @@ export function buildMeasurementsRouter(odoo = null) {
           );
           let savedQuote = upd.rows?.[0] || null;
           let finalization = null;
+          let integradorSync = null;
           try {
             finalization = await finalizeMeasurementToRevisionQuote({
               odoo,
@@ -365,10 +419,11 @@ export function buildMeasurementsRouter(odoo = null) {
             });
             const syncedOriginal = await syncOriginalQuoteFromMeasurementFinalization(id, finalization);
             if (syncedOriginal) savedQuote = { ...savedQuote, ...syncedOriginal };
+            integradorSync = await upsertIntegradorPortonMinimo({ savedQuote, finalization, measurementForm: form });
           } catch (e) {
             console.error("MEASUREMENT FINALIZATION ERROR:", e?.message || e);
           }
-          return res.json({ ok: true, quote: savedQuote, finalization });
+          return res.json({ ok: true, quote: savedQuote, finalization, integradorSync });
         }
         const statusToKeep = currentStatus === "none" ? "pending" : currentStatus;
         const upd = await dbQuery(`update public.presupuestador_quotes set requires_measurement = true, end_customer = $2::jsonb, measurement_form = $3::jsonb, measurement_status = $4 where id = $1 returning *`, [id, JSON.stringify(nextCustomer), JSON.stringify(form), statusToKeep]);
@@ -408,6 +463,7 @@ export function buildMeasurementsRouter(odoo = null) {
         const upd = await dbQuery(`update public.presupuestador_quotes set measurement_status = 'approved', measurement_review_by_user_id = $2, measurement_review_at = now(), measurement_review_notes = null, measurement_share_token = coalesce($3, measurement_share_token), measurement_share_enabled_at = coalesce(measurement_share_enabled_at, now()) where id = $1 returning *`, [id, Number(u.user_id), shareToken]);
         let savedQuote = upd.rows?.[0] || null;
         let finalization = null;
+        let integradorSync = null;
         try {
           finalization = await finalizeMeasurementToRevisionQuote({
             odoo,
@@ -417,10 +473,15 @@ export function buildMeasurementsRouter(odoo = null) {
           });
           const syncedOriginal = await syncOriginalQuoteFromMeasurementFinalization(id, finalization);
           if (syncedOriginal) savedQuote = { ...savedQuote, ...syncedOriginal };
+          integradorSync = await upsertIntegradorPortonMinimo({
+            savedQuote,
+            finalization,
+            measurementForm: savedQuote?.measurement_form || {},
+          });
         } catch (e) {
           console.error("MEASUREMENT FINALIZATION ERROR:", e?.message || e);
         }
-        return res.json({ ok: true, quote: savedQuote, finalization });
+        return res.json({ ok: true, quote: savedQuote, finalization, integradorSync });
       }
 
       const msg = String(notes || "Corregir").trim();
