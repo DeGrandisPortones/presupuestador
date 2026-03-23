@@ -51,6 +51,49 @@ function toText(v) { const x = toScalar(v); return x === null || x === undefined
 function isUuid(v) { return /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(String(v || "").trim()); }
 function round2(n) { return Math.round(Number(n || 0) * 100) / 100; }
 function normalizePhoneForLookup(v) { return String(v || "").replace(/\D+/g, "").trim(); }
+function normalizeNameForLookup(v) {
+  return String(v || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim()
+    .replace(/\s+/g, " ");
+}
+function partnerLooksLikeSameCustomer(partner, customer) {
+  const partnerName = normalizeNameForLookup(partner?.name);
+  const customerName = normalizeNameForLookup(customer?.name);
+  if (!partnerName || !customerName || partnerName !== customerName) return false;
+
+  const customerEmail = toText(customer?.email).toLowerCase();
+  const partnerEmail = toText(partner?.email).toLowerCase();
+  if (customerEmail && partnerEmail && customerEmail === partnerEmail) return true;
+
+  const customerPhone = normalizePhoneForLookup(customer?.phone);
+  const partnerPhone = normalizePhoneForLookup(partner?.phone || partner?.mobile);
+  if (customerPhone && partnerPhone && customerPhone === partnerPhone) return true;
+
+  const customerStreet = normalizeNameForLookup(customer?.street || customer?.address);
+  const partnerStreet = normalizeNameForLookup(partner?.street);
+  if (customerStreet && partnerStreet && customerStreet === partnerStreet) return true;
+
+  const customerCity = normalizeNameForLookup(customer?.city);
+  const partnerCity = normalizeNameForLookup(partner?.city);
+  if (customerCity && partnerCity && customerCity === partnerCity) return true;
+
+  return !customerEmail && !customerPhone && !customerStreet && !customerCity;
+}
+async function readPartnerLite(odoo, partnerId) {
+  const id = toIntId(partnerId);
+  if (!id) return null;
+  try {
+    const rows = await odoo.executeKw("res.partner", "read", [[id]], {
+      fields: ["id", "name", "email", "phone", "mobile", "street", "city"],
+    });
+    return rows?.[0] || null;
+  } catch {
+    return null;
+  }
+}
 
 function buildDistributorNote({ quote }) {
   const parts = [];
@@ -104,31 +147,44 @@ async function resolveSellerDisplayNameForQuote(quote, fallbackUser = null) {
 }
 
 async function findOrCreateCustomerPartner(odoo, customer) {
-  const email = toText(customer?.email).toLowerCase();
-  if (email) {
-    const ids = await odoo.executeKw("res.partner", "search", [[["email", "=", email]]], { limit: 1 });
-    if (ids?.[0]) return toIntId(ids[0]);
-  }
-
-  const phone = toText(customer?.phone);
-  if (phone) {
-    try {
-      const idsPhone = await odoo.executeKw("res.partner", "search", [[["phone", "=", phone]]], { limit: 1 });
-      if (idsPhone?.[0]) return toIntId(idsPhone[0]);
-    } catch {}
-    try {
-      const idsMobile = await odoo.executeKw("res.partner", "search", [[["mobile", "=", phone]]], { limit: 1 });
-      if (idsMobile?.[0]) return toIntId(idsMobile[0]);
-    } catch {}
-  }
-
   const name = toText(customer?.name);
   if (!name) throw new Error("Falta end_customer.name (vendedor)");
 
-  const allowNameFallback = !email && !phone && !toText(customer?.address) && !toText(customer?.city);
+  const email = toText(customer?.email).toLowerCase();
+  if (email) {
+    const ids = await odoo.executeKw("res.partner", "search", [[["email", "=", email]]], { limit: 5 });
+    for (const candidateId of ids || []) {
+      const partner = await readPartnerLite(odoo, candidateId);
+      if (partnerLooksLikeSameCustomer(partner, customer)) return toIntId(candidateId);
+    }
+  }
+
+  const phone = toText(customer?.phone);
+  const normalizedPhone = normalizePhoneForLookup(phone);
+  if (phone) {
+    try {
+      const idsPhone = await odoo.executeKw("res.partner", "search", [[["phone", "=", phone]]], { limit: 5 });
+      for (const candidateId of idsPhone || []) {
+        const partner = await readPartnerLite(odoo, candidateId);
+        if (partnerLooksLikeSameCustomer(partner, customer)) return toIntId(candidateId);
+      }
+    } catch {}
+    try {
+      const idsMobile = await odoo.executeKw("res.partner", "search", [[["mobile", "=", phone]]], { limit: 5 });
+      for (const candidateId of idsMobile || []) {
+        const partner = await readPartnerLite(odoo, candidateId);
+        if (partnerLooksLikeSameCustomer(partner, customer)) return toIntId(candidateId);
+      }
+    } catch {}
+  }
+
+  const allowNameFallback = !email && !normalizedPhone && !toText(customer?.address) && !toText(customer?.city);
   if (allowNameFallback) {
-    const ids2 = await odoo.executeKw("res.partner", "search", [[["name", "=", name]]], { limit: 1 });
-    if (ids2?.[0]) return toIntId(ids2[0]);
+    const ids2 = await odoo.executeKw("res.partner", "search", [[["name", "=", name]]], { limit: 5 });
+    for (const candidateId of ids2 || []) {
+      const partner = await readPartnerLite(odoo, candidateId);
+      if (partnerLooksLikeSameCustomer(partner, customer)) return toIntId(candidateId);
+    }
   }
 
   const created = await odoo.executeKw("res.partner", "create", [{
