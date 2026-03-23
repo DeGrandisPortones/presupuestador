@@ -448,7 +448,7 @@ export default function PresupuestosPage() {
                               window.open(measurementPublicUrl, "_blank", "noopener,noreferrer");
                               return;
                             }
-                            navigate(`/presupuestos/${r.id}`);
+                            navigate(`/mediciones/${r.id}`);
                           }}
                         >
                           {measurementPublicUrl ? "Ver medición" : "Ver detalle técnico"}

@@ -14,3 +14,8 @@ Ajuste solicitado
 Archivos incluidos
 - cotizador-front/src/pages/PresupuestosPage/index.jsx
 - cotizador-front/src/layouts/AppLayout.jsx
+
+
+Corrección v3:
+- "Ver detalle técnico" ahora abre /mediciones/:id para mostrar la planilla completada por Técnica cuando el portón es sin medición.
+- Se mantienen "Ver original", "Ver final" y "Ver medición" (cuando hay PDF público aprobado).
