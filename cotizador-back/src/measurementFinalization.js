@@ -5,6 +5,25 @@ const PLACEHOLDER_PRODUCT_ID = Number(process.env.ODOO_PLACEHOLDER_PRODUCT_ID ||
 const IVA_RATE = 0.21;
 const TACA_TACA_PLAN_NAME = String(process.env.ODOO_TACA_TACA_PLAN_NAME || "Taca Taca").trim();
 
+const PORTON_TYPE_TO_ODOO_PRODUCT_ID = Object.freeze({
+  acero_simil_aluminio_clasico: 3209,
+  coplanar_acero_simil_aluminio_clasico: 3210,
+  acero_simil_aluminio_doble_iny: 3211,
+  coplanar_acero_simil_aluminio_doble_iny: 3212,
+  para_revestir_con_al_pvc_otros: 3213,
+  estandar_acero_simil_aluminio: 3214,
+  estandar_acero_simil_madera: 3215,
+  acero_simil_madera_clasico: 3216,
+  coplanar_acero_simil_madera_clasico: 3217,
+  acero_simil_madera_doble_iny: 3218,
+  coplanar_acero_simil_madera_doble_iny: 3219,
+  revestimiento_wpc: 3220,
+  corredizo_simil_madera: 3221,
+  corredizo_simil_aluminio_doble: 3222,
+  corredizo_simil_madera_doble: 3223,
+  corredizo_simil_aluminio: 3224,
+});
+
 function toScalar(v) {
   if (Array.isArray(v)) return v[0];
   return v;
@@ -21,6 +40,19 @@ function toText(v) {
 }
 function round2(n) {
   return Math.round(Number(n || 0) * 100) / 100;
+}
+function onlyDigits(v) {
+  return String(v || "").replace(/\D/g, "");
+}
+function normalizeMeasurementMode(value) {
+  return String(value || "medidor").toLowerCase().trim() === "tecnica_only" ? "tecnica_only" : "medidor";
+}
+function normalizeMeasurementSubtype(value) {
+  return String(value || "normal").toLowerCase().trim() === "sin_medicion" ? "sin_medicion" : "normal";
+}
+function isTecnicaOnlyQuote(quote) {
+  return normalizeMeasurementMode(quote?.measurement_mode) === "tecnica_only"
+    || normalizeMeasurementSubtype(quote?.measurement_subtype) === "sin_medicion";
 }
 function normalizeBoolish(v) {
   const s = String(v ?? "").toLowerCase().trim();
@@ -337,10 +369,10 @@ let tacaTacaPlanIdCache = undefined;
 async function resolveTacaTacaPlanId(odoo) {
   if (tacaTacaPlanIdCache !== undefined) return tacaTacaPlanIdCache;
   try {
-    let ids = await odoo.executeKw("sale.financing.plan", "search", [[["name", "=", TACA_TACA_PLAN_NAME]]], { limit: 1 });
+    let ids = await odooExecuteKwCompat(odoo, "sale.financing.plan", "search", [[["name", "=", TACA_TACA_PLAN_NAME]]], { limit: 1 });
     let id = toIntId(ids?.[0]);
     if (!id) {
-      ids = await odoo.executeKw("sale.financing.plan", "search", [[["name", "ilike", TACA_TACA_PLAN_NAME]]], { limit: 1 });
+      ids = await odooExecuteKwCompat(odoo, "sale.financing.plan", "search", [[["name", "ilike", TACA_TACA_PLAN_NAME]]], { limit: 1 });
       id = toIntId(ids?.[0]);
     }
     tacaTacaPlanIdCache = id || null;
@@ -362,10 +394,10 @@ async function resolveTacaTacaRate(odoo, { planId, cardType, installments }) {
   try {
     let domain = baseDomain.slice();
     if (meta.activeField) domain.push([meta.activeField, "=", true]);
-    let rows = await odoo.executeKw("sale.financing.rate", "search_read", [domain], { fields, limit: 1, order: "id desc" });
+    let rows = await odooExecuteKwCompat(odoo, "sale.financing.rate", "search_read", [domain], { fields, limit: 1, order: "id desc" });
     let rate = rows?.[0] || null;
     if (!rate) {
-      rows = await odoo.executeKw("sale.financing.rate", "search_read", [baseDomain], { fields, limit: 1, order: "id desc" });
+      rows = await odooExecuteKwCompat(odoo, "sale.financing.rate", "search_read", [baseDomain], { fields, limit: 1, order: "id desc" });
       rate = rows?.[0] || null;
     }
     return rate;
@@ -404,11 +436,18 @@ async function buildFinancingSaleOrderVals(odoo, paymentMethod) {
   return vals;
 }
 
+async function odooExecuteKwCompat(odoo, model, method, args = [], kwargs = {}) {
+  if (typeof odoo?.executeKw === "function") {
+    return odoo.executeKw(model, method, args, kwargs);
+  }
+  throw new Error("Odoo no disponible");
+}
+
 async function renameOrderToReference(odoo, orderId, reference) {
   const ref = toText(reference);
   if (!orderId || !ref) return null;
   try {
-    await odoo.executeKw("sale.order", "write", [[Number(orderId)], {
+    await odooExecuteKwCompat(odoo, "sale.order", "write", [[Number(orderId)], {
       name: ref,
       origin: ref,
       client_order_ref: ref,
@@ -416,10 +455,60 @@ async function renameOrderToReference(odoo, orderId, reference) {
   } catch {
     // Si Odoo no deja escribir name, al menos quedan origin/client_order_ref del create.
   }
-  const [order] = await odoo.executeKw("sale.order", "read", [[Number(orderId)]], {
+  const [order] = await odooExecuteKwCompat(odoo, "sale.order", "read", [[Number(orderId)]], {
     fields: ["id", "name", "amount_total", "partner_id", "state", "pricelist_id", "origin", "client_order_ref"],
   });
   return order || null;
+}
+
+function normalizePortonTypeKey(value) {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .replace(/_+/g, "_");
+}
+function getInitialOdooProductIdForQuote(quote) {
+  const rawPortonType = quote?.payload?.porton_type ?? "";
+  const normalizedPortonType = normalizePortonTypeKey(rawPortonType);
+  const mapped = PORTON_TYPE_TO_ODOO_PRODUCT_ID[String(rawPortonType || "").trim()] ?? PORTON_TYPE_TO_ODOO_PRODUCT_ID[normalizedPortonType];
+  return Number(mapped || PLACEHOLDER_PRODUCT_ID);
+}
+async function resolveInitialOdooProduct(odoo, requestedProductId) {
+  const requestedId = Number(requestedProductId);
+  const [directVariant] = await odooExecuteKwCompat(odoo, "product.product", "read", [[requestedId]], { fields: ["id", "name", "uom_id", "product_tmpl_id"] });
+  if (directVariant?.id) {
+    const uomId = toIntId(directVariant.uom_id);
+    if (!uomId) throw new Error(`Producto inicial sin uom_id: ${requestedId}`);
+    return { productId: Number(directVariant.id), productName: directVariant.name, uomId };
+  }
+  const [template] = await odooExecuteKwCompat(odoo, "product.template", "read", [[requestedId]], { fields: ["id", "name"] });
+  if (!template?.id) throw new Error(`Producto inicial no encontrado en Odoo: ${requestedId}`);
+  const variantIds = await odooExecuteKwCompat(odoo, "product.product", "search", [[["product_tmpl_id", "=", Number(template.id)]]], { limit: 1 });
+  const variantId = toIntId(variantIds?.[0]);
+  if (!variantId) throw new Error(`Producto inicial sin variante en Odoo: ${requestedId}`);
+  const [resolvedVariant] = await odooExecuteKwCompat(odoo, "product.product", "read", [[variantId]], { fields: ["id", "name", "uom_id"] });
+  if (!resolvedVariant?.id) throw new Error(`Variante de producto inicial no encontrada en Odoo: ${variantId}`);
+  const uomId = toIntId(resolvedVariant.uom_id);
+  if (!uomId) throw new Error(`Producto inicial sin uom_id: ${variantId}`);
+  return { productId: Number(resolvedVariant.id), productName: resolvedVariant.name, uomId };
+}
+function buildFinalReferenceName(originalQuote) {
+  const odooDigits = onlyDigits(originalQuote?.odoo_sale_order_name);
+  if (odooDigits) return `NVS${odooDigits}`;
+  const quoteNumber = Number(originalQuote?.quote_number || 0);
+  if (Number.isFinite(quoteNumber) && quoteNumber > 0) return `NVS${quoteNumber}`;
+  return null;
+}
+function buildBudgetReferenceLabel(originalQuote) {
+  const saleName = toText(originalQuote?.odoo_sale_order_name);
+  if (saleName) return saleName;
+  const quoteNumber = Number(originalQuote?.quote_number || 0);
+  if (Number.isFinite(quoteNumber) && quoteNumber > 0) return String(quoteNumber);
+  return "-";
 }
 
 async function getOrCreateRevisionQuote(originalQuote, finalLines) {
@@ -496,6 +585,95 @@ function calcDetailedUnitWithIva(line, payload) {
   return round2(base * (1 + margin / 100) * (1 + IVA_RATE));
 }
 
+async function syncSingleDispatchTechnicalToOdoo({ odoo, revisionQuote, originalQuote, approverUser }) {
+  const pricelistId = toIntId(revisionQuote?.pricelist_id) || toIntId(originalQuote?.pricelist_id) || 1;
+  const sellerName = await resolveSellerDisplayNameForQuote(originalQuote, approverUser);
+
+  let partnerId = null;
+  if (originalQuote.created_by_role === "distribuidor") {
+    partnerId = toIntId(originalQuote?.bill_to_odoo_partner_id) || await getCreatorOdooPartnerId(originalQuote.created_by_user_id) || toIntId(approverUser?.odoo_partner_id);
+    if (!partnerId) throw new Error("Distribuidor sin partner en Odoo");
+  } else {
+    partnerId = await findOrCreateCustomerPartner(odoo, originalQuote.end_customer || {});
+  }
+  partnerId = toIntId(partnerId);
+  if (!partnerId) throw new Error("partner_id invalido para Odoo");
+
+  const initialProduct = await resolveInitialOdooProduct(odoo, getInitialOdooProductIdForQuote(originalQuote));
+  const lines = Array.isArray(revisionQuote.lines) ? revisionQuote.lines : [];
+  if (!lines.length) throw new Error("La copia no tiene items");
+
+  const productIds = [...new Set(lines.map((l) => Number(l.product_id)).filter(Boolean).concat([Number(initialProduct.productId)]))];
+  const products = await odooExecuteKwCompat(odoo, "product.product", "read", [productIds], { fields: ["id", "name", "uom_id"] });
+  const byId = new Map((products || []).map((p) => [Number(p.id), p]));
+
+  const orderLines = [[0, 0, {
+    product_id: Number(initialProduct.productId),
+    product_uom_qty: 1,
+    product_uom: initialProduct.uomId,
+    name: initialProduct.productName,
+    price_unit: 0,
+  }]];
+
+  let detailedTotal = 0;
+  for (const l of lines) {
+    const productId = Number(l.product_id);
+    const qty = Number(l.qty || 1) || 1;
+    const p = byId.get(productId);
+    if (!p) throw new Error(`Producto no encontrado: ${productId}`);
+    const uomId = toIntId(p?.uom_id);
+    if (!uomId) throw new Error(`Producto sin uom_id: ${productId}`);
+    const priceUnit = calcDetailedUnitWithIva(l, revisionQuote.payload || originalQuote.payload || {});
+    detailedTotal = round2(detailedTotal + (qty * priceUnit));
+    orderLines.push([0, 0, {
+      product_id: productId,
+      product_uom_qty: qty,
+      product_uom: uomId,
+      name: p.name,
+      price_unit: priceUnit,
+    }]);
+  }
+
+  const referenceNv = buildFinalReferenceName(originalQuote);
+  if (!referenceNv) {
+    throw new Error("No se pudo resolver el correlativo final NVS del presupuesto");
+  }
+
+  let note = `PRESUPUESTADOR FINAL DIRECTO TECNICA: ${originalQuote.id}`
+    + `\nReferencia: ${referenceNv}`
+    + `\nPresupuesto: ${buildBudgetReferenceLabel(originalQuote)}`
+    + `\nDestino: PRODUCCION`
+    + `\nPortón sin medición: detalle técnico completado por Técnica.`
+    + (originalQuote.note ? `\n${originalQuote.note}` : "")
+    + (sellerName ? `\nVendedor: ${sellerName}` : "");
+  note = appendPaymentMethodToNote(note, revisionQuote?.payload?.payment_method || originalQuote?.payload?.payment_method);
+
+  const financingVals = await buildFinancingSaleOrderVals(odoo, revisionQuote?.payload?.payment_method || originalQuote?.payload?.payment_method);
+  const createdOrderId = await odooExecuteKwCompat(odoo, "sale.order", "create", [{
+    partner_id: partnerId,
+    pricelist_id: pricelistId,
+    order_line: orderLines,
+    origin: referenceNv,
+    client_order_ref: referenceNv,
+    note,
+    ...financingVals,
+  }]);
+  const orderId = toIntId(createdOrderId);
+  if (!orderId) throw new Error("No se pudo crear sale.order final directa desde Técnica");
+  await applySellerToSaleOrder(odoo, orderId, sellerName);
+  const order = await renameOrderToReference(odoo, orderId, referenceNv);
+  if (!order?.id) throw new Error("No se pudo leer sale.order final directa desde Técnica");
+
+  return {
+    order,
+    metrics: {
+      detailed_total: detailedTotal,
+      reference_nv: referenceNv,
+      single_dispatch: true,
+    },
+  };
+}
+
 async function syncFinalQuoteToOdoo({ odoo, revisionQuote, originalQuote, approverUser }) {
   const pricelistId = toIntId(revisionQuote?.pricelist_id) || toIntId(originalQuote?.pricelist_id) || 1;
   const sellerName = await resolveSellerDisplayNameForQuote(originalQuote, approverUser);
@@ -514,7 +692,7 @@ async function syncFinalQuoteToOdoo({ odoo, revisionQuote, originalQuote, approv
   if (!lines.length) throw new Error("La copia no tiene items");
 
   const productIds = [...new Set(lines.map((l) => Number(l.product_id)).filter(Boolean).concat([Number(PLACEHOLDER_PRODUCT_ID)]))];
-  const products = await odoo.executeKw("product.product", "read", [productIds], { fields: ["id", "name", "uom_id"] });
+  const products = await odooExecuteKwCompat(odoo, "product.product", "read", [productIds], { fields: ["id", "name", "uom_id"] });
   const byId = new Map((products || []).map((p) => [Number(p.id), p]));
 
   const orderLines = [];
@@ -570,16 +748,19 @@ async function syncFinalQuoteToOdoo({ odoo, revisionQuote, originalQuote, approv
       product_id: Number(PLACEHOLDER_PRODUCT_ID),
       product_uom_qty: 1,
       product_uom: uomId,
-      name: `Pago anticipado según presupuesto ${originalQuote.odoo_sale_order_name || originalQuote.id}`,
+      name: `Pago anticipado según presupuesto ${buildBudgetReferenceLabel(originalQuote)}`,
       price_unit: round2(-advanceToDiscount),
     }]);
   }
 
   const finalAmountToCharge = round2(Math.max(0, detailedTotal - advanceToDiscount));
-  const referenceNv = originalQuote.odoo_sale_order_name ? `NV${originalQuote.odoo_sale_order_name}` : `NV${String(originalQuote.id).slice(0, 8)}`;
+  const referenceNv = buildFinalReferenceName(originalQuote);
+  if (!referenceNv) {
+    throw new Error("No se pudo resolver la referencia final NVS del presupuesto");
+  }
   let note = `PRESUPUESTADOR FINAL: COPY ${revisionQuote.id} (ORIG ${originalQuote.id})`
     + `\nReferencia: ${referenceNv}`
-    + `\nReferencia seña: ${originalQuote.odoo_sale_order_name || originalQuote.odoo_sale_order_id || "-"}`
+    + `\nReferencia seña: ${buildBudgetReferenceLabel(originalQuote)}`
     + `\nTotal detallado: ${detailedTotal}`
     + `\nAnticipo descontado: ${advanceToDiscount}`
     + `\nDiferencia original: ${rawDifference}`
@@ -591,7 +772,7 @@ async function syncFinalQuoteToOdoo({ odoo, revisionQuote, originalQuote, approv
   note = appendPaymentMethodToNote(note, revisionQuote?.payload?.payment_method || originalQuote?.payload?.payment_method);
 
   const financingVals = await buildFinancingSaleOrderVals(odoo, revisionQuote?.payload?.payment_method || originalQuote?.payload?.payment_method);
-  const createdOrderId = await odoo.executeKw("sale.order", "create", [{
+  const createdOrderId = await odooExecuteKwCompat(odoo, "sale.order", "create", [{
     partner_id: partnerId,
     pricelist_id: pricelistId,
     order_line: orderLines,
@@ -649,12 +830,23 @@ export async function finalizeMeasurementToRevisionQuote({ odoo, originalQuote, 
   );
   const qSync = updSync.rows?.[0] || revisionQuote;
 
-  const { order, metrics } = await syncFinalQuoteToOdoo({
-    odoo,
-    revisionQuote: qSync,
-    originalQuote,
-    approverUser,
-  });
+  const singleDispatchFromTechnical = String(originalQuote?.fulfillment_mode || "").toLowerCase().trim() === "produccion"
+    && isTecnicaOnlyQuote(originalQuote)
+    && !toIntId(originalQuote?.odoo_sale_order_id);
+
+  const { order, metrics } = singleDispatchFromTechnical
+    ? await syncSingleDispatchTechnicalToOdoo({
+        odoo,
+        revisionQuote: qSync,
+        originalQuote,
+        approverUser,
+      })
+    : await syncFinalQuoteToOdoo({
+        odoo,
+        revisionQuote: qSync,
+        originalQuote,
+        approverUser,
+      });
 
   const updFinal = await dbQuery(
     `
@@ -675,10 +867,10 @@ export async function finalizeMeasurementToRevisionQuote({ odoo, originalQuote, 
       qSync.id,
       Number(order.id),
       order.name,
-      metrics.tolerance_percent,
-      metrics.tolerance_amount,
-      metrics.difference_amount,
-      metrics.absorbed_by_company,
+      metrics.tolerance_percent ?? 0,
+      metrics.tolerance_amount ?? 0,
+      metrics.difference_amount ?? 0,
+      typeof metrics.absorbed_by_company === "boolean" ? metrics.absorbed_by_company : false,
     ]
   );
 

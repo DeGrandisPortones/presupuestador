@@ -264,7 +264,10 @@ function getMeasurementFlowForQuote({ catalog_kind, fulfillment_mode, lines }) {
 function shouldDeferSyncUntilMeasurement(quote) {
   return String(quote?.catalog_kind || "porton").toLowerCase().trim() === "porton"
     && String(quote?.fulfillment_mode || "").trim() === "produccion"
-    && quoteNeedsMeasurement(quote);
+    && (
+      normalizeMeasurementMode(quote?.measurement_mode) === "tecnica_only"
+      || normalizeMeasurementSubtype(quote?.measurement_subtype) === "sin_medicion"
+    );
 }
 function calcQuoteSubtotal({ lines, payload }) {
   const arr = Array.isArray(lines) ? lines : [];

@@ -42,8 +42,8 @@ function createdByLabel(r) {
   const role = r?.created_by_role ? ` (${r.created_by_role})` : "";
   return `${name}${role}`;
 }
-function measurementStatusLabel(s) {
-  if (s === "pending") return "Pendiente";
+function measurementStatusLabel(s, row) {
+  if (s === "pending") return String(row?.measurement_subtype || "").toLowerCase().trim() === "sin_medicion" ? "Pendiente detalle técnico" : "Pendiente";
   if (s === "needs_fix") return "A corregir";
   if (s === "submitted") return "Pendiente control";
   if (s === "approved") return "Aprobada";
@@ -51,7 +51,7 @@ function measurementStatusLabel(s) {
 }
 function measurementSubtypeLabel(row) {
   const subtype = String(row?.measurement_subtype || "normal").toLowerCase().trim();
-  return subtype === "sin_medicion" ? "Sin medición" : "Con medición";
+  return subtype === "sin_medicion" ? "Detalle técnico" : "Medición";
 }
 function localityLabel(r) {
   return r?.end_customer?.city || r?.end_customer?.address || "—";
@@ -155,7 +155,7 @@ export default function AprobacionTecnicaPage() {
         r?.end_customer?.name,
         r?.end_customer?.city,
         r?.end_customer?.address,
-        measurementStatusLabel(r?.measurement_status),
+        measurementStatusLabel(r?.measurement_status, r),
         measurementSubtypeLabel(r),
         createdByLabel(r),
       ], searchText))
@@ -231,13 +231,13 @@ export default function AprobacionTecnicaPage() {
     <div className="container">
       <div className="card">
         <h2 style={{ margin: 0 }}>Técnica</h2>
-        <div className="muted">Aprobaciones de portones, puertas, mediciones y solicitudes de Acopio → Producción.</div>
+        <div className="muted">Aprobaciones de portones, puertas, mediciones, detalles técnicos y solicitudes de Acopio → Producción.</div>
 
         <div className="spacer" />
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           <Button variant={tab === "aprobaciones_portones" ? "primary" : "ghost"} onClick={() => goToTab("aprobaciones_portones")}>Aprobaciones Portones</Button>
           <Button variant={tab === "aprobaciones_puertas" ? "primary" : "ghost"} onClick={() => goToTab("aprobaciones_puertas")}>Aprobaciones Puertas</Button>
-          <Button variant={tab === "aprobaciones_mediciones" ? "primary" : "ghost"} onClick={() => goToTab("aprobaciones_mediciones")}>Aprobaciones Mediciones</Button>
+          <Button variant={tab === "aprobaciones_mediciones" ? "primary" : "ghost"} onClick={() => goToTab("aprobaciones_mediciones")}>Circuito técnico</Button>
           <Button variant={tab === "acopio" ? "primary" : "ghost"} onClick={() => goToTab("acopio")}>Acopio → Producción</Button>
         </div>
 
@@ -257,7 +257,7 @@ export default function AprobacionTecnicaPage() {
             <div className="spacer" />
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
               <Button variant={measurementStatus === "por_realizar" ? "primary" : "ghost"} onClick={() => setMeasurementStatus("por_realizar")}>Pendientes por realizar</Button>
-              <Button variant={measurementStatus === "sin_medicion" ? "primary" : "ghost"} onClick={() => setMeasurementStatus("sin_medicion")}>Portones sin medición</Button>
+              <Button variant={measurementStatus === "sin_medicion" ? "primary" : "ghost"} onClick={() => setMeasurementStatus("sin_medicion")}>Detalles técnicos</Button>
               <Button variant={measurementStatus === "por_controlar" ? "primary" : "ghost"} onClick={() => setMeasurementStatus("por_controlar")}>Pendientes por controlar</Button>
               <Button variant={measurementStatus === "approved" ? "primary" : "ghost"} onClick={() => setMeasurementStatus("approved")}>Aprobadas</Button>
               <Button variant={measurementStatus === "all" ? "primary" : "ghost"} onClick={() => setMeasurementStatus("all")}>Todas</Button>
@@ -294,7 +294,7 @@ export default function AprobacionTecnicaPage() {
           <>
             {measQ.isLoading && <div className="muted">Cargando...</div>}
             {measQ.isError && <div style={{ color: "#d93025", fontSize: 13 }}>{measQ.error.message}</div>}
-            {!measQ.isLoading && !measurementRows.length && <div className="muted">Sin portones para medición</div>}
+            {!measQ.isLoading && !measurementRows.length && <div className="muted">Sin portones en circuito técnico</div>}
             {!!measurementRows.length && (
               <>
                 <table>
@@ -320,7 +320,7 @@ export default function AprobacionTecnicaPage() {
                           <td>{measurementSubtypeLabel(r)}</td>
                           <td>{localityLabel(r)}</td>
                           <td>{r.end_customer?.address || "—"}</td>
-                          <td>{measurementStatusLabel(r.measurement_status)}</td>
+                          <td>{measurementStatusLabel(r.measurement_status, r)}</td>
                           {!hideScheduleColumns ? <td>{fmtDate(r.measurement_scheduled_for)}</td> : null}
                           {!hideScheduleColumns ? (
                             <td style={{ minWidth: 220 }}>
@@ -342,7 +342,7 @@ export default function AprobacionTecnicaPage() {
                           ) : null}
                           <td className="right" style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
                             <Button variant="ghost" onClick={() => navigate(`/mediciones/${r.id}`)}>
-                              {isSinMedicion ? "Completar" : (r.measurement_status === "submitted" ? "Revisar" : "Abrir")}
+                              {isSinMedicion ? "Completar detalle técnico" : (r.measurement_status === "submitted" ? "Revisar" : "Abrir")}
                             </Button>
                           </td>
                         </tr>

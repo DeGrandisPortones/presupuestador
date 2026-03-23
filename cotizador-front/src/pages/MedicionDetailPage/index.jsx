@@ -17,6 +17,9 @@ function todayISO() {
   const day = String(d.getDate()).padStart(2, "0");
   return `${y}-${m}-${day}`;
 }
+function onlyDigits(v) {
+  return String(v || "").replace(/\D/g, "");
+}
 function isYes(v) {
   return v === true || String(v || "").toLowerCase().trim() === "si";
 }
@@ -53,6 +56,12 @@ function normalizeMeasurementSubtype(v) {
 function isTecnicaOnlyQuote(quote) {
   return normalizeMeasurementMode(quote?.measurement_mode) === "tecnica_only"
     || normalizeMeasurementSubtype(quote?.measurement_subtype) === "sin_medicion";
+}
+function resolveVisibleQuoteNumber(quote) {
+  const quoteNumber = String(quote?.quote_number || "").trim();
+  if (quoteNumber) return quoteNumber;
+  const finalDigits = onlyDigits(quote?.final_sale_order_name || quote?.odoo_sale_order_name || "");
+  return finalDigits || "";
 }
 function toNumberLike(v) {
   const n = Number(String(v ?? "").replace(",", "."));
@@ -197,8 +206,8 @@ function SuggestedHint({ value }) {
   return <div className="muted" style={{ fontSize: 12, color: "#6b7280", marginBottom: 6 }}>Sugerido: <b>{value}</b> · el medidor debe volver a seleccionarlo</div>;
 }
 function validateTechnicalFinalDimensions(form) {
-  if (!String(form?.alto_final_mm || "").trim()) throw new Error("Completá el Alto final antes de confirmar la medición.");
-  if (!String(form?.ancho_final_mm || "").trim()) throw new Error("Completá el Ancho final antes de confirmar la medición.");
+  if (!String(form?.alto_final_mm || "").trim()) throw new Error("Completá el Alto final antes de confirmar el detalle técnico.");
+  if (!String(form?.ancho_final_mm || "").trim()) throw new Error("Completá el Ancho final antes de confirmar el detalle técnico.");
 }
 
 export default function MedicionDetailPage() {
@@ -222,12 +231,8 @@ export default function MedicionDetailPage() {
   const canEdit = isMedidor || isTechnical;
   const canView = canEdit || isOwner || isCommercialViewer;
   const measurementSuggestions = quote?.measurement_prefill || {};
-  const visibleQuoteNumber = String(
-    quote?.quote_number ||
-    quote?.odoo_sale_order_name ||
-    quoteId ||
-    ""
-  ).trim();
+  const visibleQuoteNumber = resolveVisibleQuoteNumber(quote);
+  const detailKindLabel = isTecnicaOnly ? "Detalle técnico" : "Medición";
   const backPath = isTechnical ? "/aprobacion/tecnica?tab=aprobaciones_mediciones" : (isMedidor ? "/mediciones" : "/presupuestos");
 
   function openPendingWhatsappWindow() {
@@ -285,7 +290,7 @@ export default function MedicionDetailPage() {
     onSuccess: async (savedQuote, variables) => {
       await q.refetch();
       if (!variables?.submit) {
-        setShareInfo({ tone: "success", message: isTechnical ? "Cambios guardados." : "Medición guardada." });
+        setShareInfo({ tone: "success", message: isTechnical ? "Cambios guardados." : `${detailKindLabel} guardado.` });
         return;
       }
       if (isMedidor) {
@@ -299,13 +304,13 @@ export default function MedicionDetailPage() {
       const whatsappUrl = buildWhatsappUrl(savedQuote?.end_customer?.phone || customer?.phone, whatsappText);
       if (whatsappUrl) {
         const opened = redirectPendingWhatsappWindow(whatsappUrl);
-        setShareInfo({ tone: opened ? "success" : "warning", message: opened ? "Medición aprobada. Se abrió WhatsApp con el mensaje listo para el cliente." : "Medición aprobada. No se pudo abrir WhatsApp automáticamente, pero el mensaje quedó listo.", whatsappUrl, publicPdfUrl });
+        setShareInfo({ tone: opened ? "success" : "warning", message: opened ? `${detailKindLabel} aprobado. Se abrió WhatsApp con el mensaje listo para el cliente.` : `${detailKindLabel} aprobado. No se pudo abrir WhatsApp automáticamente, pero el mensaje quedó listo.`, whatsappUrl, publicPdfUrl });
         return;
       }
       closePendingWhatsappWindow();
-      setShareInfo({ tone: "warning", message: "Medición aprobada, pero falta un teléfono válido para abrir WhatsApp.", publicPdfUrl });
+      setShareInfo({ tone: "warning", message: `${detailKindLabel} aprobado, pero falta un teléfono válido para abrir WhatsApp.`, publicPdfUrl });
     },
-    onError: (error) => { closePendingWhatsappWindow(); setShareInfo({ tone: "warning", message: error?.message || "No se pudo guardar la medición." }); },
+    onError: (error) => { closePendingWhatsappWindow(); setShareInfo({ tone: "warning", message: error?.message || `No se pudo guardar el ${detailKindLabel.toLowerCase()}.` }); },
   });
 
   const rejectM = useMutation({
@@ -323,17 +328,19 @@ export default function MedicionDetailPage() {
       <div className="card">
         <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
           <div>
-            <h2 style={{ margin: 0 }}>Medición · Presupuesto #{visibleQuoteNumber || quoteId}</h2>
+            <h2 style={{ margin: 0 }}>{detailKindLabel} · Presupuesto #{visibleQuoteNumber || "—"}</h2>
             <div className="muted">
               {isTechnical
                 ? (isTecnicaOnly
-                  ? "Completá la planilla interna, definí Alto/Ancho final y confirmá para disparar Odoo."
+                  ? "Completá la planilla de datos técnicos, definí Alto/Ancho final y confirmá para disparar Odoo."
                   : "Revisar la planilla, corregir si hace falta y aprobar para enviar al cliente.")
                 : (isMedidor
                   ? "Completar la planilla y enviarla a Técnica para revisión."
-                  : "Vista de la planilla de medición / detalle técnico del portón.")}
+                  : (isTecnicaOnly
+                    ? "Vista de la planilla de datos técnicos del portón."
+                    : "Vista de la planilla de medición del portón."))}
             </div>
-            {quote ? <div className="muted" style={{ marginTop: 6 }}>Estado: <b>{measurementStatusLabel(quote.measurement_status)}</b>{isTecnicaOnly ? <> · Tipo: <b>Portón sin medición</b></> : null}</div> : null}
+            {quote ? <div className="muted" style={{ marginTop: 6 }}>Estado: <b>{measurementStatusLabel(quote.measurement_status)}</b>{isTecnicaOnly ? <> · Tipo: <b>Detalle técnico</b></> : null}</div> : null}
           </div>
           <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}><Button variant="ghost" onClick={() => navigate(backPath)}>Volver</Button></div>
         </div>
@@ -420,7 +427,7 @@ export default function MedicionDetailPage() {
                     <Input type="number" value={form.ancho_final_mm || ""} onChange={(v) => setForm({ ...form, ancho_final_mm: v })} style={{ width: "100%" }} disabled={!isTechnical} />
                   </Field>
                 </Row>
-                <div className="muted" style={{ fontSize: 12, marginTop: 8 }}>Estos dos campos los define Técnica y son obligatorios antes de confirmar la medición.</div>
+                <div className="muted" style={{ fontSize: 12, marginTop: 8 }}>Estos dos campos los define Técnica y son obligatorios antes de confirmar el detalle técnico.</div>
               </div>
             </div>
           </Section>
@@ -499,13 +506,13 @@ export default function MedicionDetailPage() {
                       setShareInfo({ tone: "success", message: "Se abrió WhatsApp con el mensaje listo para el cliente.", whatsappUrl, publicPdfUrl });
                       return;
                     }
-                    setShareInfo({ tone: "warning", message: "La medición ya fue aprobada, pero falta un teléfono válido para abrir WhatsApp.", publicPdfUrl });
+                    setShareInfo({ tone: "warning", message: `${detailKindLabel} ya aprobado, pero falta un teléfono válido para abrir WhatsApp.`, publicPdfUrl });
                     return;
                   }
                   if (isTechnical) openPendingWhatsappWindow();
                   mSave.mutate({ submit: true });
                 }} disabled={!canEdit || mSave.isPending || rejectM.isPending}>
-                  {mSave.isPending ? (isTechnical ? "Confirmando…" : "Enviando…") : (isTechnical ? (isTecnicaOnly ? "Confirmar medición y enviar" : "Aprobar y enviar") : "Enviar a Técnica")}
+                  {mSave.isPending ? (isTechnical ? "Confirmando…" : "Enviando…") : (isTechnical ? (isTecnicaOnly ? "Confirmar datos técnicos y enviar" : "Aprobar y enviar") : "Enviar a Técnica")}
                 </Button>
                 {isTechnical && quote.measurement_status === "submitted" && !isTecnicaOnly && <Button variant="ghost" disabled={rejectM.isPending || mSave.isPending} onClick={() => { const msg = window.prompt("Motivo de la corrección:", quote.measurement_review_notes || ""); if (msg === null) return; rejectM.mutate(msg); }}>{rejectM.isPending ? "Devolviendo…" : "Devolver para corregir"}</Button>}
               </div>
