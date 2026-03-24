@@ -12,19 +12,9 @@ import { downloadListingQuotePdf } from "../../utils/listingPdf.js";
 
 const PAGE_SIZE = 25;
 
-function normalizeMeasurementMode(v) {
-  return String(v || "medidor").toLowerCase().trim() === "tecnica_only" ? "tecnica_only" : "medidor";
-}
-function normalizeMeasurementSubtype(v) {
-  return String(v || "normal").toLowerCase().trim() === "sin_medicion" ? "sin_medicion" : "normal";
-}
-function isTecnicaOnlyQuote(q) {
-  return normalizeMeasurementMode(q?.measurement_mode) === "tecnica_only"
-    || normalizeMeasurementSubtype(q?.measurement_subtype) === "sin_medicion";
-}
 function labelMeasurementStatus(q) {
   const s = String(q?.measurement_status || "none").toLowerCase();
-  if (s === "pending") return isTecnicaOnlyQuote(q) ? "Pendiente detalle técnico" : "Pendiente";
+  if (s === "pending") return "Pendiente";
   if (s === "submitted") return "Realizada";
   if (s === "needs_fix") return "Realizada / corregir";
   if (s === "approved") return "Realizada";
@@ -36,10 +26,7 @@ function quoteWaitingMeasurement(q) {
   return q?.status === "pending_approvals"
     && q?.commercial_decision === "approved"
     && q?.technical_decision === "approved"
-    && (
-      q?.requires_measurement === true
-      || isTecnicaOnlyQuote(q)
-    )
+    && q?.requires_measurement === true
     && String(q?.measurement_status || "none").toLowerCase() !== "approved";
 }
 
@@ -58,7 +45,7 @@ function labelQuoteStatus(q) {
     if (c === "pending" && t === "pending") return "Pendiente Comercial y Técnica";
     if (c === "approved" && t === "pending") return "Pendiente Técnica";
     if (c === "pending" && t === "approved") return "Pendiente Comercial";
-    if (quoteWaitingMeasurement(q)) return isTecnicaOnlyQuote(q) ? "Pendiente detalle técnico" : "Pendiente medición técnica";
+    if (quoteWaitingMeasurement(q)) return "Pendiente medición técnica";
     if (c === "approved" && t === "approved") return "Listo para Odoo";
     return "En aprobación";
   }
@@ -150,13 +137,12 @@ function matchesRowSearch(item, searchText) {
     q?.end_customer?.phone,
     labelQuoteStatus(q),
     q?.fulfillment_mode === "acopio" ? "acopio" : "produccion",
-    isTecnicaOnlyQuote(q) ? "detalle técnico" : "medición",
   ]
     .filter(Boolean)
     .join(" ")
     .toLowerCase();
 
-    return haystack.includes(s);
+  return haystack.includes(s);
 }
 
 function toTimeDesc(value) {
@@ -262,7 +248,7 @@ export default function PresupuestosPage() {
   const doorsQ = useQuery({
     queryKey: ["doors", "mine", "presupuestos"],
     queryFn: () => listDoors({ scope: "mine" }),
-    enabled: !!user?.is_vendedor,
+    enabled: !!user?.is_vendedor || !!user?.is_distribuidor,
   });
 
   const qc = useQueryClient();
@@ -336,16 +322,13 @@ export default function PresupuestosPage() {
       filtered = filtered.filter((item) => item.rowKind === "quote" && item.raw?.fulfillment_mode === "acopio" && item.raw?.status !== "draft");
     } else if (filter === "produccion") {
       filtered = filtered.filter((item) => item.rowKind === "quote" && item.raw?.fulfillment_mode === "produccion" && item.raw?.status !== "draft");
-    } else if (filter === "tecnico") {
+    } else if (filter === "mediciones") {
       filtered = filtered.filter(
         (item) =>
           item.rowKind === "quote"
           && item.raw?.fulfillment_mode === "produccion"
           && item.raw?.status !== "draft"
-          && (
-            item.raw?.requires_measurement === true
-            || isTecnicaOnlyQuote(item.raw)
-          ),
+          && item.raw?.requires_measurement === true,
       );
     }
 
@@ -372,7 +355,7 @@ export default function PresupuestosPage() {
     <div className="container">
       <div className="card">
         <h2 style={{ margin: 0 }}>Mis presupuestos</h2>
-        <div className="muted">Portones, Ipanel y puertas, con seguimiento de estados, acopio, producción y circuito técnico</div>
+        <div className="muted">Portones, Ipanel y puertas, con seguimiento de estados, acopio, producción y mediciones</div>
 
         <div className="spacer" />
 
@@ -383,7 +366,7 @@ export default function PresupuestosPage() {
           <Button variant={filter === "rejected" ? "primary" : "ghost"} onClick={() => setFilter("rejected")}>Rechazados</Button>
           <Button variant={filter === "acopio" ? "primary" : "ghost"} onClick={() => setFilter("acopio")}>Portones en Acopio</Button>
           <Button variant={filter === "produccion" ? "primary" : "ghost"} onClick={() => setFilter("produccion")}>Portones en Producción</Button>
-          <Button variant={filter === "tecnico" ? "primary" : "ghost"} onClick={() => setFilter("tecnico")}>Seguimiento técnico</Button>
+          <Button variant={filter === "mediciones" ? "primary" : "ghost"} onClick={() => setFilter("mediciones")}>Portones en Medición</Button>
         </div>
 
         <div className="spacer" />
@@ -421,8 +404,8 @@ export default function PresupuestosPage() {
                   <th>Localidad</th>
                   <th>Estado</th>
                   <th>Destino</th>
-                  {filter === "tecnico" ? <th>Fecha visita</th> : null}
-                  {filter === "tecnico" ? <th>Estado técnico</th> : null}
+                  {filter === "mediciones" ? <th>Fecha medición</th> : null}
+                  {filter === "mediciones" ? <th>Estado medición</th> : null}
                   <th></th>
                 </tr>
               </thead>
@@ -438,8 +421,8 @@ export default function PresupuestosPage() {
                         <td>{item.locality}</td>
                         <td>{item.statusLabel}</td>
                         <td>{item.destinationLabel}</td>
-                        {filter === "tecnico" ? <td>—</td> : null}
-                        {filter === "tecnico" ? <td>—</td> : null}
+                        {filter === "mediciones" ? <td>—</td> : null}
+                        {filter === "mediciones" ? <td>—</td> : null}
                         <td className="right" style={{ display: "flex", justifyContent: "flex-end", gap: 8, flexWrap: "wrap" }}>
                           <Button variant="ghost" onClick={() => navigate(`/puertas/${door.id}`)}>Abrir puerta</Button>
                           {door.linked_quote_id ? (
@@ -464,10 +447,14 @@ export default function PresupuestosPage() {
                     String(r?.catalog_kind || "porton").toLowerCase() === "porton"
                     && (
                       r?.requires_measurement === true
-                      || isTecnicaOnlyQuote(r)
+                      || String(r?.measurement_mode || "").toLowerCase() === "tecnica_only"
+                      || String(r?.measurement_subtype || "").toLowerCase() === "sin_medicion"
                       || !["", "none"].includes(String(r?.measurement_status || "").toLowerCase())
                     );
-                  const measurementLabel = isTecnicaOnlyQuote(r) ? "Ver detalle técnico" : "Ver medición";
+                  const isMeasurementApproved = String(r?.measurement_status || "").toLowerCase() === "approved";
+                  const isTechnicalOnly = String(r?.measurement_subtype || "").toLowerCase() === "sin_medicion"
+                    || String(r?.measurement_mode || "").toLowerCase() === "tecnica_only";
+                  const measurementLabel = isTechnicalOnly ? "Ver detalle técnico" : "Ver medición";
 
                   return (
                     <tr key={r.id}>
@@ -477,8 +464,8 @@ export default function PresupuestosPage() {
                       <td>{item.locality}</td>
                       <td>{item.statusLabel}</td>
                       <td>{item.destinationLabel}</td>
-                      {filter === "tecnico" ? <td>{item.measurementDate}</td> : null}
-                      {filter === "tecnico" ? <td>{item.measurementStatus}</td> : null}
+                      {filter === "mediciones" ? <td>{item.measurementDate}</td> : null}
+                      {filter === "mediciones" ? <td>{item.measurementStatus}</td> : null}
                       <td className="right" style={{ display: "flex", justifyContent: "flex-end", gap: 8, flexWrap: "wrap" }}>
                         <Button
                           variant="ghost"
@@ -497,7 +484,15 @@ export default function PresupuestosPage() {
                           </Button>
                         ) : null}
                         {hasMeasurementDetail ? (
-                          <Button variant="ghost" onClick={() => navigate(`/mediciones/${r.id}`)}>
+                          <Button
+                            variant="ghost"
+                            disabled={!isMeasurementApproved}
+                            title={isMeasurementApproved ? "" : "Disponible cuando Técnica apruebe la medición / detalle técnico"}
+                            onClick={() => {
+                              if (!isMeasurementApproved) return;
+                              navigate(`/mediciones/${r.id}`);
+                            }}
+                          >
                             {measurementLabel}
                           </Button>
                         ) : null}
