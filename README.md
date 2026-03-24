@@ -1,18 +1,11 @@
-Este zip trae archivos completos para reemplazar, no parches.
-
-Reemplazá estos archivos en el repo presupuestador:
+Reemplazar estos archivos:
 
 - cotizador-back/src/measurementFinalization.js
-- cotizador-back/src/routes/quotes.routes.js
-- cotizador-front/src/pages/MedicionDetailPage/index.jsx
-- cotizador-front/src/pages/PresupuestosPage/index.jsx
-- cotizador-front/src/pages/AprobacionTecnicaPage/index.jsx
+- cotizador-front/src/utils/listingPdf.js
 
-Después reiniciá backend y frontend.
+No hay SQL nuevo para correr en este zip.
 
-Qué corrige:
-- Producción sin medición: un solo disparo a Odoo desde Datos Técnicos, con NVS + correlativo, sin UUID.
-- Producción con medición: conserva anticipo / venta genérica antes de medición y segundo disparo final después.
-- Acopio sin medición: conserva anticipo en acopio y final desde Datos Técnicos al pasar a producción.
-- Acopio con medición: conserva anticipo en acopio y final desde medición aprobada al pasar a producción.
-- UI: los casos sin medición se muestran como Detalle técnico / Datos técnicos.
+Este fix apunta a:
+- final con productos Odoo mapeados y con precio
+- línea de descuento del anticipo/original en la cotización final
+- numeración visible del final usando NV en la descarga/listado
