@@ -70,9 +70,19 @@ export default function HeaderBar({ pricelists, loadingPricelists, showMargin })
         <div style={{ flex: 1, minWidth: 220 }}>
           <div className="muted">Cliente final (nombre)</div>
           <Input
-            value={endCustomer.name}
-            onChange={(v) => setEndCustomer({ name: v })}
+            value={endCustomer.first_name || ""}
+            onChange={(v) => setEndCustomer({ first_name: v })}
             placeholder="Nombre"
+            style={{ width: "100%" }}
+          />
+        </div>
+
+        <div style={{ flex: 1, minWidth: 220 }}>
+          <div className="muted">Cliente final (apellido)</div>
+          <Input
+            value={endCustomer.last_name || ""}
+            onChange={(v) => setEndCustomer({ last_name: v })}
+            placeholder="Apellido"
             style={{ width: "100%" }}
           />
         </div>

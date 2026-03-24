@@ -54,8 +54,13 @@ export async function submitFinalQuote(id) {
   return data.quote;
 }
 
-export async function reviewCommercial(id, { action, notes }) {
-  const { data } = await http.post(`/api/quotes/${id}/review/commercial`, { action, notes });
+export async function reviewCommercial(id, { action, notes, billingCustomer } = {}) {
+  const body = {
+    action,
+    notes,
+    billing_customer: billingCustomer || null,
+  };
+  const { data } = await http.post(`/api/quotes/${id}/review/commercial`, body);
   if (!data?.ok) throw new Error(data?.error || "No se pudo registrar revisión comercial");
   return data;
 }

@@ -77,24 +77,14 @@ export default function AprobacionComercialPage() {
   const [searchText, setSearchText] = useState("");
   const [pageAprobaciones, setPageAprobaciones] = useState(1);
   const [pageAcopio, setPageAcopio] = useState(1);
+  const [pageAcopioListado, setPageAcopioListado] = useState(1);
   const [pagePuertas, setPagePuertas] = useState(1);
   const [downloadingPdfKey, setDownloadingPdfKey] = useState("");
 
-  const q = useQuery({
-    queryKey: ["quotes", "commercial_inbox"],
-    queryFn: () => listQuotes({ scope: "commercial_inbox" }),
-    enabled: !!user?.is_enc_comercial,
-  });
-  const acopioQ = useQuery({
-    queryKey: ["quotes", "commercial_acopio"],
-    queryFn: () => listQuotes({ scope: "commercial_acopio" }),
-    enabled: tab === "acopio" && !!user?.is_enc_comercial,
-  });
-  const doorsQ = useQuery({
-    queryKey: ["doors", "commercial_inbox"],
-    queryFn: () => listDoors({ scope: "commercial_inbox" }),
-    enabled: tab === "puertas" && !!user?.is_enc_comercial,
-  });
+  const q = useQuery({ queryKey: ["quotes", "commercial_inbox"], queryFn: () => listQuotes({ scope: "commercial_inbox" }), enabled: !!user?.is_enc_comercial });
+  const acopioQ = useQuery({ queryKey: ["quotes", "commercial_acopio"], queryFn: () => listQuotes({ scope: "commercial_acopio" }), enabled: tab === "acopio" && !!user?.is_enc_comercial });
+  const acopioListadoQ = useQuery({ queryKey: ["quotes", "commercial_acopio_all"], queryFn: () => listQuotes({ scope: "commercial_acopio_all" }), enabled: tab === "acopio_listado" && !!user?.is_enc_comercial });
+  const doorsQ = useQuery({ queryKey: ["doors", "commercial_inbox"], queryFn: () => listDoors({ scope: "commercial_inbox" }), enabled: tab === "puertas" && !!user?.is_enc_comercial });
 
   const acopioM = useMutation({ mutationFn: ({ id, action, notes }) => reviewAcopioCommercial(id, { action, notes }), onSuccess: () => acopioQ.refetch() });
   const doorM = useMutation({ mutationFn: ({ id, action, notes }) => reviewDoorCommercial(id, { action, notes }), onSuccess: () => doorsQ.refetch() });
@@ -128,62 +118,43 @@ export default function AprobacionComercialPage() {
     let out = arr;
     if (filter === "pending") out = arr.filter((x) => x.status === "pending_approvals" && x.commercial_decision === "pending");
     if (filter === "rejected") out = arr.filter((x) => x.status === "draft" && x.technical_decision === "rejected");
-    return out.filter((r) => matchesSearch([
-      createdByLabel(r),
-      r?.end_customer?.name,
-      r?.end_customer?.city,
-      r?.end_customer?.address,
-      rowLabel(r),
-    ], searchText));
+    return out.filter((r) => matchesSearch([createdByLabel(r), r?.end_customer?.name, r?.end_customer?.city, r?.end_customer?.address, rowLabel(r)], searchText));
   }, [q.data, filter, searchText]);
 
   const acopioRows = useMemo(() => {
     return (acopioQ.data || [])
       .slice()
       .sort((a, b) => toTimeDesc(b?.acopio_to_produccion_requested_at || b?.created_at) - toTimeDesc(a?.acopio_to_produccion_requested_at || a?.created_at))
-      .filter((r) => matchesSearch([
-        createdByLabel(r),
-        r?.end_customer?.name,
-        r?.end_customer?.city,
-        r?.end_customer?.address,
-        r?.acopio_to_produccion_notes,
-        acopioReqLabel(r),
-      ], searchText));
+      .filter((r) => matchesSearch([createdByLabel(r), r?.end_customer?.name, r?.end_customer?.city, r?.end_customer?.address, r?.acopio_to_produccion_notes, acopioReqLabel(r)], searchText));
   }, [acopioQ.data, searchText]);
+
+  const acopioListadoRows = useMemo(() => {
+    return (acopioListadoQ.data || [])
+      .slice()
+      .sort((a, b) => toTimeDesc(b?.confirmed_at || b?.created_at) - toTimeDesc(a?.confirmed_at || a?.created_at))
+      .filter((r) => matchesSearch([createdByLabel(r), r?.end_customer?.name, r?.end_customer?.city, r?.end_customer?.address, rowLabel(r), acopioReqLabel(r)], searchText));
+  }, [acopioListadoQ.data, searchText]);
 
   const doorRows = useMemo(() => {
     return (doorsQ.data || [])
       .slice()
       .sort((a, b) => toTimeDesc(b?.created_at) - toTimeDesc(a?.created_at))
-      .filter((d) => matchesSearch([
-        d?.door_code,
-        d?.record?.end_customer?.name,
-        d?.record?.obra_cliente,
-        d?.linked_quote_odoo_name,
-        d?.record?.asociado_porton,
-        d?.status,
-      ], searchText));
+      .filter((d) => matchesSearch([d?.door_code, d?.record?.end_customer?.name, d?.record?.obra_cliente, d?.linked_quote_odoo_name, d?.record?.asociado_porton, d?.status], searchText));
   }, [doorsQ.data, searchText]);
 
   useEffect(() => { setPageAprobaciones(1); }, [filter, searchText]);
   useEffect(() => { setPageAcopio(1); }, [searchText]);
+  useEffect(() => { setPageAcopioListado(1); }, [searchText]);
   useEffect(() => { setPagePuertas(1); }, [searchText]);
 
-  useEffect(() => {
-    const totalPages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
-    if (pageAprobaciones > totalPages) setPageAprobaciones(totalPages);
-  }, [rows.length, pageAprobaciones]);
-  useEffect(() => {
-    const totalPages = Math.max(1, Math.ceil(acopioRows.length / PAGE_SIZE));
-    if (pageAcopio > totalPages) setPageAcopio(totalPages);
-  }, [acopioRows.length, pageAcopio]);
-  useEffect(() => {
-    const totalPages = Math.max(1, Math.ceil(doorRows.length / PAGE_SIZE));
-    if (pagePuertas > totalPages) setPagePuertas(totalPages);
-  }, [doorRows.length, pagePuertas]);
+  useEffect(() => { const totalPages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE)); if (pageAprobaciones > totalPages) setPageAprobaciones(totalPages); }, [rows.length, pageAprobaciones]);
+  useEffect(() => { const totalPages = Math.max(1, Math.ceil(acopioRows.length / PAGE_SIZE)); if (pageAcopio > totalPages) setPageAcopio(totalPages); }, [acopioRows.length, pageAcopio]);
+  useEffect(() => { const totalPages = Math.max(1, Math.ceil(acopioListadoRows.length / PAGE_SIZE)); if (pageAcopioListado > totalPages) setPageAcopioListado(totalPages); }, [acopioListadoRows.length, pageAcopioListado]);
+  useEffect(() => { const totalPages = Math.max(1, Math.ceil(doorRows.length / PAGE_SIZE)); if (pagePuertas > totalPages) setPagePuertas(totalPages); }, [doorRows.length, pagePuertas]);
 
   const visibleRows = useMemo(() => rows.slice((pageAprobaciones - 1) * PAGE_SIZE, pageAprobaciones * PAGE_SIZE), [rows, pageAprobaciones]);
   const visibleAcopioRows = useMemo(() => acopioRows.slice((pageAcopio - 1) * PAGE_SIZE, pageAcopio * PAGE_SIZE), [acopioRows, pageAcopio]);
+  const visibleAcopioListadoRows = useMemo(() => acopioListadoRows.slice((pageAcopioListado - 1) * PAGE_SIZE, pageAcopioListado * PAGE_SIZE), [acopioListadoRows, pageAcopioListado]);
   const visibleDoorRows = useMemo(() => doorRows.slice((pagePuertas - 1) * PAGE_SIZE, pagePuertas * PAGE_SIZE), [doorRows, pagePuertas]);
 
   if (!user?.is_enc_comercial) {
@@ -194,12 +165,13 @@ export default function AprobacionComercialPage() {
     <div className="container">
       <div className="card">
         <h2 style={{ margin: 0 }}>Aprobación Comercial</h2>
-        <div className="muted">Presupuestos y puertas pendientes de tu decisión.</div>
+        <div className="muted">Presupuestos, portones en acopio y puertas pendientes de tu decisión.</div>
 
         <div className="spacer" />
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           <Button variant={tab === "aprobaciones" ? "primary" : "ghost"} onClick={() => setTab("aprobaciones")}>Aprobaciones</Button>
           <Button variant={tab === "acopio" ? "primary" : "ghost"} onClick={() => setTab("acopio")}>Acopio → Producción</Button>
+          <Button variant={tab === "acopio_listado" ? "primary" : "ghost"} onClick={() => setTab("acopio_listado")}>Portones en Acopio</Button>
           <Button variant={tab === "puertas" ? "primary" : "ghost"} onClick={() => setTab("puertas")}>Puertas</Button>
         </div>
 
@@ -292,6 +264,41 @@ export default function AprobacionComercialPage() {
                   </tbody>
                 </table>
                 <PaginationControls page={pageAcopio} totalItems={acopioRows.length} pageSize={PAGE_SIZE} onPageChange={setPageAcopio} />
+              </>
+            )}
+          </>
+        )}
+
+        {tab === "acopio_listado" && (
+          <>
+            {acopioListadoQ.isLoading && <div className="muted">Cargando...</div>}
+            {acopioListadoQ.isError && <div style={{ color: "#d93025", fontSize: 13 }}>{acopioListadoQ.error.message}</div>}
+            {!acopioListadoQ.isLoading && !acopioListadoRows.length && <div className="muted">Sin portones en acopio</div>}
+            {!!acopioListadoRows.length && (
+              <>
+                <table>
+                  <thead><tr><th>Fecha</th><th>Vendedor/Distribuidor</th><th>Cliente</th><th>Dirección</th><th>Estado</th><th>Solicitud Prod.</th><th></th></tr></thead>
+                  <tbody>
+                    {visibleAcopioListadoRows.map((r) => {
+                      const pdfKey = `quote-${r.id}`;
+                      return (
+                        <tr key={r.id}>
+                          <td>{fmtDate(r.confirmed_at || r.created_at)}</td>
+                          <td>{createdByLabel(r)}</td>
+                          <td>{r.end_customer?.name || <span className="muted">(sin nombre)</span>}</td>
+                          <td>{r.end_customer?.address || "—"}</td>
+                          <td>{rowLabel(r)}</td>
+                          <td>{r.acopio_to_produccion_status ? acopioReqLabel(r) : "—"}</td>
+                          <td className="right" style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+                            <PdfIconButton disabled={downloadingPdfKey === pdfKey} onClick={() => handleDownloadQuotePdf(r.id)} />
+                            <Button variant="ghost" onClick={() => navigate(`/presupuestos/${r.id}`, { state: { from: "/aprobacion/comercial" } })}>Abrir</Button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+                <PaginationControls page={pageAcopioListado} totalItems={acopioListadoRows.length} pageSize={PAGE_SIZE} onPageChange={setPageAcopioListado} />
               </>
             )}
           </>

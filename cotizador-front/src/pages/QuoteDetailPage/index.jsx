@@ -1,8 +1,9 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 
 import Button from "../../ui/Button.jsx";
+import Input from "../../ui/Input.jsx";
 import { getQuote, reviewCommercial, reviewTechnical, createRevisionQuote } from "../../api/quotes.js";
 import { listDoorsByQuote } from "../../api/doors.js";
 import { downloadMedicionPdf } from "../../api/pdf.js";
@@ -34,6 +35,68 @@ function displayQuoteNumber(quote, fallbackId = null) {
   if (quote?.odoo_sale_order_name) return String(quote.odoo_sale_order_name);
   return fallbackId ? String(fallbackId).slice(0, 8) : "—";
 }
+function emptyBillingCustomer(source = {}) {
+  return {
+    name: String(source?.name || "").trim(),
+    vat: String(source?.vat || "").trim(),
+    email: String(source?.email || "").trim(),
+    phone: String(source?.phone || "").trim(),
+    address: String(source?.address || source?.street || "").trim(),
+    city: String(source?.city || "").trim(),
+  };
+}
+function hasBillingCustomerData(customer) {
+  if (!customer) return false;
+  return Object.values(customer).some((value) => String(value || "").trim());
+}
+function billingSummary(customer) {
+  if (!hasBillingCustomerData(customer)) return "Se facturará con los datos del cliente cargado.";
+  return [customer.name, customer.vat ? `CUIT ${customer.vat}` : "", customer.address, customer.city].filter(Boolean).join(" · ");
+}
+
+function BillingModal({ value, onChange, onClose, onConfirm, loading }) {
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20, zIndex: 1000 }} onClick={() => { if (!loading) onClose(); }}>
+      <div className="card" style={{ width: "100%", maxWidth: 760, background: "#fff", border: "1px solid #ddd", boxShadow: "0 20px 60px rgba(0,0,0,0.18)" }} onClick={(e) => e.stopPropagation()}>
+        <div style={{ fontWeight: 900, fontSize: 22, marginBottom: 8 }}>Datos fiscales de facturación</div>
+        <div className="muted" style={{ marginBottom: 16 }}>
+          Si no cargás estos datos, se facturará con los datos del cliente cargado en el presupuesto.
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 12 }}>
+          <div>
+            <div className="muted" style={{ marginBottom: 6 }}>Razón social / nombre fiscal</div>
+            <Input value={value.name} onChange={(v) => onChange({ ...value, name: v })} style={{ width: "100%" }} />
+          </div>
+          <div>
+            <div className="muted" style={{ marginBottom: 6 }}>CUIT</div>
+            <Input value={value.vat} onChange={(v) => onChange({ ...value, vat: v })} style={{ width: "100%" }} />
+          </div>
+          <div>
+            <div className="muted" style={{ marginBottom: 6 }}>Correo</div>
+            <Input value={value.email} onChange={(v) => onChange({ ...value, email: v })} style={{ width: "100%" }} />
+          </div>
+          <div>
+            <div className="muted" style={{ marginBottom: 6 }}>Teléfono</div>
+            <Input value={value.phone} onChange={(v) => onChange({ ...value, phone: v })} style={{ width: "100%" }} />
+          </div>
+          <div style={{ gridColumn: "1 / -1" }}>
+            <div className="muted" style={{ marginBottom: 6 }}>Dirección fiscal</div>
+            <Input value={value.address} onChange={(v) => onChange({ ...value, address: v })} style={{ width: "100%" }} />
+          </div>
+          <div>
+            <div className="muted" style={{ marginBottom: 6 }}>Localidad</div>
+            <Input value={value.city} onChange={(v) => onChange({ ...value, city: v })} style={{ width: "100%" }} />
+          </div>
+        </div>
+        <div className="muted" style={{ marginTop: 12 }}>Dejá todos los campos vacíos si querés facturar con el cliente del presupuesto.</div>
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 18 }}>
+          <Button variant="ghost" onClick={onClose} disabled={loading}>Cancelar</Button>
+          <Button onClick={onConfirm} disabled={loading}>{loading ? "Aprobando..." : "Aprobar Comercial"}</Button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export default function QuoteDetailPage() {
   const params = useParams();
@@ -42,6 +105,8 @@ export default function QuoteDetailPage() {
   const location = useLocation();
   const user = useAuthStore((s) => s.user);
   const [notes, setNotes] = useState("");
+  const [billingModalOpen, setBillingModalOpen] = useState(false);
+  const [billingCustomer, setBillingCustomer] = useState(emptyBillingCustomer());
 
   const q = useQuery({ queryKey: ["quote", quoteId], queryFn: () => getQuote(quoteId), enabled: !!quoteId });
   const linkedDoorsQ = useQuery({ queryKey: ["doors", "by-quote", quoteId], queryFn: () => listDoorsByQuote(quoteId), enabled: !!quoteId });
@@ -53,6 +118,11 @@ export default function QuoteDetailPage() {
 
   const canCommercialAct = canCommercial && quote?.status === "pending_approvals" && quote?.commercial_decision === "pending";
   const canTechAct = canTech && quote?.status === "pending_approvals" && quote?.technical_decision === "pending";
+
+  useEffect(() => {
+    const billing = emptyBillingCustomer(quote?.payload?.billing_customer || {});
+    setBillingCustomer(billing);
+  }, [quote?.id, quote?.payload?.billing_customer]);
 
   const showMeasurement =
     !!quote?.requires_measurement ||
@@ -67,7 +137,7 @@ export default function QuoteDetailPage() {
   }, [location.state, canTech, canCommercial, user]);
 
   const commercialM = useMutation({
-    mutationFn: ({ action }) => reviewCommercial(quoteId, { action, notes }),
+    mutationFn: ({ action, billingCustomer: nextBillingCustomer }) => reviewCommercial(quoteId, { action, notes, billingCustomer: nextBillingCustomer }),
     onSuccess: () => navigate(approvalReturnPath),
   });
   const revisionM = useMutation({
@@ -91,8 +161,30 @@ export default function QuoteDetailPage() {
     return arr;
   }, [quote]);
 
+  function openBillingModal() {
+    setBillingModalOpen(true);
+  }
+
+  function confirmCommercialApproval() {
+    const normalized = emptyBillingCustomer(billingCustomer);
+    if (hasBillingCustomerData(normalized) && !normalized.name) {
+      window.alert("Si cargás datos fiscales, completá al menos la razón social / nombre fiscal.");
+      return;
+    }
+    commercialM.mutate({ action: "approve", billingCustomer: hasBillingCustomerData(normalized) ? normalized : null });
+  }
+
   return (
     <div className="container">
+      {billingModalOpen && (
+        <BillingModal
+          value={billingCustomer}
+          onChange={setBillingCustomer}
+          onClose={() => setBillingModalOpen(false)}
+          onConfirm={confirmCommercialApproval}
+          loading={commercialM.isPending}
+        />
+      )}
       <div className="card">
         <h2 style={{ margin: 0 }}>{isRevision ? "Ajuste" : "Presupuesto"} #{displayQuoteNumber(quote, quoteId)}</h2>
         {q.isLoading && <div className="muted">Cargando...</div>}
@@ -140,6 +232,11 @@ export default function QuoteDetailPage() {
                 <div className="muted">Observaciones</div>
                 <div>{quote.note || <span className="muted">(sin notas)</span>}</div>
                 {isRevision && typeof quote.final_difference_amount === "number" ? <div className="muted" style={{ marginTop: 8 }}>Diferencia final: <b>{formatARS(quote.final_difference_amount)}</b></div> : null}
+              </div>
+
+              <div style={{ flex: 1 }}>
+                <div className="muted">Facturación</div>
+                <div>{billingSummary(emptyBillingCustomer(quote.payload?.billing_customer || {}))}</div>
               </div>
 
               <div style={{ display: "flex", gap: 8, alignItems: "flex-end", flexWrap: "wrap", justifyContent: "flex-end" }}>
@@ -242,8 +339,8 @@ export default function QuoteDetailPage() {
                   <div className="spacer" />
                   <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                     {canCommercial && <>
-                      <Button disabled={!canCommercialAct || commercialM.isPending} onClick={() => commercialM.mutate({ action: "approve" })}>{commercialM.isPending ? "Procesando..." : "Aprobar Comercial"}</Button>
-                      <Button variant="danger" disabled={!canCommercialAct || commercialM.isPending} onClick={() => commercialM.mutate({ action: "reject" })}>Rechazar Comercial</Button>
+                      <Button disabled={!canCommercialAct || commercialM.isPending} onClick={openBillingModal}>{commercialM.isPending ? "Procesando..." : "Aprobar Comercial"}</Button>
+                      <Button variant="danger" disabled={!canCommercialAct || commercialM.isPending} onClick={() => commercialM.mutate({ action: "reject", billingCustomer: null })}>Rechazar Comercial</Button>
                     </>}
                     {canTech && <>
                       <Button disabled={!canTechAct || techM.isPending} onClick={() => techM.mutate({ action: "approve" })}>{techM.isPending ? "Procesando..." : "Aprobar Técnica"}</Button>

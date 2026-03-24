@@ -2,10 +2,13 @@ import { create } from "zustand";
 
 const EMPTY_CUSTOMER = {
   name: "",
+  first_name: "",
+  last_name: "",
   phone: "",
   email: "",
   address: "",
   maps_url: "",
+  city: "",
 };
 
 const SYSTEM_STANDARD_PRODUCT_ID = 3009;
@@ -94,6 +97,30 @@ function applyDerivedLines(lines, portonType, dimensions) {
   return syncSystemLine(withSurface, portonType, dimensions);
 }
 
+function splitCustomerName(endCustomer = {}) {
+  const directFirst = String(endCustomer?.first_name || "").trim();
+  const directLast = String(endCustomer?.last_name || "").trim();
+  if (directFirst || directLast) {
+    return { first_name: directFirst, last_name: directLast };
+  }
+  const fullName = String(endCustomer?.name || "").trim();
+  if (!fullName) return { first_name: "", last_name: "" };
+  const parts = fullName.split(/\s+/).filter(Boolean);
+  if (!parts.length) return { first_name: "", last_name: "" };
+  return {
+    first_name: parts[0] || "",
+    last_name: parts.slice(1).join(" "),
+  };
+}
+
+function buildCustomerName(customer = {}) {
+  const first = String(customer?.first_name || "").trim();
+  const last = String(customer?.last_name || "").trim();
+  const combined = [first, last].filter(Boolean).join(" ").trim();
+  if (combined) return combined;
+  return String(customer?.name || "").trim();
+}
+
 export const useQuoteStore = create((set, get) => ({
   quoteId: null,
   status: "draft",
@@ -147,6 +174,7 @@ export const useQuoteStore = create((set, get) => ({
   loadFromQuote(quote) {
     const q = quote || {};
     const end = q.end_customer || {};
+    const splitName = splitCustomerName(end);
     const lines = Array.isArray(q.lines) ? q.lines : [];
     const payload = q.payload || {};
     const dims = payload?.dimensions || {};
@@ -190,6 +218,9 @@ export const useQuoteStore = create((set, get) => ({
       endCustomer: {
         ...EMPTY_CUSTOMER,
         ...(end || {}),
+        first_name: splitName.first_name,
+        last_name: splitName.last_name,
+        name: buildCustomerName({ ...(end || {}), ...splitName }),
       },
       dimensions: {
         width: dims?.width ?? "",
@@ -299,7 +330,15 @@ export const useQuoteStore = create((set, get) => ({
   },
 
   setEndCustomer(patch) {
-    set((s) => ({ endCustomer: { ...s.endCustomer, ...(patch || {}) } }));
+    set((s) => {
+      const nextCustomer = { ...s.endCustomer, ...(patch || {}) };
+      return {
+        endCustomer: {
+          ...nextCustomer,
+          name: buildCustomerName(nextCustomer),
+        },
+      };
+    });
   },
 
   addLine(product) {
@@ -388,6 +427,7 @@ export const useQuoteStore = create((set, get) => ({
   buildPayloadForBack() {
     const s = get();
     const area_m2 = getSurfaceQuantity(s.dimensions);
+    const customerName = buildCustomerName(s.endCustomer);
 
     const lines = s.lines.map((l) => ({
       product_id: l.product_id,
@@ -403,7 +443,12 @@ export const useQuoteStore = create((set, get) => ({
     return {
       fulfillment_mode: s.fulfillmentMode,
       pricelist_id: s.pricelistId,
-      end_customer: s.endCustomer,
+      end_customer: {
+        ...s.endCustomer,
+        name: customerName,
+        first_name: String(s.endCustomer?.first_name || "").trim(),
+        last_name: String(s.endCustomer?.last_name || "").trim(),
+      },
       lines,
       payload: {
         margin_percent_ui: s.marginPercent,

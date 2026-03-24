@@ -5,7 +5,6 @@ import { useAuthStore } from "../../domain/auth/store.js";
 
 import { getPricelists, getPrices } from "../../api/odoo";
 import { createQuote, getQuote, confirmQuote, submitFinalQuote, updateQuote } from "../../api/quotes";
-import { syncDoorSaleByQuote } from "../../api/doors.js";
 import { downloadPresupuestoPdf, downloadProformaPdf } from "../../api/pdf";
 import toast from "react-hot-toast";
 
@@ -172,7 +171,8 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
   function validateDraft(payload) {
     const c = payload?.end_customer || {};
     const errs = [];
-    if (!String(c.name || "").trim()) errs.push("Completá el nombre del cliente.");
+    if (!String(c.first_name || "").trim()) errs.push("Completá el nombre del cliente.");
+    if (!String(c.last_name || "").trim()) errs.push("Completá el apellido del cliente.");
     if (!String(c.phone || "").trim()) errs.push("Completá el teléfono del cliente.");
     if (!Array.isArray(payload?.lines) || payload.lines.length === 0) errs.push("Agregá al menos un producto.");
     if (errs.length) throw new Error(errs[0]);
@@ -183,7 +183,8 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
     const c = payload?.end_customer || {};
     const p = payload?.payload || {};
     const errs = [];
-    if (!String(c.name || "").trim()) errs.push("Completá el nombre del cliente.");
+    if (!String(c.first_name || "").trim()) errs.push("Completá el nombre del cliente.");
+    if (!String(c.last_name || "").trim()) errs.push("Completá el apellido del cliente.");
     if (!String(c.address || "").trim()) errs.push("Completá la dirección del cliente.");
     if (!String(c.city || "").trim()) errs.push("Completá la localidad del cliente.");
     if (!String(p.payment_method || "").trim()) errs.push("Seleccioná la forma de pago.");
@@ -197,7 +198,8 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
   function validatePdfDownload(payload) {
     const c = payload?.end_customer || {};
     const errs = [];
-    if (!String(c.name || "").trim()) errs.push("Completá el nombre del cliente.");
+    if (!String(c.first_name || "").trim()) errs.push("Completá el nombre del cliente.");
+    if (!String(c.last_name || "").trim()) errs.push("Completá el apellido del cliente.");
     if (!String(c.phone || "").trim()) errs.push("Completá el teléfono del cliente.");
     if (!Array.isArray(payload?.lines) || payload.lines.length === 0) errs.push("Agregá al menos un producto.");
     if (errs.length) throw new Error(errs[0]);
@@ -232,6 +234,17 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
     const nextUrl = `/puertas/${workflowDoorId}?door_workflow=1&workflow_stage=${encodeURIComponent(workflowStage === "ipanel_first" ? "door_final" : workflowStage)}&ipanel_quote_id=${encodeURIComponent(savedQuote?.id || quoteId || idParam || "")}&porton_id=${encodeURIComponent(workflowPortonId || "")}`;
     navigate(nextUrl);
     return true;
+  }
+
+  function handleConfirmIntent() {
+    if (!isRevisionQuote && user?.is_distribuidor && (catalogKind || "porton") === "porton") {
+      const wantsToEditDeliveryPoint = window.confirm("¿Desea cambiar el punto de ubicación donde se entregará el portón?");
+      if (wantsToEditDeliveryPoint) {
+        toast("Actualizá dirección, localidad o Maps antes de confirmar.");
+        return;
+      }
+    }
+    setConfirmChoiceOpen(true);
   }
 
   const saveM = useMutation({
@@ -282,16 +295,6 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
         toast.success("Ipanel confirmado. Seguimos con el marco de puerta.");
         return;
       }
-      if (!isRevisionQuote && (catalogKind || "porton") === "porton") {
-        try {
-          const syncedDoor = await syncDoorSaleByQuote(q.id);
-          if (syncedDoor?.odoo_sale_order_name) {
-            toast.success(`Venta de puerta enviada a Odoo (${syncedDoor.odoo_sale_order_name}).`);
-          }
-        } catch (e) {
-          toast.error(e?.message || "No se pudo sincronizar la venta de la puerta.");
-        }
-      }
       navigate(`/presupuestos/${q.id}`);
       toast.success(isRevisionQuote ? "Cotización final enviada a Odoo." : "Presupuesto confirmado.");
     },
@@ -337,7 +340,7 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
           {user?.is_distribuidor ? <Button variant="secondary" onClick={onDownloadProforma}>PDF proforma</Button> : null}
           <Button onClick={() => saveM.mutate()} disabled={saveM.isPending}>{saveM.isPending ? "Guardando..." : "Guardar"}</Button>
           {!isAcopioRevision ? (
-            <Button variant="primary" onClick={() => { if (isRevisionQuote) { confirmM.mutate({}); return; } setConfirmChoiceOpen(true); }} disabled={!canConfirm || confirmM.isPending}>{confirmM.isPending ? "Confirmando..." : (isRevisionQuote ? "Enviar cotización final" : "Confirmar presupuesto")}</Button>
+            <Button variant="primary" onClick={() => { if (isRevisionQuote) { confirmM.mutate({}); return; } handleConfirmIntent(); }} disabled={!canConfirm || confirmM.isPending}>{confirmM.isPending ? "Confirmando..." : (isRevisionQuote ? "Enviar cotización final" : "Confirmar presupuesto")}</Button>
           ) : null}
         </div>
       </div>

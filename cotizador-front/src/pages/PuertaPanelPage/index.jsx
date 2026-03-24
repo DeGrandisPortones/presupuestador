@@ -62,7 +62,7 @@ export default function PuertaPanelPage() {
   const marcoReady = isMarcoComplete(door);
   const ipanelReady = isIpanelComplete(door, ipanelQ.data);
   const selectedMode = safe(door?.record?.fulfillment_mode || door?.linked_quote_fulfillment_mode);
-  const canSubmitStandalone = canSellerEdit && !isLinkedDoor && marcoReady && ipanelReady && door?.status === "draft";
+  const canSubmitDoor = canSellerEdit && marcoReady && ipanelReady && door?.status === "draft";
 
   return (
     <div className="container">
@@ -105,22 +105,17 @@ export default function PuertaPanelPage() {
           </div>
 
           <div className="spacer" />
-          {!isLinkedDoor && (
-            <div className="card">
-              <div style={{ fontWeight: 900, marginBottom: 10 }}>Enviar la puerta</div>
-              <div className="muted" style={{ marginBottom: 12 }}>La puerta solo se puede enviar cuando estén completos el <b>Marco</b> y el <b>Ipanel</b>.</div>
-              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                <Button variant={selectedMode === "acopio" ? "primary" : "ghost"} disabled={!canSubmitStandalone || submitM.isPending} onClick={() => submitM.mutate("acopio")}>Enviar a Acopio</Button>
-                <Button variant={selectedMode === "produccion" ? "primary" : "ghost"} disabled={!canSubmitStandalone || submitM.isPending} onClick={() => submitM.mutate("produccion")}>Enviar a Producción</Button>
-              </div>
+          <div className="card">
+            <div style={{ fontWeight: 900, marginBottom: 10 }}>Enviar la puerta</div>
+            <div className="muted" style={{ marginBottom: 12 }}>
+              La puerta se puede enviar cuando estén completos el <b>Marco</b> y el <b>Ipanel</b>. Si está vinculada a un portón, ahora se gestiona por separado.
             </div>
-          )}
-          {isLinkedDoor && (
-            <div className="card" style={{ background: "#fafafa" }}>
-              <div style={{ fontWeight: 900, marginBottom: 8 }}>Puerta vinculada</div>
-              <div className="muted">La puerta vinculada sigue el circuito del presupuesto del portón. Se envía a aprobación cuando confirmás el portón y toma el mismo destino.</div>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <Button variant={selectedMode === "acopio" ? "primary" : "ghost"} disabled={!canSubmitDoor || submitM.isPending} onClick={() => submitM.mutate("acopio")}>Enviar a Acopio</Button>
+              <Button variant={selectedMode === "produccion" ? "primary" : "ghost"} disabled={!canSubmitDoor || submitM.isPending} onClick={() => submitM.mutate("produccion")}>Enviar a Producción</Button>
             </div>
-          )}
+            {isLinkedDoor ? <div className="muted" style={{ marginTop: 10 }}>Puerta vinculada: el destino y la confirmación se manejan desde esta propia puerta.</div> : null}
+          </div>
         </>
       ) : (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 14 }}>
@@ -141,16 +136,6 @@ export default function PuertaPanelPage() {
             <div className="muted">Ítems: <b>{Array.isArray(ipanelQ.data?.lines) ? ipanelQ.data.lines.length : 0}</b></div>
             <div className="muted">Forma de pago: <b>{ipanelQ.data?.payload?.payment_method || "—"}</b></div>
             <div className="muted">Condición: <b>{ipanelQ.data?.payload?.condition_mode === "special" ? (ipanelQ.data?.payload?.condition_text || "Especial") : (ipanelQ.data?.payload?.condition_mode || "—")}</b></div>
-            {ipanelQ.data?.lines?.length ? (
-              <div style={{ marginTop: 10 }}>
-                <div className="muted" style={{ marginBottom: 6 }}>Productos</div>
-                <ul style={{ margin: 0, paddingLeft: 18 }}>
-                  {ipanelQ.data.lines.map((line, idx) => (
-                    <li key={`${line.product_id}-${idx}`}>{line.name || line.raw_name || `Producto ${line.product_id}`} · {line.qty}</li>
-                  ))}
-                </ul>
-              </div>
-            ) : null}
           </div>
         </div>
       )}
