@@ -11,11 +11,7 @@ import toast from "react-hot-toast";
 import { useQuoteStore } from "../../domain/quote/store";
 import { IVA_RATE_DEFAULT } from "../../domain/quote/defaults";
 import { calcTotals } from "../../domain/quote/pricing";
-import {
-  validateArgentinaPhone,
-  validateEmailAddress,
-  validateGoogleMapsUrl,
-} from "../../utils/contactValidation.js";
+import { validateArgentinaPhone, validateEmailAddress, validateGoogleMapsUrl } from "../../utils/contactValidation.js";
 
 import Button from "../../ui/Button.jsx";
 
@@ -24,6 +20,13 @@ import PortonDimensions from "./components/PortonDimensions";
 import SectionCatalog from "./components/SectionCatalog";
 import LinesTable from "./components/LinesTable";
 import SummaryBox from "./components/SummaryBox";
+
+function editorBasePath(kind = "porton") {
+  const normalized = String(kind || "porton").toLowerCase();
+  if (normalized === "ipanel") return "/cotizador/ipanel";
+  if (normalized === "otros") return "/cotizador/otros";
+  return "/cotizador";
+}
 
 export default function CotizadorPage({ catalogKind = "porton" }) {
   const navigate = useNavigate();
@@ -39,21 +42,7 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
   const workflowDoorId = String(searchParams.get("door_id") || "").trim();
   const workflowPortonId = String(searchParams.get("porton_id") || "").trim();
 
-  const {
-    quoteId,
-    status,
-    pricelistId,
-    marginPercent,
-    partnerId,
-    lines,
-    setPricelist,
-    applyBasePrices,
-    loadFromQuote,
-    reset,
-    setEndCustomer,
-    buildPayloadForBack,
-    setQuoteMeta,
-  } = useQuoteStore();
+  const { quoteId, status, pricelistId, marginPercent, partnerId, lines, setPricelist, applyBasePrices, loadFromQuote, reset, setEndCustomer, buildPayloadForBack, setQuoteMeta } = useQuoteStore();
 
   const [ivaRate] = useState(IVA_RATE_DEFAULT);
   const [confirmChoiceOpen, setConfirmChoiceOpen] = useState(false);
@@ -71,18 +60,13 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
     if (!pricelistId && pricelistsQ.data?.length) setPricelist(pricelistsQ.data[0]);
   }, [pricelistId, pricelistsQ.data, setPricelist]);
 
-  const quoteQ = useQuery({
-    queryKey: ["quote", idParam],
-    queryFn: () => getQuote(idParam),
-    enabled: !!idParam,
-  });
+  const quoteQ = useQuery({ queryKey: ["quote", idParam], queryFn: () => getQuote(idParam), enabled: !!idParam });
 
   useEffect(() => {
     if (!quoteQ.data) return;
-    const qKind = (quoteQ.data.catalog_kind || "porton").toString().toLowerCase();
+    const qKind = String(quoteQ.data?.payload?.quote_subkind || quoteQ.data.catalog_kind || "porton").toLowerCase();
     if (qKind !== (catalogKind || "porton")) {
-      const id = String(quoteQ.data.id);
-      navigate(qKind === "ipanel" ? `/cotizador/ipanel/${id}` : `/cotizador/${id}`, { replace: true });
+      navigate(`${editorBasePath(qKind)}/${quoteQ.data.id}`, { replace: true });
       return;
     }
     loadFromQuote(quoteQ.data);
@@ -93,29 +77,13 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
   const isRevisionQuote = (quoteQ.data?.quote_kind || "original") === "copy";
   const finalStatus = String(quoteQ.data?.final_status || "");
   const isAcopioRevision = isRevisionQuote && String(quoteQ.data?.fulfillment_mode || "").trim() === "acopio";
-  const visibleQuoteNumber = String(
-    quoteQ.data?.quote_number ||
-    quoteQ.data?.odoo_sale_order_name ||
-    quoteId ||
-    idParam ||
-    ""
-  ).trim();
-  const visibleParentQuoteNumber = String(
-    quoteQ.data?.parent_quote_number ||
-    quoteQ.data?.parent_quote_quote_number ||
-    quoteQ.data?.parent_odoo_sale_order_name ||
-    quoteQ.data?.parent_quote_id ||
-    ""
-  ).trim();
+  const visibleQuoteNumber = String(quoteQ.data?.quote_number || quoteQ.data?.odoo_sale_order_name || quoteId || idParam || "").trim();
+  const visibleParentQuoteNumber = String(quoteQ.data?.parent_quote_number || quoteQ.data?.parent_quote_quote_number || quoteQ.data?.parent_odoo_sale_order_name || quoteQ.data?.parent_quote_id || "").trim();
 
   useEffect(() => {
     async function run() {
       if (!pricelistId || !lines.length) return;
-      const payload = {
-        pricelist_id: pricelistId,
-        partner_id: partnerId,
-        lines: lines.map((l) => ({ product_id: l.product_id, qty: l.qty })),
-      };
+      const payload = { pricelist_id: pricelistId, partner_id: partnerId, lines: lines.map((l) => ({ product_id: l.product_id, qty: l.qty })) };
       const data = await getPrices(payload);
       applyBasePrices(data);
     }
@@ -128,14 +96,7 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
     if (user?.is_distribuidor && !user?.is_vendedor) return "distribuidor";
     return "vendedor";
   }
-
-  function withCreatorRole(payload) {
-    return {
-      ...(payload || {}),
-      created_by_role: resolveCreatedByRole(),
-    };
-  }
-
+  function withCreatorRole(payload) { return { ...(payload || {}), created_by_role: resolveCreatedByRole() }; }
   function normalizeNoteWithSeller(note) {
     const sellerLabel = String(user?.full_name || user?.username || "").trim();
     const raw = String(note || "").trim();
@@ -145,17 +106,10 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
     filtered.push(`Vendedor: ${sellerLabel}`);
     return filtered.join("\n");
   }
-
   function getDraftPayload() {
     const base = buildPayloadForBack() || {};
-    return withCreatorRole({
-      ...base,
-      catalog_kind: catalogKind,
-      fulfillment_mode: base?.fulfillment_mode || "acopio",
-      note: normalizeNoteWithSeller(base?.note),
-    });
+    return withCreatorRole({ ...base, catalog_kind: catalogKind === "otros" ? "porton" : catalogKind, fulfillment_mode: base?.fulfillment_mode || "acopio", note: normalizeNoteWithSeller(base?.note), payload: { ...(base?.payload || {}), quote_subkind: catalogKind } });
   }
-
   function validateCustomerContact(customer, { requirePhone = false, requireMaps = false, requireCity = false } = {}) {
     const c = customer || {};
     const city = String(c.city || "").trim();
@@ -167,7 +121,6 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
     const mapsErr = validateGoogleMapsUrl(c.maps_url, { required: requireMaps });
     if (mapsErr) throw new Error(mapsErr);
   }
-
   function validateDraft(payload) {
     const c = payload?.end_customer || {};
     const errs = [];
@@ -176,9 +129,8 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
     if (!String(c.phone || "").trim()) errs.push("Completá el teléfono del cliente.");
     if (!Array.isArray(payload?.lines) || payload.lines.length === 0) errs.push("Agregá al menos un producto.");
     if (errs.length) throw new Error(errs[0]);
-    validateCustomerContact(c, { requirePhone: true, requireMaps: false, requireCity: false });
+    validateCustomerContact(c, { requirePhone: true });
   }
-
   function validateConfirm(payload) {
     const c = payload?.end_customer || {};
     const p = payload?.payload || {};
@@ -194,7 +146,6 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
     if (errs.length) throw new Error(errs[0]);
     validateCustomerContact(c, { requirePhone: true, requireMaps: true, requireCity: true });
   }
-
   function validatePdfDownload(payload) {
     const c = payload?.end_customer || {};
     const errs = [];
@@ -203,7 +154,7 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
     if (!String(c.phone || "").trim()) errs.push("Completá el teléfono del cliente.");
     if (!Array.isArray(payload?.lines) || payload.lines.length === 0) errs.push("Agregá al menos un producto.");
     if (errs.length) throw new Error(errs[0]);
-    validateCustomerContact(c, { requirePhone: true, requireMaps: false, requireCity: false });
+    validateCustomerContact(c, { requirePhone: true });
   }
 
   async function persistDraftForPdf() {
@@ -214,19 +165,8 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
     else q = await createQuote(payload);
     setQuoteMeta({ quoteId: q.id, status: q.status, rejectionNotes: q.rejection_notes });
     qc.invalidateQueries({ queryKey: ["quotes", "mine"] });
-    if (!quoteId) {
-      navigate(catalogKind === "ipanel" ? `/cotizador/ipanel/${q.id}${location.search || ""}` : `/cotizador/${q.id}${location.search || ""}`, { replace: true });
-    }
-    return {
-      quote: q,
-      payload: {
-        ...payload,
-        id: q.id,
-        quote_id: q.id,
-        quote_number: q.quote_number || q.id,
-        seller_name: user?.full_name || user?.username || "",
-      },
-    };
+    if (!quoteId) navigate(`${editorBasePath(catalogKind)}/${q.id}${location.search || ""}`, { replace: true });
+    return { quote: q, payload: { ...payload, id: q.id, quote_id: q.id, quote_number: q.quote_number || q.id, seller_name: user?.full_name || user?.username || "" } };
   }
 
   function maybeContinueDoorWorkflow(savedQuote) {
@@ -261,7 +201,7 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
         toast.success("Ipanel guardado. Seguimos con el marco de puerta.");
         return;
       }
-      navigate(catalogKind === "ipanel" ? `/cotizador/ipanel/${q.id}` : `/cotizador/${q.id}`);
+      navigate(`${editorBasePath(catalogKind)}/${q.id}`);
       toast.success("Guardado.");
     },
     onError: (e) => toast.error(e?.message || "No se pudo guardar"),
@@ -270,11 +210,7 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
   const confirmM = useMutation({
     mutationFn: async (variables) => {
       const chosenMode = String(variables?.fulfillmentMode || buildPayloadForBack()?.fulfillment_mode || "acopio").trim();
-      const payload = {
-        ...getDraftPayload(),
-        catalog_kind: catalogKind,
-        fulfillment_mode: chosenMode,
-      };
+      const payload = { ...getDraftPayload(), catalog_kind: catalogKind, fulfillment_mode: chosenMode };
       validateConfirm(payload);
       let id = quoteId || idParam;
       if (id) {
@@ -306,32 +242,29 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
       const { payload } = await persistDraftForPdf();
       validatePdfDownload(payload);
       await downloadPresupuestoPdf(payload);
-    } catch (e) {
-      toast.error(e?.response?.data?.error || e.message);
-    }
+    } catch (e) { toast.error(e?.response?.data?.error || e.message); }
   };
-
   const onDownloadProforma = async () => {
     try {
       const { payload } = await persistDraftForPdf();
       validatePdfDownload(payload);
       await downloadProformaPdf(payload);
-    } catch (e) {
-      toast.error(e?.response?.data?.error || e.message);
-    }
+    } catch (e) { toast.error(e?.response?.data?.error || e.message); }
   };
 
-  const canConfirm = isAcopioRevision
-    ? false
-    : (isRevisionQuote ? ["", "draft", "rejected"].includes(finalStatus || "") : ["draft", "rejected_commercial", "rejected_technical"].includes(status));
+  const canConfirm = isAcopioRevision ? false : (isRevisionQuote ? ["", "draft", "rejected"].includes(finalStatus || "") : ["draft", "rejected_commercial", "rejected_technical"].includes(status));
+
+  const pageTitle = catalogKind === "ipanel" ? "Presupuesto Ipanel" : (catalogKind === "otros" ? "Presupuesto Otros" : "Presupuesto");
+  const logoSrc = catalogKind === "ipanel" ? "/brands/ipanel.png" : "/brands/degrandis.png";
+  const logoAlt = catalogKind === "ipanel" ? "Ipanel" : "DeGrandis Portones";
 
   return (
     <div className="container">
       <div className="card" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <img className="product-logo" src={catalogKind === "ipanel" ? "/brands/ipanel.png" : "/brands/degrandis.png"} alt={catalogKind === "ipanel" ? "Ipanel" : "DeGrandis Portones"} />
+          <img className="product-logo" src={logoSrc} alt={logoAlt} />
           <div>
-            <h2 style={{ margin: 0 }}>{visibleQuoteNumber ? `${isRevisionQuote ? "Ajuste" : "Presupuesto"} #${visibleQuoteNumber}` : "Nuevo presupuesto"}</h2>
+            <h2 style={{ margin: 0 }}>{visibleQuoteNumber ? `${isRevisionQuote ? "Ajuste" : pageTitle} #${visibleQuoteNumber}` : `Nuevo ${pageTitle.toLowerCase()}`}</h2>
             <div className="muted">Estado: <b>{isRevisionQuote ? (finalStatus || status) : status}</b>{isRevisionQuote && quoteQ.data?.parent_quote_id ? <> · Ref. original: <b>{visibleParentQuoteNumber || String(quoteQ.data.parent_quote_id).slice(0, 8)}</b></> : null}</div>
           </div>
         </div>
@@ -339,52 +272,41 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
           <Button variant="secondary" onClick={onDownloadPresupuesto}>PDF presupuesto</Button>
           {user?.is_distribuidor ? <Button variant="secondary" onClick={onDownloadProforma}>PDF proforma</Button> : null}
           <Button onClick={() => saveM.mutate()} disabled={saveM.isPending}>{saveM.isPending ? "Guardando..." : "Guardar"}</Button>
-          {!isAcopioRevision ? (
-            <Button variant="primary" onClick={() => { if (isRevisionQuote) { confirmM.mutate({}); return; } handleConfirmIntent(); }} disabled={!canConfirm || confirmM.isPending}>{confirmM.isPending ? "Confirmando..." : (isRevisionQuote ? "Enviar cotización final" : "Confirmar presupuesto")}</Button>
-          ) : null}
+          {!isAcopioRevision ? <Button variant="primary" onClick={() => { if (isRevisionQuote) { confirmM.mutate({}); return; } handleConfirmIntent(); }} disabled={!canConfirm || confirmM.isPending}>{confirmM.isPending ? "Confirmando..." : (isRevisionQuote ? "Enviar cotización final" : "Confirmar presupuesto")}</Button> : null}
         </div>
       </div>
 
-      {isAcopioRevision ? (
-        <div className="spacer" />
-      ) : null}
-      {isAcopioRevision ? (
-        <div className="card" style={{ background: "#fff8f3", border: "1px solid #f2d3bf" }}>
-          <div style={{ fontWeight: 900, marginBottom: 6 }}>Ajuste de presupuesto en Acopio</div>
-          <div className="muted">
-            Este ajuste no se envía desde acá. Guardá los cambios y luego usá <b>Solicitar paso a Producción</b> desde <b>Mis presupuestos</b>. Cuando Comercial y Técnica aprueben ese paso, el sistema enviará la venta final a Odoo.
-          </div>
-        </div>
-      ) : null}
+      {isAcopioRevision ? <div className="spacer" /> : null}
+      {isAcopioRevision ? <div className="card" style={{ background: "#fff8f3", border: "1px solid #f2d3bf" }}><div style={{ fontWeight: 900, marginBottom: 6 }}>Ajuste de presupuesto en Acopio</div><div className="muted">Este ajuste no se envía desde acá. Guardá los cambios y luego usá <b>Solicitar paso a Producción</b> desde <b>Mis presupuestos</b>. Cuando Comercial y Técnica aprueben ese paso, el sistema enviará la venta final a Odoo.</div></div> : null}
 
-      {!isRevisionQuote && confirmChoiceOpen && (
+      {!isRevisionQuote && confirmChoiceOpen ? (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0, 0, 0, 0.45)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20, zIndex: 1000 }} onClick={() => { if (!confirmM.isPending) setConfirmChoiceOpen(false); }}>
           <div className="card" style={{ width: "100%", maxWidth: 880, background: "#fff", border: "1px solid #ddd", boxShadow: "0 20px 60px rgba(0,0,0,0.18)" }} onClick={(e) => e.stopPropagation()}>
             <div style={{ fontWeight: 900, fontSize: 22, marginBottom: 6 }}>Elegí el destino del presupuesto</div>
-            <div className="muted" style={{ marginBottom: 18 }}>Esta decisión cambia cómo sigue el circuito del portón después de confirmar.</div>
+            <div className="muted" style={{ marginBottom: 18 }}>Esta decisión cambia cómo sigue el circuito del presupuesto después de confirmar.</div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 14 }}>
               <div style={{ border: "1px solid #d9e5f7", background: "#f7fbff", borderRadius: 14, padding: 16 }}>
                 <div style={{ fontWeight: 900, fontSize: 18, marginBottom: 8 }}>Acopio</div>
-                <div className="muted" style={{ marginBottom: 14 }}>El portón queda en espera. Se podrá seguir gestionando desde <b>Acopio → Producción</b> y mantiene una instancia de edición.</div>
+                <div className="muted" style={{ marginBottom: 14 }}>El presupuesto queda en espera. Se podrá seguir gestionando desde <b>Acopio → Producción</b> y mantiene una instancia de edición.</div>
                 <Button onClick={() => confirmM.mutate({ fulfillmentMode: "acopio" })} disabled={confirmM.isPending}>{confirmM.isPending ? "Confirmando..." : "Confirmar en Acopio"}</Button>
               </div>
               <div style={{ border: "1px solid #f2d3bf", background: "#fff8f3", borderRadius: 14, padding: 16 }}>
                 <div style={{ fontWeight: 900, fontSize: 18, marginBottom: 8 }}>Producción</div>
-                <div className="muted" style={{ marginBottom: 14 }}>El portón entra directo en circuito productivo. Ya no podrá editarse desde <b>Presupuestos</b>.</div>
+                <div className="muted" style={{ marginBottom: 14 }}>El presupuesto entra directo en circuito productivo. Ya no podrá editarse desde <b>Presupuestos</b>.</div>
                 <Button variant="primary" onClick={() => confirmM.mutate({ fulfillmentMode: "produccion" })} disabled={confirmM.isPending}>{confirmM.isPending ? "Confirmando..." : "Confirmar en Producción"}</Button>
               </div>
             </div>
             <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 16 }}><Button variant="ghost" onClick={() => setConfirmChoiceOpen(false)} disabled={confirmM.isPending}>Cancelar</Button></div>
           </div>
         </div>
-      )}
+      ) : null}
 
       <div className="spacer" />
       <HeaderBar pricelists={pricelistsQ.data || []} loadingPricelists={pricelistsQ.isLoading} showMargin />
       <div className="spacer" />
       <div className="row quote-row">
         <div className="card" style={{ flex: 1, minWidth: 320 }}>
-          <PortonDimensions />
+          <PortonDimensions kind={catalogKind} />
           <div className="spacer" />
           <SectionCatalog kind={catalogKind} />
         </div>
@@ -394,9 +316,9 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
           <SummaryBox totals={totals} />
         </div>
       </div>
-      {(saveM.isError || confirmM.isError) && <div className="spacer" />}
-      {saveM.isError && <div style={{ color: "#d93025", fontSize: 13 }}>{saveM.error.message}</div>}
-      {confirmM.isError && <div style={{ color: "#d93025", fontSize: 13 }}>{confirmM.error.message}</div>}
+      {(saveM.isError || confirmM.isError) ? <div className="spacer" /> : null}
+      {saveM.isError ? <div style={{ color: "#d93025", fontSize: 13 }}>{saveM.error.message}</div> : null}
+      {confirmM.isError ? <div style={{ color: "#d93025", fontSize: 13 }}>{confirmM.error.message}</div> : null}
     </div>
   );
 }

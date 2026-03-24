@@ -7,6 +7,7 @@ import PuertasPage from "./pages/PuertasPage/index.jsx";
 
 const CotizadorPortonRoute = () => <CotizadorPage catalogKind="porton" />;
 const CotizadorIpanelRoute = () => <CotizadorPage catalogKind="ipanel" />;
+const CotizadorOtrosRoute = () => <CotizadorPage catalogKind="otros" />;
 
 import LoginPage from "./pages/LoginPage/index.jsx";
 
@@ -64,6 +65,8 @@ export default function App() {
           <Route path="cotizador/:id" element={<CotizadorPortonRoute />} />
           <Route path="cotizador/ipanel" element={<CotizadorIpanelRoute />} />
           <Route path="cotizador/ipanel/:id" element={<CotizadorIpanelRoute />} />
+          <Route path="cotizador/otros" element={<CotizadorOtrosRoute />} />
+          <Route path="cotizador/otros/:id" element={<CotizadorOtrosRoute />} />
 
           <Route path="puertas" element={<PuertasPage />} />
           <Route path="puertas/nuevo/:quoteId" element={<PuertaWorkflowPage />} />

@@ -29,14 +29,7 @@ export default function PortonDimensions({ kind = "porton" }) {
   const user = useAuthStore((s) => s.user);
 
   const showTypeSelector = (kind || "porton") === "porton";
-
-  const catalogQ = useQuery({
-    queryKey: ["catalog-bootstrap-porton-type-select"],
-    queryFn: () => getCatalogBootstrap("porton"),
-    staleTime: 60 * 1000,
-    enabled: showTypeSelector,
-  });
-
+  const catalogQ = useQuery({ queryKey: ["catalog-bootstrap-porton-type-select"], queryFn: () => getCatalogBootstrap("porton"), staleTime: 60 * 1000, enabled: showTypeSelector });
   const typeVisibility = catalogQ.data?.type_visibility || {};
   const visibleTypes = useMemo(() => PORTON_TYPES.filter((t) => isTypeVisibleForUser(typeVisibility[t.key], user)), [typeVisibility, user]);
 
@@ -56,6 +49,8 @@ export default function PortonDimensions({ kind = "porton" }) {
     return Number.isFinite(a) ? a : 0;
   }, [width, height]);
 
+  const title = showTypeSelector ? "Medidas del portón" : ((kind || "") === "ipanel" ? "Medidas del Ipanel" : "Medidas del presupuesto");
+
   return (
     <div>
       {showTypeSelector ? (
@@ -69,7 +64,7 @@ export default function PortonDimensions({ kind = "porton" }) {
         </>
       ) : null}
 
-      <div style={{ fontWeight: 800, marginBottom: 8 }}>{showTypeSelector ? "Medidas del portón" : "Medidas del Ipanel"}</div>
+      <div style={{ fontWeight: 800, marginBottom: 8 }}>{title}</div>
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end" }}>
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
           <div className="muted">Ancho (m)</div>
@@ -84,9 +79,7 @@ export default function PortonDimensions({ kind = "porton" }) {
           <div style={{ fontWeight: 800, fontSize: 16 }}>{area ? `${area.toFixed(2)} m²` : "–"}</div>
         </div>
       </div>
-      <div className="muted" style={{ marginTop: 8 }}>
-        Estas medidas se guardan dentro del presupuesto (payload) para usarlas después en el cálculo de cantidades.
-      </div>
+      <div className="muted" style={{ marginTop: 8 }}>Estas medidas se guardan dentro del presupuesto (payload) para usarlas después en el cálculo de cantidades.</div>
     </div>
   );
 }

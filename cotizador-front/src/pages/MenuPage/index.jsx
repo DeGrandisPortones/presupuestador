@@ -33,7 +33,6 @@ export default function MenuPage() {
   const user = useAuthStore((s) => s.user);
 
   const isSuperuser = !!user?.is_superuser;
-
   const canQuote = !!(isSuperuser || user?.is_vendedor || user?.is_distribuidor);
   const showDashboard = !!(isSuperuser || user?.is_enc_comercial);
   const showCommercialInbox = !!(isSuperuser || user?.is_enc_comercial);
@@ -45,13 +44,10 @@ export default function MenuPage() {
   return (
     <div className="container">
       <div className="spacer" />
-
       <div className="card">
         <h2 style={{ margin: 0, textAlign: "center" }}>Menú</h2>
       </div>
-
       <div className="spacer" />
-
       <div className="menu-grid">
         {canQuote && (
           <MenuTile
@@ -70,6 +66,22 @@ export default function MenuPage() {
             onClick={() => navigate("/cotizador/ipanel")}
             logoSrc="/brands/ipanel.png"
             logoAlt="Ipanel"
+          />
+        )}
+
+        {canQuote && (
+          <MenuTile
+            title="Presupuesto Otros"
+            description="Circuito de presupuestos para productos fuera de Portones e Ipanel."
+            buttonText="Ir al cotizador"
+            onClick={() => navigate("/cotizador/otros")}
+            icon={
+              <SvgIcon>
+                <path d="M4 5h16v14H4z" />
+                <path d="M8 9h8" />
+                <path d="M8 13h8" />
+              </SvgIcon>
+            }
           />
         )}
 
@@ -172,7 +184,7 @@ export default function MenuPage() {
               title="Mediciones"
               description="Asignación y seguimiento de portones a medir."
               buttonText="Abrir mediciones"
-              onClick={() => navigate("/aprobacion/tecnica?tab=mediciones")}
+              onClick={() => navigate("/aprobacion/tecnica?tab=aprobaciones_mediciones")}
               icon={
                 <SvgIcon>
                   <path d="M4 7l3-3 13 13-3 3z" />

@@ -30,14 +30,10 @@ export default function AppLayout() {
   return (
     <div>
       <div className="card app-header" style={{ borderRadius: 0 }}>
-        <div
-          className="container"
-          style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: 0 }}
-        >
+        <div className="container" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: 0 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
             <img className="brand-logo" src="/brands/dflex.png" alt="Dflex" />
             <div>
-
               <div className="muted">{user ? `${user.username} · ${roleText}` : roleText}</div>
             </div>
           </div>
@@ -54,55 +50,30 @@ export default function AppLayout() {
         </div>
 
         <div className="container" style={{ padding: 0, marginTop: 10, display: "flex", gap: 10, flexWrap: "wrap" }}>
-          <NavLink className={({ isActive }) => (isActive ? "navlink active" : "navlink")} to="/menu">
-            Menú
-          </NavLink>
+          <NavLink className={({ isActive }) => (isActive ? "navlink active" : "navlink")} to="/menu">Menú</NavLink>
 
           {canQuote && (
             <>
               <NavLink className={({ isActive }) => (isActive ? "navlink active" : "navlink")} to="/cotizador" end>
                 Cotizador Portones
               </NavLink>
-
               <NavLink className={({ isActive }) => (isActive ? "navlink active" : "navlink")} to="/cotizador/ipanel">
                 Cotizador Ipanel
               </NavLink>
-
+              <NavLink className={({ isActive }) => (isActive ? "navlink active" : "navlink")} to="/cotizador/otros">
+                Presupuesto Otros
+              </NavLink>
               <NavLink className={({ isActive }) => (isActive ? "navlink active" : "navlink")} to="/presupuestos">
                 Mis presupuestos
               </NavLink>
             </>
           )}
 
-          {showMediciones && (
-            <NavLink className={({ isActive }) => (isActive ? "navlink active" : "navlink")} to="/mediciones">
-              Mediciones
-            </NavLink>
-          )}
-
-          {showCommercial && (
-            <NavLink className={({ isActive }) => (isActive ? "navlink active" : "navlink")} to="/aprobacion/comercial">
-              Aprobación Comercial
-            </NavLink>
-          )}
-
-          {showDashboard && (
-            <NavLink className={({ isActive }) => (isActive ? "navlink active" : "navlink")} to="/dashboard">
-              Dashboard
-            </NavLink>
-          )}
-
-          {showUsers && (
-            <NavLink className={({ isActive }) => (isActive ? "navlink active" : "navlink")} to="/usuarios">
-              Gestor de usuarios
-            </NavLink>
-          )}
-
-          {showTechnical && (
-            <NavLink className={({ isActive }) => (isActive ? "navlink active" : "navlink")} to="/aprobacion/tecnica">
-              Revisión Técnica
-            </NavLink>
-          )}
+          {showMediciones && <NavLink className={({ isActive }) => (isActive ? "navlink active" : "navlink")} to="/mediciones">Mediciones</NavLink>}
+          {showCommercial && <NavLink className={({ isActive }) => (isActive ? "navlink active" : "navlink")} to="/aprobacion/comercial">Aprobación Comercial</NavLink>}
+          {showDashboard && <NavLink className={({ isActive }) => (isActive ? "navlink active" : "navlink")} to="/dashboard">Dashboard</NavLink>}
+          {showUsers && <NavLink className={({ isActive }) => (isActive ? "navlink active" : "navlink")} to="/usuarios">Gestor de usuarios</NavLink>}
+          {showTechnical && <NavLink className={({ isActive }) => (isActive ? "navlink active" : "navlink")} to="/aprobacion/tecnica">Revisión Técnica</NavLink>}
         </div>
       </div>
 
