@@ -60,6 +60,12 @@ const MEASUREMENT_FIELDS = [
   ]},
 ];
 
+const CATALOG_KIND_OPTIONS = [
+  { key: "porton", label: "Portones" },
+  { key: "ipanel", label: "Ipanel" },
+  { key: "otros", label: "Otros" },
+];
+
 function norm(x) {
   return (x || "").toString().trim().toLowerCase();
 }
@@ -247,8 +253,9 @@ export default function DashboardPage() {
       <div className="card" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
         <div><h2 style={{ margin: 0 }}>Dashboard del Presupuestador</h2><div className="muted">Configuración de catálogo, medición y cotización final</div></div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <Button variant={catalogKind === "porton" ? "primary" : "ghost"} onClick={() => setCatalogKind("porton")}>Portones</Button>
-          <Button variant={catalogKind === "ipanel" ? "primary" : "ghost"} onClick={() => setCatalogKind("ipanel")}>Ipanel</Button>
+          {CATALOG_KIND_OPTIONS.map((option) => (
+            <Button key={option.key} variant={catalogKind === option.key ? "primary" : "ghost"} onClick={() => setCatalogKind(option.key)}>{option.label}</Button>
+          ))}
         </div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}><Button variant="ghost" onClick={onRefresh} disabled={catalogQ.isLoading}>Refrescar catálogo</Button></div>
       </div>
