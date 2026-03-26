@@ -1,0 +1,145 @@
+APLICAR SOBRE: cotizador-back/src/routes/quotes.routes.js
+
+1) Agregar estas funciones helper después de appendPaymentMethodToNote(...):
+
+function normalizeBillingCustomer(value) {
+  const raw = value && typeof value === "object" ? value : {};
+  return {
+    name: toText(raw?.name),
+    vat: toText(raw?.vat),
+    email: toText(raw?.email).toLowerCase(),
+    phone: toText(raw?.phone),
+    address: toText(raw?.address || raw?.street),
+    city: toText(raw?.city),
+  };
+}
+function hasBillingCustomerData(value) {
+  const c = normalizeBillingCustomer(value);
+  return !!(c.name || c.vat || c.email || c.phone || c.address || c.city);
+}
+function getQuoteConditionMode(quote) {
+  return String(quote?.payload?.condition_mode || "cond1").trim().toLowerCase();
+}
+function requiresBillingCustomerForQuote(quote) {
+  return quote?.created_by_role === "vendedor" && ["cond1", "special"].includes(getQuoteConditionMode(quote));
+}
+function validateBillingCustomerRequired(value) {
+  const c = normalizeBillingCustomer(value);
+  if (!c.name) return "Falta razón social / nombre fiscal";
+  if (!c.vat) return "Falta documento / CUIT";
+  if (!c.phone) return "Falta teléfono fiscal";
+  if (!c.address) return "Falta dirección fiscal";
+  if (!c.city) return "Falta localidad fiscal";
+  return null;
+}
+function resolveCustomerForOdoo(quote) {
+  if (requiresBillingCustomerForQuote(quote)) {
+    const c = normalizeBillingCustomer(quote?.payload?.billing_customer || {});
+    return {
+      name: c.name,
+      vat: c.vat,
+      email: c.email,
+      phone: c.phone,
+      address: c.address,
+      street: c.address,
+      city: c.city,
+    };
+  }
+  return quote?.end_customer || {};
+}
+function extractReferenceCore(value) {
+  const raw = toText(value);
+  if (!raw) return "";
+  return raw.replace(/^(NV|NP|S)+/i, "");
+}
+
+2) En findOrCreateCustomerPartner(...), cambiar el create para que incluya vat:
+
+const created = await odoo.executeKw("res.partner", "create", [{
+  name,
+  vat: toText(customer?.vat) || false,
+  email: email || false,
+  phone: phone || false,
+  street: toText(customer?.street) || toText(customer?.address) || false,
+  city: toText(customer?.city) || false,
+  customer_rank: 1,
+}]);
+
+3) En syncQuoteToOdoo(...), reemplazar la rama vendedor:
+
+  if (quote.created_by_role === "distribuidor") {
+    partnerId = toIntId(quote?.bill_to_odoo_partner_id) || await getCreatorOdooPartnerId(quote.created_by_user_id) || toIntId(approverUser?.odoo_partner_id);
+    if (!partnerId) throw new Error("Distribuidor sin bill_to_odoo_partner_id (quote) y sin odoo_partner_id (JWT/DB)");
+  } else {
+    partnerId = await findOrCreateCustomerPartner(odoo, resolveCustomerForOdoo(quote));
+  }
+
+4) En syncQuoteToOdoo(...), cambiar el prefijo del primer envío:
+
+const orderReference = quote?.quote_number ? `NP${quote.quote_number}` : null;
+
+5) En syncFinalQuoteToOdoo(...), reemplazar la rama vendedor:
+
+  if (originalQuote.created_by_role === "distribuidor") {
+    partnerId = toIntId(originalQuote?.bill_to_odoo_partner_id) || await getCreatorOdooPartnerId(originalQuote.created_by_user_id) || toIntId(approverUser?.odoo_partner_id);
+    if (!partnerId) throw new Error("Distribuidor sin partner en Odoo");
+  } else {
+    partnerId = await findOrCreateCustomerPartner(odoo, resolveCustomerForOdoo(originalQuote));
+  }
+
+6) En syncFinalQuoteToOdoo(...), cambiar referenceNv por:
+
+  const originalReferenceCore = extractReferenceCore(originalQuote.odoo_sale_order_name || originalQuote.quote_number || "");
+  const referenceNv = originalReferenceCore ? `NV${originalReferenceCore}` : `NV${String(originalQuote.id).slice(0, 8)}`;
+
+7) En syncDirectProductionFinalToOdoo(...), reemplazar la rama vendedor:
+
+  if (quote.created_by_role === "distribuidor") {
+    partnerId = toIntId(quote?.bill_to_odoo_partner_id) || await getCreatorOdooPartnerId(quote.created_by_user_id) || toIntId(approverUser?.odoo_partner_id);
+    if (!partnerId) throw new Error("Distribuidor sin partner en Odoo");
+  } else {
+    partnerId = await findOrCreateCustomerPartner(odoo, resolveCustomerForOdoo(quote));
+  }
+
+8) En syncDirectProductionFinalToOdoo(...), cambiar referenceNv por:
+
+  const directReferenceCore = extractReferenceCore(createdOrder?.name || quote?.quote_number || "");
+  const referenceNv = directReferenceCore ? `NV${directReferenceCore}` : `NV${String(quote.id).slice(0, 8)}`;
+
+9) En router.post("/:id/review/commercial"...), cambiar la lectura del body por:
+
+const { action, notes, billing_customer } = req.body || {};
+
+10) En ese mismo endpoint, antes del update de approve, agregar:
+
+      const nextBillingCustomer = normalizeBillingCustomer(billing_customer || {});
+      if (requiresBillingCustomerForQuote(quote)) {
+        const billingErr = validateBillingCustomerRequired(nextBillingCustomer);
+        if (billingErr) return res.status(400).json({ ok: false, error: billingErr });
+      }
+      const mergedPayload = {
+        ...(quote.payload && typeof quote.payload === "object" ? quote.payload : {}),
+      };
+      if (hasBillingCustomerData(nextBillingCustomer)) mergedPayload.billing_customer = nextBillingCustomer;
+      else delete mergedPayload.billing_customer;
+
+11) Reemplazar el update de approve comercial por:
+
+const upd1 = await dbQuery(
+  `update public.presupuestador_quotes
+      set commercial_decision='approved',
+          commercial_by_user_id=$2,
+          commercial_at=now(),
+          commercial_notes=$3,
+          payload=$4::jsonb
+    where id=$1 and status='pending_approvals' and commercial_decision='pending'
+    returning *`,
+  [id, Number(u.user_id), notes || null, JSON.stringify(mergedPayload)]
+);
+
+Resultado esperado:
+- Distribuidor: sigue yendo siempre a Odoo como el mismo distribuidor.
+- Vendedor + cond1 / special: Comercial obliga datos fiscales y Odoo usa billing_customer.
+- Vendedor + cond2: aprueba sin exigir datos fiscales y Odoo usa end_customer.
+- Primer envío: NPxxxx.
+- Final / definitivo: NVxxxx.
