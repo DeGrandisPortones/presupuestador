@@ -42,7 +42,7 @@ function requireSellerOrDistributor(req, res, next) {
 
 function normCatalogKind(kind) {
   const k = String(kind || "porton").toLowerCase().trim();
-  if (!["porton", "ipanel"].includes(k)) throw new Error('catalog_kind invalido (usar "porton" o "ipanel")');
+  if (!["porton", "ipanel", "otros"].includes(k)) throw new Error('catalog_kind invalido (usar "porton", "ipanel" u "otros")');
   return k;
 }
 function toScalar(v) { return Array.isArray(v) ? v[0] : v; }

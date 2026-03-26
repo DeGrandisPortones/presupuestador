@@ -47,10 +47,10 @@ async function ensureCatalogControls() {
   catalogControlsEnsured = true;
 }
 
-const KINDS = new Set(["porton", "ipanel"]);
+const KINDS = new Set(["porton", "ipanel", "otros"]);
 export function normKind(kind) {
   const k = String(kind || "porton").toLowerCase().trim();
-  if (!KINDS.has(k)) throw new Error('kind inválido (usar "porton" o "ipanel")');
+  if (!KINDS.has(k)) throw new Error('kind inválido (usar "porton", "ipanel" u "otros")');
   return k;
 }
 

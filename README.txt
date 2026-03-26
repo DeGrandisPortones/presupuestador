@@ -1,33 +1,14 @@
-Bundle de fix para PRESUPUESTADOR
+Este paquete corrige el ingreso al Dashboard de "Otros" y la separación de catálogo.
 
-Archivos a reemplazar:
-- cotizador-front/src/pages/PresupuestosPage/index.jsx
-- cotizador-front/src/layouts/AppLayout.jsx
-- cotizador-front/src/pages/AprobacionTecnicaPage/index.jsx
-- cotizador-front/src/pages/MedicionDetailPage/index.jsx
-- cotizador-back/src/measurementFinalization.js
+Incluye:
+- cotizador-back/src/catalogDb.js  -> acepta kind "otros"
+- cotizador-back/src/catalogBootstrap.js -> evita mezclar productos no-Ipanel dentro de "Otros"
+- cotizador-back/src/routes/quotes.routes.PARCHE.txt -> reemplazo puntual requerido en quotes.routes.js
 
-Que corrige:
-1. Mis presupuestos:
-   - Ver Original descarga el PDF original.
-   - Ver Final descarga el PDF final.
-   - Ver medicion / Ver detalle tecnico abre la planilla de medicion.
-   - Se elimina el icono PDF en la grilla.
-2. Tecnica:
-   - En Portones sin medicion no aparece asignar fecha / visita del medidor.
-   - Se oculta el menu Mediciones cuando el usuario tambien es Rev. Tecnica.
-3. Planilla:
-   - El vendedor/distribuidor dueno del presupuesto puede verla en solo lectura.
-4. Odoo:
-   - Se restaura la carga de vendedor y forma de pago/financiacion en la venta final creada desde measurementFinalization.
+Aplicación:
+1. Reemplazá los 2 archivos .js por los incluidos en este zip.
+2. Aplicá el reemplazo indicado en quotes.routes.PARCHE.txt dentro de cotizador-back/src/routes/quotes.routes.js
+3. Reiniciá backend y frontend.
 
-Pasos:
-1. Reemplazar estos archivos.
-2. Reiniciar front y back.
-3. Probar:
-   - presupuesto original -> Ver Original
-   - presupuesto con copia final -> Ver Final
-   - porton con medicion aprobada -> Ver medicion
-   - porton sin medicion -> Ver detalle tecnico
-   - Tecnica > Portones sin medicion: sin fecha de visita
-   - aprobacion de medicion -> validar vendedor y forma de pago en Odoo
+Nota:
+La corrección de catalogBootstrap.js hace que "Otros" muestre solo productos cuyas etiquetas fueron configuradas para el catálogo "otros" en el Dashboard, en lugar de traer todos los no-Ipanel.
