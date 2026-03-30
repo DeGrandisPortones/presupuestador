@@ -579,17 +579,48 @@ function appendPaymentMethodToNote(note, paymentMethod) {
   return `${note}\nForma de pago: ${pm}`;
 }
 
+function normalizeBillingTypeKey(value) {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .replace(/_+/g, "_");
+}
+function digitsOnly(value) {
+  return String(value || "").replace(/\D+/g, "");
+}
+function sanitizeDocumentNumber(value, identificationTypeName) {
+  const raw = toText(value);
+  const key = normalizeBillingTypeKey(identificationTypeName);
+  if (["cuit", "cuil", "dni"].includes(key)) return digitsOnly(raw);
+  return raw;
+}
+function isValidCuitCuil(value) {
+  const digits = digitsOnly(value);
+  if (digits.length !== 11) return false;
+  const weights = [5, 4, 3, 2, 7, 6, 5, 4, 3, 2];
+  let sum = 0;
+  for (let i = 0; i < 10; i += 1) sum += Number(digits[i]) * weights[i];
+  let verifier = 11 - (sum % 11);
+  if (verifier === 11) verifier = 0;
+  if (verifier === 10) verifier = 9;
+  return verifier === Number(digits[10]);
+}
 function normalizeBillingCustomer(value) {
   const raw = value && typeof value === "object" ? value : {};
+  const identificationTypeName = toText(raw?.identification_type_name);
   return {
     name: toText(raw?.name),
-    vat: toText(raw?.vat),
+    vat: sanitizeDocumentNumber(raw?.vat, identificationTypeName),
     email: toText(raw?.email).toLowerCase(),
     phone: toText(raw?.phone),
     address: toText(raw?.address || raw?.street),
     city: toText(raw?.city),
     identification_type_id: toIntId(raw?.identification_type_id),
-    identification_type_name: toText(raw?.identification_type_name),
+    identification_type_name: identificationTypeName,
     afip_responsibility_type_id: toIntId(raw?.afip_responsibility_type_id),
     afip_responsibility_type_name: toText(raw?.afip_responsibility_type_name),
   };
@@ -604,6 +635,21 @@ function getQuoteConditionMode(quote) {
 function requiresBillingCustomerForQuote(quote) {
   return quote?.created_by_role === "vendedor" && ["cond1", "special"].includes(getQuoteConditionMode(quote));
 }
+function validateBillingDocument(value) {
+  const c = normalizeBillingCustomer(value);
+  const typeName = toText(c.identification_type_name);
+  const typeKey = normalizeBillingTypeKey(typeName);
+  if (!typeKey || !c.vat) return null;
+  const digits = digitsOnly(c.vat);
+  if (typeKey === "cuit" || typeKey === "cuil") {
+    if (digits.length !== 11) return `El ${typeName} debe tener 11 dígitos.`;
+    if (!isValidCuitCuil(digits)) return `El ${typeName} ingresado no es válido.`;
+  }
+  if (typeKey === "dni") {
+    if (digits.length < 7 || digits.length > 8) return "El DNI debe tener 7 u 8 dígitos.";
+  }
+  return null;
+}
 function validateBillingCustomerRequired(value) {
   const c = normalizeBillingCustomer(value);
   if (!c.name) return "Falta razón social / nombre fiscal";
@@ -613,7 +659,7 @@ function validateBillingCustomerRequired(value) {
   if (!c.phone) return "Falta teléfono fiscal";
   if (!c.address) return "Falta dirección fiscal";
   if (!c.city) return "Falta localidad fiscal";
-  return null;
+  return validateBillingDocument(c);
 }
 function resolveCustomerForOdoo(quote, revisionQuote = null) {
   if (requiresBillingCustomerForQuote(quote)) {
@@ -653,7 +699,12 @@ async function syncQuoteToOdoo({ odoo, quote, approverUser }) {
     partnerId = toIntId(quote?.bill_to_odoo_partner_id) || await getCreatorOdooPartnerId(quote.created_by_user_id) || toIntId(approverUser?.odoo_partner_id);
     if (!partnerId) throw new Error("Distribuidor sin bill_to_odoo_partner_id (quote) y sin odoo_partner_id (JWT/DB)");
   } else {
-    partnerId = await findOrCreateCustomerPartner(odoo, resolveCustomerForOdoo(quote));
+    const customerForOdoo = resolveCustomerForOdoo(quote);
+    if (requiresBillingCustomerForQuote(quote)) {
+      const billingErr = validateBillingCustomerRequired(customerForOdoo);
+      if (billingErr) throw new Error(billingErr);
+    }
+    partnerId = await findOrCreateCustomerPartner(odoo, customerForOdoo);
   }
   partnerId = toIntId(partnerId);
   if (!partnerId) throw new Error("partner_id invalido para Odoo");
@@ -706,7 +757,12 @@ async function syncFinalQuoteToOdoo({ odoo, revisionQuote, originalQuote, approv
     partnerId = toIntId(originalQuote?.bill_to_odoo_partner_id) || await getCreatorOdooPartnerId(originalQuote.created_by_user_id) || toIntId(approverUser?.odoo_partner_id);
     if (!partnerId) throw new Error("Distribuidor sin partner en Odoo");
   } else {
-    partnerId = await findOrCreateCustomerPartner(odoo, resolveCustomerForOdoo(originalQuote, revisionQuote));
+    const customerForOdoo = resolveCustomerForOdoo(originalQuote, revisionQuote);
+    if (requiresBillingCustomerForQuote(originalQuote)) {
+      const billingErr = validateBillingCustomerRequired(customerForOdoo);
+      if (billingErr) throw new Error(billingErr);
+    }
+    partnerId = await findOrCreateCustomerPartner(odoo, customerForOdoo);
   }
   partnerId = toIntId(partnerId);
   if (!partnerId) throw new Error("partner_id invalido para Odoo");
@@ -819,7 +875,12 @@ async function syncDirectProductionFinalToOdoo({ odoo, quote, approverUser }) {
     partnerId = toIntId(quote?.bill_to_odoo_partner_id) || await getCreatorOdooPartnerId(quote.created_by_user_id) || toIntId(approverUser?.odoo_partner_id);
     if (!partnerId) throw new Error("Distribuidor sin partner en Odoo");
   } else {
-    partnerId = await findOrCreateCustomerPartner(odoo, resolveCustomerForOdoo(quote));
+    const customerForOdoo = resolveCustomerForOdoo(quote);
+    if (requiresBillingCustomerForQuote(quote)) {
+      const billingErr = validateBillingCustomerRequired(customerForOdoo);
+      if (billingErr) throw new Error(billingErr);
+    }
+    partnerId = await findOrCreateCustomerPartner(odoo, customerForOdoo);
   }
   partnerId = toIntId(partnerId);
   if (!partnerId) throw new Error("partner_id invalido para Odoo");
@@ -1381,6 +1442,9 @@ export function buildQuotesRouter(odoo) {
       const nextBillingCustomer = normalizeBillingCustomer(billing_customer || {});
       if (requiresBillingCustomerForQuote(quote)) {
         const billingErr = validateBillingCustomerRequired(nextBillingCustomer);
+        if (billingErr) return res.status(400).json({ ok: false, error: billingErr });
+      } else if (hasBillingCustomerData(nextBillingCustomer)) {
+        const billingErr = validateBillingDocument(nextBillingCustomer);
         if (billingErr) return res.status(400).json({ ok: false, error: billingErr });
       }
       const mergedPayload = {

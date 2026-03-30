@@ -23,18 +23,67 @@ function measurementStatusLabel(s) { if (s === "pending") return "Pendiente"; if
 function hasMeasurementForPdf(q) { return !!q?.measurement_form || !!q?.measurement_source_quote_id || ["submitted", "needs_fix", "approved"].includes(q?.measurement_status); }
 function decisionLabel(d) { if (d === "approved") return "Aprobado"; if (d === "rejected") return "Rechazado"; return "Pendiente"; }
 function displayQuoteNumber(quote, fallbackId = null) { if (quote?.quote_number !== null && quote?.quote_number !== undefined && String(quote.quote_number).trim()) return String(quote.quote_number); if (quote?.odoo_sale_order_name) return String(quote.odoo_sale_order_name); return fallbackId ? String(fallbackId).slice(0, 8) : "—"; }
+function normalizeBillingText(value) {
+  return String(value || "").trim();
+}
+function normalizeBillingTypeKey(value) {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .replace(/_+/g, "_");
+}
+function digitsOnly(value) {
+  return String(value || "").replace(/\D+/g, "");
+}
+function sanitizeDocumentNumber(value, identificationTypeName) {
+  const raw = normalizeBillingText(value);
+  const key = normalizeBillingTypeKey(identificationTypeName);
+  if (["cuit", "cuil", "dni"].includes(key)) return digitsOnly(raw);
+  return raw;
+}
+function isValidCuitCuil(value) {
+  const digits = digitsOnly(value);
+  if (digits.length !== 11) return false;
+  const weights = [5, 4, 3, 2, 7, 6, 5, 4, 3, 2];
+  let sum = 0;
+  for (let i = 0; i < 10; i += 1) sum += Number(digits[i]) * weights[i];
+  let verifier = 11 - (sum % 11);
+  if (verifier === 11) verifier = 0;
+  if (verifier === 10) verifier = 9;
+  return verifier === Number(digits[10]);
+}
+function validateBillingDocument(value) {
+  const typeName = normalizeBillingText(value?.identification_type_name);
+  const typeKey = normalizeBillingTypeKey(typeName);
+  const vatRaw = normalizeBillingText(value?.vat);
+  if (!typeKey || !vatRaw) return null;
+  const digits = digitsOnly(vatRaw);
+  if (typeKey === "cuit" || typeKey === "cuil") {
+    if (digits.length !== 11) return `El ${typeName} debe tener 11 dígitos.`;
+    if (!isValidCuitCuil(digits)) return `El ${typeName} ingresado no es válido.`;
+  }
+  if (typeKey === "dni") {
+    if (digits.length < 7 || digits.length > 8) return "El DNI debe tener 7 u 8 dígitos.";
+  }
+  return null;
+}
 function emptyBillingCustomer(source = {}) {
+  const identificationTypeName = normalizeBillingText(source?.identification_type_name || "");
   return {
-    name: String(source?.name || "").trim(),
-    vat: String(source?.vat || "").trim(),
-    email: String(source?.email || "").trim(),
-    phone: String(source?.phone || "").trim(),
-    address: String(source?.address || source?.street || "").trim(),
-    city: String(source?.city || "").trim(),
+    name: normalizeBillingText(source?.name || ""),
+    vat: sanitizeDocumentNumber(source?.vat || "", identificationTypeName),
+    email: normalizeBillingText(source?.email || ""),
+    phone: normalizeBillingText(source?.phone || ""),
+    address: normalizeBillingText(source?.address || source?.street || ""),
+    city: normalizeBillingText(source?.city || ""),
     identification_type_id: source?.identification_type_id ? String(source.identification_type_id) : "",
-    identification_type_name: String(source?.identification_type_name || "").trim(),
+    identification_type_name: identificationTypeName,
     afip_responsibility_type_id: source?.afip_responsibility_type_id ? String(source.afip_responsibility_type_id) : "",
-    afip_responsibility_type_name: String(source?.afip_responsibility_type_name || "").trim(),
+    afip_responsibility_type_name: normalizeBillingText(source?.afip_responsibility_type_name || ""),
   };
 }
 function hasBillingCustomerData(customer) {
@@ -120,7 +169,7 @@ function BillingModal({
           </div>
           <div>
             <div className="muted" style={{ marginBottom: 6 }}>Número de identificación</div>
-            <Input value={value.vat} onChange={(v) => onChange({ ...value, vat: v })} style={{ width: "100%" }} />
+            <Input value={value.vat} onChange={(v) => onChange({ ...value, vat: sanitizeDocumentNumber(v, value.identification_type_name) })} style={{ width: "100%" }} />
           </div>
           <div>
             <div className="muted" style={{ marginBottom: 6 }}>Tipo de responsabilidad AFIP</div>
