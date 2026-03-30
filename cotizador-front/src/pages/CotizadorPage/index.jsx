@@ -29,6 +29,41 @@ function normalizeUrl(value) {
   return String(value || "").trim().replace(/\/+$/, "").toLowerCase();
 }
 
+function editorRouteForKind(kind, id, search = "") {
+  const safeId = String(id || "").trim();
+  const suffix = search || "";
+  if (String(kind || "porton").toLowerCase().trim() === "ipanel") return `/cotizador/ipanel/${safeId}${suffix}`;
+  if (String(kind || "porton").toLowerCase().trim() === "otros") return `/cotizador/otros/${safeId}${suffix}`;
+  return `/cotizador/${safeId}${suffix}`;
+}
+
+function buildPdfPayloadForDownload(payload, financingPercent, extras = {}) {
+  const percent = Number(financingPercent || 0) || 0;
+  const factor = 1 + percent / 100;
+  const nextLines = Array.isArray(payload?.lines)
+    ? payload.lines.map((line) => {
+        const rawBase = Number(line?.basePrice ?? line?.base_price ?? line?.price ?? 0) || 0;
+        const financedBase = Math.round(rawBase * factor * 100) / 100;
+        return {
+          ...line,
+          basePrice: financedBase,
+          base_price: financedBase,
+          price: financedBase,
+        };
+      })
+    : [];
+
+  return {
+    ...(payload || {}),
+    ...extras,
+    lines: nextLines,
+    payload: {
+      ...(payload?.payload || {}),
+      ...(extras.payload || {}),
+    },
+  };
+}
+
 export default function CotizadorPage({ catalogKind = "porton" }) {
   const navigate = useNavigate();
   const location = useLocation();
@@ -222,14 +257,24 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
   async function persistDraftForPdf() {
     const payload = getDraftPayload();
     validateDraft(payload);
-    let q = null;
-    if (quoteId) q = await updateQuote(quoteId, payload);
-    else q = await createQuote(payload);
+
+    if (!quoteId) {
+      return {
+        quote: null,
+        payload: {
+          ...payload,
+          id: idParam || null,
+          quote_id: idParam || null,
+          quote_number: visibleQuoteNumber || idParam || "",
+          seller_name: user?.full_name || user?.username || "",
+        },
+      };
+    }
+
+    const q = await updateQuote(quoteId, payload);
     setQuoteMeta({ quoteId: q.id, status: q.status, rejectionNotes: q.rejection_notes });
     qc.invalidateQueries({ queryKey: ["quotes", "mine"] });
-    if (!quoteId) {
-      navigate(catalogKind === "ipanel" ? `/cotizador/ipanel/${q.id}${location.search || ""}` : `/cotizador/${q.id}${location.search || ""}`, { replace: true });
-    }
+
     return {
       quote: q,
       payload: {
@@ -281,7 +326,7 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
         toast.success("Ipanel guardado. Seguimos con el marco de puerta.");
         return;
       }
-      navigate(catalogKind === "ipanel" ? `/cotizador/ipanel/${q.id}` : `/cotizador/${q.id}`);
+      navigate(editorRouteForKind(catalogKind, q.id));
       toast.success("Guardado.");
     },
     onError: (e) => toast.error(e?.message || "No se pudo guardar"),
@@ -325,7 +370,8 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
     try {
       const { payload } = await persistDraftForPdf();
       validatePdfDownload(payload);
-      await downloadPresupuestoPdf(payload);
+      const pdfPayload = buildPdfPayloadForDownload(payload, financingPercent);
+      await downloadPresupuestoPdf(pdfPayload);
     } catch (e) {
       toast.error(e?.response?.data?.error || e.message);
     }
@@ -335,7 +381,8 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
     try {
       const { payload } = await persistDraftForPdf();
       validatePdfDownload(payload);
-      await downloadProformaPdf(payload);
+      const pdfPayload = buildPdfPayloadForDownload(payload, financingPercent);
+      await downloadProformaPdf(pdfPayload);
     } catch (e) {
       toast.error(e?.response?.data?.error || e.message);
     }
