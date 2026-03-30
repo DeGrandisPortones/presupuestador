@@ -1026,6 +1026,20 @@ export function buildQuotesRouter(odoo) {
                left join public.presupuestador_users u on u.id = q.created_by_user_id
                where ${onlyOriginal} and q.fulfillment_mode = 'acopio' and acopio_to_produccion_status = 'pending'
                order by q.acopio_to_produccion_requested_at desc nulls last, q.id desc limit 200`;
+      } else if (scope === "commercial_acopio_all") {
+        if (!u.is_enc_comercial) return res.status(403).json({ ok: false, error: "No autorizado" });
+        sql = `select q.*, u.username as created_by_username, u.full_name as created_by_full_name
+               from public.presupuestador_quotes q
+               left join public.presupuestador_users u on u.id = q.created_by_user_id
+               where ${onlyOriginal} and q.fulfillment_mode = 'acopio'
+               order by q.confirmed_at desc nulls last, q.id desc limit 200`;
+      } else if (scope === "technical_acopio_all") {
+        if (!u.is_rev_tecnica) return res.status(403).json({ ok: false, error: "No autorizado" });
+        sql = `select q.*, u.username as created_by_username, u.full_name as created_by_full_name
+               from public.presupuestador_quotes q
+               left join public.presupuestador_users u on u.id = q.created_by_user_id
+               where ${onlyOriginal} and q.fulfillment_mode = 'acopio'
+               order by q.confirmed_at desc nulls last, q.id desc limit 200`;
       } else {
         return res.status(400).json({ ok: false, error: "scope invalido" });
       }
@@ -1262,9 +1276,9 @@ export function buildQuotesRouter(odoo) {
               end
         where id=$1 and status='syncing_odoo'
         returning *`,
-      [qSync.id, Number(order.id), order.name, deposit_amount, String(MEASUREMENT_PRODUCT_ID)]
-    );
-    return { quote: upd2.rows?.[0] || qSync, order, directFinal: false };
+        [qSync.id, Number(order.id), order.name, deposit_amount, String(MEASUREMENT_PRODUCT_ID)]
+      );
+      return { quote: upd2.rows?.[0] || qSync, order, directFinal: false };
   }
 
   router.post("/:id/review/commercial", requireRole("is_enc_comercial"), async (req, res, next) => {
