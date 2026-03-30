@@ -2,9 +2,22 @@ import { Outlet, useNavigate, NavLink } from "react-router-dom";
 import Button from "../ui/Button.jsx";
 import { useAuthStore } from "../domain/auth/store.js";
 
+function statusStyles(isOnline) {
+  return {
+    padding: "10px 16px",
+    borderRadius: 14,
+    border: `1px solid ${isOnline ? "#1f8f4d" : "#b53a3a"}`,
+    background: isOnline ? "#1f8f4d" : "#b53a3a",
+    color: "#fff",
+    fontWeight: 800,
+    lineHeight: 1,
+  };
+}
+
 export default function AppLayout() {
   const user = useAuthStore((s) => s.user);
   const logout = useAuthStore((s) => s.logout);
+  const odooOnline = useAuthStore((s) => s.odooOnline);
   const navigate = useNavigate();
 
   const isSuperuser = !!user?.is_superuser;
@@ -38,15 +51,20 @@ export default function AppLayout() {
             </div>
           </div>
 
-          <Button
-            variant="ghost"
-            onClick={() => {
-              logout();
-              navigate("/login", { replace: true });
-            }}
-          >
-            Salir
-          </Button>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <div style={statusStyles(odooOnline)}>
+              {odooOnline ? "Online" : "Offline"}
+            </div>
+            <Button
+              variant="ghost"
+              onClick={() => {
+                logout();
+                navigate("/login", { replace: true });
+              }}
+            >
+              Salir
+            </Button>
+          </div>
         </div>
 
         <div className="container" style={{ padding: 0, marginTop: 10, display: "flex", gap: 10, flexWrap: "wrap" }}>

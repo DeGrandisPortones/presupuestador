@@ -6,11 +6,12 @@ import Input from "../../ui/Input.jsx";
 import Button from "../../ui/Button.jsx";
 import { login } from "../../api/auth.js";
 import { useAuthStore } from "../../domain/auth/store.js";
-import { setOdooBootstrap } from "../../domain/odoo/bootstrap.js";
+import { prefetchOdooSessionData } from "../../domain/odoo/prefetch.js";
 
 export default function LoginPage() {
   const navigate = useNavigate();
   const setSession = useAuthStore((s) => s.setSession);
+  const setOdooOnline = useAuthStore((s) => s.setOdooOnline);
   const token = useAuthStore((s) => s.token);
 
   if (token) return <Navigate to="/menu" replace />;
@@ -32,10 +33,13 @@ export default function LoginPage() {
 
   const m = useMutation({
     mutationFn: () => login({ username, password }),
-    onSuccess: (data) => {
+    onSuccess: async (data) => {
       setSession({ token: data.token, user: data.user });
-      if (data.bootstrap?.products?.length || data.bootstrap?.pricelists?.length) {
-        setOdooBootstrap(data.bootstrap, "porton");
+      try {
+        await prefetchOdooSessionData();
+        setOdooOnline(true);
+      } catch (_) {
+        setOdooOnline(false);
       }
       navigate("/menu", { replace: true });
     },

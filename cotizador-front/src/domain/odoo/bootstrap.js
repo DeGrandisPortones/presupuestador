@@ -1,6 +1,6 @@
 // src/domain/odoo/bootstrap.js
 //
-// v3: bootstrap POR TIPO de cotizador (porton / ipanel)
+// v3: bootstrap POR TIPO de cotizador (porton / ipanel / otros)
 
 function keyFor(kind = "porton") {
   const k = (kind || "porton").toString().trim().toLowerCase();
@@ -40,8 +40,8 @@ export function clearOdooBootstrap(kind = "porton") {
 
 export function clearAllBootstraps() {
   try {
-    // best-effort: limpiamos los 2 conocidos
     localStorage.removeItem(keyFor("porton"));
     localStorage.removeItem(keyFor("ipanel"));
+    localStorage.removeItem(keyFor("otros"));
   } catch (_) {}
 }
