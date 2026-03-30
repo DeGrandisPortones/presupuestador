@@ -16,6 +16,7 @@ import QuoteDetailPage from "./pages/QuoteDetailPage/index.jsx";
 import AprobacionComercialPage from "./pages/AprobacionComercialPage/index.jsx";
 import AprobacionTecnicaPage from "./pages/AprobacionTecnicaPage/index.jsx";
 import DashboardPage from "./pages/DashboardPage/index.jsx";
+import SuperuserMeasurementRulesPage from "./pages/SuperuserMeasurementRulesPage/index.jsx";
 import UsersAdminPage from "./pages/UsersAdminPage/index.jsx";
 import MedicionesPage from "./pages/MedicionesPage/index.jsx";
 import MedicionDetailPage from "./pages/MedicionDetailPage/index.jsx";
@@ -39,62 +40,41 @@ export default function App() {
   useEffect(() => {
     if (!token) return;
     if (user) return;
-
-    getMe()
-      .then(setUser)
-      .catch(() => logout());
+    getMe().then(setUser).catch(() => logout());
   }, [token, user, setUser, logout]);
 
   useEffect(() => {
     if (!token || !user) return;
-    window.setTimeout(() => {
-      prefetchOdooBootstrapInBackground().catch(() => {});
-    }, 0);
+    window.setTimeout(() => { prefetchOdooBootstrapInBackground().catch(() => {}); }, 0);
   }, [token, user]);
 
   return (
     <BrowserRouter>
       <Routes>
         <Route path="/login" element={<LoginPage />} />
-
-        <Route
-          path="/"
-          element={
-            <RequireAuth>
-              <AppLayout />
-            </RequireAuth>
-          }
-        >
+        <Route path="/" element={<RequireAuth><AppLayout /></RequireAuth>}>
           <Route index element={<Navigate to="/menu" replace />} />
-
           <Route path="menu" element={<MenuPage />} />
-
           <Route path="cotizador" element={<CotizadorPortonRoute />} />
           <Route path="cotizador/:id" element={<CotizadorPortonRoute />} />
           <Route path="cotizador/ipanel" element={<CotizadorIpanelRoute />} />
           <Route path="cotizador/ipanel/:id" element={<CotizadorIpanelRoute />} />
           <Route path="cotizador/otros" element={<CotizadorOtrosRoute />} />
           <Route path="cotizador/otros/:id" element={<CotizadorOtrosRoute />} />
-
           <Route path="puertas" element={<PuertasPage />} />
           <Route path="puertas/nuevo/:quoteId" element={<PuertaWorkflowPage />} />
           <Route path="puertas/:id" element={<PuertaPanelPage />} />
           <Route path="puertas/:id/marco" element={<PuertaChecklistPage />} />
-
           <Route path="presupuestos" element={<PresupuestosPage />} />
           <Route path="presupuestos/:id" element={<QuoteDetailPage />} />
-
           <Route path="mediciones" element={<MedicionesPage />} />
           <Route path="mediciones/:id" element={<MedicionDetailPage />} />
-
           <Route path="aprobacion/comercial" element={<AprobacionComercialPage />} />
           <Route path="aprobacion/tecnica" element={<AprobacionTecnicaPage />} />
-
           <Route path="usuarios" element={<UsersAdminPage />} />
-
           <Route path="dashboard" element={<DashboardPage />} />
+          <Route path="dashboard/reglas-tecnicas" element={<SuperuserMeasurementRulesPage />} />
         </Route>
-
         <Route path="*" element={<Navigate to={token ? "/menu" : "/login"} replace />} />
       </Routes>
     </BrowserRouter>
