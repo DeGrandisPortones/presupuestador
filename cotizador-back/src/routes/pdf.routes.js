@@ -7,6 +7,8 @@ import { dbQuery } from "../db.js";
 import { requireAuth } from "../auth.js";
 import { ensureQuotesMeasurementColumns } from "../quotesSchema.js";
 
+const IVA_RATE = 0.21;
+
 function isUuid(v) {
   const s = String(v || "").trim();
   return /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(s);
@@ -247,7 +249,9 @@ function buildLines(payload, { useBasePrice }) {
           0
       );
 
-      const unit = useBasePrice ? basePrice : basePrice * coefFactor;
+      const unitNet = useBasePrice ? basePrice : basePrice * coefFactor;
+      const unit = unitNet * (1 + IVA_RATE);
+      const totalNet = unitNet * qty;
       const total = unit * qty;
 
       return {
@@ -255,12 +259,15 @@ function buildLines(payload, { useBasePrice }) {
         name: safeStr(l?.raw_name || l?.rawName || l?.raw || l?.name || ""),
         unit,
         total,
+        totalNet,
       };
     })
     .filter((l) => l.qty > 0);
 
-  const grandTotal = lines.reduce((acc, l) => acc + l.total, 0);
-  return { lines, grandTotal, coefPct };
+  const subtotalNet = lines.reduce((acc, l) => acc + l.totalNet, 0);
+  const ivaAmount = subtotalNet * IVA_RATE;
+  const grandTotal = subtotalNet + ivaAmount;
+  return { lines, grandTotal, subtotalNet, ivaAmount, coefPct };
 }
 
 async function resolveMeasurementForm(quote) {
@@ -550,7 +557,7 @@ function renderPdf({ title, payload, useBasePrice }) {
   const obs = stripSellerLines(safeStr(payload?.note));
 
   const quoteNo = getQuoteNumber(payload);
-  const { lines, grandTotal } = buildLines(payload, { useBasePrice });
+  const { lines, grandTotal, subtotalNet, ivaAmount } = buildLines(payload, { useBasePrice });
 
   doc.x = margin;
   doc.y = margin;
@@ -630,6 +637,8 @@ function renderPdf({ title, payload, useBasePrice }) {
   const colUnit = innerW * 0.15;
   const colTot = innerW * 0.15;
   const SAFE_BOTTOM_GAP = 56;
+  const SUBTOTAL_ROW_H = 28;
+  const IVA_ROW_H = 28;
   const TOTAL_ROW_H = 36;
 
   function drawTableHeader() {
@@ -641,8 +650,8 @@ function renderPdf({ title, payload, useBasePrice }) {
       cols: [
         { w: colDesc, text: "DESCRIPCIÓN", align: "left" },
         { w: colQty, text: "CANT", align: "right" },
-        { w: colUnit, text: "PRECIO", align: "right" },
-        { w: colTot, text: "TOTAL", align: "right" },
+        { w: colUnit, text: "PRECIO c/IVA", align: "right" },
+        { w: colTot, text: "TOTAL c/IVA", align: "right" },
       ],
       fill: "#E5E7EB",
       textStyle: { font: "Helvetica-Bold", size: 10, color: "#111827", pad: 8 },
@@ -690,14 +699,43 @@ function renderPdf({ title, payload, useBasePrice }) {
     tableY += rowH;
   }
 
-  ensureSpace(TOTAL_ROW_H + 8);
+  ensureSpace(SUBTOTAL_ROW_H + IVA_ROW_H + TOTAL_ROW_H + 8);
+
+  drawRow(doc, {
+    x: tableX,
+    y: tableY,
+    w: innerW,
+    h: SUBTOTAL_ROW_H,
+    cols: [
+      { w: innerW * 0.68, text: "Subtotal s/IVA", align: "right" },
+      { w: innerW * 0.32, text: `$ ${formatMoney(subtotalNet)}`, align: "right" },
+    ],
+    fill: null,
+    textStyle: { font: "Helvetica", size: 10, color: "#111827", pad: 8 },
+  });
+  tableY += SUBTOTAL_ROW_H;
+
+  drawRow(doc, {
+    x: tableX,
+    y: tableY,
+    w: innerW,
+    h: IVA_ROW_H,
+    cols: [
+      { w: innerW * 0.68, text: "IVA", align: "right" },
+      { w: innerW * 0.32, text: `$ ${formatMoney(ivaAmount)}`, align: "right" },
+    ],
+    fill: null,
+    textStyle: { font: "Helvetica", size: 10, color: "#111827", pad: 8 },
+  });
+  tableY += IVA_ROW_H;
+
   drawRow(doc, {
     x: tableX,
     y: tableY,
     w: innerW,
     h: TOTAL_ROW_H,
     cols: [
-      { w: innerW * 0.68, text: "TOTAL", align: "right" },
+      { w: innerW * 0.68, text: "TOTAL (IVA incluido)", align: "right" },
       { w: innerW * 0.32, text: `$ ${formatMoney(grandTotal)}`, align: "right" },
     ],
     fill: "#F3F4F6",
