@@ -1,6 +1,8 @@
 import express from "express";
 import { requireAuth } from "../auth.js";
 
+const TACA_TACA_PLAN_NAME = String(process.env.ODOO_TACA_TACA_PLAN_NAME || "Taca Taca").trim();
+
 export function buildOdooRouter(odoo) {
   const router = express.Router();
 
@@ -105,6 +107,62 @@ export function buildOdooRouter(odoo) {
     }
   });
 
+  router.get("/financing-preview", requireAuth, async (req, res, next) => {
+    try {
+      const paymentMethod = String(req.query.payment_method || "").trim();
+      const parsed = parseTacaTacaPaymentMethod(paymentMethod);
+
+      if (!parsed) {
+        return res.json({
+          ok: true,
+          applies_financing: false,
+          percent: 0,
+          card_type: null,
+          installments: null,
+          plan_id: null,
+          rate_id: null,
+          payment_method: paymentMethod,
+        });
+      }
+
+      const planId = await resolveTacaTacaPlanId(odoo);
+      if (!planId) {
+        return res.json({
+          ok: true,
+          applies_financing: false,
+          percent: 0,
+          card_type: parsed.cardType,
+          installments: parsed.installments,
+          plan_id: null,
+          rate_id: null,
+          payment_method: paymentMethod,
+        });
+      }
+
+      const rate = await resolveTacaTacaRate(odoo, {
+        planId,
+        cardType: parsed.cardType,
+        installments: parsed.installments,
+      });
+      const meta = await resolveFinancingRateFieldMeta(odoo);
+      const rawPercent = meta?.percentField ? rate?.[meta.percentField] : null;
+      const percent = Number(rawPercent || 0) || 0;
+
+      res.json({
+        ok: true,
+        applies_financing: !!rate?.id && percent > 0,
+        percent: round2(percent),
+        card_type: parsed.cardType,
+        installments: parsed.installments,
+        plan_id: Number(planId) || null,
+        rate_id: toIntId(rate?.id),
+        payment_method: paymentMethod,
+      });
+    } catch (e) {
+      next(e);
+    }
+  });
+
   router.post("/prices", async (req, res, next) => {
     try {
       const body = req.body || {};
@@ -155,6 +213,111 @@ export function buildOdooRouter(odoo) {
 
 function round2(n) {
   return Math.round(Number(n || 0) * 100) / 100;
+}
+
+function toIntId(v) {
+  const n = Number(Array.isArray(v) ? v[0] : v);
+  return Number.isFinite(n) ? n : null;
+}
+
+function normalizePaymentMethodKey(value) {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, " ")
+    .trim()
+    .replace(/\s+/g, " ");
+}
+
+function parseTacaTacaPaymentMethod(paymentMethod) {
+  const raw = String(paymentMethod || "").trim();
+  const normalized = normalizePaymentMethodKey(raw);
+  if (!normalized) return null;
+
+  let cardType = "";
+  if (normalized.startsWith("CORDOBESA")) cardType = "cordobesa";
+  else if (normalized.startsWith("NARANJA")) cardType = "naranja";
+  else if (normalized.startsWith("OTRAS TC BANC") || normalized.startsWith("OTRAS")) cardType = "otras";
+  if (!cardType) return null;
+
+  const installmentsMatch = normalized.match(/\b(\d{1,2})\b/);
+  const installments = installmentsMatch ? Number(installmentsMatch[1]) : null;
+  if (!Number.isFinite(installments) || installments <= 0) return null;
+
+  return { raw, normalized, cardType, installments };
+}
+
+let financingRateFieldCache = undefined;
+async function resolveFinancingRateFieldMeta(odoo) {
+  if (financingRateFieldCache !== undefined) return financingRateFieldCache;
+  try {
+    const fields = await odoo.executeKw("sale.financing.rate", "fields_get", [], { attributes: ["type"] });
+    financingRateFieldCache = {
+      planField: fields?.plan_id ? "plan_id" : null,
+      cardTypeField: fields?.card_type ? "card_type" : null,
+      installmentsField: fields?.installments ? "installments" : (fields?.cuotas ? "cuotas" : null),
+      percentField: fields?.rate_percent ? "rate_percent" : (fields?.percent ? "percent" : null),
+      activeField: fields?.active ? "active" : null,
+    };
+    return financingRateFieldCache;
+  } catch {
+    financingRateFieldCache = null;
+    return financingRateFieldCache;
+  }
+}
+
+let tacaTacaPlanIdCache = undefined;
+async function resolveTacaTacaPlanId(odoo) {
+  if (tacaTacaPlanIdCache !== undefined) return tacaTacaPlanIdCache;
+  try {
+    let ids = await odoo.executeKw("sale.financing.plan", "search", [[["name", "=", TACA_TACA_PLAN_NAME]]], { limit: 1 });
+    let id = toIntId(ids?.[0]);
+    if (!id) {
+      ids = await odoo.executeKw("sale.financing.plan", "search", [[["name", "ilike", TACA_TACA_PLAN_NAME]]], { limit: 1 });
+      id = toIntId(ids?.[0]);
+    }
+    tacaTacaPlanIdCache = id || null;
+    return tacaTacaPlanIdCache;
+  } catch {
+    tacaTacaPlanIdCache = null;
+    return tacaTacaPlanIdCache;
+  }
+}
+
+async function resolveTacaTacaRate(odoo, { planId, cardType, installments }) {
+  const meta = await resolveFinancingRateFieldMeta(odoo);
+  if (!meta?.planField || !meta?.cardTypeField || !meta?.installmentsField) return null;
+
+  const baseDomain = [
+    [meta.planField, "=", Number(planId)],
+    [meta.cardTypeField, "=", String(cardType)],
+    [meta.installmentsField, "=", Number(installments)],
+  ];
+  const fields = ["id", meta.planField, meta.cardTypeField, meta.installmentsField, meta.percentField].filter(Boolean);
+
+  try {
+    let domain = baseDomain.slice();
+    if (meta.activeField) domain.push([meta.activeField, "=", true]);
+
+    let rows = await odoo.executeKw("sale.financing.rate", "search_read", [domain], {
+      fields,
+      limit: 1,
+      order: "id desc",
+    });
+    let rate = rows?.[0] || null;
+    if (!rate) {
+      rows = await odoo.executeKw("sale.financing.rate", "search_read", [baseDomain], {
+        fields,
+        limit: 1,
+        order: "id desc",
+      });
+      rate = rows?.[0] || null;
+    }
+    return rate;
+  } catch {
+    return null;
+  }
 }
 
 async function findPricelistIdByName(odoo, name) {

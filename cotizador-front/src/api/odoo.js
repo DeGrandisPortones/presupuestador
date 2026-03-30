@@ -35,15 +35,6 @@ export async function searchProducts({ query = "", limit = 10 }) {
   return data.products || [];
 }
 
-export async function getBillingOptions() {
-  const { data } = await http.get("/api/odoo/billing-options");
-  if (!data?.ok) throw new Error(data?.error || "No se pudieron cargar las opciones fiscales");
-  return {
-    identification_types: data.identification_types || [],
-    afip_responsibility_types: data.afip_responsibility_types || [],
-  };
-}
-
 export async function getPrices({ pricelist_id, partner_id = null, lines }) {
   const payload = {
     pricelist_id: pricelist_id ?? null,
@@ -53,5 +44,36 @@ export async function getPrices({ pricelist_id, partner_id = null, lines }) {
 
   const { data } = await http.post("/api/odoo/prices", payload);
   if (!data?.ok) throw new Error(data?.error || "No se pudieron calcular los precios");
+  return data;
+}
+
+export async function getBillingOptions() {
+  const { data } = await http.get("/api/odoo/billing-options");
+  if (!data?.ok) throw new Error(data?.error || "No se pudieron cargar las opciones fiscales");
+  return {
+    identification_types: data.identification_types || [],
+    afip_responsibility_types: data.afip_responsibility_types || [],
+  };
+}
+
+export async function getFinancingPreview(paymentMethod) {
+  const method = String(paymentMethod || "").trim();
+  if (!method) {
+    return {
+      ok: true,
+      applies_financing: false,
+      percent: 0,
+      card_type: null,
+      installments: null,
+      plan_id: null,
+      rate_id: null,
+      payment_method: "",
+    };
+  }
+
+  const params = new URLSearchParams();
+  params.set("payment_method", method);
+  const { data } = await http.get(`/api/odoo/financing-preview?${params.toString()}`);
+  if (!data?.ok) throw new Error(data?.error || "No se pudo obtener la financiación");
   return data;
 }

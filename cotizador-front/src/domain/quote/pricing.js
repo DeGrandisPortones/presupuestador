@@ -1,17 +1,24 @@
 export function calcFinalUnitPrice(basePrice, marginPercent) {
     const base = Number(basePrice || 0);
-    const m = Number (marginPercent || 0);
+    const m = Number(marginPercent || 0);
     const factor = 1 + m / 100;
     return round2(base * factor);
 }
 
-export function calcLineTotal(qty, unitPrice){
+export function calcLineTotal(qty, unitPrice) {
     const q = Number(qty || 0);
     const p = Number(unitPrice || 0);
     return round2(q * p);
 }
 
-export function calcTotals(lines, marginPercent, ivaRate) {
+export function calcFinancingAmount(amount, financingPercent) {
+  const base = Number(amount || 0);
+  const percent = Number(financingPercent || 0);
+  if (!Number.isFinite(base) || !Number.isFinite(percent) || percent <= 0) return 0;
+  return round2(base * percent / 100);
+}
+
+export function calcTotals(lines, marginPercent, ivaRate, financingPercent = 0) {
   const subtotal = round2(
     (lines || []).reduce((acc, l) => {
       const finalUnit = calcFinalUnitPrice(l.basePrice, marginPercent);
@@ -21,9 +28,18 @@ export function calcTotals(lines, marginPercent, ivaRate) {
   );
 
   const iva = round2(subtotal * Number(ivaRate || 0));
-  const total = round2(subtotal + iva);
+  const totalWithoutFinancing = round2(subtotal + iva);
+  const financingAmount = calcFinancingAmount(totalWithoutFinancing, financingPercent);
+  const total = round2(totalWithoutFinancing + financingAmount);
 
-  return { subtotal, iva, total };
+  return {
+    subtotal,
+    iva,
+    financingAmount,
+    totalWithoutFinancing,
+    total,
+    financingPercent: round2(financingPercent),
+  };
 }
 
 export function formatARS(n) {

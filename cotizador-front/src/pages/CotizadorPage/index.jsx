@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useParams, useLocation } from "react-router-dom";
 import { useAuthStore } from "../../domain/auth/store.js";
 
-import { getPricelists, getPrices } from "../../api/odoo";
+import { getPricelists, getPrices, getFinancingPreview } from "../../api/odoo";
 import { createQuote, getQuote, confirmQuote, submitFinalQuote, updateQuote } from "../../api/quotes";
 import { downloadPresupuestoPdf, downloadProformaPdf } from "../../api/pdf";
 import toast from "react-hot-toast";
@@ -49,6 +49,7 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
     pricelistId,
     marginPercent,
     partnerId,
+    paymentMethod,
     lines,
     setPricelist,
     applyBasePrices,
@@ -92,7 +93,15 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
     loadFromQuote(quoteQ.data);
   }, [quoteQ.data, loadFromQuote, catalogKind, navigate]);
 
-  const totals = useMemo(() => calcTotals(lines, marginPercent, ivaRate), [lines, marginPercent, ivaRate]);
+  const financingQ = useQuery({
+    queryKey: ["financing-preview", paymentMethod],
+    queryFn: () => getFinancingPreview(paymentMethod),
+    enabled: !!String(paymentMethod || "").trim(),
+    staleTime: 60 * 1000,
+  });
+
+  const financingPercent = Number(financingQ.data?.percent || 0) || 0;
+  const totals = useMemo(() => calcTotals(lines, marginPercent, ivaRate, financingPercent), [lines, marginPercent, ivaRate, financingPercent]);
   const linesKey = useMemo(() => lines.map((l) => `${l.product_id}:${l.qty}`).join("|"), [lines]);
   const isRevisionQuote = (quoteQ.data?.quote_kind || "original") === "copy";
   const finalStatus = String(quoteQ.data?.final_status || "");
@@ -391,7 +400,7 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
       )}
 
       <div className="spacer" />
-      <HeaderBar pricelists={pricelistsQ.data || []} loadingPricelists={pricelistsQ.isLoading} showMargin />
+      <HeaderBar showMargin />
       <div className="spacer" />
       <div className="row quote-row">
         <div className="card" style={{ flex: 1, minWidth: 320 }}>
@@ -402,7 +411,7 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
         <div className="card" style={{ flex: 2, minWidth: 520 }}>
           <LinesTable />
           <div className="spacer" />
-          <SummaryBox totals={totals} />
+          <SummaryBox totals={totals} paymentMethod={paymentMethod} />
         </div>
       </div>
       {(saveM.isError || confirmM.isError) && <div className="spacer" />}
