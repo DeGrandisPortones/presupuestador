@@ -7,6 +7,7 @@ import Input from "../../ui/Input.jsx";
 import { getQuote, reviewCommercial, reviewTechnical, createRevisionQuote } from "../../api/quotes.js";
 import { listDoorsByQuote } from "../../api/doors.js";
 import { downloadMedicionPdf } from "../../api/pdf.js";
+import { getBillingOptions } from "../../api/odoo.js";
 import { useAuthStore } from "../../domain/auth/store.js";
 import { formatARS } from "../../domain/quote/pricing.js";
 import MeasurementReadOnlyView from "../../components/MeasurementReadOnlyView.jsx";
@@ -22,10 +23,158 @@ function measurementStatusLabel(s) { if (s === "pending") return "Pendiente"; if
 function hasMeasurementForPdf(q) { return !!q?.measurement_form || !!q?.measurement_source_quote_id || ["submitted", "needs_fix", "approved"].includes(q?.measurement_status); }
 function decisionLabel(d) { if (d === "approved") return "Aprobado"; if (d === "rejected") return "Rechazado"; return "Pendiente"; }
 function displayQuoteNumber(quote, fallbackId = null) { if (quote?.quote_number !== null && quote?.quote_number !== undefined && String(quote.quote_number).trim()) return String(quote.quote_number); if (quote?.odoo_sale_order_name) return String(quote.odoo_sale_order_name); return fallbackId ? String(fallbackId).slice(0, 8) : "—"; }
-function emptyBillingCustomer(source = {}) { return { name: String(source?.name || "").trim(), vat: String(source?.vat || "").trim(), email: String(source?.email || "").trim(), phone: String(source?.phone || "").trim(), address: String(source?.address || source?.street || "").trim(), city: String(source?.city || "").trim() }; }
-function hasBillingCustomerData(customer) { if (!customer) return false; return Object.values(customer).some((value) => String(value || "").trim()); }
-function billingSummary(customer) { if (!hasBillingCustomerData(customer)) return "Se facturará con los datos del cliente cargado."; return [customer.name, customer.vat ? `CUIT ${customer.vat}` : "", customer.address, customer.city].filter(Boolean).join(" · "); }
-function BillingModal({ value, onChange, onClose, onConfirm, loading, requiresBilling = false }) { return <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20, zIndex: 1000 }} onClick={() => { if (!loading) onClose(); }}><div className="card" style={{ width: "100%", maxWidth: 760, background: "#fff", border: "1px solid #ddd", boxShadow: "0 20px 60px rgba(0,0,0,0.18)" }} onClick={(e) => e.stopPropagation()}><div style={{ fontWeight: 900, fontSize: 22, marginBottom: 8 }}>Datos fiscales de facturación</div><div className="muted" style={{ marginBottom: 16 }}>{requiresBilling ? "Para esta condición debés cargar los datos fiscales de facturación antes de aprobar." : "Si no cargás estos datos, se facturará con los datos del cliente cargado en el presupuesto."}</div><div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 12 }}><div><div className="muted" style={{ marginBottom: 6 }}>Razón social / nombre fiscal</div><Input value={value.name} onChange={(v) => onChange({ ...value, name: v })} style={{ width: "100%" }} /></div><div><div className="muted" style={{ marginBottom: 6 }}>CUIT</div><Input value={value.vat} onChange={(v) => onChange({ ...value, vat: v })} style={{ width: "100%" }} /></div><div><div className="muted" style={{ marginBottom: 6 }}>Correo</div><Input value={value.email} onChange={(v) => onChange({ ...value, email: v })} style={{ width: "100%" }} /></div><div><div className="muted" style={{ marginBottom: 6 }}>Teléfono</div><Input value={value.phone} onChange={(v) => onChange({ ...value, phone: v })} style={{ width: "100%" }} /></div><div style={{ gridColumn: "1 / -1" }}><div className="muted" style={{ marginBottom: 6 }}>Dirección fiscal</div><Input value={value.address} onChange={(v) => onChange({ ...value, address: v })} style={{ width: "100%" }} /></div><div><div className="muted" style={{ marginBottom: 6 }}>Localidad</div><Input value={value.city} onChange={(v) => onChange({ ...value, city: v })} style={{ width: "100%" }} /></div></div><div className="muted" style={{ marginTop: 12 }}>{requiresBilling ? "Estos datos son obligatorios para aprobar esta condición." : "Dejá todos los campos vacíos si querés facturar con el cliente del presupuesto."}</div><div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 18 }}><Button variant="ghost" onClick={onClose} disabled={loading}>Cancelar</Button><Button onClick={onConfirm} disabled={loading}>{loading ? "Aprobando..." : "Aprobar Comercial"}</Button></div></div></div>; }
+function emptyBillingCustomer(source = {}) {
+  return {
+    name: String(source?.name || "").trim(),
+    vat: String(source?.vat || "").trim(),
+    email: String(source?.email || "").trim(),
+    phone: String(source?.phone || "").trim(),
+    address: String(source?.address || source?.street || "").trim(),
+    city: String(source?.city || "").trim(),
+    identification_type_id: source?.identification_type_id ? String(source.identification_type_id) : "",
+    identification_type_name: String(source?.identification_type_name || "").trim(),
+    afip_responsibility_type_id: source?.afip_responsibility_type_id ? String(source.afip_responsibility_type_id) : "",
+    afip_responsibility_type_name: String(source?.afip_responsibility_type_name || "").trim(),
+  };
+}
+function hasBillingCustomerData(customer) {
+  if (!customer) return false;
+  return [
+    customer.name,
+    customer.vat,
+    customer.email,
+    customer.phone,
+    customer.address,
+    customer.city,
+    customer.identification_type_id,
+    customer.afip_responsibility_type_id,
+  ].some((value) => String(value || "").trim());
+}
+function billingSummary(customer) {
+  if (!hasBillingCustomerData(customer)) return "Se facturará con los datos del cliente cargado.";
+  return [
+    customer.name,
+    customer.identification_type_name || "",
+    customer.vat ? `N° ${customer.vat}` : "",
+    customer.afip_responsibility_type_name || "",
+    customer.address,
+    customer.city,
+  ].filter(Boolean).join(" · ");
+}
+function normalizeBillingSelectionValue(list, idValue) {
+  const id = String(idValue || "").trim();
+  if (!id) return null;
+  return (Array.isArray(list) ? list : []).find((item) => String(item?.id || "") === id) || null;
+}
+
+function BillingModal({
+  value,
+  onChange,
+  onClose,
+  onConfirm,
+  loading,
+  requiresBilling = false,
+  billingOptions,
+  optionsLoading = false,
+  optionsError = null,
+}) {
+  const identificationTypes = Array.isArray(billingOptions?.identification_types) ? billingOptions.identification_types : [];
+  const afipResponsibilityTypes = Array.isArray(billingOptions?.afip_responsibility_types) ? billingOptions.afip_responsibility_types : [];
+
+  const selectedIdentificationType = normalizeBillingSelectionValue(identificationTypes, value.identification_type_id);
+  const selectedAfipResponsibilityType = normalizeBillingSelectionValue(afipResponsibilityTypes, value.afip_responsibility_type_id);
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20, zIndex: 1000 }} onClick={() => { if (!loading) onClose(); }}>
+      <div className="card" style={{ width: "100%", maxWidth: 860, background: "#fff", border: "1px solid #ddd", boxShadow: "0 20px 60px rgba(0,0,0,0.18)" }} onClick={(e) => e.stopPropagation()}>
+        <div style={{ fontWeight: 900, fontSize: 22, marginBottom: 8 }}>Datos fiscales de facturación</div>
+        <div className="muted" style={{ marginBottom: 16 }}>
+          {requiresBilling ? "Para esta condición debés cargar los datos fiscales de facturación antes de aprobar." : "Si no cargás estos datos, se facturará con los datos del cliente cargado en el presupuesto."}
+        </div>
+
+        {optionsError ? <div style={{ color: "#d93025", fontSize: 13, marginBottom: 12 }}>{optionsError}</div> : null}
+        {optionsLoading ? <div className="muted" style={{ marginBottom: 12 }}>Cargando opciones fiscales desde Odoo…</div> : null}
+
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 12 }}>
+          <div>
+            <div className="muted" style={{ marginBottom: 6 }}>Razón social / nombre fiscal</div>
+            <Input value={value.name} onChange={(v) => onChange({ ...value, name: v })} style={{ width: "100%" }} />
+          </div>
+          <div>
+            <div className="muted" style={{ marginBottom: 6 }}>Tipo de identificación</div>
+            <select
+              value={value.identification_type_id}
+              onChange={(e) => {
+                const selected = normalizeBillingSelectionValue(identificationTypes, e.target.value);
+                onChange({
+                  ...value,
+                  identification_type_id: String(e.target.value || ""),
+                  identification_type_name: selected?.name || "",
+                });
+              }}
+              style={{ width: "100%", padding: "10px 12px", borderRadius: 8, border: "1px solid #ddd", outline: "none", background: "#fff" }}
+            >
+              <option value="">Seleccionar…</option>
+              {identificationTypes.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+            </select>
+          </div>
+          <div>
+            <div className="muted" style={{ marginBottom: 6 }}>Número de identificación</div>
+            <Input value={value.vat} onChange={(v) => onChange({ ...value, vat: v })} style={{ width: "100%" }} />
+          </div>
+          <div>
+            <div className="muted" style={{ marginBottom: 6 }}>Tipo de responsabilidad AFIP</div>
+            <select
+              value={value.afip_responsibility_type_id}
+              onChange={(e) => {
+                const selected = normalizeBillingSelectionValue(afipResponsibilityTypes, e.target.value);
+                onChange({
+                  ...value,
+                  afip_responsibility_type_id: String(e.target.value || ""),
+                  afip_responsibility_type_name: selected?.name || "",
+                });
+              }}
+              style={{ width: "100%", padding: "10px 12px", borderRadius: 8, border: "1px solid #ddd", outline: "none", background: "#fff" }}
+            >
+              <option value="">Seleccionar…</option>
+              {afipResponsibilityTypes.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+            </select>
+          </div>
+          <div>
+            <div className="muted" style={{ marginBottom: 6 }}>Correo</div>
+            <Input value={value.email} onChange={(v) => onChange({ ...value, email: v })} style={{ width: "100%" }} />
+          </div>
+          <div>
+            <div className="muted" style={{ marginBottom: 6 }}>Teléfono</div>
+            <Input value={value.phone} onChange={(v) => onChange({ ...value, phone: v })} style={{ width: "100%" }} />
+          </div>
+          <div style={{ gridColumn: "1 / -1" }}>
+            <div className="muted" style={{ marginBottom: 6 }}>Dirección fiscal</div>
+            <Input value={value.address} onChange={(v) => onChange({ ...value, address: v })} style={{ width: "100%" }} />
+          </div>
+          <div>
+            <div className="muted" style={{ marginBottom: 6 }}>Localidad</div>
+            <Input value={value.city} onChange={(v) => onChange({ ...value, city: v })} style={{ width: "100%" }} />
+          </div>
+        </div>
+
+        {(selectedIdentificationType || selectedAfipResponsibilityType) ? (
+          <div className="muted" style={{ marginTop: 12 }}>
+            {[selectedIdentificationType?.name ? `Documento: ${selectedIdentificationType.name}` : "", selectedAfipResponsibilityType?.name ? `AFIP: ${selectedAfipResponsibilityType.name}` : ""].filter(Boolean).join(" · ")}
+          </div>
+        ) : null}
+
+        <div className="muted" style={{ marginTop: 12 }}>
+          {requiresBilling ? "Estos datos son obligatorios para aprobar esta condición." : "Dejá todos los campos vacíos si querés facturar con el cliente del presupuesto."}
+        </div>
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 18 }}>
+          <Button variant="ghost" onClick={onClose} disabled={loading}>Cancelar</Button>
+          <Button onClick={onConfirm} disabled={loading || (requiresBilling && optionsLoading)}>{loading ? "Aprobando..." : "Aprobar Comercial"}</Button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export default function QuoteDetailPage() {
   const params = useParams();
@@ -47,6 +196,12 @@ export default function QuoteDetailPage() {
   const canTechAct = canTech && quote?.status === "pending_approvals" && quote?.technical_decision === "pending";
   const conditionMode = String(quote?.payload?.condition_mode || "cond1").trim();
   const requiresCommercialBillingData = quote?.created_by_role === "vendedor" && ["cond1", "special"].includes(conditionMode);
+  const billingOptionsQ = useQuery({
+    queryKey: ["billing-options"],
+    queryFn: () => getBillingOptions(),
+    enabled: billingModalOpen && canCommercialAct && requiresCommercialBillingData,
+    staleTime: 1000 * 60 * 30,
+  });
 
   useEffect(() => { setBillingCustomer(emptyBillingCustomer(quote?.payload?.billing_customer || {})); }, [quote?.id, quote?.payload?.billing_customer]);
 
@@ -60,12 +215,40 @@ export default function QuoteDetailPage() {
 
   const lines = Array.isArray(quote?.lines) ? quote.lines : [];
   const rejectionBoxes = useMemo(() => { if (!quote) return []; const arr = []; if (quote.commercial_decision === "rejected") arr.push({ title: "Rechazo Comercial", body: quote.commercial_notes || "(sin motivo)" }); if (quote.technical_decision === "rejected") arr.push({ title: "Rechazo Técnica", body: quote.technical_notes || "(sin motivo)" }); return arr; }, [quote]);
-  function handleCommercialApproveClick() { if (requiresCommercialBillingData) { setBillingModalOpen(true); return; } commercialM.mutate({ action: "approve", billingCustomer: null }); }
-  function confirmCommercialApproval() { const normalized = emptyBillingCustomer(billingCustomer); if (requiresCommercialBillingData) { const missing = []; if (!normalized.name) missing.push("razón social / nombre fiscal"); if (!normalized.vat) missing.push("documento / CUIT"); if (!normalized.phone) missing.push("teléfono"); if (!normalized.address) missing.push("dirección fiscal"); if (!normalized.city) missing.push("localidad"); if (missing.length) { window.alert(`Completá los datos fiscales obligatorios: ${missing.join(", ")}.`); return; } } else if (hasBillingCustomerData(normalized) && !normalized.name) { window.alert("Si cargás datos fiscales, completá al menos la razón social / nombre fiscal."); return; } commercialM.mutate({ action: "approve", billingCustomer: hasBillingCustomerData(normalized) ? normalized : null }); }
+
+  function handleCommercialApproveClick() {
+    if (requiresCommercialBillingData) {
+      setBillingModalOpen(true);
+      return;
+    }
+    commercialM.mutate({ action: "approve", billingCustomer: null });
+  }
+
+  function confirmCommercialApproval() {
+    const normalized = emptyBillingCustomer(billingCustomer);
+    if (requiresCommercialBillingData) {
+      const missing = [];
+      if (!normalized.name) missing.push("razón social / nombre fiscal");
+      if (!normalized.identification_type_id) missing.push("tipo de identificación");
+      if (!normalized.vat) missing.push("número de identificación");
+      if (!normalized.afip_responsibility_type_id) missing.push("tipo de responsabilidad AFIP");
+      if (!normalized.phone) missing.push("teléfono");
+      if (!normalized.address) missing.push("dirección fiscal");
+      if (!normalized.city) missing.push("localidad");
+      if (missing.length) {
+        window.alert(`Completá los datos fiscales obligatorios: ${missing.join(", ")}.`);
+        return;
+      }
+    } else if (hasBillingCustomerData(normalized) && !normalized.name) {
+      window.alert("Si cargás datos fiscales, completá al menos la razón social / nombre fiscal.");
+      return;
+    }
+    commercialM.mutate({ action: "approve", billingCustomer: hasBillingCustomerData(normalized) ? normalized : null });
+  }
 
   return (
     <div className="container">
-      {billingModalOpen ? <BillingModal value={billingCustomer} onChange={setBillingCustomer} onClose={() => setBillingModalOpen(false)} onConfirm={confirmCommercialApproval} loading={commercialM.isPending} requiresBilling={requiresCommercialBillingData} /> : null}
+      {billingModalOpen ? <BillingModal value={billingCustomer} onChange={setBillingCustomer} onClose={() => setBillingModalOpen(false)} onConfirm={confirmCommercialApproval} loading={commercialM.isPending} requiresBilling={requiresCommercialBillingData} billingOptions={billingOptionsQ.data} optionsLoading={billingOptionsQ.isLoading || billingOptionsQ.isFetching} optionsError={billingOptionsQ.isError ? billingOptionsQ.error.message : null} /> : null}
       <div className="card">
         <h2 style={{ margin: 0 }}>{isRevision ? "Ajuste" : "Presupuesto"} #{displayQuoteNumber(quote, quoteId)}</h2>
         {q.isLoading ? <div className="muted">Cargando...</div> : null}

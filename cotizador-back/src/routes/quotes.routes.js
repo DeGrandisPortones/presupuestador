@@ -64,6 +64,10 @@ function partnerLooksLikeSameCustomer(partner, customer) {
   const customerName = normalizeNameForLookup(customer?.name);
   if (!partnerName || !customerName || partnerName !== customerName) return false;
 
+  const customerVat = toText(customer?.vat);
+  const partnerVat = toText(partner?.vat);
+  if (customerVat && partnerVat && customerVat === partnerVat) return true;
+
   const customerEmail = toText(customer?.email).toLowerCase();
   const partnerEmail = toText(partner?.email).toLowerCase();
   if (customerEmail && partnerEmail && customerEmail === partnerEmail) return true;
@@ -87,7 +91,7 @@ async function readPartnerLite(odoo, partnerId) {
   if (!id) return null;
   try {
     const rows = await odoo.executeKw("res.partner", "read", [[id]], {
-      fields: ["id", "name", "email", "phone", "mobile", "street", "city"],
+      fields: ["id", "name", "email", "phone", "mobile", "street", "city", "vat"],
     });
     return rows?.[0] || null;
   } catch {
@@ -189,10 +193,13 @@ async function findOrCreateCustomerPartner(odoo, customer) {
 
   const created = await odoo.executeKw("res.partner", "create", [{
     name,
+    vat: toText(customer?.vat) || false,
     email: email || false,
     phone: phone || false,
     street: toText(customer?.street) || toText(customer?.address) || false,
     city: toText(customer?.city) || false,
+    l10n_latam_identification_type_id: toIntId(customer?.identification_type_id) || false,
+    l10n_ar_afip_responsibility_type_id: toIntId(customer?.afip_responsibility_type_id) || false,
     customer_rank: 1,
   }]);
   const id = toIntId(created);
@@ -572,6 +579,73 @@ function appendPaymentMethodToNote(note, paymentMethod) {
   return `${note}\nForma de pago: ${pm}`;
 }
 
+function normalizeBillingCustomer(value) {
+  const raw = value && typeof value === "object" ? value : {};
+  return {
+    name: toText(raw?.name),
+    vat: toText(raw?.vat),
+    email: toText(raw?.email).toLowerCase(),
+    phone: toText(raw?.phone),
+    address: toText(raw?.address || raw?.street),
+    city: toText(raw?.city),
+    identification_type_id: toIntId(raw?.identification_type_id),
+    identification_type_name: toText(raw?.identification_type_name),
+    afip_responsibility_type_id: toIntId(raw?.afip_responsibility_type_id),
+    afip_responsibility_type_name: toText(raw?.afip_responsibility_type_name),
+  };
+}
+function hasBillingCustomerData(value) {
+  const c = normalizeBillingCustomer(value);
+  return !!(c.name || c.vat || c.email || c.phone || c.address || c.city || c.identification_type_id || c.afip_responsibility_type_id);
+}
+function getQuoteConditionMode(quote) {
+  return String(quote?.payload?.condition_mode || "cond1").trim().toLowerCase();
+}
+function requiresBillingCustomerForQuote(quote) {
+  return quote?.created_by_role === "vendedor" && ["cond1", "special"].includes(getQuoteConditionMode(quote));
+}
+function validateBillingCustomerRequired(value) {
+  const c = normalizeBillingCustomer(value);
+  if (!c.name) return "Falta razón social / nombre fiscal";
+  if (!c.identification_type_id) return "Falta tipo de identificación";
+  if (!c.vat) return "Falta número de identificación";
+  if (!c.afip_responsibility_type_id) return "Falta tipo de responsabilidad AFIP";
+  if (!c.phone) return "Falta teléfono fiscal";
+  if (!c.address) return "Falta dirección fiscal";
+  if (!c.city) return "Falta localidad fiscal";
+  return null;
+}
+function resolveCustomerForOdoo(quote, revisionQuote = null) {
+  if (requiresBillingCustomerForQuote(quote)) {
+    const revisionPayload = revisionQuote?.payload && typeof revisionQuote.payload === "object" ? revisionQuote.payload : {};
+    const quotePayload = quote?.payload && typeof quote.payload === "object" ? quote.payload : {};
+    const source = hasBillingCustomerData(revisionPayload?.billing_customer)
+      ? revisionPayload.billing_customer
+      : (hasBillingCustomerData(quotePayload?.billing_customer) ? quotePayload.billing_customer : {});
+    const c = normalizeBillingCustomer(source);
+    return {
+      name: c.name,
+      vat: c.vat,
+      email: c.email,
+      phone: c.phone,
+      address: c.address,
+      street: c.address,
+      city: c.city,
+      identification_type_id: c.identification_type_id,
+      identification_type_name: c.identification_type_name,
+      afip_responsibility_type_id: c.afip_responsibility_type_id,
+      afip_responsibility_type_name: c.afip_responsibility_type_name,
+    };
+  }
+  return quote?.end_customer || {};
+}
+function extractReferenceCore(value) {
+  const raw = toText(value);
+  if (!raw) return "";
+  return raw.replace(/^(NV|NP|S)+/i, "");
+}
+
+
 async function syncQuoteToOdoo({ odoo, quote, approverUser }) {
   const pricelistId = toIntId(quote?.pricelist_id) || 1;
   let partnerId = null;
@@ -579,7 +653,7 @@ async function syncQuoteToOdoo({ odoo, quote, approverUser }) {
     partnerId = toIntId(quote?.bill_to_odoo_partner_id) || await getCreatorOdooPartnerId(quote.created_by_user_id) || toIntId(approverUser?.odoo_partner_id);
     if (!partnerId) throw new Error("Distribuidor sin bill_to_odoo_partner_id (quote) y sin odoo_partner_id (JWT/DB)");
   } else {
-    partnerId = await findOrCreateCustomerPartner(odoo, quote.end_customer || {});
+    partnerId = await findOrCreateCustomerPartner(odoo, resolveCustomerForOdoo(quote));
   }
   partnerId = toIntId(partnerId);
   if (!partnerId) throw new Error("partner_id invalido para Odoo");
@@ -617,7 +691,7 @@ async function syncQuoteToOdoo({ odoo, quote, approverUser }) {
   if (!orderId) throw new Error("No se pudo crear sale.order en Odoo");
   await applySellerToSaleOrder(odoo, orderId, sellerName);
 
-  const orderReference = quote?.quote_number ? `S${quote.quote_number}` : null;
+  const orderReference = quote?.quote_number ? `NP${quote.quote_number}` : null;
   const order = orderReference
     ? (await renameOrderToReference(odoo, orderId, orderReference))
     : (await odoo.executeKw("sale.order", "read", [[orderId]], { fields: ["id", "name", "amount_total", "partner_id", "state", "pricelist_id"] }))?.[0];
@@ -632,7 +706,7 @@ async function syncFinalQuoteToOdoo({ odoo, revisionQuote, originalQuote, approv
     partnerId = toIntId(originalQuote?.bill_to_odoo_partner_id) || await getCreatorOdooPartnerId(originalQuote.created_by_user_id) || toIntId(approverUser?.odoo_partner_id);
     if (!partnerId) throw new Error("Distribuidor sin partner en Odoo");
   } else {
-    partnerId = await findOrCreateCustomerPartner(odoo, originalQuote.end_customer || {});
+    partnerId = await findOrCreateCustomerPartner(odoo, resolveCustomerForOdoo(originalQuote, revisionQuote));
   }
   partnerId = toIntId(partnerId);
   if (!partnerId) throw new Error("partner_id invalido para Odoo");
@@ -691,7 +765,8 @@ async function syncFinalQuoteToOdoo({ odoo, revisionQuote, originalQuote, approv
   }
 
   const finalAmountToCharge = round2(Math.max(0, detailedTotal - advanceToDiscount));
-  const referenceNv = originalQuote.odoo_sale_order_name ? `NV${originalQuote.odoo_sale_order_name}` : `NV${String(originalQuote.id).slice(0, 8)}`;
+  const originalReferenceCore = extractReferenceCore(originalQuote.odoo_sale_order_name || originalQuote.quote_number || "");
+  const referenceNv = originalReferenceCore ? `NV${originalReferenceCore}` : `NV${String(originalQuote.id).slice(0, 8)}`;
   let note = `PRESUPUESTADOR FINAL: COPY ${revisionQuote.id} (ORIG ${originalQuote.id})`
     + `\nReferencia: ${referenceNv}`
     + `\nReferencia seña: ${originalQuote.odoo_sale_order_name || originalQuote.odoo_sale_order_id || "-"}`
@@ -744,7 +819,7 @@ async function syncDirectProductionFinalToOdoo({ odoo, quote, approverUser }) {
     partnerId = toIntId(quote?.bill_to_odoo_partner_id) || await getCreatorOdooPartnerId(quote.created_by_user_id) || toIntId(approverUser?.odoo_partner_id);
     if (!partnerId) throw new Error("Distribuidor sin partner en Odoo");
   } else {
-    partnerId = await findOrCreateCustomerPartner(odoo, quote.end_customer || {});
+    partnerId = await findOrCreateCustomerPartner(odoo, resolveCustomerForOdoo(quote));
   }
   partnerId = toIntId(partnerId);
   if (!partnerId) throw new Error("partner_id invalido para Odoo");
@@ -797,7 +872,8 @@ async function syncDirectProductionFinalToOdoo({ odoo, quote, approverUser }) {
   if (!orderId) throw new Error("No se pudo crear sale.order final directa en Odoo");
   await applySellerToSaleOrder(odoo, orderId, sellerName);
   const [createdOrder] = await odoo.executeKw("sale.order", "read", [[orderId]], { fields: ["id", "name"] });
-  const referenceNv = createdOrder?.name ? `NV${createdOrder.name}` : `NV${String(quote.id).slice(0, 8)}`;
+  const directReferenceCore = extractReferenceCore(createdOrder?.name || quote?.quote_number || "");
+  const referenceNv = directReferenceCore ? `NV${directReferenceCore}` : `NV${String(quote.id).slice(0, 8)}`;
   const order = await renameOrderToReference(odoo, orderId, referenceNv);
   if (!order?.id) throw new Error("No se pudo leer sale.order directa en Odoo");
 
@@ -1285,7 +1361,7 @@ export function buildQuotesRouter(odoo) {
     try {
       const u = req.user;
       const id = req.params.id;
-      const { action, notes } = req.body || {};
+      const { action, notes, billing_customer } = req.body || {};
       await normalizeIfSyncingButHasOrder(id);
       const r = await dbQuery(`select * from public.presupuestador_quotes where id=$1`, [id]);
       const quote = r.rows?.[0];
@@ -1302,7 +1378,28 @@ export function buildQuotesRouter(odoo) {
       }
       if (action !== "approve") return res.status(400).json({ ok: false, error: "action debe ser 'approve' o 'reject'" });
 
-      const upd1 = await dbQuery(`update public.presupuestador_quotes set commercial_decision='approved', commercial_by_user_id=$2, commercial_at=now(), commercial_notes=$3 where id=$1 and status='pending_approvals' and commercial_decision='pending' returning *`, [id, Number(u.user_id), notes || null]);
+      const nextBillingCustomer = normalizeBillingCustomer(billing_customer || {});
+      if (requiresBillingCustomerForQuote(quote)) {
+        const billingErr = validateBillingCustomerRequired(nextBillingCustomer);
+        if (billingErr) return res.status(400).json({ ok: false, error: billingErr });
+      }
+      const mergedPayload = {
+        ...(quote.payload && typeof quote.payload === "object" ? quote.payload : {}),
+      };
+      if (hasBillingCustomerData(nextBillingCustomer)) mergedPayload.billing_customer = nextBillingCustomer;
+      else delete mergedPayload.billing_customer;
+
+      const upd1 = await dbQuery(
+        `update public.presupuestador_quotes
+            set commercial_decision='approved',
+                commercial_by_user_id=$2,
+                commercial_at=now(),
+                commercial_notes=$3,
+                payload=$4::jsonb
+          where id=$1 and status='pending_approvals' and commercial_decision='pending'
+          returning *`,
+        [id, Number(u.user_id), notes || null, JSON.stringify(mergedPayload)]
+      );
       const q1 = upd1.rows?.[0] || (await dbQuery(`select * from public.presupuestador_quotes where id=$1`, [id])).rows?.[0];
       const qSync = await markSyncingIfReady(id);
       if (!qSync) return res.json({ ok: true, quote: q1 });

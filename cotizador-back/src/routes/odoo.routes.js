@@ -73,6 +73,38 @@ export function buildOdooRouter(odoo) {
     }
   });
 
+  router.get("/billing-options", requireAuth, async (_req, res, next) => {
+    try {
+      const identificationTypes = await odoo.executeKw("l10n_latam.identification.type", "search_read", [[]], {
+        fields: ["id", "name", "country_id"],
+        limit: 200,
+        order: "name asc",
+      });
+
+      const afipResponsibilityTypes = await odoo.executeKw("l10n_ar.afip.responsibility.type", "search_read", [[]], {
+        fields: ["id", "name"],
+        limit: 200,
+        order: "name asc",
+      });
+
+      res.json({
+        ok: true,
+        identification_types: (identificationTypes || []).map((item) => ({
+          id: item.id,
+          name: item.name,
+          country_id: Array.isArray(item.country_id) ? item.country_id[0] : item.country_id || null,
+          country_name: Array.isArray(item.country_id) ? item.country_id[1] : null,
+        })),
+        afip_responsibility_types: (afipResponsibilityTypes || []).map((item) => ({
+          id: item.id,
+          name: item.name,
+        })),
+      });
+    } catch (e) {
+      next(e);
+    }
+  });
+
   router.post("/prices", async (req, res, next) => {
     try {
       const body = req.body || {};

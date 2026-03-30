@@ -35,6 +35,15 @@ export async function searchProducts({ query = "", limit = 10 }) {
   return data.products || [];
 }
 
+export async function getBillingOptions() {
+  const { data } = await http.get("/api/odoo/billing-options");
+  if (!data?.ok) throw new Error(data?.error || "No se pudieron cargar las opciones fiscales");
+  return {
+    identification_types: data.identification_types || [],
+    afip_responsibility_types: data.afip_responsibility_types || [],
+  };
+}
+
 export async function getPrices({ pricelist_id, partner_id = null, lines }) {
   const payload = {
     pricelist_id: pricelist_id ?? null,
