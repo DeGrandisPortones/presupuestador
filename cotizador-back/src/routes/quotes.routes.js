@@ -10,22 +10,22 @@ const IVA_RATE = 0.21;
 const TACA_TACA_PLAN_NAME = String(process.env.ODOO_TACA_TACA_PLAN_NAME || "Taca Taca").trim();
 
 const PORTON_TYPE_TO_ODOO_PRODUCT_ID = Object.freeze({
-  acero_simil_aluminio_clasico: 3209,
-  coplanar_acero_simil_aluminio_clasico: 3210,
-  acero_simil_aluminio_doble_iny: 3211,
-  coplanar_acero_simil_aluminio_doble_iny: 3212,
-  para_revestir_con_al_pvc_otros: 3213,
-  estandar_acero_simil_aluminio: 3214,
-  estandar_acero_simil_madera: 3215,
-  acero_simil_madera_clasico: 3216,
-  coplanar_acero_simil_madera_clasico: 3217,
-  acero_simil_madera_doble_iny: 3218,
-  coplanar_acero_simil_madera_doble_iny: 3219,
+  para_revestir_con_al_pvc_otros: 3233,
+  acero_simil_aluminio_clasico: 3234,
+  acero_simil_madera_clasico: 3235,
+  acero_simil_madera_doble_iny: 3236,
+  acero_simil_aluminio_doble_iny: 3237,
+  estandar_acero_simil_aluminio: 3238,
+  estandar_acero_simil_madera: 3239,
+  coplanar_acero_simil_aluminio_clasico: 3240,
+  corredizo_simil_aluminio: 3241,
+  coplanar_acero_simil_madera_clasico: 3242,
+  coplanar_acero_simil_madera_doble_iny: 3243,
+  coplanar_acero_simil_aluminio_doble_iny: 3244,
+  corredizo_simil_aluminio_doble: 3245,
   revestimiento_wpc: 3220,
   corredizo_simil_madera: 3221,
-  corredizo_simil_aluminio_doble: 3222,
   corredizo_simil_madera_doble: 3223,
-  corredizo_simil_aluminio: 3224,
 });
 
 function requireRole(flag) {
