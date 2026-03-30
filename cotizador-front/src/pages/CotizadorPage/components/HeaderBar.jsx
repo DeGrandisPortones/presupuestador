@@ -26,7 +26,7 @@ export default function HeaderBar({ showMargin }) {
   return (
     <div className="card">
       <div className="row" style={{ alignItems: "center" }}>
-        {showMargin && (
+        {showMargin ? (
           <div>
             <div className="muted">Coeficiente (%)</div>
             <Input
@@ -40,7 +40,7 @@ export default function HeaderBar({ showMargin }) {
               style={{ minWidth: 120 }}
             />
           </div>
-        )}
+        ) : null}
 
         <div style={{ flex: 1, minWidth: 220 }}>
           <div className="muted">Cliente final (nombre)</div>

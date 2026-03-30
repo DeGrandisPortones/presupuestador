@@ -28,14 +28,13 @@ import AppLayout from "./layouts/AppLayout.jsx";
 
 import { useAuthStore } from "./domain/auth/store.js";
 import { getMe } from "./api/auth.js";
-import { prefetchOdooSessionData } from "./domain/odoo/prefetch.js";
+import { prefetchOdooBootstrapInBackground } from "./domain/odoo/prefetch.js";
 
 export default function App() {
   const token = useAuthStore((s) => s.token);
   const user = useAuthStore((s) => s.user);
   const setUser = useAuthStore((s) => s.setUser);
   const logout = useAuthStore((s) => s.logout);
-  const setOdooOnline = useAuthStore((s) => s.setOdooOnline);
 
   useEffect(() => {
     if (!token) return;
@@ -47,21 +46,11 @@ export default function App() {
   }, [token, user, setUser, logout]);
 
   useEffect(() => {
-    let cancelled = false;
-    if (!token || !user) return undefined;
-
-    prefetchOdooSessionData()
-      .then(() => {
-        if (!cancelled) setOdooOnline(true);
-      })
-      .catch(() => {
-        if (!cancelled) setOdooOnline(false);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [token, user, setOdooOnline]);
+    if (!token || !user) return;
+    window.setTimeout(() => {
+      prefetchOdooBootstrapInBackground().catch(() => {});
+    }, 0);
+  }, [token, user]);
 
   return (
     <BrowserRouter>

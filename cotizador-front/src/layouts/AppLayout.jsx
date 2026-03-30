@@ -2,22 +2,33 @@ import { Outlet, useNavigate, NavLink } from "react-router-dom";
 import Button from "../ui/Button.jsx";
 import { useAuthStore } from "../domain/auth/store.js";
 
-function statusStyles(isOnline) {
-  return {
-    padding: "10px 16px",
-    borderRadius: 14,
-    border: `1px solid ${isOnline ? "#1f8f4d" : "#b53a3a"}`,
-    background: isOnline ? "#1f8f4d" : "#b53a3a",
-    color: "#fff",
-    fontWeight: 800,
-    lineHeight: 1,
-  };
+function OdooStatusBadge() {
+  const odooStatus = useAuthStore((s) => s.odooStatus);
+  const isOnline = odooStatus === "online";
+  return (
+    <div
+      style={{
+        padding: "8px 12px",
+        borderRadius: 999,
+        border: `1px solid ${isOnline ? "#1f7a45" : "#a12626"}`,
+        background: isOnline ? "#eaf8ef" : "#fdecec",
+        color: isOnline ? "#1f7a45" : "#a12626",
+        fontWeight: 800,
+        fontSize: 13,
+        lineHeight: 1,
+        minWidth: 82,
+        textAlign: "center",
+      }}
+      title={isOnline ? "Conexión con Odoo disponible" : "Sin respuesta válida desde Odoo"}
+    >
+      {isOnline ? "Online" : "Offline"}
+    </div>
+  );
 }
 
 export default function AppLayout() {
   const user = useAuthStore((s) => s.user);
   const logout = useAuthStore((s) => s.logout);
-  const odooOnline = useAuthStore((s) => s.odooOnline);
   const navigate = useNavigate();
 
   const isSuperuser = !!user?.is_superuser;
@@ -43,7 +54,7 @@ export default function AppLayout() {
   return (
     <div>
       <div className="card app-header" style={{ borderRadius: 0 }}>
-        <div className="container" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: 0 }}>
+        <div className="container" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: 0, gap: 16 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
             <img className="brand-logo" src="/brands/dflex.png" alt="Dflex" />
             <div>
@@ -51,10 +62,8 @@ export default function AppLayout() {
             </div>
           </div>
 
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <div style={statusStyles(odooOnline)}>
-              {odooOnline ? "Online" : "Offline"}
-            </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <OdooStatusBadge />
             <Button
               variant="ghost"
               onClick={() => {

@@ -1,20 +1,21 @@
-// src/domain/odoo/bootstrap.js
-//
-// v3: bootstrap POR TIPO de cotizador (porton / ipanel / otros)
-
 function keyFor(kind = "porton") {
   const k = (kind || "porton").toString().trim().toLowerCase();
   return `odoo_bootstrap_v3_${k}`;
 }
 
+function normalizeData(data) {
+  return data && typeof data === "object" ? data : null;
+}
+
 export function setOdooBootstrap(data, kind = "porton") {
-  if (!data) return;
+  const normalized = normalizeData(data);
+  if (!normalized) return;
   try {
     localStorage.setItem(
       keyFor(kind),
       JSON.stringify({
         saved_at: new Date().toISOString(),
-        ...data,
+        ...normalized,
       })
     );
   } catch (_) {
@@ -30,6 +31,24 @@ export function getOdooBootstrap(kind = "porton") {
   } catch (_) {
     return null;
   }
+}
+
+export function mergeOdooBootstrap(patch, kind = "porton") {
+  const current = getOdooBootstrap(kind) || {};
+  const next = {
+    ...current,
+    ...(normalizeData(patch) || {}),
+  };
+  setOdooBootstrap(next, kind);
+  return next;
+}
+
+export function hasAnyOdooBootstrap() {
+  const kinds = ["porton", "ipanel", "otros"];
+  return kinds.some((kind) => {
+    const boot = getOdooBootstrap(kind);
+    return !!(boot?.pricelists?.length || boot?.products?.length || boot?.sections?.length);
+  });
 }
 
 export function clearOdooBootstrap(kind = "porton") {

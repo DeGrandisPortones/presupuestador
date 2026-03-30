@@ -6,12 +6,13 @@ import Input from "../../ui/Input.jsx";
 import Button from "../../ui/Button.jsx";
 import { login } from "../../api/auth.js";
 import { useAuthStore } from "../../domain/auth/store.js";
-import { prefetchOdooSessionData } from "../../domain/odoo/prefetch.js";
+import { setOdooBootstrap } from "../../domain/odoo/bootstrap.js";
+import { prefetchOdooBootstrapInBackground } from "../../domain/odoo/prefetch.js";
 
 export default function LoginPage() {
   const navigate = useNavigate();
   const setSession = useAuthStore((s) => s.setSession);
-  const setOdooOnline = useAuthStore((s) => s.setOdooOnline);
+  const setOdooStatus = useAuthStore((s) => s.setOdooStatus);
   const token = useAuthStore((s) => s.token);
 
   if (token) return <Navigate to="/menu" replace />;
@@ -33,15 +34,21 @@ export default function LoginPage() {
 
   const m = useMutation({
     mutationFn: () => login({ username, password }),
-    onSuccess: async (data) => {
+    onSuccess: (data) => {
       setSession({ token: data.token, user: data.user });
-      try {
-        await prefetchOdooSessionData();
-        setOdooOnline(true);
-      } catch (_) {
-        setOdooOnline(false);
+
+      if (data.bootstrap?.products?.length || data.bootstrap?.pricelists?.length || data.bootstrap?.sections?.length) {
+        setOdooBootstrap(data.bootstrap, "porton");
+        setOdooStatus("online");
       }
+
       navigate("/menu", { replace: true });
+
+      window.setTimeout(() => {
+        prefetchOdooBootstrapInBackground({ loginBootstrap: data.bootstrap }).catch(() => {
+          setOdooStatus("offline");
+        });
+      }, 0);
     },
   });
 
