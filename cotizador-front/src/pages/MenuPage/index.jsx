@@ -40,6 +40,7 @@ export default function MenuPage() {
   const showTechInbox = !!(isSuperuser || user?.is_rev_tecnica);
   const showDoors = !!(isSuperuser || user?.is_vendedor);
   const showMediciones = !!(isSuperuser || user?.is_medidor);
+  const showTechnicalRules = !!isSuperuser;
 
   return (
     <div className="container">
@@ -142,6 +143,25 @@ export default function MenuPage() {
                 <path d="M4 13h6v7H4z" />
                 <path d="M14 4h6v16h-6z" />
                 <path d="M4 4h6v5H4z" />
+              </SvgIcon>
+            }
+          />
+        )}
+
+        {showTechnicalRules && (
+          <MenuTile
+            title="Reglas Técnicas"
+            description="Dashboard exclusivo de superusuario para definir reglas sobre la planilla técnica y el pegado a Odoo."
+            buttonText="Abrir reglas"
+            onClick={() => navigate("/dashboard/reglas-tecnicas")}
+            icon={
+              <SvgIcon>
+                <path d="M4 7h16" />
+                <path d="M7 7v10" />
+                <path d="M17 7v10" />
+                <path d="M4 17h16" />
+                <path d="M9 12h6" />
+                <path d="M12 9v6" />
               </SvgIcon>
             }
           />
