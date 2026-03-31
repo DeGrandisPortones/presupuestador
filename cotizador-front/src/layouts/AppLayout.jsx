@@ -1,6 +1,8 @@
+import { useQuery } from "@tanstack/react-query";
 import { Outlet, useNavigate, NavLink } from "react-router-dom";
 import Button from "../ui/Button.jsx";
 import { useAuthStore } from "../domain/auth/store.js";
+import { getTechnicalConsultUnreadSummary } from "../api/technicalConsults.js";
 
 function OdooStatusBadge() {
   const odooStatus = useAuthStore((s) => s.odooStatus);
@@ -22,6 +24,68 @@ function OdooStatusBadge() {
       title={isOnline ? "Conexión con Odoo disponible" : "Sin respuesta válida desde Odoo"}
     >
       {isOnline ? "Online" : "Offline"}
+    </div>
+  );
+}
+
+function TechnicalConsultHeaderButton() {
+  const user = useAuthStore((s) => s.user);
+  const navigate = useNavigate();
+
+  const canAccessConsults = !!(user?.is_superuser || user?.is_vendedor || user?.is_distribuidor || user?.is_rev_tecnica);
+  const isTechnical = !!(user?.is_superuser || user?.is_rev_tecnica);
+  const isRequester = !!(!isTechnical && (user?.is_vendedor || user?.is_distribuidor));
+
+  const summaryQ = useQuery({
+    queryKey: ["technicalConsultUnreadSummary"],
+    queryFn: getTechnicalConsultUnreadSummary,
+    enabled: canAccessConsults,
+    staleTime: 10000,
+    refetchInterval: 15000,
+  });
+
+  if (!canAccessConsults) return null;
+
+  const summary = summaryQ.data || {};
+  const unreadCount = isRequester
+    ? Number(summary.mine_unread_count || 0)
+    : Math.max(Number(summary.technical_unread_count || 0), Number(summary.technical_pending_count || 0));
+
+  const highlight = unreadCount > 0;
+
+  return (
+    <div style={{ position: "relative" }}>
+      <Button
+        variant={highlight ? "primary" : "ghost"}
+        onClick={() => navigate("/consultas-tecnicas")}
+        title={highlight ? `${unreadCount} consulta(s) pendiente(s)` : "Abrir consultas técnicas"}
+        style={{ position: "relative", paddingRight: highlight ? 38 : undefined }}
+      >
+        Consulta técnica
+      </Button>
+      {highlight ? (
+        <span
+          style={{
+            position: "absolute",
+            top: -6,
+            right: -6,
+            minWidth: 22,
+            height: 22,
+            borderRadius: 999,
+            background: "#d93025",
+            color: "#fff",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            fontSize: 12,
+            fontWeight: 800,
+            padding: "0 6px",
+            boxShadow: "0 0 0 3px #fff",
+          }}
+        >
+          {unreadCount > 99 ? "99+" : unreadCount}
+        </span>
+      ) : null}
     </div>
   );
 }
@@ -63,6 +127,7 @@ export default function AppLayout() {
           </div>
 
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <TechnicalConsultHeaderButton />
             <OdooStatusBadge />
             <Button
               variant="ghost"

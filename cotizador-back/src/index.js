@@ -19,6 +19,7 @@ import { buildAdminRouter } from "./routes/admin.routes.js";
 import { buildPdfRouter } from "./routes/pdf.routes.js";
 import { buildMeasurementsRouter } from "./routes/measurements.routes.js";
 import { buildDoorsRouter } from "./routes/doors.routes.js";
+import { buildTechnicalConsultsRouter } from "./routes/technicalConsults.routes.js";
 
 const app = express();
 
@@ -41,6 +42,7 @@ app.use("/api/doors", buildDoorsRouter(odoo));
 app.use("/api/measurements", buildMeasurementsRouter(odoo));
 app.use("/api/catalog", buildCatalogRouter(odoo));
 app.use("/api/admin", buildAdminRouter(odoo));
+app.use("/api/technical-consults", buildTechnicalConsultsRouter());
 app.use("/api/pdf", buildPdfRouter());
 app.get("/health", (_req, res) => res.json({ ok: true }));
 

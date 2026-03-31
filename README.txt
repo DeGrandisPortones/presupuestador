@@ -1,14 +1,30 @@
-Este paquete corrige el ingreso al Dashboard de "Otros" y la separación de catálogo.
+Paquete de cambios - Consulta técnica / tickets persistentes
 
-Incluye:
-- cotizador-back/src/catalogDb.js  -> acepta kind "otros"
-- cotizador-back/src/catalogBootstrap.js -> evita mezclar productos no-Ipanel dentro de "Otros"
-- cotizador-back/src/routes/quotes.routes.PARCHE.txt -> reemplazo puntual requerido en quotes.routes.js
+Archivos incluidos:
 
-Aplicación:
-1. Reemplazá los 2 archivos .js por los incluidos en este zip.
-2. Aplicá el reemplazo indicado en quotes.routes.PARCHE.txt dentro de cotizador-back/src/routes/quotes.routes.js
-3. Reiniciá backend y frontend.
+cotizador-back/src/index.js
+cotizador-back/src/technicalConsultsDb.js
+cotizador-back/src/routes/technicalConsults.routes.js
+cotizador-front/src/App.jsx
+cotizador-front/src/api/technicalConsults.js
+cotizador-front/src/layouts/AppLayout.jsx
+cotizador-front/src/pages/TechnicalConsultsPage/index.jsx
 
-Nota:
-La corrección de catalogBootstrap.js hace que "Otros" muestre solo productos cuyas etiquetas fueron configuradas para el catálogo "otros" en el Dashboard, en lugar de traer todos los no-Ipanel.
+Qué hace:
+- Botón "Consulta técnica" a la izquierda de Online/Offline.
+- Badge llamativo con cantidad sin leer / pendientes.
+- Tickets persistentes con mensajes.
+- Primera respuesta de Técnica => estado En proceso.
+- Cierre solo por Técnica con resolución final obligatoria.
+- Ticket cerrado => no admite más respuestas.
+- Vista de vendedor/distribuidor y vista de Técnica en una ruta única: /consultas-tecnicas
+
+Copia:
+1. Descomprimir respetando carpetas.
+2. Copiar cada archivo encima del repo actual.
+3. Reiniciar front y back.
+
+Notas:
+- El esquema de tablas se crea solo al usar el módulo por primera vez.
+- No toqué la pantalla actual de "Revisión Técnica" para no mezclar este flujo con aprobaciones existentes.
+- El acceso técnico queda en el mismo botón del header.
