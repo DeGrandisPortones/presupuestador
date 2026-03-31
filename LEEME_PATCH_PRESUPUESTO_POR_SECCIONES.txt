@@ -39,3 +39,10 @@ Cómo resuelve las secciones:
 - Lee la/s sección/es del producto desde section_ids
 - Arma un mapa sección -> productos seleccionados
 - Usa ese mapa para completar los campos técnicos
+
+
+ACTUALIZACION ODOO
+- En "Salida a Odoo" ahora hay dos modos:
+  1) Repetir producto presupuestado: toma el mismo/los mismos product_id que el vendedor o distribuidor eligio en la seccion seleccionada.
+  2) Elegir otro producto: permite forzar un producto Odoo distinto desde un selector.
+- El modo recomendado para la mayoria de los casos es "repetir producto presupuestado".

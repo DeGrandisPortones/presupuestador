@@ -251,12 +251,15 @@ function buildBudgetContext(quote, catalog) {
     budget_sections: buildBudgetSectionsContext(quote, catalog),
   };
 }
-function resolveSectionBudgetValue(field, budgetContext) {
+function getSectionBudgetProducts(field, budgetContext) {
   const sections = budgetContext?.budget_sections || {};
   const byId = sections.by_id || {};
   const byName = sections.by_name || {};
   const section = byId[Number(field?.budget_section_id || 0)] || byName[normalizeNameKey(field?.budget_section_name)];
-  const products = Array.isArray(section?.selected_products) ? section.selected_products : [];
+  return Array.isArray(section?.selected_products) ? section.selected_products : [];
+}
+function resolveSectionBudgetValue(field, budgetContext) {
+  const products = getSectionBudgetProducts(field, budgetContext);
   if (!products.length) return "";
   const key = String(field?.budget_product_value_key || "display_name");
   const mode = String(field?.budget_multiple_mode || "first");
@@ -334,6 +337,23 @@ export default function MedicionDetailPage() {
     let next = form;
     let changed = false;
     for (const field of dynamicFields) {
+      if (String(field?.value_source_type || "") === "budget_section_product") {
+        const selectedProducts = getSectionBudgetProducts(field, budgetContext).map((item) => ({
+          product_id: Number(item?.product_id || 0) || null,
+          display_name: String(item?.display_name || "").trim(),
+          alias: String(item?.alias || "").trim(),
+          raw_name: String(item?.raw_name || "").trim(),
+          code: String(item?.code || "").trim(),
+          qty: Number(item?.qty || 1) || 1,
+        })).filter((item) => item.product_id);
+        const currentBindingProducts = getByPath(next, `__budget_binding_products.${field.key}`);
+        const currentSerialized = JSON.stringify(Array.isArray(currentBindingProducts) ? currentBindingProducts : []);
+        const nextSerialized = JSON.stringify(selectedProducts);
+        if (currentSerialized != nextSerialized) {
+          next = setByPath(next, `__budget_binding_products.${field.key}`, selectedProducts);
+          changed = true;
+        }
+      }
       const sourceValue = resolveFieldAutofillValue(field, budgetContext);
       if (sourceValue === undefined || sourceValue === null || sourceValue === "") continue;
       const currentValue = getByPath(next, field.key);

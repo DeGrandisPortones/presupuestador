@@ -60,7 +60,7 @@ function normalizeEditableBy(value) {
 }
 function normalizeOdooBindingType(value) {
   const v = String(value || "none").trim().toLowerCase();
-  return ["none", "product"].includes(v) ? v : "none";
+  return ["none", "repeat_budget_product", "custom_product"].includes(v) ? v : "none";
 }
 function normalizeBudgetProductValueKey(value) {
   const v = String(value || "display_name").trim();

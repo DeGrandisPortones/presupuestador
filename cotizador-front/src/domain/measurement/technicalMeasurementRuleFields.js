@@ -46,7 +46,8 @@ export const EDITABLE_BY_OPTIONS = [
 
 export const ODOO_BINDING_TYPE_OPTIONS = [
   { value: "none", label: "No pegar en Odoo" },
-  { value: "product", label: "Agregar producto a Odoo" },
+  { value: "repeat_budget_product", label: "Agregar producto a Odoo · repetir producto presupuestado" },
+  { value: "custom_product", label: "Agregar producto a Odoo · elegir otro producto" },
 ];
 
 export const BUDGET_PRODUCT_VALUE_OPTIONS = [
@@ -98,7 +99,7 @@ function normalizeEditableBy(value) {
 }
 function normalizeOdooBindingType(value) {
   const v = String(value || "none").trim().toLowerCase();
-  return ["none", "product"].includes(v) ? v : "none";
+  return ["none", "repeat_budget_product", "custom_product"].includes(v) ? v : "none";
 }
 function normalizeBudgetProductValueKey(value) {
   const v = String(value || "display_name").trim();
