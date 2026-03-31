@@ -10,7 +10,6 @@ import Input from "../../ui/Input.jsx";
 
 function text(v) { return String(v ?? "").trim(); }
 function boolValue(v) { return v === true || String(v || "").toLowerCase().trim() === "si"; }
-
 function splitName(endCustomer = {}) {
   const first = text(endCustomer.first_name);
   const last = text(endCustomer.last_name);
@@ -18,12 +17,10 @@ function splitName(endCustomer = {}) {
   const parts = text(endCustomer.name).split(/\s+/).filter(Boolean);
   return { first: parts[0] || "", last: parts.slice(1).join(" ") };
 }
-
 function todayISO() {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
-
 function extractBudgetDimensionMm(quote, key) {
   const dims = quote?.payload?.dimensions || {};
   const raw = key === "ancho" ? dims?.width : dims?.height;
@@ -31,14 +28,12 @@ function extractBudgetDimensionMm(quote, key) {
   if (!Number.isFinite(n) || n <= 0) return "";
   return String(Math.round(n * 1000));
 }
-
 function normalizeTriple(values = [], suggested = "") {
   const arr = Array.isArray(values) ? values.slice(0, 3).map((v) => text(v)) : [];
   while (arr.length < 3) arr.push("");
   if (!arr.some(Boolean) && suggested) arr[1] = suggested;
   return arr;
 }
-
 const SCHEME_RECT_PCTS = {
   alto: [
     { left: 9.22, top: 43.73, width: 14.4, height: 14.24 },
@@ -51,7 +46,6 @@ const SCHEME_RECT_PCTS = {
     { left: 71.36, top: 82.71, width: 14.4, height: 14.24 },
   ],
 };
-
 const schemeOverlayBaseStyle = {
   position: "absolute",
   display: "flex",
@@ -64,6 +58,15 @@ const schemeOverlayBaseStyle = {
   borderRadius: 6,
   pointerEvents: "none",
 };
+const SECTION_LABELS = {
+  datos_generales: "Datos generales",
+  esquema_medidas: "Esquema (medidas)",
+  revestimiento: "Revestimiento",
+  puerta_estructura: "Puerta / estructura",
+  rebajes_suelo: "Rebajes / suelo",
+  observaciones: "Observaciones",
+  otros: "Otros / configurables",
+};
 
 function updateSchemeValue(form, axis, index, value) {
   const next = {
@@ -74,7 +77,6 @@ function updateSchemeValue(form, axis, index, value) {
   next[axis][index] = value;
   return { ...form, esquema: next };
 }
-
 function buildInitialForm(quote, current = {}) {
   const end = quote?.end_customer || {};
   const split = splitName(end);
@@ -118,24 +120,10 @@ function buildInitialForm(quote, current = {}) {
     observaciones: text(current.observaciones),
   };
 }
-
-function Section({ title, children }) {
-  return <div className="card" style={{ background: "#fafafa", marginBottom: 12 }}><div style={{ fontWeight: 900, marginBottom: 8 }}>{title}</div>{children}</div>;
-}
-function Row({ children }) {
-  return <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>{children}</div>;
-}
-function Field({ label, children }) {
-  return <div style={{ flex: 1, minWidth: 220 }}><div className="muted" style={{ marginBottom: 6 }}>{label}</div>{children}</div>;
-}
-function YesNo({ value, onChange, disabled }) {
-  return (
-    <select value={value ? "si" : "no"} onChange={(e) => onChange(e.target.value === "si")} disabled={disabled} style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid #ddd" }}>
-      <option value="si">Sí</option>
-      <option value="no">No</option>
-    </select>
-  );
-}
+function Section({ title, children }) { return <div className="card" style={{ background: "#fafafa", marginBottom: 12 }}><div style={{ fontWeight: 900, marginBottom: 8 }}>{title}</div>{children}</div>; }
+function Row({ children }) { return <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>{children}</div>; }
+function Field({ label, children }) { return <div style={{ flex: 1, minWidth: 220 }}><div className="muted" style={{ marginBottom: 6 }}>{label}</div>{children}</div>; }
+function YesNo({ value, onChange, disabled }) { return <select value={value ? "si" : "no"} onChange={(e) => onChange(e.target.value === "si")} disabled={disabled} style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid #ddd" }}><option value="si">Sí</option><option value="no">No</option></select>; }
 
 function getByPath(obj, path) {
   const parts = String(path || "").split(".").filter(Boolean);
@@ -146,7 +134,6 @@ function getByPath(obj, path) {
   }
   return cur;
 }
-
 function setByPath(obj, path, value) {
   const parts = String(path || "").split(".").filter(Boolean);
   if (!parts.length) return obj;
@@ -160,12 +147,10 @@ function setByPath(obj, path, value) {
   cur[parts[parts.length - 1]] = value;
   return root;
 }
-
 function normalizeRuleText(value) {
   if (typeof value === "boolean") return value ? "si" : "no";
   return String(value ?? "").trim().toLowerCase();
 }
-
 function compareRule(currentRaw, operator, compareRaw) {
   const currentText = normalizeRuleText(currentRaw);
   const expectedText = normalizeRuleText(compareRaw);
@@ -182,7 +167,6 @@ function compareRule(currentRaw, operator, compareRaw) {
     default: return currentText === expectedText;
   }
 }
-
 function buildRuleContext(form, quote) {
   const heightFinal = Number(String(form?.alto_final_mm ?? "").replace(",", "."));
   const widthFinal = Number(String(form?.ancho_final_mm ?? "").replace(",", "."));
@@ -190,7 +174,6 @@ function buildRuleContext(form, quote) {
   const budgetWidth = Number(String(dims?.width ?? "").replace(",", "."));
   const budgetHeight = Number(String(dims?.height ?? "").replace(",", "."));
   const surfaceFinal = Number.isFinite(heightFinal) && Number.isFinite(widthFinal) ? (heightFinal * widthFinal) / 1000000 : null;
-
   return {
     ...form,
     surface_m2: surfaceFinal ?? ((Number.isFinite(budgetWidth) && Number.isFinite(budgetHeight)) ? (budgetWidth * budgetHeight) : 0),
@@ -200,18 +183,15 @@ function buildRuleContext(form, quote) {
     porton_type: quote?.payload?.porton_type || "",
   };
 }
-
 function evaluateDynamicRules({ form, quote, rules }) {
   const context = buildRuleContext(form, quote);
   const hidden = new Set();
   const forcedValues = {};
   const allowedOptions = {};
-
   for (const rule of Array.isArray(rules) ? rules : []) {
     if (!rule?.active || !rule?.source_key) continue;
     const current = getByPath(context, rule.source_key);
     if (!compareRule(current, rule.operator, rule.compare_value)) continue;
-
     if (rule.action_type === "set_value" && rule.target_field) forcedValues[rule.target_field] = rule.target_value;
     if (rule.action_type === "show_field" && rule.target_field) hidden.delete(rule.target_field);
     if (rule.action_type === "hide_field" && rule.target_field) hidden.add(rule.target_field);
@@ -220,32 +200,44 @@ function evaluateDynamicRules({ form, quote, rules }) {
       allowedOptions[rule.target_field] = options;
     }
   }
-
   return { hidden, forcedValues, allowedOptions };
 }
-
 function renderDynamicInput({ field, value, onChange, allowedValues }) {
   const fieldType = String(field?.type || "text").trim().toLowerCase();
-
-  if (fieldType === "boolean") {
-    return <YesNo value={boolValue(value)} onChange={(v) => onChange(v)} />;
-  }
-
+  if (fieldType === "boolean") return <YesNo value={boolValue(value)} onChange={(v) => onChange(v)} />;
   if (fieldType === "enum") {
     const allOptions = Array.isArray(field?.options) ? field.options : [];
-    const filtered = Array.isArray(allowedValues) && allowedValues.length
-      ? allOptions.filter((opt) => allowedValues.includes(opt.value))
-      : allOptions;
-
-    return (
-      <select value={value || ""} onChange={(e) => onChange(e.target.value)} style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid #ddd" }}>
-        <option value="">Seleccione…</option>
-        {filtered.map((opt) => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
-      </select>
-    );
+    const filtered = Array.isArray(allowedValues) && allowedValues.length ? allOptions.filter((opt) => allowedValues.includes(opt.value)) : allOptions;
+    return <select value={value || ""} onChange={(e) => onChange(e.target.value)} style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid #ddd" }}><option value="">Seleccione…</option>{filtered.map((opt) => <option key={opt.value} value={opt.value}>{opt.label}</option>)}</select>;
   }
-
   return <Input value={value || ""} onChange={onChange} type={fieldType === "number" ? "number" : "text"} style={{ width: "100%" }} />;
+}
+function renderDynamicSectionFields({ sectionKey, fieldsBySection, dynamicUi, allFields, form, setForm }) {
+  const sectionFields = fieldsBySection[sectionKey] || [];
+  const visibleFields = sectionFields.filter((field) => !dynamicUi.hidden.has(field.key));
+  if (!visibleFields.length) return null;
+  return (
+    <>
+      <div className="spacer" />
+      <Row>
+        {visibleFields.map((field) => {
+          const fieldMeta = allFields.find((item) => item.key === field.key) || field;
+          const allowed = dynamicUi.allowedOptions[field.key];
+          const value = getByPath(form, field.key);
+          return (
+            <Field key={field.key} label={field.label}>
+              {renderDynamicInput({
+                field: fieldMeta,
+                value,
+                allowedValues: allowed,
+                onChange: (nextValue) => setForm((prev) => setByPath(prev, field.key, nextValue)),
+              })}
+            </Field>
+          );
+        })}
+      </Row>
+    </>
+  );
 }
 
 export default function MedicionDetailPage() {
@@ -270,6 +262,15 @@ export default function MedicionDetailPage() {
 
   const dynamicFields = useMemo(() => (dynamicFieldsQ.data?.fields || []).filter((field) => field?.active !== false), [dynamicFieldsQ.data]);
   const allFields = useMemo(() => mergeMeasurementFields(dynamicFields), [dynamicFields]);
+  const fieldsBySection = useMemo(() => {
+    const out = {};
+    for (const field of dynamicFields) {
+      const key = String(field?.section || "otros").trim().toLowerCase() || "otros";
+      if (!out[key]) out[key] = [];
+      out[key].push(field);
+    }
+    return out;
+  }, [dynamicFields]);
   const dynamicUi = useMemo(() => {
     if (!form || !quote) return { hidden: new Set(), forcedValues: {}, allowedOptions: {} };
     return evaluateDynamicRules({ form, quote, rules: dynamicRulesQ.data?.rules || [] });
@@ -295,7 +296,6 @@ export default function MedicionDetailPage() {
     mutationFn: ({ submit }) => saveMeasurement(quoteId, { form, submit, endCustomer: quote?.end_customer || {} }),
     onSuccess: () => q.refetch(),
   });
-
   const rejectM = useMutation({
     mutationFn: (notes) => reviewMeasurement(quoteId, { action: "reject", notes }),
     onSuccess: () => q.refetch(),
@@ -315,7 +315,7 @@ export default function MedicionDetailPage() {
       </div>
 
       <div className="spacer" />
-      <Section title="Datos generales">
+      <Section title={SECTION_LABELS.datos_generales}>
         <Row>
           <Field label="Nota de Venta / NV"><Input value={form.nota_venta || ""} onChange={(v) => setForm({ ...form, nota_venta: v })} style={{ width: "100%" }} disabled={!isTechnical} /></Field>
           <Field label="Fecha de Nota de Pedido"><Input type="date" value={form.fecha_nota_pedido || ""} onChange={(v) => setForm({ ...form, fecha_nota_pedido: v })} style={{ width: "100%" }} disabled={!isTechnical} /></Field>
@@ -329,9 +329,10 @@ export default function MedicionDetailPage() {
           <Field label="Alto final (mm)"><Input value={form.alto_final_mm || ""} onChange={(v) => setForm({ ...form, alto_final_mm: v })} style={{ width: "100%" }} disabled={!isTechnical} /></Field>
           <Field label="Ancho final (mm)"><Input value={form.ancho_final_mm || ""} onChange={(v) => setForm({ ...form, ancho_final_mm: v })} style={{ width: "100%" }} disabled={!isTechnical} /></Field>
         </Row>
+        {renderDynamicSectionFields({ sectionKey: "datos_generales", fieldsBySection, dynamicUi, allFields, form, setForm })}
       </Section>
 
-      <Section title="Esquema (medidas)">
+      <Section title={SECTION_LABELS.esquema_medidas}>
         <div style={{ display: "flex", gap: 14, flexWrap: "wrap", alignItems: "flex-start" }}>
           <div style={{ flex: 2, minWidth: 320 }}>
             <div style={{ border: "1px solid #eee", borderRadius: 12, padding: 10, background: "#fff" }}>
@@ -350,42 +351,28 @@ export default function MedicionDetailPage() {
               </div>
             </div>
           </div>
-
           <div style={{ flex: 1, minWidth: 280 }}>
             <div style={{ fontWeight: 900, marginBottom: 8 }}>Altos</div>
             <Row>
               {[0, 1, 2].map((i) => (
-                <Field key={`alto-${i}`} label={`Alto ${i + 1} (mm)`}>
-                  <Input value={form.esquema?.alto?.[i] || ""} onChange={(v) => setForm((prev) => updateSchemeValue(prev, "alto", i, v))} style={{ width: "100%" }} />
-                </Field>
+                <Field key={`alto-${i}`} label={`Alto ${i + 1} (mm)`}><Input value={form.esquema?.alto?.[i] || ""} onChange={(v) => setForm((prev) => updateSchemeValue(prev, "alto", i, v))} style={{ width: "100%" }} /></Field>
               ))}
             </Row>
-
             <div className="spacer" />
             <div style={{ fontWeight: 900, marginBottom: 8 }}>Anchos</div>
             <Row>
               {[0, 1, 2].map((i) => (
-                <Field key={`ancho-${i}`} label={`Ancho ${i + 1} (mm)`}>
-                  <Input value={form.esquema?.ancho?.[i] || ""} onChange={(v) => setForm((prev) => updateSchemeValue(prev, "ancho", i, v))} style={{ width: "100%" }} />
-                </Field>
+                <Field key={`ancho-${i}`} label={`Ancho ${i + 1} (mm)`}><Input value={form.esquema?.ancho?.[i] || ""} onChange={(v) => setForm((prev) => updateSchemeValue(prev, "ancho", i, v))} style={{ width: "100%" }} /></Field>
               ))}
             </Row>
           </div>
         </div>
+        {renderDynamicSectionFields({ sectionKey: "esquema_medidas", fieldsBySection, dynamicUi, allFields, form, setForm })}
       </Section>
 
-      <Section title="Revestimiento">
+      <Section title={SECTION_LABELS.revestimiento}>
         <Row>
-          <Field label="Tipo revestimiento">
-            <select value={form.tipo_revestimiento_comercial || ""} onChange={(e) => setForm({ ...form, tipo_revestimiento_comercial: e.target.value })} style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid #ddd" }}>
-              <option value="">Seleccione…</option>
-              <option value="PVC">PVC</option>
-              <option value="Madera">Madera</option>
-              <option value="Aluminio">Aluminio</option>
-              <option value="chapa">Chapa</option>
-              <option value="otros">Otros</option>
-            </select>
-          </Field>
+          <Field label="Tipo revestimiento"><select value={form.tipo_revestimiento_comercial || ""} onChange={(e) => setForm({ ...form, tipo_revestimiento_comercial: e.target.value })} style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid #ddd" }}><option value="">Seleccione…</option><option value="PVC">PVC</option><option value="Madera">Madera</option><option value="Aluminio">Aluminio</option><option value="chapa">Chapa</option><option value="otros">Otros</option></select></Field>
           <Field label="Fabricante revestimiento"><Input value={form.fabricante_revestimiento || ""} onChange={(v) => setForm({ ...form, fabricante_revestimiento: v })} style={{ width: "100%" }} /></Field>
           <Field label="Color revestimiento"><Input value={form.color_revestimiento || ""} onChange={(v) => setForm({ ...form, color_revestimiento: v })} style={{ width: "100%" }} /></Field>
           <Field label="Color sistema"><Input value={form.color_sistema || ""} onChange={(v) => setForm({ ...form, color_sistema: v })} style={{ width: "100%" }} /></Field>
@@ -397,9 +384,10 @@ export default function MedicionDetailPage() {
           <Field label="Cant. de luceras"><Input value={form.lucera_cantidad || ""} onChange={(v) => setForm({ ...form, lucera_cantidad: v })} style={{ width: "100%" }} disabled={!form.lucera} /></Field>
           <Field label="Posición de lucera"><Input value={form.lucera_posicion || ""} onChange={(v) => setForm({ ...form, lucera_posicion: v })} style={{ width: "100%" }} disabled={!form.lucera} /></Field>
         </Row>
+        {renderDynamicSectionFields({ sectionKey: "revestimiento", fieldsBySection, dynamicUi, allFields, form, setForm })}
       </Section>
 
-      <Section title="Puerta / estructura">
+      <Section title={SECTION_LABELS.puerta_estructura}>
         <Row>
           <Field label="Puerta"><YesNo value={form.puerta} onChange={(v) => setForm({ ...form, puerta: v })} /></Field>
           <Field label="Posición de la puerta"><Input value={form.posicion_puerta || ""} onChange={(v) => setForm({ ...form, posicion_puerta: v })} style={{ width: "100%" }} disabled={!form.puerta} /></Field>
@@ -410,57 +398,40 @@ export default function MedicionDetailPage() {
         <Row>
           <Field label="Pasador manual"><YesNo value={form.pasador_manual} onChange={(v) => setForm({ ...form, pasador_manual: v })} /></Field>
           <Field label="Instalación"><YesNo value={form.instalacion} onChange={(v) => setForm({ ...form, instalacion: v })} /></Field>
-          <Field label="Anclaje">
-            <select value={form.anclaje || ""} onChange={(e) => setForm({ ...form, anclaje: e.target.value })} style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid #ddd" }}>
-              <option value="">Seleccione…</option>
-              <option value="no">No</option>
-              <option value="lateral">Lateral</option>
-              <option value="superior">Superior</option>
-            </select>
-          </Field>
+          <Field label="Anclaje"><select value={form.anclaje || ""} onChange={(e) => setForm({ ...form, anclaje: e.target.value })} style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid #ddd" }}><option value="">Seleccione…</option><option value="no">No</option><option value="lateral">Lateral</option><option value="superior">Superior</option></select></Field>
           <Field label="Piernas"><Input value={form.piernas || ""} onChange={(v) => setForm({ ...form, piernas: v })} style={{ width: "100%" }} /></Field>
         </Row>
+        {renderDynamicSectionFields({ sectionKey: "puerta_estructura", fieldsBySection, dynamicUi, allFields, form, setForm })}
       </Section>
 
-      <Section title="Rebajes / suelo">
+      <Section title={SECTION_LABELS.rebajes_suelo}>
         <Row>
           <Field label="Rebaje"><YesNo value={form.rebaje} onChange={(v) => setForm({ ...form, rebaje: v })} /></Field>
-          <Field label="Altura de rebaje">
-            <select value={form.rebaje_altura || ""} onChange={(e) => setForm({ ...form, rebaje_altura: e.target.value })} style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid #ddd" }} disabled={!form.rebaje}>
-              <option value="">Seleccione…</option>
-              <option value="75mm">75mm</option>
-              <option value="100mm">100mm</option>
-              <option value="125mm">125mm</option>
-            </select>
-          </Field>
+          <Field label="Altura de rebaje"><select value={form.rebaje_altura || ""} onChange={(e) => setForm({ ...form, rebaje_altura: e.target.value })} style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid #ddd" }} disabled={!form.rebaje}><option value="">Seleccione…</option><option value="75mm">75mm</option><option value="100mm">100mm</option><option value="125mm">125mm</option></select></Field>
           <Field label="Rebaje lateral"><YesNo value={form.rebaje_lateral} onChange={(v) => setForm({ ...form, rebaje_lateral: v })} /></Field>
           <Field label="Rebaje inferior"><YesNo value={form.rebaje_inferior} onChange={(v) => setForm({ ...form, rebaje_inferior: v })} /></Field>
         </Row>
         <div className="spacer" />
         <Row>
           <Field label="Trampa de tierra"><YesNo value={form.trampa_tierra} onChange={(v) => setForm({ ...form, trampa_tierra: v })} /></Field>
-          <Field label="Altura trampa de tierra">
-            <select value={form.trampa_tierra_altura || ""} onChange={(e) => setForm({ ...form, trampa_tierra_altura: e.target.value })} style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid #ddd" }} disabled={!form.trampa_tierra}>
-              <option value="">Seleccione…</option>
-              <option value="2 cm">2 cm</option>
-              <option value="5 cm">5 cm</option>
-            </select>
-          </Field>
+          <Field label="Altura trampa de tierra"><select value={form.trampa_tierra_altura || ""} onChange={(e) => setForm({ ...form, trampa_tierra_altura: e.target.value })} style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid #ddd" }} disabled={!form.trampa_tierra}><option value="">Seleccione…</option><option value="2 cm">2 cm</option><option value="5 cm">5 cm</option></select></Field>
         </Row>
+        {renderDynamicSectionFields({ sectionKey: "rebajes_suelo", fieldsBySection, dynamicUi, allFields, form, setForm })}
       </Section>
 
-      {!!dynamicFields.length && (
-        <Section title="Campos configurables por superusuario">
-          <div className="muted" style={{ marginBottom: 10 }}>
-            Acá aparecen los campos creados desde Reglas Técnicas. Si no son calculables por regla, el medidor y/o técnico los completan manualmente.
-          </div>
+      <Section title={SECTION_LABELS.observaciones}>
+        <textarea value={form.observaciones || ""} onChange={(e) => setForm({ ...form, observaciones: e.target.value })} style={{ width: "100%", minHeight: 100, padding: 10, borderRadius: 10, border: "1px solid #ddd" }} />
+        {renderDynamicSectionFields({ sectionKey: "observaciones", fieldsBySection, dynamicUi, allFields, form, setForm })}
+      </Section>
+
+      {!!(fieldsBySection.otros || []).filter((field) => !dynamicUi.hidden.has(field.key)).length && (
+        <Section title={SECTION_LABELS.otros}>
+          <div className="muted" style={{ marginBottom: 10 }}>Campos extra que no quedaron asignados a un sector puntual.</div>
           <Row>
-            {dynamicFields.map((field) => {
+            {(fieldsBySection.otros || []).filter((field) => !dynamicUi.hidden.has(field.key)).map((field) => {
               const fieldMeta = allFields.find((item) => item.key === field.key) || field;
-              if (dynamicUi.hidden.has(field.key)) return null;
               const allowed = dynamicUi.allowedOptions[field.key];
               const value = getByPath(form, field.key);
-
               return (
                 <Field key={field.key} label={field.label}>
                   {renderDynamicInput({
@@ -475,10 +446,6 @@ export default function MedicionDetailPage() {
           </Row>
         </Section>
       )}
-
-      <Section title="Observaciones">
-        <textarea value={form.observaciones || ""} onChange={(e) => setForm({ ...form, observaciones: e.target.value })} style={{ width: "100%", minHeight: 100, padding: 10, borderRadius: 10, border: "1px solid #ddd" }} />
-      </Section>
 
       <div className="card">
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>

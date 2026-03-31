@@ -24,7 +24,10 @@ export async function ensureSettingsTable() {
     [TECHNICAL_MEASUREMENT_RULES_KEY, { rules: [] }],
     [TECHNICAL_MEASUREMENT_FIELDS_KEY, { fields: [] }],
   ]) {
-    await dbQuery(`insert into public.presupuestador_settings (key, value_json) values ($1, $2::jsonb) on conflict (key) do nothing`, [key, JSON.stringify(value)]);
+    await dbQuery(
+      `insert into public.presupuestador_settings (key, value_json) values ($1, $2::jsonb) on conflict (key) do nothing`,
+      [key, JSON.stringify(value)]
+    );
   }
   ensured = true;
 }
@@ -78,6 +81,19 @@ function normalizeFieldType(value) {
   const v = String(value || "text").trim().toLowerCase();
   return ["text", "number", "boolean", "enum"].includes(v) ? v : "text";
 }
+function normalizeFieldSection(value) {
+  const v = normalizeText(value).toLowerCase();
+  const valid = [
+    "datos_generales",
+    "esquema_medidas",
+    "revestimiento",
+    "puerta_estructura",
+    "rebajes_suelo",
+    "observaciones",
+    "otros",
+  ];
+  return valid.includes(v) ? v : "otros";
+}
 function normalizeTechnicalMeasurementField(field = {}, index = 0) {
   const key = normalizeText(field.key || field.field_key);
   if (!key) return null;
@@ -88,6 +104,7 @@ function normalizeTechnicalMeasurementField(field = {}, index = 0) {
     key,
     label: normalizeText(field.label || key),
     type: normalizeFieldType(field.type || field.field_type),
+    section: normalizeFieldSection(field.section),
     required: field?.required === true,
     active: field?.active !== false,
     options,
@@ -106,7 +123,10 @@ async function getSetting(key, fallback) {
 }
 async function setSetting(key, value) {
   await ensureSettingsTable();
-  await dbQuery(`insert into public.presupuestador_settings (key, value_json, updated_at) values ($1, $2::jsonb, now()) on conflict (key) do update set value_json=excluded.value_json, updated_at=now()`, [key, JSON.stringify(value)]);
+  await dbQuery(
+    `insert into public.presupuestador_settings (key, value_json, updated_at) values ($1, $2::jsonb, now()) on conflict (key) do update set value_json=excluded.value_json, updated_at=now()`,
+    [key, JSON.stringify(value)]
+  );
   return value;
 }
 

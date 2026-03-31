@@ -1,20 +1,20 @@
-PAQUETE BASE - CAMPOS DINAMICOS EN MEDICION
+PAQUETE - CAMPOS DINAMICOS POR SECTOR
 
-Incluye:
-- settings para campos técnicos dinámicos
-- endpoints admin para guardar/cargar campos y reglas
-- funciones frontend admin para campos/rules
+Qué agrega:
+- cada campo dinámico ahora guarda 'section'
+- en Reglas Técnicas podés elegir el sector del campo
+- en la planilla de medición los campos aparecen dentro del sector elegido
 
-IMPORTANTE:
-Este paquete deja la base del backend y la API frontend lista.
-Para Automatización / Posición de motor necesitás completar además la UI de las páginas:
-- SuperuserMeasurementRulesPage
-- MedicionDetailPage
+Sectores disponibles:
+- Datos generales
+- Esquema (medidas)
+- Revestimiento
+- Puerta / estructura
+- Rebajes / suelo
+- Observaciones
+- Otros / bloque aparte
 
 Ejemplo:
-1) campo automatizacion -> enum -> si,no
-2) campo posicion_motor -> enum -> derecha,izquierda,doble
-3) regla: automatizacion = no -> action set_value -> target pasador_manual -> si
-4) regla: automatizacion = no -> action hide_field -> target posicion_motor
-5) regla: automatizacion = si -> action show_field -> target posicion_motor
-6) regla: automatizacion = si -> action allow_options -> target posicion_motor -> derecha,izquierda,doble
+- campo: automatizacion
+- sector: puerta_estructura
+=> aparece dentro de "Puerta / estructura"
