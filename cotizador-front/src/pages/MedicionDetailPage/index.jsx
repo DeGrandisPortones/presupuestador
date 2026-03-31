@@ -1,13 +1,16 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useNavigate, useParams } from "react-router-dom";
 import { getMeasurement, reviewMeasurement, saveMeasurement } from "../../api/measurements.js";
+import { adminGetTechnicalMeasurementFieldDefinitions, adminGetTechnicalMeasurementRules } from "../../api/admin.js";
 import { useAuthStore } from "../../domain/auth/store.js";
+import { mergeMeasurementFields, parseOptions } from "../../domain/measurement/technicalMeasurementRuleFields.js";
 import Button from "../../ui/Button.jsx";
 import Input from "../../ui/Input.jsx";
 
 function text(v) { return String(v ?? "").trim(); }
 function boolValue(v) { return v === true || String(v || "").toLowerCase().trim() === "si"; }
+
 function splitName(endCustomer = {}) {
   const first = text(endCustomer.first_name);
   const last = text(endCustomer.last_name);
@@ -15,10 +18,12 @@ function splitName(endCustomer = {}) {
   const parts = text(endCustomer.name).split(/\s+/).filter(Boolean);
   return { first: parts[0] || "", last: parts.slice(1).join(" ") };
 }
+
 function todayISO() {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
+
 function extractBudgetDimensionMm(quote, key) {
   const dims = quote?.payload?.dimensions || {};
   const raw = key === "ancho" ? dims?.width : dims?.height;
@@ -26,12 +31,14 @@ function extractBudgetDimensionMm(quote, key) {
   if (!Number.isFinite(n) || n <= 0) return "";
   return String(Math.round(n * 1000));
 }
+
 function normalizeTriple(values = [], suggested = "") {
   const arr = Array.isArray(values) ? values.slice(0, 3).map((v) => text(v)) : [];
   while (arr.length < 3) arr.push("");
   if (!arr.some(Boolean) && suggested) arr[1] = suggested;
   return arr;
 }
+
 const SCHEME_RECT_PCTS = {
   alto: [
     { left: 9.22, top: 43.73, width: 14.4, height: 14.24 },
@@ -44,6 +51,7 @@ const SCHEME_RECT_PCTS = {
     { left: 71.36, top: 82.71, width: 14.4, height: 14.24 },
   ],
 };
+
 const schemeOverlayBaseStyle = {
   position: "absolute",
   display: "flex",
@@ -56,6 +64,7 @@ const schemeOverlayBaseStyle = {
   borderRadius: 6,
   pointerEvents: "none",
 };
+
 function updateSchemeValue(form, axis, index, value) {
   const next = {
     ...(form.esquema || {}),
@@ -65,6 +74,7 @@ function updateSchemeValue(form, axis, index, value) {
   next[axis][index] = value;
   return { ...form, esquema: next };
 }
+
 function buildInitialForm(quote, current = {}) {
   const end = quote?.end_customer || {};
   const split = splitName(end);
@@ -108,10 +118,135 @@ function buildInitialForm(quote, current = {}) {
     observaciones: text(current.observaciones),
   };
 }
-function Section({ title, children }) { return <div className="card" style={{ background: "#fafafa", marginBottom: 12 }}><div style={{ fontWeight: 900, marginBottom: 8 }}>{title}</div>{children}</div>; }
-function Row({ children }) { return <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>{children}</div>; }
-function Field({ label, children }) { return <div style={{ flex: 1, minWidth: 220 }}><div className="muted" style={{ marginBottom: 6 }}>{label}</div>{children}</div>; }
-function YesNo({ value, onChange, disabled }) { return <select value={value ? "si" : "no"} onChange={(e) => onChange(e.target.value === "si")} disabled={disabled} style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid #ddd" }}><option value="si">Sí</option><option value="no">No</option></select>; }
+
+function Section({ title, children }) {
+  return <div className="card" style={{ background: "#fafafa", marginBottom: 12 }}><div style={{ fontWeight: 900, marginBottom: 8 }}>{title}</div>{children}</div>;
+}
+function Row({ children }) {
+  return <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>{children}</div>;
+}
+function Field({ label, children }) {
+  return <div style={{ flex: 1, minWidth: 220 }}><div className="muted" style={{ marginBottom: 6 }}>{label}</div>{children}</div>;
+}
+function YesNo({ value, onChange, disabled }) {
+  return (
+    <select value={value ? "si" : "no"} onChange={(e) => onChange(e.target.value === "si")} disabled={disabled} style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid #ddd" }}>
+      <option value="si">Sí</option>
+      <option value="no">No</option>
+    </select>
+  );
+}
+
+function getByPath(obj, path) {
+  const parts = String(path || "").split(".").filter(Boolean);
+  let cur = obj;
+  for (const p of parts) {
+    if (!cur || typeof cur !== "object") return undefined;
+    cur = cur[p];
+  }
+  return cur;
+}
+
+function setByPath(obj, path, value) {
+  const parts = String(path || "").split(".").filter(Boolean);
+  if (!parts.length) return obj;
+  const root = { ...(obj || {}) };
+  let cur = root;
+  for (let i = 0; i < parts.length - 1; i += 1) {
+    const key = parts[i];
+    cur[key] = cur[key] && typeof cur[key] === "object" ? { ...cur[key] } : {};
+    cur = cur[key];
+  }
+  cur[parts[parts.length - 1]] = value;
+  return root;
+}
+
+function normalizeRuleText(value) {
+  if (typeof value === "boolean") return value ? "si" : "no";
+  return String(value ?? "").trim().toLowerCase();
+}
+
+function compareRule(currentRaw, operator, compareRaw) {
+  const currentText = normalizeRuleText(currentRaw);
+  const expectedText = normalizeRuleText(compareRaw);
+  const currentNum = Number(String(currentRaw ?? "").replace(",", "."));
+  const expectedNum = Number(String(compareRaw ?? "").replace(",", "."));
+  switch (String(operator || "=").trim()) {
+    case "=": return currentText === expectedText;
+    case "!=": return currentText !== expectedText;
+    case ">": return Number.isFinite(currentNum) && Number.isFinite(expectedNum) && currentNum > expectedNum;
+    case ">=": return Number.isFinite(currentNum) && Number.isFinite(expectedNum) && currentNum >= expectedNum;
+    case "<": return Number.isFinite(currentNum) && Number.isFinite(expectedNum) && currentNum < expectedNum;
+    case "<=": return Number.isFinite(currentNum) && Number.isFinite(expectedNum) && currentNum <= expectedNum;
+    case "contains": return currentText.includes(expectedText);
+    default: return currentText === expectedText;
+  }
+}
+
+function buildRuleContext(form, quote) {
+  const heightFinal = Number(String(form?.alto_final_mm ?? "").replace(",", "."));
+  const widthFinal = Number(String(form?.ancho_final_mm ?? "").replace(",", "."));
+  const dims = quote?.payload?.dimensions || {};
+  const budgetWidth = Number(String(dims?.width ?? "").replace(",", "."));
+  const budgetHeight = Number(String(dims?.height ?? "").replace(",", "."));
+  const surfaceFinal = Number.isFinite(heightFinal) && Number.isFinite(widthFinal) ? (heightFinal * widthFinal) / 1000000 : null;
+
+  return {
+    ...form,
+    surface_m2: surfaceFinal ?? ((Number.isFinite(budgetWidth) && Number.isFinite(budgetHeight)) ? (budgetWidth * budgetHeight) : 0),
+    budget_width_m: Number.isFinite(budgetWidth) ? budgetWidth : 0,
+    budget_height_m: Number.isFinite(budgetHeight) ? budgetHeight : 0,
+    payment_method: quote?.payload?.payment_method || "",
+    porton_type: quote?.payload?.porton_type || "",
+  };
+}
+
+function evaluateDynamicRules({ form, quote, rules }) {
+  const context = buildRuleContext(form, quote);
+  const hidden = new Set();
+  const forcedValues = {};
+  const allowedOptions = {};
+
+  for (const rule of Array.isArray(rules) ? rules : []) {
+    if (!rule?.active || !rule?.source_key) continue;
+    const current = getByPath(context, rule.source_key);
+    if (!compareRule(current, rule.operator, rule.compare_value)) continue;
+
+    if (rule.action_type === "set_value" && rule.target_field) forcedValues[rule.target_field] = rule.target_value;
+    if (rule.action_type === "show_field" && rule.target_field) hidden.delete(rule.target_field);
+    if (rule.action_type === "hide_field" && rule.target_field) hidden.add(rule.target_field);
+    if (rule.action_type === "allow_options" && rule.target_field) {
+      const options = Array.isArray(rule.target_options) ? rule.target_options : parseOptions(rule.target_value || "").map((item) => item.value);
+      allowedOptions[rule.target_field] = options;
+    }
+  }
+
+  return { hidden, forcedValues, allowedOptions };
+}
+
+function renderDynamicInput({ field, value, onChange, allowedValues }) {
+  const fieldType = String(field?.type || "text").trim().toLowerCase();
+
+  if (fieldType === "boolean") {
+    return <YesNo value={boolValue(value)} onChange={(v) => onChange(v)} />;
+  }
+
+  if (fieldType === "enum") {
+    const allOptions = Array.isArray(field?.options) ? field.options : [];
+    const filtered = Array.isArray(allowedValues) && allowedValues.length
+      ? allOptions.filter((opt) => allowedValues.includes(opt.value))
+      : allOptions;
+
+    return (
+      <select value={value || ""} onChange={(e) => onChange(e.target.value)} style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid #ddd" }}>
+        <option value="">Seleccione…</option>
+        {filtered.map((opt) => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+      </select>
+    );
+  }
+
+  return <Input value={value || ""} onChange={onChange} type={fieldType === "number" ? "number" : "text"} style={{ width: "100%" }} />;
+}
 
 export default function MedicionDetailPage() {
   const { id } = useParams();
@@ -120,7 +255,11 @@ export default function MedicionDetailPage() {
   const user = useAuthStore((s) => s.user);
   const isTechnical = !!user?.is_rev_tecnica;
   const isMedidor = !!user?.is_medidor;
+
   const q = useQuery({ queryKey: ["measurement", quoteId], queryFn: () => getMeasurement(quoteId), enabled: !!quoteId });
+  const dynamicFieldsQ = useQuery({ queryKey: ["technicalMeasurementFieldsForMeasurement"], queryFn: adminGetTechnicalMeasurementFieldDefinitions, enabled: !!quoteId });
+  const dynamicRulesQ = useQuery({ queryKey: ["technicalMeasurementRulesForMeasurement"], queryFn: adminGetTechnicalMeasurementRules, enabled: !!quoteId });
+
   const quote = q.data;
   const [form, setForm] = useState(null);
 
@@ -129,10 +268,34 @@ export default function MedicionDetailPage() {
     setForm(buildInitialForm(quote, quote.measurement_form || {}));
   }, [quote]);
 
+  const dynamicFields = useMemo(() => (dynamicFieldsQ.data?.fields || []).filter((field) => field?.active !== false), [dynamicFieldsQ.data]);
+  const allFields = useMemo(() => mergeMeasurementFields(dynamicFields), [dynamicFields]);
+  const dynamicUi = useMemo(() => {
+    if (!form || !quote) return { hidden: new Set(), forcedValues: {}, allowedOptions: {} };
+    return evaluateDynamicRules({ form, quote, rules: dynamicRulesQ.data?.rules || [] });
+  }, [form, quote, dynamicRulesQ.data]);
+
+  useEffect(() => {
+    if (!form) return;
+    const entries = Object.entries(dynamicUi.forcedValues || {});
+    if (!entries.length) return;
+    let next = form;
+    let changed = false;
+    for (const [fieldKey, fieldValue] of entries) {
+      const current = getByPath(next, fieldKey);
+      if (String(current ?? "") !== String(fieldValue ?? "")) {
+        next = setByPath(next, fieldKey, fieldValue);
+        changed = true;
+      }
+    }
+    if (changed) setForm(next);
+  }, [dynamicUi.forcedValues, form]);
+
   const saveM = useMutation({
     mutationFn: ({ submit }) => saveMeasurement(quoteId, { form, submit, endCustomer: quote?.end_customer || {} }),
     onSuccess: () => q.refetch(),
   });
+
   const rejectM = useMutation({
     mutationFn: (notes) => reviewMeasurement(quoteId, { action: "reject", notes }),
     onSuccess: () => q.refetch(),
@@ -177,30 +340,15 @@ export default function MedicionDetailPage() {
                 {SCHEME_RECT_PCTS.alto.map((p, i) => {
                   const v = form.esquema?.alto?.[i];
                   if (!v) return null;
-                  return (
-                    <div
-                      key={`alto-ov-${i}`}
-                      style={{ ...schemeOverlayBaseStyle, left: `${p.left}%`, top: `${p.top}%`, width: `${p.width}%`, height: `${p.height}%`, fontSize: 14 }}
-                    >
-                      {v}
-                    </div>
-                  );
+                  return <div key={`alto-ov-${i}`} style={{ ...schemeOverlayBaseStyle, left: `${p.left}%`, top: `${p.top}%`, width: `${p.width}%`, height: `${p.height}%`, fontSize: 14 }}>{v}</div>;
                 })}
                 {SCHEME_RECT_PCTS.ancho.map((p, i) => {
                   const v = form.esquema?.ancho?.[i];
                   if (!v) return null;
-                  return (
-                    <div
-                      key={`ancho-ov-${i}`}
-                      style={{ ...schemeOverlayBaseStyle, left: `${p.left}%`, top: `${p.top}%`, width: `${p.width}%`, height: `${p.height}%`, fontSize: 14 }}
-                    >
-                      {v}
-                    </div>
-                  );
+                  return <div key={`ancho-ov-${i}`} style={{ ...schemeOverlayBaseStyle, left: `${p.left}%`, top: `${p.top}%`, width: `${p.width}%`, height: `${p.height}%`, fontSize: 14 }}>{v}</div>;
                 })}
               </div>
             </div>
-            <div className="muted" style={{ marginTop: 8, fontSize: 12 }}>Ingresá las tres medidas de alto y las tres medidas de ancho en milímetros.</div>
           </div>
 
           <div style={{ flex: 1, minWidth: 280 }}>
@@ -208,11 +356,7 @@ export default function MedicionDetailPage() {
             <Row>
               {[0, 1, 2].map((i) => (
                 <Field key={`alto-${i}`} label={`Alto ${i + 1} (mm)`}>
-                  <Input
-                    value={form.esquema?.alto?.[i] || ""}
-                    onChange={(v) => setForm((prev) => updateSchemeValue(prev, "alto", i, v))}
-                    style={{ width: "100%" }}
-                  />
+                  <Input value={form.esquema?.alto?.[i] || ""} onChange={(v) => setForm((prev) => updateSchemeValue(prev, "alto", i, v))} style={{ width: "100%" }} />
                 </Field>
               ))}
             </Row>
@@ -222,11 +366,7 @@ export default function MedicionDetailPage() {
             <Row>
               {[0, 1, 2].map((i) => (
                 <Field key={`ancho-${i}`} label={`Ancho ${i + 1} (mm)`}>
-                  <Input
-                    value={form.esquema?.ancho?.[i] || ""}
-                    onChange={(v) => setForm((prev) => updateSchemeValue(prev, "ancho", i, v))}
-                    style={{ width: "100%" }}
-                  />
+                  <Input value={form.esquema?.ancho?.[i] || ""} onChange={(v) => setForm((prev) => updateSchemeValue(prev, "ancho", i, v))} style={{ width: "100%" }} />
                 </Field>
               ))}
             </Row>
@@ -308,6 +448,33 @@ export default function MedicionDetailPage() {
           </Field>
         </Row>
       </Section>
+
+      {!!dynamicFields.length && (
+        <Section title="Campos configurables por superusuario">
+          <div className="muted" style={{ marginBottom: 10 }}>
+            Acá aparecen los campos creados desde Reglas Técnicas. Si no son calculables por regla, el medidor y/o técnico los completan manualmente.
+          </div>
+          <Row>
+            {dynamicFields.map((field) => {
+              const fieldMeta = allFields.find((item) => item.key === field.key) || field;
+              if (dynamicUi.hidden.has(field.key)) return null;
+              const allowed = dynamicUi.allowedOptions[field.key];
+              const value = getByPath(form, field.key);
+
+              return (
+                <Field key={field.key} label={field.label}>
+                  {renderDynamicInput({
+                    field: fieldMeta,
+                    value,
+                    allowedValues: allowed,
+                    onChange: (nextValue) => setForm((prev) => setByPath(prev, field.key, nextValue)),
+                  })}
+                </Field>
+              );
+            })}
+          </Row>
+        </Section>
+      )}
 
       <Section title="Observaciones">
         <textarea value={form.observaciones || ""} onChange={(e) => setForm({ ...form, observaciones: e.target.value })} style={{ width: "100%", minHeight: 100, padding: 10, borderRadius: 10, border: "1px solid #ddd" }} />
