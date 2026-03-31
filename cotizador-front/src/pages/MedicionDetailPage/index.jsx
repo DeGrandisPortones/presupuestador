@@ -147,6 +147,9 @@ function setByPath(obj, path, value) {
   cur[parts[parts.length - 1]] = value;
   return root;
 }
+function hasExplicitValue(value) {
+  return value !== undefined && value !== null && !(typeof value === "string" && value.trim() === "");
+}
 function normalizeRuleText(value) {
   if (typeof value === "boolean") return value ? "si" : "no";
   return String(value ?? "").trim().toLowerCase();
@@ -202,17 +205,52 @@ function evaluateDynamicRules({ form, quote, rules }) {
   }
   return { hidden, forcedValues, allowedOptions };
 }
-function renderDynamicInput({ field, value, onChange, allowedValues }) {
+function buildSourceContext(quote, form) {
+  return {
+    payload: quote?.payload || {},
+    end_customer: quote?.end_customer || {},
+    measurement_prefill: quote?.measurement_prefill || {},
+    quote_number: quote?.quote_number || "",
+    odoo_sale_order_name: quote?.odoo_sale_order_name || "",
+    final_sale_order_name: quote?.final_sale_order_name || "",
+    created_by_full_name: quote?.created_by_full_name || "",
+    created_by_username: quote?.created_by_username || "",
+    form: form || {},
+  };
+}
+function normalizeSourceValueForField(field, value) {
   const fieldType = String(field?.type || "text").trim().toLowerCase();
-  if (fieldType === "boolean") return <YesNo value={boolValue(value)} onChange={(v) => onChange(v)} />;
+  if (fieldType === "boolean") return boolValue(value);
+  return value ?? "";
+}
+function resolveDynamicFieldSourceValue(field, quote, form) {
+  const sourceType = String(field?.value_source_type || "manual").trim().toLowerCase();
+  if (sourceType === "fixed_value") return normalizeSourceValueForField(field, field?.default_value ?? "");
+  if (sourceType !== "budget_path") return undefined;
+  const path = String(field?.value_source_path || "").trim();
+  if (!path) return undefined;
+  const sourced = getByPath(buildSourceContext(quote, form), path);
+  if (sourced === undefined || sourced === null || sourced === "") return undefined;
+  return normalizeSourceValueForField(field, sourced);
+}
+function canCurrentUserEditDynamicField(field, { isTechnical, isMedidor }) {
+  const editableBy = String(field?.editable_by || "both").trim().toLowerCase();
+  if (editableBy === "none") return false;
+  if (editableBy === "tecnico") return !!isTechnical;
+  if (editableBy === "medidor") return !!isMedidor && !isTechnical;
+  return !!(isTechnical || isMedidor);
+}
+function renderDynamicInput({ field, value, onChange, allowedValues, disabled }) {
+  const fieldType = String(field?.type || "text").trim().toLowerCase();
+  if (fieldType === "boolean") return <YesNo value={boolValue(value)} onChange={(v) => onChange(v)} disabled={disabled} />;
   if (fieldType === "enum") {
     const allOptions = Array.isArray(field?.options) ? field.options : [];
     const filtered = Array.isArray(allowedValues) && allowedValues.length ? allOptions.filter((opt) => allowedValues.includes(opt.value)) : allOptions;
-    return <select value={value || ""} onChange={(e) => onChange(e.target.value)} style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid #ddd" }}><option value="">Seleccione…</option>{filtered.map((opt) => <option key={opt.value} value={opt.value}>{opt.label}</option>)}</select>;
+    return <select value={value || ""} onChange={(e) => onChange(e.target.value)} disabled={disabled} style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid #ddd" }}><option value="">Seleccione…</option>{filtered.map((opt) => <option key={opt.value} value={opt.value}>{opt.label}</option>)}</select>;
   }
-  return <Input value={value || ""} onChange={onChange} type={fieldType === "number" ? "number" : "text"} style={{ width: "100%" }} />;
+  return <Input value={value || ""} onChange={onChange} type={fieldType === "number" ? "number" : "text"} style={{ width: "100%" }} disabled={disabled} />;
 }
-function renderDynamicSectionFields({ sectionKey, fieldsBySection, dynamicUi, allFields, form, setForm }) {
+function renderDynamicSectionFields({ sectionKey, fieldsBySection, dynamicUi, allFields, form, setForm, isTechnical, isMedidor }) {
   const sectionFields = fieldsBySection[sectionKey] || [];
   const visibleFields = sectionFields.filter((field) => !dynamicUi.hidden.has(field.key));
   if (!visibleFields.length) return null;
@@ -224,12 +262,14 @@ function renderDynamicSectionFields({ sectionKey, fieldsBySection, dynamicUi, al
           const fieldMeta = allFields.find((item) => item.key === field.key) || field;
           const allowed = dynamicUi.allowedOptions[field.key];
           const value = getByPath(form, field.key);
+          const disabled = !canCurrentUserEditDynamicField(fieldMeta, { isTechnical, isMedidor });
           return (
             <Field key={field.key} label={field.label}>
               {renderDynamicInput({
                 field: fieldMeta,
                 value,
                 allowedValues: allowed,
+                disabled,
                 onChange: (nextValue) => setForm((prev) => setByPath(prev, field.key, nextValue)),
               })}
             </Field>
@@ -275,6 +315,21 @@ export default function MedicionDetailPage() {
     if (!form || !quote) return { hidden: new Set(), forcedValues: {}, allowedOptions: {} };
     return evaluateDynamicRules({ form, quote, rules: dynamicRulesQ.data?.rules || [] });
   }, [form, quote, dynamicRulesQ.data]);
+
+  useEffect(() => {
+    if (!form || !quote || !dynamicFields.length) return;
+    let next = form;
+    let changed = false;
+    for (const field of dynamicFields) {
+      const current = getByPath(next, field.key);
+      if (hasExplicitValue(current)) continue;
+      const sourcedValue = resolveDynamicFieldSourceValue(field, quote, next);
+      if (sourcedValue === undefined) continue;
+      next = setByPath(next, field.key, sourcedValue);
+      changed = true;
+    }
+    if (changed) setForm(next);
+  }, [dynamicFields, form, quote]);
 
   useEffect(() => {
     if (!form) return;
@@ -329,7 +384,7 @@ export default function MedicionDetailPage() {
           <Field label="Alto final (mm)"><Input value={form.alto_final_mm || ""} onChange={(v) => setForm({ ...form, alto_final_mm: v })} style={{ width: "100%" }} disabled={!isTechnical} /></Field>
           <Field label="Ancho final (mm)"><Input value={form.ancho_final_mm || ""} onChange={(v) => setForm({ ...form, ancho_final_mm: v })} style={{ width: "100%" }} disabled={!isTechnical} /></Field>
         </Row>
-        {renderDynamicSectionFields({ sectionKey: "datos_generales", fieldsBySection, dynamicUi, allFields, form, setForm })}
+        {renderDynamicSectionFields({ sectionKey: "datos_generales", fieldsBySection, dynamicUi, allFields, form, setForm, isTechnical, isMedidor })}
       </Section>
 
       <Section title={SECTION_LABELS.esquema_medidas}>
@@ -367,7 +422,7 @@ export default function MedicionDetailPage() {
             </Row>
           </div>
         </div>
-        {renderDynamicSectionFields({ sectionKey: "esquema_medidas", fieldsBySection, dynamicUi, allFields, form, setForm })}
+        {renderDynamicSectionFields({ sectionKey: "esquema_medidas", fieldsBySection, dynamicUi, allFields, form, setForm, isTechnical, isMedidor })}
       </Section>
 
       <Section title={SECTION_LABELS.revestimiento}>
@@ -384,7 +439,7 @@ export default function MedicionDetailPage() {
           <Field label="Cant. de luceras"><Input value={form.lucera_cantidad || ""} onChange={(v) => setForm({ ...form, lucera_cantidad: v })} style={{ width: "100%" }} disabled={!form.lucera} /></Field>
           <Field label="Posición de lucera"><Input value={form.lucera_posicion || ""} onChange={(v) => setForm({ ...form, lucera_posicion: v })} style={{ width: "100%" }} disabled={!form.lucera} /></Field>
         </Row>
-        {renderDynamicSectionFields({ sectionKey: "revestimiento", fieldsBySection, dynamicUi, allFields, form, setForm })}
+        {renderDynamicSectionFields({ sectionKey: "revestimiento", fieldsBySection, dynamicUi, allFields, form, setForm, isTechnical, isMedidor })}
       </Section>
 
       <Section title={SECTION_LABELS.puerta_estructura}>
@@ -401,7 +456,7 @@ export default function MedicionDetailPage() {
           <Field label="Anclaje"><select value={form.anclaje || ""} onChange={(e) => setForm({ ...form, anclaje: e.target.value })} style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid #ddd" }}><option value="">Seleccione…</option><option value="no">No</option><option value="lateral">Lateral</option><option value="superior">Superior</option></select></Field>
           <Field label="Piernas"><Input value={form.piernas || ""} onChange={(v) => setForm({ ...form, piernas: v })} style={{ width: "100%" }} /></Field>
         </Row>
-        {renderDynamicSectionFields({ sectionKey: "puerta_estructura", fieldsBySection, dynamicUi, allFields, form, setForm })}
+        {renderDynamicSectionFields({ sectionKey: "puerta_estructura", fieldsBySection, dynamicUi, allFields, form, setForm, isTechnical, isMedidor })}
       </Section>
 
       <Section title={SECTION_LABELS.rebajes_suelo}>
@@ -416,12 +471,12 @@ export default function MedicionDetailPage() {
           <Field label="Trampa de tierra"><YesNo value={form.trampa_tierra} onChange={(v) => setForm({ ...form, trampa_tierra: v })} /></Field>
           <Field label="Altura trampa de tierra"><select value={form.trampa_tierra_altura || ""} onChange={(e) => setForm({ ...form, trampa_tierra_altura: e.target.value })} style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid #ddd" }} disabled={!form.trampa_tierra}><option value="">Seleccione…</option><option value="2 cm">2 cm</option><option value="5 cm">5 cm</option></select></Field>
         </Row>
-        {renderDynamicSectionFields({ sectionKey: "rebajes_suelo", fieldsBySection, dynamicUi, allFields, form, setForm })}
+        {renderDynamicSectionFields({ sectionKey: "rebajes_suelo", fieldsBySection, dynamicUi, allFields, form, setForm, isTechnical, isMedidor })}
       </Section>
 
       <Section title={SECTION_LABELS.observaciones}>
         <textarea value={form.observaciones || ""} onChange={(e) => setForm({ ...form, observaciones: e.target.value })} style={{ width: "100%", minHeight: 100, padding: 10, borderRadius: 10, border: "1px solid #ddd" }} />
-        {renderDynamicSectionFields({ sectionKey: "observaciones", fieldsBySection, dynamicUi, allFields, form, setForm })}
+        {renderDynamicSectionFields({ sectionKey: "observaciones", fieldsBySection, dynamicUi, allFields, form, setForm, isTechnical, isMedidor })}
       </Section>
 
       {!!(fieldsBySection.otros || []).filter((field) => !dynamicUi.hidden.has(field.key)).length && (
@@ -432,12 +487,14 @@ export default function MedicionDetailPage() {
               const fieldMeta = allFields.find((item) => item.key === field.key) || field;
               const allowed = dynamicUi.allowedOptions[field.key];
               const value = getByPath(form, field.key);
+              const disabled = !canCurrentUserEditDynamicField(fieldMeta, { isTechnical, isMedidor });
               return (
                 <Field key={field.key} label={field.label}>
                   {renderDynamicInput({
                     field: fieldMeta,
                     value,
                     allowedValues: allowed,
+                    disabled,
                     onChange: (nextValue) => setForm((prev) => setByPath(prev, field.key, nextValue)),
                   })}
                 </Field>

@@ -30,6 +30,37 @@ export const TECHNICAL_RULE_ACTIONS = [
   { value: "allow_options", label: "Restringir opciones" },
 ];
 
+export const TECHNICAL_MEASUREMENT_SOURCE_OPTIONS = [
+  { value: "manual", label: "Manual" },
+  { value: "budget_path", label: "Tomar del presupuestador" },
+  { value: "fixed_value", label: "Valor fijo" },
+];
+
+export const TECHNICAL_MEASUREMENT_EDITABLE_OPTIONS = [
+  { value: "both", label: "Medidor y Técnica" },
+  { value: "medidor", label: "Solo medidor" },
+  { value: "tecnico", label: "Solo técnica" },
+  { value: "none", label: "Ninguno" },
+];
+
+export const TECHNICAL_MEASUREMENT_ODOO_BINDING_OPTIONS = [
+  { value: "none", label: "No pegar a Odoo" },
+  { value: "line_product", label: "Agregar producto en Odoo" },
+];
+
+function normalizeValueSourceType(value) {
+  const v = String(value || "manual").trim().toLowerCase();
+  return ["manual", "budget_path", "fixed_value"].includes(v) ? v : "manual";
+}
+function normalizeEditableBy(value) {
+  const v = String(value || "both").trim().toLowerCase();
+  return ["both", "medidor", "tecnico", "none"].includes(v) ? v : "both";
+}
+function normalizeOdooBindingType(value) {
+  const v = String(value || "none").trim().toLowerCase();
+  return ["none", "line_product"].includes(v) ? v : "none";
+}
+
 export function parseOptions(raw) {
   if (Array.isArray(raw)) {
     return raw
@@ -59,7 +90,15 @@ export function mergeMeasurementFields(customFields = []) {
       options: parseOptions(field?.options),
       active: field?.active !== false,
       required: field?.required === true,
+      section: String(field?.section || "otros").trim().toLowerCase() || "otros",
       sort_order: Number(field?.sort_order || 9999) || 9999,
+      value_source_type: normalizeValueSourceType(field?.value_source_type),
+      value_source_path: String(field?.value_source_path || "").trim(),
+      default_value: field?.default_value ?? "",
+      editable_by: normalizeEditableBy(field?.editable_by),
+      odoo_binding_type: normalizeOdooBindingType(field?.odoo_binding_type),
+      odoo_product_id: Number(field?.odoo_product_id || 0) || null,
+      odoo_product_label: String(field?.odoo_product_label || "").trim(),
       dynamic: true,
     });
   }

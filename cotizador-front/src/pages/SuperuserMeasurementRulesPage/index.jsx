@@ -13,6 +13,9 @@ import {
 import {
   TECHNICAL_RULE_OPERATORS,
   TECHNICAL_RULE_ACTIONS,
+  TECHNICAL_MEASUREMENT_SOURCE_OPTIONS,
+  TECHNICAL_MEASUREMENT_EDITABLE_OPTIONS,
+  TECHNICAL_MEASUREMENT_ODOO_BINDING_OPTIONS,
   mergeMeasurementFields,
   parseOptions,
 } from "../../domain/measurement/technicalMeasurementRuleFields.js";
@@ -25,6 +28,22 @@ const SECTION_OPTIONS = [
   { value: "rebajes_suelo", label: "Rebajes / suelo" },
   { value: "observaciones", label: "Observaciones" },
   { value: "otros", label: "Otros / bloque aparte" },
+];
+
+const BUDGET_PATH_EXAMPLES = [
+  "payload.payment_method",
+  "payload.porton_type",
+  "payload.dimensions.width",
+  "payload.dimensions.height",
+  "end_customer.name",
+  "end_customer.city",
+  "measurement_prefill.accionamiento",
+  "measurement_prefill.levadizo",
+  "measurement_prefill.revestimiento",
+  "measurement_prefill.color_sistema",
+  "measurement_prefill.color_revestimiento",
+  "measurement_prefill.alto_mm",
+  "measurement_prefill.ancho_mm",
 ];
 
 function productLabel(product) {
@@ -40,6 +59,13 @@ function newField(index = 1) {
     active: true,
     required: false,
     sort_order: index,
+    value_source_type: "manual",
+    value_source_path: "",
+    default_value: "",
+    editable_by: "both",
+    odoo_binding_type: "none",
+    odoo_product_id: "",
+    odoo_product_label: "",
   };
 }
 function newRule(index = 1) {
@@ -72,6 +98,13 @@ function normalizeFieldDraft(field, index) {
     active: field?.active !== false,
     required: field?.required === true,
     sort_order: Number(field?.sort_order || index + 1) || (index + 1),
+    value_source_type: String(field?.value_source_type || "manual").trim().toLowerCase(),
+    value_source_path: String(field?.value_source_path || "").trim(),
+    default_value: field?.default_value ?? "",
+    editable_by: String(field?.editable_by || "both").trim().toLowerCase(),
+    odoo_binding_type: String(field?.odoo_binding_type || "none").trim().toLowerCase(),
+    odoo_product_id: Number(field?.odoo_product_id || 0) || "",
+    odoo_product_label: String(field?.odoo_product_label || "").trim(),
   };
 }
 function normalizeRuleDraft(rule, index) {
@@ -91,6 +124,20 @@ function normalizeRuleDraft(rule, index) {
     product_label: String(rule?.product_label || "").trim(),
     sort_order: Number(rule?.sort_order || index + 1) || (index + 1),
   };
+}
+function updateFieldAtIndex(setFieldDraft, index, patch) {
+  setFieldDraft((prev) => {
+    const next = [...(prev.fields || [])];
+    next[index] = { ...next[index], ...patch };
+    return { fields: next };
+  });
+}
+function updateRuleAtIndex(setRuleDraft, index, patch) {
+  setRuleDraft((prev) => {
+    const next = [...(prev.rules || [])];
+    next[index] = { ...next[index], ...patch };
+    return { rules: next };
+  });
 }
 
 export default function SuperuserMeasurementRulesPage() {
@@ -125,6 +172,13 @@ export default function SuperuserMeasurementRulesPage() {
       active: field.active !== false,
       required: field.required === true,
       sort_order: field.sort_order || index + 1,
+      value_source_type: field.value_source_type || "manual",
+      value_source_path: field.value_source_path || "",
+      default_value: field.default_value ?? "",
+      editable_by: field.editable_by || "both",
+      odoo_binding_type: field.odoo_binding_type || "none",
+      odoo_product_id: Number(field.odoo_product_id || 0) || null,
+      odoo_product_label: field.odoo_product_label || "",
     }));
     return mergeMeasurementFields(dynamicFields);
   }, [fieldDraft.fields]);
@@ -142,7 +196,9 @@ export default function SuperuserMeasurementRulesPage() {
     <div className="container">
       <div className="card">
         <h2 style={{ marginTop: 0 }}>Campos dinámicos de medición</h2>
-        <div className="muted">Ahora cada campo también puede quedar asignado a un sector de la planilla, por ejemplo Puerta / estructura o Revestimiento.</div>
+        <div className="muted">
+          Ahora cada campo puede definir de dónde tomar su valor inicial, quién lo puede editar y si debe agregar un producto a Odoo.
+        </div>
         <div className="spacer" />
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           <Button onClick={() => setFieldDraft((prev) => ({ fields: [...(prev.fields || []), newField((prev.fields || []).length + 1)] }))}>+ Agregar campo</Button>
@@ -163,6 +219,13 @@ export default function SuperuserMeasurementRulesPage() {
                       active: field.active !== false,
                       required: field.required === true,
                       sort_order: index + 1,
+                      value_source_type: String(field.value_source_type || "manual").trim().toLowerCase(),
+                      value_source_path: String(field.value_source_path || "").trim(),
+                      default_value: field.default_value ?? "",
+                      editable_by: String(field.editable_by || "both").trim().toLowerCase(),
+                      odoo_binding_type: String(field.odoo_binding_type || "none").trim().toLowerCase(),
+                      odoo_product_id: Number(field.odoo_product_id || 0) || null,
+                      odoo_product_label: String(field.odoo_product_label || "").trim(),
                     }))
                     .filter((field) => field.key && field.label),
                 };
@@ -193,29 +256,17 @@ export default function SuperuserMeasurementRulesPage() {
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 10 }}>
                 <div>
                   <div className="muted" style={{ marginBottom: 6 }}>Clave interna</div>
-                  <Input value={field.key || ""} onChange={(v) => setFieldDraft((prev) => {
-                    const next = [...(prev.fields || [])];
-                    next[index] = { ...next[index], key: v.replace(/\s+/g, "_").toLowerCase() };
-                    return { fields: next };
-                  })} placeholder="automatizacion" style={{ width: "100%" }} />
+                  <Input value={field.key || ""} onChange={(v) => updateFieldAtIndex(setFieldDraft, index, { key: v.replace(/\s+/g, "_").toLowerCase() })} placeholder="automatizacion" style={{ width: "100%" }} />
                 </div>
 
                 <div>
                   <div className="muted" style={{ marginBottom: 6 }}>Etiqueta</div>
-                  <Input value={field.label || ""} onChange={(v) => setFieldDraft((prev) => {
-                    const next = [...(prev.fields || [])];
-                    next[index] = { ...next[index], label: v };
-                    return { fields: next };
-                  })} placeholder="Automatización" style={{ width: "100%" }} />
+                  <Input value={field.label || ""} onChange={(v) => updateFieldAtIndex(setFieldDraft, index, { label: v })} placeholder="Automatización" style={{ width: "100%" }} />
                 </div>
 
                 <div>
                   <div className="muted" style={{ marginBottom: 6 }}>Tipo</div>
-                  <select value={field.type || "text"} onChange={(e) => setFieldDraft((prev) => {
-                    const next = [...(prev.fields || [])];
-                    next[index] = { ...next[index], type: e.target.value };
-                    return { fields: next };
-                  })} style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid #ddd" }}>
+                  <select value={field.type || "text"} onChange={(e) => updateFieldAtIndex(setFieldDraft, index, { type: e.target.value })} style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid #ddd" }}>
                     <option value="text">Texto</option>
                     <option value="number">Número</option>
                     <option value="boolean">Sí / No</option>
@@ -225,42 +276,96 @@ export default function SuperuserMeasurementRulesPage() {
 
                 <div>
                   <div className="muted" style={{ marginBottom: 6 }}>Sector</div>
-                  <select value={field.section || "otros"} onChange={(e) => setFieldDraft((prev) => {
-                    const next = [...(prev.fields || [])];
-                    next[index] = { ...next[index], section: e.target.value };
-                    return { fields: next };
-                  })} style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid #ddd" }}>
+                  <select value={field.section || "otros"} onChange={(e) => updateFieldAtIndex(setFieldDraft, index, { section: e.target.value })} style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid #ddd" }}>
                     {SECTION_OPTIONS.map((opt) => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
                   </select>
                 </div>
 
                 <div>
                   <div className="muted" style={{ marginBottom: 6 }}>Opciones (coma)</div>
-                  <Input value={field.optionsText || ""} onChange={(v) => setFieldDraft((prev) => {
-                    const next = [...(prev.fields || [])];
-                    next[index] = { ...next[index], optionsText: v };
-                    return { fields: next };
-                  })} placeholder="si, no" style={{ width: "100%" }} disabled={field.type !== "enum"} />
+                  <Input value={field.optionsText || ""} onChange={(v) => updateFieldAtIndex(setFieldDraft, index, { optionsText: v })} placeholder="si, no" style={{ width: "100%" }} disabled={field.type !== "enum"} />
                 </div>
+              </div>
+
+              <div className="spacer" />
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 10 }}>
+                <div>
+                  <div className="muted" style={{ marginBottom: 6 }}>Cómo se llena</div>
+                  <select value={field.value_source_type || "manual"} onChange={(e) => updateFieldAtIndex(setFieldDraft, index, { value_source_type: e.target.value })} style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid #ddd" }}>
+                    {TECHNICAL_MEASUREMENT_SOURCE_OPTIONS.map((opt) => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+                  </select>
+                </div>
+
+                <div>
+                  <div className="muted" style={{ marginBottom: 6 }}>Ruta del presupuestador</div>
+                  <Input
+                    value={field.value_source_path || ""}
+                    onChange={(v) => updateFieldAtIndex(setFieldDraft, index, { value_source_path: v })}
+                    placeholder="payload.payment_method"
+                    style={{ width: "100%" }}
+                    disabled={field.value_source_type !== "budget_path"}
+                  />
+                </div>
+
+                <div>
+                  <div className="muted" style={{ marginBottom: 6 }}>Valor fijo</div>
+                  <Input
+                    value={field.default_value ?? ""}
+                    onChange={(v) => updateFieldAtIndex(setFieldDraft, index, { default_value: v })}
+                    placeholder="Completar por defecto"
+                    style={{ width: "100%" }}
+                    disabled={field.value_source_type !== "fixed_value"}
+                  />
+                </div>
+
+                <div>
+                  <div className="muted" style={{ marginBottom: 6 }}>Editable por</div>
+                  <select value={field.editable_by || "both"} onChange={(e) => updateFieldAtIndex(setFieldDraft, index, { editable_by: e.target.value })} style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid #ddd" }}>
+                    {TECHNICAL_MEASUREMENT_EDITABLE_OPTIONS.map((opt) => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+                  </select>
+                </div>
+
+                <div>
+                  <div className="muted" style={{ marginBottom: 6 }}>Salida a Odoo</div>
+                  <select value={field.odoo_binding_type || "none"} onChange={(e) => updateFieldAtIndex(setFieldDraft, index, { odoo_binding_type: e.target.value })} style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid #ddd" }}>
+                    {TECHNICAL_MEASUREMENT_ODOO_BINDING_OPTIONS.map((opt) => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+                  </select>
+                </div>
+
+                <div>
+                  <div className="muted" style={{ marginBottom: 6 }}>Producto Odoo</div>
+                  <select
+                    value={field.odoo_product_id || ""}
+                    onChange={(e) => {
+                      const product = products.find((item) => Number(item.id) === Number(e.target.value));
+                      updateFieldAtIndex(setFieldDraft, index, {
+                        odoo_product_id: e.target.value ? Number(e.target.value) : "",
+                        odoo_product_label: product ? productLabel(product) : "",
+                      });
+                    }}
+                    style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid #ddd" }}
+                    disabled={field.odoo_binding_type !== "line_product"}
+                  >
+                    <option value="">(sin producto)</option>
+                    {products.map((product) => <option key={product.id} value={product.id}>{productLabel(product)}</option>)}
+                  </select>
+                </div>
+              </div>
+
+              <div className="spacer" />
+              <div className="muted" style={{ fontSize: 12 }}>
+                Ejemplos de ruta del presupuestador: {BUDGET_PATH_EXAMPLES.join(" · ")}
               </div>
 
               <div className="spacer" />
               <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
                 <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                  <input type="checkbox" checked={field.required === true} onChange={(e) => setFieldDraft((prev) => {
-                    const next = [...(prev.fields || [])];
-                    next[index] = { ...next[index], required: e.target.checked };
-                    return { fields: next };
-                  })} />
+                  <input type="checkbox" checked={field.required === true} onChange={(e) => updateFieldAtIndex(setFieldDraft, index, { required: e.target.checked })} />
                   <span className="muted">Obligatorio</span>
                 </label>
 
                 <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                  <input type="checkbox" checked={field.active !== false} onChange={(e) => setFieldDraft((prev) => {
-                    const next = [...(prev.fields || [])];
-                    next[index] = { ...next[index], active: e.target.checked };
-                    return { fields: next };
-                  })} />
+                  <input type="checkbox" checked={field.active !== false} onChange={(e) => updateFieldAtIndex(setFieldDraft, index, { active: e.target.checked })} />
                   <span className="muted">Activo</span>
                 </label>
               </div>
@@ -273,7 +378,9 @@ export default function SuperuserMeasurementRulesPage() {
       <div className="spacer" />
       <div className="card">
         <h2 style={{ marginTop: 0 }}>Reglas de dependencia y Odoo</h2>
-        <div className="muted">Las reglas siguen funcionando igual, pero ahora los campos pueden vivir dentro del sector que corresponda en la planilla.</div>
+        <div className="muted">
+          Usá las reglas para condicionar otros campos. Campo origen + Acción + Campo destino te permite mostrar, ocultar, completar o limitar opciones.
+        </div>
         <div className="spacer" />
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           <Button onClick={() => setRuleDraft((prev) => ({ rules: [...(prev.rules || []), newRule((prev.rules || []).length + 1)] }))}>+ Agregar regla</Button>
@@ -328,25 +435,25 @@ export default function SuperuserMeasurementRulesPage() {
 
               <div className="spacer" />
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 10 }}>
-                <div><div className="muted" style={{ marginBottom: 6 }}>Nombre</div><Input value={rule.name || ""} onChange={(v) => setRuleDraft((prev) => { const next = [...(prev.rules || [])]; next[index] = { ...next[index], name: v }; return { rules: next }; })} style={{ width: "100%" }} /></div>
-                <div><div className="muted" style={{ marginBottom: 6 }}>Campo origen</div><select value={rule.source_key || ""} onChange={(e) => setRuleDraft((prev) => { const next = [...(prev.rules || [])]; next[index] = { ...next[index], source_key: e.target.value }; return { rules: next }; })} style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid #ddd" }}><option value="">Seleccione campo…</option>{allFields.map((item) => <option key={item.key} value={item.key}>{item.label}</option>)}</select></div>
-                <div><div className="muted" style={{ marginBottom: 6 }}>Operador</div><select value={rule.operator || "="} onChange={(e) => setRuleDraft((prev) => { const next = [...(prev.rules || [])]; next[index] = { ...next[index], operator: e.target.value }; return { rules: next }; })} style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid #ddd" }}>{TECHNICAL_RULE_OPERATORS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></div>
-                <div><div className="muted" style={{ marginBottom: 6 }}>Comparar contra</div><Input value={rule.compare_value ?? ""} onChange={(v) => setRuleDraft((prev) => { const next = [...(prev.rules || [])]; next[index] = { ...next[index], compare_value: v }; return { rules: next }; })} style={{ width: "100%" }} /></div>
+                <div><div className="muted" style={{ marginBottom: 6 }}>Nombre</div><Input value={rule.name || ""} onChange={(v) => updateRuleAtIndex(setRuleDraft, index, { name: v })} style={{ width: "100%" }} /></div>
+                <div><div className="muted" style={{ marginBottom: 6 }}>Campo origen</div><select value={rule.source_key || ""} onChange={(e) => updateRuleAtIndex(setRuleDraft, index, { source_key: e.target.value })} style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid #ddd" }}><option value="">Seleccione campo…</option>{allFields.map((item) => <option key={item.key} value={item.key}>{item.label}</option>)}</select></div>
+                <div><div className="muted" style={{ marginBottom: 6 }}>Operador</div><select value={rule.operator || "="} onChange={(e) => updateRuleAtIndex(setRuleDraft, index, { operator: e.target.value })} style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid #ddd" }}>{TECHNICAL_RULE_OPERATORS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></div>
+                <div><div className="muted" style={{ marginBottom: 6 }}>Comparar contra</div><Input value={rule.compare_value ?? ""} onChange={(v) => updateRuleAtIndex(setRuleDraft, index, { compare_value: v })} style={{ width: "100%" }} /></div>
               </div>
 
               <div className="spacer" />
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 10 }}>
-                <div><div className="muted" style={{ marginBottom: 6 }}>Acción</div><select value={rule.action_type || "set_value"} onChange={(e) => setRuleDraft((prev) => { const next = [...(prev.rules || [])]; next[index] = { ...next[index], action_type: e.target.value }; return { rules: next }; })} style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid #ddd" }}>{TECHNICAL_RULE_ACTIONS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></div>
-                <div><div className="muted" style={{ marginBottom: 6 }}>Campo destino</div><select value={rule.target_field || ""} onChange={(e) => setRuleDraft((prev) => { const next = [...(prev.rules || [])]; next[index] = { ...next[index], target_field: e.target.value }; return { rules: next }; })} style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid #ddd" }}><option value="">Seleccione campo…</option>{targetFieldOptions.map((item) => <option key={item.key} value={item.key}>{item.label}</option>)}</select></div>
-                <div><div className="muted" style={{ marginBottom: 6 }}>Valor destino</div><Input value={rule.target_value ?? ""} onChange={(v) => setRuleDraft((prev) => { const next = [...(prev.rules || [])]; next[index] = { ...next[index], target_value: v }; return { rules: next }; })} style={{ width: "100%" }} disabled={rule.action_type === "show_field" || rule.action_type === "hide_field"} /></div>
-                <div><div className="muted" style={{ marginBottom: 6 }}>Opciones permitidas (coma)</div><Input value={rule.target_options_text ?? ""} onChange={(v) => setRuleDraft((prev) => { const next = [...(prev.rules || [])]; next[index] = { ...next[index], target_options_text: v }; return { rules: next }; })} style={{ width: "100%" }} disabled={rule.action_type !== "allow_options"} /></div>
+                <div><div className="muted" style={{ marginBottom: 6 }}>Acción</div><select value={rule.action_type || "set_value"} onChange={(e) => updateRuleAtIndex(setRuleDraft, index, { action_type: e.target.value })} style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid #ddd" }}>{TECHNICAL_RULE_ACTIONS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></div>
+                <div><div className="muted" style={{ marginBottom: 6 }}>Campo destino</div><select value={rule.target_field || ""} onChange={(e) => updateRuleAtIndex(setRuleDraft, index, { target_field: e.target.value })} style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid #ddd" }}><option value="">Seleccione campo…</option>{targetFieldOptions.map((item) => <option key={item.key} value={item.key}>{item.label}</option>)}</select></div>
+                <div><div className="muted" style={{ marginBottom: 6 }}>Valor destino</div><Input value={rule.target_value ?? ""} onChange={(v) => updateRuleAtIndex(setRuleDraft, index, { target_value: v })} style={{ width: "100%" }} disabled={rule.action_type === "show_field" || rule.action_type === "hide_field"} /></div>
+                <div><div className="muted" style={{ marginBottom: 6 }}>Opciones permitidas (coma)</div><Input value={rule.target_options_text ?? ""} onChange={(v) => updateRuleAtIndex(setRuleDraft, index, { target_options_text: v })} style={{ width: "100%" }} disabled={rule.action_type !== "allow_options"} /></div>
               </div>
 
               <div className="spacer" />
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 10 }}>
-                <div><label style={{ display: "flex", gap: 8, alignItems: "center" }}><input type="checkbox" checked={rule.apply_to_odoo === true} onChange={(e) => setRuleDraft((prev) => { const next = [...(prev.rules || [])]; next[index] = { ...next[index], apply_to_odoo: e.target.checked }; return { rules: next }; })} /><span className="muted">Pegarlo a Odoo</span></label></div>
-                <div><div className="muted" style={{ marginBottom: 6 }}>Producto Odoo</div><select value={rule.product_id || ""} onChange={(e) => setRuleDraft((prev) => { const next = [...(prev.rules || [])]; const product = products.find((item) => Number(item.id) === Number(e.target.value)); next[index] = { ...next[index], product_id: e.target.value ? Number(e.target.value) : "", product_label: product ? productLabel(product) : "" }; return { rules: next }; })} style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid #ddd" }}><option value="">(sin producto)</option>{products.map((product) => <option key={product.id} value={product.id}>{productLabel(product)}</option>)}</select></div>
-                <div><label style={{ display: "flex", gap: 8, alignItems: "center" }}><input type="checkbox" checked={rule.active !== false} onChange={(e) => setRuleDraft((prev) => { const next = [...(prev.rules || [])]; next[index] = { ...next[index], active: e.target.checked }; return { rules: next }; })} /><span className="muted">Regla activa</span></label></div>
+                <div><label style={{ display: "flex", gap: 8, alignItems: "center" }}><input type="checkbox" checked={rule.apply_to_odoo === true} onChange={(e) => updateRuleAtIndex(setRuleDraft, index, { apply_to_odoo: e.target.checked })} /><span className="muted">Pegarlo a Odoo</span></label></div>
+                <div><div className="muted" style={{ marginBottom: 6 }}>Producto Odoo</div><select value={rule.product_id || ""} onChange={(e) => { const product = products.find((item) => Number(item.id) === Number(e.target.value)); updateRuleAtIndex(setRuleDraft, index, { product_id: e.target.value ? Number(e.target.value) : "", product_label: product ? productLabel(product) : "" }); }} style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid #ddd" }}><option value="">(sin producto)</option>{products.map((product) => <option key={product.id} value={product.id}>{productLabel(product)}</option>)}</select></div>
+                <div><label style={{ display: "flex", gap: 8, alignItems: "center" }}><input type="checkbox" checked={rule.active !== false} onChange={(e) => updateRuleAtIndex(setRuleDraft, index, { active: e.target.checked })} /><span className="muted">Regla activa</span></label></div>
               </div>
             </div>
           ))}

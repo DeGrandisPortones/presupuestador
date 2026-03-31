@@ -1,5 +1,5 @@
 import { dbQuery } from "./db.js";
-import { getCommercialFinalTolerancePercent, getMeasurementProductMappings, getTechnicalMeasurementRules } from "./settingsDb.js";
+import { getCommercialFinalTolerancePercent, getMeasurementProductMappings, getTechnicalMeasurementRules, getTechnicalMeasurementFieldDefinitions } from "./settingsDb.js";
 
 const PLACEHOLDER_PRODUCT_ID = Number(process.env.ODOO_PLACEHOLDER_PRODUCT_ID || 2880);
 const IVA_RATE = 0.21;
@@ -160,7 +160,7 @@ function buildMeasurementLineSeedsFromLegacyMappings(form, rules) {
   const out = [];
   for (const rule of Array.isArray(rules) ? rules : []) {
     if (!rule?.active || !rule?.field_key) continue;
-    const values = Array.isArray(rule.values) ? rules.values : Array.isArray(rule.values) ? rule.values : [];
+    const values = Array.isArray(rule.values) ? rule.values : [];
     const current = getByPath(form, rule.field_key);
     const currentNorm = normalizeValue(current);
     for (const entry of values) {
@@ -192,6 +192,37 @@ function buildMeasurementLineSeedsFromTechnicalRules(originalQuote, form, rules)
       qty: 1,
       name: String(rule.product_label || rule.name || `Producto ${rule.product_id}`).trim(),
       raw_name: String(rule.product_label || rule.name || `Producto ${rule.product_id}`).trim(),
+      code: null,
+      basePrice: 0,
+    });
+  }
+  return out;
+}
+function fieldValueShouldCreateOdooLine(field, value) {
+  const fieldType = String(field?.type || "text").trim().toLowerCase();
+  if (fieldType === "boolean") return normalizeValue(value) === "si";
+  return value !== undefined && value !== null && String(value).trim() !== "";
+}
+function buildMeasurementLineSeedsFromFieldBindings(form, fields) {
+  const out = [];
+  for (const field of Array.isArray(fields) ? fields : []) {
+    if (field?.active === false) continue;
+    if (String(field?.odoo_binding_type || "none").trim().toLowerCase() !== "line_product") continue;
+    const productId = Number(field?.odoo_product_id || 0) || null;
+    if (!productId) continue;
+    const value = getByPath(form, field.key);
+    if (!fieldValueShouldCreateOdooLine(field, value)) continue;
+    const fieldLabel = toText(field?.label || field?.key || `Campo ${productId}`);
+    const productLabel = toText(field?.odoo_product_label || fieldLabel || `Producto ${productId}`);
+    const valueText = typeof value === "boolean" ? (value ? "Sí" : "No") : toText(value);
+    const rawName = valueText && String(field?.type || "").toLowerCase() !== "boolean"
+      ? `${productLabel} · ${fieldLabel}: ${valueText}`
+      : productLabel;
+    out.push({
+      product_id: productId,
+      qty: 1,
+      name: productLabel,
+      raw_name: rawName,
       code: null,
       basePrice: 0,
     });
@@ -330,9 +361,11 @@ async function syncFinalQuoteToOdoo({ odoo, revisionQuote, originalQuote, approv
 export async function finalizeMeasurementToRevisionQuote({ odoo, originalQuote, measurementForm, approverUser }) {
   const legacyMappings = await getMeasurementProductMappings();
   const technicalRules = await getTechnicalMeasurementRules();
+  const technicalFields = await getTechnicalMeasurementFieldDefinitions();
   const legacySeeds = buildMeasurementLineSeedsFromLegacyMappings(measurementForm || {}, legacyMappings.rules || []);
   const technicalSeeds = buildMeasurementLineSeedsFromTechnicalRules(originalQuote, measurementForm || {}, technicalRules.rules || []);
-  const mergedSeeds = dedupeLines([...legacySeeds, ...technicalSeeds]);
+  const fieldBindingSeeds = buildMeasurementLineSeedsFromFieldBindings(measurementForm || {}, technicalFields.fields || []);
+  const mergedSeeds = dedupeLines([...legacySeeds, ...technicalSeeds, ...fieldBindingSeeds]);
   const pricedPositiveLines = await hydrateMeasurementLinePrices(odoo, originalQuote?.payload || {}, mergedSeeds);
   const tolerancePercent = await getCommercialFinalTolerancePercent();
   const discountLine = buildDiscountPreviewLine({ originalQuote, pricedLines: pricedPositiveLines, tolerancePercent });

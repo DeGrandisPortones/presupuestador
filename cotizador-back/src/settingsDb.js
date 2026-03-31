@@ -94,6 +94,18 @@ function normalizeFieldSection(value) {
   ];
   return valid.includes(v) ? v : "otros";
 }
+function normalizeFieldValueSourceType(value) {
+  const v = String(value || "manual").trim().toLowerCase();
+  return ["manual", "budget_path", "fixed_value"].includes(v) ? v : "manual";
+}
+function normalizeFieldEditableBy(value) {
+  const v = String(value || "both").trim().toLowerCase();
+  return ["both", "medidor", "tecnico", "none"].includes(v) ? v : "both";
+}
+function normalizeFieldOdooBindingType(value) {
+  const v = String(value || "none").trim().toLowerCase();
+  return ["none", "line_product"].includes(v) ? v : "none";
+}
 function normalizeTechnicalMeasurementField(field = {}, index = 0) {
   const key = normalizeText(field.key || field.field_key);
   if (!key) return null;
@@ -109,6 +121,13 @@ function normalizeTechnicalMeasurementField(field = {}, index = 0) {
     active: field?.active !== false,
     options,
     sort_order: Number(field?.sort_order || index + 1) || index + 1,
+    value_source_type: normalizeFieldValueSourceType(field?.value_source_type),
+    value_source_path: normalizeText(field?.value_source_path || ""),
+    default_value: field?.default_value ?? "",
+    editable_by: normalizeFieldEditableBy(field?.editable_by),
+    odoo_binding_type: normalizeFieldOdooBindingType(field?.odoo_binding_type),
+    odoo_product_id: Number(field?.odoo_product_id || 0) || null,
+    odoo_product_label: normalizeText(field?.odoo_product_label || ""),
   };
 }
 function normalizeTechnicalMeasurementFields(raw = {}) {
