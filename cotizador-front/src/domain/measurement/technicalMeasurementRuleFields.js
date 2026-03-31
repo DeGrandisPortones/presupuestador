@@ -30,84 +30,67 @@ export const TECHNICAL_RULE_ACTIONS = [
   { value: "allow_options", label: "Restringir opciones" },
 ];
 
-export const TECHNICAL_MEASUREMENT_SOURCE_OPTIONS = [
+export const VALUE_SOURCE_TYPE_OPTIONS = [
   { value: "manual", label: "Manual" },
-  { value: "budget_path", label: "Tomar del presupuestador" },
-  { value: "fixed_value", label: "Valor fijo" },
+  { value: "fixed", label: "Valor fijo" },
+  { value: "budget_field", label: "Dato del presupuesto" },
+  { value: "budget_section_product", label: "Producto presupuestado por sección" },
 ];
 
-export const TECHNICAL_MEASUREMENT_EDITABLE_OPTIONS = [
-  { value: "both", label: "Medidor y Técnica" },
+export const EDITABLE_BY_OPTIONS = [
+  { value: "both", label: "Medidor y técnica" },
   { value: "medidor", label: "Solo medidor" },
   { value: "tecnico", label: "Solo técnica" },
-  { value: "none", label: "Ninguno" },
+  { value: "none", label: "Ninguno (solo lectura)" },
 ];
 
-export const TECHNICAL_MEASUREMENT_ODOO_BINDING_OPTIONS = [
-  { value: "none", label: "No pegar a Odoo" },
-  { value: "line_product", label: "Agregar producto en Odoo" },
+export const ODOO_BINDING_TYPE_OPTIONS = [
+  { value: "none", label: "No pegar en Odoo" },
+  { value: "product", label: "Agregar producto a Odoo" },
 ];
 
-export const TECHNICAL_MEASUREMENT_BUDGET_PATH_GROUPS = [
-  {
-    label: "Payload del presupuestador",
-    options: [
-      { value: "payload.payment_method", label: "Forma de pago" },
-      { value: "payload.porton_type", label: "Tipo de portón" },
-      { value: "payload.dimensions.width", label: "Ancho presupuestado" },
-      { value: "payload.dimensions.height", label: "Alto presupuestado" },
-    ],
-  },
-  {
-    label: "Cliente final",
-    options: [
-      { value: "end_customer.name", label: "Nombre completo" },
-      { value: "end_customer.first_name", label: "Nombre" },
-      { value: "end_customer.last_name", label: "Apellido" },
-      { value: "end_customer.phone", label: "Teléfono" },
-      { value: "end_customer.email", label: "Email" },
-      { value: "end_customer.address", label: "Dirección" },
-      { value: "end_customer.city", label: "Ciudad" },
-      { value: "end_customer.maps_url", label: "Google Maps" },
-    ],
-  },
-  {
-    label: "Prefill técnico calculado",
-    options: [
-      { value: "measurement_prefill.accionamiento", label: "Accionamiento sugerido" },
-      { value: "measurement_prefill.levadizo", label: "Tipo levadizo sugerido" },
-      { value: "measurement_prefill.revestimiento", label: "Revestimiento sugerido" },
-      { value: "measurement_prefill.color_sistema", label: "Color sistema sugerido" },
-      { value: "measurement_prefill.color_revestimiento", label: "Color revestimiento sugerido" },
-      { value: "measurement_prefill.alto_mm", label: "Alto sugerido (mm)" },
-      { value: "measurement_prefill.ancho_mm", label: "Ancho sugerido (mm)" },
-    ],
-  },
-  {
-    label: "Datos de la cotización",
-    options: [
-      { value: "quote_number", label: "Número de presupuesto" },
-      { value: "odoo_sale_order_name", label: "NV / nombre Odoo" },
-      { value: "final_sale_order_name", label: "NV final Odoo" },
-      { value: "created_by_full_name", label: "Usuario creador (nombre)" },
-      { value: "created_by_username", label: "Usuario creador" },
-    ],
-  },
-  {
-    label: "Formulario actual",
-    options: [
-      { value: "form.alto_final_mm", label: "Alto final cargado" },
-      { value: "form.ancho_final_mm", label: "Ancho final cargado" },
-      { value: "form.observaciones", label: "Observaciones" },
-    ],
-  },
+export const BUDGET_PRODUCT_VALUE_OPTIONS = [
+  { value: "display_name", label: "Texto visible del presupuesto" },
+  { value: "alias", label: "Alias del producto" },
+  { value: "raw_name", label: "Nombre original" },
+  { value: "code", label: "Código" },
+  { value: "product_id", label: "ID producto" },
 ];
 
-export const TECHNICAL_MEASUREMENT_BUDGET_PATH_OPTIONS = TECHNICAL_MEASUREMENT_BUDGET_PATH_GROUPS.flatMap((group) => group.options);
+export const BUDGET_MULTIPLE_MODE_OPTIONS = [
+  { value: "first", label: "Tomar el primero" },
+  { value: "join", label: "Unir todos" },
+];
+
+export const BUDGET_FIELD_OPTIONS = [
+  { value: "payload.payment_method", label: "Presupuesto · Forma de pago" },
+  { value: "payload.porton_type", label: "Presupuesto · Tipo/sistema" },
+  { value: "payload.dimensions.width", label: "Presupuesto · Ancho" },
+  { value: "payload.dimensions.height", label: "Presupuesto · Alto" },
+  { value: "payload.dimensions.area_m2", label: "Presupuesto · Superficie" },
+  { value: "end_customer.name", label: "Cliente · Nombre completo" },
+  { value: "end_customer.first_name", label: "Cliente · Nombre" },
+  { value: "end_customer.last_name", label: "Cliente · Apellido" },
+  { value: "end_customer.phone", label: "Cliente · Teléfono" },
+  { value: "end_customer.email", label: "Cliente · Email" },
+  { value: "end_customer.address", label: "Cliente · Dirección" },
+  { value: "end_customer.city", label: "Cliente · Localidad" },
+  { value: "measurement_prefill.accionamiento", label: "Prefill · Accionamiento" },
+  { value: "measurement_prefill.levadizo", label: "Prefill · Levadizo" },
+  { value: "measurement_prefill.revestimiento", label: "Prefill · Revestimiento" },
+  { value: "measurement_prefill.color_sistema", label: "Prefill · Color sistema" },
+  { value: "measurement_prefill.color_revestimiento", label: "Prefill · Color revestimiento" },
+  { value: "measurement_prefill.alto_mm", label: "Prefill · Alto (mm)" },
+  { value: "measurement_prefill.ancho_mm", label: "Prefill · Ancho (mm)" },
+  { value: "quote.fulfillment_mode", label: "Cotización · Destino" },
+  { value: "quote.note", label: "Cotización · Observaciones" },
+  { value: "quote.created_by_role", label: "Cotización · Rol creador" },
+  { value: "quote.quote_number", label: "Cotización · Número" },
+];
 
 function normalizeValueSourceType(value) {
   const v = String(value || "manual").trim().toLowerCase();
-  return ["manual", "budget_path", "fixed_value"].includes(v) ? v : "manual";
+  return ["manual", "fixed", "budget_field", "budget_section_product"].includes(v) ? v : "manual";
 }
 function normalizeEditableBy(value) {
   const v = String(value || "both").trim().toLowerCase();
@@ -115,7 +98,15 @@ function normalizeEditableBy(value) {
 }
 function normalizeOdooBindingType(value) {
   const v = String(value || "none").trim().toLowerCase();
-  return ["none", "line_product"].includes(v) ? v : "none";
+  return ["none", "product"].includes(v) ? v : "none";
+}
+function normalizeBudgetProductValueKey(value) {
+  const v = String(value || "display_name").trim();
+  return ["display_name", "alias", "raw_name", "code", "product_id"].includes(v) ? v : "display_name";
+}
+function normalizeBudgetMultipleMode(value) {
+  const v = String(value || "first").trim().toLowerCase();
+  return ["first", "join"].includes(v) ? v : "first";
 }
 
 export function parseOptions(raw) {
@@ -136,7 +127,22 @@ export function parseOptions(raw) {
 }
 
 export function mergeMeasurementFields(customFields = []) {
-  const byKey = new Map(BUILTIN_MEASUREMENT_FIELDS.map((f) => [f.key, { ...f }]));
+  const byKey = new Map(BUILTIN_MEASUREMENT_FIELDS.map((field) => [field.key, {
+    ...field,
+    value_source_type: "manual",
+    value_source_path: "",
+    fixed_value: "",
+    budget_section_id: null,
+    budget_section_name: "",
+    budget_product_value_key: "display_name",
+    budget_multiple_mode: "first",
+    editable_by: "both",
+    odoo_binding_type: "none",
+    odoo_product_id: null,
+    odoo_product_label: "",
+    dynamic: false,
+  }]));
+
   for (const field of Array.isArray(customFields) ? customFields : []) {
     const key = String(field?.key || "").trim();
     if (!key) continue;
@@ -147,11 +153,15 @@ export function mergeMeasurementFields(customFields = []) {
       options: parseOptions(field?.options),
       active: field?.active !== false,
       required: field?.required === true,
-      section: String(field?.section || "otros").trim().toLowerCase() || "otros",
+      section: String(field?.section || "otros").trim().toLowerCase(),
       sort_order: Number(field?.sort_order || 9999) || 9999,
       value_source_type: normalizeValueSourceType(field?.value_source_type),
       value_source_path: String(field?.value_source_path || "").trim(),
-      default_value: field?.default_value ?? "",
+      fixed_value: field?.fixed_value ?? "",
+      budget_section_id: Number(field?.budget_section_id || 0) || null,
+      budget_section_name: String(field?.budget_section_name || "").trim(),
+      budget_product_value_key: normalizeBudgetProductValueKey(field?.budget_product_value_key),
+      budget_multiple_mode: normalizeBudgetMultipleMode(field?.budget_multiple_mode),
       editable_by: normalizeEditableBy(field?.editable_by),
       odoo_binding_type: normalizeOdooBindingType(field?.odoo_binding_type),
       odoo_product_id: Number(field?.odoo_product_id || 0) || null,
@@ -159,6 +169,7 @@ export function mergeMeasurementFields(customFields = []) {
       dynamic: true,
     });
   }
+
   return [...byKey.values()].sort(
     (a, b) =>
       Number(a.sort_order || 0) - Number(b.sort_order || 0) ||

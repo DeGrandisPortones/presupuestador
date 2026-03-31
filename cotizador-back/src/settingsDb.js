@@ -50,6 +50,27 @@ function normalizeRuleActionType(value) {
   const v = String(value || "set_value").trim().toLowerCase();
   return ["set_value", "show_field", "hide_field", "allow_options"].includes(v) ? v : "set_value";
 }
+function normalizeValueSourceType(value) {
+  const v = String(value || "manual").trim().toLowerCase();
+  return ["manual", "fixed", "budget_field", "budget_section_product"].includes(v) ? v : "manual";
+}
+function normalizeEditableBy(value) {
+  const v = String(value || "both").trim().toLowerCase();
+  return ["both", "medidor", "tecnico", "none"].includes(v) ? v : "both";
+}
+function normalizeOdooBindingType(value) {
+  const v = String(value || "none").trim().toLowerCase();
+  return ["none", "product"].includes(v) ? v : "none";
+}
+function normalizeBudgetProductValueKey(value) {
+  const v = String(value || "display_name").trim();
+  return ["display_name", "alias", "raw_name", "code", "product_id"].includes(v) ? v : "display_name";
+}
+function normalizeBudgetMultipleMode(value) {
+  const v = String(value || "first").trim().toLowerCase();
+  return ["first", "join"].includes(v) ? v : "first";
+}
+
 function normalizeTechnicalMeasurementRule(rule = {}, index = 0) {
   const source_key = normalizeText(rule.source_key || rule.field_key);
   if (!source_key) return null;
@@ -94,24 +115,20 @@ function normalizeFieldSection(value) {
   ];
   return valid.includes(v) ? v : "otros";
 }
-function normalizeFieldValueSourceType(value) {
-  const v = String(value || "manual").trim().toLowerCase();
-  return ["manual", "budget_path", "fixed_value"].includes(v) ? v : "manual";
-}
-function normalizeFieldEditableBy(value) {
-  const v = String(value || "both").trim().toLowerCase();
-  return ["both", "medidor", "tecnico", "none"].includes(v) ? v : "both";
-}
-function normalizeFieldOdooBindingType(value) {
-  const v = String(value || "none").trim().toLowerCase();
-  return ["none", "line_product"].includes(v) ? v : "none";
-}
 function normalizeTechnicalMeasurementField(field = {}, index = 0) {
   const key = normalizeText(field.key || field.field_key);
   if (!key) return null;
   const options = Array.isArray(field.options)
-    ? field.options.map((o) => typeof o === "object" ? { value: normalizeText(o.value), label: normalizeText(o.label || o.value) } : { value: normalizeText(o), label: normalizeText(o) }).filter((o) => o.value)
-    : String(field.options || "").split(",").map((x) => normalizeText(x)).filter(Boolean).map((x) => ({ value: x, label: x }));
+    ? field.options
+        .map((o) => typeof o === "object"
+          ? { value: normalizeText(o.value), label: normalizeText(o.label || o.value) }
+          : { value: normalizeText(o), label: normalizeText(o) })
+        .filter((o) => o.value)
+    : String(field.options || "")
+        .split(",")
+        .map((x) => normalizeText(x))
+        .filter(Boolean)
+        .map((x) => ({ value: x, label: x }));
   return {
     key,
     label: normalizeText(field.label || key),
@@ -121,13 +138,17 @@ function normalizeTechnicalMeasurementField(field = {}, index = 0) {
     active: field?.active !== false,
     options,
     sort_order: Number(field?.sort_order || index + 1) || index + 1,
-    value_source_type: normalizeFieldValueSourceType(field?.value_source_type),
-    value_source_path: normalizeText(field?.value_source_path || ""),
-    default_value: field?.default_value ?? "",
-    editable_by: normalizeFieldEditableBy(field?.editable_by),
-    odoo_binding_type: normalizeFieldOdooBindingType(field?.odoo_binding_type),
+    value_source_type: normalizeValueSourceType(field?.value_source_type),
+    value_source_path: normalizeText(field?.value_source_path),
+    fixed_value: field?.fixed_value ?? "",
+    budget_section_id: Number(field?.budget_section_id || 0) || null,
+    budget_section_name: normalizeText(field?.budget_section_name),
+    budget_product_value_key: normalizeBudgetProductValueKey(field?.budget_product_value_key),
+    budget_multiple_mode: normalizeBudgetMultipleMode(field?.budget_multiple_mode),
+    editable_by: normalizeEditableBy(field?.editable_by),
+    odoo_binding_type: normalizeOdooBindingType(field?.odoo_binding_type),
     odoo_product_id: Number(field?.odoo_product_id || 0) || null,
-    odoo_product_label: normalizeText(field?.odoo_product_label || ""),
+    odoo_product_label: normalizeText(field?.odoo_product_label),
   };
 }
 function normalizeTechnicalMeasurementFields(raw = {}) {

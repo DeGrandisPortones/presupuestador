@@ -1,0 +1,41 @@
+Este patch cambia el origen de datos de reglas técnicas para que pueda tomar
+ directamente lo presupuestado por vendedor/distribuidor.
+
+Qué cambia:
+- En "Reglas técnicas" ya no dependés de escribir rutas a mano.
+- Cada campo puede tomar valor desde:
+  1) Manual
+  2) Valor fijo
+  3) Dato del presupuesto
+  4) Producto presupuestado por sección
+
+Cómo usar "Producto presupuestado por sección":
+1. Crear/editar un campo dinámico técnico
+2. En "Origen del valor" elegir:
+   "Producto presupuestado por sección"
+3. Elegir la sección del catálogo, por ejemplo:
+   - Automatización
+   - Revestimiento
+   - Estructura
+4. Elegir "Qué copiar":
+   - Texto visible del presupuesto
+   - Alias del producto
+   - Nombre original
+   - Código
+   - ID producto
+
+Ejemplo:
+- Campo técnico: automatizacion
+- Origen: Producto presupuestado por sección
+- Sección: Automatización
+- Qué copiar: Texto visible del presupuesto
+
+Si el vendedor presupuestó un producto que se muestra como "Automático",
+el campo técnico se autocompleta con "Automático".
+
+Cómo resuelve las secciones:
+- Toma el presupuesto real desde quote.lines
+- Busca cada producto en el catálogo bootstrap
+- Lee la/s sección/es del producto desde section_ids
+- Arma un mapa sección -> productos seleccionados
+- Usa ese mapa para completar los campos técnicos
