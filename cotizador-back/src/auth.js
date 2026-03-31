@@ -31,6 +31,7 @@ export function signToken(user) {
     is_logistica: !!u.is_logistica,
 
     odoo_partner_id: u.odoo_partner_id ?? null,
+    odoo_pricelist_id: u.odoo_pricelist_id ?? null,
 
     full_name: u.full_name ?? null,
     default_maps_url: u.default_maps_url ?? null,
@@ -65,6 +66,7 @@ export async function requireAuth(req, res, next) {
                is_distribuidor, is_vendedor,
                is_enc_comercial, is_rev_tecnica, is_medidor, is_logistica,
                odoo_partner_id,
+               odoo_pricelist_id,
                default_maps_url,
                coalesce(is_active, true) as is_active
         from public.presupuestador_users
@@ -93,6 +95,7 @@ export async function requireAuth(req, res, next) {
           is_medidor: !!fresh.is_medidor,
           is_logistica: !!fresh.is_logistica,
           odoo_partner_id: fresh.odoo_partner_id ?? null,
+          odoo_pricelist_id: fresh.odoo_pricelist_id ?? null,
           default_maps_url: fresh.default_maps_url ?? null,
           is_active: !!fresh.is_active,
         })

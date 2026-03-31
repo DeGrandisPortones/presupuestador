@@ -1,20 +1,12 @@
-PAQUETE - CAMPOS DINAMICOS POR SECTOR
+CAMBIO: LISTA DE PRECIOS POR DISTRIBUIDOR
 
-Qué agrega:
-- cada campo dinámico ahora guarda 'section'
-- en Reglas Técnicas podés elegir el sector del campo
-- en la planilla de medición los campos aparecen dentro del sector elegido
+Incluye:
+- alta de columna odoo_pricelist_id en presupuestador_users
+- validación: si el usuario es distribuidor, debe tener lista de precios
+- login/me/token con odoo_pricelist_id disponible
+- gestor de usuarios con selector de lista de precios traída desde Odoo
 
-Sectores disponibles:
-- Datos generales
-- Esquema (medidas)
-- Revestimiento
-- Puerta / estructura
-- Rebajes / suelo
-- Observaciones
-- Otros / bloque aparte
-
-Ejemplo:
-- campo: automatizacion
-- sector: puerta_estructura
-=> aparece dentro de "Puerta / estructura"
+IMPORTANTE:
+- este paquete deja guardada la lista de precios en el usuario distribuidor
+- el selector aparece solo cuando el usuario tiene rol Distribuidor
+- cada distribuidor queda con un solo ID de lista de precios

@@ -11,6 +11,7 @@ export async function ensureUsersAdminColumns() {
   await dbQuery(`alter table public.presupuestador_users add column if not exists is_medidor boolean not null default false;`);
   await dbQuery(`alter table public.presupuestador_users add column if not exists is_logistica boolean not null default false;`);
   await dbQuery(`alter table public.presupuestador_users add column if not exists is_superuser boolean not null default false;`);
+  await dbQuery(`alter table public.presupuestador_users add column if not exists odoo_pricelist_id integer null;`);
 
   try {
     await dbQuery(`alter table public.presupuestador_users drop constraint if exists presupuestador_users_role_check;`);
@@ -53,6 +54,11 @@ function normActive(active) {
   return a;
 }
 
+function normalizePricelistId(value) {
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
 export async function listUsers({ role = "all", q = "", active = "all" } = {}) {
   await ensureUsersAdminColumns();
 
@@ -86,6 +92,7 @@ export async function listUsers({ role = "all", q = "", active = "all" } = {}) {
            is_enc_comercial, is_rev_tecnica,
            is_active,
            odoo_partner_id,
+           odoo_pricelist_id,
            default_maps_url,
            created_at, updated_at
     from public.presupuestador_users
@@ -108,6 +115,7 @@ export async function createUser({
   is_logistica = false,
   is_superuser = false,
   odoo_partner_id = null,
+  odoo_pricelist_id = null,
   default_maps_url = null,
   is_active = true,
 } = {}) {
@@ -128,6 +136,8 @@ export async function createUser({
   if (!dist && !vend && !med && !log && !sup) throw new Error("El usuario debe tener al menos un rol");
 
   const pid = odoo_partner_id ? Number(odoo_partner_id) : null;
+  const pricelistId = dist ? normalizePricelistId(odoo_pricelist_id) : null;
+  if (dist && !pricelistId) throw new Error("Falta lista de precios para el distribuidor");
 
   const r = await dbQuery(
     `
@@ -135,18 +145,18 @@ export async function createUser({
       (username, password_hash, full_name, is_active,
        is_distribuidor, is_vendedor, is_medidor, is_logistica, is_superuser,
        is_enc_comercial, is_rev_tecnica,
-       odoo_partner_id, default_maps_url)
+       odoo_partner_id, odoo_pricelist_id, default_maps_url)
     values
       ($1, crypt($2, gen_salt('bf')), $3, $4,
        $5, $6, $7, $8, $9,
        false, false,
-       $10, $11)
+       $10, $11, $12)
     returning id, username, full_name,
               is_distribuidor, is_vendedor, is_medidor, is_logistica, is_superuser,
               is_enc_comercial, is_rev_tecnica,
-              is_active, odoo_partner_id, default_maps_url, created_at, updated_at
+              is_active, odoo_partner_id, odoo_pricelist_id, default_maps_url, created_at, updated_at
     `,
-    [u, p, name, !!is_active, dist, vend, med, log, sup, pid, (default_maps_url ? String(default_maps_url).trim() : null)]
+    [u, p, name, !!is_active, dist, vend, med, log, sup, pid, pricelistId, (default_maps_url ? String(default_maps_url).trim() : null)]
   );
 
   return r.rows?.[0] || null;
@@ -161,6 +171,7 @@ export async function updateUser(id, {
   is_logistica,
   is_superuser,
   odoo_partner_id,
+  odoo_pricelist_id,
   default_maps_url,
   is_active,
 } = {}) {
@@ -170,7 +181,7 @@ export async function updateUser(id, {
   if (!userId) throw new Error("id inválido");
 
   const cur = await dbQuery(
-    `select id, is_distribuidor, is_vendedor, is_medidor, is_logistica, is_superuser, is_active, full_name, odoo_partner_id, default_maps_url
+    `select id, is_distribuidor, is_vendedor, is_medidor, is_logistica, is_superuser, is_active, full_name, odoo_partner_id, odoo_pricelist_id, default_maps_url
        from public.presupuestador_users where id=$1 limit 1`,
     [userId]
   );
@@ -187,6 +198,10 @@ export async function updateUser(id, {
   const active = is_active !== undefined ? !!is_active : !!current.is_active;
   const name = full_name !== undefined ? (full_name === null ? null : String(full_name).trim()) : current.full_name;
   const pid = odoo_partner_id !== undefined ? (odoo_partner_id ? Number(odoo_partner_id) : null) : current.odoo_partner_id;
+  const pricelistId = dist
+    ? (odoo_pricelist_id !== undefined ? normalizePricelistId(odoo_pricelist_id) : normalizePricelistId(current.odoo_pricelist_id))
+    : null;
+  if (dist && !pricelistId) throw new Error("Falta lista de precios para el distribuidor");
   const mapsUrl = default_maps_url !== undefined ? (default_maps_url ? String(default_maps_url).trim() : null) : (current.default_maps_url ?? null);
 
   const pass = password !== undefined ? String(password || "") : "";
@@ -202,16 +217,17 @@ export async function updateUser(id, {
         is_logistica = $7,
         is_superuser = $8,
         odoo_partner_id = $9,
-        default_maps_url = $10,
-        password_hash = case when $11::text is null or $11::text = '' then password_hash else crypt($11::text, gen_salt('bf')) end,
+        odoo_pricelist_id = $10,
+        default_maps_url = $11,
+        password_hash = case when $12::text is null or $12::text = '' then password_hash else crypt($12::text, gen_salt('bf')) end,
         updated_at = now()
     where id = $1
     returning id, username, full_name,
               is_distribuidor, is_vendedor, is_medidor, is_logistica, is_superuser,
               is_enc_comercial, is_rev_tecnica,
-              is_active, odoo_partner_id, default_maps_url, created_at, updated_at
+              is_active, odoo_partner_id, odoo_pricelist_id, default_maps_url, created_at, updated_at
     `,
-    [userId, name, active, dist, vend, med, log, sup, pid, mapsUrl, pass]
+    [userId, name, active, dist, vend, med, log, sup, pid, pricelistId, mapsUrl, pass]
   );
 
   return r.rows?.[0] || null;

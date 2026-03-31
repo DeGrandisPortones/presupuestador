@@ -7,6 +7,7 @@ import Input from "../../ui/Input.jsx";
 import PaginationControls from "../../ui/PaginationControls.jsx";
 import { useAuthStore } from "../../domain/auth/store.js";
 import { adminCreateUser, adminListUsers, adminUpdateUser } from "../../api/admin.js";
+import { getPricelists } from "../../api/odoo.js";
 
 const PAGE_SIZE = 25;
 
@@ -26,7 +27,15 @@ export default function UsersAdminPage() {
     enabled: !!user?.is_enc_comercial,
   });
 
+  const pricelistsQ = useQuery({
+    queryKey: ["odooPricelistsForUsersAdmin"],
+    queryFn: getPricelists,
+    enabled: !!user?.is_enc_comercial,
+    staleTime: 60 * 1000,
+  });
+
   const users = usersQ.data || [];
+  const pricelists = Array.isArray(pricelistsQ.data) ? pricelistsQ.data : [];
 
   const [mode, setMode] = useState("create");
   const [fUsername, setFUsername] = useState("");
@@ -37,6 +46,7 @@ export default function UsersAdminPage() {
   const [fIsMedidor, setFIsMedidor] = useState(false);
   const [fIsSuperuser, setFIsSuperuser] = useState(false);
   const [fOdooPartnerId, setFOdooPartnerId] = useState("");
+  const [fOdooPricelistId, setFOdooPricelistId] = useState("");
   const [fDefaultMapsUrl, setFDefaultMapsUrl] = useState("");
   const [fIsActive, setFIsActive] = useState(true);
 
@@ -51,6 +61,7 @@ export default function UsersAdminPage() {
     setFIsMedidor(roleTab === "medidor");
     setFIsSuperuser(roleTab === "superuser");
     setFOdooPartnerId("");
+    setFOdooPricelistId("");
     setFDefaultMapsUrl("");
     setFIsActive(true);
   };
@@ -66,9 +77,14 @@ export default function UsersAdminPage() {
     setFIsMedidor(!!u.is_medidor);
     setFIsSuperuser(!!u.is_superuser);
     setFOdooPartnerId(u.odoo_partner_id ? String(u.odoo_partner_id) : "");
+    setFOdooPricelistId(u.odoo_pricelist_id ? String(u.odoo_pricelist_id) : "");
     setFDefaultMapsUrl(u.default_maps_url ? String(u.default_maps_url) : "");
     setFIsActive(!!u.is_active);
   };
+
+  useEffect(() => {
+    if (!fIsDistribuidor && fOdooPricelistId) setFOdooPricelistId("");
+  }, [fIsDistribuidor, fOdooPricelistId]);
 
   const createM = useMutation({
     mutationFn: () =>
@@ -81,6 +97,7 @@ export default function UsersAdminPage() {
         is_medidor: fIsMedidor,
         is_superuser: fIsSuperuser,
         odoo_partner_id: fOdooPartnerId ? Number(fOdooPartnerId) : null,
+        odoo_pricelist_id: fIsDistribuidor && fOdooPricelistId ? Number(fOdooPricelistId) : null,
         default_maps_url: fDefaultMapsUrl ? String(fDefaultMapsUrl) : null,
         is_active: fIsActive,
       }),
@@ -102,6 +119,7 @@ export default function UsersAdminPage() {
         is_medidor: fIsMedidor,
         is_superuser: fIsSuperuser,
         odoo_partner_id: fOdooPartnerId ? Number(fOdooPartnerId) : null,
+        odoo_pricelist_id: fIsDistribuidor && fOdooPricelistId ? Number(fOdooPricelistId) : null,
         default_maps_url: fDefaultMapsUrl ? String(fDefaultMapsUrl) : null,
         is_active: fIsActive,
       }),
@@ -149,6 +167,14 @@ export default function UsersAdminPage() {
   function ensureAtLeastOneRole() {
     if (!fIsVendedor && !fIsDistribuidor && !fIsMedidor && !fIsSuperuser) {
       toast.error("Elegí Vendedor / Distribuidor / Medidor / Superusuario");
+      return false;
+    }
+    return true;
+  }
+
+  function ensureDistributorPricelist() {
+    if (fIsDistribuidor && !fOdooPricelistId) {
+      toast.error("Elegí una lista de precios para el distribuidor");
       return false;
     }
     return true;
@@ -237,6 +263,7 @@ export default function UsersAdminPage() {
                       <div className="muted" style={{ fontSize: 12 }}>
                         {u.full_name || "(sin nombre)"}
                         {u.odoo_partner_id ? ` · Odoo partner: ${u.odoo_partner_id}` : ""}
+                        {u.odoo_pricelist_id ? ` · Lista: ${u.odoo_pricelist_id}` : ""}
                       </div>
                       {!!roles.length && (
                         <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>
@@ -298,6 +325,26 @@ export default function UsersAdminPage() {
               <Input value={fOdooPartnerId} onChange={setFOdooPartnerId} placeholder="12345" style={{ width: "100%" }} />
             </div>
 
+            {fIsDistribuidor ? (
+              <div>
+                <div className="muted" style={{ marginBottom: 6 }}>Lista de precios del distribuidor</div>
+                <select
+                  value={fOdooPricelistId}
+                  onChange={(e) => setFOdooPricelistId(e.target.value)}
+                  style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid #ddd" }}
+                >
+                  <option value="">Seleccione lista…</option>
+                  {pricelists.map((pl) => (
+                    <option key={pl.id} value={pl.id}>
+                      {pl.name}{pl.active === false ? " (inactiva)" : ""}
+                    </option>
+                  ))}
+                </select>
+                {pricelistsQ.isLoading ? <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>Cargando listas desde Odoo…</div> : null}
+                {pricelistsQ.isError ? <div style={{ color: "#d93025", fontSize: 12, marginTop: 6 }}>{pricelistsQ.error.message}</div> : null}
+              </div>
+            ) : null}
+
             <div>
               <div className="muted" style={{ marginBottom: 6 }}>Maps por defecto (URL)</div>
               <Input value={fDefaultMapsUrl} onChange={setFDefaultMapsUrl} placeholder="https://maps.app.goo.gl/..." style={{ width: "100%" }} />
@@ -339,6 +386,7 @@ export default function UsersAdminPage() {
                   if (!fUsername.trim()) return toast.error("Falta username");
                   if (!fPassword) return toast.error("Falta password");
                   if (!ensureAtLeastOneRole()) return;
+                  if (!ensureDistributorPricelist()) return;
                   createM.mutate();
                 }}
                 disabled={createM.isPending}
@@ -350,6 +398,7 @@ export default function UsersAdminPage() {
                 variant="primary"
                 onClick={() => {
                   if (!ensureAtLeastOneRole()) return;
+                  if (!ensureDistributorPricelist()) return;
                   updateM.mutate();
                 }}
                 disabled={updateM.isPending}

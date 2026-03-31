@@ -20,7 +20,6 @@ function withEffectiveRoles(user) {
 export function buildAuthRouter() {
   const router = express.Router();
 
-  // LOGIN
   router.post("/login", async (req, res, next) => {
     try {
       const { username, password } = req.body || {};
@@ -35,6 +34,7 @@ export function buildAuthRouter() {
                is_distribuidor, is_vendedor,
                is_enc_comercial, is_rev_tecnica, is_medidor, is_logistica,
                odoo_partner_id,
+               odoo_pricelist_id,
                default_maps_url,
                coalesce(is_active, true) as is_active
         from public.presupuestador_users
@@ -57,7 +57,6 @@ export function buildAuthRouter() {
     }
   });
 
-  // ME
   router.get("/me", requireAuth, async (req, res) => {
     res.json({ ok: true, user: req.user });
   });
