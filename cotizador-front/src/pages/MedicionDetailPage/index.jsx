@@ -26,9 +26,50 @@ function extractBudgetDimensionMm(quote, key) {
   if (!Number.isFinite(n) || n <= 0) return "";
   return String(Math.round(n * 1000));
 }
+function normalizeTriple(values = [], suggested = "") {
+  const arr = Array.isArray(values) ? values.slice(0, 3).map((v) => text(v)) : [];
+  while (arr.length < 3) arr.push("");
+  if (!arr.some(Boolean) && suggested) arr[1] = suggested;
+  return arr;
+}
+const SCHEME_RECT_PCTS = {
+  alto: [
+    { left: 9.22, top: 43.73, width: 14.4, height: 14.24 },
+    { left: 27.02, top: 43.73, width: 14.4, height: 14.24 },
+    { left: 44.5, top: 43.73, width: 14.24, height: 14.24 },
+  ],
+  ancho: [
+    { left: 71.36, top: 22.71, width: 14.4, height: 14.24 },
+    { left: 71.36, top: 48.14, width: 14.4, height: 13.9 },
+    { left: 71.36, top: 82.71, width: 14.4, height: 14.24 },
+  ],
+};
+const schemeOverlayBaseStyle = {
+  position: "absolute",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  fontWeight: 900,
+  color: "#111",
+  textShadow: "0 1px 0 rgba(255,255,255,0.9)",
+  background: "rgba(255,255,255,0.55)",
+  borderRadius: 6,
+  pointerEvents: "none",
+};
+function updateSchemeValue(form, axis, index, value) {
+  const next = {
+    ...(form.esquema || {}),
+    alto: normalizeTriple(form.esquema?.alto || []),
+    ancho: normalizeTriple(form.esquema?.ancho || []),
+  };
+  next[axis][index] = value;
+  return { ...form, esquema: next };
+}
 function buildInitialForm(quote, current = {}) {
   const end = quote?.end_customer || {};
   const split = splitName(end);
+  const suggestedAlto = extractBudgetDimensionMm(quote, "alto");
+  const suggestedAncho = extractBudgetDimensionMm(quote, "ancho");
   return {
     ...current,
     fecha: text(current.fecha) || todayISO(),
@@ -58,8 +99,12 @@ function buildInitialForm(quote, current = {}) {
     rebaje_inferior: boolValue(current.rebaje_inferior),
     trampa_tierra: boolValue(current.trampa_tierra),
     trampa_tierra_altura: text(current.trampa_tierra_altura),
-    alto_final_mm: text(current.alto_final_mm) || extractBudgetDimensionMm(quote, "alto"),
-    ancho_final_mm: text(current.ancho_final_mm) || extractBudgetDimensionMm(quote, "ancho"),
+    esquema: {
+      alto: normalizeTriple(current?.esquema?.alto || [], suggestedAlto),
+      ancho: normalizeTriple(current?.esquema?.ancho || [], suggestedAncho),
+    },
+    alto_final_mm: text(current.alto_final_mm) || suggestedAlto,
+    ancho_final_mm: text(current.ancho_final_mm) || suggestedAncho,
     observaciones: text(current.observaciones),
   };
 }
@@ -121,6 +166,72 @@ export default function MedicionDetailPage() {
           <Field label="Alto final (mm)"><Input value={form.alto_final_mm || ""} onChange={(v) => setForm({ ...form, alto_final_mm: v })} style={{ width: "100%" }} disabled={!isTechnical} /></Field>
           <Field label="Ancho final (mm)"><Input value={form.ancho_final_mm || ""} onChange={(v) => setForm({ ...form, ancho_final_mm: v })} style={{ width: "100%" }} disabled={!isTechnical} /></Field>
         </Row>
+      </Section>
+
+      <Section title="Esquema (medidas)">
+        <div style={{ display: "flex", gap: 14, flexWrap: "wrap", alignItems: "flex-start" }}>
+          <div style={{ flex: 2, minWidth: 320 }}>
+            <div style={{ border: "1px solid #eee", borderRadius: 12, padding: 10, background: "#fff" }}>
+              <div style={{ position: "relative", width: "100%" }}>
+                <img src="/measurement_scheme.png" alt="Esquema de medición" style={{ width: "100%", height: "auto", display: "block" }} />
+                {SCHEME_RECT_PCTS.alto.map((p, i) => {
+                  const v = form.esquema?.alto?.[i];
+                  if (!v) return null;
+                  return (
+                    <div
+                      key={`alto-ov-${i}`}
+                      style={{ ...schemeOverlayBaseStyle, left: `${p.left}%`, top: `${p.top}%`, width: `${p.width}%`, height: `${p.height}%`, fontSize: 14 }}
+                    >
+                      {v}
+                    </div>
+                  );
+                })}
+                {SCHEME_RECT_PCTS.ancho.map((p, i) => {
+                  const v = form.esquema?.ancho?.[i];
+                  if (!v) return null;
+                  return (
+                    <div
+                      key={`ancho-ov-${i}`}
+                      style={{ ...schemeOverlayBaseStyle, left: `${p.left}%`, top: `${p.top}%`, width: `${p.width}%`, height: `${p.height}%`, fontSize: 14 }}
+                    >
+                      {v}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+            <div className="muted" style={{ marginTop: 8, fontSize: 12 }}>Ingresá las tres medidas de alto y las tres medidas de ancho en milímetros.</div>
+          </div>
+
+          <div style={{ flex: 1, minWidth: 280 }}>
+            <div style={{ fontWeight: 900, marginBottom: 8 }}>Altos</div>
+            <Row>
+              {[0, 1, 2].map((i) => (
+                <Field key={`alto-${i}`} label={`Alto ${i + 1} (mm)`}>
+                  <Input
+                    value={form.esquema?.alto?.[i] || ""}
+                    onChange={(v) => setForm((prev) => updateSchemeValue(prev, "alto", i, v))}
+                    style={{ width: "100%" }}
+                  />
+                </Field>
+              ))}
+            </Row>
+
+            <div className="spacer" />
+            <div style={{ fontWeight: 900, marginBottom: 8 }}>Anchos</div>
+            <Row>
+              {[0, 1, 2].map((i) => (
+                <Field key={`ancho-${i}`} label={`Ancho ${i + 1} (mm)`}>
+                  <Input
+                    value={form.esquema?.ancho?.[i] || ""}
+                    onChange={(v) => setForm((prev) => updateSchemeValue(prev, "ancho", i, v))}
+                    style={{ width: "100%" }}
+                  />
+                </Field>
+              ))}
+            </Row>
+          </div>
+        </div>
       </Section>
 
       <Section title="Revestimiento">
