@@ -51,3 +51,8 @@ Archivos para reemplazar en el repo:
 - cotizador-front/src/pages/MedicionDetailPage/index.jsx
 - cotizador-back/src/settingsDb.js
 - cotizador-back/src/measurementFinalization.js
+
+
+Actualizacion UI:
+- El campo "Ruta del presupuestador" ahora trae un desplegable con rutas conocidas agrupadas por origen.
+- Si falta alguna ruta, se puede elegir "Ruta personalizada..." y escribirla manualmente.

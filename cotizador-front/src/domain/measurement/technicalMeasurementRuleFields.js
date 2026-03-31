@@ -48,6 +48,63 @@ export const TECHNICAL_MEASUREMENT_ODOO_BINDING_OPTIONS = [
   { value: "line_product", label: "Agregar producto en Odoo" },
 ];
 
+export const TECHNICAL_MEASUREMENT_BUDGET_PATH_GROUPS = [
+  {
+    label: "Payload del presupuestador",
+    options: [
+      { value: "payload.payment_method", label: "Forma de pago" },
+      { value: "payload.porton_type", label: "Tipo de portón" },
+      { value: "payload.dimensions.width", label: "Ancho presupuestado" },
+      { value: "payload.dimensions.height", label: "Alto presupuestado" },
+    ],
+  },
+  {
+    label: "Cliente final",
+    options: [
+      { value: "end_customer.name", label: "Nombre completo" },
+      { value: "end_customer.first_name", label: "Nombre" },
+      { value: "end_customer.last_name", label: "Apellido" },
+      { value: "end_customer.phone", label: "Teléfono" },
+      { value: "end_customer.email", label: "Email" },
+      { value: "end_customer.address", label: "Dirección" },
+      { value: "end_customer.city", label: "Ciudad" },
+      { value: "end_customer.maps_url", label: "Google Maps" },
+    ],
+  },
+  {
+    label: "Prefill técnico calculado",
+    options: [
+      { value: "measurement_prefill.accionamiento", label: "Accionamiento sugerido" },
+      { value: "measurement_prefill.levadizo", label: "Tipo levadizo sugerido" },
+      { value: "measurement_prefill.revestimiento", label: "Revestimiento sugerido" },
+      { value: "measurement_prefill.color_sistema", label: "Color sistema sugerido" },
+      { value: "measurement_prefill.color_revestimiento", label: "Color revestimiento sugerido" },
+      { value: "measurement_prefill.alto_mm", label: "Alto sugerido (mm)" },
+      { value: "measurement_prefill.ancho_mm", label: "Ancho sugerido (mm)" },
+    ],
+  },
+  {
+    label: "Datos de la cotización",
+    options: [
+      { value: "quote_number", label: "Número de presupuesto" },
+      { value: "odoo_sale_order_name", label: "NV / nombre Odoo" },
+      { value: "final_sale_order_name", label: "NV final Odoo" },
+      { value: "created_by_full_name", label: "Usuario creador (nombre)" },
+      { value: "created_by_username", label: "Usuario creador" },
+    ],
+  },
+  {
+    label: "Formulario actual",
+    options: [
+      { value: "form.alto_final_mm", label: "Alto final cargado" },
+      { value: "form.ancho_final_mm", label: "Ancho final cargado" },
+      { value: "form.observaciones", label: "Observaciones" },
+    ],
+  },
+];
+
+export const TECHNICAL_MEASUREMENT_BUDGET_PATH_OPTIONS = TECHNICAL_MEASUREMENT_BUDGET_PATH_GROUPS.flatMap((group) => group.options);
+
 function normalizeValueSourceType(value) {
   const v = String(value || "manual").trim().toLowerCase();
   return ["manual", "budget_path", "fixed_value"].includes(v) ? v : "manual";

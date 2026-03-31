@@ -16,6 +16,8 @@ import {
   TECHNICAL_MEASUREMENT_SOURCE_OPTIONS,
   TECHNICAL_MEASUREMENT_EDITABLE_OPTIONS,
   TECHNICAL_MEASUREMENT_ODOO_BINDING_OPTIONS,
+  TECHNICAL_MEASUREMENT_BUDGET_PATH_GROUPS,
+  TECHNICAL_MEASUREMENT_BUDGET_PATH_OPTIONS,
   mergeMeasurementFields,
   parseOptions,
 } from "../../domain/measurement/technicalMeasurementRuleFields.js";
@@ -30,21 +32,7 @@ const SECTION_OPTIONS = [
   { value: "otros", label: "Otros / bloque aparte" },
 ];
 
-const BUDGET_PATH_EXAMPLES = [
-  "payload.payment_method",
-  "payload.porton_type",
-  "payload.dimensions.width",
-  "payload.dimensions.height",
-  "end_customer.name",
-  "end_customer.city",
-  "measurement_prefill.accionamiento",
-  "measurement_prefill.levadizo",
-  "measurement_prefill.revestimiento",
-  "measurement_prefill.color_sistema",
-  "measurement_prefill.color_revestimiento",
-  "measurement_prefill.alto_mm",
-  "measurement_prefill.ancho_mm",
-];
+const CUSTOM_PATH_VALUE = "__custom__";
 
 function productLabel(product) {
   return `${product.display_name || product.name}${product.code ? ` · ${product.code}` : ""}`;
@@ -138,6 +126,13 @@ function updateRuleAtIndex(setRuleDraft, index, patch) {
     next[index] = { ...next[index], ...patch };
     return { rules: next };
   });
+}
+function getBudgetPathSelectValue(path) {
+  const normalized = String(path || "").trim();
+  if (!normalized) return "";
+  return TECHNICAL_MEASUREMENT_BUDGET_PATH_OPTIONS.some((item) => item.value === normalized)
+    ? normalized
+    : CUSTOM_PATH_VALUE;
 }
 
 export default function SuperuserMeasurementRulesPage() {
@@ -245,7 +240,10 @@ export default function SuperuserMeasurementRulesPage() {
       <div className="spacer" />
       <div className="card">
         <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-          {fields.map((field, index) => (
+          {fields.map((field, index) => {
+            const selectedBudgetPath = getBudgetPathSelectValue(field.value_source_path);
+            const showCustomBudgetPath = field.value_source_type === "budget_path" && selectedBudgetPath === CUSTOM_PATH_VALUE;
+            return (
             <div key={`${field.key || "field"}-${index}`} style={{ border: "1px solid #eee", borderRadius: 12, padding: 12 }}>
               <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center" }}>
                 <div style={{ fontWeight: 800 }}>Campo #{index + 1}</div>
@@ -291,20 +289,34 @@ export default function SuperuserMeasurementRulesPage() {
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 10 }}>
                 <div>
                   <div className="muted" style={{ marginBottom: 6 }}>Cómo se llena</div>
-                  <select value={field.value_source_type || "manual"} onChange={(e) => updateFieldAtIndex(setFieldDraft, index, { value_source_type: e.target.value })} style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid #ddd" }}>
+                  <select value={field.value_source_type || "manual"} onChange={(e) => updateFieldAtIndex(setFieldDraft, index, { value_source_type: e.target.value, value_source_path: e.target.value === "budget_path" ? field.value_source_path || "payload.payment_method" : "" })} style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid #ddd" }}>
                     {TECHNICAL_MEASUREMENT_SOURCE_OPTIONS.map((opt) => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
                   </select>
                 </div>
 
                 <div>
                   <div className="muted" style={{ marginBottom: 6 }}>Ruta del presupuestador</div>
-                  <Input
-                    value={field.value_source_path || ""}
-                    onChange={(v) => updateFieldAtIndex(setFieldDraft, index, { value_source_path: v })}
-                    placeholder="payload.payment_method"
-                    style={{ width: "100%" }}
+                  <select
+                    value={selectedBudgetPath}
+                    onChange={(e) => {
+                      const nextValue = e.target.value;
+                      if (nextValue === CUSTOM_PATH_VALUE) {
+                        updateFieldAtIndex(setFieldDraft, index, { value_source_path: field.value_source_path || "" });
+                        return;
+                      }
+                      updateFieldAtIndex(setFieldDraft, index, { value_source_path: nextValue });
+                    }}
+                    style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid #ddd" }}
                     disabled={field.value_source_type !== "budget_path"}
-                  />
+                  >
+                    <option value="">Seleccione ruta…</option>
+                    {TECHNICAL_MEASUREMENT_BUDGET_PATH_GROUPS.map((group) => (
+                      <optgroup key={group.label} label={group.label}>
+                        {group.options.map((opt) => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+                      </optgroup>
+                    ))}
+                    <option value={CUSTOM_PATH_VALUE}>Ruta personalizada…</option>
+                  </select>
                 </div>
 
                 <div>
@@ -352,9 +364,27 @@ export default function SuperuserMeasurementRulesPage() {
                 </div>
               </div>
 
+              {showCustomBudgetPath && (
+                <>
+                  <div className="spacer" />
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 10 }}>
+                    <div>
+                      <div className="muted" style={{ marginBottom: 6 }}>Ruta personalizada</div>
+                      <Input
+                        value={field.value_source_path || ""}
+                        onChange={(v) => updateFieldAtIndex(setFieldDraft, index, { value_source_path: v })}
+                        placeholder="payload.payment_method"
+                        style={{ width: "100%" }}
+                        disabled={field.value_source_type !== "budget_path"}
+                      />
+                    </div>
+                  </div>
+                </>
+              )}
+
               <div className="spacer" />
               <div className="muted" style={{ fontSize: 12 }}>
-                Ejemplos de ruta del presupuestador: {BUDGET_PATH_EXAMPLES.join(" · ")}
+                Cuando elegís “Tomar del presupuestador”, ahora podés seleccionar una ruta existente del desplegable. Si necesitás una que no esté, usá “Ruta personalizada…”.
               </div>
 
               <div className="spacer" />
@@ -370,7 +400,8 @@ export default function SuperuserMeasurementRulesPage() {
                 </label>
               </div>
             </div>
-          ))}
+            );
+          })}
           {!fields.length && <div className="muted">Todavía no hay campos dinámicos cargados.</div>}
         </div>
       </div>
