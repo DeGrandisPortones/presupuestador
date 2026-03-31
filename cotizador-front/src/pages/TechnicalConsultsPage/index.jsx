@@ -62,6 +62,10 @@ function messageBubbleStyle(isOwn, isResolution = false) {
   };
 }
 
+function normalizeSearch(value) {
+  return String(value || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+}
+
 export default function TechnicalConsultsPage() {
   const user = useAuthStore((s) => s.user);
   const qc = useQueryClient();
@@ -77,6 +81,7 @@ export default function TechnicalConsultsPage() {
   const [newMessage, setNewMessage] = useState("");
   const [replyMessage, setReplyMessage] = useState("");
   const [resolutionText, setResolutionText] = useState("");
+  const [searchText, setSearchText] = useState("");
 
   useEffect(() => {
     setStatus(isTechnical ? "pending" : "open");
@@ -91,7 +96,24 @@ export default function TechnicalConsultsPage() {
     refetchInterval: 15000,
   });
 
-  const tickets = ticketsQ.data || [];
+  const baseTickets = ticketsQ.data || [];
+
+  const tickets = useMemo(() => {
+    const term = normalizeSearch(searchText);
+    if (!term) return baseTickets;
+    return baseTickets.filter((ticket) => {
+      const haystack = normalizeSearch([
+        ticket.id,
+        ticket.subject,
+        ticket.created_by_name,
+        ticket.created_by_role,
+        ticket.created_by_username,
+        ticket.assigned_to_name,
+        ticket.last_message_text,
+      ].join(" "));
+      return haystack.includes(term);
+    });
+  }, [baseTickets, searchText]);
 
   useEffect(() => {
     if (!tickets.length) {
@@ -101,6 +123,11 @@ export default function TechnicalConsultsPage() {
     const exists = tickets.some((ticket) => String(ticket.id) === String(selectedId));
     if (!selectedId || !exists) setSelectedId(tickets[0].id);
   }, [tickets, selectedId]);
+
+  const selectedListTicket = useMemo(
+    () => tickets.find((ticket) => String(ticket.id) === String(selectedId)) || null,
+    [tickets, selectedId]
+  );
 
   const detailQ = useQuery({
     queryKey: ["technicalConsult", selectedId],
@@ -116,17 +143,18 @@ export default function TechnicalConsultsPage() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["technicalConsultUnreadSummary"] });
       qc.invalidateQueries({ queryKey: ["technicalConsults"] });
+      if (selectedId) qc.invalidateQueries({ queryKey: ["technicalConsult", selectedId] });
     },
   });
 
   useEffect(() => {
-    if (!selectedTicket?.id) return;
-    const unreadCount = Number(selectedTicket.unread_count || 0);
-    if (unreadCount <= 0) return;
-    if (markedReadRef.current === Number(selectedTicket.id)) return;
-    markedReadRef.current = Number(selectedTicket.id);
-    markReadM.mutate(selectedTicket.id);
-  }, [selectedTicket]);
+    const ticketId = Number(selectedListTicket?.id || 0);
+    const unreadCount = Number(selectedListTicket?.unread_count || 0);
+    if (!ticketId || unreadCount <= 0) return;
+    if (markedReadRef.current === ticketId) return;
+    markedReadRef.current = ticketId;
+    markReadM.mutate(ticketId);
+  }, [selectedListTicket, markReadM]);
 
   const createM = useMutation({
     mutationFn: () => createTechnicalConsult({ subject, message: newMessage }),
@@ -224,6 +252,18 @@ export default function TechnicalConsultsPage() {
             <h3 style={{ marginTop: 0, marginBottom: 0 }}>{isTechnical ? "Tickets" : "Mis tickets"}</h3>
             <div className="muted" style={{ fontSize: 12 }}>{tickets.length} item(s)</div>
           </div>
+
+          {isTechnical ? (
+            <>
+              <div className="spacer" />
+              <Input
+                value={searchText}
+                onChange={setSearchText}
+                placeholder="Buscar por ticket, asunto, vendedor, distribuidor o mensaje"
+                style={{ width: "100%" }}
+              />
+            </>
+          ) : null}
 
           {isRequester ? (
             <>

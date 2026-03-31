@@ -18,6 +18,9 @@ Qué hace:
 - Cierre solo por Técnica con resolución final obligatoria.
 - Ticket cerrado => no admite más respuestas.
 - Vista de vendedor/distribuidor y vista de Técnica en una ruta única: /consultas-tecnicas
+- Buscador para Técnica por número, asunto, creador, asignado o texto del último mensaje.
+- En pestaña Pendientes del técnico, orden de más recientes a más antiguas.
+- Al abrir un ticket con mensajes sin leer, se marca como visto aunque esté cerrado.
 
 Copia:
 1. Descomprimir respetando carpetas.

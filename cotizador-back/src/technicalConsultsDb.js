@@ -198,11 +198,14 @@ export async function listTechnicalConsults(user, { scope = "mine", status = "al
   const viewerId = toId(user?.user_id || user?.id);
   const { whereSql, params } = buildListWhere({ user, scope: normalizedScope, status: normalizedStatus, paramOffset: 1 });
   const allParams = [viewerId, ...params];
+  const orderBySql = normalizedScope === "technical" && normalizedStatus === "pending"
+    ? "order by t.created_at desc, t.id desc"
+    : "order by coalesce(t.last_message_at, t.created_at) desc, t.id desc";
 
   const q = await dbQuery(
     `${listSql({ scope: normalizedScope, viewerIdParamPos: 1 })}
      ${whereSql}
-     order by coalesce(t.last_message_at, t.created_at) desc, t.id desc`,
+     ${orderBySql}`,
     allParams
   );
 
@@ -257,15 +260,45 @@ async function getTicketMessages(clientOrDb, ticketId) {
   return q.rows || [];
 }
 
+
+async function getUnreadInfo(clientOrDb, user, ticket) {
+  const viewerId = toId(user?.user_id || user?.id);
+  const readField = isTechnicalUser(user) ? "technical_last_read_at" : "requester_last_read_at";
+  const q = await clientOrDb.query(
+    `
+      select
+        count(*)::int as unread_count,
+        exists(
+          select 1
+          from public.presupuestador_technical_ticket_messages m
+          where m.ticket_id = $1
+            and m.author_user_id <> $2
+            and m.created_at > coalesce($3::timestamptz, to_timestamp(0))
+        ) as has_unread
+      from public.presupuestador_technical_ticket_messages m
+      where m.ticket_id = $1
+        and m.author_user_id <> $2
+        and m.created_at > coalesce($3::timestamptz, to_timestamp(0))
+    `,
+    [Number(ticket.id), viewerId, ticket?.[readField] || null]
+  );
+  return {
+    unread_count: Number(q.rows?.[0]?.unread_count || 0),
+    has_unread: !!q.rows?.[0]?.has_unread,
+  };
+}
+
 export async function getTechnicalConsultDetail(user, id) {
   await ensureTechnicalConsultTables();
   const ticket = await getTicketRow({ query: dbQuery }, id);
   if (!ticket) throw new Error("Consulta técnica no encontrada");
   if (!canAccessTicket(user, ticket)) throw new Error("No autorizado");
   const messages = await getTicketMessages({ query: dbQuery }, ticket.id);
+  const unreadInfo = await getUnreadInfo({ query: dbQuery }, user, ticket);
   const viewerIsTechnical = isTechnicalUser(user);
   return {
     ...ticket,
+    ...unreadInfo,
     status: ticketStatusLabel(ticket.status),
     messages,
     can_reply: ticket.status !== "closed",
