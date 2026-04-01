@@ -1,0 +1,29 @@
+PATCH INCREMENTAL - REGLAS QUE OCULTAN Y LIMPIAN CAMPOS DEL SISTEMA
+
+Este patch agrega:
+- nueva acción de regla: clear_field
+- soporte para ocultar/mostrar campos del sistema hardcodeados sin cambiar el layout de la planilla
+- soporte para limpiar campos del sistema al aplicar una regla
+- campos del sistema expuestos como comparables y destinos en la UI de reglas
+
+Caso típico:
+- origen: lucera
+- operador: =
+- comparar contra: no
+- acción: Ocultar campo
+- destino: lucera_cantidad
+
+Y además:
+- origen: lucera
+- operador: =
+- comparar contra: no
+- acción: Limpiar campo
+- destino: lucera_cantidad
+
+Lo mismo para lucera_posicion.
+
+Archivos incluidos:
+- cotizador-front/src/domain/measurement/technicalMeasurementRuleFields.js
+- cotizador-front/src/pages/SuperuserMeasurementRulesPage/index.jsx
+- cotizador-front/src/pages/MedicionDetailPage/index.jsx
+- cotizador-back/src/settingsDb.js
