@@ -1,0 +1,38 @@
+PATCH: propiedades del presupuesto/usuario en reglas técnicas
+
+Qué agrega:
+- En REGLAS / Campo origen aparecen propiedades comparables de:
+  - usuario logeado (current_user.*)
+  - presupuesto (quote.*)
+  - payload del presupuesto (payload.*)
+  - cliente final (end_customer.*)
+  - métricas derivadas (surface_m2, budget_width_m, budget_height_m)
+- En CAMPOS dinámicos / Origen del valor se agrega:
+  - Manual
+  - Valor fijo
+  - Dato del presupuesto
+  - Dato del usuario logeado
+
+Ejemplos útiles:
+- current_user.is_vendedor = si/no
+- current_user.is_distribuidor = si/no
+- current_user.full_name
+- quote.created_by_role
+- quote.created_by_full_name
+- payload.porton_type
+- payload.payment_method
+- end_customer.city
+- surface_m2
+
+Caso Distribuidor:
+- Hoy buildInitialForm ya lo resuelve por defecto así:
+  - si el presupuesto lo creó un vendedor => "De Grandis Portones"
+  - si lo creó un distribuidor => nombre/usuario del creador
+- Con este patch además podés comparar explícitamente current_user.* y quote.* en reglas.
+
+Archivos incluidos:
+- cotizador-front/src/domain/measurement/technicalMeasurementRuleFields.js
+- cotizador-front/src/pages/SuperuserMeasurementRulesPage/index.jsx
+- cotizador-front/src/pages/MedicionDetailPage/index.jsx
+- cotizador-back/src/settingsDb.js
+
