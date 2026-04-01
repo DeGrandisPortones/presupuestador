@@ -1,0 +1,34 @@
+PATCH: reglas + campos del sistema en planilla de medicion
+
+Incluye:
+- todos los campos actuales de la planilla visibles en Reglas tecnicas como campos del sistema
+- aviso de precedencia: primero config base del campo, despues reglas activas
+- aviso de posibles conflictos cuando varias reglas apuntan al mismo campo destino
+- configuracion editable para campos del sistema:
+  - etiqueta
+  - origen del valor
+  - editable por
+  - salida a Odoo
+- protecciones para campos del sistema:
+  - no se pueden borrar
+  - no se puede cambiar la clave interna
+  - no se puede cambiar el tipo
+  - no se puede cambiar el sector visual
+- aplicacion de esa configuracion en la planilla real de medicion
+- soporte backend para salida a Odoo en dos modos:
+  - custom_product
+  - repeat_budget_product
+
+Archivos a reemplazar:
+- cotizador-front/src/domain/measurement/technicalMeasurementRuleFields.js
+- cotizador-front/src/pages/SuperuserMeasurementRulesPage/index.jsx
+- cotizador-front/src/pages/MedicionDetailPage/index.jsx
+- cotizador-back/src/settingsDb.js
+- cotizador-back/src/measurementFinalization.js
+
+Importante:
+- despues de aplicar el patch, entra una vez a Reglas tecnicas y guarda los campos para dejar persistidos los campos del sistema con esta nueva estructura
+- la precedencia queda asi:
+  1) configuracion base del campo
+  2) reglas activas
+  3) si dos reglas activas se pisan sobre el mismo campo, manda la ultima
