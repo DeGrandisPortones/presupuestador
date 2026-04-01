@@ -207,6 +207,9 @@ export default function SuperuserMeasurementRulesPage() {
   const [savingRules, setSavingRules] = useState(false);
   const [fieldDraft, setFieldDraft] = useState({ fields: [] });
   const [ruleDraft, setRuleDraft] = useState({ rules: [] });
+  const [fieldFilter, setFieldFilter] = useState("all");
+  const [fieldSearch, setFieldSearch] = useState("");
+  const [ruleSearch, setRuleSearch] = useState("");
 
   const fieldsQ = useQuery({
     queryKey: ["technicalMeasurementFields"],
@@ -294,6 +297,51 @@ export default function SuperuserMeasurementRulesPage() {
   const targetFieldOptions = visibleFields;
   const fields = Array.isArray(fieldDraft?.fields) ? fieldDraft.fields : [];
   const rules = Array.isArray(ruleDraft?.rules) ? ruleDraft.rules : [];
+  const filteredFields = useMemo(() => {
+    const q = String(fieldSearch || "").trim().toLowerCase();
+    return fields.filter((field) => {
+      const matchesType =
+        fieldFilter === "all"
+          ? true
+          : fieldFilter === "system"
+            ? field?.system === true
+            : field?.system !== true;
+      if (!matchesType) return false;
+      if (!q) return true;
+      const haystack = [
+        field?.label,
+        field?.key,
+        field?.section,
+        field?.value_source_type,
+        field?.budget_section_name,
+        field?.odoo_product_label,
+      ]
+        .map((item) => String(item || "").toLowerCase())
+        .join(" ");
+      return haystack.includes(q);
+    });
+  }, [fields, fieldFilter, fieldSearch]);
+  const filteredRules = useMemo(() => {
+    const q = String(ruleSearch || "").trim().toLowerCase();
+    if (!q) return rules;
+    const fieldLabelByKey = new Map(
+      visibleFields.map((field) => [field.key, String(field.label || field.key || "")]),
+    );
+    return rules.filter((rule) => {
+      const haystack = [
+        rule?.name,
+        rule?.source_key,
+        rule?.target_field,
+        rule?.compare_value,
+        rule?.target_value,
+        fieldLabelByKey.get(rule?.source_key),
+        fieldLabelByKey.get(rule?.target_field),
+      ]
+        .map((item) => String(item || "").toLowerCase())
+        .join(" ");
+      return haystack.includes(q);
+    });
+  }, [rules, ruleSearch, visibleFields]);
   const conflictWarnings = useMemo(
     () => detectRuleConflicts(rules, visibleFields),
     [rules, visibleFields],
@@ -422,12 +470,52 @@ export default function SuperuserMeasurementRulesPage() {
             {savingFields ? "Guardando..." : "Guardar campos"}
           </Button>
         </div>
+        <div className="spacer" />
+        <div
+          style={{
+            display: "flex",
+            gap: 10,
+            flexWrap: "wrap",
+            alignItems: "center",
+          }}
+        >
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <Button
+              variant={fieldFilter === "all" ? "primary" : "ghost"}
+              onClick={() => setFieldFilter("all")}
+            >
+              Todos ({fields.length})
+            </Button>
+            <Button
+              variant={fieldFilter === "system" ? "primary" : "ghost"}
+              onClick={() => setFieldFilter("system")}
+            >
+              Sistema ({fields.filter((field) => field?.system === true).length})
+            </Button>
+            <Button
+              variant={fieldFilter === "custom" ? "primary" : "ghost"}
+              onClick={() => setFieldFilter("custom")}
+            >
+              Custom ({fields.filter((field) => field?.system !== true).length})
+            </Button>
+          </div>
+          <div style={{ flex: 1, minWidth: 280 }}>
+            <Input
+              value={fieldSearch}
+              onChange={setFieldSearch}
+              placeholder="Buscar campos por nombre, clave, sector u origen..."
+              style={{ width: "100%" }}
+            />
+          </div>
+        </div>
       </div>
 
       <div className="spacer" />
       <div className="card">
         <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-          {fields.map((field, index) => (
+          {filteredFields.map((field) => {
+            const index = fields.findIndex((candidate) => candidate === field);
+            return (
             <div
               key={`${field.key || "field"}-${index}`}
               style={{
@@ -916,7 +1004,11 @@ export default function SuperuserMeasurementRulesPage() {
                 </label>
               </div>
             </div>
-          ))}
+          );
+          })}
+          {!filteredFields.length && fields.length > 0 && (
+            <div className="muted">No hay campos que coincidan con el filtro o la búsqueda.</div>
+          )}
           {!fields.length && (
             <div className="muted">
               Todavía no hay campos dinámicos cargados.
@@ -1021,12 +1113,23 @@ export default function SuperuserMeasurementRulesPage() {
             {savingRules ? "Guardando..." : "Guardar reglas"}
           </Button>
         </div>
+        <div className="spacer" />
+        <div style={{ maxWidth: 520 }}>
+          <Input
+            value={ruleSearch}
+            onChange={setRuleSearch}
+            placeholder="Buscar reglas por nombre, campo origen, destino o valor..."
+            style={{ width: "100%" }}
+          />
+        </div>
       </div>
 
       <div className="spacer" />
       <div className="card">
         <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-          {rules.map((rule, index) => (
+          {filteredRules.map((rule) => {
+            const index = rules.findIndex((candidate) => candidate === rule);
+            return (
             <div
               key={rule.id || index}
               style={{
@@ -1301,7 +1404,11 @@ export default function SuperuserMeasurementRulesPage() {
                 </div>
               </div>
             </div>
-          ))}
+          );
+          })}
+          {!filteredRules.length && rules.length > 0 && (
+            <div className="muted">No hay reglas que coincidan con la búsqueda.</div>
+          )}
           {!rules.length && (
             <div className="muted">
               Todavía no hay reglas técnicas configuradas.

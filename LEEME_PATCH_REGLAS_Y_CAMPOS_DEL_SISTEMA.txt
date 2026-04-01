@@ -24,3 +24,7 @@ ARCHIVO PRINCIPAL MODIFICADO
 NOTA
 - Este patch está armado sobre el zip anterior de reglas/luceras para mantener el resto
   del comportamiento ya agregado.
+
+- Filtro visual de campos: Todos / Sistema / Custom
+- Buscador de campos
+- Buscador de reglas
