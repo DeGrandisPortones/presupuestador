@@ -18,6 +18,7 @@ import {
   USER_FIELD_OPTIONS,
   EDITABLE_BY_OPTIONS,
   ODOO_BINDING_TYPE_OPTIONS,
+  FIELD_TYPE_OPTIONS,
   BUDGET_PRODUCT_VALUE_OPTIONS,
   BUDGET_MULTIPLE_MODE_OPTIONS,
   mergeMeasurementFields,
@@ -646,10 +647,11 @@ export default function SuperuserMeasurementRulesPage() {
                     }}
                     disabled={field.system === true}
                   >
-                    <option value="text">Texto</option>
-                    <option value="number">Número</option>
-                    <option value="boolean">Sí / No</option>
-                    <option value="enum">Lista cerrada</option>
+                    {FIELD_TYPE_OPTIONS.map((opt) => (
+                      <option key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </option>
+                    ))}
                   </select>
                 </div>
                 <div>
@@ -737,6 +739,41 @@ export default function SuperuserMeasurementRulesPage() {
                     gap: 10,
                   }}
                 >
+                  {field.type === "odoo_product" ? (
+                    <>
+                      <div>
+                        <div className="muted" style={{ marginBottom: 6 }}>
+                          Cómo se completa
+                        </div>
+                        <Input value="Producto elegido en el presupuesto para esta sección" disabled style={{ width: "100%" }} />
+                      </div>
+                      <div>
+                        <div className="muted" style={{ marginBottom: 6 }}>
+                          Sección del presupuesto
+                        </div>
+                        <select
+                          value={field.budget_section_id || ""}
+                          onChange={(e) => {
+                            const section = budgetSections.find((item) => Number(item.id) === Number(e.target.value));
+                            updateFieldAt(setFieldDraft, index, {
+                              budget_section_id: e.target.value ? Number(e.target.value) : "",
+                              budget_section_name: section ? String(section.name || "") : "",
+                              value_source_type: "budget_section_product",
+                              budget_product_value_key: "alias",
+                              budget_multiple_mode: "first",
+                              odoo_binding_type: "selected_measurement_product",
+                            });
+                          }}
+                          style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid #ddd" }}
+                        >
+                          <option value="">Seleccione sección…</option>
+                          {budgetSections.map((section) => (
+                            <option key={section.id} value={section.id}>{section.name}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </>
+                  ) : (
                   <div>
                     <div className="muted" style={{ marginBottom: 6 }}>
                       Cómo se completa
@@ -761,8 +798,8 @@ export default function SuperuserMeasurementRulesPage() {
                         </option>
                       ))}
                     </select>
-                  </div>
-                  {field.value_source_type === "fixed" && (
+                  </div>)}
+                  {field.type !== "odoo_product" && field.value_source_type === "fixed" && (
                     <div>
                       <div className="muted" style={{ marginBottom: 6 }}>
                         Valor fijo
@@ -779,7 +816,7 @@ export default function SuperuserMeasurementRulesPage() {
                       />
                     </div>
                   )}
-                  {field.value_source_type === "budget_field" && (
+                  {field.type !== "odoo_product" && field.value_source_type === "budget_field" && (
                     <div style={{ gridColumn: "1 / -1" }}>
                       <div className="muted" style={{ marginBottom: 6 }}>
                         Dato del presupuesto
@@ -807,7 +844,7 @@ export default function SuperuserMeasurementRulesPage() {
                       </select>
                     </div>
                   )}
-                  {field.value_source_type === "current_user_field" && (
+                  {field.type !== "odoo_product" && field.value_source_type === "current_user_field" && (
                     <div style={{ gridColumn: "1 / -1" }}>
                       <div className="muted" style={{ marginBottom: 6 }}>
                         Dato del usuario logeado
@@ -835,7 +872,7 @@ export default function SuperuserMeasurementRulesPage() {
                       </select>
                     </div>
                   )}
-                  {field.value_source_type === "budget_section_product" && (
+                  {field.type !== "odoo_product" && field.value_source_type === "budget_section_product" && (
                     <>
                       <div>
                         <div className="muted" style={{ marginBottom: 6 }}>
@@ -951,6 +988,14 @@ export default function SuperuserMeasurementRulesPage() {
                     gap: 10,
                   }}
                 >
+                  {field.type === "odoo_product" ? (
+                    <div>
+                      <div className="muted" style={{ marginBottom: 6 }}>
+                        Acción
+                      </div>
+                      <Input value="Usa siempre el producto final seleccionado en medición" disabled style={{ width: "100%" }} />
+                    </div>
+                  ) : (
                   <div>
                     <div className="muted" style={{ marginBottom: 6 }}>
                       Acción
@@ -975,7 +1020,7 @@ export default function SuperuserMeasurementRulesPage() {
                         </option>
                       ))}
                     </select>
-                  </div>
+                  </div>)}
                   <div>
                     <div className="muted" style={{ marginBottom: 6 }}>
                       Producto Odoo
@@ -1004,7 +1049,7 @@ export default function SuperuserMeasurementRulesPage() {
                         borderRadius: 10,
                         border: "1px solid #ddd",
                       }}
-                      disabled={field.odoo_binding_type !== "custom_product"}
+                      disabled={field.type === "odoo_product" || field.odoo_binding_type !== "custom_product"}
                     >
                       <option value="">(sin producto)</option>
                       {(Number(field.budget_section_id || 0)

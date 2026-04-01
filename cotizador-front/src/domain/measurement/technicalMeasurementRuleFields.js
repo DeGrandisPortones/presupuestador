@@ -353,6 +353,15 @@ export const TECHNICAL_RULE_ACTIONS = [
   { value: "allow_options", label: "Restringir opciones" },
 ];
 
+
+export const FIELD_TYPE_OPTIONS = [
+  { value: "text", label: "Texto" },
+  { value: "number", label: "Número" },
+  { value: "boolean", label: "Sí / No" },
+  { value: "enum", label: "Lista cerrada" },
+  { value: "odoo_product", label: "Producto de Odoo" },
+];
+
 export const VALUE_SOURCE_TYPE_OPTIONS = [
   { value: "manual", label: "Manual" },
   { value: "fixed", label: "Valor fijo" },
@@ -380,6 +389,10 @@ export const ODOO_BINDING_TYPE_OPTIONS = [
   {
     value: "custom_product",
     label: "Agregar producto a Odoo · elegir otro producto",
+  },
+  {
+    value: "selected_measurement_product",
+    label: "Agregar producto a Odoo · usar producto seleccionado en medición",
   },
 ];
 
@@ -455,7 +468,7 @@ function normalizeValueSourceType(value) {
   const v = String(value || "manual")
     .trim()
     .toLowerCase();
-  return ["manual", "fixed", "budget_field", "budget_section_product"].includes(
+  return ["manual", "fixed", "budget_field", "current_user_field", "budget_section_product"].includes(
     v,
   )
     ? v
@@ -513,13 +526,14 @@ export function parseOptions(raw) {
 }
 
 function normalizeBaseField(field = {}) {
-  return {
+  const normalizedType = String(field?.type || "text")
+    .trim()
+    .toLowerCase();
+  const normalized = {
     ...FIELD_RUNTIME_DEFAULTS,
     key: String(field?.key || "").trim(),
     label: String(field?.label || field?.key || "").trim(),
-    type: String(field?.type || "text")
-      .trim()
-      .toLowerCase(),
+    type: normalizedType,
     options: parseOptions(field?.options),
     active: field?.active !== false,
     required: field?.required === true,
@@ -547,6 +561,14 @@ function normalizeBaseField(field = {}) {
     context_only: field?.context_only === true,
     can_delete: field?.can_delete !== false,
   };
+  if (normalized.type === "odoo_product") {
+    normalized.value_source_type = "budget_section_product";
+    normalized.budget_product_value_key = normalized.budget_product_value_key || "alias";
+    if (normalized.budget_product_value_key === "display_name") normalized.budget_product_value_key = "alias";
+    normalized.budget_multiple_mode = "first";
+    normalized.odoo_binding_type = "selected_measurement_product";
+  }
+  return normalized;
 }
 
 export function mergeMeasurementFields(customFields = []) {

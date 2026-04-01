@@ -137,7 +137,7 @@ function normalizeFieldType(value) {
   const v = String(value || "text")
     .trim()
     .toLowerCase();
-  return ["text", "number", "boolean", "enum"].includes(v) ? v : "text";
+  return ["text", "number", "boolean", "enum", "odoo_product"].includes(v) ? v : "text";
 }
 function normalizeFieldSection(value) {
   const v = normalizeText(value).toLowerCase();
@@ -171,7 +171,7 @@ function normalizeTechnicalMeasurementField(field = {}, index = 0) {
         .map((x) => normalizeText(x))
         .filter(Boolean)
         .map((x) => ({ value: x, label: x }));
-  return {
+  const normalized = {
     key,
     label: normalizeText(field.label || key),
     type: normalizeFieldType(field.type || field.field_type),
@@ -196,6 +196,13 @@ function normalizeTechnicalMeasurementField(field = {}, index = 0) {
     odoo_product_id: Number(field?.odoo_product_id || 0) || null,
     odoo_product_label: normalizeText(field?.odoo_product_label),
   };
+  if (normalized.type === "odoo_product") {
+    normalized.value_source_type = "budget_section_product";
+    if (!normalized.budget_product_value_key || normalized.budget_product_value_key === "display_name") normalized.budget_product_value_key = "alias";
+    normalized.budget_multiple_mode = "first";
+    normalized.odoo_binding_type = "selected_measurement_product";
+  }
+  return normalized;
 }
 function normalizeTechnicalMeasurementFields(raw = {}) {
   const fields = Array.isArray(raw?.fields) ? raw.fields : [];

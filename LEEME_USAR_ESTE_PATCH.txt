@@ -1,10 +1,9 @@
-Usar este zip en lugar del ultimo que recorto funcionalidades.
+Patch acumulativo: agrega el tipo de campo "Producto de Odoo" sin sacar los tipos existentes.
 
-Este patch recompone lo que venia funcionando y mantiene:
-- buscador de campos
-- buscador de reglas
-- filtro Todos / Sistema / Custom
-- origen del valor desde presupuesto, usuario y producto por seccion
-- destino Odoo con repetir producto presupuestado, producto fijo y producto seleccionado en medicion
+Comportamiento del tipo nuevo:
+- el campo se liga a una sección del presupuestador
+- trae por defecto el producto elegido en el presupuesto para esa sección
+- en medición/técnica permite cambiarlo por otro producto de esa misma sección (mostrado por alias)
+- el producto final seleccionado es el que pega en Odoo
 
-Ademas, cuando el campo tiene una seccion de presupuesto asociada, el selector de producto Odoo manual queda filtrado por los productos de esa seccion.
+Se mantienen los tipos: texto, número, sí/no y lista cerrada.

@@ -501,6 +501,7 @@ function coerceDynamicValue(field, value) {
   return String(value ?? "");
 }
 function resolveFieldAutofillValue(field, budgetContext) {
+  if (String(field?.type || "") === "odoo_product") return resolveSectionBudgetValue({ ...field, budget_product_value_key: field?.budget_product_value_key || "alias" }, budgetContext);
   const sourceType = String(field?.value_source_type || "manual");
   if (sourceType === "fixed") return field?.fixed_value ?? "";
   if (sourceType === "budget_field" || sourceType === "current_user_field")
@@ -606,8 +607,10 @@ function renderDynamicSectionFields({
           const selectedBindingProduct = getByPath(form, `__selected_binding_product.${field.key}`);
           const effectiveSelectedProductId = String(selectedBindingProduct?.product_id || getByPath(form, `__budget_binding_products.${field.key}.0.product_id`) || "");
           const shouldRenderSectionProductSelector =
-            String(fieldMeta?.value_source_type || "") === "budget_section_product" &&
-            String(fieldMeta?.odoo_binding_type || "") === "selected_measurement_product" &&
+            ((String(fieldMeta?.type || "") === "odoo_product") || (
+              String(fieldMeta?.value_source_type || "") === "budget_section_product" &&
+              String(fieldMeta?.odoo_binding_type || "") === "selected_measurement_product"
+            )) &&
             sectionCatalogProducts.length > 0;
           return (
             <Field key={field.key} label={field.label}>
@@ -623,7 +626,10 @@ function renderDynamicSectionFields({
                         next = setByPath(next, `__selected_binding_product.${field.key}`, null);
                         return next;
                       }
-                      next = setByPath(next, field.key, coerceDynamicValue(fieldMeta, coerceBudgetSectionProductValue(fieldMeta, product)));
+                      const visibleValue = String(fieldMeta?.type || "") === "odoo_product"
+                        ? coerceBudgetSectionProductValue({ ...fieldMeta, budget_product_value_key: fieldMeta?.budget_product_value_key || "alias" }, product)
+                        : coerceBudgetSectionProductValue(fieldMeta, product);
+                      next = setByPath(next, field.key, coerceDynamicValue(fieldMeta, visibleValue));
                       next = setByPath(next, `__selected_binding_product.${field.key}`, {
                         product_id: Number(product.id),
                         display_name: String(product.display_name || product.alias || product.name || '').trim(),
@@ -769,7 +775,7 @@ export default function MedicionDetailPage() {
     let next = form;
     let changed = false;
     for (const field of autofillFields) {
-      if (String(field?.value_source_type || "") === "budget_section_product") {
+      if (String(field?.value_source_type || "") === "budget_section_product" || String(field?.type || "") === "odoo_product") {
         const selectedProducts = getSectionBudgetProducts(field, budgetContext)
           .map((item) => ({
             product_id: Number(item?.product_id || 0) || null,
@@ -795,6 +801,13 @@ export default function MedicionDetailPage() {
             selectedProducts,
           );
           changed = true;
+        }
+        if (String(field?.type || "") === "odoo_product") {
+          const existingSelected = getByPath(next, `__selected_binding_product.${field.key}`);
+          if (!existingSelected?.product_id && selectedProducts[0]?.product_id) {
+            next = setByPath(next, `__selected_binding_product.${field.key}`, selectedProducts[0]);
+            changed = true;
+          }
         }
       }
       const sourceValue = resolveFieldAutofillValue(field, budgetContext);

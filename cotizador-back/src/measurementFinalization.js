@@ -235,7 +235,8 @@ function buildMeasurementLineSeedsFromFieldBindings(form, fields) {
   const out = [];
   for (const field of Array.isArray(fields) ? fields : []) {
     if (field?.active === false) continue;
-    const bindingType = String(field?.odoo_binding_type || "none");
+    let bindingType = String(field?.odoo_binding_type || "none");
+    if (String(field?.type || "") === "odoo_product" && bindingType === "none") bindingType = "selected_measurement_product";
     const current = getByPath(form, field.key);
     if (!hasMeaningfulFieldValue(current)) continue;
 
