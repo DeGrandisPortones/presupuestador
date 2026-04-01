@@ -1,3 +1,5 @@
+export const PROTECTED_SYSTEM_FIELD_KEYS = ["nota_venta", "fecha_nota_pedido", "fecha"]
+
 const FIELD_RUNTIME_DEFAULTS = {
   active: true,
   required: false,
@@ -56,6 +58,8 @@ export const SYSTEM_MEASUREMENT_FIELDS = [
     section: "datos_generales",
     editable_by: "tecnico",
     sort_order: 10,
+    can_delete: false,
+    protected: true,
   },
   {
     key: "fecha_nota_pedido",
@@ -64,6 +68,8 @@ export const SYSTEM_MEASUREMENT_FIELDS = [
     section: "datos_generales",
     editable_by: "tecnico",
     sort_order: 20,
+    can_delete: false,
+    protected: true,
   },
   {
     key: "fecha",
@@ -72,6 +78,8 @@ export const SYSTEM_MEASUREMENT_FIELDS = [
     section: "datos_generales",
     editable_by: "both",
     sort_order: 30,
+    can_delete: false,
+    protected: true,
   },
   {
     key: "distribuidor",
@@ -152,10 +160,11 @@ export const SYSTEM_MEASUREMENT_FIELDS = [
   {
     key: "lucera_posicion",
     label: "Posición de lucera",
-    type: "text",
+    type: "enum",
     section: "revestimiento",
     editable_by: "both",
     sort_order: 150,
+    options: ["Superior", "Inferior", "Repartidas", "Vertical Der"],
   },
   {
     key: "color_revestimiento",
@@ -519,6 +528,7 @@ function normalizeBaseField(field = {}) {
     system: field?.system === true,
     context_only: field?.context_only === true,
     can_delete: field?.can_delete !== false,
+    protected: field?.protected === true || PROTECTED_SYSTEM_FIELD_KEYS.includes(String(field?.key || "").trim()),
   };
 }
 
@@ -543,7 +553,8 @@ export function mergeMeasurementFields(customFields = []) {
       normalized.context_only = base.context_only;
       normalized.dynamic = false;
       normalized.can_delete = base.can_delete;
-      if (base.system) {
+      normalized.protected = base.protected === true || normalized.protected === true;
+      if (base.system && normalized.protected) {
         normalized.type = base.type;
         normalized.section = base.section;
         normalized.options = base.options;

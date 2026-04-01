@@ -994,29 +994,21 @@ export default function MedicionDetailPage() {
           {renderBuiltInField(
             "tipo_revestimiento_comercial",
             "Tipo revestimiento",
-            <select
-              value={form.tipo_revestimiento_comercial || ""}
-              onChange={(e) =>
+            renderDynamicInput({
+              field: getConfiguredField("tipo_revestimiento_comercial") || {
+                key: "tipo_revestimiento_comercial",
+                type: "enum",
+                options: parseOptions(["PVC", "Madera", "Aluminio", "chapa", "otros"]),
+              },
+              value: form.tipo_revestimiento_comercial || "",
+              allowedValues: dynamicUi.allowedOptions["tipo_revestimiento_comercial"],
+              disabled: !canEditField("tipo_revestimiento_comercial"),
+              onChange: (nextValue) =>
                 setForm({
                   ...form,
-                  tipo_revestimiento_comercial: e.target.value,
-                })
-              }
-              style={{
-                width: "100%",
-                padding: 10,
-                borderRadius: 10,
-                border: "1px solid #ddd",
-              }}
-              disabled={!canEditField("tipo_revestimiento_comercial")}
-            >
-              <option value="">Seleccione…</option>
-              <option value="PVC">PVC</option>
-              <option value="Madera">Madera</option>
-              <option value="Aluminio">Aluminio</option>
-              <option value="chapa">Chapa</option>
-              <option value="otros">Otros</option>
-            </select>,
+                  tipo_revestimiento_comercial: String(nextValue || ""),
+                }),
+            }),
           )}
           {renderBuiltInField(
             "fabricante_revestimiento",
@@ -1091,12 +1083,18 @@ export default function MedicionDetailPage() {
           {renderBuiltInField(
             "lucera_posicion",
             "Posición de lucera",
-            <Input
-              value={form.lucera_posicion || ""}
-              onChange={(v) => setForm({ ...form, lucera_posicion: v })}
-              style={{ width: "100%" }}
-              disabled={!canEditField("lucera_posicion") || !form.lucera}
-            />,
+            renderDynamicInput({
+              field: getConfiguredField("lucera_posicion") || {
+                key: "lucera_posicion",
+                type: "enum",
+                options: parseOptions(["Superior", "Inferior", "Repartidas", "Vertical Der"]),
+              },
+              value: form.lucera_posicion || "",
+              allowedValues: dynamicUi.allowedOptions["lucera_posicion"],
+              disabled: !canEditField("lucera_posicion") || !form.lucera,
+              onChange: (nextValue) =>
+                setForm({ ...form, lucera_posicion: String(nextValue || "") }),
+            }),
           )}
         </Row>
         {renderDynamicSectionFields({
@@ -1185,22 +1183,18 @@ export default function MedicionDetailPage() {
           {renderBuiltInField(
             "anclaje",
             "Anclaje",
-            <select
-              value={form.anclaje || ""}
-              onChange={(e) => setForm({ ...form, anclaje: e.target.value })}
-              style={{
-                width: "100%",
-                padding: 10,
-                borderRadius: 10,
-                border: "1px solid #ddd",
-              }}
-              disabled={!canEditField("anclaje")}
-            >
-              <option value="">Seleccione…</option>
-              <option value="no">No</option>
-              <option value="lateral">Lateral</option>
-              <option value="superior">Superior</option>
-            </select>,
+            renderDynamicInput({
+              field: getConfiguredField("anclaje") || {
+                key: "anclaje",
+                type: "enum",
+                options: parseOptions(["no", "lateral", "superior"]),
+              },
+              value: form.anclaje || "",
+              allowedValues: dynamicUi.allowedOptions["anclaje"],
+              disabled: !canEditField("anclaje"),
+              onChange: (nextValue) =>
+                setForm({ ...form, anclaje: String(nextValue || "") }),
+            }),
           )}
           {renderBuiltInField(
             "piernas",
@@ -1238,24 +1232,18 @@ export default function MedicionDetailPage() {
           {renderBuiltInField(
             "rebaje_altura",
             "Altura de rebaje",
-            <select
-              value={form.rebaje_altura || ""}
-              onChange={(e) =>
-                setForm({ ...form, rebaje_altura: e.target.value })
-              }
-              style={{
-                width: "100%",
-                padding: 10,
-                borderRadius: 10,
-                border: "1px solid #ddd",
-              }}
-              disabled={!canEditField("rebaje_altura") || !form.rebaje}
-            >
-              <option value="">Seleccione…</option>
-              <option value="75mm">75mm</option>
-              <option value="100mm">100mm</option>
-              <option value="125mm">125mm</option>
-            </select>,
+            renderDynamicInput({
+              field: getConfiguredField("rebaje_altura") || {
+                key: "rebaje_altura",
+                type: "enum",
+                options: parseOptions(["75mm", "100mm", "125mm"]),
+              },
+              value: form.rebaje_altura || "",
+              allowedValues: dynamicUi.allowedOptions["rebaje_altura"],
+              disabled: !canEditField("rebaje_altura") || !form.rebaje,
+              onChange: (nextValue) =>
+                setForm({ ...form, rebaje_altura: String(nextValue || "") }),
+            }),
           )}
           {renderBuiltInField(
             "rebaje_lateral",
@@ -1290,25 +1278,18 @@ export default function MedicionDetailPage() {
           {renderBuiltInField(
             "trampa_tierra_altura",
             "Altura trampa de tierra",
-            <select
-              value={form.trampa_tierra_altura || ""}
-              onChange={(e) =>
-                setForm({ ...form, trampa_tierra_altura: e.target.value })
-              }
-              style={{
-                width: "100%",
-                padding: 10,
-                borderRadius: 10,
-                border: "1px solid #ddd",
-              }}
-              disabled={
-                !canEditField("trampa_tierra_altura") || !form.trampa_tierra
-              }
-            >
-              <option value="">Seleccione…</option>
-              <option value="2 cm">2 cm</option>
-              <option value="5 cm">5 cm</option>
-            </select>,
+            renderDynamicInput({
+              field: getConfiguredField("trampa_tierra_altura") || {
+                key: "trampa_tierra_altura",
+                type: "enum",
+                options: parseOptions(["2 cm", "5 cm"]),
+              },
+              value: form.trampa_tierra_altura || "",
+              allowedValues: dynamicUi.allowedOptions["trampa_tierra_altura"],
+              disabled: !canEditField("trampa_tierra_altura") || !form.trampa_tierra,
+              onChange: (nextValue) =>
+                setForm({ ...form, trampa_tierra_altura: String(nextValue || "") }),
+            }),
           )}
         </Row>
         {renderDynamicSectionFields({

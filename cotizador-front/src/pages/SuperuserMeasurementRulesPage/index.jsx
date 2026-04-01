@@ -19,6 +19,7 @@ import {
   ODOO_BINDING_TYPE_OPTIONS,
   BUDGET_PRODUCT_VALUE_OPTIONS,
   BUDGET_MULTIPLE_MODE_OPTIONS,
+  PROTECTED_SYSTEM_FIELD_KEYS,
   mergeMeasurementFields,
   parseOptions,
 } from "../../domain/measurement/technicalMeasurementRuleFields.js";
@@ -112,6 +113,7 @@ function normalizeFieldDraft(field, index) {
     system: field?.system === true,
     context_only: field?.context_only === true,
     can_delete: field?.can_delete !== false,
+    protected: field?.protected === true || PROTECTED_SYSTEM_FIELD_KEYS.includes(String(field?.key || "").trim()),
   };
 }
 function normalizeRuleDraft(rule, index) {
@@ -125,9 +127,9 @@ function normalizeRuleDraft(rule, index) {
     action_type: String(rule?.action_type || "set_value"),
     target_field: String(rule?.target_field || "").trim(),
     target_value: rule?.target_value ?? "",
-    target_options_text: Array.isArray(rule?.target_options)
-      ? rule.target_options.join(", ")
-      : String(rule?.target_options || "").trim(),
+    target_options_values: Array.isArray(rule?.target_options)
+      ? rule.target_options.map((item) => String(item || "").trim()).filter(Boolean)
+      : parseOptions(rule?.target_options || "").map((item) => item.value),
     apply_to_odoo: rule?.apply_to_odoo === true,
     product_id: Number(rule?.product_id || 0) || "",
     product_label: String(rule?.product_label || "").trim(),
@@ -199,6 +201,13 @@ function detectRuleConflicts(rules = [], fields = []) {
     });
   }
   return warnings;
+}
+
+function getFieldOptionList(fieldKey, fields = []) {
+  const match = (Array.isArray(fields) ? fields : []).find((field) =>
+    String(field?.key || "").trim() === String(fieldKey || "").trim(),
+  );
+  return Array.isArray(match?.options) ? match.options : [];
 }
 
 export default function SuperuserMeasurementRulesPage() {
@@ -381,10 +390,9 @@ export default function SuperuserMeasurementRulesPage() {
           </div>
           <div className="muted">
             Los campos que ya existen en la planilla ahora aparecen acá como
-            campos del sistema. Les podés cambiar el origen del valor, quién los
-            edita y la salida a Odoo. La clave interna, el tipo y el sector
-            visual quedan fijos para no desarmar la planilla actual. Los campos
-            creados por vos sí se pueden eliminar definitivamente.
+            campos del sistema. Nota de venta y fechas quedan protegidos. El resto de
+            los campos sistema puede ajustar tipo, opciones, permisos, origen del valor
+            y salida a Odoo. Los campos creados por vos sí se pueden eliminar definitivamente.
           </div>
         </div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
@@ -560,9 +568,9 @@ export default function SuperuserMeasurementRulesPage() {
                   variant="ghost"
                   onClick={() => removeCustomField(setFieldDraft, field, index)}
                   disabled={!field.can_delete}
-                  title={field.can_delete ? "Eliminar campo" : "Campo del sistema: no se puede borrar"}
+                  title={field.can_delete ? "Eliminar campo" : field.protected ? "Campo protegido del sistema" : "Campo del sistema: no se puede borrar"}
                 >
-                  {field.can_delete ? "Eliminar campo" : "Campo protegido"}
+                  {field.can_delete ? "Eliminar campo" : field.protected ? "Campo protegido" : "Campo del sistema"}
                 </Button>
               </div>
               <div className="spacer" />
@@ -576,6 +584,11 @@ export default function SuperuserMeasurementRulesPage() {
                   Campo creado por configuración. Podés desactivarlo o eliminarlo definitivamente.
                 </div>
               )}
+              {field.protected ? (
+                <div className="muted" style={{ marginBottom: 10, color: "#1b4b7a" }}>
+                  Campo protegido: el origen automático, el tipo, el sector y las opciones quedan fijos porque este dato siempre sale del sistema.
+                </div>
+              ) : null}
               <div
                 style={{
                   display: "grid",
@@ -610,6 +623,7 @@ export default function SuperuserMeasurementRulesPage() {
                     }
                     placeholder="Automatización"
                     style={{ width: "100%" }}
+                    disabled={field.protected === true}
                   />
                 </div>
                 <div>
@@ -629,7 +643,7 @@ export default function SuperuserMeasurementRulesPage() {
                       borderRadius: 10,
                       border: "1px solid #ddd",
                     }}
-                    disabled={field.system === true}
+                    disabled={field.protected === true}
                   >
                     <option value="text">Texto</option>
                     <option value="number">Número</option>
@@ -654,7 +668,7 @@ export default function SuperuserMeasurementRulesPage() {
                       borderRadius: 10,
                       border: "1px solid #ddd",
                     }}
-                    disabled={field.system === true}
+                    disabled={field.protected === true}
                   >
                     {SECTION_OPTIONS.map((opt) => (
                       <option key={opt.value} value={opt.value}>
@@ -674,7 +688,7 @@ export default function SuperuserMeasurementRulesPage() {
                     }
                     placeholder="si, no"
                     style={{ width: "100%" }}
-                    disabled={field.type !== "enum" || field.system === true}
+                    disabled={field.type !== "enum" || field.protected === true}
                   />
                 </div>
                 <div>
@@ -739,7 +753,7 @@ export default function SuperuserMeasurementRulesPage() {
                         borderRadius: 10,
                         border: "1px solid #ddd",
                       }}
-                    >
+                    disabled={field.protected === true}>
                       {VALUE_SOURCE_TYPE_OPTIONS.map((opt) => (
                         <option key={opt.value} value={opt.value}>
                           {opt.label}
@@ -761,6 +775,7 @@ export default function SuperuserMeasurementRulesPage() {
                         }
                         placeholder="Automático"
                         style={{ width: "100%" }}
+                        disabled={field.protected === true}
                       />
                     </div>
                   )}
@@ -925,7 +940,7 @@ export default function SuperuserMeasurementRulesPage() {
                         borderRadius: 10,
                         border: "1px solid #ddd",
                       }}
-                    >
+                    disabled={field.protected === true}>
                       {ODOO_BINDING_TYPE_OPTIONS.map((opt) => (
                         <option key={opt.value} value={opt.value}>
                           {opt.label}
@@ -958,7 +973,7 @@ export default function SuperuserMeasurementRulesPage() {
                         borderRadius: 10,
                         border: "1px solid #ddd",
                       }}
-                      disabled={field.odoo_binding_type !== "custom_product"}
+                      disabled={field.protected === true || field.odoo_binding_type !== "custom_product"}
                     >
                       <option value="">(sin producto)</option>
                       {products.map((product) => (
@@ -1088,9 +1103,9 @@ export default function SuperuserMeasurementRulesPage() {
                       action_type: String(rule.action_type || "set_value"),
                       target_field: String(rule.target_field || "").trim(),
                       target_value: rule.target_value ?? "",
-                      target_options: parseOptions(
-                        rule.target_options_text || "",
-                      ).map((item) => item.value),
+                      target_options: Array.isArray(rule.target_options_values)
+                        ? rule.target_options_values
+                        : [],
                       apply_to_odoo: rule.apply_to_odoo === true,
                       product_id: Number(rule.product_id || 0) || null,
                       product_label: String(rule.product_label || "").trim(),
@@ -1316,18 +1331,38 @@ export default function SuperuserMeasurementRulesPage() {
                 </div>
                 <div>
                   <div className="muted" style={{ marginBottom: 6 }}>
-                    Opciones permitidas (coma)
+                    Opciones permitidas
                   </div>
-                  <Input
-                    value={rule.target_options_text ?? ""}
-                    onChange={(v) =>
-                      updateRuleAt(setRuleDraft, index, {
-                        target_options_text: v,
-                      })
-                    }
-                    style={{ width: "100%" }}
-                    disabled={rule.action_type !== "allow_options"}
-                  />
+                  {rule.action_type !== "allow_options" ? (
+                    <Input value="" onChange={() => {}} style={{ width: "100%" }} disabled />
+                  ) : getFieldOptionList(rule.target_field, visibleFields).length ? (
+                    <div style={{ border: "1px solid #ddd", borderRadius: 10, padding: 10, minHeight: 48, background: "#fff" }}>
+                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                        {getFieldOptionList(rule.target_field, visibleFields).map((opt) => {
+                          const value = String(opt?.value || "").trim();
+                          const checked = Array.isArray(rule.target_options_values) && rule.target_options_values.includes(value);
+                          return (
+                            <label key={value} style={{ display: "flex", gap: 6, alignItems: "center", padding: "4px 8px", borderRadius: 999, background: checked ? "#eef6ff" : "#f7f7f7" }}>
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                onChange={(e) => {
+                                  const current = Array.isArray(rule.target_options_values) ? rule.target_options_values : [];
+                                  const next = e.target.checked ? [...current, value] : current.filter((item) => item !== value);
+                                  updateRuleAt(setRuleDraft, index, { target_options_values: next });
+                                }}
+                              />
+                              <span>{opt?.label || value}</span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="muted" style={{ minHeight: 48, padding: 10, borderRadius: 10, border: "1px dashed #ddd", background: "#fafafa" }}>
+                      Primero configurá el campo destino como Lista cerrada y cargale sus opciones en el configurador del campo.
+                    </div>
+                  )}
                 </div>
               </div>
               <div className="spacer" />

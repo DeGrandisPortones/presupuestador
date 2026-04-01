@@ -1,4 +1,0 @@
-Cambios incluidos:
-- Vendedor: no reutiliza un partner solo por email o telefono si el nombre no coincide.
-- Ahora crea un cliente nuevo cuando no hay coincidencia confiable.
-asd
