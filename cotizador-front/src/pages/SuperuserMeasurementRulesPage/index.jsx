@@ -18,6 +18,7 @@ import {
   VALUE_SOURCE_OPTIONS,
   USER_CONTEXT_SOURCE_OPTIONS,
   QUOTE_CONTEXT_SOURCE_OPTIONS,
+  BUDGET_PRODUCT_COPY_OPTIONS,
 } from '../../domain/measurement/technicalMeasurementRuleFields.js';
 
 const SECTION_OPTIONS = [
@@ -32,6 +33,14 @@ const SECTION_OPTIONS = [
 
 function productLabel(product) {
   return `${product.display_name || product.name}${product.code ? ` · ${product.code}` : ''}`;
+}
+
+function parseBudgetSectionProductSourcePath(raw) {
+  const [sectionId = '', copyWhat = 'presence_si_no', ifMany = 'first'] = String(raw || '').split('::');
+  return { sectionId: String(sectionId || ''), copyWhat: String(copyWhat || 'presence_si_no'), ifMany: String(ifMany || 'first') };
+}
+function buildBudgetSectionProductSourcePath({ sectionId = '', copyWhat = 'presence_si_no', ifMany = 'first' } = {}) {
+  return `${String(sectionId || '').trim()}::${String(copyWhat || 'presence_si_no').trim()}::${String(ifMany || 'first').trim()}`;
 }
 function newField(index = 1) {
   return {
@@ -122,6 +131,12 @@ export default function SuperuserMeasurementRulesPage() {
   }, [rulesQ.data]);
 
   const products = Array.isArray(catalogQ.data?.products) ? catalogQ.data.products : [];
+  const budgetSectionSourceOptions = useMemo(() => {
+    const sections = Array.isArray(catalogQ.data?.sections) ? catalogQ.data.sections : [];
+    return [...sections]
+      .sort((a, b) => (Number(a.position || 0) - Number(b.position || 0)) || String(a.name || '').localeCompare(String(b.name || ''), 'es'))
+      .map((section) => ({ value: String(section.id), label: String(section.name || `Sección ${section.id}`) }));
+  }, [catalogQ.data]);
   const allFields = useMemo(() => {
     const configuredFields = (fieldDraft.fields || []).map((field, index) => ({
       key: field.key,
@@ -302,6 +317,46 @@ export default function SuperuserMeasurementRulesPage() {
                       </select>
                     </div>
                   )}
+
+                  {field.value_source_type === 'budget_section_product' && (() => {
+                    const parsed = parseBudgetSectionProductSourcePath(field.value_source_path || '');
+                    return (
+                      <>
+                        <div>
+                          <div className='muted' style={{ marginBottom: 6 }}>Sección del presupuesto</div>
+                          <select value={parsed.sectionId || ''} onChange={(e) => setFieldDraft((prev) => {
+                            const next = [...(prev.fields || [])];
+                            next[index] = { ...next[index], value_source_path: buildBudgetSectionProductSourcePath({ sectionId: e.target.value, copyWhat: parsed.copyWhat, ifMany: parsed.ifMany }) };
+                            return { fields: next };
+                          })} style={{ width: '100%', padding: 10, borderRadius: 10, border: '1px solid #ddd' }}>
+                            <option value=''>Seleccione sección…</option>
+                            {budgetSectionSourceOptions.map((opt) => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+                          </select>
+                        </div>
+                        <div>
+                          <div className='muted' style={{ marginBottom: 6 }}>Qué copiar</div>
+                          <select value={parsed.copyWhat || 'presence_si_no'} onChange={(e) => setFieldDraft((prev) => {
+                            const next = [...(prev.fields || [])];
+                            next[index] = { ...next[index], value_source_path: buildBudgetSectionProductSourcePath({ sectionId: parsed.sectionId, copyWhat: e.target.value, ifMany: parsed.ifMany }) };
+                            return { fields: next };
+                          })} style={{ width: '100%', padding: 10, borderRadius: 10, border: '1px solid #ddd' }}>
+                            {BUDGET_PRODUCT_COPY_OPTIONS.map((opt) => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+                          </select>
+                        </div>
+                        <div>
+                          <div className='muted' style={{ marginBottom: 6 }}>Si hay varios productos</div>
+                          <select value={parsed.ifMany || 'first'} onChange={(e) => setFieldDraft((prev) => {
+                            const next = [...(prev.fields || [])];
+                            next[index] = { ...next[index], value_source_path: buildBudgetSectionProductSourcePath({ sectionId: parsed.sectionId, copyWhat: parsed.copyWhat, ifMany: e.target.value }) };
+                            return { fields: next };
+                          })} style={{ width: '100%', padding: 10, borderRadius: 10, border: '1px solid #ddd' }}>
+                            <option value='first'>Tomar el primero</option>
+                            <option value='join'>Unir todos</option>
+                          </select>
+                        </div>
+                      </>
+                    );
+                  })()}
                 </div>
               </div>
 

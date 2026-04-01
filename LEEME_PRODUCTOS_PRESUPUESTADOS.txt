@@ -1,0 +1,31 @@
+Patch incremental sobre el paquete de propiedades de usuario/presupuesto.
+
+Agrega un nuevo origen del valor para campos técnicos:
+- Producto presupuestado por sección
+
+Cómo funciona:
+- Elegís la sección del presupuesto
+- Elegís qué copiar del producto detectado en esa sección:
+  - Presencia en presupuesto (si/no)
+  - Nombre visible del producto
+  - Alias del producto
+  - Nombre original del producto
+  - Código del producto
+  - ID del producto
+- Si hay varios productos en esa sección, podés:
+  - Tomar el primero
+  - Unir todos
+
+Implementación:
+- En medición se reconstruyen los productos seleccionados por sección usando:
+  - quote.lines
+  - catálogo bootstrap (sections + products.section_ids)
+- El valor se autocompleta solo si el campo está vacío.
+
+Caso típico:
+- Campo: lucera
+- Origen: Producto presupuestado por sección
+- Sección: Lucera
+- Qué copiar: Presencia en presupuesto (si/no)
+
+Con eso, si hay un producto presupuestado dentro de la sección Lucera, el campo toma "si".

@@ -67,6 +67,16 @@ export const VALUE_SOURCE_OPTIONS = [
   { value: 'fixed_value', label: 'Valor fijo' },
   { value: 'quote_field', label: 'Dato del presupuesto' },
   { value: 'current_user_field', label: 'Dato del usuario logeado' },
+  { value: 'budget_section_product', label: 'Producto presupuestado por sección' },
+];
+
+export const BUDGET_PRODUCT_COPY_OPTIONS = [
+  { value: 'presence_si_no', label: 'Presencia en presupuesto (si/no)' },
+  { value: 'display_name', label: 'Nombre visible del producto' },
+  { value: 'alias', label: 'Alias del producto' },
+  { value: 'raw_name', label: 'Nombre original del producto' },
+  { value: 'code', label: 'Código del producto' },
+  { value: 'product_id', label: 'ID del producto' },
 ];
 
 export const USER_CONTEXT_SOURCE_OPTIONS = [

@@ -3,6 +3,7 @@ import { useMutation, useQuery } from '@tanstack/react-query';
 import { useNavigate, useParams } from 'react-router-dom';
 import { getMeasurement, reviewMeasurement, saveMeasurement } from '../../api/measurements.js';
 import { adminGetTechnicalMeasurementFieldDefinitions, adminGetTechnicalMeasurementRules } from '../../api/admin.js';
+import { getCatalogBootstrap } from '../../api/catalog.js';
 import { useAuthStore } from '../../domain/auth/store.js';
 import { mergeMeasurementFields, parseOptions } from '../../domain/measurement/technicalMeasurementRuleFields.js';
 import Button from '../../ui/Button.jsx';
@@ -120,6 +121,59 @@ function buildInitialForm(quote, current = {}) {
     observaciones: text(current.observaciones),
   };
 }
+
+function parseBudgetSectionProductSourcePath(raw) {
+  const [sectionId = '', copyWhat = 'presence_si_no', ifMany = 'first'] = String(raw || '').split('::');
+  return { sectionId: String(sectionId || ''), copyWhat: String(copyWhat || 'presence_si_no'), ifMany: String(ifMany || 'first') };
+}
+function buildBudgetSectionsContext(quote, catalogData) {
+  const sections = Array.isArray(catalogData?.sections) ? catalogData.sections : [];
+  const products = Array.isArray(catalogData?.products) ? catalogData.products : [];
+  const lines = Array.isArray(quote?.lines) ? quote.lines : [];
+  const lineByProductId = new Map(lines.map((line) => [Number(line?.product_id || 0), line]));
+  const productsBySection = new Map();
+  for (const section of sections) {
+    productsBySection.set(String(section.id), { section_id: String(section.id), section_name: String(section.name || `Sección ${section.id}`), selected_products: [] });
+  }
+  for (const product of products) {
+    const productId = Number(product?.id || 0);
+    if (!productId || !lineByProductId.has(productId)) continue;
+    const line = lineByProductId.get(productId) || {};
+    const sectionIds = Array.isArray(product?.section_ids) ? product.section_ids : [];
+    for (const sectionIdRaw of sectionIds) {
+      const sectionId = String(sectionIdRaw || '');
+      if (!productsBySection.has(sectionId)) continue;
+      productsBySection.get(sectionId).selected_products.push({
+        product_id: productId,
+        display_name: String(product?.display_name || product?.alias || product?.name || line?.name || '').trim(),
+        alias: String(product?.alias || '').trim(),
+        raw_name: String(line?.raw_name || product?.name || line?.name || '').trim(),
+        code: String(product?.code || line?.code || '').trim(),
+        qty: Number(line?.qty || 1) || 1,
+      });
+    }
+  }
+  return Object.fromEntries([...productsBySection.entries()]);
+}
+function resolveBudgetSectionProductValue(sourcePath, budgetSections) {
+  const { sectionId, copyWhat, ifMany } = parseBudgetSectionProductSourcePath(sourcePath);
+  const section = budgetSections?.[String(sectionId || '')];
+  const selectedProducts = Array.isArray(section?.selected_products) ? section.selected_products : [];
+  if (copyWhat === 'presence_si_no') return selectedProducts.length ? 'si' : 'no';
+  if (!selectedProducts.length) return undefined;
+  const values = selectedProducts
+    .map((product) => {
+      if (copyWhat === 'display_name') return product.display_name;
+      if (copyWhat === 'alias') return product.alias || product.display_name;
+      if (copyWhat === 'raw_name') return product.raw_name || product.display_name;
+      if (copyWhat === 'code') return product.code;
+      if (copyWhat === 'product_id') return String(product.product_id || '');
+      return product.display_name;
+    })
+    .filter((value) => String(value || '').trim() !== '');
+  if (!values.length) return undefined;
+  return ifMany === 'join' ? values.join(', ') : values[0];
+}
 function Section({ title, children }) { return <div className='card' style={{ background: '#fafafa', marginBottom: 12 }}><div style={{ fontWeight: 900, marginBottom: 8 }}>{title}</div>{children}</div>; }
 function Row({ children }) { return <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>{children}</div>; }
 function Field({ label, children }) { return <div style={{ flex: 1, minWidth: 220 }}><div className='muted' style={{ marginBottom: 6 }}>{label}</div>{children}</div>; }
@@ -167,7 +221,7 @@ function compareRule(currentRaw, operator, compareRaw) {
     default: return currentText === expectedText;
   }
 }
-function buildRuleContext(form, quote, user) {
+function buildRuleContext(form, quote, user, budgetSections) {
   const heightFinal = Number(String(form?.alto_final_mm ?? '').replace(',', '.'));
   const widthFinal = Number(String(form?.ancho_final_mm ?? '').replace(',', '.'));
   const dims = quote?.payload?.dimensions || {};
@@ -189,6 +243,7 @@ function buildRuleContext(form, quote, user) {
     },
     payload: quote?.payload || {},
     end_customer: quote?.end_customer || {},
+    budget_sections: budgetSections || {},
     current_user: {
       user_id: user?.user_id || '',
       username: user?.username || '',
@@ -214,10 +269,11 @@ function resolveFieldSourceValue(field, context) {
   if (!sourcePath && sourceType !== 'fixed_value') return undefined;
   if (sourceType === 'fixed_value') return field?.value_source_path ?? '';
   if (sourceType === 'quote_field' || sourceType === 'current_user_field') return getByPath(context, sourcePath);
+  if (sourceType === 'budget_section_product') return resolveBudgetSectionProductValue(sourcePath, context?.budget_sections || {});
   return undefined;
 }
-function evaluateDynamicRules({ form, quote, user, rules }) {
-  const context = buildRuleContext(form, quote, user);
+function evaluateDynamicRules({ form, quote, user, budgetSections, rules }) {
+  const context = buildRuleContext(form, quote, user, budgetSections);
   const hidden = new Set();
   const forcedValues = {};
   const allowedOptions = {};
@@ -284,6 +340,7 @@ export default function MedicionDetailPage() {
   const q = useQuery({ queryKey: ['measurement', quoteId], queryFn: () => getMeasurement(quoteId), enabled: !!quoteId });
   const dynamicFieldsQ = useQuery({ queryKey: ['technicalMeasurementFieldsForMeasurement'], queryFn: adminGetTechnicalMeasurementFieldDefinitions, enabled: !!quoteId });
   const dynamicRulesQ = useQuery({ queryKey: ['technicalMeasurementRulesForMeasurement'], queryFn: adminGetTechnicalMeasurementRules, enabled: !!quoteId });
+  const catalogQ = useQuery({ queryKey: ['measurementCatalogBootstrap', quoteId], queryFn: () => getCatalogBootstrap(q.data?.catalog_kind || 'porton'), enabled: !!q.data });
 
   const quote = q.data;
   const [form, setForm] = useState(null);
@@ -304,10 +361,11 @@ export default function MedicionDetailPage() {
     }
     return out;
   }, [dynamicFields]);
+  const budgetSections = useMemo(() => buildBudgetSectionsContext(quote, catalogQ.data), [quote, catalogQ.data]);
   const dynamicUi = useMemo(() => {
     if (!form || !quote) return { hidden: new Set(), forcedValues: {}, allowedOptions: {}, context: {} };
-    return evaluateDynamicRules({ form, quote, user, rules: dynamicRulesQ.data?.rules || [] });
-  }, [form, quote, user, dynamicRulesQ.data]);
+    return evaluateDynamicRules({ form, quote, user, budgetSections, rules: dynamicRulesQ.data?.rules || [] });
+  }, [form, quote, user, budgetSections, dynamicRulesQ.data]);
 
   useEffect(() => {
     if (!form || !dynamicFields.length) return;

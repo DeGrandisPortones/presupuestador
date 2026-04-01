@@ -52,7 +52,7 @@ function normalizeRuleActionType(value) {
 }
 function normalizeValueSourceType(value) {
   const v = String(value || 'manual').trim().toLowerCase();
-  return ['manual', 'fixed_value', 'quote_field', 'current_user_field'].includes(v) ? v : 'manual';
+  return ['manual', 'fixed_value', 'quote_field', 'current_user_field', 'budget_section_product'].includes(v) ? v : 'manual';
 }
 function normalizeTechnicalMeasurementRule(rule = {}, index = 0) {
   const source_key = normalizeText(rule.source_key || rule.field_key);
