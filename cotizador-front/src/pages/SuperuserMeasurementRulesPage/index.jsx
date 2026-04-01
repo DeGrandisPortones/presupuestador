@@ -148,6 +148,27 @@ function updateRuleAt(setRuleDraft, index, patch) {
     return { rules: next };
   });
 }
+function removeCustomField(setFieldDraft, field, index) {
+  if (!field?.can_delete) return;
+  const label = String(field?.label || field?.key || `Campo #${index + 1}`).trim();
+  const ok = window.confirm(
+    `Vas a eliminar definitivamente el campo "${label}". Esta acción se guarda cuando presiones "Guardar campos".`,
+  );
+  if (!ok) return;
+  setFieldDraft((prev) => ({
+    fields: (prev.fields || []).filter((_, i) => i !== index),
+  }));
+}
+function removeRule(setRuleDraft, rule, index) {
+  const label = String(rule?.name || `Regla #${index + 1}`).trim();
+  const ok = window.confirm(
+    `Vas a eliminar definitivamente la regla "${label}". Esta acción se guarda cuando presiones "Guardar reglas".`,
+  );
+  if (!ok) return;
+  setRuleDraft((prev) => ({
+    rules: (prev.rules || []).filter((_, i) => i !== index),
+  }));
+}
 function detectRuleConflicts(rules = [], fields = []) {
   const byTarget = new Map();
   const fieldLabelByKey = new Map(
@@ -314,7 +335,8 @@ export default function SuperuserMeasurementRulesPage() {
             Los campos que ya existen en la planilla ahora aparecen acá como
             campos del sistema. Les podés cambiar el origen del valor, quién los
             edita y la salida a Odoo. La clave interna, el tipo y el sector
-            visual quedan fijos para no desarmar la planilla actual.
+            visual quedan fijos para no desarmar la planilla actual. Los campos
+            creados por vos sí se pueden eliminar definitivamente.
           </div>
         </div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
@@ -448,14 +470,11 @@ export default function SuperuserMeasurementRulesPage() {
                 </div>
                 <Button
                   variant="ghost"
-                  onClick={() =>
-                    setFieldDraft((prev) => ({
-                      fields: (prev.fields || []).filter((_, i) => i !== index),
-                    }))
-                  }
+                  onClick={() => removeCustomField(setFieldDraft, field, index)}
                   disabled={!field.can_delete}
+                  title={field.can_delete ? "Eliminar campo" : "Campo del sistema: no se puede borrar"}
                 >
-                  ✕
+                  {field.can_delete ? "Eliminar campo" : "Campo protegido"}
                 </Button>
               </div>
               <div className="spacer" />
@@ -464,7 +483,11 @@ export default function SuperuserMeasurementRulesPage() {
                   Campo nativo de la planilla. Acá configurás origen del valor,
                   permisos y salida a Odoo.
                 </div>
-              ) : null}
+              ) : (
+                <div className="muted" style={{ marginBottom: 10 }}>
+                  Campo creado por configuración. Podés desactivarlo o eliminarlo definitivamente.
+                </div>
+              )}
               <div
                 style={{
                   display: "grid",
@@ -1023,13 +1046,10 @@ export default function SuperuserMeasurementRulesPage() {
                 <div style={{ fontWeight: 800 }}>Regla #{index + 1}</div>
                 <Button
                   variant="ghost"
-                  onClick={() =>
-                    setRuleDraft((prev) => ({
-                      rules: (prev.rules || []).filter((_, i) => i !== index),
-                    }))
-                  }
+                  onClick={() => removeRule(setRuleDraft, rule, index)}
+                  title="Eliminar regla"
                 >
-                  ✕
+                  Eliminar regla
                 </Button>
               </div>
               <div className="spacer" />

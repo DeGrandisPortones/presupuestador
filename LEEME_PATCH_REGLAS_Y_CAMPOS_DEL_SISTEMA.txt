@@ -1,43 +1,26 @@
-PATCH: reglas + campos del sistema en planilla de medicion
+PATCH REGLAS Y CAMPOS DEL SISTEMA - BAJA DEFINITIVA DE CREADOS
 
-Incluye:
-- todos los campos actuales de la planilla visibles en Reglas tecnicas como campos del sistema
-- aviso de precedencia: primero config base del campo, despues reglas activas
-- aviso de posibles conflictos cuando varias reglas apuntan al mismo campo destino
-- configuracion editable para campos del sistema:
-  - etiqueta
-  - origen del valor
-  - editable por
-  - salida a Odoo
-- protecciones para campos del sistema:
-  - no se pueden borrar
-  - no se puede cambiar la clave interna
-  - no se puede cambiar el tipo
-  - no se puede cambiar el sector visual
-- aplicacion de esa configuracion en la planilla real de medicion
-- soporte backend para salida a Odoo en dos modos:
-  - custom_product
-  - repeat_budget_product
+Este zip actualiza la pantalla de Reglas técnicas para que, además de deshabilitar,
+se puedan eliminar definitivamente los campos y reglas creados por configuración.
 
-Archivos a reemplazar:
-- cotizador-front/src/domain/measurement/technicalMeasurementRuleFields.js
+QUE CAMBIA
+- Los campos creados por vos muestran el botón: "Eliminar campo"
+- Las reglas muestran el botón: "Eliminar regla"
+- Ambos piden confirmación antes de sacar el elemento del borrador actual
+- La eliminación queda persistida cuando presionás:
+  - Guardar campos
+  - Guardar reglas
+- Los campos del sistema siguen protegidos y NO se pueden borrar
+
+COMPORTAMIENTO
+- Deshabilitar: deja el elemento guardado pero inactivo
+- Eliminar: lo saca del listado y deja de guardarse en settings
+- Los campos del sistema continúan apareciendo para configurar origen/permisos/Odoo,
+  pero no se pueden eliminar
+
+ARCHIVO PRINCIPAL MODIFICADO
 - cotizador-front/src/pages/SuperuserMeasurementRulesPage/index.jsx
-- cotizador-front/src/pages/MedicionDetailPage/index.jsx
-- cotizador-back/src/settingsDb.js
-- cotizador-back/src/measurementFinalization.js
 
-Importante:
-- despues de aplicar el patch, entra una vez a Reglas tecnicas y guarda los campos para dejar persistidos los campos del sistema con esta nueva estructura
-- la precedencia queda asi:
-  1) configuracion base del campo
-  2) reglas activas
-  3) si dos reglas activas se pisan sobre el mismo campo, manda la ultima
-
-
-AJUSTE LUCERAS
-- El campo sistema lucera_cantidad ahora queda como lista cerrada: 1, 2, 3, 4.
-- Esto habilita reglas del tipo:
-  * source_key = surface_m2, operator = >, compare_value = 6, action_type = allow_options, target_field = lucera_cantidad, target_options = 3,4
-  * source_key = lucera_cantidad, operator = =, compare_value = 3, con salida a Odoo al producto de 3 luceras
-  * source_key = lucera_cantidad, operator = =, compare_value = 4, con salida a Odoo al producto de 4 luceras
-- Aunque el usuario haya guardado antes lucera_cantidad como número, este patch fuerza en runtime que los campos sistema conserven su tipo y opciones base.
+NOTA
+- Este patch está armado sobre el zip anterior de reglas/luceras para mantener el resto
+  del comportamiento ya agregado.
