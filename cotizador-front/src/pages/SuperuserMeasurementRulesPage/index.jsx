@@ -263,6 +263,24 @@ export default function SuperuserMeasurementRulesPage() {
     );
   }, [catalogQ.data]);
 
+  const productsBySectionId = useMemo(() => {
+    const map = new Map();
+    for (const section of budgetSections) {
+      map.set(Number(section.id), []);
+    }
+    for (const product of products) {
+      const sectionIds = Array.isArray(product?.section_ids)
+        ? product.section_ids
+        : [];
+      for (const sectionId of sectionIds) {
+        const key = Number(sectionId);
+        if (!map.has(key)) map.set(key, []);
+        map.get(key).push(product);
+      }
+    }
+    return map;
+  }, [budgetSections, products]);
+
   const allFields = useMemo(() => {
     const dynamicFields = (fieldDraft.fields || [])
       .filter((field) => field?.context_only !== true)
