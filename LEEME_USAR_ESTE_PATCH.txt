@@ -1,0 +1,10 @@
+Usar este zip en lugar del ultimo que recorto funcionalidades.
+
+Este patch recompone lo que venia funcionando y mantiene:
+- buscador de campos
+- buscador de reglas
+- filtro Todos / Sistema / Custom
+- origen del valor desde presupuesto, usuario y producto por seccion
+- destino Odoo con repetir producto presupuestado, producto fijo y producto seleccionado en medicion
+
+Ademas, cuando el campo tiene una seccion de presupuesto asociada, el selector de producto Odoo manual queda filtrado por los productos de esa seccion.
