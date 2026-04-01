@@ -32,3 +32,12 @@ Importante:
   1) configuracion base del campo
   2) reglas activas
   3) si dos reglas activas se pisan sobre el mismo campo, manda la ultima
+
+
+AJUSTE LUCERAS
+- El campo sistema lucera_cantidad ahora queda como lista cerrada: 1, 2, 3, 4.
+- Esto habilita reglas del tipo:
+  * source_key = surface_m2, operator = >, compare_value = 6, action_type = allow_options, target_field = lucera_cantidad, target_options = 3,4
+  * source_key = lucera_cantidad, operator = =, compare_value = 3, con salida a Odoo al producto de 3 luceras
+  * source_key = lucera_cantidad, operator = =, compare_value = 4, con salida a Odoo al producto de 4 luceras
+- Aunque el usuario haya guardado antes lucera_cantidad como número, este patch fuerza en runtime que los campos sistema conserven su tipo y opciones base.

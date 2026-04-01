@@ -143,10 +143,11 @@ export const SYSTEM_MEASUREMENT_FIELDS = [
   {
     key: "lucera_cantidad",
     label: "Cant. de luceras",
-    type: "number",
+    type: "enum",
     section: "revestimiento",
     editable_by: "both",
     sort_order: 140,
+    options: ["1", "2", "3", "4"],
   },
   {
     key: "lucera_posicion",
@@ -542,6 +543,11 @@ export function mergeMeasurementFields(customFields = []) {
       normalized.context_only = base.context_only;
       normalized.dynamic = false;
       normalized.can_delete = base.can_delete;
+      if (base.system) {
+        normalized.type = base.type;
+        normalized.section = base.section;
+        normalized.options = base.options;
+      }
     } else {
       normalized.dynamic = true;
       normalized.system = false;

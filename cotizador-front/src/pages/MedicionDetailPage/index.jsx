@@ -1075,12 +1075,18 @@ export default function MedicionDetailPage() {
           {renderBuiltInField(
             "lucera_cantidad",
             "Cant. de luceras",
-            <Input
-              value={form.lucera_cantidad || ""}
-              onChange={(v) => setForm({ ...form, lucera_cantidad: v })}
-              style={{ width: "100%" }}
-              disabled={!canEditField("lucera_cantidad") || !form.lucera}
-            />,
+            renderDynamicInput({
+              field: getConfiguredField("lucera_cantidad") || {
+                key: "lucera_cantidad",
+                type: "enum",
+                options: parseOptions(["1", "2", "3", "4"]),
+              },
+              value: form.lucera_cantidad || "",
+              allowedValues: dynamicUi.allowedOptions["lucera_cantidad"],
+              disabled: !canEditField("lucera_cantidad") || !form.lucera,
+              onChange: (nextValue) =>
+                setForm({ ...form, lucera_cantidad: String(nextValue || "") }),
+            }),
           )}
           {renderBuiltInField(
             "lucera_posicion",
