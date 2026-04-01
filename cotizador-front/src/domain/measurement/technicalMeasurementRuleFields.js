@@ -418,6 +418,10 @@ export const ODOO_BINDING_TYPE_OPTIONS = [
     label: "Agregar producto a Odoo · repetir producto presupuestado",
   },
   {
+    value: "selected_measurement_product",
+    label: "Agregar producto a Odoo · usar producto seleccionado en medición",
+  },
+  {
     value: "custom_product",
     label: "Agregar producto a Odoo · elegir otro producto",
   },

@@ -81,7 +81,7 @@ function normalizeOdooBindingType(value) {
   const v = String(value || "none")
     .trim()
     .toLowerCase();
-  return ["none", "repeat_budget_product", "custom_product"].includes(v)
+  return ["none", "repeat_budget_product", "custom_product", "selected_measurement_product"].includes(v)
     ? v
     : "none";
 }

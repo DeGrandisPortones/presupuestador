@@ -453,6 +453,25 @@ function resolveSectionBudgetValue(field, budgetContext) {
   if (!values.length) return "";
   return mode === "join" ? values.join(", ") : values[0];
 }
+function getBudgetProductComparableValues(product) {
+  return [
+    String(product?.display_name || "").trim(),
+    String(product?.alias || "").trim(),
+    String(product?.raw_name || "").trim(),
+    String(product?.code || "").trim(),
+    String(product?.product_id || "").trim(),
+  ].filter(Boolean);
+}
+function resolveSelectedBudgetProductForField(field, fieldValue, budgetContext) {
+  const products = getSectionBudgetProducts(field, budgetContext);
+  if (!products.length) return null;
+  const raw = String(fieldValue ?? "").trim();
+  if (!raw) return null;
+  const direct = products.find((product) =>
+    getBudgetProductComparableValues(product).some((item) => item === raw),
+  );
+  return direct || null;
+}
 function coerceDynamicValue(field, value) {
   const fieldType = String(field?.type || "text")
     .trim()
@@ -722,6 +741,25 @@ export default function MedicionDetailPage() {
             next,
             `__budget_binding_products.${field.key}`,
             selectedProducts,
+          );
+          changed = true;
+        }
+        const matchedSelectedProduct = resolveSelectedBudgetProductForField(
+          field,
+          getByPath(next, field.key),
+          budgetContext,
+        );
+        const currentSelectedProduct = getByPath(
+          next,
+          `__selected_binding_product.${field.key}`,
+        );
+        const currentSelectedSerialized = JSON.stringify(currentSelectedProduct || null);
+        const nextSelectedSerialized = JSON.stringify(matchedSelectedProduct || null);
+        if (currentSelectedSerialized !== nextSelectedSerialized) {
+          next = setByPath(
+            next,
+            `__selected_binding_product.${field.key}`,
+            matchedSelectedProduct || null,
           );
           changed = true;
         }

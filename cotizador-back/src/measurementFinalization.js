@@ -218,6 +218,19 @@ function normalizeStoredBindingProducts(value) {
         .filter((item) => item.product_id)
     : [];
 }
+function normalizeStoredSelectedBindingProduct(value) {
+  if (!value || typeof value !== "object") return null;
+  const product_id = Number(value?.product_id || 0) || null;
+  if (!product_id) return null;
+  return {
+    product_id,
+    display_name: String(value?.display_name || "").trim(),
+    alias: String(value?.alias || "").trim(),
+    raw_name: String(value?.raw_name || "").trim(),
+    code: String(value?.code || "").trim(),
+    qty: Number(value?.qty || 1) || 1,
+  };
+}
 function buildMeasurementLineSeedsFromFieldBindings(form, fields) {
   const out = [];
   for (const field of Array.isArray(fields) ? fields : []) {
@@ -267,6 +280,31 @@ function buildMeasurementLineSeedsFromFieldBindings(form, fields) {
           basePrice: 0,
         });
       }
+      continue;
+    }
+
+    if (bindingType === "selected_measurement_product") {
+      const selectedProduct = normalizeStoredSelectedBindingProduct(
+        getByPath(form, `__selected_binding_product.${field.key}`),
+      );
+      if (!selectedProduct?.product_id) continue;
+      out.push({
+        product_id: Number(selectedProduct.product_id),
+        qty: Number(selectedProduct.qty || 1) || 1,
+        name: String(
+          selectedProduct.display_name ||
+            selectedProduct.alias ||
+            selectedProduct.raw_name ||
+            `Producto ${selectedProduct.product_id}`,
+        ).trim(),
+        raw_name: String(
+          selectedProduct.raw_name ||
+            selectedProduct.display_name ||
+            `Producto ${selectedProduct.product_id}`,
+        ).trim(),
+        code: selectedProduct.code || null,
+        basePrice: 0,
+      });
     }
   }
   return out;

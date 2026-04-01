@@ -11,3 +11,7 @@ Notas:
 - el selector de Producto Odoo se filtra por la seccion elegida del campo cuando corresponde
 - para productos presupuestados por seccion, el origen puede copiar presencia si/no, alias, nombre, codigo o id
 - este patch esta pensado para aplicar encima de la base del repo, reemplazando estos archivos
+
+
+Nuevo en este ajuste:
+- Odoo binding `selected_measurement_product`: usa el producto final actualmente elegido en medición para ese campo cuando el valor del campo matchea un producto de la sección.
