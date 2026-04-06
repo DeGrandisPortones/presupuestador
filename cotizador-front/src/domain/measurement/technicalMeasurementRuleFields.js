@@ -18,6 +18,8 @@ const FIELD_RUNTIME_DEFAULTS = {
   can_delete: true,
 };
 
+const DEPRECATED_HIDDEN_FIELD_KEYS = new Set(["tipo_revestimiento_comercial"]);
+
 export const CONTEXT_ONLY_MEASUREMENT_FIELDS = [
   {
     key: "surface_m2",
@@ -585,6 +587,7 @@ export function mergeMeasurementFields(customFields = []) {
   for (const field of Array.isArray(customFields) ? customFields : []) {
     const key = String(field?.key || "").trim();
     if (!key) continue;
+    if (DEPRECATED_HIDDEN_FIELD_KEYS.has(key)) continue;
     const base = byKey.get(key);
     const normalized = normalizeBaseField({ ...base, ...field, key });
     if (base) {
