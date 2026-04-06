@@ -10,6 +10,7 @@ import {
   adminSaveTechnicalMeasurementFieldDefinitions,
 } from "../../api/admin.js";
 import { getCatalogBootstrap } from "../../api/catalog.js";
+import { PORTON_TYPES } from "../../domain/quote/portonConstants.js";
 import {
   TECHNICAL_RULE_OPERATORS,
   TECHNICAL_RULE_ACTIONS,
@@ -277,6 +278,8 @@ export default function SuperuserMeasurementRulesPage() {
     }
     return map;
   }, [products]);
+
+  const portonTypeOptions = useMemo(() => PORTON_TYPES.slice(), []);
 
   const allFields = useMemo(() => {
     const dynamicFields = (fieldDraft.fields || [])
@@ -1323,13 +1326,37 @@ export default function SuperuserMeasurementRulesPage() {
                   <div className="muted" style={{ marginBottom: 6 }}>
                     Comparar contra
                   </div>
-                  <Input
-                    value={rule.compare_value ?? ""}
-                    onChange={(v) =>
-                      updateRuleAt(setRuleDraft, index, { compare_value: v })
-                    }
-                    style={{ width: "100%" }}
-                  />
+                  {String(rule.source_key || "") === "porton_type" ? (
+                    <select
+                      value={rule.compare_value ?? ""}
+                      onChange={(e) =>
+                        updateRuleAt(setRuleDraft, index, {
+                          compare_value: e.target.value,
+                        })
+                      }
+                      style={{
+                        width: "100%",
+                        padding: 10,
+                        borderRadius: 10,
+                        border: "1px solid #ddd",
+                      }}
+                    >
+                      <option value="">Seleccione un sistema…</option>
+                      {portonTypeOptions.map((item) => (
+                        <option key={item.key} value={item.key}>
+                          {item.label}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <Input
+                      value={rule.compare_value ?? ""}
+                      onChange={(v) =>
+                        updateRuleAt(setRuleDraft, index, { compare_value: v })
+                      }
+                      style={{ width: "100%" }}
+                    />
+                  )}
                 </div>
               </div>
               <div className="spacer" />

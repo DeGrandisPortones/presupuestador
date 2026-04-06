@@ -1105,34 +1105,7 @@ export default function MedicionDetailPage() {
       </Section>
       <Section title={SECTION_LABELS.revestimiento}>
         <Row>
-          {renderBuiltInField(
-            "tipo_revestimiento_comercial",
-            "Tipo revestimiento",
-            <select
-              value={form.tipo_revestimiento_comercial || ""}
-              onChange={(e) =>
-                setForm({
-                  ...form,
-                  tipo_revestimiento_comercial: e.target.value,
-                })
-              }
-              style={{
-                width: "100%",
-                padding: 10,
-                borderRadius: 10,
-                border: "1px solid #ddd",
-              }}
-              disabled={!canEditField("tipo_revestimiento_comercial")}
-            >
-              <option value="">Seleccione…</option>
-              <option value="PVC">PVC</option>
-              <option value="Madera">Madera</option>
-              <option value="Aluminio">Aluminio</option>
-              <option value="chapa">Chapa</option>
-              <option value="otros">Otros</option>
-            </select>,
-          )}
-          {renderBuiltInField(
+                    {renderBuiltInField(
             "fabricante_revestimiento",
             "Fabricante revestimiento",
             <Input

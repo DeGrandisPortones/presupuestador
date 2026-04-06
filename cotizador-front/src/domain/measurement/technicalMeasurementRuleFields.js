@@ -46,6 +46,15 @@ export const CONTEXT_ONLY_MEASUREMENT_FIELDS = [
     context_only: true,
     can_delete: false,
   },
+  {
+    key: "porton_type",
+    label: "Presupuesto / Tipo-sistema",
+    type: "text",
+    options: [],
+    sort_order: 9004,
+    context_only: true,
+    can_delete: false,
+  },
   { key: "current_user.user_id", label: "Usuario actual / ID", type: "text", options: [], sort_order: 9040, context_only: true, can_delete: false },
   { key: "current_user.username", label: "Usuario actual / Usuario", type: "text", options: [], sort_order: 9041, context_only: true, can_delete: false },
   { key: "current_user.full_name", label: "Usuario actual / Nombre completo", type: "text", options: [], sort_order: 9042, context_only: true, can_delete: false },
@@ -123,15 +132,6 @@ export const SYSTEM_MEASUREMENT_FIELDS = [
     sort_order: 80,
   },
 
-  {
-    key: "tipo_revestimiento_comercial",
-    label: "Tipo revestimiento",
-    type: "enum",
-    section: "revestimiento",
-    editable_by: "both",
-    sort_order: 110,
-    options: ["PVC", "Madera", "Aluminio", "chapa", "otros"],
-  },
   {
     key: "fabricante_revestimiento",
     label: "Fabricante revestimiento",
