@@ -1,55 +1,62 @@
-# Paquete de cambios · Medición con revisión comercial
+# Paquete de cambios · WhatsApp + final a Odoo desde base original/acopio
 
-Este zip está armado para **copiar y pegar** dentro del repo `presupuestador`.
+Este zip está pensado para aplicar **encima del paquete anterior de medición con revisión comercial**.
 
-## Qué incluye
-### Backend
-- `cotizador-back/src/settingsDb.js`
-- `cotizador-back/src/quotesSchema.js`
+## Archivo incluido
 - `cotizador-back/src/measurementFinalization.js`
-- `cotizador-back/src/routes/measurements.routes.js`
 
-### Frontend
-- `cotizador-front/src/api/measurements.js`
-- `cotizador-front/src/domain/measurement/technicalMeasurementRuleFields.js`
-- `cotizador-front/src/pages/AprobacionComercialPage/index.jsx`
-- `cotizador-front/src/pages/MedicionDetailPage/index.jsx`
+## Qué corrige
+1. **WhatsApp automático al aprobar Técnica**
+   - Cuando Técnica aprueba la planilla/detalle técnico y el presupuesto tiene teléfono, se arma automáticamente el mensaje con el link público de la planilla aprobada.
+   - El envío se hace por **WhatsApp Cloud API** si están configuradas las variables de entorno.
 
-### Notas de integración
-- `PATCH_superuser_measurement_rules_page.md`
+2. **Cotización final a Odoo basada en la cotización correcta**
+   - La finalización ya no arma la venta sólo con extras de medición.
+   - Toma como base el presupuesto vigente:
+     - el **original** si no hay ajuste final,
+     - o la **copia/final** (`final_copy_id`) si el portón vino de **Acopio → Producción**.
+   - Encima de esa base aplica los cambios aprobados desde medición/comercial.
 
-## Flujo implementado
-1. Cada campo técnico puede tener `send_modification_to_commercial`.
-2. Cuando el medidor envía la medición:
-   - si no tocó ningún campo marcado, pasa a `submitted` y sigue a técnica;
-   - si tocó al menos uno, pasa a `commercial_review`.
-3. En `commercial_review`:
-   - comercial ve el diff;
-   - sólo puede editar los campos enviados a comercial;
-   - ve el preview económico y las líneas que dispararían a Odoo;
-   - al confirmar, pasa a `submitted`.
-4. Técnica recién entra después.
-5. Se agregó persistencia de:
-   - `measurement_original_form`
-   - `measurement_commercial_review_required`
-   - `measurement_commercial_review_status`
-   - `measurement_commercial_review_by_user_id`
-   - `measurement_commercial_review_at`
-   - `measurement_commercial_diff_json`
+3. **Cotización final a cero cuando corresponde**
+   - Si no hubo modificación real contra el presupuesto base, o si la diferencia queda absorbida por tolerancia, igual arma la cotización final y la sincroniza a Odoo con total final a cobrar `0`.
+
+## Variables de entorno para WhatsApp
+Tenés que configurar estas variables en el backend para que el envío sea real:
+
+- `PUBLIC_BASE_URL`
+  - ejemplo: `https://tu-dominio.com`
+  - se usa para construir el link público a la planilla aprobada.
+- `WHATSAPP_CLOUD_API_TOKEN`
+- `WHATSAPP_CLOUD_PHONE_NUMBER_ID`
+- opcional: `WHATSAPP_GRAPH_VERSION`
+  - por defecto usa `v20.0`
+
+## Cómo funciona el link
+El mensaje apunta a:
+
+`PUBLIC_BASE_URL/api/pdf/medicion/public/:token`
+
+El token ya lo genera el flujo actual cuando Técnica aprueba.
 
 ## Importante
-- El preview económico reutiliza lógica de finalización, pero sin sincronizar todavía a Odoo.
-- Dejé la pantalla de revisión comercial de medición integrada en:
-  - `/aprobacion/comercial` → pestaña **Mediciones**
-  - `/mediciones/:id` para revisar y aprobar
-- La pantalla de superusuario para exponer el checkbox nuevo la dejé documentada en `PATCH_superuser_measurement_rules_page.md` porque ya es una pantalla grande y preferí no reemplazarla completa a ciegas.
+- No hizo falta tocar `measurements.routes.js` porque ese flujo ya llama a `finalizeMeasurementToRevisionQuote(...)` en los dos puntos de aprobación técnica.
+- Si WhatsApp no está configurado, la aprobación sigue funcionando igual y la finalización a Odoo también.
+- Si existe `final_copy_id`, la final toma esa copia como base para respetar los cambios del paso **Acopio → Producción**.
+- Se excluyen de la base las líneas de medición y la línea placeholder de descuento anterior, para no duplicarlas.
 
-## Recomendado antes de subir
-1. Copiar estos archivos.
-2. Aplicar el patch del dashboard de reglas técnicas.
-3. Levantar front y back.
-4. Probar estos casos:
-   - medición sin cambios comerciales → va directo a técnica
-   - medición con cambio comercial → va a comercial
-   - comercial corrige un campo → pasa a técnica
-   - técnica aprueba → finaliza y sincroniza
+## Recomendado para probar
+1. Caso producción directa, sin cambios:
+   - Técnica aprueba.
+   - Debe generarse final en Odoo con total a cobrar `0`.
+   - Debe prepararse/enviarse el WhatsApp.
+
+2. Caso Acopio → Producción con ajuste:
+   - Ajustar presupuesto desde acopio.
+   - Pasarlo a producción.
+   - Aprobar medición/técnica.
+   - La final a Odoo debe tomar la **copia final** como base.
+
+3. Caso con cambio comercial en medición:
+   - Comercial modifica un ítem disparador.
+   - Técnica aprueba.
+   - La final debe reflejar esa sustitución sobre la base vigente.
