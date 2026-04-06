@@ -60,6 +60,7 @@ function newField(index = 1) {
     odoo_binding_type: "none",
     odoo_product_id: "",
     odoo_product_label: "",
+    send_modification_to_commercial: false,
   };
 }
 function newRule(index = 1) {
@@ -112,6 +113,8 @@ function normalizeFieldDraft(field, index) {
     odoo_binding_type: String(field?.odoo_binding_type || "none"),
     odoo_product_id: Number(field?.odoo_product_id || 0) || "",
     odoo_product_label: String(field?.odoo_product_label || "").trim(),
+    send_modification_to_commercial:
+      field?.send_modification_to_commercial === true,
     system: field?.system === true,
     context_only: field?.context_only === true,
     can_delete: field?.can_delete !== false,
@@ -304,6 +307,8 @@ export default function SuperuserMeasurementRulesPage() {
         odoo_binding_type: field.odoo_binding_type,
         odoo_product_id: field.odoo_product_id,
         odoo_product_label: field.odoo_product_label,
+        send_modification_to_commercial:
+          field.send_modification_to_commercial === true,
       }));
     return mergeMeasurementFields(dynamicFields);
   }, [fieldDraft.fields]);
@@ -467,6 +472,8 @@ export default function SuperuserMeasurementRulesPage() {
                       odoo_product_label: String(
                         field.odoo_product_label || "",
                       ).trim(),
+                      send_modification_to_commercial:
+                        field.send_modification_to_commercial === true,
                     }))
                     .filter((field) => field.key && field.label),
                 };
@@ -574,6 +581,20 @@ export default function SuperuserMeasurementRulesPage() {
                       Sistema
                     </span>
                   ) : null}
+                  {field.send_modification_to_commercial ? (
+                    <span
+                      style={{
+                        fontSize: 12,
+                        fontWeight: 700,
+                        padding: "4px 8px",
+                        borderRadius: 999,
+                        background: "#fff3cd",
+                        color: "#7a5a00",
+                      }}
+                    >
+                      Envía modificación a comercial
+                    </span>
+                  ) : null}
                 </div>
                 <Button
                   variant="ghost"
@@ -595,6 +616,11 @@ export default function SuperuserMeasurementRulesPage() {
                   Campo creado por configuración. Podés desactivarlo o eliminarlo definitivamente.
                 </div>
               )}
+              <div className="muted" style={{ marginBottom: 10 }}>
+                Si este flag está activo y el medidor cambia el valor respecto
+                del valor base, la medición se frena en revisión comercial antes
+                de pasar a técnica.
+              </div>
               <div
                 style={{
                   display: "grid",
@@ -1097,6 +1123,20 @@ export default function SuperuserMeasurementRulesPage() {
                     }
                   />
                   <span className="muted">Activo</span>
+                </label>
+                <label
+                  style={{ display: "flex", gap: 8, alignItems: "center" }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={field.send_modification_to_commercial === true}
+                    onChange={(e) =>
+                      updateFieldAt(setFieldDraft, index, {
+                        send_modification_to_commercial: e.target.checked,
+                      })
+                    }
+                  />
+                  <span className="muted">Envía modificación a comercial</span>
                 </label>
               </div>
             </div>
