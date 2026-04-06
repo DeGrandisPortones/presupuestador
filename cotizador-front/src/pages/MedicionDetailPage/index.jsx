@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { useNavigate, useParams } from "react-router-dom";
+import { useLocation, useNavigate, useParams } from "react-router-dom";
 import {
   getMeasurement,
   reviewMeasurement,
-  saveMeasurement,
+  saveMeasurementDetailed,
 } from "../../api/measurements.js";
 import {
   adminGetTechnicalMeasurementFieldDefinitions,
@@ -125,7 +125,6 @@ function buildInitialForm(quote, current = {}) {
           quote?.created_by_username ||
           (quote?.created_by_role === "vendedor" ? "De Grandis Portones" : ""),
       ),
-    tipo_revestimiento_comercial: text(current.tipo_revestimiento_comercial),
     fabricante_revestimiento: text(current.fabricante_revestimiento),
     lucera: boolValue(current.lucera),
     lucera_cantidad: text(current.lucera_cantidad),
@@ -199,7 +198,6 @@ function YesNo({ value, onChange, disabled }) {
     </select>
   );
 }
-
 function getByPath(obj, path) {
   const parts = String(path || "")
     .split(".")
@@ -446,7 +444,6 @@ function getSectionBudgetProducts(field, budgetContext) {
     ? section.selected_products
     : [];
 }
-
 function getSectionCatalogProducts(field, catalog) {
   const sectionId = Number(field?.budget_section_id || 0);
   const products = Array.isArray(catalog?.products) ? catalog.products : [];
@@ -458,19 +455,19 @@ function getSectionCatalogProducts(field, catalog) {
   );
 }
 function productDisplayLabel(product) {
-  const alias = String(product?.alias || '').trim();
-  const display = String(product?.display_name || product?.name || '').trim();
-  const code = String(product?.code || '').trim();
-  return `${alias || display}${code ? ` · ${code}` : ''}`.trim();
+  const alias = String(product?.alias || "").trim();
+  const display = String(product?.display_name || product?.name || "").trim();
+  const code = String(product?.code || "").trim();
+  return `${alias || display}${code ? ` · ${code}` : ""}`.trim();
 }
 function coerceBudgetSectionProductValue(field, product) {
-  const key = String(field?.budget_product_value_key || 'display_name');
-  if (key === 'presence_si_no') return 'si';
-  if (key === 'product_id') return String(product?.id || product?.product_id || '');
-  if (key === 'alias') return String(product?.alias || '').trim();
-  if (key === 'raw_name') return String(product?.name || product?.raw_name || '').trim();
-  if (key === 'code') return String(product?.code || '').trim();
-  return String(product?.display_name || product?.alias || product?.name || '').trim();
+  const key = String(field?.budget_product_value_key || "display_name");
+  if (key === "presence_si_no") return "si";
+  if (key === "product_id") return String(product?.id || product?.product_id || "");
+  if (key === "alias") return String(product?.alias || "").trim();
+  if (key === "raw_name") return String(product?.name || product?.raw_name || "").trim();
+  if (key === "code") return String(product?.code || "").trim();
+  return String(product?.display_name || product?.alias || product?.name || "").trim();
 }
 function resolveSectionBudgetValue(field, budgetContext) {
   const products = getSectionBudgetProducts(field, budgetContext);
@@ -509,14 +506,6 @@ function resolveFieldAutofillValue(field, budgetContext) {
   if (sourceType === "budget_section_product")
     return resolveSectionBudgetValue(field, budgetContext);
   return "";
-}
-function canEditDynamicField(field, { isTechnical, isMedidor }) {
-  const mode = String(field?.editable_by || "both");
-  if (mode === "none") return false;
-  if (mode === "both") return isTechnical || isMedidor;
-  if (mode === "tecnico") return isTechnical;
-  if (mode === "medidor") return isMedidor;
-  return true;
 }
 function renderDynamicInput({
   field,
@@ -573,102 +562,26 @@ function renderDynamicInput({
     />
   );
 }
-function renderDynamicSectionFields({
-  sectionKey,
-  fieldsBySection,
-  dynamicUi,
-  allFields,
-  form,
-  setForm,
-  isTechnical,
-  isMedidor,
-  catalog,
-  budgetContext,
-}) {
-  const sectionFields = fieldsBySection[sectionKey] || [];
-  const visibleFields = sectionFields.filter(
-    (field) => !dynamicUi.hidden.has(field.key),
-  );
-  if (!visibleFields.length) return null;
-  return (
-    <>
-      <div className="spacer" />
-      <Row>
-        {visibleFields.map((field) => {
-          const fieldMeta =
-            allFields.find((item) => item.key === field.key) || field;
-          const allowed = dynamicUi.allowedOptions[field.key];
-          const value = getByPath(form, field.key);
-          const disabled = !canEditDynamicField(fieldMeta, {
-            isTechnical,
-            isMedidor,
-          });
-          const sectionCatalogProducts = getSectionCatalogProducts(fieldMeta, catalog);
-          const selectedBindingProduct = getByPath(form, `__selected_binding_product.${field.key}`);
-          const effectiveSelectedProductId = String(selectedBindingProduct?.product_id || getByPath(form, `__budget_binding_products.${field.key}.0.product_id`) || "");
-          const shouldRenderSectionProductSelector =
-            ((String(fieldMeta?.type || "") === "odoo_product") || (
-              String(fieldMeta?.value_source_type || "") === "budget_section_product" &&
-              String(fieldMeta?.odoo_binding_type || "") === "selected_measurement_product"
-            )) &&
-            sectionCatalogProducts.length > 0;
-          return (
-            <Field key={field.key} label={field.label}>
-              {shouldRenderSectionProductSelector ? (
-                <select
-                  value={effectiveSelectedProductId}
-                  onChange={(e) => {
-                    const product = sectionCatalogProducts.find((item) => String(item.id) === String(e.target.value));
-                    setForm((prev) => {
-                      let next = prev;
-                      if (!product) {
-                        next = setByPath(next, field.key, "");
-                        next = setByPath(next, `__selected_binding_product.${field.key}`, null);
-                        return next;
-                      }
-                      const visibleValue = String(fieldMeta?.type || "") === "odoo_product"
-                        ? coerceBudgetSectionProductValue({ ...fieldMeta, budget_product_value_key: fieldMeta?.budget_product_value_key || "alias" }, product)
-                        : coerceBudgetSectionProductValue(fieldMeta, product);
-                      next = setByPath(next, field.key, coerceDynamicValue(fieldMeta, visibleValue));
-                      next = setByPath(next, `__selected_binding_product.${field.key}`, {
-                        product_id: Number(product.id),
-                        display_name: String(product.display_name || product.alias || product.name || '').trim(),
-                        alias: String(product.alias || '').trim(),
-                        raw_name: String(product.name || '').trim(),
-                        code: String(product.code || '').trim(),
-                        qty: 1,
-                      });
-                      return next;
-                    });
-                  }}
-                  disabled={disabled}
-                  style={{ width: '100%', padding: 10, borderRadius: 10, border: '1px solid #ddd' }}
-                >
-                  <option value="">Seleccione producto…</option>
-                  {sectionCatalogProducts.map((product) => (
-                    <option key={product.id} value={product.id}>{productDisplayLabel(product)}</option>
-                  ))}
-                </select>
-              ) : renderDynamicInput({
-                field: fieldMeta,
-                value,
-                allowedValues: allowed,
-                disabled,
-                onChange: (nextValue) =>
-                  setForm((prev) => setByPath(prev, field.key, nextValue)),
-              })}
-            </Field>
-          );
-        })}
-      </Row>
-    </>
-  );
+function formatDisplayValue(value) {
+  if (value === null || value === undefined || value === "") return "—";
+  if (typeof value === "boolean") return value ? "Sí" : "No";
+  if (Array.isArray(value)) return value.join(", ") || "—";
+  if (typeof value === "object") return JSON.stringify(value);
+  return String(value);
+}
+function formatARS(value) {
+  const n = Number(value || 0);
+  return `$ ${n.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+function normalizeDiffItems(items) {
+  return Array.isArray(items) ? items : [];
 }
 
 export default function MedicionDetailPage() {
   const { id } = useParams();
   const quoteId = id ? String(id) : null;
   const navigate = useNavigate();
+  const location = useLocation();
   const user = useAuthStore((s) => s.user);
   const isTechnical = !!user?.is_rev_tecnica;
   const isMedidor = !!user?.is_medidor;
@@ -695,7 +608,14 @@ export default function MedicionDetailPage() {
   });
 
   const quote = q.data;
+  const isCommercialReviewer = useMemo(() => {
+    if (!quote || !user) return false;
+    const isOwner = String(quote.created_by_user_id) === String(user.user_id);
+    const isSellerOwner = isOwner && (user.is_vendedor || user.is_distribuidor);
+    return String(quote.measurement_status || "") === "commercial_review" && (user.is_enc_comercial || isSellerOwner);
+  }, [quote, user]);
   const [form, setForm] = useState(null);
+  const [lastMessage, setLastMessage] = useState("");
 
   useEffect(() => {
     if (!quote) return;
@@ -746,20 +666,35 @@ export default function MedicionDetailPage() {
       rules: dynamicRulesQ.data?.rules || [],
     });
   }, [form, quote, user, dynamicRulesQ.data]);
+  const commercialDiffItems = useMemo(
+    () => normalizeDiffItems(quote?.measurement_commercial_diff_json),
+    [quote?.measurement_commercial_diff_json],
+  );
+  const commercialEditableKeys = useMemo(
+    () => new Set(commercialDiffItems.map((item) => String(item?.key || "").trim()).filter(Boolean)),
+    [commercialDiffItems],
+  );
 
   function getConfiguredField(key) {
     return fieldConfigByKey.get(String(key || "").trim()) || null;
   }
   function canEditField(key) {
     const field = getConfiguredField(key);
+    if (isCommercialReviewer) return commercialEditableKeys.has(String(key || "").trim());
     if (!field) return isTechnical || isMedidor;
-    return canEditDynamicField(field, { isTechnical, isMedidor });
+    const mode = String(field?.editable_by || "both");
+    if (mode === "none") return false;
+    if (mode === "both") return isTechnical || isMedidor;
+    if (mode === "tecnico") return isTechnical;
+    if (mode === "medidor") return isMedidor;
+    return true;
   }
   function getFieldLabel(key, fallback) {
     const field = getConfiguredField(key);
     return String(field?.label || fallback || key || "");
   }
   function isFieldHidden(key) {
+    if (isCommercialReviewer) return false;
     return dynamicUi.hidden.has(String(key || "").trim());
   }
   function renderBuiltInField(key, fallbackLabel, content) {
@@ -771,7 +706,7 @@ export default function MedicionDetailPage() {
     const autofillFields = allFields.filter(
       (field) => field?.context_only !== true,
     );
-    if (!form || !autofillFields.length) return;
+    if (!form || !autofillFields.length || isCommercialReviewer) return;
     let next = form;
     let changed = false;
     for (const field of autofillFields) {
@@ -794,7 +729,7 @@ export default function MedicionDetailPage() {
           Array.isArray(currentBindingProducts) ? currentBindingProducts : [],
         );
         const nextSerialized = JSON.stringify(selectedProducts);
-        if (currentSerialized != nextSerialized) {
+        if (currentSerialized !== nextSerialized) {
           next = setByPath(
             next,
             `__budget_binding_products.${field.key}`,
@@ -827,10 +762,10 @@ export default function MedicionDetailPage() {
       changed = true;
     }
     if (changed) setForm(next);
-  }, [form, allFields, budgetContext]);
+  }, [form, allFields, budgetContext, isCommercialReviewer]);
 
   useEffect(() => {
-    if (!form) return;
+    if (!form || isCommercialReviewer) return;
     const entries = Object.entries(dynamicUi.forcedValues || {});
     if (!entries.length) return;
     let next = form;
@@ -843,16 +778,113 @@ export default function MedicionDetailPage() {
       }
     }
     if (changed) setForm(next);
-  }, [dynamicUi.forcedValues, form]);
+  }, [dynamicUi.forcedValues, form, isCommercialReviewer]);
+
+  function dynamicFieldDisabled(fieldMeta) {
+    if (isCommercialReviewer) return !commercialEditableKeys.has(String(fieldMeta?.key || "").trim());
+    const mode = String(fieldMeta?.editable_by || "both");
+    if (mode === "none") return true;
+    if (mode === "both") return !(isTechnical || isMedidor);
+    if (mode === "tecnico") return !isTechnical;
+    if (mode === "medidor") return !isMedidor;
+    return false;
+  }
+  function renderDynamicSectionFields(sectionKey) {
+    const sectionFields = fieldsBySection[sectionKey] || [];
+    const visibleFields = isCommercialReviewer
+      ? sectionFields.filter((field) => commercialEditableKeys.has(String(field?.key || "").trim()))
+      : sectionFields.filter((field) => !dynamicUi.hidden.has(field.key));
+    if (!visibleFields.length) return null;
+    return (
+      <>
+        <div className="spacer" />
+        <Row>
+          {visibleFields.map((field) => {
+            const fieldMeta =
+              allFields.find((item) => item.key === field.key) || field;
+            const allowed = dynamicUi.allowedOptions[field.key];
+            const value = getByPath(form, field.key);
+            const disabled = dynamicFieldDisabled(fieldMeta);
+            const sectionCatalogProducts = getSectionCatalogProducts(fieldMeta, catalogQ.data);
+            const selectedBindingProduct = getByPath(form, `__selected_binding_product.${field.key}`);
+            const effectiveSelectedProductId = String(selectedBindingProduct?.product_id || getByPath(form, `__budget_binding_products.${field.key}.0.product_id`) || "");
+            const shouldRenderSectionProductSelector =
+              ((String(fieldMeta?.type || "") === "odoo_product") || (
+                String(fieldMeta?.value_source_type || "") === "budget_section_product" &&
+                String(fieldMeta?.odoo_binding_type || "") === "selected_measurement_product"
+              )) &&
+              sectionCatalogProducts.length > 0;
+            return (
+              <Field key={field.key} label={field.label}>
+                {shouldRenderSectionProductSelector ? (
+                  <select
+                    value={effectiveSelectedProductId}
+                    onChange={(e) => {
+                      const product = sectionCatalogProducts.find((item) => String(item.id) === String(e.target.value));
+                      setForm((prev) => {
+                        let next = prev;
+                        if (!product) {
+                          next = setByPath(next, field.key, "");
+                          next = setByPath(next, `__selected_binding_product.${field.key}`, null);
+                          return next;
+                        }
+                        const visibleValue = String(fieldMeta?.type || "") === "odoo_product"
+                          ? coerceBudgetSectionProductValue({ ...fieldMeta, budget_product_value_key: fieldMeta?.budget_product_value_key || "alias" }, product)
+                          : coerceBudgetSectionProductValue(fieldMeta, product);
+                        next = setByPath(next, field.key, coerceDynamicValue(fieldMeta, visibleValue));
+                        next = setByPath(next, `__selected_binding_product.${field.key}`, {
+                          product_id: Number(product.id),
+                          display_name: String(product.display_name || product.alias || product.name || '').trim(),
+                          alias: String(product.alias || '').trim(),
+                          raw_name: String(product.name || '').trim(),
+                          code: String(product.code || '').trim(),
+                          qty: 1,
+                        });
+                        return next;
+                      });
+                    }}
+                    disabled={disabled}
+                    style={{ width: '100%', padding: 10, borderRadius: 10, border: '1px solid #ddd' }}
+                  >
+                    <option value="">Seleccione producto…</option>
+                    {sectionCatalogProducts.map((product) => (
+                      <option key={product.id} value={product.id}>{productDisplayLabel(product)}</option>
+                    ))}
+                  </select>
+                ) : renderDynamicInput({
+                  field: fieldMeta,
+                  value,
+                  allowedValues: allowed,
+                  disabled,
+                  onChange: (nextValue) =>
+                    setForm((prev) => setByPath(prev, field.key, nextValue)),
+                })}
+              </Field>
+            );
+          })}
+        </Row>
+      </>
+    );
+  }
 
   const saveM = useMutation({
     mutationFn: ({ submit }) =>
-      saveMeasurement(quoteId, {
+      saveMeasurementDetailed(quoteId, {
         form,
         submit,
         endCustomer: quote?.end_customer || {},
+        baselineForm: quote?.measurement_original_form || buildInitialForm(quote, quote.measurement_original_form || quote.measurement_form || {}),
       }),
-    onSuccess: () => q.refetch(),
+    onSuccess: (response) => {
+      if (response?.requiresCommercialReview) {
+        setLastMessage("La medición quedó en revisión comercial.");
+      } else if (response?.moved_to_tecnica) {
+        setLastMessage("La revisión comercial quedó lista y pasó a técnica.");
+      } else {
+        setLastMessage("Guardado.");
+      }
+      q.refetch();
+    },
   });
   const rejectM = useMutation({
     mutationFn: (notes) =>
@@ -878,19 +910,100 @@ export default function MedicionDetailPage() {
     );
   if (!quote || !form) return null;
 
+  const returnPath = typeof location.state?.from === "string" ? location.state.from : -1;
+  const preview = quote?.measurement_commercial_preview || null;
+
   return (
     <div className="container">
       <div className="card">
-        <h2 style={{ marginTop: 0 }}>Planilla de medición / datos técnicos</h2>
+        <h2 style={{ marginTop: 0 }}>
+          {isCommercialReviewer ? "Revisión comercial de medición" : "Planilla de medición / datos técnicos"}
+        </h2>
         <div className="muted">
-          Presupuesto #
-          {quote?.quote_number || quote?.odoo_sale_order_name || "—"}
+          Presupuesto #{quote?.quote_number || quote?.odoo_sale_order_name || "—"}
+          {quote?.measurement_status ? ` · Estado: ${quote.measurement_status}` : ""}
         </div>
         <div className="spacer" />
-        <Button variant="ghost" onClick={() => navigate(-1)}>
+        <Button variant="ghost" onClick={() => navigate(returnPath)}>
           Volver
         </Button>
       </div>
+
+      {quote?.measurement_review_notes ? (
+        <>
+          <div className="spacer" />
+          <div className="card" style={{ background: "#fff5f5", border: "1px solid #f2c1be" }}>
+            <div style={{ fontWeight: 900, marginBottom: 6 }}>Observación de revisión</div>
+            <div>{quote.measurement_review_notes}</div>
+          </div>
+        </>
+      ) : null}
+
+      {isCommercialReviewer ? (
+        <>
+          <div className="spacer" />
+          <div className="card" style={{ background: "#f8fbff" }}>
+            <div style={{ fontWeight: 900, marginBottom: 8 }}>Cambios enviados a comercial</div>
+            {!commercialDiffItems.length ? <div className="muted">No se detectaron campos marcados para revisión comercial.</div> : (
+              <table>
+                <thead>
+                  <tr>
+                    <th>Campo</th>
+                    <th>Valor original</th>
+                    <th>Valor medidor</th>
+                    <th>Producto / binding</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {commercialDiffItems.map((item) => (
+                    <tr key={item.key}>
+                      <td>{item.label || item.key}</td>
+                      <td>{formatDisplayValue(item.previous_value)}</td>
+                      <td>{formatDisplayValue(item.next_value)}</td>
+                      <td>{item.preview_product_label || item.odoo_product_label || item.odoo_binding_type || "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+            {preview?.metrics ? (
+              <>
+                <div className="spacer" />
+                <div className="muted" style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
+                  <span>Total detallado: <b>{formatARS(preview.metrics.detailed_total)}</b></span>
+                  <span>Diferencia: <b>{formatARS(preview.metrics.difference_amount)}</b></span>
+                  <span>Monto a cobrar: <b>{formatARS(preview.metrics.final_amount_to_charge)}</b></span>
+                </div>
+                {Array.isArray(preview?.generated_lines) && preview.generated_lines.length ? (
+                  <>
+                    <div className="spacer" />
+                    <div style={{ fontWeight: 800, marginBottom: 8 }}>Preview de líneas Odoo</div>
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Producto</th>
+                          <th className="right">Cant.</th>
+                          <th className="right">Base</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {preview.generated_lines.map((line, idx) => (
+                          <tr key={`${line.product_id}-${idx}`}>
+                            <td>{line.name || `Producto ${line.product_id}`}</td>
+                            <td className="right">{line.qty || 1}</td>
+                            <td className="right">{typeof line.price_unit === "number" ? formatARS(line.price_unit) : formatARS(line.basePrice || 0)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </>
+                ) : null}
+              </>
+            ) : null}
+          </div>
+        </>
+      ) : null}
+
       <div className="spacer" />
       <Section title={SECTION_LABELS.datos_generales}>
         <Row>
@@ -980,37 +1093,13 @@ export default function MedicionDetailPage() {
             />,
           )}
         </Row>
-        {renderDynamicSectionFields({
-          sectionKey: "datos_generales",
-          fieldsBySection,
-          dynamicUi,
-          allFields,
-          form,
-          setForm,
-          isTechnical,
-          isMedidor,
-          catalog: catalogQ.data,
-          budgetContext,
-        })}
+        {renderDynamicSectionFields("datos_generales")}
       </Section>
+
       <Section title={SECTION_LABELS.esquema_medidas}>
-        <div
-          style={{
-            display: "flex",
-            gap: 14,
-            flexWrap: "wrap",
-            alignItems: "flex-start",
-          }}
-        >
+        <div style={{ display: "flex", gap: 14, flexWrap: "wrap", alignItems: "flex-start" }}>
           <div style={{ flex: 2, minWidth: 320 }}>
-            <div
-              style={{
-                border: "1px solid #eee",
-                borderRadius: 12,
-                padding: 10,
-                background: "#fff",
-              }}
-            >
+            <div style={{ border: "1px solid #eee", borderRadius: 12, padding: 10, background: "#fff" }}>
               <div style={{ position: "relative", width: "100%" }}>
                 <img
                   src="/measurement_scheme.png"
@@ -1069,6 +1158,7 @@ export default function MedicionDetailPage() {
                       setForm((prev) => updateSchemeValue(prev, "alto", i, v))
                     }
                     style={{ width: "100%" }}
+                    disabled={isCommercialReviewer}
                   />
                 </Field>
               ))}
@@ -1084,28 +1174,19 @@ export default function MedicionDetailPage() {
                       setForm((prev) => updateSchemeValue(prev, "ancho", i, v))
                     }
                     style={{ width: "100%" }}
+                    disabled={isCommercialReviewer}
                   />
                 </Field>
               ))}
             </Row>
           </div>
         </div>
-        {renderDynamicSectionFields({
-          sectionKey: "esquema_medidas",
-          fieldsBySection,
-          dynamicUi,
-          allFields,
-          form,
-          setForm,
-          isTechnical,
-          isMedidor,
-          catalog: catalogQ.data,
-          budgetContext,
-        })}
+        {renderDynamicSectionFields("esquema_medidas")}
       </Section>
+
       <Section title={SECTION_LABELS.revestimiento}>
         <Row>
-                    {renderBuiltInField(
+          {renderBuiltInField(
             "fabricante_revestimiento",
             "Fabricante revestimiento",
             <Input
@@ -1186,19 +1267,9 @@ export default function MedicionDetailPage() {
             />,
           )}
         </Row>
-        {renderDynamicSectionFields({
-          sectionKey: "revestimiento",
-          fieldsBySection,
-          dynamicUi,
-          allFields,
-          form,
-          setForm,
-          isTechnical,
-          isMedidor,
-          catalog: catalogQ.data,
-          budgetContext,
-        })}
+        {renderDynamicSectionFields("revestimiento")}
       </Section>
+
       <Section title={SECTION_LABELS.puerta_estructura}>
         <Row>
           {renderBuiltInField(
@@ -1302,19 +1373,9 @@ export default function MedicionDetailPage() {
             />,
           )}
         </Row>
-        {renderDynamicSectionFields({
-          sectionKey: "puerta_estructura",
-          fieldsBySection,
-          dynamicUi,
-          allFields,
-          form,
-          setForm,
-          isTechnical,
-          isMedidor,
-          catalog: catalogQ.data,
-          budgetContext,
-        })}
+        {renderDynamicSectionFields("puerta_estructura")}
       </Section>
+
       <Section title={SECTION_LABELS.rebajes_suelo}>
         <Row>
           {renderBuiltInField(
@@ -1402,19 +1463,9 @@ export default function MedicionDetailPage() {
             </select>,
           )}
         </Row>
-        {renderDynamicSectionFields({
-          sectionKey: "rebajes_suelo",
-          fieldsBySection,
-          dynamicUi,
-          allFields,
-          form,
-          setForm,
-          isTechnical,
-          isMedidor,
-          catalog: catalogQ.data,
-          budgetContext,
-        })}
+        {renderDynamicSectionFields("rebajes_suelo")}
       </Section>
+
       <Section title={SECTION_LABELS.observaciones}>
         <textarea
           value={form.observaciones || ""}
@@ -1426,22 +1477,16 @@ export default function MedicionDetailPage() {
             borderRadius: 10,
             border: "1px solid #ddd",
           }}
+          disabled={!canEditField("observaciones")}
         />
-        {renderDynamicSectionFields({
-          sectionKey: "observaciones",
-          fieldsBySection,
-          dynamicUi,
-          allFields,
-          form,
-          setForm,
-          isTechnical,
-          isMedidor,
-          catalog: catalogQ.data,
-          budgetContext,
-        })}
+        {renderDynamicSectionFields("observaciones")}
       </Section>
+
       {!!(fieldsBySection.otros || []).filter(
-        (field) => !dynamicUi.hidden.has(field.key),
+        (field) =>
+          isCommercialReviewer
+            ? commercialEditableKeys.has(String(field?.key || "").trim())
+            : !dynamicUi.hidden.has(field.key),
       ).length && (
         <Section title={SECTION_LABELS.otros}>
           <div className="muted" style={{ marginBottom: 10 }}>
@@ -1449,16 +1494,17 @@ export default function MedicionDetailPage() {
           </div>
           <Row>
             {(fieldsBySection.otros || [])
-              .filter((field) => !dynamicUi.hidden.has(field.key))
+              .filter((field) =>
+                isCommercialReviewer
+                  ? commercialEditableKeys.has(String(field?.key || "").trim())
+                  : !dynamicUi.hidden.has(field.key),
+              )
               .map((field) => {
                 const fieldMeta =
                   allFields.find((item) => item.key === field.key) || field;
                 const allowed = dynamicUi.allowedOptions[field.key];
                 const value = getByPath(form, field.key);
-                const disabled = !canEditDynamicField(fieldMeta, {
-                  isTechnical,
-                  isMedidor,
-                });
+                const disabled = dynamicFieldDisabled(fieldMeta);
                 return (
                   <Field key={field.key} label={field.label}>
                     {renderDynamicInput({
@@ -1477,6 +1523,7 @@ export default function MedicionDetailPage() {
           </Row>
         </Section>
       )}
+
       <div className="card">
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           <Button
@@ -1484,17 +1531,19 @@ export default function MedicionDetailPage() {
             disabled={saveM.isPending}
             onClick={() => saveM.mutate({ submit: false })}
           >
-            {saveM.isPending ? "Guardando..." : "Guardar"}
+            {saveM.isPending ? "Guardando..." : (isCommercialReviewer ? "Guardar revisión comercial" : "Guardar")}
           </Button>
           <Button
             disabled={saveM.isPending}
             onClick={() => saveM.mutate({ submit: true })}
           >
             {saveM.isPending
-              ? "Enviando..."
-              : isTechnical
-                ? "Confirmar datos técnicos"
-                : "Enviar a Técnica"}
+              ? "Procesando..."
+              : isCommercialReviewer
+                ? "Enviar a Técnica"
+                : isTechnical
+                  ? "Confirmar datos técnicos"
+                  : "Enviar"}
           </Button>
           {isTechnical && (
             <Button
@@ -1510,6 +1559,18 @@ export default function MedicionDetailPage() {
             </Button>
           )}
         </div>
+        {saveM.isError ? (
+          <>
+            <div className="spacer" />
+            <div style={{ color: "#d93025", fontSize: 13 }}>{saveM.error.message}</div>
+          </>
+        ) : null}
+        {lastMessage ? (
+          <>
+            <div className="spacer" />
+            <div className="muted">{lastMessage}</div>
+          </>
+        ) : null}
       </div>
     </div>
   );

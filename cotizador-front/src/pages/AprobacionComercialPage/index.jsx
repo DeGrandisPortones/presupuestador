@@ -7,6 +7,7 @@ import Input from "../../ui/Input.jsx";
 import PaginationControls from "../../ui/PaginationControls.jsx";
 import { listQuotes, reviewAcopioCommercial } from "../../api/quotes.js";
 import { listDoors, reviewDoorCommercial } from "../../api/doors.js";
+import { listMeasurements } from "../../api/measurements.js";
 import { useAuthStore } from "../../domain/auth/store.js";
 import { downloadListingDoorPdf, downloadListingQuotePdf } from "../../utils/listingPdf.js";
 
@@ -19,7 +20,6 @@ function acopioReqLabel(r) {
   const tL = t === "approved" ? "OK" : t === "rejected" ? "NO" : "Pend.";
   return `C:${cL} · T:${tL}`;
 }
-
 function rowLabel(r) {
   if (r.status === "pending_approvals") {
     if (r.commercial_decision === "pending") return "Pendiente tu decisión";
@@ -32,34 +32,37 @@ function rowLabel(r) {
   if (r.status === "syncing_odoo") return "Sincronizando…";
   return r.status;
 }
-
+function measurementRowLabel(r) {
+  const status = String(r?.measurement_status || "");
+  if (status === "commercial_review") return "Revisión comercial de medición";
+  if (status === "submitted") return "Pendiente técnica";
+  if (status === "needs_fix") return "Devuelto para corregir";
+  if (status === "approved") return "Aprobada";
+  return status || "—";
+}
 function fmtDate(iso) {
   if (!iso) return "—";
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "—";
   return d.toLocaleDateString("es-AR");
 }
-
 function createdByLabel(r) {
   const name = r?.created_by_full_name || r?.created_by_username || (r?.created_by_user_id ? `#${r.created_by_user_id}` : "—");
   const role = r?.created_by_role ? ` (${r.created_by_role})` : "";
   return `${name}${role}`;
 }
-
 function matchesSearch(values, searchText) {
   const s = String(searchText || "").trim().toLowerCase();
   if (!s) return true;
   const haystack = values.filter(Boolean).join(" ").toLowerCase();
   return haystack.includes(s);
 }
-
 function toTimeDesc(value) {
   if (!value) return 0;
   const d = new Date(value);
   if (Number.isNaN(d.getTime())) return 0;
   return d.getTime();
 }
-
 function PdfIconButton({ onClick, disabled = false }) {
   return (
     <Button variant="ghost" disabled={disabled} onClick={onClick} title="Descargar PDF">
@@ -79,12 +82,18 @@ export default function AprobacionComercialPage() {
   const [pageAcopio, setPageAcopio] = useState(1);
   const [pageAcopioListado, setPageAcopioListado] = useState(1);
   const [pagePuertas, setPagePuertas] = useState(1);
+  const [pageMediciones, setPageMediciones] = useState(1);
   const [downloadingPdfKey, setDownloadingPdfKey] = useState("");
 
   const q = useQuery({ queryKey: ["quotes", "commercial_inbox"], queryFn: () => listQuotes({ scope: "commercial_inbox" }), enabled: !!user?.is_enc_comercial });
   const acopioQ = useQuery({ queryKey: ["quotes", "commercial_acopio"], queryFn: () => listQuotes({ scope: "commercial_acopio" }), enabled: tab === "acopio" && !!user?.is_enc_comercial });
   const acopioListadoQ = useQuery({ queryKey: ["quotes", "commercial_acopio_all"], queryFn: () => listQuotes({ scope: "commercial_acopio_all" }), enabled: tab === "acopio_listado" && !!user?.is_enc_comercial });
   const doorsQ = useQuery({ queryKey: ["doors", "commercial_inbox"], queryFn: () => listDoors({ scope: "commercial_inbox" }), enabled: tab === "puertas" && !!user?.is_enc_comercial });
+  const medicionesQ = useQuery({
+    queryKey: ["measurements", "commercial_review"],
+    queryFn: () => listMeasurements({ status: "commercial_review", viewer: "comercial" }),
+    enabled: tab === "mediciones" && !!user?.is_enc_comercial,
+  });
 
   const acopioM = useMutation({ mutationFn: ({ id, action, notes }) => reviewAcopioCommercial(id, { action, notes }), onSuccess: () => acopioQ.refetch() });
   const doorM = useMutation({ mutationFn: ({ id, action, notes }) => reviewDoorCommercial(id, { action, notes }), onSuccess: () => doorsQ.refetch() });
@@ -142,20 +151,38 @@ export default function AprobacionComercialPage() {
       .filter((d) => matchesSearch([d?.door_code, d?.record?.end_customer?.name, d?.record?.obra_cliente, d?.linked_quote_odoo_name, d?.record?.asociado_porton, d?.status], searchText));
   }, [doorsQ.data, searchText]);
 
+  const medicionesRows = useMemo(() => {
+    return (medicionesQ.data || [])
+      .slice()
+      .sort((a, b) => toTimeDesc(b?.measurement_at || b?.created_at) - toTimeDesc(a?.measurement_at || a?.created_at))
+      .filter((r) =>
+        matchesSearch(
+          [
+            createdByLabel(r),
+            r?.end_customer?.name,
+            r?.end_customer?.city,
+            r?.end_customer?.address,
+            measurementRowLabel(r),
+            ...(Array.isArray(r?.measurement_commercial_diff_json)
+              ? r.measurement_commercial_diff_json.map((item) => item?.label || item?.key)
+              : []),
+          ],
+          searchText,
+        ),
+      );
+  }, [medicionesQ.data, searchText]);
+
   useEffect(() => { setPageAprobaciones(1); }, [filter, searchText]);
   useEffect(() => { setPageAcopio(1); }, [searchText]);
   useEffect(() => { setPageAcopioListado(1); }, [searchText]);
   useEffect(() => { setPagePuertas(1); }, [searchText]);
-
-  useEffect(() => { const totalPages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE)); if (pageAprobaciones > totalPages) setPageAprobaciones(totalPages); }, [rows.length, pageAprobaciones]);
-  useEffect(() => { const totalPages = Math.max(1, Math.ceil(acopioRows.length / PAGE_SIZE)); if (pageAcopio > totalPages) setPageAcopio(totalPages); }, [acopioRows.length, pageAcopio]);
-  useEffect(() => { const totalPages = Math.max(1, Math.ceil(acopioListadoRows.length / PAGE_SIZE)); if (pageAcopioListado > totalPages) setPageAcopioListado(totalPages); }, [acopioListadoRows.length, pageAcopioListado]);
-  useEffect(() => { const totalPages = Math.max(1, Math.ceil(doorRows.length / PAGE_SIZE)); if (pagePuertas > totalPages) setPagePuertas(totalPages); }, [doorRows.length, pagePuertas]);
+  useEffect(() => { setPageMediciones(1); }, [searchText]);
 
   const visibleRows = useMemo(() => rows.slice((pageAprobaciones - 1) * PAGE_SIZE, pageAprobaciones * PAGE_SIZE), [rows, pageAprobaciones]);
   const visibleAcopioRows = useMemo(() => acopioRows.slice((pageAcopio - 1) * PAGE_SIZE, pageAcopio * PAGE_SIZE), [acopioRows, pageAcopio]);
   const visibleAcopioListadoRows = useMemo(() => acopioListadoRows.slice((pageAcopioListado - 1) * PAGE_SIZE, pageAcopioListado * PAGE_SIZE), [acopioListadoRows, pageAcopioListado]);
   const visibleDoorRows = useMemo(() => doorRows.slice((pagePuertas - 1) * PAGE_SIZE, pagePuertas * PAGE_SIZE), [doorRows, pagePuertas]);
+  const visibleMedicionesRows = useMemo(() => medicionesRows.slice((pageMediciones - 1) * PAGE_SIZE, pageMediciones * PAGE_SIZE), [medicionesRows, pageMediciones]);
 
   if (!user?.is_enc_comercial) {
     return <div className="container"><div className="card">No autorizado (falta rol Enc. Comercial).</div></div>;
@@ -165,11 +192,12 @@ export default function AprobacionComercialPage() {
     <div className="container">
       <div className="card">
         <h2 style={{ margin: 0 }}>Aprobación Comercial</h2>
-        <div className="muted">Presupuestos, portones en acopio y puertas pendientes de tu decisión.</div>
+        <div className="muted">Presupuestos, portones en acopio, puertas y mediciones pendientes de tu decisión.</div>
 
         <div className="spacer" />
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           <Button variant={tab === "aprobaciones" ? "primary" : "ghost"} onClick={() => setTab("aprobaciones")}>Aprobaciones</Button>
+          <Button variant={tab === "mediciones" ? "primary" : "ghost"} onClick={() => setTab("mediciones")}>Mediciones</Button>
           <Button variant={tab === "acopio" ? "primary" : "ghost"} onClick={() => setTab("acopio")}>Acopio → Producción</Button>
           <Button variant={tab === "acopio_listado" ? "primary" : "ghost"} onClick={() => setTab("acopio_listado")}>Portones en Acopio</Button>
           <Button variant={tab === "puertas" ? "primary" : "ghost"} onClick={() => setTab("puertas")}>Puertas</Button>
@@ -187,7 +215,7 @@ export default function AprobacionComercialPage() {
         )}
 
         <div className="spacer" />
-        <Input value={searchText} onChange={setSearchText} placeholder="Buscar por cliente, localidad, dirección, usuario, código o estado…" style={{ width: "100%" }} />
+        <Input value={searchText} onChange={setSearchText} placeholder="Buscar por cliente, localidad, dirección, usuario, código, estado o campo..." style={{ width: "100%" }} />
       </div>
 
       <div className="spacer" />
@@ -222,6 +250,41 @@ export default function AprobacionComercialPage() {
                   </tbody>
                 </table>
                 <PaginationControls page={pageAprobaciones} totalItems={rows.length} pageSize={PAGE_SIZE} onPageChange={setPageAprobaciones} />
+              </>
+            )}
+          </>
+        )}
+
+        {tab === "mediciones" && (
+          <>
+            {medicionesQ.isLoading && <div className="muted">Cargando...</div>}
+            {medicionesQ.isError && <div style={{ color: "#d93025", fontSize: 13 }}>{medicionesQ.error.message}</div>}
+            {!medicionesQ.isLoading && !medicionesRows.length && <div className="muted">Sin mediciones pendientes de revisión comercial</div>}
+            {!!medicionesRows.length && (
+              <>
+                <table>
+                  <thead><tr><th>Fecha</th><th>Vendedor/Distribuidor</th><th>Cliente</th><th>Dirección</th><th>Estado</th><th>Campos modificados</th><th></th></tr></thead>
+                  <tbody>
+                    {visibleMedicionesRows.map((r) => (
+                      <tr key={r.id}>
+                        <td>{fmtDate(r.measurement_at || r.created_at)}</td>
+                        <td>{createdByLabel(r)}</td>
+                        <td>{r.end_customer?.name || <span className="muted">(sin nombre)</span>}</td>
+                        <td>{r.end_customer?.address || "—"}</td>
+                        <td>{measurementRowLabel(r)}</td>
+                        <td>
+                          {Array.isArray(r?.measurement_commercial_diff_json) && r.measurement_commercial_diff_json.length
+                            ? r.measurement_commercial_diff_json.map((item) => item?.label || item?.key).filter(Boolean).join(", ")
+                            : "—"}
+                        </td>
+                        <td className="right">
+                          <Button onClick={() => navigate(`/mediciones/${r.id}`, { state: { from: "/aprobacion/comercial" } })}>Abrir</Button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                <PaginationControls page={pageMediciones} totalItems={medicionesRows.length} pageSize={PAGE_SIZE} onPageChange={setPageMediciones} />
               </>
             )}
           </>

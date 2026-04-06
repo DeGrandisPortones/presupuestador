@@ -532,11 +532,8 @@ async function syncFinalQuoteToOdoo({ odoo, revisionQuote, originalQuote }) {
     },
   };
 }
-export async function finalizeMeasurementToRevisionQuote({
-  odoo,
-  originalQuote,
-  measurementForm,
-}) {
+
+async function buildMeasurementFinalizationBase({ odoo, originalQuote, measurementForm }) {
   const legacyMappings = await getMeasurementProductMappings();
   const technicalRules = await getTechnicalMeasurementRules();
   const technicalFields = await getTechnicalMeasurementFieldDefinitions();
@@ -572,12 +569,87 @@ export async function finalizeMeasurementToRevisionQuote({
   const finalLines = discountLine
     ? [...pricedPositiveLines, discountLine]
     : pricedPositiveLines;
+  const positiveTotal = round2(
+    pricedPositiveLines.reduce((acc, line) => {
+      const qty = Number(line?.qty || 1) || 1;
+      const price =
+        typeof line?.price_unit === "number"
+          ? round2(line.price_unit)
+          : calcDetailedUnitWithIva(line, originalQuote?.payload || {});
+      return acc + qty * price;
+    }, 0),
+  );
+  const originalBudgeted = round2(
+    Number(originalQuote?.deposit_amount || 0) || 0,
+  );
+  const toleranceAmount = round2((originalBudgeted * tolerancePercent) / 100);
+  const differenceAmount = round2(Math.max(0, positiveTotal - originalBudgeted));
+  const absorbedByCompany =
+    originalBudgeted > 0 && differenceAmount <= toleranceAmount;
+  const finalAmountToCharge = round2(
+    Math.max(
+      0,
+      finalLines.reduce((acc, line) => {
+        const qty = Number(line?.qty || 1) || 1;
+        const price =
+          typeof line?.price_unit === "number"
+            ? round2(line.price_unit)
+            : calcDetailedUnitWithIva(line, originalQuote?.payload || {});
+        return acc + qty * price;
+      }, 0),
+    ),
+  );
+  return {
+    generated_lines: finalLines,
+    priced_positive_lines: pricedPositiveLines,
+    metrics: {
+      detailed_total: positiveTotal,
+      tolerance_percent: round2(tolerancePercent),
+      tolerance_amount: toleranceAmount,
+      difference_amount: differenceAmount,
+      absorbed_by_company: absorbedByCompany,
+      final_amount_to_charge: finalAmountToCharge,
+      reference_nv: referenceNumberFromQuote(originalQuote, null),
+    },
+  };
+}
+
+export async function previewMeasurementRevisionQuote({
+  odoo,
+  originalQuote,
+  measurementForm,
+}) {
+  const base = await buildMeasurementFinalizationBase({
+    odoo,
+    originalQuote,
+    measurementForm,
+  });
+  return {
+    ...base,
+    synced: false,
+    revisionQuote: null,
+    reason: base.generated_lines.length ? null : "Sin reglas aplicables",
+  };
+}
+
+export async function finalizeMeasurementToRevisionQuote({
+  odoo,
+  originalQuote,
+  measurementForm,
+}) {
+  const base = await buildMeasurementFinalizationBase({
+    odoo,
+    originalQuote,
+    measurementForm,
+  });
+  const finalLines = base.generated_lines || [];
   if (!finalLines.length)
     return {
       revisionQuote: null,
       generated_lines: [],
       synced: false,
       reason: "Sin reglas aplicables",
+      metrics: base.metrics,
     };
   const revisionQuote = await getOrCreateRevisionQuote(
     originalQuote,
@@ -589,6 +661,7 @@ export async function finalizeMeasurementToRevisionQuote({
       generated_lines: finalLines,
       synced: false,
       reason: !odoo ? "Odoo no disponible" : "No se pudo crear la copia",
+      metrics: base.metrics,
     };
   const updSync = await dbQuery(
     `update public.presupuestador_quotes set status='syncing_odoo', final_status='syncing_odoo', final_technical_decision='approved', final_logistics_decision='approved', final_technical_notes=null, final_logistics_notes=null where id=$1 returning *`,

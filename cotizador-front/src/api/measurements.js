@@ -28,9 +28,24 @@ export async function getMeasurement(id) {
   return res.data?.quote;
 }
 
-export async function saveMeasurement(id, { form, submit = false, endCustomer = null } = {}) {
-  const res = await http.put(`/api/measurements/${id}`, { form, submit, end_customer: endCustomer });
-  return res.data?.quote;
+export async function saveMeasurementDetailed(id, { form, submit = false, endCustomer = null, baselineForm = null } = {}) {
+  const res = await http.put(`/api/measurements/${id}`, {
+    form,
+    submit,
+    end_customer: endCustomer,
+    baseline_form: baselineForm,
+  });
+  return res.data;
+}
+
+export async function saveMeasurement(id, { form, submit = false, endCustomer = null, baselineForm = null } = {}) {
+  const data = await saveMeasurementDetailed(id, {
+    form,
+    submit,
+    endCustomer,
+    baselineForm,
+  });
+  return data?.quote || null;
 }
 
 export async function scheduleMeasurement(id, { scheduledFor } = {}) {

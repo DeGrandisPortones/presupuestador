@@ -47,6 +47,7 @@ export async function ensureQuotesMeasurementColumns() {
   await dbQuery(`alter table public.presupuestador_quotes add column if not exists measurement_mode text not null default 'medidor';`);
   await dbQuery(`alter table public.presupuestador_quotes add column if not exists measurement_subtype text not null default 'normal';`);
   await dbQuery(`alter table public.presupuestador_quotes add column if not exists measurement_form jsonb null;`);
+  await dbQuery(`alter table public.presupuestador_quotes add column if not exists measurement_original_form jsonb null;`);
   await dbQuery(`alter table public.presupuestador_quotes add column if not exists measurement_assigned_to_user_id int null;`);
   await dbQuery(`alter table public.presupuestador_quotes add column if not exists measurement_scheduled_for date null;`);
   await dbQuery(`alter table public.presupuestador_quotes add column if not exists measurement_scheduled_by_user_id int null;`);
@@ -58,6 +59,11 @@ export async function ensureQuotesMeasurementColumns() {
   await dbQuery(`alter table public.presupuestador_quotes add column if not exists measurement_review_notes text null;`);
   await dbQuery(`alter table public.presupuestador_quotes add column if not exists measurement_share_token text null;`);
   await dbQuery(`alter table public.presupuestador_quotes add column if not exists measurement_share_enabled_at timestamptz null;`);
+  await dbQuery(`alter table public.presupuestador_quotes add column if not exists measurement_commercial_review_required boolean not null default false;`);
+  await dbQuery(`alter table public.presupuestador_quotes add column if not exists measurement_commercial_review_status text null;`);
+  await dbQuery(`alter table public.presupuestador_quotes add column if not exists measurement_commercial_review_by_user_id int null;`);
+  await dbQuery(`alter table public.presupuestador_quotes add column if not exists measurement_commercial_review_at timestamptz null;`);
+  await dbQuery(`alter table public.presupuestador_quotes add column if not exists measurement_commercial_diff_json jsonb null;`);
 
   await dbQuery(`alter table public.presupuestador_quotes add column if not exists final_status text null;`);
   await dbQuery(`alter table public.presupuestador_quotes add column if not exists final_technical_decision text null;`);

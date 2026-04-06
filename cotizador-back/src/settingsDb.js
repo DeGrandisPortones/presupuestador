@@ -97,6 +97,9 @@ function normalizeBudgetMultipleMode(value) {
     .toLowerCase();
   return ["first", "join"].includes(v) ? v : "first";
 }
+function normalizeBooleanFlag(value) {
+  return value === true;
+}
 
 function normalizeTechnicalMeasurementRule(rule = {}, index = 0) {
   const source_key = normalizeText(rule.source_key || rule.field_key);
@@ -195,6 +198,9 @@ function normalizeTechnicalMeasurementField(field = {}, index = 0) {
     odoo_binding_type: normalizeOdooBindingType(field?.odoo_binding_type),
     odoo_product_id: Number(field?.odoo_product_id || 0) || null,
     odoo_product_label: normalizeText(field?.odoo_product_label),
+    send_modification_to_commercial: normalizeBooleanFlag(
+      field?.send_modification_to_commercial,
+    ),
   };
   if (normalized.type === "odoo_product") {
     normalized.value_source_type = "budget_section_product";

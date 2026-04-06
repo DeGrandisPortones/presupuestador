@@ -3,12 +3,22 @@ import express from "express";
 import { requireAuth } from "../auth.js";
 import { dbQuery } from "../db.js";
 import { ensureQuotesMeasurementColumns } from "../quotesSchema.js";
-import { finalizeMeasurementToRevisionQuote } from "../measurementFinalization.js";
+import {
+  finalizeMeasurementToRevisionQuote,
+  previewMeasurementRevisionQuote,
+} from "../measurementFinalization.js";
+import { getTechnicalMeasurementFieldDefinitions } from "../settingsDb.js";
 
 const MEASUREMENT_PRODUCT_ID = Number(process.env.ODOO_MEASUREMENT_PRODUCT_ID || 2865);
 
 function requireMeasurementEditor(req, res, next) {
-  if (!req.user?.is_medidor && !req.user?.is_rev_tecnica) {
+  if (
+    !req.user?.is_medidor &&
+    !req.user?.is_rev_tecnica &&
+    !req.user?.is_enc_comercial &&
+    !req.user?.is_vendedor &&
+    !req.user?.is_distribuidor
+  ) {
     return res.status(403).json({ ok: false, error: "No autorizado" });
   }
   next();
@@ -16,6 +26,12 @@ function requireMeasurementEditor(req, res, next) {
 function requireTechnicalReviewer(req, res, next) {
   if (!req.user?.is_rev_tecnica) return res.status(403).json({ ok: false, error: "No autorizado" });
   next();
+}
+function isCommercialMeasurementReviewer({ user, quote }) {
+  if (!user || !quote) return false;
+  const isOwner = String(quote.created_by_user_id) === String(user.user_id);
+  const isSellerOwner = isOwner && (user.is_vendedor || user.is_distribuidor);
+  return !!(user.is_enc_comercial || isSellerOwner);
 }
 function canReadMeasurement({ user, quote }) {
   if (!user || !quote) return false;
@@ -28,12 +44,12 @@ function canReadMeasurement({ user, quote }) {
 }
 function normalizeStatus(s) {
   const v = String(s || "pending").toLowerCase().trim();
-  if (!["pending", "needs_fix", "submitted", "approved", "all"].includes(v)) return "pending";
+  if (!["pending", "needs_fix", "submitted", "approved", "commercial_review", "all"].includes(v)) return "pending";
   return v;
 }
 function normalizeViewer(v) {
   const s = String(v || "medidor").toLowerCase().trim();
-  if (!["medidor", "tecnica"].includes(s)) return "medidor";
+  if (!["medidor", "tecnica", "comercial"].includes(s)) return "medidor";
   return s;
 }
 function normalizeMeasurementMode(v) {
@@ -177,6 +193,113 @@ function validateFinalDimensions(form) {
   if (!anchoFinal) return "Falta ancho_final_mm";
   return null;
 }
+function getByPath(obj, path) {
+  const parts = String(path || "").split(".").filter(Boolean);
+  let cur = obj;
+  for (const part of parts) {
+    if (!cur || typeof cur !== "object") return undefined;
+    cur = cur[part];
+  }
+  return cur;
+}
+function isNumericSegment(value) {
+  return /^\d+$/.test(String(value || ""));
+}
+function cloneContainer(value) {
+  return Array.isArray(value) ? value.slice() : { ...(value || {}) };
+}
+function setByPath(obj, path, value) {
+  const parts = String(path || "").split(".").filter(Boolean);
+  if (!parts.length) return obj;
+  const root = cloneContainer(obj || {});
+  let cur = root;
+  for (let i = 0; i < parts.length - 1; i += 1) {
+    const key = isNumericSegment(parts[i]) ? Number(parts[i]) : parts[i];
+    const nextSegment = parts[i + 1];
+    const existing = cur[key];
+    if (existing && typeof existing === "object") cur[key] = cloneContainer(existing);
+    else cur[key] = isNumericSegment(nextSegment) ? [] : {};
+    cur = cur[key];
+  }
+  const lastKey = isNumericSegment(parts[parts.length - 1])
+    ? Number(parts[parts.length - 1])
+    : parts[parts.length - 1];
+  cur[lastKey] = value;
+  return root;
+}
+function normalizeComparableValue(value) {
+  if (typeof value === "boolean") return value ? "si" : "no";
+  if (Array.isArray(value)) return JSON.stringify(value);
+  if (value && typeof value === "object") return JSON.stringify(value);
+  return String(value ?? "").trim().toLowerCase();
+}
+function diffValuesChanged(prevValue, nextValue) {
+  return normalizeComparableValue(prevValue) !== normalizeComparableValue(nextValue);
+}
+function pickCommercialDiffProductLabel(field, form) {
+  const bindingType = String(field?.odoo_binding_type || "none").trim().toLowerCase();
+  if (bindingType === "custom_product") {
+    return String(field?.odoo_product_label || "").trim();
+  }
+  if (bindingType === "selected_measurement_product") {
+    const selected = getByPath(form, `__selected_binding_product.${field.key}`);
+    return String(
+      selected?.display_name ||
+      selected?.alias ||
+      selected?.raw_name ||
+      field?.odoo_product_label ||
+      "",
+    ).trim();
+  }
+  if (bindingType === "repeat_budget_product") {
+    const products = getByPath(form, `__budget_binding_products.${field.key}`);
+    if (Array.isArray(products) && products.length) {
+      return products
+        .map((item) => item?.display_name || item?.alias || item?.raw_name || "")
+        .filter(Boolean)
+        .join(", ");
+    }
+  }
+  return "";
+}
+async function buildCommercialMeasurementDiff({ baseForm, nextForm }) {
+  const configured = await getTechnicalMeasurementFieldDefinitions();
+  const fields = Array.isArray(configured?.fields) ? configured.fields : [];
+  return fields
+    .filter((field) => field?.active !== false && field?.send_modification_to_commercial === true)
+    .map((field) => {
+      const prevValue = getByPath(baseForm || {}, field.key);
+      const nextValue = getByPath(nextForm || {}, field.key);
+      if (!diffValuesChanged(prevValue, nextValue)) return null;
+      return {
+        key: field.key,
+        label: field.label || field.key,
+        previous_value: prevValue ?? null,
+        next_value: nextValue ?? null,
+        odoo_binding_type: String(field?.odoo_binding_type || "none"),
+        odoo_product_id: Number(field?.odoo_product_id || 0) || null,
+        odoo_product_label: String(field?.odoo_product_label || "").trim(),
+        preview_product_label: pickCommercialDiffProductLabel(field, nextForm || {}),
+      };
+    })
+    .filter(Boolean);
+}
+function sanitizeCommercialFormUpdate({ currentForm, requestedForm, diffItems }) {
+  const allowedKeys = new Set((Array.isArray(diffItems) ? diffItems : []).map((item) => String(item.key || "").trim()).filter(Boolean));
+  let next = cloneContainer(currentForm || {});
+  for (const key of allowedKeys) {
+    next = setByPath(next, key, getByPath(requestedForm || {}, key));
+    const selectedBinding = getByPath(requestedForm || {}, `__selected_binding_product.${key}`);
+    const budgetBinding = getByPath(requestedForm || {}, `__budget_binding_products.${key}`);
+    if (selectedBinding !== undefined) {
+      next = setByPath(next, `__selected_binding_product.${key}`, selectedBinding);
+    }
+    if (budgetBinding !== undefined) {
+      next = setByPath(next, `__budget_binding_products.${key}`, budgetBinding);
+    }
+  }
+  return next;
+}
 async function syncOriginalQuoteFromMeasurementFinalization(quoteId, finalization) {
   const orderId = Number(finalization?.order?.id || 0) || null;
   const orderName = String(finalization?.order?.name || "").trim();
@@ -289,6 +412,7 @@ export function buildMeasurementsRouter(odoo = null) {
 
       if (viewer === "medidor" && !u?.is_medidor) return res.status(403).json({ ok: false, error: "No autorizado" });
       if (viewer === "tecnica" && !u?.is_rev_tecnica) return res.status(403).json({ ok: false, error: "No autorizado" });
+      if (viewer === "comercial" && !u?.is_enc_comercial) return res.status(403).json({ ok: false, error: "No autorizado" });
 
       const where = [
         "q.catalog_kind = 'porton'",
@@ -303,6 +427,13 @@ export function buildMeasurementsRouter(odoo = null) {
         params.push(Number(u.user_id));
         where.push(`(q.measurement_assigned_to_user_id is null or q.measurement_assigned_to_user_id = $${params.length})`);
       }
+      if (viewer === "tecnica") {
+        where.push(`coalesce(q.measurement_status, 'none') <> 'commercial_review'`);
+      }
+      if (viewer === "comercial") {
+        where.push(`coalesce(q.measurement_status, 'none') = 'commercial_review'`);
+      }
+
       if (status !== "all") {
         params.push(status);
         where.push(`q.measurement_status = $${params.length}`);
@@ -352,6 +483,20 @@ export function buildMeasurementsRouter(odoo = null) {
       if (!quote) return res.status(404).json({ ok: false, error: "Presupuesto no encontrado" });
       if (!canReadMeasurement({ user: u, quote })) return res.status(403).json({ ok: false, error: "No autorizado" });
       quote.measurement_prefill = deriveMeasurementPrefill(quote);
+      if (String(quote.measurement_status || "") === "commercial_review") {
+        try {
+          quote.measurement_commercial_preview = await previewMeasurementRevisionQuote({
+            odoo,
+            originalQuote: quote,
+            measurementForm: quote.measurement_form || {},
+          });
+        } catch (e) {
+          quote.measurement_commercial_preview = {
+            ok: false,
+            error: e?.message || "No se pudo calcular el preview comercial",
+          };
+        }
+      }
       res.json({ ok: true, quote });
     } catch (e) { next(e); }
   });
@@ -382,21 +527,21 @@ export function buildMeasurementsRouter(odoo = null) {
       if (!form || typeof form !== "object") return res.status(400).json({ ok: false, error: "Falta form (objeto)" });
       const submit = body.submit === true;
       const endCustomer = body.end_customer ?? null;
+      const baselineForm = body.baseline_form && typeof body.baseline_form === "object"
+        ? body.baseline_form
+        : null;
+
       const cur = await dbQuery(`select * from public.presupuestador_quotes where id=$1 limit 1`, [id]);
       const quote = cur.rows?.[0];
       if (!quote) return res.status(404).json({ ok: false, error: "Presupuesto no encontrado" });
       if (!quoteAllowsMeasurementWorkflow(quote)) return res.status(400).json({ ok: false, error: "Este presupuesto no requiere medición" });
-      if (!u?.is_rev_tecnica && isTecnicaOnlyQuote(quote)) {
-        return res.status(403).json({ ok: false, error: "Este portón sin medición solo puede completarlo Técnica" });
-      }
+
       const currentStatus = String(quote.measurement_status || "none").toLowerCase().trim();
-      if (!u?.is_rev_tecnica) {
-        if (currentStatus === "approved") return res.status(409).json({ ok: false, error: "La medición ya fue aprobada" });
-        if (currentStatus === "submitted") return res.status(409).json({ ok: false, error: "La medición ya fue enviada. Esperá la revisión técnica." });
-      }
       const nextCustomer = mergeEndCustomer(quote.end_customer || {}, endCustomer);
       const customerErr = validateEndCustomerForMeasurement(nextCustomer, { requireWhatsapp: submit && !!u?.is_rev_tecnica });
       if (customerErr) return res.status(400).json({ ok: false, error: customerErr });
+
+      const isCommercialReviewer = isCommercialMeasurementReviewer({ user: u, quote });
 
       if (u?.is_rev_tecnica) {
         if (submit) {
@@ -430,9 +575,123 @@ export function buildMeasurementsRouter(odoo = null) {
         return res.json({ ok: true, quote: upd.rows?.[0] || null });
       }
 
-      const nextStatus = submit ? "submitted" : (currentStatus === "needs_fix" ? "needs_fix" : "pending");
-      const upd = await dbQuery(`update public.presupuestador_quotes set requires_measurement = true, end_customer = $2::jsonb, measurement_form = $3::jsonb, measurement_status = $4, measurement_review_notes = null, measurement_review_by_user_id = null, measurement_review_at = null, measurement_assigned_to_user_id = coalesce(measurement_assigned_to_user_id, $5), measurement_by_user_id = $5, measurement_at = now() where id = $1 returning *`, [id, JSON.stringify(nextCustomer), JSON.stringify(form), nextStatus, Number(u.user_id)]);
-      return res.json({ ok: true, quote: upd.rows?.[0] || null });
+      if (isCommercialReviewer) {
+        if (currentStatus !== "commercial_review") {
+          return res.status(409).json({ ok: false, error: "La medición no está en revisión comercial" });
+        }
+        const sanitizedForm = sanitizeCommercialFormUpdate({
+          currentForm: quote.measurement_form || {},
+          requestedForm: form,
+          diffItems: quote.measurement_commercial_diff_json || [],
+        });
+        const nextPreview = await previewMeasurementRevisionQuote({
+          odoo,
+          originalQuote: quote,
+          measurementForm: sanitizedForm,
+        });
+        const commercialStatus = submit ? "approved" : "pending";
+        const nextStatus = submit ? "submitted" : "commercial_review";
+        const upd = await dbQuery(
+          `update public.presupuestador_quotes
+              set end_customer = $2::jsonb,
+                  measurement_form = $3::jsonb,
+                  measurement_status = $4,
+                  measurement_commercial_review_required = case when $4 = 'commercial_review' then true else false end,
+                  measurement_commercial_review_status = $5,
+                  measurement_commercial_review_by_user_id = $6,
+                  measurement_commercial_review_at = now(),
+                  measurement_review_notes = null
+            where id = $1
+            returning *`,
+          [
+            id,
+            JSON.stringify(nextCustomer),
+            JSON.stringify(sanitizedForm),
+            nextStatus,
+            commercialStatus,
+            Number(u.user_id),
+          ],
+        );
+        return res.json({
+          ok: true,
+          quote: upd.rows?.[0] || null,
+          commercialPreview: nextPreview,
+          moved_to_tecnica: submit === true,
+        });
+      }
+
+      if (!u?.is_medidor) {
+        return res.status(403).json({ ok: false, error: "No autorizado" });
+      }
+      if (isTecnicaOnlyQuote(quote)) {
+        return res.status(403).json({ ok: false, error: "Este portón sin medición solo puede completarlo Técnica" });
+      }
+      if (currentStatus === "approved") return res.status(409).json({ ok: false, error: "La medición ya fue aprobada" });
+      if (currentStatus === "submitted") return res.status(409).json({ ok: false, error: "La medición ya fue enviada. Esperá la revisión técnica." });
+      if (currentStatus === "commercial_review") return res.status(409).json({ ok: false, error: "La medición quedó en revisión comercial." });
+
+      const effectiveBaselineForm =
+        quote.measurement_original_form ||
+        baselineForm ||
+        quote.measurement_form ||
+        {};
+      const commercialDiff = await buildCommercialMeasurementDiff({
+        baseForm: effectiveBaselineForm,
+        nextForm: form,
+      });
+      const requiresCommercialReview = submit && commercialDiff.length > 0;
+      const nextStatus = submit
+        ? (requiresCommercialReview ? "commercial_review" : "submitted")
+        : (currentStatus === "needs_fix" ? "needs_fix" : "pending");
+
+      const upd = await dbQuery(
+        `update public.presupuestador_quotes
+            set requires_measurement = true,
+                end_customer = $2::jsonb,
+                measurement_form = $3::jsonb,
+                measurement_original_form = coalesce(measurement_original_form, $4::jsonb),
+                measurement_status = $5,
+                measurement_review_notes = null,
+                measurement_review_by_user_id = null,
+                measurement_review_at = null,
+                measurement_assigned_to_user_id = coalesce(measurement_assigned_to_user_id, $6),
+                measurement_by_user_id = $6,
+                measurement_at = now(),
+                measurement_commercial_review_required = $7,
+                measurement_commercial_review_status = $8,
+                measurement_commercial_review_by_user_id = null,
+                measurement_commercial_review_at = case when $7 then now() else null end,
+                measurement_commercial_diff_json = $9::jsonb
+          where id = $1
+          returning *`,
+        [
+          id,
+          JSON.stringify(nextCustomer),
+          JSON.stringify(form),
+          JSON.stringify(effectiveBaselineForm || {}),
+          nextStatus,
+          Number(u.user_id),
+          requiresCommercialReview,
+          requiresCommercialReview ? "pending" : null,
+          JSON.stringify(commercialDiff),
+        ],
+      );
+      const updatedQuote = upd.rows?.[0] || null;
+      let commercialPreview = null;
+      if (requiresCommercialReview) {
+        commercialPreview = await previewMeasurementRevisionQuote({
+          odoo,
+          originalQuote: { ...(quote || {}), measurement_form: form },
+          measurementForm: form,
+        });
+      }
+      return res.json({
+        ok: true,
+        quote: updatedQuote,
+        requiresCommercialReview,
+        commercialDiff,
+        commercialPreview,
+      });
     } catch (e) { next(e); }
   });
 
