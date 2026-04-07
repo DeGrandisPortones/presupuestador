@@ -1,6 +1,6 @@
 import { dbQuery } from "./db.js";
 import {
-  getCommercialFinalTolerancePercent,
+  getCommercialFinalToleranceAreaM2,
   getMeasurementProductMappings,
   getTechnicalMeasurementRules,
   getTechnicalMeasurementFieldDefinitions,
@@ -29,6 +29,9 @@ function toText(v) {
 function round2(n) {
   return Math.round(Number(n || 0) * 100) / 100;
 }
+function round4(n) {
+  return Math.round(Number(n || 0) * 10000) / 10000;
+}
 function normalizeBoolish(v) {
   const s = String(v ?? "").toLowerCase().trim();
   if (["true", "1", "si", "sí", "yes"].includes(s)) return "si";
@@ -51,6 +54,10 @@ function normalizeValue(v) {
 }
 function onlyDigits(value) {
   return String(value || "").replace(/\D/g, "");
+}
+function toNumberLike(value) {
+  const n = Number(String(value ?? "").replace(",", "."));
+  return Number.isFinite(n) ? n : null;
 }
 function referenceNumberFromQuote(originalQuote, revisionQuote) {
   const direct =
@@ -169,6 +176,8 @@ function normalizeStoredBindingProducts(value) {
           raw_name: String(item?.raw_name || "").trim(),
           code: String(item?.code || "").trim(),
           qty: Number(item?.qty || 1) || 1,
+          uses_surface_quantity: item?.uses_surface_quantity === true || item?.use_surface_qty === true,
+          use_surface_qty: item?.use_surface_qty === true || item?.uses_surface_quantity === true,
         }))
         .filter((item) => item.product_id)
     : [];
@@ -184,105 +193,9 @@ function normalizeStoredSelectedBindingProduct(value) {
     raw_name: String(value?.raw_name || "").trim(),
     code: String(value?.code || "").trim(),
     qty: Number(value?.qty || 1) || 1,
+    uses_surface_quantity: value?.uses_surface_quantity === true || value?.use_surface_qty === true,
+    use_surface_qty: value?.use_surface_qty === true || value?.uses_surface_quantity === true,
   };
-}
-function buildMeasurementLineSeedsFromFieldBindings(form, fields) {
-  const out = [];
-  for (const field of Array.isArray(fields) ? fields : []) {
-    if (field?.active === false) continue;
-    let bindingType = String(field?.odoo_binding_type || "none");
-    if (String(field?.type || "") === "odoo_product" && bindingType === "none") {
-      bindingType = "selected_measurement_product";
-    }
-    const current = getByPath(form, field.key);
-    if (!hasMeaningfulFieldValue(current)) continue;
-
-    if (bindingType === "custom_product") {
-      const productId = Number(field?.odoo_product_id || 0);
-      if (!productId) continue;
-      out.push({
-        product_id: productId,
-        qty: 1,
-        name: String(field?.odoo_product_label || field?.label || `Producto ${productId}`).trim(),
-        raw_name: String(field?.odoo_product_label || field?.label || `Producto ${productId}`).trim(),
-        code: null,
-        basePrice: 0,
-      });
-      continue;
-    }
-
-    if (bindingType === "repeat_budget_product") {
-      const boundProducts = normalizeStoredBindingProducts(
-        getByPath(form, `__budget_binding_products.${field.key}`),
-      );
-      for (const product of boundProducts) {
-        out.push({
-          product_id: Number(product.product_id),
-          qty: Number(product.qty || 1) || 1,
-          name: String(product.display_name || product.alias || product.raw_name || `Producto ${product.product_id}`).trim(),
-          raw_name: String(product.raw_name || product.display_name || `Producto ${product.product_id}`).trim(),
-          code: product.code || null,
-          basePrice: 0,
-        });
-      }
-      continue;
-    }
-
-    if (bindingType === "selected_measurement_product") {
-      const selectedProduct = normalizeStoredSelectedBindingProduct(
-        getByPath(form, `__selected_binding_product.${field.key}`),
-      );
-      if (!selectedProduct?.product_id) continue;
-      out.push({
-        product_id: Number(selectedProduct.product_id),
-        qty: Number(selectedProduct.qty || 1) || 1,
-        name: String(selectedProduct.display_name || selectedProduct.alias || selectedProduct.raw_name || `Producto ${selectedProduct.product_id}`).trim(),
-        raw_name: String(selectedProduct.raw_name || selectedProduct.display_name || `Producto ${selectedProduct.product_id}`).trim(),
-        code: selectedProduct.code || null,
-        basePrice: 0,
-      });
-    }
-  }
-  return out;
-}
-function dedupeLines(lines) {
-  const map = new Map();
-  for (const line of Array.isArray(lines) ? lines : []) {
-    const id = Number(line?.product_id || 0);
-    if (!id) continue;
-    if (!map.has(id)) map.set(id, { ...line, qty: Number(line?.qty || 1) || 1 });
-    else {
-      const prev = map.get(id);
-      map.set(id, {
-        ...prev,
-        qty: (Number(prev.qty || 1) || 1) + (Number(line?.qty || 1) || 1),
-      });
-    }
-  }
-  return [...map.values()];
-}
-async function hydrateMeasurementLinePrices(odoo, payload, seeds) {
-  const list = Array.isArray(seeds) ? seeds : [];
-  if (!list.length || !odoo) return list;
-  const ids = [...new Set(list.map((l) => Number(l.product_id)).filter(Boolean))];
-  if (!ids.length) return list;
-  let products = [];
-  try {
-    products = await odoo.executeKw("product.product", "read", [ids], {
-      fields: ["id", "name", "default_code", "uom_id", "lst_price", "list_price", "product_tmpl_id"],
-    });
-  } catch {}
-  const byId = new Map((products || []).map((p) => [Number(p.id), p]));
-  return list.map((seed) => {
-    const p = byId.get(Number(seed.product_id));
-    return {
-      ...seed,
-      name: toText(seed?.name) || toText(p?.name) || `Producto ${seed.product_id}`,
-      raw_name: toText(seed?.raw_name) || toText(p?.name) || `Producto ${seed.product_id}`,
-      code: toText(p?.default_code) || seed?.code || null,
-      basePrice: Number(p?.lst_price ?? p?.list_price ?? seed?.basePrice ?? 0) || 0,
-    };
-  });
 }
 function cloneBudgetLine(line = {}) {
   const productId = Number(line?.product_id || 0) || null;
@@ -294,6 +207,8 @@ function cloneBudgetLine(line = {}) {
     raw_name: String(line?.raw_name || line?.name || `Producto ${productId}`).trim(),
     code: String(line?.code || "").trim() || null,
     basePrice: Number(line?.basePrice ?? line?.base_price ?? line?.price ?? 0) || 0,
+    uses_surface_quantity: line?.uses_surface_quantity === true || line?.use_surface_qty === true,
+    use_surface_qty: line?.use_surface_qty === true || line?.uses_surface_quantity === true,
     ...(typeof line?.price_unit === "number" ? { price_unit: Number(line.price_unit) } : {}),
     ...(typeof line?.unit_price === "number" ? { unit_price: Number(line.unit_price) } : {}),
   };
@@ -311,6 +226,22 @@ function buildBasePositiveLinesFromQuote(sourceQuote) {
       return true;
     });
 }
+function isSurfaceQtyLine(line) {
+  return !!(line?.uses_surface_quantity === true || line?.use_surface_qty === true);
+}
+function scaleSurfaceLinesByArea(lines, { sourceAreaM2, finalAreaM2 }) {
+  const sourceArea = Number(sourceAreaM2 || 0);
+  const finalArea = Number(finalAreaM2 || 0);
+  if (!(sourceArea > 0) || !(finalArea > 0)) return Array.isArray(lines) ? lines.map((line) => ({ ...line })) : [];
+  const factor = finalArea / sourceArea;
+  return (Array.isArray(lines) ? lines : []).map((line) => {
+    if (!isSurfaceQtyLine(line)) return { ...line };
+    return {
+      ...line,
+      qty: round4((Number(line?.qty || 0) || 0) * factor),
+    };
+  });
+}
 function mergeByProductId(lines) {
   const map = new Map();
   for (const line of Array.isArray(lines) ? lines : []) {
@@ -323,31 +254,41 @@ function mergeByProductId(lines) {
     const prev = map.get(productId);
     map.set(productId, {
       ...prev,
-      qty: (Number(prev.qty || 1) || 1) + (Number(line?.qty || 1) || 1),
+      qty: round4((Number(prev.qty || 1) || 1) + (Number(line?.qty || 1) || 1)),
       name: prev.name || line.name,
       raw_name: prev.raw_name || line.raw_name,
       code: prev.code || line.code || null,
       basePrice: Number(prev.basePrice || 0) || Number(line.basePrice || 0) || 0,
+      uses_surface_quantity: prev.uses_surface_quantity === true || line.uses_surface_quantity === true,
+      use_surface_qty: prev.use_surface_qty === true || line.use_surface_qty === true,
       ...(typeof prev.price_unit === "number" ? { price_unit: prev.price_unit } : (typeof line.price_unit === "number" ? { price_unit: line.price_unit } : {})),
     });
   }
   return [...map.values()];
 }
-async function resolveBaseSourceQuote(originalQuote) {
-  if (!originalQuote?.id) return originalQuote;
-  if (String(originalQuote?.quote_kind || "original") === "copy") return originalQuote;
-  const finalCopyId = String(originalQuote?.final_copy_id || "").trim();
-  if (!finalCopyId) return originalQuote;
-  try {
-    const r = await dbQuery(
-      `select * from public.presupuestador_quotes where id=$1 limit 1`,
-      [finalCopyId],
-    );
-    const copy = r.rows?.[0] || null;
-    return copy || originalQuote;
-  } catch {
-    return originalQuote;
-  }
+function totalLinesAmount(lines, payload) {
+  return round2(
+    (Array.isArray(lines) ? lines : []).reduce((acc, line) => {
+      const qty = Number(line?.qty || 1) || 1;
+      const price = typeof line?.price_unit === "number"
+        ? round2(line.price_unit)
+        : calcDetailedUnitWithIva(line, payload || {});
+      return acc + qty * price;
+    }, 0),
+  );
+}
+function computeQuoteSurfaceM2(quote) {
+  const dims = quote?.payload?.dimensions || {};
+  const widthM = toNumberLike(dims?.width);
+  const heightM = toNumberLike(dims?.height);
+  if (!(widthM > 0) || !(heightM > 0)) return 0;
+  return round4(widthM * heightM);
+}
+function computeFinalSurfaceM2({ sourceQuote, originalQuote, measurementForm }) {
+  const altoMm = toNumberLike(measurementForm?.alto_final_mm);
+  const anchoMm = toNumberLike(measurementForm?.ancho_final_mm);
+  if (altoMm > 0 && anchoMm > 0) return round4((altoMm * anchoMm) / 1000000);
+  return computeQuoteSurfaceM2(sourceQuote || originalQuote);
 }
 function replaceBoundProductsInBaseLines({ baseLines, field, measurementForm }) {
   const bindingType = String(field?.odoo_binding_type || (String(field?.type || "") === "odoo_product" ? "selected_measurement_product" : "none")).trim().toLowerCase();
@@ -368,6 +309,8 @@ function replaceBoundProductsInBaseLines({ baseLines, field, measurementForm }) 
     raw_name: String(selectedProduct.raw_name || selectedProduct.display_name || `Producto ${selectedProduct.product_id}`).trim(),
     code: selectedProduct.code || null,
     basePrice: 0,
+    uses_surface_quantity: selectedProduct.uses_surface_quantity === true,
+    use_surface_qty: selectedProduct.use_surface_qty === true,
   });
   return nextBase;
 }
@@ -395,22 +338,82 @@ function buildAdditionalLineSeedsFromFieldBindings(form, fields) {
   }
   return out;
 }
-function buildDiscountPreviewLine({ originalQuote, pricingPayload, pricedLines, tolerancePercent }) {
+async function hydrateMeasurementLinePrices(odoo, payload, seeds) {
+  const list = Array.isArray(seeds) ? seeds : [];
+  if (!list.length || !odoo) return list;
+  const ids = [...new Set(list.map((l) => Number(l.product_id)).filter(Boolean))];
+  if (!ids.length) return list;
+  let products = [];
+  try {
+    products = await odoo.executeKw("product.product", "read", [ids], {
+      fields: ["id", "name", "default_code", "uom_id", "lst_price", "list_price", "product_tmpl_id"],
+    });
+  } catch {}
+  const byId = new Map((products || []).map((p) => [Number(p.id), p]));
+  return list.map((seed) => {
+    const p = byId.get(Number(seed.product_id));
+    return {
+      ...seed,
+      name: toText(seed?.name) || toText(p?.name) || `Producto ${seed.product_id}`,
+      raw_name: toText(seed?.raw_name) || toText(p?.name) || `Producto ${seed.product_id}`,
+      code: toText(p?.default_code) || seed?.code || null,
+      basePrice: Number(p?.lst_price ?? p?.list_price ?? seed?.basePrice ?? 0) || 0,
+    };
+  });
+}
+async function resolveBaseSourceQuote(originalQuote) {
+  if (!originalQuote?.id) return originalQuote;
+  if (String(originalQuote?.quote_kind || "original") === "copy") return originalQuote;
+  const finalCopyId = String(originalQuote?.final_copy_id || "").trim();
+  if (!finalCopyId) return originalQuote;
+  try {
+    const r = await dbQuery(
+      `select * from public.presupuestador_quotes where id=$1 limit 1`,
+      [finalCopyId],
+    );
+    const copy = r.rows?.[0] || null;
+    return copy || originalQuote;
+  } catch {
+    return originalQuote;
+  }
+}
+function computeSurfacePricingMetrics({ sourceLines, finalLines, pricingPayload, sourceAreaM2, finalAreaM2, toleranceAreaM2 }) {
+  const safeSourceArea = round4(Math.max(0, Number(sourceAreaM2 || 0) || 0));
+  const safeFinalArea = round4(Math.max(0, Number(finalAreaM2 || 0) || 0));
+  const safeToleranceArea = round4(Math.max(0, Number(toleranceAreaM2 || 0) || 0));
+  const surfaceSourceLines = (Array.isArray(sourceLines) ? sourceLines : []).filter(isSurfaceQtyLine);
+  const surfaceFinalLines = (Array.isArray(finalLines) ? finalLines : []).filter(isSurfaceQtyLine);
+  const sourceSurfaceAmount = totalLinesAmount(surfaceSourceLines, pricingPayload);
+  const finalSurfaceAmount = totalLinesAmount(surfaceFinalLines, pricingPayload);
+  const surfaceIncrementAmount = round2(Math.max(0, finalSurfaceAmount - sourceSurfaceAmount));
+  const surfaceDiffM2 = round4(Math.max(0, safeFinalArea - safeSourceArea));
+  const surfaceChargeableDiffM2 = round4(Math.max(0, surfaceDiffM2 - safeToleranceArea));
+  const surfaceAbsorbedDiffM2 = round4(Math.max(0, surfaceDiffM2 - surfaceChargeableDiffM2));
+  const absorbedSurfaceAmount = surfaceDiffM2 > 0
+    ? round2(surfaceIncrementAmount * (surfaceAbsorbedDiffM2 / surfaceDiffM2))
+    : 0;
+  const chargeableSurfaceAmount = round2(Math.max(0, surfaceIncrementAmount - absorbedSurfaceAmount));
+  return {
+    tolerance_area_m2: safeToleranceArea,
+    source_surface_m2: safeSourceArea,
+    final_surface_m2: safeFinalArea,
+    surface_diff_m2: surfaceDiffM2,
+    surface_chargeable_diff_m2: surfaceChargeableDiffM2,
+    surface_absorbed_diff_m2: surfaceAbsorbedDiffM2,
+    source_surface_amount: sourceSurfaceAmount,
+    final_surface_amount: finalSurfaceAmount,
+    surface_increment_amount: surfaceIncrementAmount,
+    surface_absorbed_amount: absorbedSurfaceAmount,
+    surface_chargeable_amount: chargeableSurfaceAmount,
+  };
+}
+function buildDiscountPreviewLine({ originalQuote, absorbedSurfaceAmount, positiveTotal }) {
   const originalBudgeted = round2(Number(originalQuote?.deposit_amount || 0) || 0);
-  if (originalBudgeted <= 0) return null;
-  const positiveTotal = round2(
-    pricedLines.reduce((acc, line) => {
-      const price = calcDetailedUnitWithIva(line, pricingPayload || {});
-      const qty = Number(line?.qty || 1) || 1;
-      if (price <= 0) return acc;
-      return acc + qty * price;
-    }, 0),
-  );
-  if (positiveTotal <= 0) return null;
-  const toleranceAmount = round2((originalBudgeted * Number(tolerancePercent || 0)) / 100);
-  const rawDifference = round2(Math.max(0, positiveTotal - originalBudgeted));
-  let discountAmount = originalBudgeted;
-  if (rawDifference <= toleranceAmount) discountAmount = positiveTotal;
+  const absorbedSurface = round2(Math.max(0, Number(absorbedSurfaceAmount || 0) || 0));
+  const discountAmount = round2(Math.min(
+    Math.max(0, Number(positiveTotal || 0) || 0),
+    Math.max(0, originalBudgeted + absorbedSurface),
+  ));
   if (discountAmount <= 0) return null;
   const reference = referenceNumberFromQuote(originalQuote, null) || toText(originalQuote?.quote_number) || "ANTICIPO";
   return {
@@ -509,7 +512,7 @@ async function getOrCreateRevisionQuote({ originalQuote, sourceQuote, finalLines
   );
   return ins.rows?.[0] || null;
 }
-async function syncFinalQuoteToOdoo({ odoo, revisionQuote, originalQuote, sourceQuote }) {
+async function syncFinalQuoteToOdoo({ odoo, revisionQuote, originalQuote, sourceQuote, precomputedMetrics }) {
   const partnerId =
     toIntId(revisionQuote?.bill_to_odoo_partner_id) ||
     toIntId(sourceQuote?.bill_to_odoo_partner_id) ||
@@ -523,7 +526,6 @@ async function syncFinalQuoteToOdoo({ odoo, revisionQuote, originalQuote, source
   });
   const byId = new Map((products || []).map((p) => [Number(p.id), p]));
   const orderLines = [];
-  let grossPositiveTotal = 0;
   let totalToCharge = 0;
   for (const l of lines) {
     const productId = Number(l.product_id);
@@ -536,7 +538,6 @@ async function syncFinalQuoteToOdoo({ odoo, revisionQuote, originalQuote, source
       ? round2(l.price_unit)
       : calcDetailedUnitWithIva(l, revisionQuote.payload || sourceQuote?.payload || originalQuote.payload || {});
     totalToCharge = round2(totalToCharge + qty * priceUnit);
-    if (priceUnit > 0) grossPositiveTotal = round2(grossPositiveTotal + qty * priceUnit);
     orderLines.push([
       0,
       0,
@@ -550,11 +551,6 @@ async function syncFinalQuoteToOdoo({ odoo, revisionQuote, originalQuote, source
     ]);
   }
 
-  const originalBudgeted = round2(Number(originalQuote.deposit_amount || 0) || 0);
-  const tolerancePercent = round2(await getCommercialFinalTolerancePercent());
-  const toleranceAmount = round2((originalBudgeted * tolerancePercent) / 100);
-  const rawDifference = round2(Math.max(0, grossPositiveTotal - originalBudgeted));
-  const absorbedByCompany = originalBudgeted > 0 && rawDifference <= toleranceAmount;
   const refNo = referenceNumberFromQuote(originalQuote, revisionQuote);
   const referenceNv = refNo
     ? `NV${refNo}`
@@ -575,12 +571,9 @@ async function syncFinalQuoteToOdoo({ odoo, revisionQuote, originalQuote, source
   return {
     order,
     metrics: {
-      detailed_total: grossPositiveTotal,
-      tolerance_percent: tolerancePercent,
-      tolerance_amount: toleranceAmount,
-      difference_amount: rawDifference,
-      absorbed_by_company: absorbedByCompany,
+      ...(precomputedMetrics || {}),
       final_amount_to_charge: round2(Math.max(0, totalToCharge)),
+      difference_amount: round2(Math.max(0, totalToCharge)),
       reference_nv: referenceNv,
     },
   };
@@ -691,7 +684,14 @@ async function buildMeasurementFinalizationBase({ odoo, originalQuote, measureme
   const technicalFieldsPayload = await getTechnicalMeasurementFieldDefinitions();
   const technicalFields = Array.isArray(technicalFieldsPayload?.fields) ? technicalFieldsPayload.fields : [];
 
-  let baseLines = buildBasePositiveLinesFromQuote(sourceQuote);
+  const sourceBaseLines = buildBasePositiveLinesFromQuote(sourceQuote);
+  const sourceAreaM2 = computeQuoteSurfaceM2(sourceQuote || originalQuote);
+  const finalAreaM2 = computeFinalSurfaceM2({ sourceQuote, originalQuote, measurementForm });
+  let baseLines = scaleSurfaceLinesByArea(sourceBaseLines, {
+    sourceAreaM2,
+    finalAreaM2,
+  });
+
   for (const field of technicalFields) {
     baseLines = replaceBoundProductsInBaseLines({
       baseLines,
@@ -725,40 +725,27 @@ async function buildMeasurementFinalizationBase({ odoo, originalQuote, measureme
     mergedExtraSeeds,
   );
 
+  const pricingPayload = sourceQuote?.payload || originalQuote?.payload || {};
   const positiveLines = mergeByProductId([...baseLines, ...pricedExtraLines]);
-  const tolerancePercent = await getCommercialFinalTolerancePercent();
+  const positiveTotal = totalLinesAmount(positiveLines, pricingPayload);
+  const toleranceAreaM2 = await getCommercialFinalToleranceAreaM2();
+  const surfaceMetrics = computeSurfacePricingMetrics({
+    sourceLines: sourceBaseLines,
+    finalLines: positiveLines,
+    pricingPayload,
+    sourceAreaM2,
+    finalAreaM2,
+    toleranceAreaM2,
+  });
+
   const discountLine = buildDiscountPreviewLine({
     originalQuote,
-    pricingPayload: sourceQuote?.payload || originalQuote?.payload || {},
-    pricedLines: positiveLines,
-    tolerancePercent,
+    absorbedSurfaceAmount: surfaceMetrics.surface_absorbed_amount,
+    positiveTotal,
   });
   const finalLines = discountLine ? [...positiveLines, discountLine] : positiveLines;
-  const positiveTotal = round2(
-    positiveLines.reduce((acc, line) => {
-      const qty = Number(line?.qty || 1) || 1;
-      const price = typeof line?.price_unit === "number"
-        ? round2(line.price_unit)
-        : calcDetailedUnitWithIva(line, sourceQuote?.payload || originalQuote?.payload || {});
-      return acc + qty * price;
-    }, 0),
-  );
-  const originalBudgeted = round2(Number(originalQuote?.deposit_amount || 0) || 0);
-  const toleranceAmount = round2((originalBudgeted * tolerancePercent) / 100);
-  const differenceAmount = round2(Math.max(0, positiveTotal - originalBudgeted));
-  const absorbedByCompany = originalBudgeted > 0 && differenceAmount <= toleranceAmount;
-  const finalAmountToCharge = round2(
-    Math.max(
-      0,
-      finalLines.reduce((acc, line) => {
-        const qty = Number(line?.qty || 1) || 1;
-        const price = typeof line?.price_unit === "number"
-          ? round2(line.price_unit)
-          : calcDetailedUnitWithIva(line, sourceQuote?.payload || originalQuote?.payload || {});
-        return acc + qty * price;
-      }, 0),
-    ),
-  );
+  const finalAmountToCharge = totalLinesAmount(finalLines, pricingPayload);
+  const extraAmount = round2(Math.max(0, totalLinesAmount(pricedExtraLines, pricingPayload)));
 
   return {
     source_quote_id: sourceQuote?.id || originalQuote?.id || null,
@@ -767,10 +754,22 @@ async function buildMeasurementFinalizationBase({ odoo, originalQuote, measureme
     priced_positive_lines: positiveLines,
     metrics: {
       detailed_total: positiveTotal,
-      tolerance_percent: round2(tolerancePercent),
-      tolerance_amount: toleranceAmount,
-      difference_amount: differenceAmount,
-      absorbed_by_company: absorbedByCompany,
+      tolerance_percent: 0,
+      tolerance_amount: surfaceMetrics.surface_absorbed_amount,
+      tolerance_area_m2: surfaceMetrics.tolerance_area_m2,
+      source_surface_m2: surfaceMetrics.source_surface_m2,
+      final_surface_m2: surfaceMetrics.final_surface_m2,
+      surface_diff_m2: surfaceMetrics.surface_diff_m2,
+      surface_chargeable_diff_m2: surfaceMetrics.surface_chargeable_diff_m2,
+      surface_absorbed_diff_m2: surfaceMetrics.surface_absorbed_diff_m2,
+      source_surface_amount: surfaceMetrics.source_surface_amount,
+      final_surface_amount: surfaceMetrics.final_surface_amount,
+      surface_increment_amount: surfaceMetrics.surface_increment_amount,
+      surface_absorbed_amount: surfaceMetrics.surface_absorbed_amount,
+      surface_chargeable_amount: surfaceMetrics.surface_chargeable_amount,
+      extra_amount: extraAmount,
+      difference_amount: finalAmountToCharge,
+      absorbed_by_company: surfaceMetrics.surface_absorbed_amount > 0,
       final_amount_to_charge: finalAmountToCharge,
       reference_nv: referenceNumberFromQuote(originalQuote, null),
     },
@@ -840,6 +839,7 @@ export async function finalizeMeasurementToRevisionQuote({ odoo, originalQuote, 
     revisionQuote: qSync,
     originalQuote,
     sourceQuote: base.source_quote,
+    precomputedMetrics: base.metrics,
   });
   const updFinal = await dbQuery(
     `update public.presupuestador_quotes
@@ -858,10 +858,10 @@ export async function finalizeMeasurementToRevisionQuote({ odoo, originalQuote, 
       qSync.id,
       Number(order.id),
       order.name,
-      metrics.tolerance_percent,
-      metrics.tolerance_amount,
-      metrics.difference_amount,
-      metrics.absorbed_by_company,
+      metrics.tolerance_percent ?? 0,
+      metrics.tolerance_amount ?? 0,
+      metrics.difference_amount ?? 0,
+      metrics.absorbed_by_company === true,
     ],
   );
   return {

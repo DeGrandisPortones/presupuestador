@@ -109,7 +109,7 @@ export default function DashboardPage() {
 
   const [tab, setTab] = useState("tags");
   const [catalogKind, setCatalogKind] = useState("porton");
-  const [tolerancePercent, setTolerancePercent] = useState("0");
+  const [toleranceAreaM2, setToleranceAreaM2] = useState("0");
   const [doorFormula, setDoorFormula] = useState("precio_ipanel + precio_venta_marco");
   const [savingTolerance, setSavingTolerance] = useState(false);
   const [savingDoorFormula, setSavingDoorFormula] = useState(false);
@@ -129,7 +129,7 @@ export default function DashboardPage() {
 
   useEffect(() => {
     if (!finalSettingsQ.data) return;
-    setTolerancePercent(String(finalSettingsQ.data.tolerance_percent ?? 0));
+    setToleranceAreaM2(String(finalSettingsQ.data.tolerance_area_m2 ?? 0));
   }, [finalSettingsQ.data]);
 
   useEffect(() => {
@@ -216,8 +216,10 @@ export default function DashboardPage() {
   const onSaveTolerance = async () => {
     setSavingTolerance(true);
     try {
-      const saved = await adminSaveFinalSettings({ tolerance_percent: tolerancePercent });
-      setTolerancePercent(String(saved.tolerance_percent ?? 0));
+      const saved = await adminSaveFinalSettings({
+        tolerance_area_m2: toleranceAreaM2,
+      });
+      setToleranceAreaM2(String(saved.tolerance_area_m2 ?? 0));
       qc.invalidateQueries({ queryKey: ["adminFinalSettings"] });
       alert("Tolerancia guardada correctamente.");
     } finally {
@@ -263,10 +265,25 @@ export default function DashboardPage() {
       <div className="spacer" />
       <div className="card" style={{ background: "#fafafa" }}>
         <h3 style={{ marginTop: 0 }}>Tolerancia comercial para cotización final</h3>
-        <div className="muted" style={{ marginBottom: 10 }}>Si la diferencia entre el presupuesto detallado final y la seña ya enviada es menor o igual a este porcentaje, el sistema descuenta lo necesario para que la nueva cotización en Odoo quede en <b>$0</b>.</div>
+        <div className="muted" style={{ marginBottom: 10 }}>
+          La tolerancia ahora se mide en <b>m²</b>. Si la superficie final del portón
+          supera a la original dentro de esta tolerancia, esa diferencia de superficie
+          no se cobra. Los agregados extra, como cerraduras u otros adicionales,
+          se siguen cobrando igual.
+        </div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-end" }}>
-          <div style={{ minWidth: 220 }}><div className="muted">Tolerancia %</div><Input value={tolerancePercent} onChange={setTolerancePercent} placeholder="0" style={{ width: "100%" }} /></div>
-          <Button variant="primary" onClick={onSaveTolerance} disabled={savingTolerance || finalSettingsQ.isLoading}>{savingTolerance ? "Guardando..." : "Guardar tolerancia"}</Button>
+          <div style={{ minWidth: 220 }}>
+            <div className="muted">Tolerancia m²</div>
+            <Input
+              value={toleranceAreaM2}
+              onChange={setToleranceAreaM2}
+              placeholder="0"
+              style={{ width: "100%" }}
+            />
+          </div>
+          <Button variant="primary" onClick={onSaveTolerance} disabled={savingTolerance || finalSettingsQ.isLoading}>
+            {savingTolerance ? "Guardando..." : "Guardar tolerancia"}
+          </Button>
           {finalSettingsQ.isError ? <div style={{ color: "#d93025" }}>{finalSettingsQ.error.message}</div> : null}
         </div>
       </div>

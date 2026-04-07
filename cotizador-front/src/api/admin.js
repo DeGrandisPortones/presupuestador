@@ -9,13 +9,13 @@ export async function adminGetCatalog(kind = "porton") {
 export async function adminGetFinalSettings() {
   const { data } = await http.get(`/api/admin/final-settings`);
   if (!data?.ok) throw new Error(data?.error || "No se pudo cargar la tolerancia comercial");
-  return data.settings || { tolerance_percent: 0 };
+  return data.settings || { tolerance_percent: 0, tolerance_area_m2: 0 };
 }
 
 export async function adminSaveFinalSettings(payload) {
   const { data } = await http.put(`/api/admin/final-settings`, payload || {});
   if (!data?.ok) throw new Error(data?.error || "No se pudo guardar la tolerancia comercial");
-  return data.settings || { tolerance_percent: 0 };
+  return data.settings || { tolerance_percent: 0, tolerance_area_m2: 0 };
 }
 
 export async function adminGetMeasurementProductMappings() {

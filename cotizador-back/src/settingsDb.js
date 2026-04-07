@@ -18,7 +18,7 @@ export async function ensureSettingsTable() {
     )
   `);
   for (const [key, value] of [
-    [FINAL_QUOTE_SETTINGS_KEY, { tolerance_percent: 0 }],
+    [FINAL_QUOTE_SETTINGS_KEY, { tolerance_percent: 0, tolerance_area_m2: 0 }],
     [MEASUREMENT_PRODUCT_MAPPINGS_KEY, { rules: [] }],
     [
       DOOR_QUOTE_SETTINGS_KEY,
@@ -42,6 +42,11 @@ function normalizeTolerancePercent(value) {
   const n = Number(String(value ?? 0).replace(",", "."));
   if (!Number.isFinite(n)) return 0;
   return Math.max(0, Math.min(100, Math.round(n * 100) / 100));
+}
+function normalizeToleranceAreaM2(value) {
+  const n = Number(String(value ?? 0).replace(",", "."));
+  if (!Number.isFinite(n)) return 0;
+  return Math.max(0, Math.round(n * 10000) / 10000);
 }
 function normalizeDoorFormula(formula) {
   const raw = String(formula ?? "").trim();
@@ -241,16 +246,27 @@ export async function getCommercialFinalQuoteSettings() {
   const raw = await getSetting(FINAL_QUOTE_SETTINGS_KEY, {});
   return {
     tolerance_percent: normalizeTolerancePercent(raw?.tolerance_percent),
+    tolerance_area_m2: normalizeToleranceAreaM2(raw?.tolerance_area_m2),
   };
 }
-export async function setCommercialFinalQuoteSettings({ tolerance_percent }) {
+export async function setCommercialFinalQuoteSettings(payload = {}) {
+  const current = await getCommercialFinalQuoteSettings();
   return setSetting(FINAL_QUOTE_SETTINGS_KEY, {
-    tolerance_percent: normalizeTolerancePercent(tolerance_percent),
+    tolerance_percent: normalizeTolerancePercent(
+      payload?.tolerance_percent ?? current?.tolerance_percent ?? 0,
+    ),
+    tolerance_area_m2: normalizeToleranceAreaM2(
+      payload?.tolerance_area_m2 ?? current?.tolerance_area_m2 ?? 0,
+    ),
   });
 }
 export async function getCommercialFinalTolerancePercent() {
   const s = await getCommercialFinalQuoteSettings();
   return s.tolerance_percent;
+}
+export async function getCommercialFinalToleranceAreaM2() {
+  const s = await getCommercialFinalQuoteSettings();
+  return s.tolerance_area_m2;
 }
 export async function getMeasurementProductMappings() {
   return { rules: [] };
