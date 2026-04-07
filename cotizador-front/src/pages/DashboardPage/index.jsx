@@ -24,6 +24,8 @@ import {
   adminSaveMeasurementProductMappings,
   adminGetDoorQuoteSettings,
   adminSaveDoorQuoteSettings,
+  adminGetTechnicalMeasurementRules,
+  adminSaveTechnicalMeasurementRules,
 } from "../../api/admin.js";
 
 const MEASUREMENT_FIELDS = [
@@ -111,8 +113,10 @@ export default function DashboardPage() {
   const [catalogKind, setCatalogKind] = useState("porton");
   const [toleranceAreaM2, setToleranceAreaM2] = useState("0");
   const [doorFormula, setDoorFormula] = useState("precio_ipanel + precio_venta_marco");
+  const [surfaceFinalFormula, setSurfaceFinalFormula] = useState("(alto_final_mm / 1000) * (ancho_final_mm / 1000)");
   const [savingTolerance, setSavingTolerance] = useState(false);
   const [savingDoorFormula, setSavingDoorFormula] = useState(false);
+  const [savingSurfaceFormula, setSavingSurfaceFormula] = useState(false);
   const [newSectionName, setNewSectionName] = useState("");
   const [newSectionPos, setNewSectionPos] = useState("100");
   const [newSectionUseSurface, setNewSectionUseSurface] = useState(false);
@@ -125,6 +129,7 @@ export default function DashboardPage() {
   const quotesQ = useQuery({ queryKey: ["adminQuotes", catalogKind], queryFn: () => adminGetQuotes(catalogKind, 200), enabled: !!user?.is_enc_comercial && tab === "data" });
   const finalSettingsQ = useQuery({ queryKey: ["adminFinalSettings"], queryFn: adminGetFinalSettings, enabled: !!user?.is_enc_comercial });
   const doorQuoteSettingsQ = useQuery({ queryKey: ["adminDoorQuoteSettings"], queryFn: adminGetDoorQuoteSettings, enabled: !!user?.is_enc_comercial });
+  const technicalMeasurementRulesQ = useQuery({ queryKey: ["adminTechnicalMeasurementRulesForDashboard"], queryFn: adminGetTechnicalMeasurementRules, enabled: !!user?.is_enc_comercial });
   const measurementMappingsQ = useQuery({ queryKey: ["adminMeasurementProductMappings"], queryFn: adminGetMeasurementProductMappings, enabled: !!user?.is_enc_comercial && tab === "medicion" });
 
   useEffect(() => {
@@ -136,6 +141,11 @@ export default function DashboardPage() {
     if (!doorQuoteSettingsQ.data) return;
     setDoorFormula(String(doorQuoteSettingsQ.data.formula || "precio_ipanel + precio_venta_marco"));
   }, [doorQuoteSettingsQ.data]);
+
+  useEffect(() => {
+    if (!technicalMeasurementRulesQ.data) return;
+    setSurfaceFinalFormula(String(technicalMeasurementRulesQ.data.surface_final_formula || "(alto_final_mm / 1000) * (ancho_final_mm / 1000)"));
+  }, [technicalMeasurementRulesQ.data]);
 
   const catalog = catalogQ.data;
   const sections = Array.isArray(catalog?.sections) ? catalog.sections : [];
@@ -249,6 +259,22 @@ export default function DashboardPage() {
     }
   };
 
+  const onSaveSurfaceFinalFormula = async () => {
+    setSavingSurfaceFormula(true);
+    try {
+      const current = technicalMeasurementRulesQ.data || { rules: [] };
+      const saved = await adminSaveTechnicalMeasurementRules({
+        rules: Array.isArray(current.rules) ? current.rules : [],
+        surface_final_formula: surfaceFinalFormula,
+      });
+      setSurfaceFinalFormula(String(saved.surface_final_formula || "(alto_final_mm / 1000) * (ancho_final_mm / 1000)"));
+      qc.invalidateQueries({ queryKey: ["adminTechnicalMeasurementRulesForDashboard"] });
+      alert("Fórmula de superficie final guardada correctamente.");
+    } finally {
+      setSavingSurfaceFormula(false);
+    }
+  };
+
   return (
     <div className="container">
       <div className="spacer" />
@@ -288,7 +314,29 @@ export default function DashboardPage() {
         </div>
       </div>
 
+
+
       <div className="spacer" />
+      <div className="card" style={{ background: "#fafafa" }}>
+        <h3 style={{ marginTop: 0 }}>Fórmula de superficie final de medición</h3>
+        <div className="muted" style={{ marginBottom: 10 }}>
+          Esta fórmula se usa para comparar la superficie presupuestada contra la superficie final tomada en medición y decidir si el portón debe volver al vendedor.
+          Variables útiles: <b>alto_final_mm</b>, <b>ancho_final_mm</b>, <b>alto_1_mm</b>, <b>alto_2_mm</b>, <b>alto_3_mm</b>, <b>ancho_1_mm</b>, <b>ancho_2_mm</b>, <b>ancho_3_mm</b>, <b>budget_width_m</b>, <b>budget_height_m</b>, <b>budget_surface_m2</b>.
+        </div>
+        <textarea
+          value={surfaceFinalFormula}
+          onChange={(e) => setSurfaceFinalFormula(e.target.value)}
+          style={{ width: "100%", minHeight: 84, padding: 10, borderRadius: 10, border: "1px solid #ddd", resize: "vertical", background: "#fff", color: "#111827" }}
+        />
+        <div className="muted" style={{ marginTop: 8 }}>
+          Ejemplo: <b>(alto_final_mm / 1000) * (ancho_final_mm / 1000)</b>
+        </div>
+        <div className="spacer" />
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+          <Button variant="primary" onClick={onSaveSurfaceFinalFormula} disabled={savingSurfaceFormula || technicalMeasurementRulesQ.isLoading}>{savingSurfaceFormula ? "Guardando..." : "Guardar fórmula de superficie"}</Button>
+          {technicalMeasurementRulesQ.isError ? <div style={{ color: "#d93025" }}>{technicalMeasurementRulesQ.error.message}</div> : null}
+        </div>
+      </div>      <div className="spacer" />
       <div className="card" style={{ background: "#fafafa" }}>
         <h3 style={{ marginTop: 0 }}>Fórmula comercial de puerta</h3>
         <div className="muted" style={{ marginBottom: 10 }}>

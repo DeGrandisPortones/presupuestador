@@ -194,7 +194,15 @@ export async function getTechnicalMeasurementRules() {
   return normalizeTechnicalMeasurementRules(raw);
 }
 export async function setTechnicalMeasurementRules(payload = {}) {
-  return setSetting(TECHNICAL_MEASUREMENT_RULES_KEY, normalizeTechnicalMeasurementRules(payload));
+  const current = await getTechnicalMeasurementRules();
+  const merged = {
+    ...(current || {}),
+    ...(payload && typeof payload === 'object' ? payload : {}),
+    surface_final_formula: payload?.surface_final_formula !== undefined
+      ? payload.surface_final_formula
+      : current?.surface_final_formula,
+  };
+  return setSetting(TECHNICAL_MEASUREMENT_RULES_KEY, normalizeTechnicalMeasurementRules(merged));
 }
 export async function getMeasurementSurfaceFinalFormula() {
   const settings = await getTechnicalMeasurementRules();
@@ -206,4 +214,9 @@ export async function getTechnicalMeasurementFieldDefinitions() {
 }
 export async function setTechnicalMeasurementFieldDefinitions(payload = {}) {
   return setSetting(TECHNICAL_MEASUREMENT_FIELDS_KEY, normalizeTechnicalMeasurementFields(payload));
+}
+
+// Compatibilidad con imports viejos mientras se termina de migrar todo a tolerancia por m².
+export async function getCommercialFinalTolerancePercent() {
+  return 0;
 }

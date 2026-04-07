@@ -868,15 +868,19 @@ export default function MedicionDetailPage() {
   }
 
   const saveM = useMutation({
-    mutationFn: ({ submit }) =>
+    mutationFn: ({ submit, returnToSeller = false, returnReason = "" }) =>
       saveMeasurementDetailed(quoteId, {
         form,
         submit,
+        returnToSeller,
+        returnReason,
         endCustomer: quote?.end_customer || {},
         baselineForm: quote?.measurement_original_form || buildInitialForm(quote, quote.measurement_original_form || quote.measurement_form || {}),
       }),
     onSuccess: (response) => {
-      if (response?.requiresCommercialReview) {
+      if (response?.returned_to_seller) {
+        setLastMessage("El portón fue devuelto al vendedor para rehacer el presupuesto.");
+      } else if (response?.requiresCommercialReview) {
         setLastMessage("La medición quedó en revisión comercial.");
       } else if (response?.moved_to_tecnica) {
         setLastMessage("La revisión comercial quedó lista y pasó a técnica.");
@@ -896,667 +900,78 @@ export default function MedicionDetailPage() {
     return (
       <div className="container">
         <div className="card">
-          <div className="muted">Cargando…</div>
-        </div>
-      </div>
-    );
-  if (q.isError)
-    return (
-      <div className="container">
-        <div className="card">
-          <div style={{ color: "#d93025" }}>{q.error.message}</div>
-        </div>
-      </div>
-    );
-  if (!quote || !form) return null;
-
-  const returnPath = typeof location.state?.from === "string" ? location.state.from : -1;
-  const preview = quote?.measurement_commercial_preview || null;
-
-  return (
-    <div className="container">
-      <div className="card">
-        <h2 style={{ marginTop: 0 }}>
-          {isCommercialReviewer ? "Revisión comercial de medición" : "Planilla de medición / datos técnicos"}
-        </h2>
-        <div className="muted">
-          Presupuesto #{quote?.quote_number || quote?.odoo_sale_order_name || "—"}
-          {quote?.measurement_status ? ` · Estado: ${quote.measurement_status}` : ""}
-        </div>
-        <div className="spacer" />
-        <Button variant="ghost" onClick={() => navigate(returnPath)}>
-          Volver
-        </Button>
-      </div>
-
-      {quote?.measurement_review_notes ? (
-        <>
-          <div className="spacer" />
-          <div className="card" style={{ background: "#fff5f5", border: "1px solid #f2c1be" }}>
-            <div style={{ fontWeight: 900, marginBottom: 6 }}>Observación de revisión</div>
-            <div>{quote.measurement_review_notes}</div>
-          </div>
-        </>
-      ) : null}
-
-      {isCommercialReviewer ? (
-        <>
-          <div className="spacer" />
-          <div className="card" style={{ background: "#f8fbff" }}>
-            <div style={{ fontWeight: 900, marginBottom: 8 }}>Cambios enviados a comercial</div>
-            {!commercialDiffItems.length ? <div className="muted">No se detectaron campos marcados para revisión comercial.</div> : (
-              <table>
-                <thead>
-                  <tr>
-                    <th>Campo</th>
-                    <th>Valor original</th>
-                    <th>Valor medidor</th>
-                    <th>Producto / binding</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {commercialDiffItems.map((item) => (
-                    <tr key={item.key}>
-                      <td>{item.label || item.key}</td>
-                      <td>{formatDisplayValue(item.previous_value)}</td>
-                      <td>{formatDisplayValue(item.next_value)}</td>
-                      <td>{item.preview_product_label || item.odoo_product_label || item.odoo_binding_type || "—"}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-            {preview?.metrics ? (
-              <>
-                <div className="spacer" />
-                <div className="muted" style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
-                  <span>Total detallado: <b>{formatARS(preview.metrics.detailed_total)}</b></span>
-                  <span>Diferencia: <b>{formatARS(preview.metrics.difference_amount)}</b></span>
-                  <span>Monto a cobrar: <b>{formatARS(preview.metrics.final_amount_to_charge)}</b></span>
-                </div>
-                {Array.isArray(preview?.generated_lines) && preview.generated_lines.length ? (
-                  <>
-                    <div className="spacer" />
-                    <div style={{ fontWeight: 800, marginBottom: 8 }}>Preview de líneas Odoo</div>
-                    <table>
-                      <thead>
-                        <tr>
-                          <th>Producto</th>
-                          <th className="right">Cant.</th>
-                          <th className="right">Base</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {preview.generated_lines.map((line, idx) => (
-                          <tr key={`${line.product_id}-${idx}`}>
-                            <td>{line.name || `Producto ${line.product_id}`}</td>
-                            <td className="right">{line.qty || 1}</td>
-                            <td className="right">{typeof line.price_unit === "number" ? formatARS(line.price_unit) : formatARS(line.basePrice || 0)}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </>
-                ) : null}
-              </>
-            ) : null}
-          </div>
-        </>
-      ) : null}
-
-      <div className="spacer" />
-      <Section title={SECTION_LABELS.datos_generales}>
-        <Row>
-          {renderBuiltInField(
-            "nota_venta",
-            "Nota de Venta / NV",
-            <Input
-              value={form.nota_venta || ""}
-              onChange={(v) => setForm({ ...form, nota_venta: v })}
-              style={{ width: "100%" }}
-              disabled={!canEditField("nota_venta")}
-            />,
-          )}
-          {renderBuiltInField(
-            "fecha_nota_pedido",
-            "Fecha de Nota de Pedido",
-            <Input
-              type="date"
-              value={form.fecha_nota_pedido || ""}
-              onChange={(v) => setForm({ ...form, fecha_nota_pedido: v })}
-              style={{ width: "100%" }}
-              disabled={!canEditField("fecha_nota_pedido")}
-            />,
-          )}
-          {renderBuiltInField(
-            "fecha",
-            "Fecha de medición",
-            <Input
-              type="date"
-              value={form.fecha || ""}
-              onChange={(v) => setForm({ ...form, fecha: v })}
-              style={{ width: "100%" }}
-              disabled={!canEditField("fecha")}
-            />,
-          )}
-          {renderBuiltInField(
-            "distribuidor",
-            "Distribuidor",
-            <Input
-              value={form.distribuidor || ""}
-              onChange={(v) => setForm({ ...form, distribuidor: v })}
-              style={{ width: "100%" }}
-              disabled={!canEditField("distribuidor")}
-            />,
-          )}
-        </Row>
-        <div className="spacer" />
-        <Row>
-          {renderBuiltInField(
-            "cliente_nombre",
-            "Nombre del cliente",
-            <Input
-              value={form.cliente_nombre || ""}
-              onChange={(v) => setForm({ ...form, cliente_nombre: v })}
-              style={{ width: "100%" }}
-              disabled={!canEditField("cliente_nombre")}
-            />,
-          )}
-          {renderBuiltInField(
-            "cliente_apellido",
-            "Apellido del cliente",
-            <Input
-              value={form.cliente_apellido || ""}
-              onChange={(v) => setForm({ ...form, cliente_apellido: v })}
-              style={{ width: "100%" }}
-              disabled={!canEditField("cliente_apellido")}
-            />,
-          )}
-          {renderBuiltInField(
-            "alto_final_mm",
-            "Alto final (mm)",
-            <Input
-              value={form.alto_final_mm || ""}
-              onChange={(v) => setForm({ ...form, alto_final_mm: v })}
-              style={{ width: "100%" }}
-              disabled={!canEditField("alto_final_mm")}
-            />,
-          )}
-          {renderBuiltInField(
-            "ancho_final_mm",
-            "Ancho final (mm)",
-            <Input
-              value={form.ancho_final_mm || ""}
-              onChange={(v) => setForm({ ...form, ancho_final_mm: v })}
-              style={{ width: "100%" }}
-              disabled={!canEditField("ancho_final_mm")}
-            />,
-          )}
-        </Row>
-        {renderDynamicSectionFields("datos_generales")}
-      </Section>
-
-      <Section title={SECTION_LABELS.esquema_medidas}>
-        <div style={{ display: "flex", gap: 14, flexWrap: "wrap", alignItems: "flex-start" }}>
-          <div style={{ flex: 2, minWidth: 320 }}>
-            <div style={{ border: "1px solid #eee", borderRadius: 12, padding: 10, background: "#fff" }}>
-              <div style={{ position: "relative", width: "100%" }}>
-                <img
-                  src="/measurement_scheme.png"
-                  alt="Esquema de medición"
-                  style={{ width: "100%", height: "auto", display: "block" }}
-                />
-                {SCHEME_RECT_PCTS.alto.map((p, i) => {
-                  const v = form.esquema?.alto?.[i];
-                  if (!v) return null;
-                  return (
-                    <div
-                      key={`alto-ov-${i}`}
-                      style={{
-                        ...schemeOverlayBaseStyle,
-                        left: `${p.left}%`,
-                        top: `${p.top}%`,
-                        width: `${p.width}%`,
-                        height: `${p.height}%`,
-                        fontSize: 14,
-                      }}
-                    >
-                      {v}
-                    </div>
-                  );
-                })}
-                {SCHEME_RECT_PCTS.ancho.map((p, i) => {
-                  const v = form.esquema?.ancho?.[i];
-                  if (!v) return null;
-                  return (
-                    <div
-                      key={`ancho-ov-${i}`}
-                      style={{
-                        ...schemeOverlayBaseStyle,
-                        left: `${p.left}%`,
-                        top: `${p.top}%`,
-                        width: `${p.width}%`,
-                        height: `${p.height}%`,
-                        fontSize: 14,
-                      }}
-                    >
-                      {v}
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          </div>
-          <div style={{ flex: 1, minWidth: 280 }}>
-            <div style={{ fontWeight: 900, marginBottom: 8 }}>Altos</div>
-            <Row>
-              {[0, 1, 2].map((i) => (
-                <Field key={`alto-${i}`} label={`Alto ${i + 1} (mm)`}>
-                  <Input
-                    value={form.esquema?.alto?.[i] || ""}
-                    onChange={(v) =>
-                      setForm((prev) => updateSchemeValue(prev, "alto", i, v))
-                    }
-                    style={{ width: "100%" }}
-                    disabled={isCommercialReviewer}
-                  />
-                </Field>
-              ))}
-            </Row>
-            <div className="spacer" />
-            <div style={{ fontWeight: 900, marginBottom: 8 }}>Anchos</div>
-            <Row>
-              {[0, 1, 2].map((i) => (
-                <Field key={`ancho-${i}`} label={`Ancho ${i + 1} (mm)`}>
-                  <Input
-                    value={form.esquema?.ancho?.[i] || ""}
-                    onChange={(v) =>
-                      setForm((prev) => updateSchemeValue(prev, "ancho", i, v))
-                    }
-                    style={{ width: "100%" }}
-                    disabled={isCommercialReviewer}
-                  />
-                </Field>
-              ))}
-            </Row>
-          </div>
-        </div>
-        {renderDynamicSectionFields("esquema_medidas")}
-      </Section>
-
-      <Section title={SECTION_LABELS.revestimiento}>
-        <Row>
-          {renderBuiltInField(
-            "fabricante_revestimiento",
-            "Fabricante revestimiento",
-            <Input
-              value={form.fabricante_revestimiento || ""}
-              onChange={(v) =>
-                setForm({ ...form, fabricante_revestimiento: v })
-              }
-              style={{ width: "100%" }}
-              disabled={!canEditField("fabricante_revestimiento")}
-            />,
-          )}
-          {renderBuiltInField(
-            "color_revestimiento",
-            "Color revestimiento",
-            <Input
-              value={form.color_revestimiento || ""}
-              onChange={(v) => setForm({ ...form, color_revestimiento: v })}
-              style={{ width: "100%" }}
-              disabled={!canEditField("color_revestimiento")}
-            />,
-          )}
-          {renderBuiltInField(
-            "color_sistema",
-            "Color sistema",
-            <Input
-              value={form.color_sistema || ""}
-              onChange={(v) => setForm({ ...form, color_sistema: v })}
-              style={{ width: "100%" }}
-              disabled={!canEditField("color_sistema")}
-            />,
-          )}
-        </Row>
-        <div className="spacer" />
-        <Row>
-          {renderBuiltInField(
-            "listones",
-            "Listones",
-            <Input
-              value={form.listones || ""}
-              onChange={(v) => setForm({ ...form, listones: v })}
-              style={{ width: "100%" }}
-              disabled={!canEditField("listones")}
-            />,
-          )}
-          {renderBuiltInField(
-            "lucera",
-            "Lucera",
-            <YesNo
-              value={form.lucera}
-              onChange={(v) => setForm({ ...form, lucera: v })}
-              disabled={!canEditField("lucera")}
-            />,
-          )}
-          {renderBuiltInField(
-            "lucera_cantidad",
-            "Cant. de luceras",
-            renderDynamicInput({
-              field: getConfiguredField("lucera_cantidad") || {
-                key: "lucera_cantidad",
-                type: "enum",
-                options: parseOptions(["1", "2", "3", "4"]),
-              },
-              value: form.lucera_cantidad || "",
-              allowedValues: dynamicUi.allowedOptions["lucera_cantidad"],
-              disabled: !canEditField("lucera_cantidad") || !form.lucera,
-              onChange: (nextValue) =>
-                setForm({ ...form, lucera_cantidad: String(nextValue || "") }),
-            }),
-          )}
-          {renderBuiltInField(
-            "lucera_posicion",
-            "Posición de lucera",
-            <Input
-              value={form.lucera_posicion || ""}
-              onChange={(v) => setForm({ ...form, lucera_posicion: v })}
-              style={{ width: "100%" }}
-              disabled={!canEditField("lucera_posicion") || !form.lucera}
-            />,
-          )}
-        </Row>
-        {renderDynamicSectionFields("revestimiento")}
-      </Section>
-
-      <Section title={SECTION_LABELS.puerta_estructura}>
-        <Row>
-          {renderBuiltInField(
-            "puerta",
-            "Puerta",
-            <YesNo
-              value={form.puerta}
-              onChange={(v) => setForm({ ...form, puerta: v })}
-              disabled={!canEditField("puerta")}
-            />,
-          )}
-          {renderBuiltInField(
-            "posicion_puerta",
-            "Posición de la puerta",
-            <Input
-              value={form.posicion_puerta || ""}
-              onChange={(v) => setForm({ ...form, posicion_puerta: v })}
-              style={{ width: "100%" }}
-              disabled={!canEditField("posicion_puerta") || !form.puerta}
-            />,
-          )}
-          {renderBuiltInField(
-            "parantes.cant",
-            "Parantes cantidad",
-            <Input
-              value={form.parantes?.cant || ""}
-              onChange={(v) =>
-                setForm({
-                  ...form,
-                  parantes: { ...(form.parantes || {}), cant: v },
-                })
-              }
-              style={{ width: "100%" }}
-              disabled={!canEditField("parantes.cant")}
-            />,
-          )}
-          {renderBuiltInField(
-            "parantes.distribucion",
-            "Parantes distribución",
-            <Input
-              value={form.parantes?.distribucion || ""}
-              onChange={(v) =>
-                setForm({
-                  ...form,
-                  parantes: { ...(form.parantes || {}), distribucion: v },
-                })
-              }
-              style={{ width: "100%" }}
-              disabled={!canEditField("parantes.distribucion")}
-            />,
-          )}
-        </Row>
-        <div className="spacer" />
-        <Row>
-          {renderBuiltInField(
-            "pasador_manual",
-            "Pasador manual",
-            <YesNo
-              value={form.pasador_manual}
-              onChange={(v) => setForm({ ...form, pasador_manual: v })}
-              disabled={!canEditField("pasador_manual")}
-            />,
-          )}
-          {renderBuiltInField(
-            "instalacion",
-            "Instalación",
-            <YesNo
-              value={form.instalacion}
-              onChange={(v) => setForm({ ...form, instalacion: v })}
-              disabled={!canEditField("instalacion")}
-            />,
-          )}
-          {renderBuiltInField(
-            "anclaje",
-            "Anclaje",
-            <select
-              value={form.anclaje || ""}
-              onChange={(e) => setForm({ ...form, anclaje: e.target.value })}
-              style={{
-                width: "100%",
-                padding: 10,
-                borderRadius: 10,
-                border: "1px solid #ddd",
-              }}
-              disabled={!canEditField("anclaje")}
-            >
-              <option value="">Seleccione…</option>
-              <option value="no">No</option>
-              <option value="lateral">Lateral</option>
-              <option value="superior">Superior</option>
-            </select>,
-          )}
-          {renderBuiltInField(
-            "piernas",
-            "Piernas",
-            <Input
-              value={form.piernas || ""}
-              onChange={(v) => setForm({ ...form, piernas: v })}
-              style={{ width: "100%" }}
-              disabled={!canEditField("piernas")}
-            />,
-          )}
-        </Row>
-        {renderDynamicSectionFields("puerta_estructura")}
-      </Section>
-
-      <Section title={SECTION_LABELS.rebajes_suelo}>
-        <Row>
-          {renderBuiltInField(
-            "rebaje",
-            "Rebaje",
-            <YesNo
-              value={form.rebaje}
-              onChange={(v) => setForm({ ...form, rebaje: v })}
-              disabled={!canEditField("rebaje")}
-            />,
-          )}
-          {renderBuiltInField(
-            "rebaje_altura",
-            "Altura de rebaje",
-            <select
-              value={form.rebaje_altura || ""}
-              onChange={(e) =>
-                setForm({ ...form, rebaje_altura: e.target.value })
-              }
-              style={{
-                width: "100%",
-                padding: 10,
-                borderRadius: 10,
-                border: "1px solid #ddd",
-              }}
-              disabled={!canEditField("rebaje_altura") || !form.rebaje}
-            >
-              <option value="">Seleccione…</option>
-              <option value="75mm">75mm</option>
-              <option value="100mm">100mm</option>
-              <option value="125mm">125mm</option>
-            </select>,
-          )}
-          {renderBuiltInField(
-            "rebaje_lateral",
-            "Rebaje lateral",
-            <YesNo
-              value={form.rebaje_lateral}
-              onChange={(v) => setForm({ ...form, rebaje_lateral: v })}
-              disabled={!canEditField("rebaje_lateral")}
-            />,
-          )}
-          {renderBuiltInField(
-            "rebaje_inferior",
-            "Rebaje inferior",
-            <YesNo
-              value={form.rebaje_inferior}
-              onChange={(v) => setForm({ ...form, rebaje_inferior: v })}
-              disabled={!canEditField("rebaje_inferior")}
-            />,
-          )}
-        </Row>
-        <div className="spacer" />
-        <Row>
-          {renderBuiltInField(
-            "trampa_tierra",
-            "Trampa de tierra",
-            <YesNo
-              value={form.trampa_tierra}
-              onChange={(v) => setForm({ ...form, trampa_tierra: v })}
-              disabled={!canEditField("trampa_tierra")}
-            />,
-          )}
-          {renderBuiltInField(
-            "trampa_tierra_altura",
-            "Altura trampa de tierra",
-            <select
-              value={form.trampa_tierra_altura || ""}
-              onChange={(e) =>
-                setForm({ ...form, trampa_tierra_altura: e.target.value })
-              }
-              style={{
-                width: "100%",
-                padding: 10,
-                borderRadius: 10,
-                border: "1px solid #ddd",
-              }}
-              disabled={
-                !canEditField("trampa_tierra_altura") || !form.trampa_tierra
-              }
-            >
-              <option value="">Seleccione…</option>
-              <option value="2 cm">2 cm</option>
-              <option value="5 cm">5 cm</option>
-            </select>,
-          )}
-        </Row>
-        {renderDynamicSectionFields("rebajes_suelo")}
-      </Section>
-
-      <Section title={SECTION_LABELS.observaciones}>
-        <textarea
-          value={form.observaciones || ""}
-          onChange={(e) => setForm({ ...form, observaciones: e.target.value })}
-          style={{
-            width: "100%",
-            minHeight: 100,
-            padding: 10,
-            borderRadius: 10,
-            border: "1px solid #ddd",
-          }}
-          disabled={!canEditField("observaciones")}
-        />
-        {renderDynamicSectionFields("observaciones")}
-      </Section>
-
-      {!!(fieldsBySection.otros || []).filter(
-        (field) =>
-          isCommercialReviewer
-            ? commercialEditableKeys.has(String(field?.key || "").trim())
-            : !dynamicUi.hidden.has(field.key),
-      ).length && (
-        <Section title={SECTION_LABELS.otros}>
-          <div className="muted" style={{ marginBottom: 10 }}>
-            Campos extra que no quedaron asignados a un sector puntual.
-          </div>
-          <Row>
-            {(fieldsBySection.otros || [])
-              .filter((field) =>
-                isCommercialReviewer
-                  ? commercialEditableKeys.has(String(field?.key || "").trim())
-                  : !dynamicUi.hidden.has(field.key),
-              )
-              .map((field) => {
-                const fieldMeta =
-                  allFields.find((item) => item.key === field.key) || field;
-                const allowed = dynamicUi.allowedOptions[field.key];
-                const value = getByPath(form, field.key);
-                const disabled = dynamicFieldDisabled(fieldMeta);
-                return (
-                  <Field key={field.key} label={field.label}>
-                    {renderDynamicInput({
-                      field: fieldMeta,
-                      value,
-                      allowedValues: allowed,
-                      disabled,
-                      onChange: (nextValue) =>
-                        setForm((prev) =>
-                          setByPath(prev, field.key, nextValue),
-                        ),
-                    })}
-                  </Field>
-                );
-              })}
-          </Row>
-        </Section>
-      )}
-
-      <div className="card">
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <Button
-            variant="secondary"
-            disabled={saveM.isPending}
-            onClick={() => saveM.mutate({ submit: false })}
-          >
-            {saveM.isPending ? "Guardando..." : (isCommercialReviewer ? "Guardar revisión comercial" : "Guardar")}
-          </Button>
-          <Button
-            disabled={saveM.isPending}
-            onClick={() => saveM.mutate({ submit: true })}
-          >
-            {saveM.isPending
-              ? "Procesando..."
-              : isCommercialReviewer
-                ? "Enviar a Técnica"
-                : isTechnical
-                  ? "Confirmar datos técnicos"
-                  : "Enviar"}
-          </Button>
-          {isTechnical && (
+          {(!forceReturnToSeller || isTechnical || isCommercialReviewer) && (
+            <Button
+              variant="secondary"
+              disabled={saveM.isPending}
+              onClick={() => saveM.mutate({ submit: false })}
+            >
+              {saveM.isPending ? "Guardando..." : (isCommercialReviewer ? "Guardar revisión comercial" : "Guardar")}
+            </Button>
+          )}
+
+          {!forceReturnToSeller && (
+            <Button
+              disabled={saveM.isPending}
+              onClick={() => saveM.mutate({ submit: true })}
+            >
+              {saveM.isPending
+                ? "Procesando..."
+                : isCommercialReviewer
+                  ? "Enviar a Técnica"
+                  : isTechnical
+                    ? "Confirmar datos técnicos"
+                    : "Guardar y Enviar"}
+            </Button>
+          )}
+
+          {isMedidor && !isCommercialReviewer ? (
             <Button
               variant="ghost"
-              disabled={rejectM.isPending}
+              disabled={saveM.isPending}
               onClick={() => {
-                const notes = window.prompt("Motivo de corrección:", "") || "";
-                if (!notes) return;
-                rejectM.mutate(notes);
+                const prefilled = forceReturnToSeller ? defaultReturnReason : "";
+                const notes = window.prompt("Motivo de devolución al vendedor:", prefilled) || prefilled;
+                if (!String(notes || "").trim()) return;
+                saveM.mutate({ submit: false, returnToSeller: true, returnReason: notes });
               }}
             >
-              {rejectM.isPending ? "Devolviendo..." : "Devolver para corregir"}
+              {saveM.isPending ? "Procesando..." : "Devolver al vendedor"}
             </Button>
+          ) : null}
+
+          {isTechnical && (
+            <>
+              <Button
+                variant="ghost"
+                disabled={rejectM.isPending}
+                onClick={() => {
+                  const notes = window.prompt("Motivo de corrección:", "") || "";
+                  if (!notes) return;
+                  rejectM.mutate(notes);
+                }}
+              >
+                {rejectM.isPending ? "Devolviendo..." : "Devolver para corregir"}
+              </Button>
+              <Button
+                variant="ghost"
+                disabled={rejectM.isPending}
+                onClick={async () => {
+                  const notes = window.prompt("Motivo de devolución al vendedor:", forceReturnToSeller ? defaultReturnReason : "") || (forceReturnToSeller ? defaultReturnReason : "");
+                  if (!notes) return;
+                  try {
+                    await reviewMeasurement(quoteId, { action: "return_to_seller", notes });
+                    setLastMessage("El portón fue devuelto al vendedor para rehacer el presupuesto.");
+                    q.refetch();
+                  } catch (e) {
+                    window.alert(e?.message || "No se pudo devolver al vendedor");
+                  }
+                }}
+              >
+                Devolver al vendedor
+              </Button>
+            </>
           )}
         </div>
         {saveM.isError ? (
