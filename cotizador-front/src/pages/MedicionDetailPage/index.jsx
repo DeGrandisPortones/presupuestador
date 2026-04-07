@@ -674,6 +674,16 @@ export default function MedicionDetailPage() {
     () => new Set(commercialDiffItems.map((item) => String(item?.key || "").trim()).filter(Boolean)),
     [commercialDiffItems],
   );
+  const defaultReturnReason =
+    "El tamaño del portón es mayor al presupuestado originalmente";
+  const forceReturnToSeller = useMemo(() => {
+    if (!quote) return false;
+    return Boolean(
+      quote?.measurement_force_return_to_seller === true ||
+      quote?.measurement_surface_blocked === true ||
+      quote?.measurement_requires_budget_update === true,
+    );
+  }, [quote]);
 
   function getConfiguredField(key) {
     return fieldConfigByKey.get(String(key || "").trim()) || null;
@@ -896,90 +906,715 @@ export default function MedicionDetailPage() {
     onSuccess: () => q.refetch(),
   });
 
-  if (q.isLoading)
+  if (q.isLoading) {
     return (
       <div className="container">
         <div className="card">
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          {(!forceReturnToSeller || isTechnical || isCommercialReviewer) && (
-            <Button
-              variant="secondary"
-              disabled={saveM.isPending}
-              onClick={() => saveM.mutate({ submit: false })}
-            >
-              {saveM.isPending ? "Guardando..." : (isCommercialReviewer ? "Guardar revisión comercial" : "Guardar")}
-            </Button>
-          )}
+          <div className="muted">Cargando medición...</div>
+        </div>
+      </div>
+    );
+  }
 
-          {!forceReturnToSeller && (
-            <Button
-              disabled={saveM.isPending}
-              onClick={() => saveM.mutate({ submit: true })}
-            >
-              {saveM.isPending
-                ? "Procesando..."
-                : isCommercialReviewer
-                  ? "Enviar a Técnica"
-                  : isTechnical
-                    ? "Confirmar datos técnicos"
-                    : "Guardar y Enviar"}
-            </Button>
-          )}
+  if (q.isError) {
+    return (
+      <div className="container">
+        <div className="card">
+          <div style={{ color: "#d93025", fontSize: 13 }}>
+            {q.error?.message || "No se pudo cargar la medición"}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
-          {isMedidor && !isCommercialReviewer ? (
-            <Button
-              variant="ghost"
-              disabled={saveM.isPending}
-              onClick={() => {
-                const prefilled = forceReturnToSeller ? defaultReturnReason : "";
-                const notes = window.prompt("Motivo de devolución al vendedor:", prefilled) || prefilled;
-                if (!String(notes || "").trim()) return;
-                saveM.mutate({ submit: false, returnToSeller: true, returnReason: notes });
+  if (!quote || !form) {
+    return (
+      <div className="container">
+        <div className="card">
+          <div className="muted">Sin datos de medición.</div>
+        </div>
+      </div>
+    );
+  }
+
+  const returnPath =
+    (typeof location.state?.from === "string" && location.state.from.trim()) ||
+    "/mediciones";
+
+  const previewMetrics = quote?.measurement_commercial_preview_json || {};
+
+  return (
+    <div className="container">
+      <div className="card">
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            gap: 12,
+            alignItems: "flex-start",
+            flexWrap: "wrap",
+          }}
+        >
+          <div>
+            <h2 style={{ margin: 0 }}>Medición / Datos técnicos</h2>
+            <div className="muted" style={{ marginTop: 6 }}>
+              Cliente: <b>{quote?.end_customer?.name || "—"}</b> · Estado: <b>{quote?.measurement_status || "pending"}</b>
+            </div>
+          </div>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <Button variant="ghost" onClick={() => navigate(returnPath)}>
+              Volver
+            </Button>
+            {(!forceReturnToSeller || isTechnical || isCommercialReviewer) && (
+              <Button
+                variant="secondary"
+                disabled={saveM.isPending}
+                onClick={() => saveM.mutate({ submit: false })}
+              >
+                {saveM.isPending
+                  ? "Guardando..."
+                  : isCommercialReviewer
+                    ? "Guardar revisión comercial"
+                    : "Guardar"}
+              </Button>
+            )}
+
+            {!forceReturnToSeller && (
+              <Button
+                disabled={saveM.isPending}
+                onClick={() => saveM.mutate({ submit: true })}
+              >
+                {saveM.isPending
+                  ? "Procesando..."
+                  : isCommercialReviewer
+                    ? "Enviar a Técnica"
+                    : isTechnical
+                      ? "Confirmar datos técnicos"
+                      : "Guardar y Enviar"}
+              </Button>
+            )}
+
+            {isMedidor && !isCommercialReviewer ? (
+              <Button
+                variant="ghost"
+                disabled={saveM.isPending}
+                onClick={() => {
+                  const prefilled = forceReturnToSeller ? defaultReturnReason : "";
+                  const notes =
+                    window.prompt("Motivo de devolución al vendedor:", prefilled) ||
+                    prefilled;
+                  if (!String(notes || "").trim()) return;
+                  saveM.mutate({
+                    submit: false,
+                    returnToSeller: true,
+                    returnReason: notes,
+                  });
+                }}
+              >
+                {saveM.isPending ? "Procesando..." : "Devolver al vendedor"}
+              </Button>
+            ) : null}
+
+            {isTechnical && (
+              <>
+                <Button
+                  variant="ghost"
+                  disabled={rejectM.isPending}
+                  onClick={() => {
+                    const notes = window.prompt("Motivo de corrección:", "") || "";
+                    if (!notes) return;
+                    rejectM.mutate(notes);
+                  }}
+                >
+                  {rejectM.isPending ? "Devolviendo..." : "Devolver para corregir"}
+                </Button>
+                <Button
+                  variant="ghost"
+                  disabled={rejectM.isPending}
+                  onClick={async () => {
+                    const prefilled = forceReturnToSeller
+                      ? defaultReturnReason
+                      : "";
+                    const notes =
+                      window.prompt("Motivo de devolución al vendedor:", prefilled) ||
+                      prefilled;
+                    if (!String(notes || "").trim()) return;
+                    try {
+                      await reviewMeasurement(quoteId, {
+                        action: "return_to_seller",
+                        notes,
+                      });
+                      setLastMessage(
+                        "El portón fue devuelto al vendedor para rehacer el presupuesto.",
+                      );
+                      q.refetch();
+                    } catch (e) {
+                      window.alert(
+                        e?.message || "No se pudo devolver al vendedor",
+                      );
+                    }
+                  }}
+                >
+                  Devolver al vendedor
+                </Button>
+              </>
+            )}
+          </div>
+        </div>
+
+        {forceReturnToSeller ? (
+          <>
+            <div className="spacer" />
+            <div
+              style={{
+                border: "1px solid #f2d3bf",
+                background: "#fff8f3",
+                borderRadius: 12,
+                padding: 12,
               }}
             >
-              {saveM.isPending ? "Procesando..." : "Devolver al vendedor"}
-            </Button>
-          ) : null}
+              <div style={{ fontWeight: 900, marginBottom: 6 }}>
+                Presupuesto fuera de tolerancia
+              </div>
+              <div className="muted">
+                La superficie final del portón supera lo presupuestado originalmente
+                por fuera de la tolerancia permitida. Debe volver al vendedor para
+                rehacer el presupuesto antes de seguir a técnica.
+              </div>
+            </div>
+          </>
+        ) : null}
 
-          {isTechnical && (
-            <>
-              <Button
-                variant="ghost"
-                disabled={rejectM.isPending}
-                onClick={() => {
-                  const notes = window.prompt("Motivo de corrección:", "") || "";
-                  if (!notes) return;
-                  rejectM.mutate(notes);
-                }}
-              >
-                {rejectM.isPending ? "Devolviendo..." : "Devolver para corregir"}
-              </Button>
-              <Button
-                variant="ghost"
-                disabled={rejectM.isPending}
-                onClick={async () => {
-                  const notes = window.prompt("Motivo de devolución al vendedor:", forceReturnToSeller ? defaultReturnReason : "") || (forceReturnToSeller ? defaultReturnReason : "");
-                  if (!notes) return;
-                  try {
-                    await reviewMeasurement(quoteId, { action: "return_to_seller", notes });
-                    setLastMessage("El portón fue devuelto al vendedor para rehacer el presupuesto.");
-                    q.refetch();
-                  } catch (e) {
-                    window.alert(e?.message || "No se pudo devolver al vendedor");
+        {quote?.measurement_return_to_seller_reason ? (
+          <>
+            <div className="spacer" />
+            <div
+              style={{
+                border: "1px solid #f2d3bf",
+                background: "#fff8f3",
+                borderRadius: 12,
+                padding: 12,
+              }}
+            >
+              <div style={{ fontWeight: 900, marginBottom: 6 }}>
+                Motivo de devolución al vendedor
+              </div>
+              <div>{quote.measurement_return_to_seller_reason}</div>
+            </div>
+          </>
+        ) : null}
+
+        {commercialDiffItems.length ? (
+          <>
+            <div className="spacer" />
+            <div className="card" style={{ background: "#fafafa" }}>
+              <div style={{ fontWeight: 900, marginBottom: 8 }}>
+                Cambios enviados a comercial
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {commercialDiffItems.map((item, index) => (
+                  <div
+                    key={`${item?.key || "diff"}-${index}`}
+                    style={{ border: "1px solid #eee", borderRadius: 10, padding: 10 }}
+                  >
+                    <div style={{ fontWeight: 700 }}>
+                      {getFieldLabel(item?.key, item?.label || item?.key)}
+                    </div>
+                    <div className="muted">
+                      Original: <b>{formatDisplayValue(item?.original_value)}</b> · Nuevo: <b>{formatDisplayValue(item?.new_value)}</b>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              {previewMetrics ? (
+                <>
+                  <div className="spacer" />
+                  <div className="muted">
+                    Monto estimado a cobrar: <b>{formatARS(previewMetrics?.final_amount_to_charge || 0)}</b>
+                  </div>
+                </>
+              ) : null}
+            </div>
+          </>
+        ) : null}
+
+        <div className="spacer" />
+        <Section title="Datos generales">
+          <Row>
+            {renderBuiltInField(
+              "fecha",
+              "Fecha",
+              <Input
+                value={form.fecha || ""}
+                onChange={(v) => setForm((prev) => ({ ...prev, fecha: v }))}
+                disabled={!canEditField("fecha")}
+                style={{ width: "100%" }}
+              />,
+            )}
+            {renderBuiltInField(
+              "fecha_nota_pedido",
+              "Fecha nota pedido",
+              <Input
+                value={form.fecha_nota_pedido || ""}
+                onChange={(v) =>
+                  setForm((prev) => ({ ...prev, fecha_nota_pedido: v }))
+                }
+                disabled={!canEditField("fecha_nota_pedido")}
+                style={{ width: "100%" }}
+              />,
+            )}
+            {renderBuiltInField(
+              "nota_venta",
+              "Nota de venta",
+              <Input
+                value={form.nota_venta || ""}
+                onChange={(v) => setForm((prev) => ({ ...prev, nota_venta: v }))}
+                disabled={!canEditField("nota_venta")}
+                style={{ width: "100%" }}
+              />,
+            )}
+          </Row>
+          <div className="spacer" />
+          <Row>
+            {renderBuiltInField(
+              "cliente_nombre",
+              "Cliente nombre",
+              <Input
+                value={form.cliente_nombre || ""}
+                onChange={(v) =>
+                  setForm((prev) => ({ ...prev, cliente_nombre: v }))
+                }
+                disabled={!canEditField("cliente_nombre")}
+                style={{ width: "100%" }}
+              />,
+            )}
+            {renderBuiltInField(
+              "cliente_apellido",
+              "Cliente apellido",
+              <Input
+                value={form.cliente_apellido || ""}
+                onChange={(v) =>
+                  setForm((prev) => ({ ...prev, cliente_apellido: v }))
+                }
+                disabled={!canEditField("cliente_apellido")}
+                style={{ width: "100%" }}
+              />,
+            )}
+            {renderBuiltInField(
+              "distribuidor",
+              "Vendedor / Distribuidor",
+              <Input
+                value={form.distribuidor || ""}
+                onChange={(v) => setForm((prev) => ({ ...prev, distribuidor: v }))}
+                disabled={!canEditField("distribuidor")}
+                style={{ width: "100%" }}
+              />,
+            )}
+          </Row>
+          {renderDynamicSectionFields("datos_generales")}
+        </Section>
+
+        <Section title="Esquema de medidas">
+          <Row>
+            {renderBuiltInField(
+              "alto_final_mm",
+              "Alto final (mm)",
+              <Input
+                value={form.alto_final_mm || ""}
+                onChange={(v) => setForm((prev) => ({ ...prev, alto_final_mm: v }))}
+                disabled={!canEditField("alto_final_mm")}
+                style={{ width: "100%" }}
+              />,
+            )}
+            {renderBuiltInField(
+              "ancho_final_mm",
+              "Ancho final (mm)",
+              <Input
+                value={form.ancho_final_mm || ""}
+                onChange={(v) => setForm((prev) => ({ ...prev, ancho_final_mm: v }))}
+                disabled={!canEditField("ancho_final_mm")}
+                style={{ width: "100%" }}
+              />,
+            )}
+          </Row>
+          <div className="spacer" />
+          <Row>
+            {[0, 1, 2].map((idx) => (
+              <Field key={`alto-${idx}`} label={`Alto ${idx + 1} (mm)`}>
+                <Input
+                  value={form.esquema?.alto?.[idx] || ""}
+                  onChange={(v) =>
+                    setForm((prev) => updateSchemeValue(prev, "alto", idx, v))
                   }
+                  disabled={!canEditField("esquema.alto")}
+                  style={{ width: "100%" }}
+                />
+              </Field>
+            ))}
+          </Row>
+          <div className="spacer" />
+          <Row>
+            {[0, 1, 2].map((idx) => (
+              <Field key={`ancho-${idx}`} label={`Ancho ${idx + 1} (mm)`}>
+                <Input
+                  value={form.esquema?.ancho?.[idx] || ""}
+                  onChange={(v) =>
+                    setForm((prev) => updateSchemeValue(prev, "ancho", idx, v))
+                  }
+                  disabled={!canEditField("esquema.ancho")}
+                  style={{ width: "100%" }}
+                />
+              </Field>
+            ))}
+          </Row>
+          <div className="spacer" />
+          <div
+            style={{
+              position: "relative",
+              width: "100%",
+              maxWidth: 780,
+              margin: "0 auto",
+            }}
+          >
+            <img
+              src="/esquema-medicion.png"
+              alt="Esquema de medición"
+              style={{ width: "100%", height: "auto", display: "block" }}
+            />
+            {SCHEME_RECT_PCTS.alto.map((rect, idx) => (
+              <div
+                key={`overlay-alto-${idx}`}
+                style={{
+                  ...schemeOverlayBaseStyle,
+                  left: `${rect.left}%`,
+                  top: `${rect.top}%`,
+                  width: `${rect.width}%`,
+                  height: `${rect.height}%`,
                 }}
               >
-                Devolver al vendedor
-              </Button>
-            </>
-          )}
-        </div>
+                {form.esquema?.alto?.[idx] || ""}
+              </div>
+            ))}
+            {SCHEME_RECT_PCTS.ancho.map((rect, idx) => (
+              <div
+                key={`overlay-ancho-${idx}`}
+                style={{
+                  ...schemeOverlayBaseStyle,
+                  left: `${rect.left}%`,
+                  top: `${rect.top}%`,
+                  width: `${rect.width}%`,
+                  height: `${rect.height}%`,
+                }}
+              >
+                {form.esquema?.ancho?.[idx] || ""}
+              </div>
+            ))}
+          </div>
+          {renderDynamicSectionFields("esquema_medidas")}
+        </Section>
+
+        <Section title="Revestimiento">
+          <Row>
+            {renderBuiltInField(
+              "fabricante_revestimiento",
+              "Fabricante revestimiento",
+              <Input
+                value={form.fabricante_revestimiento || ""}
+                onChange={(v) =>
+                  setForm((prev) => ({ ...prev, fabricante_revestimiento: v }))
+                }
+                disabled={!canEditField("fabricante_revestimiento")}
+                style={{ width: "100%" }}
+              />,
+            )}
+            {renderBuiltInField(
+              "color_revestimiento",
+              "Color revestimiento",
+              <Input
+                value={form.color_revestimiento || ""}
+                onChange={(v) =>
+                  setForm((prev) => ({ ...prev, color_revestimiento: v }))
+                }
+                disabled={!canEditField("color_revestimiento")}
+                style={{ width: "100%" }}
+              />,
+            )}
+            {renderBuiltInField(
+              "color_sistema",
+              "Color sistema",
+              <Input
+                value={form.color_sistema || ""}
+                onChange={(v) =>
+                  setForm((prev) => ({ ...prev, color_sistema: v }))
+                }
+                disabled={!canEditField("color_sistema")}
+                style={{ width: "100%" }}
+              />,
+            )}
+          </Row>
+          <div className="spacer" />
+          <Row>
+            {renderBuiltInField(
+              "listones",
+              "Listones",
+              <Input
+                value={form.listones || ""}
+                onChange={(v) => setForm((prev) => ({ ...prev, listones: v }))}
+                disabled={!canEditField("listones")}
+                style={{ width: "100%" }}
+              />,
+            )}
+            {renderBuiltInField(
+              "lucera",
+              "Lucera",
+              <YesNo
+                value={!!form.lucera}
+                onChange={(v) => setForm((prev) => ({ ...prev, lucera: v }))}
+                disabled={!canEditField("lucera")}
+              />,
+            )}
+            {renderBuiltInField(
+              "lucera_cantidad",
+              "Cantidad luceras",
+              <Input
+                value={form.lucera_cantidad || ""}
+                onChange={(v) =>
+                  setForm((prev) => ({ ...prev, lucera_cantidad: v }))
+                }
+                disabled={!canEditField("lucera_cantidad")}
+                style={{ width: "100%" }}
+              />,
+            )}
+          </Row>
+          <div className="spacer" />
+          <Row>
+            {renderBuiltInField(
+              "lucera_posicion",
+              "Posición lucera",
+              <Input
+                value={form.lucera_posicion || ""}
+                onChange={(v) =>
+                  setForm((prev) => ({ ...prev, lucera_posicion: v }))
+                }
+                disabled={!canEditField("lucera_posicion")}
+                style={{ width: "100%" }}
+              />,
+            )}
+          </Row>
+          {renderDynamicSectionFields("revestimiento")}
+        </Section>
+
+        <Section title="Puerta / estructura">
+          <Row>
+            {renderBuiltInField(
+              "puerta",
+              "Puerta",
+              <YesNo
+                value={!!form.puerta}
+                onChange={(v) => setForm((prev) => ({ ...prev, puerta: v }))}
+                disabled={!canEditField("puerta")}
+              />,
+            )}
+            {renderBuiltInField(
+              "posicion_puerta",
+              "Posición puerta",
+              <Input
+                value={form.posicion_puerta || ""}
+                onChange={(v) =>
+                  setForm((prev) => ({ ...prev, posicion_puerta: v }))
+                }
+                disabled={!canEditField("posicion_puerta")}
+                style={{ width: "100%" }}
+              />,
+            )}
+            {renderBuiltInField(
+              "parantes.cant",
+              "Cantidad de parantes",
+              <Input
+                value={form.parantes?.cant || ""}
+                onChange={(v) =>
+                  setForm((prev) => ({
+                    ...prev,
+                    parantes: { ...(prev.parantes || {}), cant: v },
+                  }))
+                }
+                disabled={!canEditField("parantes.cant")}
+                style={{ width: "100%" }}
+              />,
+            )}
+          </Row>
+          <div className="spacer" />
+          <Row>
+            {renderBuiltInField(
+              "parantes.distribucion",
+              "Distribución de parantes",
+              <Input
+                value={form.parantes?.distribucion || ""}
+                onChange={(v) =>
+                  setForm((prev) => ({
+                    ...prev,
+                    parantes: { ...(prev.parantes || {}), distribucion: v },
+                  }))
+                }
+                disabled={!canEditField("parantes.distribucion")}
+                style={{ width: "100%" }}
+              />,
+            )}
+            {renderBuiltInField(
+              "pasador_manual",
+              "Pasador manual",
+              <YesNo
+                value={!!form.pasador_manual}
+                onChange={(v) =>
+                  setForm((prev) => ({ ...prev, pasador_manual: v }))
+                }
+                disabled={!canEditField("pasador_manual")}
+              />,
+            )}
+            {renderBuiltInField(
+              "instalacion",
+              "Instalación",
+              <YesNo
+                value={!!form.instalacion}
+                onChange={(v) => setForm((prev) => ({ ...prev, instalacion: v }))}
+                disabled={!canEditField("instalacion")}
+              />,
+            )}
+          </Row>
+          {renderDynamicSectionFields("puerta_estructura")}
+        </Section>
+
+        <Section title="Rebajes / suelo">
+          <Row>
+            {renderBuiltInField(
+              "anclaje",
+              "Anclaje",
+              <Input
+                value={form.anclaje || ""}
+                onChange={(v) => setForm((prev) => ({ ...prev, anclaje: v }))}
+                disabled={!canEditField("anclaje")}
+                style={{ width: "100%" }}
+              />,
+            )}
+            {renderBuiltInField(
+              "piernas",
+              "Piernas",
+              <Input
+                value={form.piernas || ""}
+                onChange={(v) => setForm((prev) => ({ ...prev, piernas: v }))}
+                disabled={!canEditField("piernas")}
+                style={{ width: "100%" }}
+              />,
+            )}
+            {renderBuiltInField(
+              "rebaje",
+              "Rebaje",
+              <YesNo
+                value={!!form.rebaje}
+                onChange={(v) => setForm((prev) => ({ ...prev, rebaje: v }))}
+                disabled={!canEditField("rebaje")}
+              />,
+            )}
+          </Row>
+          <div className="spacer" />
+          <Row>
+            {renderBuiltInField(
+              "rebaje_altura",
+              "Rebaje altura",
+              <Input
+                value={form.rebaje_altura || ""}
+                onChange={(v) =>
+                  setForm((prev) => ({ ...prev, rebaje_altura: v }))
+                }
+                disabled={!canEditField("rebaje_altura")}
+                style={{ width: "100%" }}
+              />,
+            )}
+            {renderBuiltInField(
+              "rebaje_lateral",
+              "Rebaje lateral",
+              <YesNo
+                value={!!form.rebaje_lateral}
+                onChange={(v) =>
+                  setForm((prev) => ({ ...prev, rebaje_lateral: v }))
+                }
+                disabled={!canEditField("rebaje_lateral")}
+              />,
+            )}
+            {renderBuiltInField(
+              "rebaje_inferior",
+              "Rebaje inferior",
+              <YesNo
+                value={!!form.rebaje_inferior}
+                onChange={(v) =>
+                  setForm((prev) => ({ ...prev, rebaje_inferior: v }))
+                }
+                disabled={!canEditField("rebaje_inferior")}
+              />,
+            )}
+          </Row>
+          <div className="spacer" />
+          <Row>
+            {renderBuiltInField(
+              "trampa_tierra",
+              "Trampa tierra",
+              <YesNo
+                value={!!form.trampa_tierra}
+                onChange={(v) =>
+                  setForm((prev) => ({ ...prev, trampa_tierra: v }))
+                }
+                disabled={!canEditField("trampa_tierra")}
+              />,
+            )}
+            {renderBuiltInField(
+              "trampa_tierra_altura",
+              "Trampa tierra altura",
+              <Input
+                value={form.trampa_tierra_altura || ""}
+                onChange={(v) =>
+                  setForm((prev) => ({ ...prev, trampa_tierra_altura: v }))
+                }
+                disabled={!canEditField("trampa_tierra_altura")}
+                style={{ width: "100%" }}
+              />,
+            )}
+          </Row>
+          {renderDynamicSectionFields("rebajes_suelo")}
+        </Section>
+
+        <Section title="Observaciones">
+          <div className="muted" style={{ marginBottom: 6 }}>
+            Observaciones
+          </div>
+          <textarea
+            value={form.observaciones || ""}
+            onChange={(e) =>
+              setForm((prev) => ({ ...prev, observaciones: e.target.value }))
+            }
+            disabled={!canEditField("observaciones")}
+            style={{
+              width: "100%",
+              minHeight: 110,
+              padding: 10,
+              borderRadius: 10,
+              border: "1px solid #ddd",
+              resize: "vertical",
+            }}
+          />
+          {renderDynamicSectionFields("observaciones")}
+          {renderDynamicSectionFields("otros")}
+        </Section>
+
         {saveM.isError ? (
           <>
             <div className="spacer" />
-            <div style={{ color: "#d93025", fontSize: 13 }}>{saveM.error.message}</div>
+            <div style={{ color: "#d93025", fontSize: 13 }}>
+              {saveM.error?.message || "No se pudo guardar la medición"}
+            </div>
           </>
         ) : null}
+
         {lastMessage ? (
           <>
             <div className="spacer" />
