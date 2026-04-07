@@ -1,3 +1,4 @@
+
 import crypto from "crypto";
 import express from "express";
 import { requireAuth } from "../auth.js";
@@ -41,12 +42,7 @@ function canReadMeasurement({ user, quote }) { if (!user || !quote) return false
 function toNumberLike(v) { const n = Number(String(v ?? "").replace(",", ".")); return Number.isFinite(n) ? n : null; }
 function extractBudgetDimensionMm(quote, key) { const dims = quote?.payload?.dimensions || {}; const raw = key === "ancho" ? dims?.width : dims?.height; const n = toNumberLike(raw); if (!Number.isFinite(n) || n <= 0) return null; return Math.round(n * 1000); }
 function normalizeText(v) { return String(v || "").trim().toLowerCase(); }
-function normalizeFormulaText(v) {
-  return String(v || "")
-    .trim()
-    .toLowerCase()
-    .replace(/\s+/g, "_");
-}
+function normalizeFormulaText(v) { return String(v || "").trim().toLowerCase().replace(/\s+/g, "_"); }
 function boolishToNumber(value) {
   if (value === true) return 1;
   if (value === false) return 0;
@@ -63,79 +59,215 @@ function deriveMeasurementPrefill(quote) {
   const out = {};
   if (names.includes("motor") || names.includes("automat")) out.accionamiento = "automatico";
   if (portonType.includes("coplanar")) out.levadizo = "coplanar"; else if (portonType) out.levadizo = "comun";
-  const altoMm = extractBudgetDimensionMm(quote, "alto"); const anchoMm = extractBudgetDimensionMm(quote, "ancho");
-  if (altoMm) out.alto_mm = altoMm; if (anchoMm) out.ancho_mm = anchoMm;
+  const altoMm = extractBudgetDimensionMm(quote, "alto");
+  const anchoMm = extractBudgetDimensionMm(quote, "ancho");
+  if (altoMm) out.alto_mm = altoMm;
+  if (anchoMm) out.ancho_mm = anchoMm;
   return out;
 }
 function validateFinalDimensions(form) { const altoFinal = String(form?.alto_final_mm || "").trim(); const anchoFinal = String(form?.ancho_final_mm || "").trim(); if (!altoFinal) return "Falta alto_final_mm"; if (!anchoFinal) return "Falta ancho_final_mm"; return null; }
 function averageMm(values = []) { const list = (Array.isArray(values) ? values : []).map((v) => Number(String(v || "").replace(",", "."))).filter((n) => Number.isFinite(n) && n > 0); if (!list.length) return 0; return list.reduce((acc, n) => acc + n, 0) / list.length; }
 function maxMm(values = []) { const list = (Array.isArray(values) ? values : []).map((v) => Number(String(v || "").replace(",", "."))).filter((n) => Number.isFinite(n) && n > 0); return list.length ? Math.max(...list) : 0; }
 function minMm(values = []) { const list = (Array.isArray(values) ? values : []).map((v) => Number(String(v || "").replace(",", "."))).filter((n) => Number.isFinite(n) && n > 0); return list.length ? Math.min(...list) : 0; }
-function inferDoorConstructionType({ quote, form }) {
-  const payloadType = normalizeFormulaText(quote?.payload?.porton_type || quote?.payload?.door_type || form?.tipo_porton || form?.porton_tipo || "");
-  const names = (Array.isArray(quote?.lines) ? quote.lines : [])
-    .map((line) => normalizeFormulaText(line?.name || line?.raw_name || ""))
-    .join(" ");
-  const formType = normalizeFormulaText(form?.revestimiento_tipo || form?.panel_tipo || form?.tipo_panel || "");
-  const haystack = `${payloadType} ${formType} ${names}`;
-  return haystack.includes("inyect") ? "inyectado" : "clasico";
+function round4(n) { return Math.round(Number(n || 0) * 10000) / 10000; }
+function round2(n) { return Math.round(Number(n || 0) * 100) / 100; }
+function getByPath(obj, path) {
+  const parts = String(path || "").split(".").filter(Boolean);
+  let cur = obj;
+  for (const p of parts) {
+    if (!cur || typeof cur !== "object") return undefined;
+    cur = cur[p];
+  }
+  return cur;
 }
-function inferInstallationMode(form) {
-  const raw = normalizeFormulaText(
-    form?.colocacion ||
-    form?.tipo_colocacion ||
-    form?.instalacion_tipo ||
-    form?.instalacion_modo ||
-    "",
+function getBudgetProductIdSet(quote) {
+  const lines = Array.isArray(quote?.lines) ? quote.lines : [];
+  return new Set(lines.map((line) => Number(line?.product_id || 0)).filter(Boolean));
+}
+function detectInstallationModeByProducts(quote, surfaceParameters) {
+  const ids = getBudgetProductIdSet(quote);
+  const insideId = Number(surfaceParameters?.installation_inside_product_id || 0);
+  const behindId = Number(surfaceParameters?.installation_behind_product_id || 0);
+  if (insideId && ids.has(insideId)) return "dentro_vano";
+  if (behindId && ids.has(behindId)) return "detras_vano";
+  return "sin_instalacion";
+}
+function detectNoCladding(quote, surfaceParameters) {
+  const ids = getBudgetProductIdSet(quote);
+  const noCladdingId = Number(surfaceParameters?.no_cladding_product_id || 0);
+  return !!(noCladdingId && ids.has(noCladdingId));
+}
+function resolveSellerKgM2Entry(quote, surfaceParameters) {
+  const payload = quote?.payload || {};
+  const candidates = [];
+  if (surfaceParameters?.seller_kg_m2_field_path) {
+    candidates.push(surfaceParameters.seller_kg_m2_field_path);
+  }
+  candidates.push(
+    "kg_m2_entry",
+    "kg_m2",
+    "entry_kg_m2",
+    "custom_kg_m2",
+    "peso_m2",
+    "payload.kg_m2_entry",
   );
-  if (raw.includes("detras") || raw.includes("detrás") || raw.includes("detras_del_vano") || raw.includes("por_detras")) return "detras_vano";
-  if (raw.includes("dentro")) return "dentro_vano";
-  return raw || "detras_vano";
+  for (const path of candidates) {
+    const value = path.includes(".") ? getByPath(payload, path.replace(/^payload\./, "")) : payload?.[path];
+    const n = toNumberLike(value);
+    if (Number.isFinite(n) && n > 0) return n;
+  }
+  return 0;
 }
-function normalizeSurfaceParameters(raw = {}) {
-  const num = (value, fallback = 0) => {
-    const n = Number(String(value ?? fallback).replace(",", "."));
-    return Number.isFinite(n) ? n : fallback;
-  };
+function detectDoorType(quote) {
+  const payloadType = normalizeFormulaText(quote?.payload?.porton_type || quote?.payload?.tipo_porton || "");
+  if (payloadType.includes("inyect")) return "inyectado";
+  if (payloadType.includes("clas")) return "clasico";
+  const lines = Array.isArray(quote?.lines) ? quote.lines : [];
+  const hay = lines.map((l) => normalizeFormulaText(l?.name || l?.raw_name || "")).join(" ");
+  if (hay.includes("inyect")) return "inyectado";
+  return "clasico";
+}
+function computeSurfaceAutomaticContext({ quote, form, surfaceParameters }) {
+  const budgetHeightMm = extractBudgetDimensionMm(quote, "alto") || 0;
+  const budgetWidthMm = extractBudgetDimensionMm(quote, "ancho") || 0;
+  const altos = Array.isArray(form?.esquema?.alto) ? form.esquema.alto : [];
+  const anchos = Array.isArray(form?.esquema?.ancho) ? form.esquema.ancho : [];
+  const altoMinMm = minMm(altos) || budgetHeightMm;
+  const anchoMinMm = minMm(anchos) || budgetWidthMm;
+
+  const installationMode = detectInstallationModeByProducts(quote, surfaceParameters);
+  const noCladding = detectNoCladding(quote, surfaceParameters);
+  const tipoPorton = detectDoorType(quote);
+  const sellerKgM2Entry = resolveSellerKgM2Entry(quote, surfaceParameters);
+
+  const kgM2Porton = installationMode === "sin_instalacion"
+    ? (sellerKgM2Entry > 0 ? sellerKgM2Entry : (tipoPorton === "inyectado" ? Number(surfaceParameters?.injected_kg_m2 || 25) : Number(surfaceParameters?.classic_kg_m2 || 15)))
+    : (tipoPorton === "inyectado" ? Number(surfaceParameters?.injected_kg_m2 || 25) : Number(surfaceParameters?.classic_kg_m2 || 15));
+
+  const baseHeightForWeightMm = installationMode === "sin_instalacion" ? budgetHeightMm : altoMinMm;
+  const baseWidthForWeightMm = installationMode === "sin_instalacion" ? budgetWidthMm : anchoMinMm;
+  const discountedHeightM = Math.max(0, (baseHeightForWeightMm - Number(surfaceParameters?.weight_height_discount_mm || 10)) / 1000);
+  const discountedWidthM = Math.max(0, (baseWidthForWeightMm - Number(surfaceParameters?.weight_width_discount_mm || 14)) / 1000);
+  const pesoEstimadoKg = round2(discountedHeightM * discountedWidthM * kgM2Porton);
+
+  const limitAngostas = noCladding
+    ? Number(surfaceParameters?.no_cladding_angostas_max_kg || 80)
+    : Number(surfaceParameters?.legs_angostas_max_kg || 140);
+  const limitComunes = Number(surfaceParameters?.legs_comunes_max_kg || 175);
+  const limitAnchas = Number(surfaceParameters?.legs_anchas_max_kg || 240);
+  const limitSuperanchas = Number(surfaceParameters?.legs_superanchas_max_kg || 300);
+
+  let piernasTipo = "angostas";
+  if (pesoEstimadoKg > limitSuperanchas) piernasTipo = "especiales";
+  else if (pesoEstimadoKg > limitAnchas) piernasTipo = "superanchas";
+  else if (pesoEstimadoKg > limitComunes) piernasTipo = "anchas";
+  else if (pesoEstimadoKg > limitAngostas) piernasTipo = "comunes";
+
+  let altoCalculadoMm = budgetHeightMm;
+  let anchoCalculadoMm = budgetWidthMm;
+  if (installationMode === "detras_vano") {
+    altoCalculadoMm = Math.max(0, altoMinMm + Number(surfaceParameters?.behind_vano_add_height_mm || 100));
+    const addMap = {
+      angostas: Number(surfaceParameters?.legs_angostas_add_width_mm || 140),
+      comunes: Number(surfaceParameters?.legs_comunes_add_width_mm || 200),
+      anchas: Number(surfaceParameters?.legs_anchas_add_width_mm || 280),
+      superanchas: Number(surfaceParameters?.legs_superanchas_add_width_mm || 380),
+      especiales: Number(surfaceParameters?.legs_especiales_add_width_mm || surfaceParameters?.legs_superanchas_add_width_mm || 380),
+    };
+    anchoCalculadoMm = Math.max(0, anchoMinMm + (addMap[piernasTipo] || 0));
+  } else if (installationMode === "dentro_vano") {
+    altoCalculadoMm = Math.max(0, altoMinMm - Number(surfaceParameters?.inside_vano_subtract_height_mm || 10));
+    anchoCalculadoMm = Math.max(0, anchoMinMm - Number(surfaceParameters?.inside_vano_subtract_width_mm || 20));
+  }
+
+  const superficieAutomaticaM2 = round4((altoCalculadoMm / 1000) * (anchoCalculadoMm / 1000));
+
   return {
-    clasico_kg_m2: num(raw?.clasico_kg_m2, 15),
-    inyectado_kg_m2: num(raw?.inyectado_kg_m2, 25),
-    piernas_angostas_hasta_kg: num(raw?.piernas_angostas_hasta_kg, 140),
-    piernas_comunes_hasta_kg: num(raw?.piernas_comunes_hasta_kg, 175),
-    piernas_anchas_hasta_kg: num(raw?.piernas_anchas_hasta_kg, 240),
-    piernas_superanchas_hasta_kg: num(raw?.piernas_superanchas_hasta_kg, 300),
-    peso_descuento_alto_mm: num(raw?.peso_descuento_alto_mm, 10),
-    peso_descuento_ancho_mm: num(raw?.peso_descuento_ancho_mm, 14),
-    detras_vano_alto_mm: num(raw?.detras_vano_alto_mm, 100),
-    detras_vano_ancho_angostas_mm: num(raw?.detras_vano_ancho_angostas_mm, 140),
-    detras_vano_ancho_comunes_mm: num(raw?.detras_vano_ancho_comunes_mm, 200),
-    detras_vano_ancho_anchas_mm: num(raw?.detras_vano_ancho_anchas_mm, 280),
-    detras_vano_ancho_superanchas_mm: num(raw?.detras_vano_ancho_superanchas_mm, 380),
-    dentro_vano_alto_mm: num(raw?.dentro_vano_alto_mm, -10),
-    dentro_vano_ancho_mm: num(raw?.dentro_vano_ancho_mm, -20),
+    installation_mode: installationMode,
+    tipo_porton: tipoPorton,
+    sin_revestimiento: noCladding ? 1 : 0,
+    kg_m2_entry: sellerKgM2Entry,
+    kg_m2_porton: round4(kgM2Porton),
+    peso_estimado_kg: pesoEstimadoKg,
+    piernas_tipo: piernasTipo,
+    alto_calculado_mm: Math.round(altoCalculadoMm),
+    ancho_calculado_mm: Math.round(anchoCalculadoMm),
+    superficie_automatica_m2: superficieAutomaticaM2,
+    piernas_angostas: piernasTipo === "angostas" ? 1 : 0,
+    piernas_comunes: piernasTipo === "comunes" ? 1 : 0,
+    piernas_anchas: piernasTipo === "anchas" ? 1 : 0,
+    piernas_superanchas: piernasTipo === "superanchas" ? 1 : 0,
+    piernas_especiales: piernasTipo === "especiales" ? 1 : 0,
+    instalacion_dentro_vano: installationMode === "dentro_vano" ? 1 : 0,
+    instalacion_detras_vano: installationMode === "detras_vano" ? 1 : 0,
   };
 }
-function classifyLegType(weightKg, params) {
-  const weight = Number(weightKg || 0) || 0;
-  if (weight <= Number(params?.piernas_angostas_hasta_kg || 0)) return "angostas";
-  if (weight <= Number(params?.piernas_comunes_hasta_kg || 0)) return "comunes";
-  if (weight <= Number(params?.piernas_anchas_hasta_kg || 0)) return "anchas";
-  if (weight <= Number(params?.piernas_superanchas_hasta_kg || 0)) return "superanchas";
-  return "especiales";
-}
-function widthAdditionForLegType(legType, params) {
-  switch (String(legType || "")) {
-    case "angostas": return Number(params?.detras_vano_ancho_angostas_mm || 0) || 0;
-    case "comunes": return Number(params?.detras_vano_ancho_comunes_mm || 0) || 0;
-    case "anchas": return Number(params?.detras_vano_ancho_anchas_mm || 0) || 0;
-    case "superanchas":
-    case "especiales":
+function compareSurfaceHelperValue(currentRaw, operator, compareRaw) {
+  const currentText = normalizeFormulaText(currentRaw);
+  const expectedText = normalizeFormulaText(compareRaw);
+  const currentNum = Number(String(currentRaw ?? "").replace(",", "."));
+  const expectedNum = Number(String(compareRaw ?? "").replace(",", "."));
+  switch (String(operator || "=").trim()) {
+    case "=":
+      return currentText === expectedText;
+    case "!=":
+      return currentText !== expectedText;
+    case ">":
+      return Number.isFinite(currentNum) && Number.isFinite(expectedNum) && currentNum > expectedNum;
+    case ">=":
+      return Number.isFinite(currentNum) && Number.isFinite(expectedNum) && currentNum >= expectedNum;
+    case "<":
+      return Number.isFinite(currentNum) && Number.isFinite(expectedNum) && currentNum < expectedNum;
+    case "<=":
+      return Number.isFinite(currentNum) && Number.isFinite(expectedNum) && currentNum <= expectedNum;
+    case "contains":
+      return currentText.includes(expectedText);
     default:
-      return Number(params?.detras_vano_ancho_superanchas_mm || 0) || 0;
+      return currentText === expectedText;
   }
 }
+function isValidFormulaIdentifier(value) {
+  return /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(String(value || "").trim());
+}
+function normalizeSurfaceHelperKey(value) {
+  let v = String(value || "").trim().replace(/[^A-Za-z0-9_$]+/g, "_");
+  if (!v) return "";
+  if (!/^[A-Za-z_$]/.test(v)) v = `helper_${v}`;
+  return v;
+}
+function coerceSurfaceHelperValue(value) {
+  const raw = String(value ?? "").trim();
+  if (!raw) return "";
+  const lower = raw.toLowerCase();
+  if (["si", "sí", "true", "yes"].includes(lower)) return 1;
+  if (["no", "false"].includes(lower)) return 0;
+  const num = Number(raw.replace(",", "."));
+  if (Number.isFinite(num)) return num;
+  return normalizeFormulaText(raw);
+}
+function applySurfaceHelperRules(context, helperRules) {
+  let next = { ...(context || {}) };
+  for (const rule of Array.isArray(helperRules) ? helperRules : []) {
+    if (rule?.active === false) continue;
+    const sourceLeft = String(rule?.source_left || "").trim();
+    const helperKey = normalizeSurfaceHelperKey(rule?.helper_key);
+    if (!sourceLeft || !helperKey) continue;
+    const leftOk = compareSurfaceHelperValue(next?.[sourceLeft], rule?.operator_left || "=", rule?.compare_left);
+    const sourceRight = String(rule?.source_right || "").trim();
+    const rightOk = sourceRight
+      ? compareSurfaceHelperValue(next?.[sourceRight], rule?.operator_right || "=", rule?.compare_right)
+      : true;
+    const matches = sourceRight
+      ? String(rule?.join_mode || "and").trim().toLowerCase() === "or"
+        ? leftOk || rightOk
+        : leftOk && rightOk
+      : leftOk;
+    if (!matches) continue;
+    next[helperKey] = coerceSurfaceHelperValue(rule?.helper_value);
+  }
+  return next;
+}
 function buildSurfaceFormulaContext({ quote, form, surfaceParameters }) {
-  const params = normalizeSurfaceParameters(surfaceParameters);
   const budgetWidthM = Number(quote?.payload?.dimensions?.width || 0) || 0;
   const budgetHeightM = Number(quote?.payload?.dimensions?.height || 0) || 0;
   const original = Number(quote?.payload?.dimensions?.area_m2 || 0) || 0;
@@ -143,25 +275,7 @@ function buildSurfaceFormulaContext({ quote, form, surfaceParameters }) {
   const anchos = Array.isArray(form?.esquema?.ancho) ? form.esquema.ancho : [];
   const alto_final_mm = Number(String(form?.alto_final_mm || 0).replace(",", ".")) || 0;
   const ancho_final_mm = Number(String(form?.ancho_final_mm || 0).replace(",", ".")) || 0;
-  const alto_min_mm = minMm(altos) || alto_final_mm || Math.round(budgetHeightM * 1000);
-  const ancho_min_mm = minMm(anchos) || ancho_final_mm || Math.round(budgetWidthM * 1000);
-  const constructionType = inferDoorConstructionType({ quote, form });
-  const kg_m2_porton = constructionType === "inyectado" ? Number(params.inyectado_kg_m2 || 0) || 0 : Number(params.clasico_kg_m2 || 0) || 0;
-  const alto_peso_mm = Math.max(0, alto_min_mm - (Number(params.peso_descuento_alto_mm || 0) || 0));
-  const ancho_peso_mm = Math.max(0, ancho_min_mm - (Number(params.peso_descuento_ancho_mm || 0) || 0));
-  const peso_estimado_kg = Number((((alto_peso_mm / 1000) * (ancho_peso_mm / 1000)) * kg_m2_porton).toFixed(4)) || 0;
-  const piernas_tipo = classifyLegType(peso_estimado_kg, params);
-  const colocacion = inferInstallationMode(form);
-  const colocacion_dentro_vano = colocacion === "dentro_vano" ? 1 : 0;
-  const colocacion_detras_vano = colocacion === "detras_vano" ? 1 : 0;
-  const instalacion_dentro_vano = colocacion_dentro_vano;
-  const instalacion_detras_vano = colocacion_detras_vano;
-  const alto_calculado_mm = colocacion_dentro_vano
-    ? Math.max(0, alto_min_mm + (Number(params.dentro_vano_alto_mm || 0) || 0))
-    : Math.max(0, alto_min_mm + (Number(params.detras_vano_alto_mm || 0) || 0));
-  const ancho_calculado_mm = colocacion_dentro_vano
-    ? Math.max(0, ancho_min_mm + (Number(params.dentro_vano_ancho_mm || 0) || 0))
-    : Math.max(0, ancho_min_mm + widthAdditionForLegType(piernas_tipo, params));
+  const automatic = computeSurfaceAutomaticContext({ quote, form, surfaceParameters });
   return {
     superficie_original_m2: original,
     budget_surface_m2: original,
@@ -179,41 +293,15 @@ function buildSurfaceFormulaContext({ quote, form, surfaceParameters }) {
     ancho_prom_mm: averageMm(anchos),
     alto_max_mm: maxMm(altos),
     ancho_max_mm: maxMm(anchos),
-    alto_min_mm,
-    ancho_min_mm,
-    alto_peso_mm,
-    ancho_peso_mm,
-    alto_calculado_mm,
-    ancho_calculado_mm,
-    superficie_automatica_m2: Number(((alto_calculado_mm / 1000) * (ancho_calculado_mm / 1000)).toFixed(4)) || 0,
-    tipo_porton: constructionType,
-    porton_clasico: constructionType === "clasico" ? 1 : 0,
-    porton_inyectado: constructionType === "inyectado" ? 1 : 0,
-    kg_m2_porton,
-    peso_estimado_kg,
-    piernas: piernas_tipo,
-    piernas_tipo,
-    piernas_angostas: piernas_tipo === "angostas" ? 1 : 0,
-    piernas_comunes: piernas_tipo === "comunes" ? 1 : 0,
-    piernas_anchas: piernas_tipo === "anchas" ? 1 : 0,
-    piernas_superanchas: piernas_tipo === "superanchas" ? 1 : 0,
-    piernas_especiales: piernas_tipo === "especiales" ? 1 : 0,
-    colocacion,
-    instalacion: colocacion,
-    colocacion_dentro_vano,
-    colocacion_detras_vano,
-    instalacion_dentro_vano,
-    instalacion_detras_vano,
-    descuento_superficie_m2: 0,
-    ...params,
+    alto_min_mm: minMm(altos),
+    ancho_min_mm: minMm(anchos),
+    ...automatic,
   };
 }
 function evaluateSurfaceFormula(formula, context) {
   const safeFormula = String(formula || "").trim();
   if (!safeFormula) return 0;
-  const allowed = Object.keys(context || {})
-    .filter((key) => /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(String(key || "")))
-    .sort();
+  const allowed = Object.keys(context || {}).filter((key) => isValidFormulaIdentifier(key)).sort();
   try {
     const fn = new Function(
       ...allowed,
@@ -234,8 +322,11 @@ function evaluateSurfaceFormula(formula, context) {
 async function buildMeasurementSurfaceGuard({ quote, form }) {
   const tolerance_area_m2 = Number(await getCommercialFinalToleranceAreaM2()) || 0;
   const technicalSettings = await getTechnicalMeasurementRules();
-  const surface_final_formula = String(technicalSettings?.surface_final_formula || "(alto_calculado_mm / 1000) * (ancho_calculado_mm / 1000)");
-  const ctx = buildSurfaceFormulaContext({ quote, form, surfaceParameters: technicalSettings?.surface_parameters || {} });
+  const surface_final_formula = String(technicalSettings?.surface_final_formula || "surface_automatica_m2");
+  const helperRules = Array.isArray(technicalSettings?.surface_helper_rules) ? technicalSettings.surface_helper_rules : [];
+  const surfaceParameters = technicalSettings?.surface_parameters || {};
+  let ctx = buildSurfaceFormulaContext({ quote, form, surfaceParameters });
+  ctx = applySurfaceHelperRules(ctx, helperRules);
   const surface_original_m2 = Number(ctx.superficie_original_m2 || 0) || 0;
   const surface_final_m2 = evaluateSurfaceFormula(surface_final_formula, ctx);
   const difference_m2 = Math.max(0, Number((surface_final_m2 - surface_original_m2).toFixed(4)));
@@ -259,7 +350,13 @@ function stripPreviouslyBilledLines(lines) { return (Array.isArray(lines) ? line
 function buildReturnContext(quote) {
   const currentPayload = quote?.payload && typeof quote.payload === "object" ? { ...quote.payload } : {};
   const existing = currentPayload.measurement_return_context && typeof currentPayload.measurement_return_context === "object" ? currentPayload.measurement_return_context : {};
-  return { ...existing, original_lines: existing.original_lines || stripPreviouslyBilledLines(quote?.lines), original_payload: existing.original_payload || { ...currentPayload, measurement_return_context: undefined }, original_note: existing.original_note !== undefined ? existing.original_note : quote?.note || null, original_status: existing.original_status || quote?.status || "synced_odoo" };
+  return {
+    ...existing,
+    original_lines: existing.original_lines || stripPreviouslyBilledLines(quote?.lines),
+    original_payload: existing.original_payload || { ...currentPayload, measurement_return_context: undefined },
+    original_note: existing.original_note !== undefined ? existing.original_note : quote?.note || null,
+    original_status: existing.original_status || quote?.status || "synced_odoo",
+  };
 }
 function payloadWithReturnContext(basePayload, ctx) { const next = { ...(basePayload || {}) }; next.measurement_return_context = ctx; return next; }
 function payloadWithoutReturnContext(basePayload) { const next = { ...(basePayload || {}) }; delete next.measurement_return_context; return next; }

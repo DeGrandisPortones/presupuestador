@@ -1,3 +1,4 @@
+
 import { dbQuery } from "./db.js";
 import { normalizeDoorQuoteFormula } from "./doorQuoteFormula.js";
 
@@ -6,23 +7,30 @@ const MEASUREMENT_PRODUCT_MAPPINGS_KEY = "measurement_product_mappings";
 const DOOR_QUOTE_SETTINGS_KEY = "door_quote_settings";
 const TECHNICAL_MEASUREMENT_RULES_KEY = "technical_measurement_rules";
 const TECHNICAL_MEASUREMENT_FIELDS_KEY = "technical_measurement_fields";
-const DEFAULT_SURFACE_FINAL_FORMULA = "(alto_calculado_mm / 1000) * (ancho_calculado_mm / 1000)";
+const DEFAULT_SURFACE_FINAL_FORMULA = "surface_automatica_m2";
+
 const DEFAULT_SURFACE_PARAMETERS = {
-  clasico_kg_m2: 15,
-  inyectado_kg_m2: 25,
-  piernas_angostas_hasta_kg: 140,
-  piernas_comunes_hasta_kg: 175,
-  piernas_anchas_hasta_kg: 240,
-  piernas_superanchas_hasta_kg: 300,
-  peso_descuento_alto_mm: 10,
-  peso_descuento_ancho_mm: 14,
-  detras_vano_alto_mm: 100,
-  detras_vano_ancho_angostas_mm: 140,
-  detras_vano_ancho_comunes_mm: 200,
-  detras_vano_ancho_anchas_mm: 280,
-  detras_vano_ancho_superanchas_mm: 380,
-  dentro_vano_alto_mm: -10,
-  dentro_vano_ancho_mm: -20,
+  classic_kg_m2: 15,
+  injected_kg_m2: 25,
+  seller_kg_m2_field_path: "kg_m2_entry",
+  weight_height_discount_mm: 10,
+  weight_width_discount_mm: 14,
+  no_cladding_angostas_max_kg: 80,
+  legs_angostas_max_kg: 140,
+  legs_comunes_max_kg: 175,
+  legs_anchas_max_kg: 240,
+  legs_superanchas_max_kg: 300,
+  behind_vano_add_height_mm: 100,
+  inside_vano_subtract_height_mm: 10,
+  inside_vano_subtract_width_mm: 20,
+  legs_angostas_add_width_mm: 140,
+  legs_comunes_add_width_mm: 200,
+  legs_anchas_add_width_mm: 280,
+  legs_superanchas_add_width_mm: 380,
+  legs_especiales_add_width_mm: 380,
+  installation_inside_product_id: null,
+  installation_behind_product_id: null,
+  no_cladding_product_id: null,
 };
 
 let ensured = false;
@@ -40,7 +48,12 @@ export async function ensureSettingsTable() {
     [FINAL_QUOTE_SETTINGS_KEY, { tolerance_area_m2: 0 }],
     [MEASUREMENT_PRODUCT_MAPPINGS_KEY, { rules: [] }],
     [DOOR_QUOTE_SETTINGS_KEY, { formula: "precio_ipanel + precio_venta_marco" }],
-    [TECHNICAL_MEASUREMENT_RULES_KEY, { rules: [], surface_final_formula: DEFAULT_SURFACE_FINAL_FORMULA, surface_helper_rules: [], surface_parameters: DEFAULT_SURFACE_PARAMETERS }],
+    [TECHNICAL_MEASUREMENT_RULES_KEY, {
+      rules: [],
+      surface_final_formula: DEFAULT_SURFACE_FINAL_FORMULA,
+      surface_helper_rules: [],
+      surface_parameters: DEFAULT_SURFACE_PARAMETERS,
+    }],
     [TECHNICAL_MEASUREMENT_FIELDS_KEY, { fields: [] }],
   ]) {
     await dbQuery(
@@ -73,15 +86,6 @@ function normalizeRuleActionType(value) {
   const v = String(value || "set_value").trim().toLowerCase();
   return ["set_value", "clear_field", "show_field", "hide_field", "allow_options"].includes(v) ? v : "set_value";
 }
-function normalizeJoinMode(value) {
-  return String(value || "and").trim().toLowerCase() === "or" ? "or" : "and";
-}
-function normalizeHelperKey(value) {
-  let v = String(value || "").trim().replace(/[^A-Za-z0-9_$]+/g, "_");
-  if (!v) return "";
-  if (!/^[A-Za-z_$]/.test(v)) v = `helper_${v}`;
-  return v;
-}
 function normalizeValueSourceType(value) {
   const v = String(value || "manual").trim().toLowerCase();
   return ["manual", "fixed", "budget_field", "current_user_field", "budget_section_product"].includes(v) ? v : "manual";
@@ -103,30 +107,15 @@ function normalizeBudgetMultipleMode(value) {
   return ["first", "join"].includes(v) ? v : "first";
 }
 function normalizeBooleanFlag(value) { return value === true; }
-
-function normalizeSurfaceParameterNumber(value, fallback = 0) {
+function normalizeNumber(value, fallback = 0, digits = 4) {
   const n = Number(String(value ?? fallback).replace(",", "."));
-  if (!Number.isFinite(n)) return Number(fallback || 0) || 0;
-  return Math.round(n * 10000) / 10000;
+  if (!Number.isFinite(n)) return fallback;
+  const factor = Math.pow(10, digits);
+  return Math.round(n * factor) / factor;
 }
-function normalizeSurfaceParameters(raw = {}) {
-  return {
-    clasico_kg_m2: normalizeSurfaceParameterNumber(raw?.clasico_kg_m2, DEFAULT_SURFACE_PARAMETERS.clasico_kg_m2),
-    inyectado_kg_m2: normalizeSurfaceParameterNumber(raw?.inyectado_kg_m2, DEFAULT_SURFACE_PARAMETERS.inyectado_kg_m2),
-    piernas_angostas_hasta_kg: normalizeSurfaceParameterNumber(raw?.piernas_angostas_hasta_kg, DEFAULT_SURFACE_PARAMETERS.piernas_angostas_hasta_kg),
-    piernas_comunes_hasta_kg: normalizeSurfaceParameterNumber(raw?.piernas_comunes_hasta_kg, DEFAULT_SURFACE_PARAMETERS.piernas_comunes_hasta_kg),
-    piernas_anchas_hasta_kg: normalizeSurfaceParameterNumber(raw?.piernas_anchas_hasta_kg, DEFAULT_SURFACE_PARAMETERS.piernas_anchas_hasta_kg),
-    piernas_superanchas_hasta_kg: normalizeSurfaceParameterNumber(raw?.piernas_superanchas_hasta_kg, DEFAULT_SURFACE_PARAMETERS.piernas_superanchas_hasta_kg),
-    peso_descuento_alto_mm: normalizeSurfaceParameterNumber(raw?.peso_descuento_alto_mm, DEFAULT_SURFACE_PARAMETERS.peso_descuento_alto_mm),
-    peso_descuento_ancho_mm: normalizeSurfaceParameterNumber(raw?.peso_descuento_ancho_mm, DEFAULT_SURFACE_PARAMETERS.peso_descuento_ancho_mm),
-    detras_vano_alto_mm: normalizeSurfaceParameterNumber(raw?.detras_vano_alto_mm, DEFAULT_SURFACE_PARAMETERS.detras_vano_alto_mm),
-    detras_vano_ancho_angostas_mm: normalizeSurfaceParameterNumber(raw?.detras_vano_ancho_angostas_mm, DEFAULT_SURFACE_PARAMETERS.detras_vano_ancho_angostas_mm),
-    detras_vano_ancho_comunes_mm: normalizeSurfaceParameterNumber(raw?.detras_vano_ancho_comunes_mm, DEFAULT_SURFACE_PARAMETERS.detras_vano_ancho_comunes_mm),
-    detras_vano_ancho_anchas_mm: normalizeSurfaceParameterNumber(raw?.detras_vano_ancho_anchas_mm, DEFAULT_SURFACE_PARAMETERS.detras_vano_ancho_anchas_mm),
-    detras_vano_ancho_superanchas_mm: normalizeSurfaceParameterNumber(raw?.detras_vano_ancho_superanchas_mm, DEFAULT_SURFACE_PARAMETERS.detras_vano_ancho_superanchas_mm),
-    dentro_vano_alto_mm: normalizeSurfaceParameterNumber(raw?.dentro_vano_alto_mm, DEFAULT_SURFACE_PARAMETERS.dentro_vano_alto_mm),
-    dentro_vano_ancho_mm: normalizeSurfaceParameterNumber(raw?.dentro_vano_ancho_mm, DEFAULT_SURFACE_PARAMETERS.dentro_vano_ancho_mm),
-  };
+function normalizeNullableInt(value) {
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? Math.round(n) : null;
 }
 
 function normalizeTechnicalMeasurementRule(rule = {}, index = 0) {
@@ -152,36 +141,66 @@ function normalizeTechnicalMeasurementRule(rule = {}, index = 0) {
     sort_order: Number(rule?.sort_order || index + 1) || index + 1,
   };
 }
+
 function normalizeSurfaceHelperRule(rule = {}, index = 0) {
-  const source_left = normalizeText(rule.source_left || rule.left_source || rule.source_key);
-  const helper_key = normalizeHelperKey(rule.helper_key || rule.target_key);
-  if (!source_left || !helper_key) return null;
+  const helper_key = normalizeText(rule.helper_key || rule.key);
+  if (!helper_key) return null;
+  const source_left = normalizeText(rule.source_left || rule.source_key || "");
   return {
     id: normalizeText(rule.id || `surface_helper_${index + 1}`),
     name: normalizeText(rule.name || helper_key),
     active: rule?.active !== false,
     source_left,
-    operator_left: normalizeRuleOperator(rule.operator_left || rule.operator),
+    operator_left: normalizeRuleOperator(rule.operator_left || rule.operator || "="),
     compare_left: rule?.compare_left ?? rule?.compare_value ?? "",
-    join_mode: normalizeJoinMode(rule.join_mode),
-    source_right: normalizeText(rule.source_right),
+    join_mode: String(rule?.join_mode || "and").trim().toLowerCase() === "or" ? "or" : "and",
+    source_right: normalizeText(rule.source_right || ""),
     operator_right: normalizeRuleOperator(rule.operator_right || "="),
     compare_right: rule?.compare_right ?? "",
     helper_key,
-    helper_value: rule?.helper_value ?? "",
+    helper_value: rule?.helper_value ?? rule?.target_value ?? "",
     sort_order: Number(rule?.sort_order || index + 1) || index + 1,
   };
 }
+
+function normalizeSurfaceParameters(raw = {}) {
+  const merged = { ...DEFAULT_SURFACE_PARAMETERS, ...(raw && typeof raw === "object" ? raw : {}) };
+  return {
+    classic_kg_m2: normalizeNumber(merged.classic_kg_m2, 15, 4),
+    injected_kg_m2: normalizeNumber(merged.injected_kg_m2, 25, 4),
+    seller_kg_m2_field_path: normalizeText(merged.seller_kg_m2_field_path || "kg_m2_entry"),
+    weight_height_discount_mm: normalizeNumber(merged.weight_height_discount_mm, 10, 4),
+    weight_width_discount_mm: normalizeNumber(merged.weight_width_discount_mm, 14, 4),
+    no_cladding_angostas_max_kg: normalizeNumber(merged.no_cladding_angostas_max_kg, 80, 4),
+    legs_angostas_max_kg: normalizeNumber(merged.legs_angostas_max_kg, 140, 4),
+    legs_comunes_max_kg: normalizeNumber(merged.legs_comunes_max_kg, 175, 4),
+    legs_anchas_max_kg: normalizeNumber(merged.legs_anchas_max_kg, 240, 4),
+    legs_superanchas_max_kg: normalizeNumber(merged.legs_superanchas_max_kg, 300, 4),
+    behind_vano_add_height_mm: normalizeNumber(merged.behind_vano_add_height_mm, 100, 4),
+    inside_vano_subtract_height_mm: normalizeNumber(merged.inside_vano_subtract_height_mm, 10, 4),
+    inside_vano_subtract_width_mm: normalizeNumber(merged.inside_vano_subtract_width_mm, 20, 4),
+    legs_angostas_add_width_mm: normalizeNumber(merged.legs_angostas_add_width_mm, 140, 4),
+    legs_comunes_add_width_mm: normalizeNumber(merged.legs_comunes_add_width_mm, 200, 4),
+    legs_anchas_add_width_mm: normalizeNumber(merged.legs_anchas_add_width_mm, 280, 4),
+    legs_superanchas_add_width_mm: normalizeNumber(merged.legs_superanchas_add_width_mm, 380, 4),
+    legs_especiales_add_width_mm: normalizeNumber(merged.legs_especiales_add_width_mm, 380, 4),
+    installation_inside_product_id: normalizeNullableInt(merged.installation_inside_product_id),
+    installation_behind_product_id: normalizeNullableInt(merged.installation_behind_product_id),
+    no_cladding_product_id: normalizeNullableInt(merged.no_cladding_product_id),
+  };
+}
+
 function normalizeTechnicalMeasurementRules(raw = {}) {
   const rules = Array.isArray(raw?.rules) ? raw.rules : [];
-  const surface_helper_rules = Array.isArray(raw?.surface_helper_rules) ? raw.surface_helper_rules : [];
+  const helperRules = Array.isArray(raw?.surface_helper_rules) ? raw.surface_helper_rules : [];
   return {
     rules: rules.map((r, i) => normalizeTechnicalMeasurementRule(r, i)).filter(Boolean).sort((a, b) => a.sort_order - b.sort_order),
     surface_final_formula: normalizeSurfaceFinalFormula(raw?.surface_final_formula),
-    surface_helper_rules: surface_helper_rules.map((r, i) => normalizeSurfaceHelperRule(r, i)).filter(Boolean).sort((a, b) => a.sort_order - b.sort_order),
+    surface_helper_rules: helperRules.map((r, i) => normalizeSurfaceHelperRule(r, i)).filter(Boolean).sort((a, b) => a.sort_order - b.sort_order),
     surface_parameters: normalizeSurfaceParameters(raw?.surface_parameters),
   };
 }
+
 function normalizeFieldType(value) {
   const v = String(value || "text").trim().toLowerCase();
   return ["text", "number", "boolean", "enum", "odoo_product"].includes(v) ? v : "text";
@@ -269,18 +288,22 @@ export async function getTechnicalMeasurementRules() {
 }
 export async function setTechnicalMeasurementRules(payload = {}) {
   const current = await getTechnicalMeasurementRules();
+  const incoming = payload && typeof payload === "object" ? payload : {};
   const merged = {
     ...(current || {}),
-    ...(payload && typeof payload === "object" ? payload : {}),
-    surface_final_formula: payload?.surface_final_formula !== undefined
-      ? payload.surface_final_formula
+    ...incoming,
+    surface_final_formula: incoming?.surface_final_formula !== undefined
+      ? incoming.surface_final_formula
       : current?.surface_final_formula,
-    surface_helper_rules: payload?.surface_helper_rules !== undefined
-      ? payload.surface_helper_rules
+    surface_helper_rules: incoming?.surface_helper_rules !== undefined
+      ? incoming.surface_helper_rules
       : current?.surface_helper_rules,
-    surface_parameters: payload?.surface_parameters !== undefined
-      ? payload.surface_parameters
-      : current?.surface_parameters,
+    surface_parameters: {
+      ...(current?.surface_parameters || DEFAULT_SURFACE_PARAMETERS),
+      ...(incoming?.surface_parameters && typeof incoming.surface_parameters === "object"
+        ? incoming.surface_parameters
+        : {}),
+    },
   };
   return setSetting(TECHNICAL_MEASUREMENT_RULES_KEY, normalizeTechnicalMeasurementRules(merged));
 }
@@ -296,6 +319,7 @@ export async function setTechnicalMeasurementFieldDefinitions(payload = {}) {
   return setSetting(TECHNICAL_MEASUREMENT_FIELDS_KEY, normalizeTechnicalMeasurementFields(payload));
 }
 
+// Compatibilidad con imports viejos mientras se termina de migrar todo a tolerancia por m².
 export async function getCommercialFinalTolerancePercent() {
   return 0;
 }
