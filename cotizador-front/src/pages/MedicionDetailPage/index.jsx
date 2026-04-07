@@ -1278,7 +1278,7 @@ export default function MedicionDetailPage() {
             }}
           >
             <img
-              src="/esquema-medicion.png"
+              src="/measurement_scheme.png"
               alt="Esquema de medición"
               style={{ width: "100%", height: "auto", display: "block" }}
             />
