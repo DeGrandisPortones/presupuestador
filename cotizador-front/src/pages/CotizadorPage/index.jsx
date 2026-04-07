@@ -5,17 +5,14 @@ import { useAuthStore } from "../../domain/auth/store.js";
 
 import { getPricelists, getPrices, getFinancingPreview } from "../../api/odoo";
 import { createQuote, getQuote, confirmQuote, submitFinalQuote, updateQuote } from "../../api/quotes";
+import { confirmReturnedMeasurementQuote, resetReturnedMeasurementQuote } from "../../api/measurements";
 import { downloadPresupuestoPdf, downloadProformaPdf } from "../../api/pdf";
 import toast from "react-hot-toast";
 
 import { useQuoteStore } from "../../domain/quote/store";
 import { IVA_RATE_DEFAULT } from "../../domain/quote/defaults";
 import { calcTotals } from "../../domain/quote/pricing";
-import {
-  validateArgentinaPhone,
-  validateEmailAddress,
-  validateGoogleMapsUrl,
-} from "../../utils/contactValidation.js";
+import { validateArgentinaPhone, validateEmailAddress, validateGoogleMapsUrl } from "../../utils/contactValidation.js";
 
 import Button from "../../ui/Button.jsx";
 
@@ -25,18 +22,8 @@ import SectionCatalog from "./components/SectionCatalog";
 import LinesTable from "./components/LinesTable";
 import SummaryBox from "./components/SummaryBox";
 
-function normalizeUrl(value) {
-  return String(value || "").trim().replace(/\/+$/, "").toLowerCase();
-}
-
-function editorRouteForKind(kind, id, search = "") {
-  const safeId = String(id || "").trim();
-  const suffix = search || "";
-  if (String(kind || "porton").toLowerCase().trim() === "ipanel") return `/cotizador/ipanel/${safeId}${suffix}`;
-  if (String(kind || "porton").toLowerCase().trim() === "otros") return `/cotizador/otros/${safeId}${suffix}`;
-  return `/cotizador/${safeId}${suffix}`;
-}
-
+function normalizeUrl(value) { return String(value || "").trim().replace(/\/+$/, "").toLowerCase(); }
+function editorRouteForKind(kind, id, search = "") { const safeId = String(id || "").trim(); const suffix = search || ""; if (String(kind || "porton").toLowerCase().trim() === "ipanel") return `/cotizador/ipanel/${safeId}${suffix}`; if (String(kind || "porton").toLowerCase().trim() === "otros") return `/cotizador/otros/${safeId}${suffix}`; return `/cotizador/${safeId}${suffix}`; }
 function buildPdfPayloadForDownload(payload, financingPercent, extras = {}) {
   const percent = Number(financingPercent || 0) || 0;
   const factor = 1 + percent / 100;
@@ -44,24 +31,10 @@ function buildPdfPayloadForDownload(payload, financingPercent, extras = {}) {
     ? payload.lines.map((line) => {
         const rawBase = Number(line?.basePrice ?? line?.base_price ?? line?.price ?? 0) || 0;
         const financedBase = Math.round(rawBase * factor * 100) / 100;
-        return {
-          ...line,
-          basePrice: financedBase,
-          base_price: financedBase,
-          price: financedBase,
-        };
+        return { ...line, basePrice: financedBase, base_price: financedBase, price: financedBase };
       })
     : [];
-
-  return {
-    ...(payload || {}),
-    ...extras,
-    lines: nextLines,
-    payload: {
-      ...(payload?.payload || {}),
-      ...(extras.payload || {}),
-    },
-  };
+  return { ...(payload || {}), ...extras, lines: nextLines, payload: { ...(payload?.payload || {}), ...(extras.payload || {}) } };
 }
 
 export default function CotizadorPage({ catalogKind = "porton" }) {
@@ -78,45 +51,16 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
   const workflowDoorId = String(searchParams.get("door_id") || "").trim();
   const workflowPortonId = String(searchParams.get("porton_id") || "").trim();
 
-  const {
-    quoteId,
-    status,
-    pricelistId,
-    marginPercent,
-    partnerId,
-    paymentMethod,
-    lines,
-    setPricelist,
-    applyBasePrices,
-    loadFromQuote,
-    reset,
-    setEndCustomer,
-    buildPayloadForBack,
-    setQuoteMeta,
-  } = useQuoteStore();
-
+  const { quoteId, status, pricelistId, marginPercent, partnerId, paymentMethod, lines, setPricelist, applyBasePrices, loadFromQuote, reset, setEndCustomer, buildPayloadForBack, setQuoteMeta } = useQuoteStore();
   const [ivaRate] = useState(IVA_RATE_DEFAULT);
   const [confirmChoiceOpen, setConfirmChoiceOpen] = useState(false);
 
-  useEffect(() => {
-    if (!idParam) {
-      reset();
-      if (user?.default_maps_url) setEndCustomer({ maps_url: user.default_maps_url });
-    }
-  }, [idParam, reset, user?.default_maps_url, setEndCustomer]);
+  useEffect(() => { if (!idParam) { reset(); if (user?.default_maps_url) setEndCustomer({ maps_url: user.default_maps_url }); } }, [idParam, reset, user?.default_maps_url, setEndCustomer]);
 
   const pricelistsQ = useQuery({ queryKey: ["pricelists"], queryFn: getPricelists });
+  useEffect(() => { if (!pricelistId && pricelistsQ.data?.length) setPricelist(pricelistsQ.data[0]); }, [pricelistId, pricelistsQ.data, setPricelist]);
 
-  useEffect(() => {
-    if (!pricelistId && pricelistsQ.data?.length) setPricelist(pricelistsQ.data[0]);
-  }, [pricelistId, pricelistsQ.data, setPricelist]);
-
-  const quoteQ = useQuery({
-    queryKey: ["quote", idParam],
-    queryFn: () => getQuote(idParam),
-    enabled: !!idParam,
-  });
-
+  const quoteQ = useQuery({ queryKey: ["quote", idParam], queryFn: () => getQuote(idParam), enabled: !!idParam });
   useEffect(() => {
     if (!quoteQ.data) return;
     const qKind = (quoteQ.data.catalog_kind || "porton").toString().toLowerCase();
@@ -128,42 +72,23 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
     loadFromQuote(quoteQ.data);
   }, [quoteQ.data, loadFromQuote, catalogKind, navigate]);
 
-  const financingQ = useQuery({
-    queryKey: ["financing-preview", paymentMethod],
-    queryFn: () => getFinancingPreview(paymentMethod),
-    enabled: !!String(paymentMethod || "").trim(),
-    staleTime: 60 * 1000,
-  });
-
+  const financingQ = useQuery({ queryKey: ["financing-preview", paymentMethod], queryFn: () => getFinancingPreview(paymentMethod), enabled: !!String(paymentMethod || "").trim(), staleTime: 60 * 1000 });
   const financingPercent = Number(financingQ.data?.percent || 0) || 0;
   const totals = useMemo(() => calcTotals(lines, marginPercent, ivaRate, financingPercent), [lines, marginPercent, ivaRate, financingPercent]);
   const linesKey = useMemo(() => lines.map((l) => `${l.product_id}:${l.qty}`).join("|"), [lines]);
   const isRevisionQuote = (quoteQ.data?.quote_kind || "original") === "copy";
   const finalStatus = String(quoteQ.data?.final_status || "");
   const isAcopioRevision = isRevisionQuote && String(quoteQ.data?.fulfillment_mode || "").trim() === "acopio";
-  const visibleQuoteNumber = String(
-    quoteQ.data?.quote_number ||
-    quoteQ.data?.odoo_sale_order_name ||
-    quoteId ||
-    idParam ||
-    ""
-  ).trim();
-  const visibleParentQuoteNumber = String(
-    quoteQ.data?.parent_quote_number ||
-    quoteQ.data?.parent_quote_quote_number ||
-    quoteQ.data?.parent_odoo_sale_order_name ||
-    quoteQ.data?.parent_quote_id ||
-    ""
-  ).trim();
+  const isReturnedMeasurementQuote = !isRevisionQuote && String(quoteQ.data?.measurement_status || "") === "returned_to_seller";
+  const returnedMeasurementReason = String(quoteQ.data?.measurement_review_notes || "").trim();
+  const returnedMeasurementForced = quoteQ.data?.measurement_return_force_reason === true;
+  const visibleQuoteNumber = String(quoteQ.data?.quote_number || quoteQ.data?.odoo_sale_order_name || quoteId || idParam || "").trim();
+  const visibleParentQuoteNumber = String(quoteQ.data?.parent_quote_number || quoteQ.data?.parent_quote_quote_number || quoteQ.data?.parent_odoo_sale_order_name || quoteQ.data?.parent_quote_id || "").trim();
 
   useEffect(() => {
     async function run() {
       if (!pricelistId || !lines.length) return;
-      const payload = {
-        pricelist_id: pricelistId,
-        partner_id: partnerId,
-        lines: lines.map((l) => ({ product_id: l.product_id, qty: l.qty })),
-      };
+      const payload = { pricelist_id: pricelistId, partner_id: partnerId, lines: lines.filter((line) => !line.previously_billed_line).map((l) => ({ product_id: l.product_id, qty: l.qty })) };
       const data = await getPrices(payload);
       applyBasePrices(data);
     }
@@ -176,14 +101,7 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
     if (user?.is_distribuidor && !user?.is_vendedor) return "distribuidor";
     return "vendedor";
   }
-
-  function withCreatorRole(payload) {
-    return {
-      ...(payload || {}),
-      created_by_role: resolveCreatedByRole(),
-    };
-  }
-
+  function withCreatorRole(payload) { return { ...(payload || {}), created_by_role: resolveCreatedByRole() }; }
   function normalizeNoteWithSeller(note) {
     const sellerLabel = String(user?.full_name || user?.username || "").trim();
     const raw = String(note || "").trim();
@@ -193,40 +111,28 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
     filtered.push(`Vendedor: ${sellerLabel}`);
     return filtered.join("\n");
   }
-
   function getDraftPayload() {
     const base = buildPayloadForBack() || {};
-    return withCreatorRole({
-      ...base,
-      catalog_kind: catalogKind,
-      fulfillment_mode: base?.fulfillment_mode || "acopio",
-      note: normalizeNoteWithSeller(base?.note),
-    });
+    return withCreatorRole({ ...base, catalog_kind: catalogKind, fulfillment_mode: base?.fulfillment_mode || "acopio", note: normalizeNoteWithSeller(base?.note) });
   }
-
   function validateCustomerContact(customer, { requirePhone = false, requireMaps = false, requireCity = false } = {}) {
     const c = customer || {};
     const city = String(c.city || "").trim();
     if (requireCity && !city) throw new Error("Completá la localidad del cliente.");
-    const phoneErr = validateArgentinaPhone(c.phone, { required: requirePhone });
-    if (phoneErr) throw new Error(phoneErr);
-    const emailErr = validateEmailAddress(c.email, { required: false });
-    if (emailErr) throw new Error(emailErr);
-    const mapsErr = validateGoogleMapsUrl(c.maps_url, { required: requireMaps });
-    if (mapsErr) throw new Error(mapsErr);
+    const phoneErr = validateArgentinaPhone(c.phone, { required: requirePhone }); if (phoneErr) throw new Error(phoneErr);
+    const emailErr = validateEmailAddress(c.email, { required: false }); if (emailErr) throw new Error(emailErr);
+    const mapsErr = validateGoogleMapsUrl(c.maps_url, { required: requireMaps }); if (mapsErr) throw new Error(mapsErr);
   }
-
   function validateDraft(payload) {
     const c = payload?.end_customer || {};
     const errs = [];
     if (!String(c.first_name || "").trim()) errs.push("Completá el nombre del cliente.");
     if (!String(c.last_name || "").trim()) errs.push("Completá el apellido del cliente.");
     if (!String(c.phone || "").trim()) errs.push("Completá el teléfono del cliente.");
-    if (!Array.isArray(payload?.lines) || payload.lines.length === 0) errs.push("Agregá al menos un producto.");
+    if (!Array.isArray(payload?.lines) || payload.lines.filter((line) => !line.previously_billed_line).length === 0) errs.push("Agregá al menos un producto.");
     if (errs.length) throw new Error(errs[0]);
     validateCustomerContact(c, { requirePhone: true, requireMaps: false, requireCity: false });
   }
-
   function validateConfirm(payload) {
     const c = payload?.end_customer || {};
     const p = payload?.payload || {};
@@ -238,159 +144,65 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
     if (!String(p.payment_method || "").trim()) errs.push("Seleccioná la forma de pago.");
     if ((catalogKind || "porton") === "porton" && !String(p.porton_type || "").trim()) errs.push("Seleccioná el tipo/sistema del portón.");
     if (String(p.condition_mode || "") === "special" && !String(p.condition_text || "").trim()) errs.push("Completá la condición especial.");
-    if (!Array.isArray(payload?.lines) || payload.lines.length === 0) errs.push("Agregá al menos un producto.");
+    if (!Array.isArray(payload?.lines) || payload.lines.filter((line) => !line.previously_billed_line).length === 0) errs.push("Agregá al menos un producto.");
     if (errs.length) throw new Error(errs[0]);
     validateCustomerContact(c, { requirePhone: true, requireMaps: true, requireCity: true });
   }
-
-  function validatePdfDownload(payload) {
-    const c = payload?.end_customer || {};
-    const errs = [];
-    if (!String(c.first_name || "").trim()) errs.push("Completá el nombre del cliente.");
-    if (!String(c.last_name || "").trim()) errs.push("Completá el apellido del cliente.");
-    if (!String(c.phone || "").trim()) errs.push("Completá el teléfono del cliente.");
-    if (!Array.isArray(payload?.lines) || payload.lines.length === 0) errs.push("Agregá al menos un producto.");
-    if (errs.length) throw new Error(errs[0]);
-    validateCustomerContact(c, { requirePhone: true, requireMaps: false, requireCity: false });
-  }
+  function validatePdfDownload(payload) { validateDraft(payload); }
 
   async function persistDraftForPdf() {
     const payload = getDraftPayload();
     validateDraft(payload);
-
     if (!quoteId) {
-      return {
-        quote: null,
-        payload: {
-          ...payload,
-          id: idParam || null,
-          quote_id: idParam || null,
-          quote_number: visibleQuoteNumber || idParam || "",
-          seller_name: user?.full_name || user?.username || "",
-        },
-      };
+      return { quote: null, payload: { ...payload, id: idParam || null, quote_id: idParam || null, quote_number: visibleQuoteNumber || idParam || "", seller_name: user?.full_name || user?.username || "" } };
     }
-
     const q = await updateQuote(quoteId, payload);
     setQuoteMeta({ quoteId: q.id, status: q.status, rejectionNotes: q.rejection_notes });
     qc.invalidateQueries({ queryKey: ["quotes", "mine"] });
-
-    return {
-      quote: q,
-      payload: {
-        ...payload,
-        id: q.id,
-        quote_id: q.id,
-        quote_number: q.quote_number || q.id,
-        seller_name: user?.full_name || user?.username || "",
-      },
-    };
+    return { quote: q, payload: { ...payload, id: q.id, quote_id: q.id, quote_number: q.quote_number || q.id, seller_name: user?.full_name || user?.username || "" } };
   }
-
   function maybeContinueDoorWorkflow(savedQuote) {
     if (!isDoorWorkflow || (catalogKind || "") !== "ipanel" || !workflowDoorId) return false;
     const nextUrl = `/puertas/${workflowDoorId}?door_workflow=1&workflow_stage=${encodeURIComponent(workflowStage === "ipanel_first" ? "door_final" : workflowStage)}&ipanel_quote_id=${encodeURIComponent(savedQuote?.id || quoteId || idParam || "")}&porton_id=${encodeURIComponent(workflowPortonId || "")}`;
     navigate(nextUrl);
     return true;
   }
-
   function handleConfirmIntent() {
+    if (isReturnedMeasurementQuote) return;
     if (!isRevisionQuote && user?.is_distribuidor && (catalogKind || "porton") === "porton") {
       const currentMapsUrl = normalizeUrl(buildPayloadForBack()?.end_customer?.maps_url);
       const defaultMapsUrl = normalizeUrl(user?.default_maps_url);
       const isUsingDefaultLocation = !!defaultMapsUrl && currentMapsUrl === defaultMapsUrl;
-      const alertText = isUsingDefaultLocation
-        ? "Si no actualiza la dirección el producto será entregado en el punto de ubicación predeterminada para su empresa, si no desea cambiarla haga click en aceptar."
-        : "¿Desea cambiar el punto de ubicación donde se entregará el portón?";
-
+      const alertText = isUsingDefaultLocation ? "Si no actualiza la dirección el producto será entregado en el punto de ubicación predeterminada para su empresa, si no desea cambiarla haga click en aceptar." : "¿Desea cambiar el punto de ubicación donde se entregará el portón?";
       const wantsToContinue = window.confirm(alertText);
-      if (!wantsToContinue) {
-        toast("Actualizá dirección, localidad o Maps antes de confirmar.");
-        return;
-      }
+      if (!wantsToContinue) { toast("Actualizá dirección, localidad o Maps antes de confirmar."); return; }
     }
     setConfirmChoiceOpen(true);
   }
 
-  const saveM = useMutation({
-    mutationFn: async () => {
-      const payload = getDraftPayload();
-      validateDraft(payload);
-      if (quoteId) return await updateQuote(quoteId, payload);
-      return await createQuote(payload);
-    },
-    onSuccess: (q) => {
-      setQuoteMeta({ quoteId: q.id, status: q.status, rejectionNotes: q.rejection_notes });
-      qc.invalidateQueries({ queryKey: ["quotes", "mine"] });
-      if (maybeContinueDoorWorkflow(q)) {
-        toast.success("Ipanel guardado. Seguimos con el marco de puerta.");
-        return;
-      }
-      navigate(editorRouteForKind(catalogKind, q.id));
-      toast.success("Guardado.");
-    },
-    onError: (e) => toast.error(e?.message || "No se pudo guardar"),
-  });
+  const saveM = useMutation({ mutationFn: async () => { const payload = getDraftPayload(); validateDraft(payload); if (quoteId) return await updateQuote(quoteId, payload); return await createQuote(payload); }, onSuccess: (q) => { setQuoteMeta({ quoteId: q.id, status: q.status, rejectionNotes: q.rejection_notes }); qc.invalidateQueries({ queryKey: ["quotes", "mine"] }); if (maybeContinueDoorWorkflow(q)) { toast.success("Ipanel guardado. Seguimos con el marco de puerta."); return; } navigate(editorRouteForKind(catalogKind, q.id)); toast.success("Guardado."); }, onError: (e) => toast.error(e?.message || "No se pudo guardar") });
 
   const confirmM = useMutation({
     mutationFn: async (variables) => {
       const chosenMode = String(variables?.fulfillmentMode || buildPayloadForBack()?.fulfillment_mode || "acopio").trim();
-      const payload = {
-        ...getDraftPayload(),
-        catalog_kind: catalogKind,
-        fulfillment_mode: chosenMode,
-      };
+      const payload = { ...getDraftPayload(), catalog_kind: catalogKind, fulfillment_mode: chosenMode };
       validateConfirm(payload);
       let id = quoteId || idParam;
-      if (id) {
-        await updateQuote(id, payload);
-      } else {
-        const created = await createQuote(payload);
-        id = created.id;
-        setQuoteMeta({ quoteId: created.id, status: created.status, rejectionNotes: created.rejection_notes });
-      }
+      if (id) await updateQuote(id, payload); else { const created = await createQuote(payload); id = created.id; setQuoteMeta({ quoteId: created.id, status: created.status, rejectionNotes: created.rejection_notes }); }
       if (isRevisionQuote) return await submitFinalQuote(id);
       return await confirmQuote(id, { fulfillment_mode: chosenMode });
     },
-    onSuccess: async (q) => {
-      setConfirmChoiceOpen(false);
-      setQuoteMeta({ quoteId: q.id, status: q.status, rejectionNotes: q.rejection_notes });
-      qc.invalidateQueries({ queryKey: ["quotes", "mine"] });
-      if (maybeContinueDoorWorkflow(q)) {
-        toast.success("Ipanel confirmado. Seguimos con el marco de puerta.");
-        return;
-      }
-      navigate(`/presupuestos/${q.id}`);
-      toast.success(isRevisionQuote ? "Cotización final enviada a Odoo." : "Presupuesto confirmado.");
-    },
+    onSuccess: async (q) => { setConfirmChoiceOpen(false); setQuoteMeta({ quoteId: q.id, status: q.status, rejectionNotes: q.rejection_notes }); qc.invalidateQueries({ queryKey: ["quotes", "mine"] }); if (maybeContinueDoorWorkflow(q)) { toast.success("Ipanel confirmado. Seguimos con el marco de puerta."); return; } navigate(`/presupuestos/${q.id}`); toast.success(isRevisionQuote ? "Cotización final enviada a Odoo." : "Presupuesto confirmado."); },
     onError: (e) => toast.error(e?.message || (isRevisionQuote ? "No se pudo enviar la cotización final" : "No se pudo confirmar")),
   });
 
-  const onDownloadPresupuesto = async () => {
-    try {
-      const { payload } = await persistDraftForPdf();
-      validatePdfDownload(payload);
-      const pdfPayload = buildPdfPayloadForDownload(payload, financingPercent);
-      await downloadPresupuestoPdf(pdfPayload);
-    } catch (e) {
-      toast.error(e?.response?.data?.error || e.message);
-    }
-  };
+  const resetReturnedM = useMutation({ mutationFn: async () => { if (!quoteId) throw new Error("Quote inválida"); return await resetReturnedMeasurementQuote(quoteId); }, onSuccess: async () => { await qc.invalidateQueries({ queryKey: ["quote", quoteId] }); toast.success("Se restableció el presupuesto original."); }, onError: (e) => toast.error(e?.message || "No se pudo restablecer") });
+  const confirmReturnedM = useMutation({ mutationFn: async () => { const payload = getDraftPayload(); validateConfirm(payload); if (!quoteId) throw new Error("Quote inválida"); await updateQuote(quoteId, payload); return await confirmReturnedMeasurementQuote(quoteId); }, onSuccess: async () => { await qc.invalidateQueries({ queryKey: ["quote", quoteId] }); await qc.invalidateQueries({ queryKey: ["quotes", "mine"] }); navigate(`/mediciones/${quoteId}`); toast.success("Presupuesto actualizado. La planilla volvió a Técnica."); }, onError: (e) => toast.error(e?.message || "No se pudo enviar a técnica") });
 
-  const onDownloadProforma = async () => {
-    try {
-      const { payload } = await persistDraftForPdf();
-      validatePdfDownload(payload);
-      const pdfPayload = buildPdfPayloadForDownload(payload, financingPercent);
-      await downloadProformaPdf(pdfPayload);
-    } catch (e) {
-      toast.error(e?.response?.data?.error || e.message);
-    }
-  };
+  const onDownloadPresupuesto = async () => { try { const { payload } = await persistDraftForPdf(); validatePdfDownload(payload); const pdfPayload = buildPdfPayloadForDownload(payload, financingPercent); await downloadPresupuestoPdf(pdfPayload); } catch (e) { toast.error(e?.response?.data?.error || e.message); } };
+  const onDownloadProforma = async () => { try { const { payload } = await persistDraftForPdf(); validatePdfDownload(payload); const pdfPayload = buildPdfPayloadForDownload(payload, financingPercent); await downloadProformaPdf(pdfPayload); } catch (e) { toast.error(e?.response?.data?.error || e.message); } };
 
-  const canConfirm = isAcopioRevision
-    ? false
-    : (isRevisionQuote ? ["", "draft", "rejected"].includes(finalStatus || "") : ["draft", "rejected_commercial", "rejected_technical"].includes(status));
+  const canConfirm = isAcopioRevision ? false : (isReturnedMeasurementQuote ? false : (isRevisionQuote ? ["", "draft", "rejected"].includes(finalStatus || "") : ["draft", "rejected_commercial", "rejected_technical"].includes(status)));
 
   return (
     <div className="container">
@@ -406,40 +218,33 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
           <Button variant="secondary" onClick={onDownloadPresupuesto}>PDF presupuesto</Button>
           {user?.is_distribuidor ? <Button variant="secondary" onClick={onDownloadProforma}>PDF proforma</Button> : null}
           <Button onClick={() => saveM.mutate()} disabled={saveM.isPending}>{saveM.isPending ? "Guardando..." : "Guardar"}</Button>
-          {!isAcopioRevision ? (
-            <Button variant="primary" onClick={() => { if (isRevisionQuote) { confirmM.mutate({}); return; } handleConfirmIntent(); }} disabled={!canConfirm || confirmM.isPending}>{confirmM.isPending ? "Confirmando..." : (isRevisionQuote ? "Enviar cotización final" : "Confirmar presupuesto")}</Button>
-          ) : null}
+          {isReturnedMeasurementQuote ? (
+            <>
+              <Button variant="ghost" onClick={() => resetReturnedM.mutate()} disabled={resetReturnedM.isPending || confirmReturnedM.isPending}>{resetReturnedM.isPending ? "Restableciendo..." : "Restablecer al original"}</Button>
+              <Button variant="primary" onClick={() => confirmReturnedM.mutate()} disabled={confirmReturnedM.isPending || resetReturnedM.isPending}>{confirmReturnedM.isPending ? "Enviando..." : "Confirmar y volver a Técnica"}</Button>
+            </>
+          ) : (!isAcopioRevision ? (<Button variant="primary" onClick={() => { if (isRevisionQuote) { confirmM.mutate({}); return; } handleConfirmIntent(); }} disabled={!canConfirm || confirmM.isPending}>{confirmM.isPending ? "Confirmando..." : (isRevisionQuote ? "Enviar cotización final" : "Confirmar presupuesto")}</Button>) : null)}
         </div>
       </div>
 
-      {isAcopioRevision ? (
-        <div className="spacer" />
-      ) : null}
-      {isAcopioRevision ? (
-        <div className="card" style={{ background: "#fff8f3", border: "1px solid #f2d3bf" }}>
-          <div style={{ fontWeight: 900, marginBottom: 6 }}>Ajuste de presupuesto en Acopio</div>
-          <div className="muted">
-            Este ajuste no se envía desde acá. Guardá los cambios y luego usá <b>Solicitar paso a Producción</b> desde <b>Mis presupuestos</b>. Cuando Comercial y Técnica aprueben ese paso, el sistema enviará la venta final a Odoo.
-          </div>
-        </div>
+      {isReturnedMeasurementQuote ? (
+        <><div className="spacer" /><div className="card" style={{ background: "#fff8f3", border: "1px solid #f2d3bf" }}>
+          <div style={{ fontWeight: 900, marginBottom: 6 }}>Presupuesto devuelto desde medición / datos técnicos</div>
+          <div className="muted" style={{ marginBottom: 8 }}>{returnedMeasurementReason || "El medidor o técnica devolvió este portón para que ajustes el presupuesto antes de continuar."}</div>
+          {returnedMeasurementForced ? <div className="muted">Este caso quedó bloqueado por superficie final mayor a la presupuestada fuera de tolerancia. Después de ajustar, usá <b>Confirmar y volver a Técnica</b>.</div> : <div className="muted">Podés ajustar los ítems del presupuesto. El ítem <b>Facturado previamente</b> queda visible para calcular la diferencia. Cuando termines, usá <b>Confirmar y volver a Técnica</b>.</div>}
+        </div></>
       ) : null}
 
-      {!isRevisionQuote && confirmChoiceOpen && (
+      {isAcopioRevision ? (<><div className="spacer" /><div className="card" style={{ background: "#fff8f3", border: "1px solid #f2d3bf" }}><div style={{ fontWeight: 900, marginBottom: 6 }}>Ajuste de presupuesto en Acopio</div><div className="muted">Este ajuste no se envía desde acá. Guardá los cambios y luego usá <b>Solicitar paso a Producción</b> desde <b>Mis presupuestos</b>. Cuando Comercial y Técnica aprueben ese paso, el sistema enviará la venta final a Odoo.</div></div></>) : null}
+
+      {!isRevisionQuote && !isReturnedMeasurementQuote && confirmChoiceOpen && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0, 0, 0, 0.45)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20, zIndex: 1000 }} onClick={() => { if (!confirmM.isPending) setConfirmChoiceOpen(false); }}>
           <div className="card" style={{ width: "100%", maxWidth: 880, background: "#fff", border: "1px solid #ddd", boxShadow: "0 20px 60px rgba(0,0,0,0.18)" }} onClick={(e) => e.stopPropagation()}>
             <div style={{ fontWeight: 900, fontSize: 22, marginBottom: 6 }}>Elegí el destino del presupuesto</div>
             <div className="muted" style={{ marginBottom: 18 }}>Esta decisión cambia cómo sigue el circuito del portón después de confirmar.</div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 14 }}>
-              <div style={{ border: "1px solid #d9e5f7", background: "#f7fbff", borderRadius: 14, padding: 16 }}>
-                <div style={{ fontWeight: 900, fontSize: 18, marginBottom: 8 }}>Acopio</div>
-                <div className="muted" style={{ marginBottom: 14 }}>El portón queda en espera. Se podrá seguir gestionando desde <b>Acopio → Producción</b> y mantiene una instancia de edición.</div>
-                <Button onClick={() => confirmM.mutate({ fulfillmentMode: "acopio" })} disabled={confirmM.isPending}>{confirmM.isPending ? "Confirmando..." : "Confirmar en Acopio"}</Button>
-              </div>
-              <div style={{ border: "1px solid #f2d3bf", background: "#fff8f3", borderRadius: 14, padding: 16 }}>
-                <div style={{ fontWeight: 900, fontSize: 18, marginBottom: 8 }}>Producción</div>
-                <div className="muted" style={{ marginBottom: 14 }}>El portón entra directo en circuito productivo. Ya no podrá editarse desde <b>Presupuestos</b>.</div>
-                <Button variant="primary" onClick={() => confirmM.mutate({ fulfillmentMode: "produccion" })} disabled={confirmM.isPending}>{confirmM.isPending ? "Confirmando..." : "Confirmar en Producción"}</Button>
-              </div>
+              <div style={{ border: "1px solid #d9e5f7", background: "#f7fbff", borderRadius: 14, padding: 16 }}><div style={{ fontWeight: 900, fontSize: 18, marginBottom: 8 }}>Acopio</div><div className="muted" style={{ marginBottom: 14 }}>El portón queda en espera. Se podrá seguir gestionando desde <b>Acopio → Producción</b> y mantiene una instancia de edición.</div><Button onClick={() => confirmM.mutate({ fulfillmentMode: "acopio" })} disabled={confirmM.isPending}>{confirmM.isPending ? "Confirmando..." : "Confirmar en Acopio"}</Button></div>
+              <div style={{ border: "1px solid #f2d3bf", background: "#fff8f3", borderRadius: 14, padding: 16 }}><div style={{ fontWeight: 900, fontSize: 18, marginBottom: 8 }}>Producción</div><div className="muted" style={{ marginBottom: 14 }}>El portón entra directo en circuito productivo. Ya no podrá editarse desde <b>Presupuestos</b>.</div><Button variant="primary" onClick={() => confirmM.mutate({ fulfillmentMode: "produccion" })} disabled={confirmM.isPending}>{confirmM.isPending ? "Confirmando..." : "Confirmar en Producción"}</Button></div>
             </div>
             <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 16 }}><Button variant="ghost" onClick={() => setConfirmChoiceOpen(false)} disabled={confirmM.isPending}>Cancelar</Button></div>
           </div>
@@ -461,9 +266,11 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
           <SummaryBox totals={totals} paymentMethod={paymentMethod} />
         </div>
       </div>
-      {(saveM.isError || confirmM.isError) && <div className="spacer" />}
+      {(saveM.isError || confirmM.isError || resetReturnedM.isError || confirmReturnedM.isError) && <div className="spacer" />}
       {saveM.isError && <div style={{ color: "#d93025", fontSize: 13 }}>{saveM.error.message}</div>}
       {confirmM.isError && <div style={{ color: "#d93025", fontSize: 13 }}>{confirmM.error.message}</div>}
+      {resetReturnedM.isError && <div style={{ color: "#d93025", fontSize: 13 }}>{resetReturnedM.error.message}</div>}
+      {confirmReturnedM.isError && <div style={{ color: "#d93025", fontSize: 13 }}>{confirmReturnedM.error.message}</div>}
     </div>
   );
 }

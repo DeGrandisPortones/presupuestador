@@ -6,7 +6,7 @@ const SYSTEM_PRODUCT_IDS = new Set([3008, 3009]);
 export default function LineRow({ line, finalUnit, total, formatARS }) {
   const { setQty, removeLine } = useQuoteStore();
   const visibleName = String(line.name || line.raw_name || `Producto ${line.product_id}`).trim();
-  const isProtectedLine = !!line.auto_system_item || !!line.surface_quantity || SYSTEM_PRODUCT_IDS.has(Number(line.product_id));
+  const isProtectedLine = !!line.auto_system_item || !!line.surface_quantity || !!line.previously_billed_line || SYSTEM_PRODUCT_IDS.has(Number(line.product_id));
 
   return (
     <tr>
@@ -16,6 +16,7 @@ export default function LineRow({ line, finalUnit, total, formatARS }) {
           ID: {line.product_id} {line.code ? `| ${line.code}` : ""}
           {line.auto_system_item ? " · Auto por sistema y superficie" : ""}
           {!line.auto_system_item && line.surface_quantity ? " · Cantidad por superficie" : ""}
+          {line.previously_billed_line ? " · Facturado previamente" : ""}
         </div>
       </td>
 
