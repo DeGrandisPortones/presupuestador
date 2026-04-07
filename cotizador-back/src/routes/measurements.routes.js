@@ -4,7 +4,7 @@ import { requireAuth } from "../auth.js";
 import { dbQuery } from "../db.js";
 import { ensureQuotesMeasurementColumns } from "../quotesSchema.js";
 import { finalizeMeasurementToRevisionQuote } from "../measurementFinalization.js";
-import { getCommercialFinalToleranceAreaM2, getMeasurementSurfaceFinalFormula } from "../settingsDb.js";
+import { getCommercialFinalToleranceAreaM2, getTechnicalMeasurementRules } from "../settingsDb.js";
 
 const MEASUREMENT_PRODUCT_ID = Number(process.env.ODOO_MEASUREMENT_PRODUCT_ID || 2865);
 const PREVIOUSLY_BILLED_PRODUCT_ID = -900001;
@@ -54,6 +54,79 @@ function boolishToNumber(value) {
   if (["si", "sí", "true", "1", "yes"].includes(normalized)) return 1;
   if (["no", "false", "0"].includes(normalized)) return 0;
   return 0;
+}
+function compareSurfaceHelperValue(currentRaw, operator, compareRaw) {
+  const currentText = normalizeFormulaText(currentRaw);
+  const expectedText = normalizeFormulaText(compareRaw);
+  const currentNum = Number(String(currentRaw ?? "").replace(",", "."));
+  const expectedNum = Number(String(compareRaw ?? "").replace(",", "."));
+  switch (String(operator || "=").trim()) {
+    case "=":
+      return currentText === expectedText;
+    case "!=":
+      return currentText !== expectedText;
+    case ">":
+      return Number.isFinite(currentNum) && Number.isFinite(expectedNum) && currentNum > expectedNum;
+    case ">=":
+      return Number.isFinite(currentNum) && Number.isFinite(expectedNum) && currentNum >= expectedNum;
+    case "<":
+      return Number.isFinite(currentNum) && Number.isFinite(expectedNum) && currentNum < expectedNum;
+    case "<=":
+      return Number.isFinite(currentNum) && Number.isFinite(expectedNum) && currentNum <= expectedNum;
+    case "contains":
+      return currentText.includes(expectedText);
+    default:
+      return currentText === expectedText;
+  }
+}
+function isValidFormulaIdentifier(value) {
+  return /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(String(value || "").trim());
+}
+function normalizeSurfaceHelperKey(value) {
+  let v = String(value || "").trim().replace(/[^A-Za-z0-9_$]+/g, "_");
+  if (!v) return "";
+  if (!/^[A-Za-z_$]/.test(v)) v = `helper_${v}`;
+  return v;
+}
+function coerceSurfaceHelperValue(value) {
+  const raw = String(value ?? "").trim();
+  if (!raw) return "";
+  const lower = raw.toLowerCase();
+  if (["si", "sí", "true", "yes"].includes(lower)) return 1;
+  if (["no", "false"].includes(lower)) return 0;
+  const num = Number(raw.replace(",", "."));
+  if (Number.isFinite(num)) return num;
+  return normalizeFormulaText(raw);
+}
+function applySurfaceHelperRules(context, helperRules) {
+  let next = { ...(context || {}) };
+  for (const rule of Array.isArray(helperRules) ? helperRules : []) {
+    if (rule?.active === false) continue;
+    const sourceLeft = String(rule?.source_left || "").trim();
+    const helperKey = normalizeSurfaceHelperKey(rule?.helper_key);
+    if (!sourceLeft || !helperKey) continue;
+    const leftOk = compareSurfaceHelperValue(
+      next?.[sourceLeft],
+      rule?.operator_left || "=",
+      rule?.compare_left,
+    );
+    const sourceRight = String(rule?.source_right || "").trim();
+    const rightOk = sourceRight
+      ? compareSurfaceHelperValue(
+          next?.[sourceRight],
+          rule?.operator_right || "=",
+          rule?.compare_right,
+        )
+      : true;
+    const matches = sourceRight
+      ? String(rule?.join_mode || "and").trim().toLowerCase() === "or"
+        ? leftOk || rightOk
+        : leftOk && rightOk
+      : leftOk;
+    if (!matches) continue;
+    next[helperKey] = coerceSurfaceHelperValue(rule?.helper_value);
+  }
+  return next;
 }
 function deriveMeasurementPrefill(quote) {
   const payload = quote?.payload || {};
@@ -131,35 +204,9 @@ function buildSurfaceFormulaContext({ quote, form }) {
 function evaluateSurfaceFormula(formula, context) {
   const safeFormula = String(formula || "").trim();
   if (!safeFormula) return 0;
-  const allowed = [
-    "superficie_original_m2",
-    "budget_surface_m2",
-    "budget_width_m",
-    "budget_height_m",
-    "alto_final_mm",
-    "ancho_final_mm",
-    "alto1_mm",
-    "alto2_mm",
-    "alto3_mm",
-    "ancho1_mm",
-    "ancho2_mm",
-    "ancho3_mm",
-    "alto_prom_mm",
-    "ancho_prom_mm",
-    "alto_max_mm",
-    "ancho_max_mm",
-    "alto_min_mm",
-    "ancho_min_mm",
-    "piernas",
-    "colocacion",
-    "instalacion",
-    "piernas_angostas",
-    "piernas_medias",
-    "piernas_anchas",
-    "colocacion_dentro_vano",
-    "instalacion_dentro_vano",
-    "descuento_superficie_m2",
-  ];
+  const allowed = Object.keys(context || {})
+    .filter((key) => isValidFormulaIdentifier(key))
+    .sort();
   try {
     const fn = new Function(
       ...allowed,
@@ -179,13 +226,30 @@ function evaluateSurfaceFormula(formula, context) {
 }
 async function buildMeasurementSurfaceGuard({ quote, form }) {
   const tolerance_area_m2 = Number(await getCommercialFinalToleranceAreaM2()) || 0;
-  const surface_final_formula = await getMeasurementSurfaceFinalFormula();
-  const ctx = buildSurfaceFormulaContext({ quote, form });
+  const technicalSettings = await getTechnicalMeasurementRules();
+  const surface_final_formula = String(
+    technicalSettings?.surface_final_formula ||
+      "(alto_final_mm / 1000) * (ancho_final_mm / 1000)",
+  );
+  const helperRules = Array.isArray(technicalSettings?.surface_helper_rules)
+    ? technicalSettings.surface_helper_rules
+    : [];
+  let ctx = buildSurfaceFormulaContext({ quote, form });
+  ctx = applySurfaceHelperRules(ctx, helperRules);
   const surface_original_m2 = Number(ctx.superficie_original_m2 || 0) || 0;
   const surface_final_m2 = evaluateSurfaceFormula(surface_final_formula, ctx);
   const difference_m2 = Math.max(0, Number((surface_final_m2 - surface_original_m2).toFixed(4)));
   const forced_return_to_seller = difference_m2 > tolerance_area_m2 && surface_final_m2 > surface_original_m2;
-  return { surface_original_m2, surface_final_m2, difference_m2, tolerance_area_m2, surface_final_formula, forced_return_to_seller, default_return_reason: forced_return_to_seller ? DEFAULT_RETURN_REASON : "" };
+  return {
+    surface_original_m2,
+    surface_final_m2,
+    difference_m2,
+    tolerance_area_m2,
+    surface_final_formula,
+    forced_return_to_seller,
+    default_return_reason: forced_return_to_seller ? DEFAULT_RETURN_REASON : "",
+    helper_values: ctx,
+  };
 }
 function buildPreviouslyBilledLine(quote) {
   const amount = Number(quote?.deposit_amount || 0) || 0;

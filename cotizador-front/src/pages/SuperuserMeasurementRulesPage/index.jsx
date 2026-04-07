@@ -36,6 +36,36 @@ const SECTION_OPTIONS = [
   { value: "otros", label: "Otros / bloque aparte" },
 ];
 
+const SURFACE_HELPER_SOURCE_OPTIONS = [
+  { value: "superficie_original_m2", label: "Superficie original (m²)" },
+  { value: "budget_surface_m2", label: "Superficie presupuestada (m²)" },
+  { value: "budget_width_m", label: "Ancho presupuestado (m)" },
+  { value: "budget_height_m", label: "Alto presupuestado (m)" },
+  { value: "alto_final_mm", label: "Alto final (mm)" },
+  { value: "ancho_final_mm", label: "Ancho final (mm)" },
+  { value: "alto1_mm", label: "Alto 1 (mm)" },
+  { value: "alto2_mm", label: "Alto 2 (mm)" },
+  { value: "alto3_mm", label: "Alto 3 (mm)" },
+  { value: "ancho1_mm", label: "Ancho 1 (mm)" },
+  { value: "ancho2_mm", label: "Ancho 2 (mm)" },
+  { value: "ancho3_mm", label: "Ancho 3 (mm)" },
+  { value: "alto_min_mm", label: "Alto mínimo (mm)" },
+  { value: "ancho_min_mm", label: "Ancho mínimo (mm)" },
+  { value: "alto_max_mm", label: "Alto máximo (mm)" },
+  { value: "ancho_max_mm", label: "Ancho máximo (mm)" },
+  { value: "alto_prom_mm", label: "Alto promedio (mm)" },
+  { value: "ancho_prom_mm", label: "Ancho promedio (mm)" },
+  { value: "piernas", label: "Piernas (texto)" },
+  { value: "colocacion", label: "Colocación (texto)" },
+  { value: "instalacion", label: "Instalación (si/no)" },
+  { value: "piernas_angostas", label: "Helper piernas angostas" },
+  { value: "piernas_medias", label: "Helper piernas medias" },
+  { value: "piernas_anchas", label: "Helper piernas anchas" },
+  { value: "colocacion_dentro_vano", label: "Helper colocación dentro vano" },
+  { value: "instalacion_dentro_vano", label: "Helper instalación dentro vano" },
+  { value: "descuento_superficie_m2", label: "Helper descuento superficie m²" },
+];
+
 function productLabel(product) {
   return `${product.display_name || product.alias || product.name}${product.code ? ` · ${product.code}` : ""}`;
 }
@@ -140,6 +170,13 @@ function normalizeRuleDraft(rule, index) {
     sort_order: Number(rule?.sort_order || index + 1) || index + 1,
   };
 }
+
+function normalizeSurfaceHelperKey(value) {
+  let next = String(value || "").trim().replace(/[^A-Za-z0-9_$]+/g, "_");
+  if (!next) return "";
+  if (!/^[A-Za-z_$]/.test(next)) next = `helper_${next}`;
+  return next;
+}
 function updateFieldAt(setFieldDraft, index, patch) {
   setFieldDraft((prev) => {
     const next = [...(prev.fields || [])];
@@ -213,6 +250,7 @@ export default function SuperuserMeasurementRulesPage() {
   const [savingRules, setSavingRules] = useState(false);
   const [savingSurfaceFormula, setSavingSurfaceFormula] = useState(false);
   const [surfaceFinalFormula, setSurfaceFinalFormula] = useState("(alto_final_mm / 1000) * (ancho_final_mm / 1000)");
+  const [surfaceHelperDraft, setSurfaceHelperDraft] = useState({ rules: [] });
   const [fieldDraft, setFieldDraft] = useState({ fields: [] });
   const [ruleDraft, setRuleDraft] = useState({ rules: [] });
   const [fieldFilter, setFieldFilter] = useState("all");
@@ -258,6 +296,11 @@ export default function SuperuserMeasurementRulesPage() {
           "(alto_final_mm / 1000) * (ancho_final_mm / 1000)",
       ),
     );
+    setSurfaceHelperDraft({
+      rules: Array.isArray(rulesQ.data.surface_helper_rules)
+        ? rulesQ.data.surface_helper_rules
+        : [],
+    });
   }, [rulesQ.data]);
 
   const products = useMemo(
@@ -327,8 +370,24 @@ export default function SuperuserMeasurementRulesPage() {
   );
   const ruleSourceOptions = allFields;
   const targetFieldOptions = visibleFields;
+  const helperSourceOptions = useMemo(() => {
+    const seen = new Set();
+    const merged = [];
+    for (const item of SURFACE_HELPER_SOURCE_OPTIONS) {
+      if (!item?.value || seen.has(item.value)) continue;
+      seen.add(item.value);
+      merged.push(item);
+    }
+    for (const field of visibleFields) {
+      if (!field?.key || seen.has(field.key)) continue;
+      seen.add(field.key);
+      merged.push({ value: field.key, label: `Campo: ${field.label || field.key}` });
+    }
+    return merged;
+  }, [visibleFields]);
   const fields = Array.isArray(fieldDraft?.fields) ? fieldDraft.fields : [];
   const rules = Array.isArray(ruleDraft?.rules) ? ruleDraft.rules : [];
+  const surfaceHelpers = Array.isArray(surfaceHelperDraft?.rules) ? surfaceHelperDraft.rules : [];
   const filteredFields = useMemo(() => {
     const q = String(fieldSearch || "").trim().toLowerCase();
     return fields.filter((field) => {
@@ -379,39 +438,51 @@ export default function SuperuserMeasurementRulesPage() {
     [rules, visibleFields],
   );
 
+  function buildTechnicalRulesPayload() {
+    return {
+      rules: rules
+        .map((rule, index) => ({
+          id: rule.id || `rule_${index + 1}`,
+          name: String(rule.name || "").trim(),
+          active: rule.active !== false,
+          source_key: String(rule.source_key || "").trim(),
+          operator: String(rule.operator || "="),
+          compare_value: rule.compare_value ?? "",
+          action_type: String(rule.action_type || "set_value"),
+          target_field: String(rule.target_field || "").trim(),
+          target_value: rule.target_value ?? "",
+          target_options: parseOptions(
+            rule.target_options_text || "",
+          ).map((item) => item.value),
+          apply_to_odoo: rule.apply_to_odoo === true,
+          product_id: Number(rule.product_id || 0) || null,
+          product_label: String(rule.product_label || "").trim(),
+          sort_order: index + 1,
+        }))
+        .filter((rule) => rule.source_key),
+      surface_final_formula: surfaceFinalFormula,
+      surface_helper_rules: surfaceHelpers,
+    };
+  }
+
   async function onSaveSurfaceFinalFormula() {
     setSavingSurfaceFormula(true);
     try {
-      const saved = await adminSaveTechnicalMeasurementRules({
-        rules: rules
-          .map((rule, index) => ({
-            id: rule.id || `rule_${index + 1}`,
-            name: String(rule.name || "").trim(),
-            active: rule.active !== false,
-            source_key: String(rule.source_key || "").trim(),
-            operator: String(rule.operator || "="),
-            compare_value: rule.compare_value ?? "",
-            action_type: String(rule.action_type || "set_value"),
-            target_field: String(rule.target_field || "").trim(),
-            target_value: rule.target_value ?? "",
-            target_options: parseOptions(
-              rule.target_options_text || "",
-            ).map((item) => item.value),
-            apply_to_odoo: rule.apply_to_odoo === true,
-            product_id: Number(rule.product_id || 0) || null,
-            product_label: String(rule.product_label || "").trim(),
-            sort_order: index + 1,
-          }))
-          .filter((rule) => rule.source_key),
-        surface_final_formula: surfaceFinalFormula,
-      });
+      const saved = await adminSaveTechnicalMeasurementRules(
+        buildTechnicalRulesPayload(),
+      );
       setSurfaceFinalFormula(
         String(
           saved.surface_final_formula ||
             "(alto_final_mm / 1000) * (ancho_final_mm / 1000)",
         ),
       );
-      window.alert("Fórmula de superficie guardada.");
+      setSurfaceHelperDraft({
+        rules: Array.isArray(saved.surface_helper_rules)
+          ? saved.surface_helper_rules
+          : [],
+      });
+      window.alert("Auxiliares y fórmula guardados.");
     } finally {
       setSavingSurfaceFormula(false);
     }
@@ -1201,6 +1272,115 @@ export default function SuperuserMeasurementRulesPage() {
 
       <div className="spacer" />
       <div className="card" style={{ background: "#fafafa" }}>
+        <h2 style={{ marginTop: 0 }}>Auxiliares de superficie</h2>
+        <div className="muted" style={{ marginBottom: 10 }}>
+          Definí reglas previas a la fórmula. Ejemplo: si <b>alto_min_mm</b> y <b>ancho_min_mm</b> cumplen cierto rango,
+          seteás <b>piernas = angostas</b>. Después podés usar ese helper en la fórmula o en otro auxiliar.
+        </div>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
+          <Button
+            onClick={() =>
+              setSurfaceHelperDraft((prev) => ({
+                rules: [
+                  ...(prev.rules || []),
+                  {
+                    id: `surface_helper_${Date.now()}`,
+                    name: "",
+                    active: true,
+                    source_left: "alto_min_mm",
+                    operator_left: "<=",
+                    compare_left: "",
+                    join_mode: "and",
+                    source_right: "ancho_min_mm",
+                    operator_right: "<=",
+                    compare_right: "",
+                    helper_key: "piernas",
+                    helper_value: "",
+                    sort_order: (prev.rules || []).length + 1,
+                  },
+                ],
+              }))
+            }
+          >
+            + Agregar auxiliar
+          </Button>
+          <Button variant="primary" onClick={onSaveSurfaceFinalFormula} disabled={savingSurfaceFormula}>
+            {savingSurfaceFormula ? "Guardando..." : "Guardar auxiliares y fórmula"}
+          </Button>
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+          {surfaceHelpers.map((rule, index) => (
+            <div key={rule.id || index} style={{ border: "1px solid #eee", borderRadius: 12, padding: 12, background: "#fff" }}>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 10 }}>
+                <div>
+                  <div className="muted" style={{ marginBottom: 6 }}>Nombre</div>
+                  <Input value={rule.name || ""} onChange={(v) => setSurfaceHelperDraft((prev) => ({ rules: (prev.rules || []).map((item, i) => i === index ? { ...item, name: v } : item) }))} style={{ width: "100%" }} />
+                </div>
+                <div>
+                  <div className="muted" style={{ marginBottom: 6 }}>Condición A</div>
+                  <select value={rule.source_left || ""} onChange={(e) => setSurfaceHelperDraft((prev) => ({ rules: (prev.rules || []).map((item, i) => i === index ? { ...item, source_left: e.target.value } : item) }))} style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid #ddd" }}>
+                    <option value="">Seleccione variable…</option>
+                    {helperSourceOptions.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <div className="muted" style={{ marginBottom: 6 }}>Operador A</div>
+                  <select value={rule.operator_left || "="} onChange={(e) => setSurfaceHelperDraft((prev) => ({ rules: (prev.rules || []).map((item, i) => i === index ? { ...item, operator_left: e.target.value } : item) }))} style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid #ddd" }}>
+                    {TECHNICAL_RULE_OPERATORS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <div className="muted" style={{ marginBottom: 6 }}>Comparar A</div>
+                  <Input value={rule.compare_left ?? ""} onChange={(v) => setSurfaceHelperDraft((prev) => ({ rules: (prev.rules || []).map((item, i) => i === index ? { ...item, compare_left: v } : item) }))} style={{ width: "100%" }} />
+                </div>
+                <div>
+                  <div className="muted" style={{ marginBottom: 6 }}>Unión</div>
+                  <select value={rule.join_mode || "and"} onChange={(e) => setSurfaceHelperDraft((prev) => ({ rules: (prev.rules || []).map((item, i) => i === index ? { ...item, join_mode: e.target.value } : item) }))} style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid #ddd" }}>
+                    <option value="and">Y además</option>
+                    <option value="or">O también</option>
+                  </select>
+                </div>
+                <div>
+                  <div className="muted" style={{ marginBottom: 6 }}>Condición B (opcional)</div>
+                  <select value={rule.source_right || ""} onChange={(e) => setSurfaceHelperDraft((prev) => ({ rules: (prev.rules || []).map((item, i) => i === index ? { ...item, source_right: e.target.value } : item) }))} style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid #ddd" }}>
+                    <option value="">(sin segunda condición)</option>
+                    {helperSourceOptions.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <div className="muted" style={{ marginBottom: 6 }}>Operador B</div>
+                  <select value={rule.operator_right || "="} onChange={(e) => setSurfaceHelperDraft((prev) => ({ rules: (prev.rules || []).map((item, i) => i === index ? { ...item, operator_right: e.target.value } : item) }))} style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid #ddd" }}>
+                    {TECHNICAL_RULE_OPERATORS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <div className="muted" style={{ marginBottom: 6 }}>Comparar B</div>
+                  <Input value={rule.compare_right ?? ""} onChange={(v) => setSurfaceHelperDraft((prev) => ({ rules: (prev.rules || []).map((item, i) => i === index ? { ...item, compare_right: v } : item) }))} style={{ width: "100%" }} />
+                </div>
+                <div>
+                  <div className="muted" style={{ marginBottom: 6 }}>Helper</div>
+                  <Input value={rule.helper_key || ""} onChange={(v) => setSurfaceHelperDraft((prev) => ({ rules: (prev.rules || []).map((item, i) => i === index ? { ...item, helper_key: normalizeSurfaceHelperKey(v) } : item) }))} placeholder="piernas o descuento_superficie_m2" style={{ width: "100%" }} />
+                </div>
+                <div>
+                  <div className="muted" style={{ marginBottom: 6 }}>Valor</div>
+                  <Input value={rule.helper_value ?? ""} onChange={(v) => setSurfaceHelperDraft((prev) => ({ rules: (prev.rules || []).map((item, i) => i === index ? { ...item, helper_value: v } : item) }))} placeholder="angostas o 0.65" style={{ width: "100%" }} />
+                </div>
+                <div style={{ display: "flex", alignItems: "end", gap: 8 }}>
+                  <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                    <input type="checkbox" checked={rule.active !== false} onChange={(e) => setSurfaceHelperDraft((prev) => ({ rules: (prev.rules || []).map((item, i) => i === index ? { ...item, active: e.target.checked } : item) }))} />
+                    <span className="muted">Activo</span>
+                  </label>
+                  <Button variant="ghost" onClick={() => setSurfaceHelperDraft((prev) => ({ rules: (prev.rules || []).filter((_, i) => i !== index) }))}>Eliminar</Button>
+                </div>
+              </div>
+            </div>
+          ))}
+          {!surfaceHelpers.length ? <div className="muted">Todavía no hay auxiliares configurados.</div> : null}
+        </div>
+      </div>
+
+      <div className="spacer" />
+      <div className="card" style={{ background: "#fafafa" }}>
         <h2 style={{ marginTop: 0 }}>Fórmula de superficie final</h2>
         <div className="muted" style={{ marginBottom: 10 }}>
           Esta fórmula decide la <b>superficie final</b> que se compara contra la superficie presupuestada para forzar la devolución al vendedor.
@@ -1212,11 +1392,11 @@ export default function SuperuserMeasurementRulesPage() {
           style={{ width: "100%", minHeight: 96, padding: 10, borderRadius: 10, border: "1px solid #ddd", resize: "vertical", background: "#fff", color: "#111827" }}
         />
         <div className="muted" style={{ marginTop: 8 }}>
-          Variables: <b>superficie_original_m2</b>, <b>budget_surface_m2</b>, <b>budget_width_m</b>, <b>budget_height_m</b>,
+          Variables base: <b>superficie_original_m2</b>, <b>budget_surface_m2</b>, <b>budget_width_m</b>, <b>budget_height_m</b>,
           <b>alto_final_mm</b>, <b>ancho_final_mm</b>, <b>alto1_mm</b>, <b>alto2_mm</b>, <b>alto3_mm</b>,
           <b>ancho1_mm</b>, <b>ancho2_mm</b>, <b>ancho3_mm</b>, <b>alto_prom_mm</b>, <b>ancho_prom_mm</b>,
-          <b>piernas</b>, <b>colocacion</b>, <b>instalacion</b>, <b>piernas_angostas</b>, <b>piernas_medias</b>,
-          <b>piernas_anchas</b>, <b>instalacion_dentro_vano</b>, <b>colocacion_dentro_vano</b>, <b>descuento_superficie_m2</b>.
+          <b>alto_min_mm</b>, <b>ancho_min_mm</b>, <b>alto_max_mm</b>, <b>ancho_max_mm</b>, <b>piernas</b>,
+          <b>colocacion</b>, <b>instalacion</b> y cualquier helper que definas arriba.
         </div>
         <div className="muted" style={{ marginTop: 6 }}>
           Ejemplo: <b>((alto_final_mm / 1000) * (ancho_final_mm / 1000)) - (instalacion_dentro_vano * piernas_angostas * 0.65)</b>
@@ -1288,30 +1468,9 @@ export default function SuperuserMeasurementRulesPage() {
             onClick={async () => {
               setSavingRules(true);
               try {
-                const payload = {
-                  rules: rules
-                    .map((rule, index) => ({
-                      id: rule.id || `rule_${index + 1}`,
-                      name: String(rule.name || "").trim(),
-                      active: rule.active !== false,
-                      source_key: String(rule.source_key || "").trim(),
-                      operator: String(rule.operator || "="),
-                      compare_value: rule.compare_value ?? "",
-                      action_type: String(rule.action_type || "set_value"),
-                      target_field: String(rule.target_field || "").trim(),
-                      target_value: rule.target_value ?? "",
-                      target_options: parseOptions(
-                        rule.target_options_text || "",
-                      ).map((item) => item.value),
-                      apply_to_odoo: rule.apply_to_odoo === true,
-                      product_id: Number(rule.product_id || 0) || null,
-                      product_label: String(rule.product_label || "").trim(),
-                      sort_order: index + 1,
-                    }))
-                    .filter((rule) => rule.source_key),
-                  surface_final_formula: surfaceFinalFormula,
-                };
-                const saved = await adminSaveTechnicalMeasurementRules(payload);
+                const saved = await adminSaveTechnicalMeasurementRules(
+                  buildTechnicalRulesPayload(),
+                );
                 setRuleDraft({
                   rules: (saved.rules || []).map((rule, index) =>
                     normalizeRuleDraft(rule, index),
@@ -1323,6 +1482,11 @@ export default function SuperuserMeasurementRulesPage() {
                       "(alto_final_mm / 1000) * (ancho_final_mm / 1000)",
                   ),
                 );
+                setSurfaceHelperDraft({
+                  rules: Array.isArray(saved.surface_helper_rules)
+                    ? saved.surface_helper_rules
+                    : [],
+                });
                 window.alert("Reglas guardadas.");
               } finally {
                 setSavingRules(false);

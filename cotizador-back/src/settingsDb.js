@@ -23,7 +23,7 @@ export async function ensureSettingsTable() {
     [FINAL_QUOTE_SETTINGS_KEY, { tolerance_area_m2: 0 }],
     [MEASUREMENT_PRODUCT_MAPPINGS_KEY, { rules: [] }],
     [DOOR_QUOTE_SETTINGS_KEY, { formula: "precio_ipanel + precio_venta_marco" }],
-    [TECHNICAL_MEASUREMENT_RULES_KEY, { rules: [], surface_final_formula: DEFAULT_SURFACE_FINAL_FORMULA }],
+    [TECHNICAL_MEASUREMENT_RULES_KEY, { rules: [], surface_final_formula: DEFAULT_SURFACE_FINAL_FORMULA, surface_helper_rules: [] }],
     [TECHNICAL_MEASUREMENT_FIELDS_KEY, { fields: [] }],
   ]) {
     await dbQuery(
@@ -55,6 +55,15 @@ function normalizeRuleOperator(value) {
 function normalizeRuleActionType(value) {
   const v = String(value || "set_value").trim().toLowerCase();
   return ["set_value", "clear_field", "show_field", "hide_field", "allow_options"].includes(v) ? v : "set_value";
+}
+function normalizeJoinMode(value) {
+  return String(value || "and").trim().toLowerCase() === "or" ? "or" : "and";
+}
+function normalizeHelperKey(value) {
+  let v = String(value || "").trim().replace(/[^A-Za-z0-9_$]+/g, "_");
+  if (!v) return "";
+  if (!/^[A-Za-z_$]/.test(v)) v = `helper_${v}`;
+  return v;
 }
 function normalizeValueSourceType(value) {
   const v = String(value || "manual").trim().toLowerCase();
@@ -101,11 +110,33 @@ function normalizeTechnicalMeasurementRule(rule = {}, index = 0) {
     sort_order: Number(rule?.sort_order || index + 1) || index + 1,
   };
 }
+function normalizeSurfaceHelperRule(rule = {}, index = 0) {
+  const source_left = normalizeText(rule.source_left || rule.left_source || rule.source_key);
+  const helper_key = normalizeHelperKey(rule.helper_key || rule.target_key);
+  if (!source_left || !helper_key) return null;
+  return {
+    id: normalizeText(rule.id || `surface_helper_${index + 1}`),
+    name: normalizeText(rule.name || helper_key),
+    active: rule?.active !== false,
+    source_left,
+    operator_left: normalizeRuleOperator(rule.operator_left || rule.operator),
+    compare_left: rule?.compare_left ?? rule?.compare_value ?? "",
+    join_mode: normalizeJoinMode(rule.join_mode),
+    source_right: normalizeText(rule.source_right),
+    operator_right: normalizeRuleOperator(rule.operator_right || "="),
+    compare_right: rule?.compare_right ?? "",
+    helper_key,
+    helper_value: rule?.helper_value ?? "",
+    sort_order: Number(rule?.sort_order || index + 1) || index + 1,
+  };
+}
 function normalizeTechnicalMeasurementRules(raw = {}) {
   const rules = Array.isArray(raw?.rules) ? raw.rules : [];
+  const surface_helper_rules = Array.isArray(raw?.surface_helper_rules) ? raw.surface_helper_rules : [];
   return {
     rules: rules.map((r, i) => normalizeTechnicalMeasurementRule(r, i)).filter(Boolean).sort((a, b) => a.sort_order - b.sort_order),
     surface_final_formula: normalizeSurfaceFinalFormula(raw?.surface_final_formula),
+    surface_helper_rules: surface_helper_rules.map((r, i) => normalizeSurfaceHelperRule(r, i)).filter(Boolean).sort((a, b) => a.sort_order - b.sort_order),
   };
 }
 function normalizeFieldType(value) {
@@ -197,10 +228,13 @@ export async function setTechnicalMeasurementRules(payload = {}) {
   const current = await getTechnicalMeasurementRules();
   const merged = {
     ...(current || {}),
-    ...(payload && typeof payload === 'object' ? payload : {}),
+    ...(payload && typeof payload === "object" ? payload : {}),
     surface_final_formula: payload?.surface_final_formula !== undefined
       ? payload.surface_final_formula
       : current?.surface_final_formula,
+    surface_helper_rules: payload?.surface_helper_rules !== undefined
+      ? payload.surface_helper_rules
+      : current?.surface_helper_rules,
   };
   return setSetting(TECHNICAL_MEASUREMENT_RULES_KEY, normalizeTechnicalMeasurementRules(merged));
 }
@@ -216,7 +250,6 @@ export async function setTechnicalMeasurementFieldDefinitions(payload = {}) {
   return setSetting(TECHNICAL_MEASUREMENT_FIELDS_KEY, normalizeTechnicalMeasurementFields(payload));
 }
 
-// Compatibilidad con imports viejos mientras se termina de migrar todo a tolerancia por m².
 export async function getCommercialFinalTolerancePercent() {
   return 0;
 }

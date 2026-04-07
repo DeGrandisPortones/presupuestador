@@ -1,9 +1,0 @@
-Patch acumulativo: agrega el tipo de campo "Producto de Odoo" sin sacar los tipos existentes.
-
-Comportamiento del tipo nuevo:
-- el campo se liga a una sección del presupuestador
-- trae por defecto el producto elegido en el presupuesto para esa sección
-- en medición/técnica permite cambiarlo por otro producto de esa misma sección (mostrado por alias)
-- el producto final seleccionado es el que pega en Odoo
-
-Se mantienen los tipos: texto, número, sí/no y lista cerrada.
