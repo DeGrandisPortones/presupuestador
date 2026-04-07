@@ -41,6 +41,20 @@ function canReadMeasurement({ user, quote }) { if (!user || !quote) return false
 function toNumberLike(v) { const n = Number(String(v ?? "").replace(",", ".")); return Number.isFinite(n) ? n : null; }
 function extractBudgetDimensionMm(quote, key) { const dims = quote?.payload?.dimensions || {}; const raw = key === "ancho" ? dims?.width : dims?.height; const n = toNumberLike(raw); if (!Number.isFinite(n) || n <= 0) return null; return Math.round(n * 1000); }
 function normalizeText(v) { return String(v || "").trim().toLowerCase(); }
+function normalizeFormulaText(v) {
+  return String(v || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, "_");
+}
+function boolishToNumber(value) {
+  if (value === true) return 1;
+  if (value === false) return 0;
+  const normalized = normalizeText(value);
+  if (["si", "sí", "true", "1", "yes"].includes(normalized)) return 1;
+  if (["no", "false", "0"].includes(normalized)) return 0;
+  return 0;
+}
 function deriveMeasurementPrefill(quote) {
   const payload = quote?.payload || {};
   const lines = Array.isArray(quote?.lines) ? quote.lines : [];
@@ -58,13 +72,37 @@ function averageMm(values = []) { const list = (Array.isArray(values) ? values :
 function maxMm(values = []) { const list = (Array.isArray(values) ? values : []).map((v) => Number(String(v || "").replace(",", "."))).filter((n) => Number.isFinite(n) && n > 0); return list.length ? Math.max(...list) : 0; }
 function minMm(values = []) { const list = (Array.isArray(values) ? values : []).map((v) => Number(String(v || "").replace(",", "."))).filter((n) => Number.isFinite(n) && n > 0); return list.length ? Math.min(...list) : 0; }
 function buildSurfaceFormulaContext({ quote, form }) {
+  const budgetWidthM = Number(quote?.payload?.dimensions?.width || 0) || 0;
+  const budgetHeightM = Number(quote?.payload?.dimensions?.height || 0) || 0;
   const original = Number(quote?.payload?.dimensions?.area_m2 || 0) || 0;
   const altos = Array.isArray(form?.esquema?.alto) ? form.esquema.alto : [];
   const anchos = Array.isArray(form?.esquema?.ancho) ? form.esquema.ancho : [];
   const alto_final_mm = Number(String(form?.alto_final_mm || 0).replace(",", ".")) || 0;
   const ancho_final_mm = Number(String(form?.ancho_final_mm || 0).replace(",", ".")) || 0;
+  const piernas = normalizeFormulaText(form?.piernas || form?.tipo_piernas || "");
+  const colocacion = normalizeFormulaText(
+    form?.colocacion ||
+    form?.tipo_colocacion ||
+    form?.instalacion_tipo ||
+    form?.instalacion_modo ||
+    "",
+  );
+  const instalacion = boolishToNumber(form?.instalacion);
+  const piernas_angostas = piernas.includes("angosta") ? 1 : 0;
+  const piernas_medias = piernas.includes("media") ? 1 : 0;
+  const piernas_anchas = piernas.includes("ancha") ? 1 : 0;
+  const colocacion_dentro_vano = (
+    colocacion === "dentro_vano" ||
+    colocacion === "por_dentro_del_vano" ||
+    colocacion.includes("dentro")
+  ) ? 1 : 0;
+  const instalacion_dentro_vano = colocacion_dentro_vano;
+  const descuento_superficie_m2 = instalacion_dentro_vano && piernas_angostas ? 0.65 : 0;
   return {
     superficie_original_m2: original,
+    budget_surface_m2: original,
+    budget_width_m: budgetWidthM,
+    budget_height_m: budgetHeightM,
     alto_final_mm,
     ancho_final_mm,
     alto1_mm: Number(String(altos[0] || 0).replace(",", ".")) || 0,
@@ -79,16 +117,62 @@ function buildSurfaceFormulaContext({ quote, form }) {
     ancho_max_mm: maxMm(anchos),
     alto_min_mm: minMm(altos),
     ancho_min_mm: minMm(anchos),
+    piernas,
+    colocacion,
+    instalacion,
+    piernas_angostas,
+    piernas_medias,
+    piernas_anchas,
+    colocacion_dentro_vano,
+    instalacion_dentro_vano,
+    descuento_superficie_m2,
   };
 }
 function evaluateSurfaceFormula(formula, context) {
   const safeFormula = String(formula || "").trim();
   if (!safeFormula) return 0;
-  const allowed = ["superficie_original_m2", "alto_final_mm", "ancho_final_mm", "alto1_mm", "alto2_mm", "alto3_mm", "ancho1_mm", "ancho2_mm", "ancho3_mm", "alto_prom_mm", "ancho_prom_mm", "alto_max_mm", "ancho_max_mm", "alto_min_mm", "ancho_min_mm"];
+  const allowed = [
+    "superficie_original_m2",
+    "budget_surface_m2",
+    "budget_width_m",
+    "budget_height_m",
+    "alto_final_mm",
+    "ancho_final_mm",
+    "alto1_mm",
+    "alto2_mm",
+    "alto3_mm",
+    "ancho1_mm",
+    "ancho2_mm",
+    "ancho3_mm",
+    "alto_prom_mm",
+    "ancho_prom_mm",
+    "alto_max_mm",
+    "ancho_max_mm",
+    "alto_min_mm",
+    "ancho_min_mm",
+    "piernas",
+    "colocacion",
+    "instalacion",
+    "piernas_angostas",
+    "piernas_medias",
+    "piernas_anchas",
+    "colocacion_dentro_vano",
+    "instalacion_dentro_vano",
+    "descuento_superficie_m2",
+  ];
   try {
-    const fn = new Function(...allowed, `return (${safeFormula});`);
-    const result = Number(fn(...allowed.map((key) => Number(context?.[key] || 0) || 0)));
-    return Number.isFinite(result) ? Math.max(0, result) : 0;
+    const fn = new Function(
+      ...allowed,
+      `const si = (cond, onTrue, onFalse = 0) => (cond ? onTrue : onFalse);
+       const max = Math.max;
+       const min = Math.min;
+       const abs = Math.abs;
+       const round = Math.round;
+       return (${safeFormula});`,
+    );
+    const result = fn(...allowed.map((key) => context?.[key]));
+    const numeric = Number(result);
+    return Number.isFinite(numeric) ? Math.max(0, numeric) : 0;
   } catch {
     return 0;
   }

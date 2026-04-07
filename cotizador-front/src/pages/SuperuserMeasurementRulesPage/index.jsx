@@ -211,6 +211,8 @@ export default function SuperuserMeasurementRulesPage() {
   const user = useAuthStore((s) => s.user);
   const [savingFields, setSavingFields] = useState(false);
   const [savingRules, setSavingRules] = useState(false);
+  const [savingSurfaceFormula, setSavingSurfaceFormula] = useState(false);
+  const [surfaceFinalFormula, setSurfaceFinalFormula] = useState("(alto_final_mm / 1000) * (ancho_final_mm / 1000)");
   const [fieldDraft, setFieldDraft] = useState({ fields: [] });
   const [ruleDraft, setRuleDraft] = useState({ rules: [] });
   const [fieldFilter, setFieldFilter] = useState("all");
@@ -250,6 +252,12 @@ export default function SuperuserMeasurementRulesPage() {
         normalizeRuleDraft(rule, index),
       ),
     });
+    setSurfaceFinalFormula(
+      String(
+        rulesQ.data.surface_final_formula ||
+          "(alto_final_mm / 1000) * (ancho_final_mm / 1000)",
+      ),
+    );
   }, [rulesQ.data]);
 
   const products = useMemo(
@@ -370,6 +378,44 @@ export default function SuperuserMeasurementRulesPage() {
     () => detectRuleConflicts(rules, visibleFields),
     [rules, visibleFields],
   );
+
+  async function onSaveSurfaceFinalFormula() {
+    setSavingSurfaceFormula(true);
+    try {
+      const saved = await adminSaveTechnicalMeasurementRules({
+        rules: rules
+          .map((rule, index) => ({
+            id: rule.id || `rule_${index + 1}`,
+            name: String(rule.name || "").trim(),
+            active: rule.active !== false,
+            source_key: String(rule.source_key || "").trim(),
+            operator: String(rule.operator || "="),
+            compare_value: rule.compare_value ?? "",
+            action_type: String(rule.action_type || "set_value"),
+            target_field: String(rule.target_field || "").trim(),
+            target_value: rule.target_value ?? "",
+            target_options: parseOptions(
+              rule.target_options_text || "",
+            ).map((item) => item.value),
+            apply_to_odoo: rule.apply_to_odoo === true,
+            product_id: Number(rule.product_id || 0) || null,
+            product_label: String(rule.product_label || "").trim(),
+            sort_order: index + 1,
+          }))
+          .filter((rule) => rule.source_key),
+        surface_final_formula: surfaceFinalFormula,
+      });
+      setSurfaceFinalFormula(
+        String(
+          saved.surface_final_formula ||
+            "(alto_final_mm / 1000) * (ancho_final_mm / 1000)",
+        ),
+      );
+      window.alert("Fórmula de superficie guardada.");
+    } finally {
+      setSavingSurfaceFormula(false);
+    }
+  }
 
   if (!user?.is_superuser) {
     return (
@@ -1154,6 +1200,36 @@ export default function SuperuserMeasurementRulesPage() {
       </div>
 
       <div className="spacer" />
+      <div className="card" style={{ background: "#fafafa" }}>
+        <h2 style={{ marginTop: 0 }}>Fórmula de superficie final</h2>
+        <div className="muted" style={{ marginBottom: 10 }}>
+          Esta fórmula decide la <b>superficie final</b> que se compara contra la superficie presupuestada para forzar la devolución al vendedor.
+          Además de medidas, puede usar <b>auxiliares</b> como piernas, colocación e instalación.
+        </div>
+        <textarea
+          value={surfaceFinalFormula}
+          onChange={(e) => setSurfaceFinalFormula(e.target.value)}
+          style={{ width: "100%", minHeight: 96, padding: 10, borderRadius: 10, border: "1px solid #ddd", resize: "vertical", background: "#fff", color: "#111827" }}
+        />
+        <div className="muted" style={{ marginTop: 8 }}>
+          Variables: <b>superficie_original_m2</b>, <b>budget_surface_m2</b>, <b>budget_width_m</b>, <b>budget_height_m</b>,
+          <b>alto_final_mm</b>, <b>ancho_final_mm</b>, <b>alto1_mm</b>, <b>alto2_mm</b>, <b>alto3_mm</b>,
+          <b>ancho1_mm</b>, <b>ancho2_mm</b>, <b>ancho3_mm</b>, <b>alto_prom_mm</b>, <b>ancho_prom_mm</b>,
+          <b>piernas</b>, <b>colocacion</b>, <b>instalacion</b>, <b>piernas_angostas</b>, <b>piernas_medias</b>,
+          <b>piernas_anchas</b>, <b>instalacion_dentro_vano</b>, <b>colocacion_dentro_vano</b>, <b>descuento_superficie_m2</b>.
+        </div>
+        <div className="muted" style={{ marginTop: 6 }}>
+          Ejemplo: <b>((alto_final_mm / 1000) * (ancho_final_mm / 1000)) - (instalacion_dentro_vano * piernas_angostas * 0.65)</b>
+        </div>
+        <div className="spacer" />
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+          <Button variant="primary" onClick={onSaveSurfaceFinalFormula} disabled={savingSurfaceFormula || savingRules}>
+            {savingSurfaceFormula ? "Guardando..." : "Guardar fórmula de superficie"}
+          </Button>
+        </div>
+      </div>
+
+      <div className="spacer" />
       <div className="card">
         <h2 style={{ marginTop: 0 }}>Reglas de dependencia y Odoo</h2>
         <div className="muted">
@@ -1233,6 +1309,7 @@ export default function SuperuserMeasurementRulesPage() {
                       sort_order: index + 1,
                     }))
                     .filter((rule) => rule.source_key),
+                  surface_final_formula: surfaceFinalFormula,
                 };
                 const saved = await adminSaveTechnicalMeasurementRules(payload);
                 setRuleDraft({
@@ -1240,6 +1317,12 @@ export default function SuperuserMeasurementRulesPage() {
                     normalizeRuleDraft(rule, index),
                   ),
                 });
+                setSurfaceFinalFormula(
+                  String(
+                    saved.surface_final_formula ||
+                      "(alto_final_mm / 1000) * (ancho_final_mm / 1000)",
+                  ),
+                );
                 window.alert("Reglas guardadas.");
               } finally {
                 setSavingRules(false);
