@@ -55,79 +55,6 @@ function boolishToNumber(value) {
   if (["no", "false", "0"].includes(normalized)) return 0;
   return 0;
 }
-function compareSurfaceHelperValue(currentRaw, operator, compareRaw) {
-  const currentText = normalizeFormulaText(currentRaw);
-  const expectedText = normalizeFormulaText(compareRaw);
-  const currentNum = Number(String(currentRaw ?? "").replace(",", "."));
-  const expectedNum = Number(String(compareRaw ?? "").replace(",", "."));
-  switch (String(operator || "=").trim()) {
-    case "=":
-      return currentText === expectedText;
-    case "!=":
-      return currentText !== expectedText;
-    case ">":
-      return Number.isFinite(currentNum) && Number.isFinite(expectedNum) && currentNum > expectedNum;
-    case ">=":
-      return Number.isFinite(currentNum) && Number.isFinite(expectedNum) && currentNum >= expectedNum;
-    case "<":
-      return Number.isFinite(currentNum) && Number.isFinite(expectedNum) && currentNum < expectedNum;
-    case "<=":
-      return Number.isFinite(currentNum) && Number.isFinite(expectedNum) && currentNum <= expectedNum;
-    case "contains":
-      return currentText.includes(expectedText);
-    default:
-      return currentText === expectedText;
-  }
-}
-function isValidFormulaIdentifier(value) {
-  return /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(String(value || "").trim());
-}
-function normalizeSurfaceHelperKey(value) {
-  let v = String(value || "").trim().replace(/[^A-Za-z0-9_$]+/g, "_");
-  if (!v) return "";
-  if (!/^[A-Za-z_$]/.test(v)) v = `helper_${v}`;
-  return v;
-}
-function coerceSurfaceHelperValue(value) {
-  const raw = String(value ?? "").trim();
-  if (!raw) return "";
-  const lower = raw.toLowerCase();
-  if (["si", "sí", "true", "yes"].includes(lower)) return 1;
-  if (["no", "false"].includes(lower)) return 0;
-  const num = Number(raw.replace(",", "."));
-  if (Number.isFinite(num)) return num;
-  return normalizeFormulaText(raw);
-}
-function applySurfaceHelperRules(context, helperRules) {
-  let next = { ...(context || {}) };
-  for (const rule of Array.isArray(helperRules) ? helperRules : []) {
-    if (rule?.active === false) continue;
-    const sourceLeft = String(rule?.source_left || "").trim();
-    const helperKey = normalizeSurfaceHelperKey(rule?.helper_key);
-    if (!sourceLeft || !helperKey) continue;
-    const leftOk = compareSurfaceHelperValue(
-      next?.[sourceLeft],
-      rule?.operator_left || "=",
-      rule?.compare_left,
-    );
-    const sourceRight = String(rule?.source_right || "").trim();
-    const rightOk = sourceRight
-      ? compareSurfaceHelperValue(
-          next?.[sourceRight],
-          rule?.operator_right || "=",
-          rule?.compare_right,
-        )
-      : true;
-    const matches = sourceRight
-      ? String(rule?.join_mode || "and").trim().toLowerCase() === "or"
-        ? leftOk || rightOk
-        : leftOk && rightOk
-      : leftOk;
-    if (!matches) continue;
-    next[helperKey] = coerceSurfaceHelperValue(rule?.helper_value);
-  }
-  return next;
-}
 function deriveMeasurementPrefill(quote) {
   const payload = quote?.payload || {};
   const lines = Array.isArray(quote?.lines) ? quote.lines : [];
@@ -144,7 +71,71 @@ function validateFinalDimensions(form) { const altoFinal = String(form?.alto_fin
 function averageMm(values = []) { const list = (Array.isArray(values) ? values : []).map((v) => Number(String(v || "").replace(",", "."))).filter((n) => Number.isFinite(n) && n > 0); if (!list.length) return 0; return list.reduce((acc, n) => acc + n, 0) / list.length; }
 function maxMm(values = []) { const list = (Array.isArray(values) ? values : []).map((v) => Number(String(v || "").replace(",", "."))).filter((n) => Number.isFinite(n) && n > 0); return list.length ? Math.max(...list) : 0; }
 function minMm(values = []) { const list = (Array.isArray(values) ? values : []).map((v) => Number(String(v || "").replace(",", "."))).filter((n) => Number.isFinite(n) && n > 0); return list.length ? Math.min(...list) : 0; }
-function buildSurfaceFormulaContext({ quote, form }) {
+function inferDoorConstructionType({ quote, form }) {
+  const payloadType = normalizeFormulaText(quote?.payload?.porton_type || quote?.payload?.door_type || form?.tipo_porton || form?.porton_tipo || "");
+  const names = (Array.isArray(quote?.lines) ? quote.lines : [])
+    .map((line) => normalizeFormulaText(line?.name || line?.raw_name || ""))
+    .join(" ");
+  const formType = normalizeFormulaText(form?.revestimiento_tipo || form?.panel_tipo || form?.tipo_panel || "");
+  const haystack = `${payloadType} ${formType} ${names}`;
+  return haystack.includes("inyect") ? "inyectado" : "clasico";
+}
+function inferInstallationMode(form) {
+  const raw = normalizeFormulaText(
+    form?.colocacion ||
+    form?.tipo_colocacion ||
+    form?.instalacion_tipo ||
+    form?.instalacion_modo ||
+    "",
+  );
+  if (raw.includes("detras") || raw.includes("detrás") || raw.includes("detras_del_vano") || raw.includes("por_detras")) return "detras_vano";
+  if (raw.includes("dentro")) return "dentro_vano";
+  return raw || "detras_vano";
+}
+function normalizeSurfaceParameters(raw = {}) {
+  const num = (value, fallback = 0) => {
+    const n = Number(String(value ?? fallback).replace(",", "."));
+    return Number.isFinite(n) ? n : fallback;
+  };
+  return {
+    clasico_kg_m2: num(raw?.clasico_kg_m2, 15),
+    inyectado_kg_m2: num(raw?.inyectado_kg_m2, 25),
+    piernas_angostas_hasta_kg: num(raw?.piernas_angostas_hasta_kg, 140),
+    piernas_comunes_hasta_kg: num(raw?.piernas_comunes_hasta_kg, 175),
+    piernas_anchas_hasta_kg: num(raw?.piernas_anchas_hasta_kg, 240),
+    piernas_superanchas_hasta_kg: num(raw?.piernas_superanchas_hasta_kg, 300),
+    peso_descuento_alto_mm: num(raw?.peso_descuento_alto_mm, 10),
+    peso_descuento_ancho_mm: num(raw?.peso_descuento_ancho_mm, 14),
+    detras_vano_alto_mm: num(raw?.detras_vano_alto_mm, 100),
+    detras_vano_ancho_angostas_mm: num(raw?.detras_vano_ancho_angostas_mm, 140),
+    detras_vano_ancho_comunes_mm: num(raw?.detras_vano_ancho_comunes_mm, 200),
+    detras_vano_ancho_anchas_mm: num(raw?.detras_vano_ancho_anchas_mm, 280),
+    detras_vano_ancho_superanchas_mm: num(raw?.detras_vano_ancho_superanchas_mm, 380),
+    dentro_vano_alto_mm: num(raw?.dentro_vano_alto_mm, -10),
+    dentro_vano_ancho_mm: num(raw?.dentro_vano_ancho_mm, -20),
+  };
+}
+function classifyLegType(weightKg, params) {
+  const weight = Number(weightKg || 0) || 0;
+  if (weight <= Number(params?.piernas_angostas_hasta_kg || 0)) return "angostas";
+  if (weight <= Number(params?.piernas_comunes_hasta_kg || 0)) return "comunes";
+  if (weight <= Number(params?.piernas_anchas_hasta_kg || 0)) return "anchas";
+  if (weight <= Number(params?.piernas_superanchas_hasta_kg || 0)) return "superanchas";
+  return "especiales";
+}
+function widthAdditionForLegType(legType, params) {
+  switch (String(legType || "")) {
+    case "angostas": return Number(params?.detras_vano_ancho_angostas_mm || 0) || 0;
+    case "comunes": return Number(params?.detras_vano_ancho_comunes_mm || 0) || 0;
+    case "anchas": return Number(params?.detras_vano_ancho_anchas_mm || 0) || 0;
+    case "superanchas":
+    case "especiales":
+    default:
+      return Number(params?.detras_vano_ancho_superanchas_mm || 0) || 0;
+  }
+}
+function buildSurfaceFormulaContext({ quote, form, surfaceParameters }) {
+  const params = normalizeSurfaceParameters(surfaceParameters);
   const budgetWidthM = Number(quote?.payload?.dimensions?.width || 0) || 0;
   const budgetHeightM = Number(quote?.payload?.dimensions?.height || 0) || 0;
   const original = Number(quote?.payload?.dimensions?.area_m2 || 0) || 0;
@@ -152,25 +143,25 @@ function buildSurfaceFormulaContext({ quote, form }) {
   const anchos = Array.isArray(form?.esquema?.ancho) ? form.esquema.ancho : [];
   const alto_final_mm = Number(String(form?.alto_final_mm || 0).replace(",", ".")) || 0;
   const ancho_final_mm = Number(String(form?.ancho_final_mm || 0).replace(",", ".")) || 0;
-  const piernas = normalizeFormulaText(form?.piernas || form?.tipo_piernas || "");
-  const colocacion = normalizeFormulaText(
-    form?.colocacion ||
-    form?.tipo_colocacion ||
-    form?.instalacion_tipo ||
-    form?.instalacion_modo ||
-    "",
-  );
-  const instalacion = boolishToNumber(form?.instalacion);
-  const piernas_angostas = piernas.includes("angosta") ? 1 : 0;
-  const piernas_medias = piernas.includes("media") ? 1 : 0;
-  const piernas_anchas = piernas.includes("ancha") ? 1 : 0;
-  const colocacion_dentro_vano = (
-    colocacion === "dentro_vano" ||
-    colocacion === "por_dentro_del_vano" ||
-    colocacion.includes("dentro")
-  ) ? 1 : 0;
+  const alto_min_mm = minMm(altos) || alto_final_mm || Math.round(budgetHeightM * 1000);
+  const ancho_min_mm = minMm(anchos) || ancho_final_mm || Math.round(budgetWidthM * 1000);
+  const constructionType = inferDoorConstructionType({ quote, form });
+  const kg_m2_porton = constructionType === "inyectado" ? Number(params.inyectado_kg_m2 || 0) || 0 : Number(params.clasico_kg_m2 || 0) || 0;
+  const alto_peso_mm = Math.max(0, alto_min_mm - (Number(params.peso_descuento_alto_mm || 0) || 0));
+  const ancho_peso_mm = Math.max(0, ancho_min_mm - (Number(params.peso_descuento_ancho_mm || 0) || 0));
+  const peso_estimado_kg = Number((((alto_peso_mm / 1000) * (ancho_peso_mm / 1000)) * kg_m2_porton).toFixed(4)) || 0;
+  const piernas_tipo = classifyLegType(peso_estimado_kg, params);
+  const colocacion = inferInstallationMode(form);
+  const colocacion_dentro_vano = colocacion === "dentro_vano" ? 1 : 0;
+  const colocacion_detras_vano = colocacion === "detras_vano" ? 1 : 0;
   const instalacion_dentro_vano = colocacion_dentro_vano;
-  const descuento_superficie_m2 = instalacion_dentro_vano && piernas_angostas ? 0.65 : 0;
+  const instalacion_detras_vano = colocacion_detras_vano;
+  const alto_calculado_mm = colocacion_dentro_vano
+    ? Math.max(0, alto_min_mm + (Number(params.dentro_vano_alto_mm || 0) || 0))
+    : Math.max(0, alto_min_mm + (Number(params.detras_vano_alto_mm || 0) || 0));
+  const ancho_calculado_mm = colocacion_dentro_vano
+    ? Math.max(0, ancho_min_mm + (Number(params.dentro_vano_ancho_mm || 0) || 0))
+    : Math.max(0, ancho_min_mm + widthAdditionForLegType(piernas_tipo, params));
   return {
     superficie_original_m2: original,
     budget_surface_m2: original,
@@ -188,24 +179,40 @@ function buildSurfaceFormulaContext({ quote, form }) {
     ancho_prom_mm: averageMm(anchos),
     alto_max_mm: maxMm(altos),
     ancho_max_mm: maxMm(anchos),
-    alto_min_mm: minMm(altos),
-    ancho_min_mm: minMm(anchos),
-    piernas,
+    alto_min_mm,
+    ancho_min_mm,
+    alto_peso_mm,
+    ancho_peso_mm,
+    alto_calculado_mm,
+    ancho_calculado_mm,
+    superficie_automatica_m2: Number(((alto_calculado_mm / 1000) * (ancho_calculado_mm / 1000)).toFixed(4)) || 0,
+    tipo_porton: constructionType,
+    porton_clasico: constructionType === "clasico" ? 1 : 0,
+    porton_inyectado: constructionType === "inyectado" ? 1 : 0,
+    kg_m2_porton,
+    peso_estimado_kg,
+    piernas: piernas_tipo,
+    piernas_tipo,
+    piernas_angostas: piernas_tipo === "angostas" ? 1 : 0,
+    piernas_comunes: piernas_tipo === "comunes" ? 1 : 0,
+    piernas_anchas: piernas_tipo === "anchas" ? 1 : 0,
+    piernas_superanchas: piernas_tipo === "superanchas" ? 1 : 0,
+    piernas_especiales: piernas_tipo === "especiales" ? 1 : 0,
     colocacion,
-    instalacion,
-    piernas_angostas,
-    piernas_medias,
-    piernas_anchas,
+    instalacion: colocacion,
     colocacion_dentro_vano,
+    colocacion_detras_vano,
     instalacion_dentro_vano,
-    descuento_superficie_m2,
+    instalacion_detras_vano,
+    descuento_superficie_m2: 0,
+    ...params,
   };
 }
 function evaluateSurfaceFormula(formula, context) {
   const safeFormula = String(formula || "").trim();
   if (!safeFormula) return 0;
   const allowed = Object.keys(context || {})
-    .filter((key) => isValidFormulaIdentifier(key))
+    .filter((key) => /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(String(key || "")))
     .sort();
   try {
     const fn = new Function(
@@ -227,15 +234,8 @@ function evaluateSurfaceFormula(formula, context) {
 async function buildMeasurementSurfaceGuard({ quote, form }) {
   const tolerance_area_m2 = Number(await getCommercialFinalToleranceAreaM2()) || 0;
   const technicalSettings = await getTechnicalMeasurementRules();
-  const surface_final_formula = String(
-    technicalSettings?.surface_final_formula ||
-      "(alto_final_mm / 1000) * (ancho_final_mm / 1000)",
-  );
-  const helperRules = Array.isArray(technicalSettings?.surface_helper_rules)
-    ? technicalSettings.surface_helper_rules
-    : [];
-  let ctx = buildSurfaceFormulaContext({ quote, form });
-  ctx = applySurfaceHelperRules(ctx, helperRules);
+  const surface_final_formula = String(technicalSettings?.surface_final_formula || "(alto_calculado_mm / 1000) * (ancho_calculado_mm / 1000)");
+  const ctx = buildSurfaceFormulaContext({ quote, form, surfaceParameters: technicalSettings?.surface_parameters || {} });
   const surface_original_m2 = Number(ctx.superficie_original_m2 || 0) || 0;
   const surface_final_m2 = evaluateSurfaceFormula(surface_final_formula, ctx);
   const difference_m2 = Math.max(0, Number((surface_final_m2 - surface_original_m2).toFixed(4)));

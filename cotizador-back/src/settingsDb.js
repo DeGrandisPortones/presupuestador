@@ -6,7 +6,24 @@ const MEASUREMENT_PRODUCT_MAPPINGS_KEY = "measurement_product_mappings";
 const DOOR_QUOTE_SETTINGS_KEY = "door_quote_settings";
 const TECHNICAL_MEASUREMENT_RULES_KEY = "technical_measurement_rules";
 const TECHNICAL_MEASUREMENT_FIELDS_KEY = "technical_measurement_fields";
-const DEFAULT_SURFACE_FINAL_FORMULA = "(alto_final_mm / 1000) * (ancho_final_mm / 1000)";
+const DEFAULT_SURFACE_FINAL_FORMULA = "(alto_calculado_mm / 1000) * (ancho_calculado_mm / 1000)";
+const DEFAULT_SURFACE_PARAMETERS = {
+  clasico_kg_m2: 15,
+  inyectado_kg_m2: 25,
+  piernas_angostas_hasta_kg: 140,
+  piernas_comunes_hasta_kg: 175,
+  piernas_anchas_hasta_kg: 240,
+  piernas_superanchas_hasta_kg: 300,
+  peso_descuento_alto_mm: 10,
+  peso_descuento_ancho_mm: 14,
+  detras_vano_alto_mm: 100,
+  detras_vano_ancho_angostas_mm: 140,
+  detras_vano_ancho_comunes_mm: 200,
+  detras_vano_ancho_anchas_mm: 280,
+  detras_vano_ancho_superanchas_mm: 380,
+  dentro_vano_alto_mm: -10,
+  dentro_vano_ancho_mm: -20,
+};
 
 let ensured = false;
 
@@ -23,7 +40,7 @@ export async function ensureSettingsTable() {
     [FINAL_QUOTE_SETTINGS_KEY, { tolerance_area_m2: 0 }],
     [MEASUREMENT_PRODUCT_MAPPINGS_KEY, { rules: [] }],
     [DOOR_QUOTE_SETTINGS_KEY, { formula: "precio_ipanel + precio_venta_marco" }],
-    [TECHNICAL_MEASUREMENT_RULES_KEY, { rules: [], surface_final_formula: DEFAULT_SURFACE_FINAL_FORMULA, surface_helper_rules: [] }],
+    [TECHNICAL_MEASUREMENT_RULES_KEY, { rules: [], surface_final_formula: DEFAULT_SURFACE_FINAL_FORMULA, surface_helper_rules: [], surface_parameters: DEFAULT_SURFACE_PARAMETERS }],
     [TECHNICAL_MEASUREMENT_FIELDS_KEY, { fields: [] }],
   ]) {
     await dbQuery(
@@ -87,6 +104,31 @@ function normalizeBudgetMultipleMode(value) {
 }
 function normalizeBooleanFlag(value) { return value === true; }
 
+function normalizeSurfaceParameterNumber(value, fallback = 0) {
+  const n = Number(String(value ?? fallback).replace(",", "."));
+  if (!Number.isFinite(n)) return Number(fallback || 0) || 0;
+  return Math.round(n * 10000) / 10000;
+}
+function normalizeSurfaceParameters(raw = {}) {
+  return {
+    clasico_kg_m2: normalizeSurfaceParameterNumber(raw?.clasico_kg_m2, DEFAULT_SURFACE_PARAMETERS.clasico_kg_m2),
+    inyectado_kg_m2: normalizeSurfaceParameterNumber(raw?.inyectado_kg_m2, DEFAULT_SURFACE_PARAMETERS.inyectado_kg_m2),
+    piernas_angostas_hasta_kg: normalizeSurfaceParameterNumber(raw?.piernas_angostas_hasta_kg, DEFAULT_SURFACE_PARAMETERS.piernas_angostas_hasta_kg),
+    piernas_comunes_hasta_kg: normalizeSurfaceParameterNumber(raw?.piernas_comunes_hasta_kg, DEFAULT_SURFACE_PARAMETERS.piernas_comunes_hasta_kg),
+    piernas_anchas_hasta_kg: normalizeSurfaceParameterNumber(raw?.piernas_anchas_hasta_kg, DEFAULT_SURFACE_PARAMETERS.piernas_anchas_hasta_kg),
+    piernas_superanchas_hasta_kg: normalizeSurfaceParameterNumber(raw?.piernas_superanchas_hasta_kg, DEFAULT_SURFACE_PARAMETERS.piernas_superanchas_hasta_kg),
+    peso_descuento_alto_mm: normalizeSurfaceParameterNumber(raw?.peso_descuento_alto_mm, DEFAULT_SURFACE_PARAMETERS.peso_descuento_alto_mm),
+    peso_descuento_ancho_mm: normalizeSurfaceParameterNumber(raw?.peso_descuento_ancho_mm, DEFAULT_SURFACE_PARAMETERS.peso_descuento_ancho_mm),
+    detras_vano_alto_mm: normalizeSurfaceParameterNumber(raw?.detras_vano_alto_mm, DEFAULT_SURFACE_PARAMETERS.detras_vano_alto_mm),
+    detras_vano_ancho_angostas_mm: normalizeSurfaceParameterNumber(raw?.detras_vano_ancho_angostas_mm, DEFAULT_SURFACE_PARAMETERS.detras_vano_ancho_angostas_mm),
+    detras_vano_ancho_comunes_mm: normalizeSurfaceParameterNumber(raw?.detras_vano_ancho_comunes_mm, DEFAULT_SURFACE_PARAMETERS.detras_vano_ancho_comunes_mm),
+    detras_vano_ancho_anchas_mm: normalizeSurfaceParameterNumber(raw?.detras_vano_ancho_anchas_mm, DEFAULT_SURFACE_PARAMETERS.detras_vano_ancho_anchas_mm),
+    detras_vano_ancho_superanchas_mm: normalizeSurfaceParameterNumber(raw?.detras_vano_ancho_superanchas_mm, DEFAULT_SURFACE_PARAMETERS.detras_vano_ancho_superanchas_mm),
+    dentro_vano_alto_mm: normalizeSurfaceParameterNumber(raw?.dentro_vano_alto_mm, DEFAULT_SURFACE_PARAMETERS.dentro_vano_alto_mm),
+    dentro_vano_ancho_mm: normalizeSurfaceParameterNumber(raw?.dentro_vano_ancho_mm, DEFAULT_SURFACE_PARAMETERS.dentro_vano_ancho_mm),
+  };
+}
+
 function normalizeTechnicalMeasurementRule(rule = {}, index = 0) {
   const source_key = normalizeText(rule.source_key || rule.field_key);
   if (!source_key) return null;
@@ -137,6 +179,7 @@ function normalizeTechnicalMeasurementRules(raw = {}) {
     rules: rules.map((r, i) => normalizeTechnicalMeasurementRule(r, i)).filter(Boolean).sort((a, b) => a.sort_order - b.sort_order),
     surface_final_formula: normalizeSurfaceFinalFormula(raw?.surface_final_formula),
     surface_helper_rules: surface_helper_rules.map((r, i) => normalizeSurfaceHelperRule(r, i)).filter(Boolean).sort((a, b) => a.sort_order - b.sort_order),
+    surface_parameters: normalizeSurfaceParameters(raw?.surface_parameters),
   };
 }
 function normalizeFieldType(value) {
@@ -235,6 +278,9 @@ export async function setTechnicalMeasurementRules(payload = {}) {
     surface_helper_rules: payload?.surface_helper_rules !== undefined
       ? payload.surface_helper_rules
       : current?.surface_helper_rules,
+    surface_parameters: payload?.surface_parameters !== undefined
+      ? payload.surface_parameters
+      : current?.surface_parameters,
   };
   return setSetting(TECHNICAL_MEASUREMENT_RULES_KEY, normalizeTechnicalMeasurementRules(merged));
 }
