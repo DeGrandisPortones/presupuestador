@@ -4,10 +4,11 @@ import { getOdooBootstrap, setOdooBootstrap } from "../../../domain/odoo/bootstr
 import { useQuoteStore } from "../../../domain/quote/store";
 import { useAuthStore } from "../../../domain/auth/store.js";
 import { getCatalogBootstrap } from "../../../api/catalog.js";
-import { adminGetTechnicalMeasurementRules, adminRefreshCatalog } from "../../../api/admin.js";
+import {
+  adminGetTechnicalMeasurementRules,
+  adminRefreshCatalog,
+} from "../../../api/admin.js";
 import Button from "../../../ui/Button";
-
-const SYSTEM_PRODUCT_IDS = new Set([3008, 3009]);
 
 function getProductLabel(product) {
   return product?.display_name || product?.alias || product?.name || "";
@@ -78,13 +79,20 @@ function computeOrderedSectionIds({
     guard += 1;
 
     for (const currentSectionId of [...ordered]) {
-      const selectedInParent = selectedProductIdsBySection.get(Number(currentSectionId)) || new Set();
+      const selectedInParent =
+        selectedProductIdsBySection.get(Number(currentSectionId)) || new Set();
 
       for (const rule of dependencyRules) {
         const parentSectionId = Number(rule?.parent_section_id || 0);
         if (parentSectionId !== Number(currentSectionId)) continue;
 
-        if (!matchProductIds(selectedInParent, rule?.required_product_ids, rule?.match_mode || "any")) {
+        if (
+          !matchProductIds(
+            selectedInParent,
+            rule?.required_product_ids,
+            rule?.match_mode || "any",
+          )
+        ) {
           continue;
         }
 
@@ -113,7 +121,9 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
   const user = useAuthStore((s) => s.user);
   const canForceRefreshCatalog = !!(user?.is_enc_comercial || user?.is_superuser);
 
-  const [boot, setBoot] = useState(() => getOdooBootstrap(kind) || getOdooBootstrap(bootstrapKind));
+  const [boot, setBoot] = useState(
+    () => getOdooBootstrap(kind) || getOdooBootstrap(bootstrapKind),
+  );
   const [openSectionId, setOpenSectionId] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
   const [autoloadAttempted, setAutoloadAttempted] = useState(false);
@@ -173,7 +183,7 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
       setRefreshing(false);
       setAutoloadAttempted(true);
     }
-  }, [kind, bootstrapKind, canForceRefreshCatalog]);
+  }, [bootstrapKind, canForceRefreshCatalog, kind]);
 
   useEffect(() => {
     setBoot(getOdooBootstrap(kind) || getOdooBootstrap(bootstrapKind));
@@ -220,7 +230,6 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
     const map = new Map();
     for (const section of sectionList) map.set(Number(section.id), []);
     for (const product of products) {
-      if (SYSTEM_PRODUCT_IDS.has(Number(product.id))) continue;
       const sectionIds = Array.isArray(product.section_ids) ? product.section_ids : [];
       for (const rawSectionId of sectionIds) {
         const sectionId = Number(rawSectionId);
@@ -281,7 +290,13 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
 
     let derivedType = "";
     for (const rule of systemRules) {
-      if (matchProductIds(selectedProductIdsGlobal, rule?.required_product_ids, rule?.match_mode || "all")) {
+      if (
+        matchProductIds(
+          selectedProductIdsGlobal,
+          rule?.required_product_ids,
+          rule?.match_mode || "all",
+        )
+      ) {
         derivedType = String(rule?.derived_porton_type || "").trim();
         break;
       }
@@ -308,12 +323,15 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
     const targetProductId = Number(product?.id);
 
     const sectionProductIds = new Set(
-      (productsBySection.get(Number(sectionId)) || []).map((item) => Number(item.id)).filter(Boolean),
+      (productsBySection.get(Number(sectionId)) || [])
+        .map((item) => Number(item.id))
+        .filter(Boolean),
     );
     const currentSelectedIds = [...currentSelected].filter((id) => id !== targetProductId);
 
     const currentIndex = orderedVisibleSectionIds.findIndex((id) => Number(id) === Number(sectionId));
-    const downstreamSectionIds = currentIndex >= 0 ? orderedVisibleSectionIds.slice(currentIndex + 1) : [];
+    const downstreamSectionIds =
+      currentIndex >= 0 ? orderedVisibleSectionIds.slice(currentIndex + 1) : [];
     const hasDownstreamSelections = downstreamSectionIds.some((sid) => {
       const selected = selectedProductIdsBySection.get(Number(sid));
       return selected && selected.size > 0;
@@ -327,7 +345,7 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
 
     if (currentSelectedIds.length > 0 && hasDownstreamSelections) {
       const ok = window.confirm(
-        "Si cambias este producto, vas a tener que volver a cargar las secciones siguientes. Deseas continuar?",
+        "Si cambiás este producto, vas a tener que volver a cargar las secciones siguientes. ¿Deseás continuar?",
       );
       if (!ok) return;
     }
@@ -341,7 +359,9 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
 
     if (hasDownstreamSelections) {
       for (const downstreamSectionId of downstreamSectionIds) {
-        const selectedDownstream = [...(nextSelectionMap.get(Number(downstreamSectionId)) || new Set())];
+        const selectedDownstream = [
+          ...(nextSelectionMap.get(Number(downstreamSectionId)) || new Set()),
+        ];
         for (const productId of selectedDownstream) {
           forceRemoveLine(productId);
           nextSelectionMap.get(Number(downstreamSectionId))?.delete(Number(productId));
@@ -373,14 +393,10 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
 
   const title =
     (kind || "porton") === "porton"
-      ? "Caracteristicas del porton"
+      ? "Características del portón"
       : (kind || "") === "ipanel"
-        ? "Caracteristicas del Ipanel"
-        : "Caracteristicas / productos";
-
-  const refreshButtonLabel = canForceRefreshCatalog
-    ? (refreshing ? "Forzando actualizacion..." : "Forzar actualizacion")
-    : (refreshing ? "Actualizando..." : "Actualizar catalogo");
+        ? "Características del Ipanel"
+        : "Características / productos";
 
   if (!boot) {
     return (
@@ -388,16 +404,14 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
         <div className="dg-row dg-row--between dg-row--center">
           <h3 className="dg-h3">{title}</h3>
           <Button variant="ghost" disabled={refreshing} onClick={refreshCatalog}>
-            {refreshButtonLabel}
+            {refreshing ? "Cargando…" : "Actualizar catálogo"}
           </Button>
         </div>
         <div className="spacer" />
         <div className="muted">
           {refreshing
-            ? "Cargando catalogo automaticamente..."
-            : canForceRefreshCatalog
-              ? "Podes forzar la actualizacion para limpiar cache y volver a leer etiquetas y productos desde Odoo."
-              : "No se pudo cargar el catalogo automaticamente. Podes reintentar con el boton de actualizar."}
+            ? "Cargando catálogo automáticamente…"
+            : "No se pudo cargar el catálogo automáticamente. Podés reintentar con el botón de actualizar."}
         </div>
       </div>
     );
@@ -408,7 +422,7 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
       <div className="dg-row dg-row--between dg-row--center">
         <h3 className="dg-h3">{title}</h3>
         <Button variant="ghost" disabled={refreshing} onClick={refreshCatalog}>
-          {refreshButtonLabel}
+          {refreshing ? "Actualizando…" : "Actualizar catálogo"}
         </Button>
       </div>
 
@@ -416,7 +430,7 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
         <>
           <div className="spacer" />
           <div className="muted">
-            No hay secciones habilitadas todavia. Elegi una seccion inicial en el dashboard o configura dependencias.
+            No hay secciones habilitadas todavía. Elegí una sección inicial en el dashboard o configurá dependencias.
           </div>
         </>
       ) : (
@@ -424,9 +438,7 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
           {visibleSections.map((section) => {
             const sectionId = Number(section.id);
             const isOpen = openSectionId === sectionId;
-            const sectionProducts = (productsBySection.get(sectionId) || []).filter(
-              (product) => !SYSTEM_PRODUCT_IDS.has(Number(product.id)),
-            );
+            const sectionProducts = productsBySection.get(sectionId) || [];
             const selectedInSection = selectedProductIdsBySection.get(sectionId) || new Set();
 
             return (
@@ -438,15 +450,13 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
                 >
                   <div className="dg-acc-title">
                     {section.name}
-                    {section.use_surface_qty ? " - cantidad por superficie" : ""}
+                    {section.use_surface_qty ? " · cantidad por superficie" : ""}
                   </div>
                   <div className="dg-acc-meta">
-                    {selectedInSection.size
-                      ? `${selectedInSection.size} seleccionado`
-                      : "Sin seleccion"}{" "}
-                    - {sectionProducts.length}
+                    {selectedInSection.size ? `${selectedInSection.size} seleccionado` : "Sin selección"}{" "}
+                    · {sectionProducts.length}
                   </div>
-                  <div className="dg-acc-chevron">{isOpen ? "v" : ">"}</div>
+                  <div className="dg-acc-chevron">{isOpen ? "▾" : "▸"}</div>
                 </button>
 
                 {isOpen ? (
@@ -471,11 +481,11 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
                             <div className="dg-product-info">
                               <div className="dg-product-name">
                                 {getProductLabel(product)}
-                                {product.uses_surface_quantity ? " - cantidad por superficie" : ""}
+                                {product.uses_surface_quantity ? " · cantidad por superficie" : ""}
                               </div>
                               <div className="muted" style={{ fontSize: 12 }}>
-                                {product.code ? `Codigo: ${product.code}` : `ID: ${product.id}`}
-                                {disabledForUser ? " - No habilitado para tu rol" : ""}
+                                {product.code ? `Código: ${product.code}` : `ID: ${product.id}`}
+                                {disabledForUser ? " · No habilitado para tu rol" : ""}
                               </div>
                             </div>
 
@@ -491,7 +501,7 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
                       })}
 
                       {!sectionProducts.length && (
-                        <div className="muted">Sin productos para mostrar en esta seccion</div>
+                        <div className="muted">Sin productos para mostrar en esta sección</div>
                       )}
                     </div>
                   </div>
