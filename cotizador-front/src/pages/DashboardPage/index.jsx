@@ -92,8 +92,25 @@ export default function DashboardPage() {
   useEffect(() => { if (doorQuoteSettingsQ.data) setDoorFormula(String(doorQuoteSettingsQ.data.formula || "precio_ipanel + precio_venta_marco")); }, [doorQuoteSettingsQ.data]);
   useEffect(() => {
     if (!technicalRulesQ.data) return;
-    setDependencyRules((technicalRulesQ.data.section_dependency_rules || []).map((rule, index) => ({ id: String(rule.id || `dep_${index + 1}`), name: String(rule.name || ""), active: rule.active !== false, parent_section_id: Number(rule.parent_section_id || 0) || "", required_product_ids_text: stringifyIdList(rule.required_product_ids), match_mode: String(rule.match_mode || "any"), child_section_ids_text: stringifyIdList(rule.child_section_ids), sort_order: Number(rule.sort_order || index + 1) || index + 1 })));
-    setSystemRules((technicalRulesQ.data.system_derivation_rules || []).map((rule, index) => ({ id: String(rule.id || `sys_${index + 1}`), name: String(rule.name || ""), active: rule.active !== false, required_product_ids_text: stringifyIdList(rule.required_product_ids), match_mode: String(rule.match_mode || "all"), derived_porton_type: String(rule.derived_porton_type || ""), sort_order: Number(rule.sort_order || index + 1) || index + 1 })));
+    setDependencyRules((technicalRulesQ.data.section_dependency_rules || []).map((rule, index) => ({
+      id: String(rule.id || `dep_${index + 1}`),
+      name: String(rule.name || ""),
+      active: rule.active !== false,
+      parent_section_id: Number(rule.parent_section_id || 0) || "",
+      required_product_ids_text: stringifyIdList(rule.required_product_ids),
+      match_mode: String(rule.match_mode || "any"),
+      child_section_ids_text: stringifyIdList(rule.child_section_ids),
+      sort_order: Number(rule.sort_order || index + 1) || index + 1,
+    })));
+    setSystemRules((technicalRulesQ.data.system_derivation_rules || []).map((rule, index) => ({
+      id: String(rule.id || `sys_${index + 1}`),
+      name: String(rule.name || ""),
+      active: rule.active !== false,
+      required_product_ids_text: stringifyIdList(rule.required_product_ids),
+      match_mode: String(rule.match_mode || "all"),
+      derived_porton_type: String(rule.derived_porton_type || ""),
+      sort_order: Number(rule.sort_order || index + 1) || index + 1,
+    })));
   }, [technicalRulesQ.data]);
 
   const catalog = catalogQ.data;
@@ -160,7 +177,36 @@ export default function DashboardPage() {
   const onSaveTolerance = async () => { setSavingTolerance(true); try { const saved = await adminSaveFinalSettings({ tolerance_area_m2: toleranceAreaM2 }); setToleranceAreaM2(String(saved.tolerance_area_m2 ?? 0)); qc.invalidateQueries({ queryKey: ["adminFinalSettings"] }); alert("Tolerancia guardada correctamente."); } finally { setSavingTolerance(false); } };
   function appendFormulaToken(token) { const next = String(token || "").trim(); if (!next) return; setDoorFormula((prev) => { const left = String(prev || ""); return left.trim() ? `${left} ${next}` : next; }); }
   const onSaveDoorFormula = async () => { setSavingDoorFormula(true); try { const saved = await adminSaveDoorQuoteSettings({ formula: doorFormula }); setDoorFormula(String(saved.formula || "precio_ipanel + precio_venta_marco")); qc.invalidateQueries({ queryKey: ["adminDoorQuoteSettings"] }); alert("Fórmula de puerta guardada correctamente."); } finally { setSavingDoorFormula(false); } };
-  const onSaveDependencies = async () => { setSavingDependencies(true); try { await adminSaveTechnicalMeasurementRules({ section_dependency_rules: dependencyRules.map((rule, index) => ({ id: rule.id || `dep_${index + 1}`, name: String(rule.name || "").trim(), active: rule.active !== false, parent_section_id: Number(rule.parent_section_id || 0) || null, required_product_ids: parseIdList(rule.required_product_ids_text), match_mode: String(rule.match_mode || "any"), child_section_ids: parseIdList(rule.child_section_ids_text), sort_order: index + 1 })).filter((rule) => rule.parent_section_id && rule.required_product_ids.length && rule.child_section_ids.length), system_derivation_rules: systemRules.map((rule, index) => ({ id: rule.id || `sys_${index + 1}`, name: String(rule.name || "").trim(), active: rule.active !== false, required_product_ids: parseIdList(rule.required_product_ids_text), match_mode: String(rule.match_mode || "all"), derived_porton_type: String(rule.derived_porton_type || "").trim(), sort_order: index + 1 })).filter((rule) => rule.required_product_ids.length && rule.derived_porton_type) }); qc.invalidateQueries({ queryKey: ["adminTechnicalMeasurementRulesForDashboard"] }); alert("Dependencias guardadas."); } finally { setSavingDependencies(false); } };
+  const onSaveDependencies = async () => {
+    setSavingDependencies(true);
+    try {
+      await adminSaveTechnicalMeasurementRules({
+        section_dependency_rules: dependencyRules.map((rule, index) => ({
+          id: rule.id || `dep_${index + 1}`,
+          name: String(rule.name || "").trim(),
+          active: rule.active !== false,
+          parent_section_id: Number(rule.parent_section_id || 0) || null,
+          required_product_ids: parseIdList(rule.required_product_ids_text),
+          match_mode: String(rule.match_mode || "any"),
+          child_section_ids: parseIdList(rule.child_section_ids_text),
+          sort_order: index + 1,
+        })).filter((rule) => rule.parent_section_id && rule.required_product_ids.length && rule.child_section_ids.length),
+        system_derivation_rules: systemRules.map((rule, index) => ({
+          id: rule.id || `sys_${index + 1}`,
+          name: String(rule.name || "").trim(),
+          active: rule.active !== false,
+          required_product_ids: parseIdList(rule.required_product_ids_text),
+          match_mode: String(rule.match_mode || "all"),
+          derived_porton_type: String(rule.derived_porton_type || "").trim(),
+          sort_order: index + 1,
+        })).filter((rule) => rule.required_product_ids.length && rule.derived_porton_type),
+      });
+      qc.invalidateQueries({ queryKey: ["adminTechnicalMeasurementRulesForDashboard"] });
+      alert("Dependencias guardadas.");
+    } finally {
+      setSavingDependencies(false);
+    }
+  };
 
   return (
     <div className="container">
@@ -186,7 +232,7 @@ export default function DashboardPage() {
           <Button variant="ghost" onClick={() => appendFormulaToken("precio_compra")}>+ precio_compra</Button>
           <Button variant="ghost" onClick={() => appendFormulaToken("precio_venta")}>+ precio_venta</Button>
           <Button variant="ghost" onClick={() => appendFormulaToken("(")}>(</Button>
-          <Button variant="ghost" onClick={() => appendFormulaToken(")")}> ) </Button>
+          <Button variant="ghost" onClick={() => appendFormulaToken(")")}>)</Button>
           <Button variant="ghost" onClick={() => appendFormulaToken("+")}>+</Button>
           <Button variant="ghost" onClick={() => appendFormulaToken("-")}>-</Button>
           <Button variant="ghost" onClick={() => appendFormulaToken("*")}>*</Button>
@@ -225,7 +271,7 @@ export default function DashboardPage() {
 }
 
 function TagsTab({ catalogKind, sections, tags, newSectionName, setNewSectionName, newSectionPos, setNewSectionPos, newSectionUseSurface, setNewSectionUseSurface, onCreateSection, qc }) {
-  return <div className="row"><div className="card" style={{ flex: 1, minWidth: 320 }}><h3 style={{ marginTop: 0 }}>Secciones</h3><div className="spacer" /><div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}><Input value={newSectionName} onChange={setNewSectionName} placeholder="Nueva sección…" style={{ flex: 1, minWidth: 180 }} /><Input value={newSectionPos} onChange={setNewSectionPos} placeholder="Posición" style={{ width: 110 }} /><label style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 180 }}><input type="checkbox" checked={newSectionUseSurface} onChange={(e) => setNewSectionUseSurface(e.target.checked)} /><span className="muted">Cantidad = superficie</span></label><Button variant="primary" disabled={!newSectionName.trim()} onClick={onCreateSection}>Crear</Button></div><div className="spacer" /><div style={{ display: "flex", flexDirection: "column", gap: 8 }}>{sections.map((s) => (<div key={s.id} style={{ border: "1px solid #eee", padding: 10, borderRadius: 10 }}><div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}><div><div style={{ fontWeight: 800 }}>{s.name}</div><div className="muted">Posición: {s.position}</div></div><Button variant="ghost" onClick={async () => { if (!window.confirm(`Borrar sección "${s.name}"?`)) return; await adminDeleteSection(catalogKind, s.id); qc.invalidateQueries({ queryKey: ["adminCatalog", catalogKind] }); alert("Sección borrada."); }}>🗑</Button></div><div className="spacer" /><label style={{ display: "flex", gap: 8, alignItems: "center" }}><input type="checkbox" checked={!!s.use_surface_qty} onChange={async (e) => { await adminUpdateSection(catalogKind, s.id, { use_surface_qty: e.target.checked }); qc.invalidateQueries({ queryKey: ["adminCatalog", catalogKind] }); alert("Sección actualizada."); }} /><span className="muted">Tomar cantidad por superficie siempre</span></label></div>))}</div></div><div className="card" style={{ flex: 2, minWidth: 520 }}><h3 style={{ marginTop: 0 }}>Asignar sección por etiqueta</h3><div className="spacer" /><div style={{ display: "flex", flexDirection: "column", gap: 8, maxHeight: 560, overflow: "auto", paddingRight: 6 }}>{tags.map((t) => (<div key={t.id} style={{ display: "flex", justifyContent: "space-between", gap: 8, border: "1px solid #eee", padding: 10, borderRadius: 10, alignItems: "center" }}><div style={{ fontWeight: 700 }}>{t.name}</div><select value={t.section_id || ""} onChange={async (e) => { const v = e.target.value ? Number(e.target.value) : null; await adminSetTagSection(catalogKind, t.id, v); qc.invalidateQueries({ queryKey: ["adminCatalog", catalogKind] }); alert("Etiqueta actualizada."); }} style={{ padding: 8, borderRadius: 10, border: "1px solid #ddd", minWidth: 220 }}><option value="">(sin sección)</option>{sections.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select></div>))}</div></div></div>;
+  return <div className="row"><div className="card" style={{ flex: 1, minWidth: 320 }}><h3 style={{ marginTop: 0 }}>Secciones</h3><div className="spacer" /><div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}><Input value={newSectionName} onChange={setNewSectionName} placeholder="Nueva sección…" style={{ flex: 1, minWidth: 180 }} /><Input value={newSectionPos} onChange={setNewSectionPos} placeholder="Posición" style={{ width: 110 }} /><label style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 180 }}><input type="checkbox" checked={newSectionUseSurface} onChange={(e) => setNewSectionUseSurface(e.target.checked)} /><span className="muted">Cantidad = superficie</span></label><Button variant="primary" disabled={!newSectionName.trim()} onClick={onCreateSection}>Crear</Button></div><div className="spacer" /><div style={{ display: "flex", flexDirection: "column", gap: 8 }}>{sections.map((s) => (<div key={s.id} style={{ border: "1px solid #eee", padding: 10, borderRadius: 10 }}><div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}><div><div style={{ fontWeight: 800 }}>{s.name}</div><div className="muted">Posición: {s.position} · ID: {s.id}</div></div><Button variant="ghost" onClick={async () => { if (!window.confirm(`Borrar sección "${s.name}"?`)) return; await adminDeleteSection(catalogKind, s.id); qc.invalidateQueries({ queryKey: ["adminCatalog", catalogKind] }); alert("Sección borrada."); }}>🗑</Button></div><div className="spacer" /><label style={{ display: "flex", gap: 8, alignItems: "center" }}><input type="checkbox" checked={!!s.use_surface_qty} onChange={async (e) => { await adminUpdateSection(catalogKind, s.id, { use_surface_qty: e.target.checked }); qc.invalidateQueries({ queryKey: ["adminCatalog", catalogKind] }); alert("Sección actualizada."); }} /><span className="muted">Tomar cantidad por superficie siempre</span></label></div>))}</div></div><div className="card" style={{ flex: 2, minWidth: 520 }}><h3 style={{ marginTop: 0 }}>Asignar sección por etiqueta</h3><div className="spacer" /><div style={{ display: "flex", flexDirection: "column", gap: 8, maxHeight: 560, overflow: "auto", paddingRight: 6 }}>{tags.map((t) => (<div key={t.id} style={{ display: "flex", justifyContent: "space-between", gap: 8, border: "1px solid #eee", padding: 10, borderRadius: 10, alignItems: "center" }}><div style={{ fontWeight: 700 }}>{t.name}</div><select value={t.section_id || ""} onChange={async (e) => { const v = e.target.value ? Number(e.target.value) : null; await adminSetTagSection(catalogKind, t.id, v); qc.invalidateQueries({ queryKey: ["adminCatalog", catalogKind] }); alert("Etiqueta actualizada."); }} style={{ padding: 8, borderRadius: 10, border: "1px solid #ddd", minWidth: 220 }}><option value="">(sin sección)</option>{sections.map((s) => <option key={s.id} value={s.id}>{s.name} · ID {s.id}</option>)}</select></div>))}</div></div></div>;
 }
 function AliasesTab({ catalogKind, filteredProductsByQuery, productQuery, setProductQuery, qc }) {
   return <div className="row"><div className="card" style={{ flex: 1, minWidth: 320 }}><h3 style={{ marginTop: 0 }}>Alias y visibilidad</h3><div className="spacer" /><Input value={productQuery} onChange={setProductQuery} placeholder="Buscar producto…" style={{ width: "100%" }} /></div><div className="card" style={{ flex: 2, minWidth: 520 }}><h3 style={{ marginTop: 0 }}>Productos</h3><div className="spacer" /><div style={{ display: "flex", flexDirection: "column", gap: 8, maxHeight: 620, overflow: "auto", paddingRight: 6 }}>{filteredProductsByQuery.slice(0, 400).map((p) => (<AliasRow key={p.id} product={p} onSave={async ({ alias, visibilityMode }) => { await adminSetProductAlias(catalogKind, p.id, alias); await adminSetProductVisibility(catalogKind, p.id, { disable_for_vendedor: visibilityMode === "vendedor" || visibilityMode === "both", disable_for_distribuidor: visibilityMode === "distribuidor" || visibilityMode === "both" }); qc.invalidateQueries({ queryKey: ["adminCatalog", catalogKind] }); alert("Producto actualizado."); }} />))}</div></div></div>;
@@ -234,7 +280,109 @@ function TypesTab({ catalogKind, sections, typeSections, typeVisibility, qc }) {
   return <div className="row"><TypesSectionsCard catalogKind={catalogKind} sections={sections} typeSections={typeSections} typeVisibility={typeVisibility} onSave={async (typeKey, sectionIds, visibilityMode) => { await adminSetTypeSections(catalogKind, typeKey, sectionIds); await adminSetTypeVisibility(catalogKind, typeKey, { disable_for_vendedor: visibilityMode === "vendedor" || visibilityMode === "both", disable_for_distribuidor: visibilityMode === "distribuidor" || visibilityMode === "both" }); await adminRefreshCatalog(); qc.invalidateQueries({ queryKey: ["adminCatalog", catalogKind] }); alert("Configuración del tipo guardada."); }} /></div>;
 }
 function DependenciesTab({ sections, dependencyRules, setDependencyRules, systemRules, setSystemRules, saving, onSave }) {
-  return <div className="row"><div className="card" style={{ flex: 1, minWidth: 420 }}><h3 style={{ marginTop: 0 }}>Dependencias entre secciones</h3><div className="muted" style={{ marginBottom: 10 }}>Configurá qué sección se habilita según los productos elegidos en una sección anterior.</div><div style={{ display: "flex", flexDirection: "column", gap: 10 }}>{dependencyRules.map((rule, index) => (<div key={rule.id || index} style={{ border: "1px solid #eee", borderRadius: 10, padding: 10 }}><Input value={rule.name || ""} onChange={(v) => setDependencyRules((prev) => prev.map((item, i) => i === index ? { ...item, name: v } : item))} placeholder="Nombre de la dependencia" style={{ width: "100%", marginBottom: 8 }} /><div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}><select value={rule.parent_section_id || ""} onChange={(e) => setDependencyRules((prev) => prev.map((item, i) => i === index ? { ...item, parent_section_id: e.target.value ? Number(e.target.value) : "" } : item))} style={{ padding: 8, borderRadius: 10, border: "1px solid #ddd" }}><option value="">Sección origen</option>{sections.map((section) => <option key={section.id} value={section.id}>{section.name}</option>)}</select><select value={rule.match_mode || "any"} onChange={(e) => setDependencyRules((prev) => prev.map((item, i) => i === index ? { ...item, match_mode: e.target.value } : item))} style={{ padding: 8, borderRadius: 10, border: "1px solid #ddd" }}><option value="any">Cumple con cualquier producto</option><option value="all">Cumple con todos los productos</option></select></div><div className="spacer" /><Input value={rule.required_product_ids_text || ""} onChange={(v) => setDependencyRules((prev) => prev.map((item, i) => i === index ? { ...item, required_product_ids_text: v } : item))} placeholder="IDs de productos disparadores" style={{ width: "100%" }} /><div className="spacer" /><Input value={rule.child_section_ids_text || ""} onChange={(v) => setDependencyRules((prev) => prev.map((item, i) => i === index ? { ...item, child_section_ids_text: v } : item))} placeholder="IDs de secciones a habilitar" style={{ width: "100%" }} /><div className="spacer" /><label style={{ display: "flex", alignItems: "center", gap: 8 }}><input type="checkbox" checked={rule.active !== false} onChange={(e) => setDependencyRules((prev) => prev.map((item, i) => i === index ? { ...item, active: e.target.checked } : item))} /><span className="muted">Activa</span></label></div>))}</div><div className="spacer" /><Button variant="ghost" onClick={() => setDependencyRules((prev) => [...prev, newDependencyRule(prev.length + 1)])}>+ Agregar dependencia</Button></div><div className="card" style={{ flex: 1, minWidth: 420 }}><h3 style={{ marginTop: 0 }}>Derivación del sistema</h3><div className="muted" style={{ marginBottom: 10 }}>Define qué combinación de productos repone la propiedad interna “Tipo / Sistema”.</div><div style={{ display: "flex", flexDirection: "column", gap: 10 }}>{systemRules.map((rule, index) => (<div key={rule.id || index} style={{ border: "1px solid #eee", borderRadius: 10, padding: 10 }}><Input value={rule.name || ""} onChange={(v) => setSystemRules((prev) => prev.map((item, i) => i === index ? { ...item, name: v } : item))} placeholder="Nombre de la regla" style={{ width: "100%", marginBottom: 8 }} /><div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}><select value={rule.match_mode || "all"} onChange={(e) => setSystemRules((prev) => prev.map((item, i) => i === index ? { ...item, match_mode: e.target.value } : item))} style={{ padding: 8, borderRadius: 10, border: "1px solid #ddd" }}><option value="all">Requiere todos los productos</option><option value="any">Requiere cualquier producto</option></select><select value={rule.derived_porton_type || ""} onChange={(e) => setSystemRules((prev) => prev.map((item, i) => i === index ? { ...item, derived_porton_type: e.target.value } : item))} style={{ padding: 8, borderRadius: 10, border: "1px solid #ddd" }}><option value="">Sistema derivado…</option>{PORTON_TYPES.map((item) => <option key={item.key} value={item.key}>{item.label}</option>)}</select></div><div className="spacer" /><Input value={rule.required_product_ids_text || ""} onChange={(v) => setSystemRules((prev) => prev.map((item, i) => i === index ? { ...item, required_product_ids_text: v } : item))} placeholder="IDs de productos que definen el sistema" style={{ width: "100%" }} /><div className="spacer" /><label style={{ display: "flex", alignItems: "center", gap: 8 }}><input type="checkbox" checked={rule.active !== false} onChange={(e) => setSystemRules((prev) => prev.map((item, i) => i === index ? { ...item, active: e.target.checked } : item))} /><span className="muted">Activa</span></label></div>))}</div><div className="spacer" /><div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}><Button variant="ghost" onClick={() => setSystemRules((prev) => [...prev, newSystemRule(prev.length + 1)])}>+ Agregar derivación</Button><Button variant="primary" onClick={onSave} disabled={saving}>{saving ? "Guardando..." : "Guardar dependencias"}</Button></div></div></div>;
+  function updateDependency(index, patch) {
+    setDependencyRules((prev) => prev.map((item, i) => i === index ? { ...item, ...patch } : item));
+  }
+  function updateSystem(index, patch) {
+    setSystemRules((prev) => prev.map((item, i) => i === index ? { ...item, ...patch } : item));
+  }
+  return (
+    <div className="row">
+      <div className="card" style={{ flex: 1, minWidth: 460 }}>
+        <h3 style={{ marginTop: 0 }}>Dependencias entre secciones</h3>
+        <div className="muted" style={{ marginBottom: 10 }}>
+          Configurá qué sección se habilita según los productos elegidos en una sección anterior. Las dependencias se evalúan por sección origen y pueden encadenarse.
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {dependencyRules.map((rule, index) => {
+            const selectedChildIds = new Set(parseIdList(rule.child_section_ids_text));
+            return (
+              <div key={rule.id || index} style={{ border: "1px solid #eee", borderRadius: 10, padding: 10 }}>
+                <Input value={rule.name || ""} onChange={(v) => updateDependency(index, { name: v })} placeholder="Nombre de la dependencia" style={{ width: "100%", marginBottom: 8 }} />
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                  <select value={rule.parent_section_id || ""} onChange={(e) => updateDependency(index, { parent_section_id: e.target.value ? Number(e.target.value) : "" })} style={{ padding: 8, borderRadius: 10, border: "1px solid #ddd" }}>
+                    <option value="">Sección origen</option>
+                    {sections.map((section) => <option key={section.id} value={section.id}>{section.name} · ID {section.id}</option>)}
+                  </select>
+                  <select value={rule.match_mode || "any"} onChange={(e) => updateDependency(index, { match_mode: e.target.value })} style={{ padding: 8, borderRadius: 10, border: "1px solid #ddd" }}>
+                    <option value="any">Cumple con cualquier producto</option>
+                    <option value="all">Cumple con todos los productos</option>
+                  </select>
+                </div>
+                <div className="spacer" />
+                <Input value={rule.required_product_ids_text || ""} onChange={(v) => updateDependency(index, { required_product_ids_text: v })} placeholder="IDs de productos disparadores (separados con coma)" style={{ width: "100%" }} />
+                <div className="spacer" />
+                <div className="muted" style={{ marginBottom: 6 }}>Secciones a habilitar</div>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))", gap: 8, border: "1px solid #eee", borderRadius: 10, padding: 10 }}>
+                  {sections.map((section) => {
+                    const sid = Number(section.id);
+                    const checked = selectedChildIds.has(sid);
+                    return (
+                      <label key={sid} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={(e) => {
+                            const next = new Set(selectedChildIds);
+                            if (e.target.checked) next.add(sid);
+                            else next.delete(sid);
+                            updateDependency(index, { child_section_ids_text: stringifyIdList([...next].sort((a, b) => a - b)) });
+                          }}
+                        />
+                        <span>{section.name} · ID {section.id}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+                <div className="muted" style={{ marginTop: 6 }}>IDs seleccionados: {rule.child_section_ids_text || "—"}</div>
+                <div className="spacer" />
+                <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <input type="checkbox" checked={rule.active !== false} onChange={(e) => updateDependency(index, { active: e.target.checked })} />
+                  <span className="muted">Activa</span>
+                </label>
+              </div>
+            );
+          })}
+        </div>
+        <div className="spacer" />
+        <Button variant="ghost" onClick={() => setDependencyRules((prev) => [...prev, newDependencyRule(prev.length + 1)])}>+ Agregar dependencia</Button>
+      </div>
+
+      <div className="card" style={{ flex: 1, minWidth: 420 }}>
+        <h3 style={{ marginTop: 0 }}>Derivación del sistema</h3>
+        <div className="muted" style={{ marginBottom: 10 }}>Define qué combinación de productos repone la propiedad interna “Tipo / Sistema”. Los IDs de productos se cargan separados con coma.</div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {systemRules.map((rule, index) => (
+            <div key={rule.id || index} style={{ border: "1px solid #eee", borderRadius: 10, padding: 10 }}>
+              <Input value={rule.name || ""} onChange={(v) => updateSystem(index, { name: v })} placeholder="Nombre de la regla" style={{ width: "100%", marginBottom: 8 }} />
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                <select value={rule.match_mode || "all"} onChange={(e) => updateSystem(index, { match_mode: e.target.value })} style={{ padding: 8, borderRadius: 10, border: "1px solid #ddd" }}>
+                  <option value="all">Requiere todos los productos</option>
+                  <option value="any">Requiere cualquier producto</option>
+                </select>
+                <select value={rule.derived_porton_type || ""} onChange={(e) => updateSystem(index, { derived_porton_type: e.target.value })} style={{ padding: 8, borderRadius: 10, border: "1px solid #ddd" }}>
+                  <option value="">Sistema derivado…</option>
+                  {PORTON_TYPES.map((item) => <option key={item.key} value={item.key}>{item.label}</option>)}
+                </select>
+              </div>
+              <div className="spacer" />
+              <Input value={rule.required_product_ids_text || ""} onChange={(v) => updateSystem(index, { required_product_ids_text: v })} placeholder="IDs de productos que definen el sistema (coma)" style={{ width: "100%" }} />
+              <div className="spacer" />
+              <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <input type="checkbox" checked={rule.active !== false} onChange={(e) => updateSystem(index, { active: e.target.checked })} />
+                <span className="muted">Activa</span>
+              </label>
+            </div>
+          ))}
+        </div>
+        <div className="spacer" />
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <Button variant="ghost" onClick={() => setSystemRules((prev) => [...prev, newSystemRule(prev.length + 1)])}>+ Agregar derivación</Button>
+          <Button variant="primary" onClick={onSave} disabled={saving}>{saving ? "Guardando..." : "Guardar dependencias"}</Button>
+        </div>
+      </div>
+    </div>
+  );
 }
 function DataTab({ sections, tags, sectionFilter, setSectionFilter, tagFilter, setTagFilter, filteredProductsForData, filteredQuotes }) {
   return <div className="row"><div className="card" style={{ flex: 1, minWidth: 320 }}><h3 style={{ marginTop: 0 }}>Filtros</h3><div className="muted">Sección</div><select value={sectionFilter} onChange={(e) => setSectionFilter(e.target.value)} style={{ padding: 8, borderRadius: 10, border: "1px solid #ddd", width: "100%" }}><option value="all">(todas)</option>{sections.map((s) => <option key={s.id} value={String(s.id)}>{s.name}</option>)}</select><div className="spacer" /><div className="muted">Etiqueta</div><select value={tagFilter} onChange={(e) => setTagFilter(e.target.value)} style={{ padding: 8, borderRadius: 10, border: "1px solid #ddd", width: "100%" }}><option value="all">(todas)</option>{tags.map((t) => <option key={t.id} value={String(t.id)}>{t.name}</option>)}</select></div><div className="card" style={{ flex: 1, minWidth: 420 }}><h3 style={{ marginTop: 0 }}>Productos filtrados</h3><div style={{ display: "flex", flexDirection: "column", gap: 8, maxHeight: 360, overflow: "auto", paddingRight: 6 }}>{filteredProductsForData.map((p) => (<div key={p.id} style={{ border: "1px solid #eee", padding: 10, borderRadius: 10 }}><div style={{ fontWeight: 800 }}>{p.display_name || p.name}</div><div className="muted" style={{ fontSize: 12 }}>ID: {p.id} {p.code ? `· ${p.code}` : ""}</div></div>))}</div></div><div className="card" style={{ flex: 1, minWidth: 420 }}><h3 style={{ marginTop: 0 }}>Últimas cotizaciones</h3><div style={{ display: "flex", flexDirection: "column", gap: 8, maxHeight: 360, overflow: "auto", paddingRight: 6 }}>{filteredQuotes.map((q) => (<div key={q.id} style={{ border: "1px solid #eee", padding: 10, borderRadius: 10 }}><div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}><div style={{ fontWeight: 800 }}>{q.odoo_sale_order_name || q.final_sale_order_name || `#${String(q.id).slice(0, 8)}`}</div><div className="muted">{q.final_status || q.status}</div></div></div>))}</div></div></div>;
@@ -244,7 +392,11 @@ function TypesSectionsCard({ catalogKind, sections, typeSections, typeVisibility
   const [selectedSectionIds, setSelectedSectionIds] = useState([]);
   const [visibilityMode, setVisibilityMode] = useState("none");
   const canUse = (catalogKind || "porton") === "porton";
-  useEffect(() => { const arr = canUse && selectedType ? (typeSections?.[selectedType] || []) : []; setSelectedSectionIds((arr || []).map((x) => Number(x))); setVisibilityMode(visibilityModeFromTypeEntry(typeVisibility?.[selectedType] || {})); }, [selectedType, catalogKind, canUse, typeSections, typeVisibility]);
+  useEffect(() => {
+    const arr = canUse && selectedType ? (typeSections?.[selectedType] || []) : [];
+    setSelectedSectionIds((arr || []).map((x) => Number(x)));
+    setVisibilityMode(visibilityModeFromTypeEntry(typeVisibility?.[selectedType] || {}));
+  }, [selectedType, catalogKind, canUse, typeSections, typeVisibility]);
   if (!canUse) return <div className="card" style={{ flex: 1 }}><h3 style={{ marginTop: 0 }}>Tipos → Secciones</h3><div className="muted">Esto aplica solo a Portones.</div></div>;
   const sectionSet = new Set(selectedSectionIds.map((x) => Number(x)));
   return <><div className="card" style={{ flex: 1, minWidth: 320 }}><h3 style={{ marginTop: 0 }}>Tipos / Sistemas</h3><div className="spacer" /><select value={selectedType} onChange={(e) => setSelectedType(e.target.value)} style={{ padding: 10, borderRadius: 10, border: "1px solid #ddd", width: "100%" }}>{PORTON_TYPES.map((t) => <option key={t.key} value={t.key}>{t.label}</option>)}</select><div className="spacer" /><div className="muted">Visibilidad del tipo</div><select value={visibilityMode} onChange={(e) => setVisibilityMode(e.target.value)} style={{ padding: 10, borderRadius: 10, border: "1px solid #ddd", width: "100%" }}><option value="none">Habilitado para todos</option><option value="vendedor">Oculto solo para vendedores</option><option value="distribuidor">Oculto solo para distribuidores</option><option value="both">Oculto para ambos</option></select><div className="spacer" /><Button variant="primary" onClick={async () => onSave(selectedType, selectedSectionIds, visibilityMode)}>Guardar configuración</Button></div><div className="card" style={{ flex: 2, minWidth: 520 }}><h3 style={{ marginTop: 0 }}>Secciones visibles</h3><div className="spacer" /><div style={{ display: "flex", flexDirection: "column", gap: 8, maxHeight: 620, overflow: "auto", paddingRight: 6 }}>{sections.map((s) => { const sid = Number(s.id); const checked = sectionSet.has(sid); return <label key={sid} style={{ display: "flex", gap: 10, alignItems: "center", border: "1px solid #eee", padding: 10, borderRadius: 10 }}><input type="checkbox" checked={checked} onChange={(e) => { const next = new Set(sectionSet); if (e.target.checked) next.add(sid); else next.delete(sid); setSelectedSectionIds([...next]); }} /><div style={{ fontWeight: 700 }}>{s.name}</div><div className="muted" style={{ marginLeft: "auto" }}>Pos: {s.position}</div></label>; })}</div></div></>;
