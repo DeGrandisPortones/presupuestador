@@ -38,6 +38,69 @@ function matchProductIds(selectedIds, requiredIds, matchMode = "any") {
   return required.some((id) => selected.has(id));
 }
 
+function cloneSelectionMap(sectionList, selectedProductIdsBySection) {
+  const map = new Map();
+  for (const section of sectionList) {
+    const sid = Number(section.id);
+    map.set(sid, new Set(selectedProductIdsBySection.get(sid) || []));
+  }
+  return map;
+}
+
+function computeOrderedSectionIds({
+  kind,
+  sectionList,
+  sectionMap,
+  initialSectionId,
+  dependencyRules,
+  selectedProductIdsBySection,
+}) {
+  if ((kind || "porton").toLowerCase().trim() !== "porton") {
+    return sectionList.map((section) => Number(section.id));
+  }
+
+  if (!sectionList.length) return [];
+
+  const startId =
+    initialSectionId && sectionMap.has(Number(initialSectionId))
+      ? Number(initialSectionId)
+      : Number(sectionList[0]?.id || 0);
+
+  if (!startId) return [];
+
+  const ordered = [startId];
+  const seen = new Set(ordered);
+
+  let changed = true;
+  let guard = 0;
+  while (changed && guard < 30) {
+    changed = false;
+    guard += 1;
+
+    for (const currentSectionId of [...ordered]) {
+      const selectedInParent = selectedProductIdsBySection.get(Number(currentSectionId)) || new Set();
+
+      for (const rule of dependencyRules) {
+        const parentSectionId = Number(rule?.parent_section_id || 0);
+        if (parentSectionId !== Number(currentSectionId)) continue;
+
+        if (!matchProductIds(selectedInParent, rule?.required_product_ids, rule?.match_mode || "any")) {
+          continue;
+        }
+
+        for (const childSectionId of normalizeIdList(rule?.child_section_ids)) {
+          if (!sectionMap.has(childSectionId) || seen.has(childSectionId)) continue;
+          ordered.push(childSectionId);
+          seen.add(childSectionId);
+          changed = true;
+        }
+      }
+    }
+  }
+
+  return ordered;
+}
+
 export default function SectionCatalog({ kind = "porton" }) {
   const bootstrapKind = (kind || "porton") === "otros" ? "porton" : kind;
 
@@ -184,58 +247,15 @@ export default function SectionCatalog({ kind = "porton" }) {
   }, [lines, productsBySection, sectionList]);
 
   const orderedVisibleSectionIds = useMemo(() => {
-    if ((kind || "porton").toLowerCase().trim() !== "porton") {
-      return sectionList.map((section) => Number(section.id));
-    }
-
-    if (!sectionList.length) return [];
-
-    const startId =
-      initialSectionId && sectionMap.has(Number(initialSectionId))
-        ? Number(initialSectionId)
-        : Number(sectionList[0]?.id || 0);
-
-    if (!startId) return [];
-
-    const ordered = [startId];
-    const seen = new Set(ordered);
-
-    let changed = true;
-    let guard = 0;
-    while (changed && guard < 30) {
-      changed = false;
-      guard += 1;
-
-      for (const currentSectionId of [...ordered]) {
-        const selectedInParent = selectedProductIdsBySection.get(Number(currentSectionId)) || new Set();
-
-        for (const rule of dependencyRules) {
-          const parentSectionId = Number(rule?.parent_section_id || 0);
-          if (parentSectionId !== Number(currentSectionId)) continue;
-
-          if (!matchProductIds(selectedInParent, rule?.required_product_ids, rule?.match_mode || "any")) {
-            continue;
-          }
-
-          for (const childSectionId of normalizeIdList(rule?.child_section_ids)) {
-            if (!sectionMap.has(childSectionId) || seen.has(childSectionId)) continue;
-            ordered.push(childSectionId);
-            seen.add(childSectionId);
-            changed = true;
-          }
-        }
-      }
-    }
-
-    return ordered;
-  }, [
-    kind,
-    initialSectionId,
-    sectionList,
-    sectionMap,
-    dependencyRules,
-    selectedProductIdsBySection,
-  ]);
+    return computeOrderedSectionIds({
+      kind,
+      sectionList,
+      sectionMap,
+      initialSectionId,
+      dependencyRules,
+      selectedProductIdsBySection,
+    });
+  }, [kind, sectionList, sectionMap, initialSectionId, dependencyRules, selectedProductIdsBySection]);
 
   const visibleSections = useMemo(
     () => orderedVisibleSectionIds.map((id) => sectionMap.get(Number(id))).filter(Boolean),
@@ -269,20 +289,65 @@ export default function SectionCatalog({ kind = "porton" }) {
   function selectProductForSection(sectionId, product) {
     const currentSelected = selectedProductIdsBySection.get(Number(sectionId)) || new Set();
     const targetProductId = Number(product?.id);
+    const currentSelectedIds = [...currentSelected].filter((id) => id !== targetProductId);
+
+    const currentIndex = orderedVisibleSectionIds.findIndex((id) => Number(id) === Number(sectionId));
+    const downstreamSectionIds = currentIndex >= 0 ? orderedVisibleSectionIds.slice(currentIndex + 1) : [];
+    const hasDownstreamSelections = downstreamSectionIds.some((sid) => {
+      const selected = selectedProductIdsBySection.get(Number(sid));
+      return selected && selected.size > 0;
+    });
 
     if (currentSelected.has(targetProductId) && currentSelected.size === 1) {
+      const nextSectionId = downstreamSectionIds[0] || null;
+      setOpenSectionId(nextSectionId ? Number(nextSectionId) : null);
       return;
     }
 
+    if (currentSelectedIds.length > 0 && hasDownstreamSelections) {
+      const ok = window.confirm(
+        "Si cambiás este producto, vas a tener que volver a cargar las secciones siguientes. ¿Deseás continuar?",
+      );
+      if (!ok) return;
+    }
+
+    const nextSelectionMap = cloneSelectionMap(sectionList, selectedProductIdsBySection);
+
     currentSelected.forEach((productId) => {
       removeLine(productId);
+      nextSelectionMap.get(Number(sectionId))?.delete(Number(productId));
     });
+
+    if (hasDownstreamSelections) {
+      for (const downstreamSectionId of downstreamSectionIds) {
+        const selectedDownstream = [...(nextSelectionMap.get(Number(downstreamSectionId)) || new Set())];
+        for (const productId of selectedDownstream) {
+          removeLine(productId);
+          nextSelectionMap.get(Number(downstreamSectionId))?.delete(Number(productId));
+        }
+      }
+    }
 
     addLine({
       ...product,
       name: getProductLabel(product),
       raw_name: product?.name,
     });
+    nextSelectionMap.set(Number(sectionId), new Set([targetProductId]));
+
+    const nextOrderedIds = computeOrderedSectionIds({
+      kind,
+      sectionList,
+      sectionMap,
+      initialSectionId,
+      dependencyRules,
+      selectedProductIdsBySection: nextSelectionMap,
+    });
+
+    const nextIndex = nextOrderedIds.findIndex((id) => Number(id) === Number(sectionId));
+    const nextSectionId = nextIndex >= 0 ? nextOrderedIds[nextIndex + 1] : null;
+
+    setOpenSectionId(nextSectionId ? Number(nextSectionId) : null);
   }
 
   const title =
