@@ -36,7 +36,6 @@ export default function MenuPage() {
   const canQuote = !!(isSuperuser || user?.is_vendedor || user?.is_distribuidor);
   const showDashboard = !!(isSuperuser || user?.is_enc_comercial);
   const showCommercialInbox = !!(isSuperuser || user?.is_enc_comercial);
-  const showPlanning = !!(isSuperuser || user?.is_enc_comercial);
   const showUsers = !!(isSuperuser || user?.is_enc_comercial);
   const showTechInbox = !!(isSuperuser || user?.is_rev_tecnica);
   const showDoors = !!(isSuperuser || user?.is_vendedor);
@@ -194,24 +193,6 @@ export default function MenuPage() {
                 <circle cx="12" cy="12" r="9" />
                 <path d="M8.5 12h7" />
                 <path d="M12 8.5v7" />
-              </SvgIcon>
-            }
-          />
-        )}
-
-        {showPlanning && (
-          <MenuTile
-            title="Planificación"
-            description="Capacidad de producción semanal."
-            buttonText="Abrir planificación"
-            onClick={() => navigate("/planificacion")}
-            icon={
-              <SvgIcon>
-                <path d="M4 6h16" />
-                <path d="M4 12h16" />
-                <path d="M4 18h16" />
-                <path d="M8 4v16" />
-                <path d="M16 4v16" />
               </SvgIcon>
             }
           />

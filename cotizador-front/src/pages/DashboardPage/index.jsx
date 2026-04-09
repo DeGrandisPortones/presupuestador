@@ -696,12 +696,44 @@ function TagsTab({
         <div className="spacer" />
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           {sections.map((s) => (
-            <SectionEditorRow
+            <div
               key={s.id}
-              section={s}
-              catalogKind={catalogKind}
-              qc={qc}
-            />
+              style={{ border: "1px solid #eee", padding: 10, borderRadius: 10 }}
+            >
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+                <div>
+                  <div style={{ fontWeight: 800 }}>
+                    {s.name} · ID {s.id}
+                  </div>
+                </div>
+                <Button
+                  variant="ghost"
+                  onClick={async () => {
+                    if (!window.confirm(`Borrar sección "${s.name}"?`)) return;
+                    await adminDeleteSection(catalogKind, s.id);
+                    qc.invalidateQueries({ queryKey: ["adminCatalog", catalogKind] });
+                    alert("Sección borrada.");
+                  }}
+                >
+                  🗑
+                </Button>
+              </div>
+              <div className="spacer" />
+              <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                <input
+                  type="checkbox"
+                  checked={!!s.use_surface_qty}
+                  onChange={async (e) => {
+                    await adminUpdateSection(catalogKind, s.id, {
+                      use_surface_qty: e.target.checked,
+                    });
+                    qc.invalidateQueries({ queryKey: ["adminCatalog", catalogKind] });
+                    alert("Sección actualizada.");
+                  }}
+                />
+                <span className="muted">Tomar cantidad por superficie siempre</span>
+              </label>
+            </div>
           ))}
         </div>
       </div>
@@ -714,9 +746,6 @@ function TagsTab({
             display: "flex",
             flexDirection: "column",
             gap: 8,
-            maxHeight: 560,
-            overflow: "auto",
-            paddingRight: 6,
           }}
         >
           {tags.map((t) => (
@@ -758,82 +787,6 @@ function TagsTab({
             </div>
           ))}
         </div>
-      </div>
-    </div>
-  );
-}
-
-function SectionEditorRow({ section, catalogKind, qc }) {
-  const [name, setName] = useState(section?.name || "");
-  const [useSurfaceQty, setUseSurfaceQty] = useState(!!section?.use_surface_qty);
-  const [saving, setSaving] = useState(false);
-
-  useEffect(() => {
-    setName(section?.name || "");
-    setUseSurfaceQty(!!section?.use_surface_qty);
-  }, [section?.id, section?.name, section?.use_surface_qty]);
-
-  const changed = String(name || "").trim() !== String(section?.name || "").trim() || !!useSurfaceQty !== !!section?.use_surface_qty;
-
-  async function saveSection() {
-    setSaving(true);
-    try {
-      await adminUpdateSection(catalogKind, section.id, {
-        name: String(name || "").trim() || section?.name || "",
-        use_surface_qty: !!useSurfaceQty,
-      });
-      qc.invalidateQueries({ queryKey: ["adminCatalog", catalogKind] });
-      alert("Sección actualizada.");
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  return (
-    <div
-      style={{ border: "1px solid #eee", padding: 10, borderRadius: 10 }}
-    >
-      <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "flex-start" }}>
-        <div style={{ flex: 1 }}>
-          <div className="muted" style={{ marginBottom: 6 }}>
-            Nombre de la sección · ID {section.id}
-          </div>
-          <Input
-            value={name}
-            onChange={setName}
-            placeholder="Nombre de la sección"
-            style={{ width: "100%" }}
-          />
-        </div>
-        <Button
-          variant="ghost"
-          onClick={async () => {
-            if (!window.confirm(`Borrar sección "${section.name}"?`)) return;
-            await adminDeleteSection(catalogKind, section.id);
-            qc.invalidateQueries({ queryKey: ["adminCatalog", catalogKind] });
-            alert("Sección borrada.");
-          }}
-        >
-          🗑
-        </Button>
-      </div>
-      <div className="spacer" />
-      <label style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 10 }}>
-        <input
-          type="checkbox"
-          checked={useSurfaceQty}
-          onChange={(e) => setUseSurfaceQty(e.target.checked)}
-        />
-        <span className="muted">Tomar cantidad por superficie siempre</span>
-      </label>
-      <div style={{ display: "flex", justifyContent: "flex-end" }}>
-        <Button
-          variant="primary"
-          disabled={!changed || saving || !String(name || "").trim()}
-          onClick={saveSection}
-        >
-          {saving ? "Guardando..." : "Guardar sección"}
-        </Button>
       </div>
     </div>
   );

@@ -105,7 +105,7 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
   const bootstrapKind = (kind || "porton") === "otros" ? "porton" : kind;
 
   const addLine = useQuoteStore((s) => s.addLine);
-  const forceRemoveLine = useQuoteStore((s) => s.forceRemoveLine);
+  const removeLine = useQuoteStore((s) => s.removeLine);
   const lines = useQuoteStore((s) => s.lines);
   const portonType = useQuoteStore((s) => s.portonType);
   const setPortonType = useQuoteStore((s) => s.setPortonType);
@@ -292,10 +292,14 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
     if (!visibleSections.length) return;
     const firstVisibleSectionId = Number(visibleSections[0]?.id || 0) || null;
     const visibleIds = new Set(visibleSections.map((section) => Number(section.id)));
+    if (firstVisibleSectionId && initialSectionId && firstVisibleSectionId === Number(initialSectionId)) {
+      setOpenSectionId(firstVisibleSectionId);
+      return;
+    }
     if (openSectionId == null || !visibleIds.has(Number(openSectionId))) {
       setOpenSectionId(firstVisibleSectionId);
     }
-  }, [visibleSections, openSectionId]);
+  }, [visibleSections, openSectionId, initialSectionId]);
 
   function selectProductForSection(sectionId, product) {
     const currentSelected = selectedProductIdsBySection.get(Number(sectionId)) || new Set();
@@ -325,7 +329,7 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
     const nextSelectionMap = cloneSelectionMap(sectionList, selectedProductIdsBySection);
 
     currentSelected.forEach((productId) => {
-      forceRemoveLine(productId);
+      removeLine(productId);
       nextSelectionMap.get(Number(sectionId))?.delete(Number(productId));
     });
 
@@ -333,19 +337,16 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
       for (const downstreamSectionId of downstreamSectionIds) {
         const selectedDownstream = [...(nextSelectionMap.get(Number(downstreamSectionId)) || new Set())];
         for (const productId of selectedDownstream) {
-          forceRemoveLine(productId);
+          removeLine(productId);
           nextSelectionMap.get(Number(downstreamSectionId))?.delete(Number(productId));
         }
       }
     }
 
-    const currentSection = sectionMap.get(Number(sectionId));
-
     addLine({
       ...product,
       name: getProductLabel(product),
       raw_name: product?.name,
-      uses_surface_quantity: !!currentSection?.use_surface_qty || !!product?.uses_surface_quantity,
     });
     nextSelectionMap.set(Number(sectionId), new Set([targetProductId]));
 
@@ -458,7 +459,7 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
                             <div className="dg-product-info">
                               <div className="dg-product-name">
                                 {getProductLabel(product)}
-                                {(section.use_surface_qty || product.uses_surface_quantity) ? " · cantidad por superficie" : ""}
+                                {product.uses_surface_quantity ? " · cantidad por superficie" : ""}
                               </div>
                               <div className="muted" style={{ fontSize: 12 }}>
                                 {product.code ? `Código: ${product.code}` : `ID: ${product.id}`}
