@@ -6,9 +6,9 @@ import Button from "../../ui/Button.jsx";
 import Input from "../../ui/Input.jsx";
 import PaginationControls from "../../ui/PaginationControls.jsx";
 import { listQuotes, reviewAcopioCommercial } from "../../api/quotes.js";
+import { adminGetProductionPlanning, adminSaveProductionPlanning } from "../../api/admin.js";
 import { listDoors, reviewDoorCommercial } from "../../api/doors.js";
 import { listMeasurements } from "../../api/measurements.js";
-import { adminGetProductionPlanning, adminSaveProductionPlanning } from "../../api/admin.js";
 import { useAuthStore } from "../../domain/auth/store.js";
 import { downloadListingDoorPdf, downloadListingQuotePdf } from "../../utils/listingPdf.js";
 
@@ -71,17 +71,11 @@ function PdfIconButton({ onClick, disabled = false }) {
     </Button>
   );
 }
-function normalizeCapacity(value) {
-  const n = Number(String(value ?? "0").replace(/[^0-9-]/g, ""));
-  if (!Number.isFinite(n) || n < 0) return 0;
-  return Math.trunc(n);
-}
 
 export default function AprobacionComercialPage() {
   const navigate = useNavigate();
   const user = useAuthStore((s) => s.user);
 
-  const currentYear = new Date().getFullYear();
   const [tab, setTab] = useState("aprobaciones");
   const [filter, setFilter] = useState("all");
   const [searchText, setSearchText] = useState("");
@@ -91,8 +85,10 @@ export default function AprobacionComercialPage() {
   const [pagePuertas, setPagePuertas] = useState(1);
   const [pageMediciones, setPageMediciones] = useState(1);
   const [downloadingPdfKey, setDownloadingPdfKey] = useState("");
+  const currentYear = new Date().getFullYear();
+  const yearOptions = Array.from({ length: 6 }, (_, idx) => String(currentYear - 1 + idx));
   const [planningYear, setPlanningYear] = useState(String(currentYear));
-  const [planningWeeks, setPlanningWeeks] = useState([]);
+  const [planningDraft, setPlanningDraft] = useState([]);
 
   const q = useQuery({ queryKey: ["quotes", "commercial_inbox"], queryFn: () => listQuotes({ scope: "commercial_inbox" }), enabled: !!user?.is_enc_comercial });
   const acopioQ = useQuery({ queryKey: ["quotes", "commercial_acopio"], queryFn: () => listQuotes({ scope: "commercial_acopio" }), enabled: tab === "acopio" && !!user?.is_enc_comercial });
@@ -105,30 +101,35 @@ export default function AprobacionComercialPage() {
   });
   const planningQ = useQuery({
     queryKey: ["admin", "production-planning", planningYear],
-    queryFn: () => adminGetProductionPlanning(planningYear),
+    queryFn: () => adminGetProductionPlanning(Number(planningYear || currentYear)),
     enabled: tab === "planificacion" && !!user?.is_enc_comercial,
   });
-
-  useEffect(() => {
-    if (!planningQ.data?.weeks) return;
-    setPlanningWeeks(planningQ.data.weeks.map((week) => ({ ...week, capacity: String(week.capacity ?? 0) })));
-  }, [planningQ.data]);
 
   const acopioM = useMutation({ mutationFn: ({ id, action, notes }) => reviewAcopioCommercial(id, { action, notes }), onSuccess: () => acopioQ.refetch() });
   const doorM = useMutation({ mutationFn: ({ id, action, notes }) => reviewDoorCommercial(id, { action, notes }), onSuccess: () => doorsQ.refetch() });
   const planningSaveM = useMutation({
     mutationFn: async () => {
-      const payload = {
+      return adminSaveProductionPlanning({
         year: Number(planningYear || currentYear),
-        weeks: planningWeeks.map((week) => ({ ...week, capacity: normalizeCapacity(week.capacity) })),
-      };
-      return await adminSaveProductionPlanning(payload);
+        weeks: planningDraft.map((row) => ({
+          week_number: Number(row.week_number || row.week || 0),
+          capacity: Math.max(0, Number(String(row.capacity_input ?? row.capacity ?? 0).replace(",", ".")) || 0),
+        })),
+      });
     },
-    onSuccess: (saved) => {
-      setPlanningWeeks((saved?.weeks || []).map((week) => ({ ...week, capacity: String(week.capacity ?? 0) })));
+    onSuccess: (planning) => {
+      setPlanningDraft(
+        (planning?.weeks || []).map((row) => ({
+          ...row,
+          capacity_input: String(row.capacity ?? 0),
+        })),
+      );
       toast.success("Planificación guardada.");
+      planningQ.refetch();
     },
-    onError: (e) => toast.error(e?.message || "No se pudo guardar la planificación"),
+    onError: (e) => {
+      toast.error(e?.message || "No se pudo guardar la planificación.");
+    },
   });
 
   async function handleDownloadQuotePdf(id) {
@@ -205,6 +206,16 @@ export default function AprobacionComercialPage() {
       );
   }, [medicionesQ.data, searchText]);
 
+  useEffect(() => {
+    if (!planningQ.data?.weeks) return;
+    setPlanningDraft(
+      planningQ.data.weeks.map((row) => ({
+        ...row,
+        capacity_input: String(row.capacity ?? 0),
+      })),
+    );
+  }, [planningQ.data]);
+
   useEffect(() => { setPageAprobaciones(1); }, [filter, searchText]);
   useEffect(() => { setPageAcopio(1); }, [searchText]);
   useEffect(() => { setPageAcopioListado(1); }, [searchText]);
@@ -225,16 +236,16 @@ export default function AprobacionComercialPage() {
     <div className="container">
       <div className="card">
         <h2 style={{ margin: 0 }}>Aprobación Comercial</h2>
-        <div className="muted">Presupuestos, portones en acopio, puertas, mediciones y planificación semanal.</div>
+        <div className="muted">Presupuestos, portones en acopio, puertas y mediciones pendientes de tu decisión.</div>
 
         <div className="spacer" />
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           <Button variant={tab === "aprobaciones" ? "primary" : "ghost"} onClick={() => setTab("aprobaciones")}>Aprobaciones</Button>
+          <Button variant={tab === "planificacion" ? "primary" : "ghost"} onClick={() => setTab("planificacion")}>Planificación</Button>
           <Button variant={tab === "mediciones" ? "primary" : "ghost"} onClick={() => setTab("mediciones")}>Mediciones</Button>
           <Button variant={tab === "acopio" ? "primary" : "ghost"} onClick={() => setTab("acopio")}>Acopio → Producción</Button>
           <Button variant={tab === "acopio_listado" ? "primary" : "ghost"} onClick={() => setTab("acopio_listado")}>Portones en Acopio</Button>
           <Button variant={tab === "puertas" ? "primary" : "ghost"} onClick={() => setTab("puertas")}>Puertas</Button>
-          <Button variant={tab === "planificacion" ? "primary" : "ghost"} onClick={() => setTab("planificacion")}>Planificación</Button>
         </div>
 
         {tab === "aprobaciones" && (
@@ -248,23 +259,12 @@ export default function AprobacionComercialPage() {
           </>
         )}
 
-        {tab === "planificacion" ? (
-          <>
-            <div className="spacer" />
-            <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-              <div className="muted">Año</div>
-              <Input value={planningYear} onChange={setPlanningYear} style={{ width: 120 }} />
-              <Button variant="ghost" onClick={() => planningQ.refetch()} disabled={planningQ.isFetching}>Cargar</Button>
-              <Button onClick={() => planningSaveM.mutate()} disabled={planningSaveM.isPending}>{planningSaveM.isPending ? "Guardando..." : "Guardar"}</Button>
-            </div>
-            <div className="muted" style={{ marginTop: 8 }}>Cada fila representa una semana productiva que comienza en lunes. La capacidad es la cantidad máxima de portones para esa semana.</div>
-          </>
-        ) : (
+        {tab !== "planificacion" ? (
           <>
             <div className="spacer" />
             <Input value={searchText} onChange={setSearchText} placeholder="Buscar por cliente, localidad, dirección, usuario, código, estado o campo..." style={{ width: "100%" }} />
           </>
-        )}
+        ) : null}
       </div>
 
       <div className="spacer" />
@@ -300,6 +300,73 @@ export default function AprobacionComercialPage() {
                 </table>
                 <PaginationControls page={pageAprobaciones} totalItems={rows.length} pageSize={PAGE_SIZE} onPageChange={setPageAprobaciones} />
               </>
+            )}
+          </>
+        )}
+
+        {tab === "planificacion" && (
+          <>
+            <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginBottom: 14 }}>
+              <div className="muted">Año</div>
+              <select
+                value={planningYear}
+                onChange={(e) => setPlanningYear(String(e.target.value || currentYear))}
+                style={{ padding: "10px 12px", borderRadius: 8, border: "1px solid #ddd", outline: "none", background: "#fff" }}
+              >
+                {yearOptions.map((year) => <option key={year} value={year}>{year}</option>)}
+              </select>
+              <Button variant="ghost" onClick={() => planningQ.refetch()} disabled={planningQ.isLoading || planningQ.isFetching}>Recargar</Button>
+              <Button onClick={() => planningSaveM.mutate()} disabled={planningSaveM.isPending || planningQ.isLoading}>
+                {planningSaveM.isPending ? "Guardando..." : "Guardar planificación"}
+              </Button>
+            </div>
+
+            {planningQ.isLoading && <div className="muted">Cargando planificación...</div>}
+            {planningQ.isError && <div style={{ color: "#d93025", fontSize: 13 }}>{planningQ.error.message}</div>}
+            {!planningQ.isLoading && !planningDraft.length && <div className="muted">Sin semanas cargadas para este año.</div>}
+
+            {!planningQ.isLoading && !!planningDraft.length && (
+              <table>
+                <thead>
+                  <tr>
+                    <th>Semana</th>
+                    <th>Desde</th>
+                    <th>Hasta</th>
+                    <th className="right">Capacidad</th>
+                    <th className="right">Comprometidos</th>
+                    <th className="right">Disponible</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {planningDraft.map((row) => {
+                    const week = Number(row.week_number || row.week || 0);
+                    const capacity = Math.max(0, Number(String(row.capacity_input ?? row.capacity ?? 0).replace(",", ".")) || 0);
+                    const committed = Math.max(0, Number(row.committed_count || 0));
+                    const available = Math.max(0, Number(row.available ?? (capacity - committed)) || 0);
+                    return (
+                      <tr key={`${planningYear}-${week}`}>
+                        <td>Semana {week}</td>
+                        <td>{fmtDate(row.start_date)}</td>
+                        <td>{fmtDate(row.end_date)}</td>
+                        <td className="right">
+                          <input
+                            type="number"
+                            min="0"
+                            value={row.capacity_input ?? row.capacity ?? 0}
+                            onChange={(e) => {
+                              const nextValue = String(e.target.value || "0");
+                              setPlanningDraft((prev) => prev.map((item) => Number(item.week_number || item.week || 0) === week ? { ...item, capacity_input: nextValue } : item));
+                            }}
+                            style={{ width: 110, textAlign: "right", padding: "8px 10px", borderRadius: 8, border: "1px solid #ddd", outline: "none" }}
+                          />
+                        </td>
+                        <td className="right">{committed}</td>
+                        <td className="right">{available}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
             )}
           </>
         )}
@@ -447,37 +514,6 @@ export default function AprobacionComercialPage() {
                   </tbody>
                 </table>
                 <PaginationControls page={pagePuertas} totalItems={doorRows.length} pageSize={PAGE_SIZE} onPageChange={setPagePuertas} />
-              </>
-            )}
-          </>
-        )}
-
-        {tab === "planificacion" && (
-          <>
-            {planningQ.isLoading && <div className="muted">Cargando planificación...</div>}
-            {planningQ.isError && <div style={{ color: "#d93025", fontSize: 13 }}>{planningQ.error.message}</div>}
-            {!planningQ.isLoading && (
-              <>
-                <table>
-                  <thead><tr><th>Semana</th><th>Desde</th><th>Hasta</th><th className="right">Capacidad</th></tr></thead>
-                  <tbody>
-                    {planningWeeks.map((week, idx) => (
-                      <tr key={`${week.week_number}-${week.start_date}`}>
-                        <td>{week.week_number}</td>
-                        <td>{fmtDate(week.start_date)}</td>
-                        <td>{fmtDate(week.end_date)}</td>
-                        <td className="right" style={{ width: 150 }}>
-                          <Input
-                            value={week.capacity}
-                            onChange={(value) => setPlanningWeeks((current) => current.map((item, itemIdx) => itemIdx === idx ? { ...item, capacity: value } : item))}
-                            style={{ width: 120, textAlign: "right" }}
-                          />
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-                {!planningWeeks.length ? <div className="muted">No hay semanas para este año.</div> : null}
               </>
             )}
           </>

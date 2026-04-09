@@ -164,6 +164,29 @@ export async function getProductionPlanningEstimate({ quoteId = null, fromDate =
   }
 }
 
+export async function getProductionPlanningWithUsage(yearInput) {
+  const year = Number(yearInput || 0) || new Date().getUTCFullYear();
+  const client = await getPool().connect();
+  try {
+    const planningYear = getPlanningYear(await getProductionPlanningSettings(), year);
+    const counts = await fetchCommittedCounts(client, [year]);
+    return {
+      ...planningYear,
+      weeks: (planningYear.weeks || []).map((week) => {
+        const capacity = Number(week.capacity || 0);
+        const committedCount = Number(counts.get(`${year}-${week.week_number}`) || 0);
+        return {
+          ...week,
+          committed_count: committedCount,
+          available: Math.max(0, capacity - committedCount),
+        };
+      }),
+    };
+  } finally {
+    client.release();
+  }
+}
+
 export async function attachQuoteProductionPlanning(quote) {
   if (!quote) return quote;
   const planning = await getQuoteProductionPlanning(quote);

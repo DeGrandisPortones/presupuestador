@@ -4,7 +4,14 @@ import { useNavigate, useParams, useLocation } from "react-router-dom";
 import { useAuthStore } from "../../domain/auth/store.js";
 
 import { getPricelists, getPrices, getFinancingPreview } from "../../api/odoo";
-import { createQuote, getQuote, confirmQuote, submitFinalQuote, updateQuote, getProductionPlanningEstimate } from "../../api/quotes";
+import {
+  createQuote,
+  getProductionPlanningEstimate,
+  getQuote,
+  confirmQuote,
+  submitFinalQuote,
+  updateQuote,
+} from "../../api/quotes";
 import { confirmReturnedMeasurementQuote, resetReturnedMeasurementQuote } from "../../api/measurements";
 import { downloadPresupuestoPdf, downloadProformaPdf } from "../../api/pdf";
 import toast from "react-hot-toast";
@@ -48,15 +55,6 @@ function appendMetricsToNote(note, payload) {
   filtered.push(metrics);
   return filtered.join("\n").trim();
 }
-function buildProductionPlanningPayload(payload, estimate) {
-  if (!estimate) return payload;
-  return {
-    ...(payload || {}),
-    production_planning: {
-      ...estimate,
-    },
-  };
-}
 function buildPdfPayloadForDownload(payload, financingPercent, extras = {}) {
   const percent = Number(financingPercent || 0) || 0;
   const factor = 1 + percent / 100;
@@ -70,17 +68,6 @@ function buildPdfPayloadForDownload(payload, financingPercent, extras = {}) {
   const nextPayload = { ...(payload || {}), ...extras, lines: nextLines, payload: { ...(payload?.payload || {}), ...(extras.payload || {}) } };
   nextPayload.note = appendMetricsToNote(nextPayload.note, nextPayload);
   return nextPayload;
-}
-function planningLabel(estimate) {
-  if (!estimate) return "";
-  const weeksText = String(estimate.weeks_text || "").trim();
-  const weekNumber = String(estimate.week_number || "").trim();
-  const start = String(estimate.start_date_label || estimate.start_date || "").trim();
-  const end = String(estimate.end_date_label || estimate.end_date || "").trim();
-  const weekPart = weekNumber ? `Semana ${weekNumber}` : "Semana estimada";
-  const rangePart = start || end ? ` (${start || "—"} al ${end || "—"})` : "";
-  const prefix = weeksText ? `Entrega estimada: en ${weeksText}` : "Entrega estimada";
-  return `${prefix} · ${weekPart}${rangePart}`;
 }
 
 export default function CotizadorPage({ catalogKind = "porton" }) {
@@ -107,6 +94,15 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
   useEffect(() => { if (!pricelistId && pricelistsQ.data?.length) setPricelist(pricelistsQ.data[0]); }, [pricelistId, pricelistsQ.data, setPricelist]);
 
   const quoteQ = useQuery({ queryKey: ["quote", idParam], queryFn: () => getQuote(idParam), enabled: !!idParam });
+  const productionDeliveryQ = useQuery({
+    queryKey: ["production-planning-estimate", quoteId || idParam || "draft", String(catalogKind || "porton").toLowerCase()],
+    queryFn: () => getProductionPlanningEstimate({ quoteId: quoteId || idParam || null }),
+    enabled: !!user && String(catalogKind || "porton").toLowerCase() === "porton",
+    staleTime: 60 * 1000,
+    refetchInterval: 2 * 60 * 1000,
+  });
+  const productionDelivery = productionDeliveryQ.data || null;
+
   useEffect(() => {
     if (!quoteQ.data) return;
     const qKind = (quoteQ.data.catalog_kind || "porton").toString().toLowerCase();
@@ -130,16 +126,6 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
   const returnedMeasurementForced = quoteQ.data?.measurement_return_force_reason === true;
   const visibleQuoteNumber = String(quoteQ.data?.quote_number || quoteQ.data?.odoo_sale_order_name || quoteId || idParam || "").trim();
   const visibleParentQuoteNumber = String(quoteQ.data?.parent_quote_number || quoteQ.data?.parent_quote_quote_number || quoteQ.data?.parent_odoo_sale_order_name || quoteQ.data?.parent_quote_id || "").trim();
-  const effectiveQuoteId = quoteId || idParam || quoteQ.data?.id || null;
-
-  const productionEstimateQ = useQuery({
-    queryKey: ["production-planning-estimate", effectiveQuoteId || "new", catalogKind],
-    queryFn: () => getProductionPlanningEstimate({ quoteId: effectiveQuoteId }),
-    enabled: (catalogKind || "porton") === "porton",
-    staleTime: 30 * 1000,
-    refetchInterval: 2 * 60 * 1000,
-  });
-  const productionEstimate = quoteQ.data?.production_planning || productionEstimateQ.data || null;
 
   useEffect(() => {
     async function run() {
@@ -169,8 +155,7 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
   }
   function getDraftPayload() {
     const base = buildPayloadForBack() || {};
-    const payload = withCreatorRole({ ...base, catalog_kind: catalogKind, fulfillment_mode: base?.fulfillment_mode || "acopio", note: normalizeNoteWithSeller(base?.note) });
-    return buildProductionPlanningPayload(payload, productionEstimate);
+    return withCreatorRole({ ...base, catalog_kind: catalogKind, fulfillment_mode: base?.fulfillment_mode || "acopio", note: normalizeNoteWithSeller(base?.note) });
   }
   function validateCustomerContact(customer, { requirePhone = false, requireMaps = false, requireCity = false } = {}) {
     const c = customer || {};
@@ -242,7 +227,7 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
   const confirmM = useMutation({
     mutationFn: async (variables) => {
       const chosenMode = String(variables?.fulfillmentMode || buildPayloadForBack()?.fulfillment_mode || "acopio").trim();
-      const payload = buildProductionPlanningPayload({ ...getDraftPayload(), catalog_kind: catalogKind, fulfillment_mode: chosenMode }, productionEstimate);
+      const payload = { ...getDraftPayload(), catalog_kind: catalogKind, fulfillment_mode: chosenMode };
       validateConfirm(payload);
       let id = quoteId || idParam;
       if (id) await updateQuote(id, payload); else { const created = await createQuote(payload); id = created.id; setQuoteMeta({ quoteId: created.id, status: created.status, rejectionNotes: created.rejection_notes }); }
@@ -256,8 +241,40 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
   const resetReturnedM = useMutation({ mutationFn: async () => { if (!quoteId) throw new Error("Quote inválida"); return await resetReturnedMeasurementQuote(quoteId); }, onSuccess: async () => { await qc.invalidateQueries({ queryKey: ["quote", quoteId] }); toast.success("Se restableció el presupuesto original."); }, onError: (e) => toast.error(e?.message || "No se pudo restablecer") });
   const confirmReturnedM = useMutation({ mutationFn: async () => { const payload = getDraftPayload(); validateConfirm(payload); if (!quoteId) throw new Error("Quote inválida"); await updateQuote(quoteId, payload); return await confirmReturnedMeasurementQuote(quoteId); }, onSuccess: async () => { await qc.invalidateQueries({ queryKey: ["quote", quoteId] }); await qc.invalidateQueries({ queryKey: ["quotes", "mine"] }); navigate(`/mediciones/${quoteId}`); toast.success("Presupuesto actualizado. La planilla volvió a Técnica."); }, onError: (e) => toast.error(e?.message || "No se pudo enviar a técnica") });
 
-  const onDownloadPresupuesto = async () => { try { const { payload } = await persistDraftForPdf(); validatePdfDownload(payload); const payloadWithPlanning = buildProductionPlanningPayload(payload, productionEstimate); const pdfPayload = buildPdfPayloadForDownload(payloadWithPlanning, financingPercent); await downloadPresupuestoPdf(pdfPayload); } catch (e) { toast.error(e?.response?.data?.error || e.message); } };
-  const onDownloadProforma = async () => { try { const { payload } = await persistDraftForPdf(); validatePdfDownload(payload); const payloadWithPlanning = buildProductionPlanningPayload(payload, productionEstimate); const pdfPayload = buildPdfPayloadForDownload(payloadWithPlanning, financingPercent); await downloadProformaPdf(pdfPayload); } catch (e) { toast.error(e?.response?.data?.error || e.message); } };
+  async function getLatestProductionPlanning() {
+    try {
+      return await getProductionPlanningEstimate({ quoteId: quoteId || idParam || null });
+    } catch {
+      return productionDelivery || null;
+    }
+  }
+
+  const onDownloadPresupuesto = async () => {
+    try {
+      const { payload } = await persistDraftForPdf();
+      validatePdfDownload(payload);
+      const latestProductionPlanning = await getLatestProductionPlanning();
+      const pdfPayload = buildPdfPayloadForDownload(
+        payload,
+        financingPercent,
+        latestProductionPlanning ? { production_planning: latestProductionPlanning } : {},
+      );
+      await downloadPresupuestoPdf(pdfPayload);
+    } catch (e) { toast.error(e?.response?.data?.error || e.message); }
+  };
+  const onDownloadProforma = async () => {
+    try {
+      const { payload } = await persistDraftForPdf();
+      validatePdfDownload(payload);
+      const latestProductionPlanning = await getLatestProductionPlanning();
+      const pdfPayload = buildPdfPayloadForDownload(
+        payload,
+        financingPercent,
+        latestProductionPlanning ? { production_planning: latestProductionPlanning } : {},
+      );
+      await downloadProformaPdf(pdfPayload);
+    } catch (e) { toast.error(e?.response?.data?.error || e.message); }
+  };
 
   const canConfirm = isAcopioRevision ? false : (isReturnedMeasurementQuote ? false : (isRevisionQuote ? ["", "draft", "rejected"].includes(finalStatus || "") : ["draft", "rejected_commercial", "rejected_technical"].includes(status)));
 
@@ -294,25 +311,26 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
 
       {isAcopioRevision ? (<><div className="spacer" /><div className="card" style={{ background: "#fff8f3", border: "1px solid #f2d3bf" }}><div style={{ fontWeight: 900, marginBottom: 6 }}>Ajuste de presupuesto en Acopio</div><div className="muted">Este ajuste no se envía desde acá. Guardá los cambios y luego usá <b>Solicitar paso a Producción</b> desde <b>Mis presupuestos</b>. Cuando Comercial y Técnica aprueben ese paso, el sistema enviará la venta final a Odoo.</div></div></>) : null}
 
-      {(catalogKind || "porton") === "porton" ? (
+      {String(catalogKind || "porton").toLowerCase() === "porton" ? (
         <>
           <div className="spacer" />
-          <div className="card" style={{ background: "#fafafa" }}>
-            <div style={{ fontWeight: 900, marginBottom: 6 }}>Promesa estimada de entrega</div>
-            {productionEstimate ? (
-              <>
-                <div>{planningLabel(productionEstimate)}</div>
-                <div className="muted" style={{ marginTop: 6 }}>
-                  {productionEstimate.committed ? "Este cupo ya quedó comprometido porque el presupuesto tiene aprobaciones comercial y técnica." : "Este dato se recalcula automáticamente cada 2 minutos y se compromete recién cuando el presupuesto tiene aprobaciones comercial y técnica."}
-                </div>
-              </>
-            ) : productionEstimateQ.isLoading ? (
-              <div className="muted">Calculando semana estimada...</div>
-            ) : productionEstimateQ.isError ? (
-              <div className="muted">{productionEstimateQ.error?.message || "No se pudo calcular la semana estimada."}</div>
-            ) : (
-              <div className="muted">No hay una planificación semanal configurada con capacidad disponible.</div>
-            )}
+          <div className="card" style={{ background: "#f7fbff", border: "1px solid #d9e5f7" }}>
+            <div style={{ fontWeight: 900, marginBottom: 6 }}>
+              {productionDelivery?.committed === true ? "Producción comprometida" : "Entrega estimada"}
+            </div>
+            <div className="muted">
+              {productionDelivery?.summary
+                ? productionDelivery.summary
+                : (productionDeliveryQ.isLoading
+                  ? "Calculando disponibilidad de producción..."
+                  : "No hay planificación de producción cargada para estimar la entrega.")}
+            </div>
+            <div className="muted" style={{ marginTop: 6 }}>
+              Este dato se actualiza automáticamente cada 2 minutos. El cupo se compromete recién cuando quedan aprobadas Comercial y Técnica.
+            </div>
+            {productionDeliveryQ.isError ? (
+              <div style={{ color: "#d93025", fontSize: 13, marginTop: 8 }}>{productionDeliveryQ.error.message}</div>
+            ) : null}
           </div>
         </>
       ) : null}
@@ -333,19 +351,24 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
 
       <div className="spacer" />
       <HeaderBar showMargin />
+
+      <div className="spacer" />
+      <div className="card">
+        <PortonDimensions />
+      </div>
+
       <div className="spacer" />
       <div className="row quote-row">
-        <div className="card" style={{ flex: 1, minWidth: 320 }}>
-          <PortonDimensions />
-          <div className="spacer" />
-          <SectionCatalog kind={catalogKind} />
+        <div className="card" style={{ flex: 1, minWidth: 340 }}>
+          <SectionCatalog kind={catalogKind} onDownloadPresupuesto={onDownloadPresupuesto} />
         </div>
-        <div className="card" style={{ flex: 2, minWidth: 520 }}>
+        <div className="card" style={{ flex: 2, minWidth: 560 }}>
           <LinesTable />
           <div className="spacer" />
           <SummaryBox totals={totals} paymentMethod={paymentMethod} />
         </div>
       </div>
+
       {(saveM.isError || confirmM.isError || resetReturnedM.isError || confirmReturnedM.isError) && <div className="spacer" />}
       {saveM.isError && <div style={{ color: "#d93025", fontSize: 13 }}>{saveM.error.message}</div>}
       {confirmM.isError && <div style={{ color: "#d93025", fontSize: 13 }}>{confirmM.error.message}</div>}

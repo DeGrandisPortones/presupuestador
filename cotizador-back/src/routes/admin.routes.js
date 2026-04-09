@@ -13,9 +13,9 @@ import {
   setTechnicalMeasurementRules,
   getTechnicalMeasurementFieldDefinitions,
   setTechnicalMeasurementFieldDefinitions,
-  getProductionPlanningYear,
   setProductionPlanningYear,
 } from "../settingsDb.js";
+import { getProductionPlanningWithUsage } from "../productionPlanning.js";
 
 function requireEncComercial(req, res, next) { if (!req.user?.is_enc_comercial) return res.status(403).json({ ok: false, error: "No autorizado" }); next(); }
 function requireSuperuser(req, res, next) { if (!req.user?.is_superuser) return res.status(403).json({ ok: false, error: "No autorizado" }); next(); }
@@ -66,13 +66,14 @@ export function buildAdminRouter(odoo) {
     try {
       const now = new Date();
       const year = Number(req.query.year || now.getUTCFullYear());
-      res.json({ ok: true, planning: await getProductionPlanningYear(year) });
+      res.json({ ok: true, planning: await getProductionPlanningWithUsage(year) });
     } catch (e) { next(e); }
   });
   router.put("/production-planning", requireAuth, requireEncComercialOrSuperuser, async (req, res, next) => {
     try {
       const body = req.body || {};
-      res.json({ ok: true, planning: await setProductionPlanningYear({ year: body.year, weeks: body.weeks || [] }) });
+      await setProductionPlanningYear({ year: body.year, weeks: body.weeks || [] });
+      res.json({ ok: true, planning: await getProductionPlanningWithUsage(body.year) });
     } catch (e) { next(e); }
   });
 
