@@ -288,7 +288,7 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
       <div className="spacer" />
       <div className="row quote-row">
         <div className="card" style={{ flex: 1, minWidth: 340 }}>
-          <SectionCatalog kind={catalogKind} />
+          <SectionCatalog kind={catalogKind} onDownloadPresupuesto={onDownloadPresupuesto} />
         </div>
         <div className="card" style={{ flex: 2, minWidth: 560 }}>
           <LinesTable />

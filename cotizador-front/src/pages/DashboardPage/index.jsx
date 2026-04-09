@@ -1138,14 +1138,19 @@ function DependenciesTab({
         </div>
 
         <div className="spacer" />
-        <Button
-          variant="ghost"
-          onClick={() =>
-            setDependencyRules((prev) => [...prev, newDependencyRule(prev.length + 1)])
-          }
-        >
-          + Agregar dependencia
-        </Button>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <Button
+            variant="ghost"
+            onClick={() =>
+              setDependencyRules((prev) => [...prev, newDependencyRule(prev.length + 1)])
+            }
+          >
+            + Agregar dependencia
+          </Button>
+          <Button variant="primary" onClick={onSave} disabled={saving}>
+            {saving ? "Guardando..." : "Guardar dependencias"}
+          </Button>
+        </div>
       </div>
 
       <div className="card" style={{ flex: 1, minWidth: 420 }}>

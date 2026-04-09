@@ -101,7 +101,7 @@ function computeOrderedSectionIds({
   return ordered;
 }
 
-export default function SectionCatalog({ kind = "porton" }) {
+export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto = null }) {
   const bootstrapKind = (kind || "porton") === "otros" ? "porton" : kind;
 
   const addLine = useQuoteStore((s) => s.addLine);
@@ -261,6 +261,14 @@ export default function SectionCatalog({ kind = "porton" }) {
     () => orderedVisibleSectionIds.map((id) => sectionMap.get(Number(id))).filter(Boolean),
     [orderedVisibleSectionIds, sectionMap],
   );
+
+  const terminalStepCompleted = useMemo(() => {
+    if (!visibleSections.length) return false;
+    const lastSection = visibleSections[visibleSections.length - 1];
+    if (!lastSection) return false;
+    const selected = selectedProductIdsBySection.get(Number(lastSection.id));
+    return !!selected && selected.size > 0;
+  }, [visibleSections, selectedProductIdsBySection]);
 
   useEffect(() => {
     if ((kind || "porton").toLowerCase().trim() !== "porton") return;
@@ -474,6 +482,17 @@ export default function SectionCatalog({ kind = "porton" }) {
           })}
         </div>
       )}
+
+      {terminalStepCompleted && typeof onDownloadPresupuesto === "function" ? (
+        <>
+          <div className="spacer" />
+          <div style={{ display: "flex", justifyContent: "flex-start" }}>
+            <Button variant="secondary" onClick={onDownloadPresupuesto}>
+              Descargar presupuesto
+            </Button>
+          </div>
+        </>
+      ) : null}
     </div>
   );
 }
