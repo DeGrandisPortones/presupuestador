@@ -343,20 +343,6 @@ export default function DashboardPage() {
     }
   };
 
-  const onSaveInitialSection = async () => {
-    setSavingDependencies(true);
-    try {
-      const saved = await adminSaveTechnicalMeasurementRules({
-        initial_section_id: Number(initialSectionId || 0) || null,
-      });
-      setInitialSectionId(Number(saved?.initial_section_id || 0) || "");
-      qc.invalidateQueries({ queryKey: ["adminTechnicalMeasurementRulesForDashboard"] });
-      window.alert("Sección inicial guardada.");
-    } finally {
-      setSavingDependencies(false);
-    }
-  };
-
   const onSaveDependencies = async () => {
     setSavingDependencies(true);
     try {
@@ -645,7 +631,6 @@ export default function DashboardPage() {
               setSystemRules={setSystemRules}
               saving={savingDependencies}
               onSave={onSaveDependencies}
-              onSaveInitialSection={onSaveInitialSection}
             />
           )}
 
@@ -876,7 +861,6 @@ function DependenciesTab({
   setSystemRules,
   saving,
   onSave,
-  onSaveInitialSection,
 }) {
   const sectionMap = useMemo(
     () => new Map(sections.map((section) => [Number(section.id), section])),
@@ -903,25 +887,20 @@ function DependenciesTab({
           <div className="muted" style={{ marginBottom: 6 }}>
             Sección inicial del flujo
           </div>
-          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-            <select
-              value={initialSectionId || ""}
-              onChange={(e) =>
-                setInitialSectionId(e.target.value ? Number(e.target.value) : "")
-              }
-              style={{ flex: 1, minWidth: 240, padding: 8, borderRadius: 10, border: "1px solid #ddd" }}
-            >
-              <option value="">Elegir sección inicial…</option>
-              {sections.map((section) => (
-                <option key={section.id} value={section.id}>
-                  {section.name}
-                </option>
-              ))}
-            </select>
-            <Button variant="primary" onClick={onSaveInitialSection} disabled={saving}>
-              {saving ? "Guardando..." : "Guardar inicio"}
-            </Button>
-          </div>
+          <select
+            value={initialSectionId || ""}
+            onChange={(e) =>
+              setInitialSectionId(e.target.value ? Number(e.target.value) : "")
+            }
+            style={{ width: "100%", padding: 8, borderRadius: 10, border: "1px solid #ddd" }}
+          >
+            <option value="">Elegir sección inicial…</option>
+            {sections.map((section) => (
+              <option key={section.id} value={section.id}>
+                {section.name}
+              </option>
+            ))}
+          </select>
         </div>
 
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>

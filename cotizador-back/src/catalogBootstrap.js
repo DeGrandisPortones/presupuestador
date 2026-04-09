@@ -4,7 +4,6 @@ import {
   listSections,
   getTagSectionMap,
   getProductAliasMap,
-  getTypeSectionsMap,
   getProductVisibilityMap,
   getTypeVisibilityMap,
 } from "./catalogDb.js";
@@ -26,7 +25,6 @@ export async function loadCatalogBootstrap(odoo, kind="porton") {
   const sections = await listSections(k);
   const tagSection = await getTagSectionMap(k);
   const aliasMap = await getProductAliasMap(k);
-  const typeSections = await getTypeSectionsMap(k);
   const visibilityMap = await getProductVisibilityMap(k);
   const typeVisibility = await getTypeVisibilityMap(k);
 
@@ -81,7 +79,6 @@ export async function loadCatalogBootstrap(odoo, kind="porton") {
     kind: k,
     generated_at: new Date().toISOString(),
     sections,
-    type_sections: typeSections,
     type_visibility: typeVisibility,
     tags,
     products,
