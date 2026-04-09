@@ -1,4 +1,3 @@
-
 import { dbQuery } from "./db.js";
 import { normalizeDoorQuoteFormula } from "./doorQuoteFormula.js";
 
@@ -8,30 +7,6 @@ const DOOR_QUOTE_SETTINGS_KEY = "door_quote_settings";
 const TECHNICAL_MEASUREMENT_RULES_KEY = "technical_measurement_rules";
 const TECHNICAL_MEASUREMENT_FIELDS_KEY = "technical_measurement_fields";
 const DEFAULT_SURFACE_FINAL_FORMULA = "surface_automatica_m2";
-
-const DEFAULT_SURFACE_PARAMETERS = {
-  classic_kg_m2: 15,
-  injected_kg_m2: 25,
-  seller_kg_m2_field_path: "kg_m2_entry",
-  weight_height_discount_mm: 10,
-  weight_width_discount_mm: 14,
-  no_cladding_angostas_max_kg: 80,
-  legs_angostas_max_kg: 140,
-  legs_comunes_max_kg: 175,
-  legs_anchas_max_kg: 240,
-  legs_superanchas_max_kg: 300,
-  behind_vano_add_height_mm: 100,
-  inside_vano_subtract_height_mm: 10,
-  inside_vano_subtract_width_mm: 20,
-  legs_angostas_add_width_mm: 140,
-  legs_comunes_add_width_mm: 200,
-  legs_anchas_add_width_mm: 280,
-  legs_superanchas_add_width_mm: 380,
-  legs_especiales_add_width_mm: 380,
-  installation_inside_product_id: null,
-  installation_behind_product_id: null,
-  no_cladding_product_id: null,
-};
 
 let ensured = false;
 
@@ -48,75 +23,26 @@ export async function ensureSettingsTable() {
     [FINAL_QUOTE_SETTINGS_KEY, { tolerance_area_m2: 0 }],
     [MEASUREMENT_PRODUCT_MAPPINGS_KEY, { rules: [] }],
     [DOOR_QUOTE_SETTINGS_KEY, { formula: "precio_ipanel + precio_venta_marco" }],
-    [TECHNICAL_MEASUREMENT_RULES_KEY, {
-      rules: [],
-      surface_final_formula: DEFAULT_SURFACE_FINAL_FORMULA,
-      surface_helper_rules: [],
-      surface_parameters: DEFAULT_SURFACE_PARAMETERS,
-    }],
+    [TECHNICAL_MEASUREMENT_RULES_KEY, { rules: [], surface_final_formula: DEFAULT_SURFACE_FINAL_FORMULA }],
     [TECHNICAL_MEASUREMENT_FIELDS_KEY, { fields: [] }],
   ]) {
-    await dbQuery(
-      `insert into public.presupuestador_settings (key, value_json) values ($1, $2::jsonb) on conflict (key) do nothing`,
-      [key, JSON.stringify(value)],
-    );
+    await dbQuery(`insert into public.presupuestador_settings (key, value_json) values ($1, $2::jsonb) on conflict (key) do nothing`, [key, JSON.stringify(value)]);
   }
   ensured = true;
 }
 
 function normalizeText(v) { return String(v ?? "").trim(); }
-function normalizeToleranceAreaM2(value) {
-  const n = Number(String(value ?? 0).replace(",", "."));
-  if (!Number.isFinite(n)) return 0;
-  return Math.max(0, Math.round(n * 10000) / 10000);
-}
-function normalizeDoorFormula(formula) {
-  const raw = String(formula ?? "").trim();
-  return raw ? normalizeDoorQuoteFormula(raw) : "precio_ipanel + precio_venta_marco";
-}
-function normalizeSurfaceFinalFormula(value) {
-  const raw = String(value || "").trim();
-  return raw || DEFAULT_SURFACE_FINAL_FORMULA;
-}
-function normalizeRuleOperator(value) {
-  const op = String(value || "=").trim();
-  return ["=", "!=", ">", ">=", "<", "<=", "contains"].includes(op) ? op : "=";
-}
-function normalizeRuleActionType(value) {
-  const v = String(value || "set_value").trim().toLowerCase();
-  return ["set_value", "clear_field", "show_field", "hide_field", "allow_options"].includes(v) ? v : "set_value";
-}
-function normalizeValueSourceType(value) {
-  const v = String(value || "manual").trim().toLowerCase();
-  return ["manual", "fixed", "budget_field", "current_user_field", "budget_section_product"].includes(v) ? v : "manual";
-}
-function normalizeEditableBy(value) {
-  const v = String(value || "both").trim().toLowerCase();
-  return ["both", "medidor", "tecnico", "none"].includes(v) ? v : "both";
-}
-function normalizeOdooBindingType(value) {
-  const v = String(value || "none").trim().toLowerCase();
-  return ["none", "repeat_budget_product", "custom_product", "selected_measurement_product"].includes(v) ? v : "none";
-}
-function normalizeBudgetProductValueKey(value) {
-  const v = String(value || "display_name").trim();
-  return ["presence_si_no", "display_name", "alias", "raw_name", "code", "product_id"].includes(v) ? v : "display_name";
-}
-function normalizeBudgetMultipleMode(value) {
-  const v = String(value || "first").trim().toLowerCase();
-  return ["first", "join"].includes(v) ? v : "first";
-}
+function normalizeToleranceAreaM2(value) { const n = Number(String(value ?? 0).replace(",", ".")); if (!Number.isFinite(n)) return 0; return Math.max(0, Math.round(n * 10000) / 10000); }
+function normalizeDoorFormula(formula) { const raw = String(formula ?? "").trim(); return raw ? normalizeDoorQuoteFormula(raw) : "precio_ipanel + precio_venta_marco"; }
+function normalizeSurfaceFinalFormula(value) { const raw = String(value || "").trim(); return raw || DEFAULT_SURFACE_FINAL_FORMULA; }
+function normalizeRuleOperator(value) { const op = String(value || "=").trim(); return ["=", "!=", ">", ">=", "<", "<=", "contains"].includes(op) ? op : "="; }
+function normalizeRuleActionType(value) { const v = String(value || "set_value").trim().toLowerCase(); return ["set_value", "clear_field", "show_field", "hide_field", "allow_options"].includes(v) ? v : "set_value"; }
+function normalizeValueSourceType(value) { const v = String(value || "manual").trim().toLowerCase(); return ["manual", "fixed", "budget_field", "current_user_field", "budget_section_product"].includes(v) ? v : "manual"; }
+function normalizeEditableBy(value) { const v = String(value || "both").trim().toLowerCase(); return ["both", "medidor", "tecnico", "none"].includes(v) ? v : "both"; }
+function normalizeOdooBindingType(value) { const v = String(value || "none").trim().toLowerCase(); return ["none", "repeat_budget_product", "custom_product", "selected_measurement_product"].includes(v) ? v : "none"; }
+function normalizeBudgetProductValueKey(value) { const v = String(value || "display_name").trim(); return ["presence_si_no", "display_name", "alias", "raw_name", "code", "product_id"].includes(v) ? v : "display_name"; }
+function normalizeBudgetMultipleMode(value) { const v = String(value || "first").trim().toLowerCase(); return ["first", "join"].includes(v) ? v : "first"; }
 function normalizeBooleanFlag(value) { return value === true; }
-function normalizeNumber(value, fallback = 0, digits = 4) {
-  const n = Number(String(value ?? fallback).replace(",", "."));
-  if (!Number.isFinite(n)) return fallback;
-  const factor = Math.pow(10, digits);
-  return Math.round(n * factor) / factor;
-}
-function normalizeNullableInt(value) {
-  const n = Number(value);
-  return Number.isFinite(n) && n > 0 ? Math.round(n) : null;
-}
 
 function normalizeTechnicalMeasurementRule(rule = {}, index = 0) {
   const source_key = normalizeText(rule.source_key || rule.field_key);
@@ -141,75 +67,12 @@ function normalizeTechnicalMeasurementRule(rule = {}, index = 0) {
     sort_order: Number(rule?.sort_order || index + 1) || index + 1,
   };
 }
-
-function normalizeSurfaceHelperRule(rule = {}, index = 0) {
-  const helper_key = normalizeText(rule.helper_key || rule.key);
-  if (!helper_key) return null;
-  const source_left = normalizeText(rule.source_left || rule.source_key || "");
-  return {
-    id: normalizeText(rule.id || `surface_helper_${index + 1}`),
-    name: normalizeText(rule.name || helper_key),
-    active: rule?.active !== false,
-    source_left,
-    operator_left: normalizeRuleOperator(rule.operator_left || rule.operator || "="),
-    compare_left: rule?.compare_left ?? rule?.compare_value ?? "",
-    join_mode: String(rule?.join_mode || "and").trim().toLowerCase() === "or" ? "or" : "and",
-    source_right: normalizeText(rule.source_right || ""),
-    operator_right: normalizeRuleOperator(rule.operator_right || "="),
-    compare_right: rule?.compare_right ?? "",
-    helper_key,
-    helper_value: rule?.helper_value ?? rule?.target_value ?? "",
-    sort_order: Number(rule?.sort_order || index + 1) || index + 1,
-  };
-}
-
-function normalizeSurfaceParameters(raw = {}) {
-  const merged = { ...DEFAULT_SURFACE_PARAMETERS, ...(raw && typeof raw === "object" ? raw : {}) };
-  return {
-    classic_kg_m2: normalizeNumber(merged.classic_kg_m2, 15, 4),
-    injected_kg_m2: normalizeNumber(merged.injected_kg_m2, 25, 4),
-    seller_kg_m2_field_path: normalizeText(merged.seller_kg_m2_field_path || "kg_m2_entry"),
-    weight_height_discount_mm: normalizeNumber(merged.weight_height_discount_mm, 10, 4),
-    weight_width_discount_mm: normalizeNumber(merged.weight_width_discount_mm, 14, 4),
-    no_cladding_angostas_max_kg: normalizeNumber(merged.no_cladding_angostas_max_kg, 80, 4),
-    legs_angostas_max_kg: normalizeNumber(merged.legs_angostas_max_kg, 140, 4),
-    legs_comunes_max_kg: normalizeNumber(merged.legs_comunes_max_kg, 175, 4),
-    legs_anchas_max_kg: normalizeNumber(merged.legs_anchas_max_kg, 240, 4),
-    legs_superanchas_max_kg: normalizeNumber(merged.legs_superanchas_max_kg, 300, 4),
-    behind_vano_add_height_mm: normalizeNumber(merged.behind_vano_add_height_mm, 100, 4),
-    inside_vano_subtract_height_mm: normalizeNumber(merged.inside_vano_subtract_height_mm, 10, 4),
-    inside_vano_subtract_width_mm: normalizeNumber(merged.inside_vano_subtract_width_mm, 20, 4),
-    legs_angostas_add_width_mm: normalizeNumber(merged.legs_angostas_add_width_mm, 140, 4),
-    legs_comunes_add_width_mm: normalizeNumber(merged.legs_comunes_add_width_mm, 200, 4),
-    legs_anchas_add_width_mm: normalizeNumber(merged.legs_anchas_add_width_mm, 280, 4),
-    legs_superanchas_add_width_mm: normalizeNumber(merged.legs_superanchas_add_width_mm, 380, 4),
-    legs_especiales_add_width_mm: normalizeNumber(merged.legs_especiales_add_width_mm, 380, 4),
-    installation_inside_product_id: normalizeNullableInt(merged.installation_inside_product_id),
-    installation_behind_product_id: normalizeNullableInt(merged.installation_behind_product_id),
-    no_cladding_product_id: normalizeNullableInt(merged.no_cladding_product_id),
-  };
-}
-
 function normalizeTechnicalMeasurementRules(raw = {}) {
   const rules = Array.isArray(raw?.rules) ? raw.rules : [];
-  const helperRules = Array.isArray(raw?.surface_helper_rules) ? raw.surface_helper_rules : [];
-  return {
-    rules: rules.map((r, i) => normalizeTechnicalMeasurementRule(r, i)).filter(Boolean).sort((a, b) => a.sort_order - b.sort_order),
-    surface_final_formula: normalizeSurfaceFinalFormula(raw?.surface_final_formula),
-    surface_helper_rules: helperRules.map((r, i) => normalizeSurfaceHelperRule(r, i)).filter(Boolean).sort((a, b) => a.sort_order - b.sort_order),
-    surface_parameters: normalizeSurfaceParameters(raw?.surface_parameters),
-  };
+  return { rules: rules.map((r, i) => normalizeTechnicalMeasurementRule(r, i)).filter(Boolean).sort((a, b) => a.sort_order - b.sort_order), surface_final_formula: normalizeSurfaceFinalFormula(raw?.surface_final_formula) };
 }
-
-function normalizeFieldType(value) {
-  const v = String(value || "text").trim().toLowerCase();
-  return ["text", "number", "boolean", "enum", "odoo_product"].includes(v) ? v : "text";
-}
-function normalizeFieldSection(value) {
-  const v = normalizeText(value).toLowerCase();
-  const valid = ["datos_generales", "esquema_medidas", "revestimiento", "puerta_estructura", "rebajes_suelo", "observaciones", "otros"];
-  return valid.includes(v) ? v : "otros";
-}
+function normalizeFieldType(value) { const v = String(value || "text").trim().toLowerCase(); return ["text", "number", "boolean", "enum", "odoo_product"].includes(v) ? v : "text"; }
+function normalizeFieldSection(value) { const v = normalizeText(value).toLowerCase(); const valid = ["datos_generales", "esquema_medidas", "revestimiento", "puerta_estructura", "rebajes_suelo", "observaciones", "otros"]; return valid.includes(v) ? v : "otros"; }
 function normalizeTechnicalMeasurementField(field = {}, index = 0) {
   const key = normalizeText(field.key || field.field_key);
   if (!key) return null;
@@ -246,80 +109,21 @@ function normalizeTechnicalMeasurementField(field = {}, index = 0) {
   }
   return normalized;
 }
-function normalizeTechnicalMeasurementFields(raw = {}) {
-  const fields = Array.isArray(raw?.fields) ? raw.fields : [];
-  return { fields: fields.map((f, i) => normalizeTechnicalMeasurementField(f, i)).filter(Boolean).sort((a, b) => a.sort_order - b.sort_order) };
-}
+function normalizeTechnicalMeasurementFields(raw = {}) { const fields = Array.isArray(raw?.fields) ? raw.fields : []; return { fields: fields.map((f, i) => normalizeTechnicalMeasurementField(f, i)).filter(Boolean).sort((a, b) => a.sort_order - b.sort_order) }; }
 
-async function getSetting(key, fallback) {
-  await ensureSettingsTable();
-  const r = await dbQuery(`select value_json from public.presupuestador_settings where key=$1 limit 1`, [key]);
-  return r.rows?.[0]?.value_json || fallback;
-}
-async function setSetting(key, value) {
-  await ensureSettingsTable();
-  await dbQuery(`insert into public.presupuestador_settings (key, value_json, updated_at) values ($1, $2::jsonb, now()) on conflict (key) do update set value_json=excluded.value_json, updated_at=now()`, [key, JSON.stringify(value)]);
-  return value;
-}
+async function getSetting(key, fallback) { await ensureSettingsTable(); const r = await dbQuery(`select value_json from public.presupuestador_settings where key=$1 limit 1`, [key]); return r.rows?.[0]?.value_json || fallback; }
+async function setSetting(key, value) { await ensureSettingsTable(); await dbQuery(`insert into public.presupuestador_settings (key, value_json, updated_at) values ($1, $2::jsonb, now()) on conflict (key) do update set value_json=excluded.value_json, updated_at=now()`, [key, JSON.stringify(value)]); return value; }
 
-export async function getCommercialFinalQuoteSettings() {
-  const raw = await getSetting(FINAL_QUOTE_SETTINGS_KEY, {});
-  return { tolerance_area_m2: normalizeToleranceAreaM2(raw?.tolerance_area_m2) };
-}
-export async function setCommercialFinalQuoteSettings({ tolerance_area_m2 }) {
-  return setSetting(FINAL_QUOTE_SETTINGS_KEY, { tolerance_area_m2: normalizeToleranceAreaM2(tolerance_area_m2) });
-}
-export async function getCommercialFinalToleranceAreaM2() {
-  const s = await getCommercialFinalQuoteSettings();
-  return s.tolerance_area_m2;
-}
+export async function getCommercialFinalQuoteSettings() { const raw = await getSetting(FINAL_QUOTE_SETTINGS_KEY, {}); return { tolerance_area_m2: normalizeToleranceAreaM2(raw?.tolerance_area_m2) }; }
+export async function setCommercialFinalQuoteSettings({ tolerance_area_m2 }) { return setSetting(FINAL_QUOTE_SETTINGS_KEY, { tolerance_area_m2: normalizeToleranceAreaM2(tolerance_area_m2) }); }
+export async function getCommercialFinalToleranceAreaM2() { const s = await getCommercialFinalQuoteSettings(); return s.tolerance_area_m2; }
 export async function getMeasurementProductMappings() { return { rules: [] }; }
 export async function setMeasurementProductMappings(payload = {}) { return setSetting(MEASUREMENT_PRODUCT_MAPPINGS_KEY, payload); }
-export async function getDoorQuoteSettings() {
-  const raw = await getSetting(DOOR_QUOTE_SETTINGS_KEY, {});
-  return { formula: normalizeDoorFormula(raw?.formula) };
-}
-export async function setDoorQuoteSettings(payload = {}) {
-  return setSetting(DOOR_QUOTE_SETTINGS_KEY, { formula: normalizeDoorFormula(payload?.formula) });
-}
-export async function getTechnicalMeasurementRules() {
-  const raw = await getSetting(TECHNICAL_MEASUREMENT_RULES_KEY, {});
-  return normalizeTechnicalMeasurementRules(raw);
-}
-export async function setTechnicalMeasurementRules(payload = {}) {
-  const current = await getTechnicalMeasurementRules();
-  const incoming = payload && typeof payload === "object" ? payload : {};
-  const merged = {
-    ...(current || {}),
-    ...incoming,
-    surface_final_formula: incoming?.surface_final_formula !== undefined
-      ? incoming.surface_final_formula
-      : current?.surface_final_formula,
-    surface_helper_rules: incoming?.surface_helper_rules !== undefined
-      ? incoming.surface_helper_rules
-      : current?.surface_helper_rules,
-    surface_parameters: {
-      ...(current?.surface_parameters || DEFAULT_SURFACE_PARAMETERS),
-      ...(incoming?.surface_parameters && typeof incoming.surface_parameters === "object"
-        ? incoming.surface_parameters
-        : {}),
-    },
-  };
-  return setSetting(TECHNICAL_MEASUREMENT_RULES_KEY, normalizeTechnicalMeasurementRules(merged));
-}
-export async function getMeasurementSurfaceFinalFormula() {
-  const settings = await getTechnicalMeasurementRules();
-  return normalizeSurfaceFinalFormula(settings?.surface_final_formula);
-}
-export async function getTechnicalMeasurementFieldDefinitions() {
-  const raw = await getSetting(TECHNICAL_MEASUREMENT_FIELDS_KEY, {});
-  return normalizeTechnicalMeasurementFields(raw);
-}
-export async function setTechnicalMeasurementFieldDefinitions(payload = {}) {
-  return setSetting(TECHNICAL_MEASUREMENT_FIELDS_KEY, normalizeTechnicalMeasurementFields(payload));
-}
-
-// Compatibilidad con imports viejos mientras se termina de migrar todo a tolerancia por m².
-export async function getCommercialFinalTolerancePercent() {
-  return 0;
-}
+export async function getDoorQuoteSettings() { const raw = await getSetting(DOOR_QUOTE_SETTINGS_KEY, {}); return { formula: normalizeDoorFormula(raw?.formula) }; }
+export async function setDoorQuoteSettings(payload = {}) { return setSetting(DOOR_QUOTE_SETTINGS_KEY, { formula: normalizeDoorFormula(payload?.formula) }); }
+export async function getTechnicalMeasurementRules() { const raw = await getSetting(TECHNICAL_MEASUREMENT_RULES_KEY, {}); return normalizeTechnicalMeasurementRules(raw); }
+export async function setTechnicalMeasurementRules(payload = {}) { const current = await getTechnicalMeasurementRules(); const merged = { ...(current || {}), ...(payload && typeof payload === 'object' ? payload : {}), surface_final_formula: payload?.surface_final_formula !== undefined ? payload.surface_final_formula : current?.surface_final_formula }; return setSetting(TECHNICAL_MEASUREMENT_RULES_KEY, normalizeTechnicalMeasurementRules(merged)); }
+export async function getMeasurementSurfaceFinalFormula() { const settings = await getTechnicalMeasurementRules(); return normalizeSurfaceFinalFormula(settings?.surface_final_formula); }
+export async function getTechnicalMeasurementFieldDefinitions() { const raw = await getSetting(TECHNICAL_MEASUREMENT_FIELDS_KEY, {}); return normalizeTechnicalMeasurementFields(raw); }
+export async function setTechnicalMeasurementFieldDefinitions(payload = {}) { return setSetting(TECHNICAL_MEASUREMENT_FIELDS_KEY, normalizeTechnicalMeasurementFields(payload)); }
+export async function getCommercialFinalTolerancePercent() { return 0; }

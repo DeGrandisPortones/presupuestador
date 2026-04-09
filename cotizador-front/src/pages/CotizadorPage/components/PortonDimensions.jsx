@@ -21,32 +21,52 @@ function isTypeVisibleForUser(flags, user) {
   if (user?.is_vendedor) return !dv;
   return true;
 }
-function normalizeText(v) {
+function norm(v) {
   return String(v || "").trim().toLowerCase().replace(/\s+/g, "_");
 }
-function pickParams(raw) {
-  const params = raw?.surface_calc_params || raw?.surface_parameters || {};
-  return {
-    default_clasico_kg_m2: Number(params?.default_clasico_kg_m2 || 15) || 15,
-    default_inyectado_kg_m2: Number(params?.default_inyectado_kg_m2 || 25) || 25,
-    angostas_hasta_kg: Number(params?.angostas_hasta_kg || 140) || 140,
-    comunes_hasta_kg: Number(params?.comunes_hasta_kg || 175) || 175,
-    anchas_hasta_kg: Number(params?.anchas_hasta_kg || 240) || 240,
-    superanchas_hasta_kg: Number(params?.superanchas_hasta_kg || 300) || 300,
-    sin_revestimiento_angostas_hasta_kg: Number(params?.sin_revestimiento_angostas_hasta_kg || 80) || 80,
-    peso_alto_descuento_mm: Number(params?.peso_alto_descuento_mm || 10) || 10,
-    peso_ancho_descuento_mm: Number(params?.peso_ancho_descuento_mm || 14) || 14,
-    apto_revestir_product_ids: Array.isArray(params?.apto_revestir_product_ids)
-      ? params.apto_revestir_product_ids.map((x) => Number(x)).filter(Boolean)
-      : String(params?.apto_revestir_product_ids || "").split(",").map((x) => Number(String(x).trim())).filter(Boolean),
-  };
+function getRulesParams(rulesData) {
+  const root = rulesData || {};
+  return root.surface_calc_params || root.surface_params || root.measurement_surface_params || {};
 }
-function getLegsType(weightKg, isSinRevestimiento, params) {
-  const angLimit = isSinRevestimiento ? params.sin_revestimiento_angostas_hasta_kg : params.angostas_hasta_kg;
-  if (weightKg <= angLimit) return "Angostas";
-  if (weightKg <= params.comunes_hasta_kg) return "Comunes";
-  if (weightKg <= params.anchas_hasta_kg) return "Anchas";
-  if (weightKg <= params.superanchas_hasta_kg) return "Superanchas";
+function getNumberParam(params, keys, fallback) {
+  for (const key of keys) {
+    const value = Number(String(params?.[key] ?? "").replace(",", "."));
+    if (Number.isFinite(value) && value > 0) return value;
+  }
+  return fallback;
+}
+function getStringParam(params, keys, fallback = "") {
+  for (const key of keys) {
+    const value = String(params?.[key] ?? "").trim();
+    if (value) return value;
+  }
+  return fallback;
+}
+function getProductIdSet(params, keys) {
+  const raw = getStringParam(params, keys, "");
+  return new Set(String(raw || "").split(/[;,\s]+/).map((x) => Number(x)).filter((x) => Number.isFinite(x) && x > 0));
+}
+function detectAptoParaRevestir(lines, params) {
+  const ids = getProductIdSet(params, ["apto_para_revestir_product_id", "apto_para_revestir_product_ids", "sin_revestimiento_product_id", "sin_revestimiento_product_ids"]);
+  if (!ids.size) return false;
+  return (Array.isArray(lines) ? lines : []).some((line) => ids.has(Number(line?.product_id)));
+}
+function inferKgM2FromType(portonType) {
+  const t = norm(portonType);
+  if (t.includes("inyect")) return 25;
+  if (t.includes("clas")) return 15;
+  return 0;
+}
+function legsTypeForWeight(weightKg, isApto, params) {
+  const limitAngostas = getNumberParam(params, [isApto ? "limit_angostas_apto_kg" : "limit_angostas_kg", "piernas_angostas_hasta_kg"], isApto ? 80 : 140);
+  const limitComunes = getNumberParam(params, ["limit_comunes_kg", "piernas_comunes_hasta_kg"], 175);
+  const limitAnchas = getNumberParam(params, ["limit_anchas_kg", "piernas_anchas_hasta_kg"], 240);
+  const limitSuper = getNumberParam(params, ["limit_superanchas_kg", "piernas_superanchas_hasta_kg"], 300);
+  if (!Number.isFinite(weightKg) || weightKg <= 0) return "—";
+  if (weightKg <= limitAngostas) return "Angostas";
+  if (weightKg <= limitComunes) return "Comunes";
+  if (weightKg <= limitAnchas) return "Anchas";
+  if (weightKg <= limitSuper) return "Superanchas";
   return "Especiales";
 }
 
@@ -60,7 +80,7 @@ export default function PortonDimensions({ kind = "porton" }) {
 
   const showTypeSelector = (kind || "porton") === "porton";
   const catalogQ = useQuery({ queryKey: ["catalog-bootstrap-porton-type-select"], queryFn: () => getCatalogBootstrap("porton"), staleTime: 60 * 1000, enabled: showTypeSelector });
-  const rulesQ = useQuery({ queryKey: ["technical-measurement-rules-for-budget-preview"], queryFn: adminGetTechnicalMeasurementRules, staleTime: 60 * 1000, enabled: showTypeSelector });
+  const rulesQ = useQuery({ queryKey: ["technical-rules-dimensions-preview"], queryFn: adminGetTechnicalMeasurementRules, staleTime: 60 * 1000, enabled: showTypeSelector });
   const typeVisibility = catalogQ.data?.type_visibility || {};
   const visibleTypes = useMemo(() => PORTON_TYPES.filter((t) => isTypeVisibleForUser(typeVisibility[t.key], user)), [typeVisibility, user]);
 
@@ -75,29 +95,17 @@ export default function PortonDimensions({ kind = "porton" }) {
 
   const width = useMemo(() => toNumber(dimensions?.width), [dimensions?.width]);
   const height = useMemo(() => toNumber(dimensions?.height), [dimensions?.height]);
-  const kgM2Input = useMemo(() => toNumber(dimensions?.kg_m2), [dimensions?.kg_m2]);
   const area = useMemo(() => {
     const a = width * height;
     return Number.isFinite(a) ? a : 0;
   }, [width, height]);
-  const calcParams = useMemo(() => pickParams(rulesQ.data || {}), [rulesQ.data]);
-  const isInyectado = useMemo(() => normalizeText(portonType).includes("inyect"), [portonType]);
-  const effectiveKgM2 = useMemo(() => {
-    if (kgM2Input > 0) return kgM2Input;
-    return isInyectado ? calcParams.default_inyectado_kg_m2 : calcParams.default_clasico_kg_m2;
-  }, [kgM2Input, isInyectado, calcParams]);
-  const lineProductIds = useMemo(() => (Array.isArray(lines) ? lines : []).map((line) => Number(line?.product_id || 0)).filter(Boolean), [lines]);
-  const isSinRevestimiento = useMemo(() => {
-    const ids = new Set(calcParams.apto_revestir_product_ids || []);
-    return lineProductIds.some((id) => ids.has(id));
-  }, [lineProductIds, calcParams]);
-  const pesoEstimadoKg = useMemo(() => {
-    const altoMm = Math.max(0, Math.round(height * 1000) - calcParams.peso_alto_descuento_mm);
-    const anchoMm = Math.max(0, Math.round(width * 1000) - calcParams.peso_ancho_descuento_mm);
-    const areaKg = (altoMm / 1000) * (anchoMm / 1000);
-    return areaKg > 0 ? areaKg * effectiveKgM2 : 0;
-  }, [height, width, effectiveKgM2, calcParams]);
-  const piernasTipo = useMemo(() => getLegsType(pesoEstimadoKg, isSinRevestimiento, calcParams), [pesoEstimadoKg, isSinRevestimiento, calcParams]);
+  const params = useMemo(() => getRulesParams(rulesQ.data), [rulesQ.data]);
+  const isAptoParaRevestir = useMemo(() => detectAptoParaRevestir(lines, params), [lines, params]);
+  const enteredKgM2 = toNumber(dimensions?.kg_m2);
+  const inferredKgM2 = inferKgM2FromType(portonType);
+  const effectiveKgM2 = enteredKgM2 > 0 ? enteredKgM2 : inferredKgM2;
+  const estimatedWeightKg = area > 0 && effectiveKgM2 > 0 ? area * effectiveKgM2 : 0;
+  const estimatedLegs = useMemo(() => legsTypeForWeight(estimatedWeightKg, isAptoParaRevestir, params), [estimatedWeightKg, isAptoParaRevestir, params]);
 
   const title = showTypeSelector ? "Medidas del portón" : ((kind || "") === "ipanel" ? "Medidas del Ipanel" : "Medidas del presupuesto");
 
@@ -124,38 +132,42 @@ export default function PortonDimensions({ kind = "porton" }) {
           <div className="muted">Alto (m)</div>
           <Input type="text" inputMode="decimal" value={dimensions?.height ?? ""} onChange={(v) => setDimensions({ height: normalizeDecimal(v) })} placeholder="Ej: 2.1" style={{ width: 140 }} />
         </div>
-        {showTypeSelector ? (
-          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-            <div className="muted">Kg por m²</div>
-            <Input type="text" inputMode="decimal" value={dimensions?.kg_m2 ?? ""} onChange={(v) => setDimensions({ kg_m2: normalizeDecimal(v) })} placeholder={String(isInyectado ? calcParams.default_inyectado_kg_m2 : calcParams.default_clasico_kg_m2)} style={{ width: 140 }} />
-          </div>
-        ) : null}
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          <div className="muted">Kg por m²</div>
+          <Input type="text" inputMode="decimal" value={dimensions?.kg_m2 ?? ""} onChange={(v) => setDimensions({ kg_m2: normalizeDecimal(v) })} placeholder={isAptoParaRevestir ? "Obligatorio si es apto para revestir" : "Opcional"} style={{ width: 200 }} />
+        </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 180 }}>
           <div className="muted">Superficie</div>
           <div style={{ fontWeight: 800, fontSize: 16 }}>{area ? `${area.toFixed(2)} m²` : "–"}</div>
         </div>
       </div>
-      {showTypeSelector ? (
-        <div style={{ display: "flex", gap: 20, flexWrap: "wrap", marginTop: 12 }}>
-          <div>
-            <div className="muted">Kg/m² efectivo</div>
-            <div style={{ fontWeight: 800 }}>{effectiveKgM2 ? `${effectiveKgM2.toFixed(2)} kg/m²` : "–"}</div>
-          </div>
-          <div>
-            <div className="muted">Peso estimado</div>
-            <div style={{ fontWeight: 800 }}>{pesoEstimadoKg ? `${pesoEstimadoKg.toFixed(2)} kg` : "–"}</div>
-          </div>
-          <div>
-            <div className="muted">Piernas estimadas</div>
-            <div style={{ fontWeight: 800 }}>{piernasTipo}</div>
-          </div>
-          <div>
-            <div className="muted">Sin revestimiento</div>
-            <div style={{ fontWeight: 800 }}>{isSinRevestimiento ? "Sí" : "No"}</div>
-          </div>
+      <div className="spacer" />
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 10 }}>
+        <div style={{ border: "1px solid #eee", borderRadius: 10, padding: 10 }}>
+          <div className="muted">Kg/m² efectivo</div>
+          <div style={{ fontWeight: 800 }}>{effectiveKgM2 > 0 ? `${effectiveKgM2.toFixed(2)} kg/m²` : "—"}</div>
+        </div>
+        <div style={{ border: "1px solid #eee", borderRadius: 10, padding: 10 }}>
+          <div className="muted">Peso estimado</div>
+          <div style={{ fontWeight: 800 }}>{estimatedWeightKg > 0 ? `${estimatedWeightKg.toFixed(2)} kg` : "—"}</div>
+        </div>
+        <div style={{ border: "1px solid #eee", borderRadius: 10, padding: 10 }}>
+          <div className="muted">Piernas estimadas</div>
+          <div style={{ fontWeight: 800 }}>{estimatedLegs}</div>
+        </div>
+        <div style={{ border: "1px solid #eee", borderRadius: 10, padding: 10 }}>
+          <div className="muted">Sin revestimiento</div>
+          <div style={{ fontWeight: 800 }}>{isAptoParaRevestir ? "Sí" : "No"}</div>
+        </div>
+      </div>
+      <div className="muted" style={{ marginTop: 8 }}>
+        Estas medidas se guardan dentro del presupuesto (payload) para usarlas después en medición, cálculo de peso y comparación de superficie.
+      </div>
+      {isAptoParaRevestir && enteredKgM2 <= 0 ? (
+        <div style={{ marginTop: 8, color: "#b45309", fontWeight: 700 }}>
+          Este portón está marcado como apto para revestir. Declarar kg/m² es obligatorio.
         </div>
       ) : null}
-      <div className="muted" style={{ marginTop: 8 }}>Estas medidas se guardan dentro del presupuesto (payload) para usarlas después en el cálculo de cantidades y de medición.</div>
     </div>
   );
 }

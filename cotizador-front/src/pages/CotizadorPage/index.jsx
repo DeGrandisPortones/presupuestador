@@ -24,6 +24,30 @@ import SummaryBox from "./components/SummaryBox";
 
 function normalizeUrl(value) { return String(value || "").trim().replace(/\/+$/, "").toLowerCase(); }
 function editorRouteForKind(kind, id, search = "") { const safeId = String(id || "").trim(); const suffix = search || ""; if (String(kind || "porton").toLowerCase().trim() === "ipanel") return `/cotizador/ipanel/${safeId}${suffix}`; if (String(kind || "porton").toLowerCase().trim() === "otros") return `/cotizador/otros/${safeId}${suffix}`; return `/cotizador/${safeId}${suffix}`; }
+function parseNum(v) { const n = Number(String(v ?? "").replace(",", ".")); return Number.isFinite(n) ? n : 0; }
+function formatMetric(v) { const n = Number(v || 0); return Number.isFinite(n) && n > 0 ? String(n).replace(/\.00$/, "") : ""; }
+function buildPortonMetricsText(payload) {
+  const dims = payload?.payload?.dimensions || payload?.dimensions || {};
+  const width = parseNum(dims?.width);
+  const height = parseNum(dims?.height);
+  const kgM2 = parseNum(dims?.kg_m2);
+  const area = width > 0 && height > 0 ? width * height : 0;
+  const weight = area > 0 && kgM2 > 0 ? area * kgM2 : 0;
+  const rows = [];
+  if (height > 0) rows.push(`Alto: ${formatMetric(height)} m`);
+  if (width > 0) rows.push(`Ancho: ${formatMetric(width)} m`);
+  if (kgM2 > 0) rows.push(`Kg/m²: ${formatMetric(kgM2)}`);
+  if (weight > 0) rows.push(`Peso estimado: ${formatMetric(weight)} kg`);
+  return rows.join(" · ");
+}
+function appendMetricsToNote(note, payload) {
+  const metrics = buildPortonMetricsText(payload);
+  if (!metrics) return String(note || "").trim();
+  const rows = String(note || "").split(/\r?\n/).filter(Boolean);
+  const filtered = rows.filter((line) => !/^alto:\s/i.test(line) && !/^ancho:\s/i.test(line) && !/^kg\/m²:\s/i.test(line) && !/^peso estimado:\s/i.test(line));
+  filtered.push(metrics);
+  return filtered.join("\n").trim();
+}
 function buildPdfPayloadForDownload(payload, financingPercent, extras = {}) {
   const percent = Number(financingPercent || 0) || 0;
   const factor = 1 + percent / 100;
@@ -34,7 +58,9 @@ function buildPdfPayloadForDownload(payload, financingPercent, extras = {}) {
         return { ...line, basePrice: financedBase, base_price: financedBase, price: financedBase };
       })
     : [];
-  return { ...(payload || {}), ...extras, lines: nextLines, payload: { ...(payload?.payload || {}), ...(extras.payload || {}) } };
+  const nextPayload = { ...(payload || {}), ...extras, lines: nextLines, payload: { ...(payload?.payload || {}), ...(extras.payload || {}) } };
+  nextPayload.note = appendMetricsToNote(nextPayload.note, nextPayload);
+  return nextPayload;
 }
 
 export default function CotizadorPage({ catalogKind = "porton" }) {
