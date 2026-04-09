@@ -75,6 +75,7 @@ function PdfIconButton({ onClick, disabled = false }) {
 export default function AprobacionComercialPage() {
   const navigate = useNavigate();
   const user = useAuthStore((s) => s.user);
+  const canCommercialView = !!user?.is_enc_comercial || !!user?.is_superuser;
 
   const [tab, setTab] = useState("aprobaciones");
   const [filter, setFilter] = useState("all");
@@ -90,19 +91,19 @@ export default function AprobacionComercialPage() {
   const [planningYear, setPlanningYear] = useState(String(currentYear));
   const [planningDraft, setPlanningDraft] = useState([]);
 
-  const q = useQuery({ queryKey: ["quotes", "commercial_inbox"], queryFn: () => listQuotes({ scope: "commercial_inbox" }), enabled: !!user?.is_enc_comercial });
-  const acopioQ = useQuery({ queryKey: ["quotes", "commercial_acopio"], queryFn: () => listQuotes({ scope: "commercial_acopio" }), enabled: tab === "acopio" && !!user?.is_enc_comercial });
-  const acopioListadoQ = useQuery({ queryKey: ["quotes", "commercial_acopio_all"], queryFn: () => listQuotes({ scope: "commercial_acopio_all" }), enabled: tab === "acopio_listado" && !!user?.is_enc_comercial });
-  const doorsQ = useQuery({ queryKey: ["doors", "commercial_inbox"], queryFn: () => listDoors({ scope: "commercial_inbox" }), enabled: tab === "puertas" && !!user?.is_enc_comercial });
+  const q = useQuery({ queryKey: ["quotes", "commercial_inbox"], queryFn: () => listQuotes({ scope: "commercial_inbox" }), enabled: canCommercialView });
+  const acopioQ = useQuery({ queryKey: ["quotes", "commercial_acopio"], queryFn: () => listQuotes({ scope: "commercial_acopio" }), enabled: tab === "acopio" && canCommercialView });
+  const acopioListadoQ = useQuery({ queryKey: ["quotes", "commercial_acopio_all"], queryFn: () => listQuotes({ scope: "commercial_acopio_all" }), enabled: tab === "acopio_listado" && canCommercialView });
+  const doorsQ = useQuery({ queryKey: ["doors", "commercial_inbox"], queryFn: () => listDoors({ scope: "commercial_inbox" }), enabled: tab === "puertas" && canCommercialView });
   const medicionesQ = useQuery({
     queryKey: ["measurements", "commercial_review"],
     queryFn: () => listMeasurements({ status: "commercial_review", viewer: "comercial" }),
-    enabled: tab === "mediciones" && !!user?.is_enc_comercial,
+    enabled: tab === "mediciones" && canCommercialView,
   });
   const planningQ = useQuery({
     queryKey: ["admin", "production-planning", planningYear],
     queryFn: () => adminGetProductionPlanning(Number(planningYear || currentYear)),
-    enabled: tab === "planificacion" && !!user?.is_enc_comercial,
+    enabled: tab === "planificacion" && canCommercialView,
   });
 
   const acopioM = useMutation({ mutationFn: ({ id, action, notes }) => reviewAcopioCommercial(id, { action, notes }), onSuccess: () => acopioQ.refetch() });
@@ -228,7 +229,7 @@ export default function AprobacionComercialPage() {
   const visibleDoorRows = useMemo(() => doorRows.slice((pagePuertas - 1) * PAGE_SIZE, pagePuertas * PAGE_SIZE), [doorRows, pagePuertas]);
   const visibleMedicionesRows = useMemo(() => medicionesRows.slice((pageMediciones - 1) * PAGE_SIZE, pageMediciones * PAGE_SIZE), [medicionesRows, pageMediciones]);
 
-  if (!user?.is_enc_comercial) {
+  if (!canCommercialView) {
     return <div className="container"><div className="card">No autorizado (falta rol Enc. Comercial).</div></div>;
   }
 

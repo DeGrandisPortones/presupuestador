@@ -352,7 +352,7 @@ export default function DashboardPage() {
       });
       setInitialSectionId(Number(saved?.initial_section_id || 0) || "");
       qc.invalidateQueries({ queryKey: ["adminTechnicalMeasurementRulesForDashboard"] });
-      window.alert("Sección inicial guardada.");
+      alert("Sección inicial guardada.");
     } finally {
       setSavingInitialSection(false);
     }
@@ -640,14 +640,14 @@ export default function DashboardPage() {
               productsBySectionId={productsBySectionId}
               initialSectionId={initialSectionId}
               setInitialSectionId={setInitialSectionId}
-              onSaveInitialSection={onSaveInitialSection}
-              savingInitialSection={savingInitialSection}
               dependencyRules={dependencyRules}
               setDependencyRules={setDependencyRules}
               systemRules={systemRules}
               setSystemRules={setSystemRules}
               saving={savingDependencies}
+              savingInitialSection={savingInitialSection}
               onSave={onSaveDependencies}
+              onSaveInitialSection={onSaveInitialSection}
             />
           )}
 
@@ -872,14 +872,14 @@ function DependenciesTab({
   productsBySectionId,
   initialSectionId,
   setInitialSectionId,
-  onSaveInitialSection,
-  savingInitialSection,
   dependencyRules,
   setDependencyRules,
   systemRules,
   setSystemRules,
   saving,
+  savingInitialSection,
   onSave,
+  onSaveInitialSection,
 }) {
   const sectionMap = useMemo(
     () => new Map(sections.map((section) => [Number(section.id), section])),
