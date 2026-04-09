@@ -746,6 +746,9 @@ function TagsTab({
             display: "flex",
             flexDirection: "column",
             gap: 8,
+            maxHeight: 560,
+            overflow: "auto",
+            paddingRight: 6,
           }}
         >
           {tags.map((t) => (
