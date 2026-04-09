@@ -4,7 +4,7 @@ import { getOdooBootstrap, setOdooBootstrap } from "../../../domain/odoo/bootstr
 import { useQuoteStore } from "../../../domain/quote/store";
 import { useAuthStore } from "../../../domain/auth/store.js";
 import { getCatalogBootstrap } from "../../../api/catalog.js";
-import { adminGetTechnicalMeasurementRules } from "../../../api/admin.js";
+import { adminGetTechnicalMeasurementRules, adminRefreshCatalog } from "../../../api/admin.js";
 import Button from "../../../ui/Button";
 
 const SYSTEM_PRODUCT_IDS = new Set([3008, 3009]);
@@ -111,6 +111,7 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
   const setPortonType = useQuoteStore((s) => s.setPortonType);
 
   const user = useAuthStore((s) => s.user);
+  const canForceRefreshCatalog = !!(user?.is_enc_comercial || user?.is_superuser);
 
   const [boot, setBoot] = useState(() => getOdooBootstrap(kind) || getOdooBootstrap(bootstrapKind));
   const [openSectionId, setOpenSectionId] = useState(null);
@@ -162,6 +163,9 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
   const refreshCatalog = useCallback(async () => {
     setRefreshing(true);
     try {
+      if (canForceRefreshCatalog) {
+        await adminRefreshCatalog();
+      }
       const data = await getCatalogBootstrap(bootstrapKind);
       setOdooBootstrap(data, kind);
       setBoot(data);
@@ -169,7 +173,7 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
       setRefreshing(false);
       setAutoloadAttempted(true);
     }
-  }, [kind, bootstrapKind]);
+  }, [kind, bootstrapKind, canForceRefreshCatalog]);
 
   useEffect(() => {
     setBoot(getOdooBootstrap(kind) || getOdooBootstrap(bootstrapKind));
@@ -323,7 +327,7 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
 
     if (currentSelectedIds.length > 0 && hasDownstreamSelections) {
       const ok = window.confirm(
-        "Si cambiás este producto, vas a tener que volver a cargar las secciones siguientes. ¿Deseás continuar?",
+        "Si cambias este producto, vas a tener que volver a cargar las secciones siguientes. Deseas continuar?",
       );
       if (!ok) return;
     }
@@ -369,10 +373,14 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
 
   const title =
     (kind || "porton") === "porton"
-      ? "Características del portón"
+      ? "Caracteristicas del porton"
       : (kind || "") === "ipanel"
-        ? "Características del Ipanel"
-        : "Características / productos";
+        ? "Caracteristicas del Ipanel"
+        : "Caracteristicas / productos";
+
+  const refreshButtonLabel = canForceRefreshCatalog
+    ? (refreshing ? "Forzando actualizacion..." : "Forzar actualizacion")
+    : (refreshing ? "Actualizando..." : "Actualizar catalogo");
 
   if (!boot) {
     return (
@@ -380,14 +388,16 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
         <div className="dg-row dg-row--between dg-row--center">
           <h3 className="dg-h3">{title}</h3>
           <Button variant="ghost" disabled={refreshing} onClick={refreshCatalog}>
-            {refreshing ? "Cargando…" : "Actualizar catálogo"}
+            {refreshButtonLabel}
           </Button>
         </div>
         <div className="spacer" />
         <div className="muted">
           {refreshing
-            ? "Cargando catálogo automáticamente…"
-            : "No se pudo cargar el catálogo automáticamente. Podés reintentar con el botón de actualizar."}
+            ? "Cargando catalogo automaticamente..."
+            : canForceRefreshCatalog
+              ? "Podes forzar la actualizacion para limpiar cache y volver a leer etiquetas y productos desde Odoo."
+              : "No se pudo cargar el catalogo automaticamente. Podes reintentar con el boton de actualizar."}
         </div>
       </div>
     );
@@ -398,7 +408,7 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
       <div className="dg-row dg-row--between dg-row--center">
         <h3 className="dg-h3">{title}</h3>
         <Button variant="ghost" disabled={refreshing} onClick={refreshCatalog}>
-          {refreshing ? "Actualizando…" : "Actualizar catálogo"}
+          {refreshButtonLabel}
         </Button>
       </div>
 
@@ -406,7 +416,7 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
         <>
           <div className="spacer" />
           <div className="muted">
-            No hay secciones habilitadas todavía. Elegí una sección inicial en el dashboard o configurá dependencias.
+            No hay secciones habilitadas todavia. Elegi una seccion inicial en el dashboard o configura dependencias.
           </div>
         </>
       ) : (
@@ -428,15 +438,15 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
                 >
                   <div className="dg-acc-title">
                     {section.name}
-                    {section.use_surface_qty ? " · cantidad por superficie" : ""}
+                    {section.use_surface_qty ? " - cantidad por superficie" : ""}
                   </div>
                   <div className="dg-acc-meta">
                     {selectedInSection.size
                       ? `${selectedInSection.size} seleccionado`
-                      : "Sin selección"}{" "}
-                    · {sectionProducts.length}
+                      : "Sin seleccion"}{" "}
+                    - {sectionProducts.length}
                   </div>
-                  <div className="dg-acc-chevron">{isOpen ? "▾" : "▸"}</div>
+                  <div className="dg-acc-chevron">{isOpen ? "v" : ">"}</div>
                 </button>
 
                 {isOpen ? (
@@ -461,11 +471,11 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
                             <div className="dg-product-info">
                               <div className="dg-product-name">
                                 {getProductLabel(product)}
-                                {product.uses_surface_quantity ? " · cantidad por superficie" : ""}
+                                {product.uses_surface_quantity ? " - cantidad por superficie" : ""}
                               </div>
                               <div className="muted" style={{ fontSize: 12 }}>
-                                {product.code ? `Código: ${product.code}` : `ID: ${product.id}`}
-                                {disabledForUser ? " · No habilitado para tu rol" : ""}
+                                {product.code ? `Codigo: ${product.code}` : `ID: ${product.id}`}
+                                {disabledForUser ? " - No habilitado para tu rol" : ""}
                               </div>
                             </div>
 
@@ -481,7 +491,7 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
                       })}
 
                       {!sectionProducts.length && (
-                        <div className="muted">Sin productos para mostrar en esta sección</div>
+                        <div className="muted">Sin productos para mostrar en esta seccion</div>
                       )}
                     </div>
                   </div>
