@@ -202,9 +202,9 @@ export default function MenuPage() {
         {showPlanning && (
           <MenuTile
             title="Planificación"
-            description="Capacidad semanal de producción para cargar portones por semana."
+            description="Capacidad de producción semanal."
             buttonText="Abrir planificación"
-            onClick={() => navigate("/aprobacion/comercial?tab=planificacion")}
+            onClick={() => navigate("/planificacion")}
             icon={
               <SvgIcon>
                 <path d="M4 6h16" />

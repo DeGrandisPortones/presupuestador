@@ -14,6 +14,7 @@ import LoginPage from "./pages/LoginPage/index.jsx";
 import PresupuestosPage from "./pages/PresupuestosPage/index.jsx";
 import QuoteDetailPage from "./pages/QuoteDetailPage/index.jsx";
 import AprobacionComercialPage from "./pages/AprobacionComercialPage/index.jsx";
+import PlanificacionPage from "./pages/PlanificacionPage/index.jsx";
 import AprobacionTecnicaPage from "./pages/AprobacionTecnicaPage/index.jsx";
 import DashboardPage from "./pages/DashboardPage/index.jsx";
 import SuperuserMeasurementRulesPage from "./pages/SuperuserMeasurementRulesPage/index.jsx";
@@ -71,6 +72,7 @@ export default function App() {
           <Route path="mediciones" element={<MedicionesPage />} />
           <Route path="mediciones/:id" element={<MedicionDetailPage />} />
           <Route path="aprobacion/comercial" element={<AprobacionComercialPage />} />
+          <Route path="planificacion" element={<PlanificacionPage />} />
           <Route path="aprobacion/tecnica" element={<AprobacionTecnicaPage />} />
           <Route path="consultas-tecnicas" element={<TechnicalConsultsPage />} />
           <Route path="usuarios" element={<UsersAdminPage />} />
