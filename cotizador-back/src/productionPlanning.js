@@ -58,9 +58,9 @@ function buildDisplay({ year, weekNumber, startDate, endDate, weeksOut, committe
     weeks_out: safeWeeksOut,
     weeks_text: safeWeeksOut === null ? "" : buildWeeksText(safeWeeksOut),
     label: buildPlanningLabel(weekNumber, startDate, endDate),
-    summary: weekNumber
-      ? `Entrega estimada. Semana ${Number(weekNumber)}, entre ${formatDateAr(startDate)} y ${formatDateAr(endDate)}`
-      : `Entrega estimada. Entre ${formatDateAr(startDate)} y ${formatDateAr(endDate)}`,
+    summary: safeWeeksOut === null
+      ? buildPlanningLabel(weekNumber, startDate, endDate)
+      : `Entrega estimada: en ${buildWeeksText(safeWeeksOut)} · ${buildPlanningLabel(weekNumber, startDate, endDate)}`,
     committed: committed === true,
     capacity: Number(capacity || 0),
     committed_count: Number(committedCount || 0),
