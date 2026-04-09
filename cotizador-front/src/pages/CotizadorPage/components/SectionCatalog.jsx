@@ -105,7 +105,7 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
   const bootstrapKind = (kind || "porton") === "otros" ? "porton" : kind;
 
   const addLine = useQuoteStore((s) => s.addLine);
-  const forceRemoveLine = useQuoteStore((s) => s.forceRemoveLine);
+  const removeLine = useQuoteStore((s) => s.removeLine);
   const lines = useQuoteStore((s) => s.lines);
   const portonType = useQuoteStore((s) => s.portonType);
   const setPortonType = useQuoteStore((s) => s.setPortonType);
@@ -292,12 +292,14 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
     if (!visibleSections.length) return;
     const firstVisibleSectionId = Number(visibleSections[0]?.id || 0) || null;
     const visibleIds = new Set(visibleSections.map((section) => Number(section.id)));
-    const currentOpenSectionId = Number(openSectionId || 0) || null;
-    if (currentOpenSectionId && visibleIds.has(currentOpenSectionId)) return;
-    if (firstVisibleSectionId) {
+    if (firstVisibleSectionId && initialSectionId && firstVisibleSectionId === Number(initialSectionId)) {
+      setOpenSectionId(firstVisibleSectionId);
+      return;
+    }
+    if (openSectionId == null || !visibleIds.has(Number(openSectionId))) {
       setOpenSectionId(firstVisibleSectionId);
     }
-  }, [visibleSections, openSectionId]);
+  }, [visibleSections, openSectionId, initialSectionId]);
 
   function selectProductForSection(sectionId, product) {
     const currentSelected = selectedProductIdsBySection.get(Number(sectionId)) || new Set();
@@ -327,7 +329,7 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
     const nextSelectionMap = cloneSelectionMap(sectionList, selectedProductIdsBySection);
 
     currentSelected.forEach((productId) => {
-      forceRemoveLine(productId);
+      removeLine(productId);
       nextSelectionMap.get(Number(sectionId))?.delete(Number(productId));
     });
 
@@ -335,7 +337,7 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
       for (const downstreamSectionId of downstreamSectionIds) {
         const selectedDownstream = [...(nextSelectionMap.get(Number(downstreamSectionId)) || new Set())];
         for (const productId of selectedDownstream) {
-          forceRemoveLine(productId);
+          removeLine(productId);
           nextSelectionMap.get(Number(downstreamSectionId))?.delete(Number(productId));
         }
       }

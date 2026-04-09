@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { Outlet, useNavigate, NavLink } from "react-router-dom";
+import { Outlet, useNavigate, NavLink, useLocation } from "react-router-dom";
 import Button from "../ui/Button.jsx";
 import { useAuthStore } from "../domain/auth/store.js";
 import { getTechnicalConsultUnreadSummary } from "../api/technicalConsults.js";
@@ -94,6 +94,7 @@ export default function AppLayout() {
   const user = useAuthStore((s) => s.user);
   const logout = useAuthStore((s) => s.logout);
   const navigate = useNavigate();
+  const location = useLocation();
 
   const isSuperuser = !!user?.is_superuser;
 
@@ -113,6 +114,7 @@ export default function AppLayout() {
   const canQuote = !!(isSuperuser || user?.is_vendedor || user?.is_distribuidor);
   const showMediciones = !!(isSuperuser || user?.is_medidor) && !user?.is_rev_tecnica;
   const showCommercial = !!(isSuperuser || user?.is_enc_comercial);
+  const showPlanning = !!(isSuperuser || user?.is_enc_comercial);
   const showTechnical = !!(isSuperuser || user?.is_rev_tecnica);
 
   return (
@@ -163,6 +165,7 @@ export default function AppLayout() {
 
           {showMediciones && <NavLink className={({ isActive }) => (isActive ? "navlink active" : "navlink")} to="/mediciones">Mediciones</NavLink>}
           {showCommercial && <NavLink className={({ isActive }) => (isActive ? "navlink active" : "navlink")} to="/aprobacion/comercial">Aprobación Comercial</NavLink>}
+          {showPlanning && <NavLink className={() => ((location.pathname === "/aprobacion/comercial" && location.search.includes("tab=planificacion")) ? "navlink active" : "navlink")} to="/aprobacion/comercial?tab=planificacion">Planificación</NavLink>}
           {showDashboard && <NavLink className={({ isActive }) => (isActive ? "navlink active" : "navlink")} to="/dashboard">Dashboard</NavLink>}
           {showUsers && <NavLink className={({ isActive }) => (isActive ? "navlink active" : "navlink")} to="/usuarios">Gestor de usuarios</NavLink>}
           {showTechnical && <NavLink className={({ isActive }) => (isActive ? "navlink active" : "navlink")} to="/aprobacion/tecnica">Revisión Técnica</NavLink>}
