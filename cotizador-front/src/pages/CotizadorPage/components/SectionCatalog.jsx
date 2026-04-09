@@ -5,17 +5,14 @@ import { useQuoteStore } from "../../../domain/quote/store";
 import { useAuthStore } from "../../../domain/auth/store.js";
 import { getCatalogBootstrap } from "../../../api/catalog.js";
 import { adminGetTechnicalMeasurementRules } from "../../../api/admin.js";
-import Input from "../../../ui/Input";
 import Button from "../../../ui/Button";
 
 const SYSTEM_PRODUCT_IDS = new Set([3008, 3009]);
 
-function normalize(s) {
-  return (s || "").toString().trim().toLowerCase();
-}
 function getProductLabel(product) {
   return product?.display_name || product?.alias || product?.name || "";
 }
+
 function isDisabledForUser(product, user) {
   if (!product || !user) return false;
   const disableForVendedor = !!product.disable_for_vendedor;
@@ -24,15 +21,12 @@ function isDisabledForUser(product, user) {
   if (user.is_distribuidor && disableForDistribuidor) return true;
   return false;
 }
-function parseIdList(value) {
-  return String(value || "")
-    .split(/[;,\s]+/)
-    .map((x) => Number(x))
-    .filter((x) => Number.isFinite(x) && x > 0);
-}
+
 function matchProductIds(selectedIds, requiredIds, matchMode = "any") {
   const selected = selectedIds instanceof Set ? selectedIds : new Set(selectedIds || []);
-  const required = Array.isArray(requiredIds) ? requiredIds.map((x) => Number(x)).filter(Boolean) : [];
+  const required = Array.isArray(requiredIds)
+    ? requiredIds.map((x) => Number(x)).filter(Boolean)
+    : [];
   if (!required.length) return false;
   if (String(matchMode || "any").trim().toLowerCase() === "all") {
     return required.every((id) => selected.has(Number(id)));
@@ -47,12 +41,13 @@ export default function SectionCatalog({ kind = "porton" }) {
   const setPortonType = useQuoteStore((s) => s.setPortonType);
   const user = useAuthStore((s) => s.user);
 
-  const [boot, setBoot] = useState(() => getOdooBootstrap(kind) || getOdooBootstrap(bootstrapKind));
+  const [boot, setBoot] = useState(
+    () => getOdooBootstrap(kind) || getOdooBootstrap(bootstrapKind),
+  );
   const sections = Array.isArray(boot?.sections) ? boot.sections : [];
   const products = Array.isArray(boot?.products) ? boot.products : [];
 
   const [openSectionId, setOpenSectionId] = useState(null);
-  const [queryBySection, setQueryBySection] = useState({});
   const [refreshing, setRefreshing] = useState(false);
   const [autoloadAttempted, setAutoloadAttempted] = useState(false);
 
@@ -111,7 +106,6 @@ export default function SectionCatalog({ kind = "porton" }) {
     setBoot(getOdooBootstrap(kind) || getOdooBootstrap(bootstrapKind));
     setAutoloadAttempted(false);
     setOpenSectionId(null);
-    setQueryBySection({});
   }, [kind, bootstrapKind]);
 
   useEffect(() => {
@@ -181,7 +175,7 @@ export default function SectionCatalog({ kind = "porton" }) {
   }, [lines, productsBySection, sectionList]);
 
   const visibleSectionIds = useMemo(() => {
-    if (!(kind || "porton").toLowerCase().trim() === "porton") {
+    if ((kind || "porton").toLowerCase().trim() !== "porton") {
       return new Set(sectionList.map((section) => Number(section.id)));
     }
     if (!sectionList.length) return new Set();
@@ -192,7 +186,9 @@ export default function SectionCatalog({ kind = "porton" }) {
 
     const childIds = new Set(
       activeRules.flatMap((rule) =>
-        (Array.isArray(rule?.child_section_ids) ? rule.child_section_ids : []).map((x) => Number(x)),
+        (Array.isArray(rule?.child_section_ids) ? rule.child_section_ids : []).map((x) =>
+          Number(x),
+        ),
       ),
     );
     const visible = new Set(
@@ -210,9 +206,13 @@ export default function SectionCatalog({ kind = "porton" }) {
         const parentSectionId = Number(rule?.parent_section_id || 0);
         if (!parentSectionId || !visible.has(parentSectionId)) continue;
         const selectedInParent = selectedProductIdsBySection.get(parentSectionId) || new Set();
-        const requiredIds = Array.isArray(rule?.required_product_ids) ? rule.required_product_ids : [];
+        const requiredIds = Array.isArray(rule?.required_product_ids)
+          ? rule.required_product_ids
+          : [];
         if (!matchProductIds(selectedInParent, requiredIds, rule?.match_mode || "any")) continue;
-        for (const childIdRaw of Array.isArray(rule?.child_section_ids) ? rule.child_section_ids : []) {
+        for (const childIdRaw of Array.isArray(rule?.child_section_ids)
+          ? rule.child_section_ids
+          : []) {
           const childId = Number(childIdRaw);
           if (!childId || visible.has(childId)) continue;
           visible.add(childId);
@@ -232,7 +232,9 @@ export default function SectionCatalog({ kind = "porton" }) {
     if ((kind || "porton").toLowerCase().trim() !== "porton") return;
     let derived = "";
     for (const rule of systemRules) {
-      const requiredIds = Array.isArray(rule?.required_product_ids) ? rule.required_product_ids : [];
+      const requiredIds = Array.isArray(rule?.required_product_ids)
+        ? rule.required_product_ids
+        : [];
       if (!requiredIds.length) continue;
       if (matchProductIds(selectedProductIdsGlobal, requiredIds, rule?.match_mode || "all")) {
         derived = String(rule?.derived_porton_type || "").trim();
@@ -250,18 +252,9 @@ export default function SectionCatalog({ kind = "porton" }) {
   }, [visibleSections, visibleSectionIds, openSectionId]);
 
   function getVisibleProducts(sectionId) {
-    const all = (productsBySection.get(Number(sectionId)) || []).filter(
+    return (productsBySection.get(Number(sectionId)) || []).filter(
       (product) => !SYSTEM_PRODUCT_IDS.has(Number(product.id)),
     );
-    const q = normalize(queryBySection[sectionId] || "");
-    if (!q) return all;
-    return all.filter((p) => {
-      const label = normalize(getProductLabel(p));
-      const alias = normalize(p.alias || "");
-      const raw = normalize(p.name);
-      const code = normalize(p.code);
-      return label.includes(q) || alias.includes(q) || raw.includes(q) || code.includes(q);
-    });
   }
 
   const title =
@@ -313,7 +306,6 @@ export default function SectionCatalog({ kind = "porton" }) {
             const isOpen = openSectionId === sid;
             const visible = getVisibleProducts(sid);
             const all = productsBySection.get(sid) || [];
-            const q = queryBySection[sid] || "";
             const selectedInSection = selectedProductIdsBySection.get(sid) || new Set();
             return (
               <div key={sid} className={isOpen ? "dg-acc-item is-open" : "dg-acc-item"}>
@@ -322,7 +314,10 @@ export default function SectionCatalog({ kind = "porton" }) {
                   className="dg-acc-header"
                   onClick={() => setOpenSectionId(isOpen ? null : sid)}
                 >
-                  <div className="dg-acc-title">{s.name}{s.use_surface_qty ? " · cantidad por superficie" : ""}</div>
+                  <div className="dg-acc-title">
+                    {s.name}
+                    {s.use_surface_qty ? " · cantidad por superficie" : ""}
+                  </div>
                   <div className="dg-acc-meta">
                     {selectedInSection.size ? `${selectedInSection.size} seleccionados` : "Sin selección"} · {visible.length}/{all.length}
                   </div>
@@ -330,13 +325,6 @@ export default function SectionCatalog({ kind = "porton" }) {
                 </button>
                 {isOpen ? (
                   <div className="dg-acc-body">
-                    <Input
-                      value={q}
-                      onChange={(v) => setQueryBySection((prev) => ({ ...prev, [sid]: v }))}
-                      placeholder="Buscar dentro de esta sección (alias, nombre o código)…"
-                      style={{ width: "100%" }}
-                    />
-                    <div className="spacer" />
                     <div className="dg-product-list">
                       {visible.map((p) => {
                         const disabledForUser = isDisabledForUser(p, user);
@@ -358,14 +346,18 @@ export default function SectionCatalog({ kind = "porton" }) {
                             </div>
                             <Button
                               disabled={disabledForUser}
-                              onClick={() => addLine({ ...p, name: getProductLabel(p), raw_name: p.name })}
+                              onClick={() =>
+                                addLine({ ...p, name: getProductLabel(p), raw_name: p.name })
+                              }
                             >
                               +
                             </Button>
                           </div>
                         );
                       })}
-                      {!visible.length && <div className="muted">Sin productos para mostrar en esta sección</div>}
+                      {!visible.length && (
+                        <div className="muted">Sin productos para mostrar en esta sección</div>
+                      )}
                     </div>
                   </div>
                 ) : null}
