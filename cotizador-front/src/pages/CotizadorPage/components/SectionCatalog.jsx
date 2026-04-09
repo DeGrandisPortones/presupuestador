@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { getOdooBootstrap, setOdooBootstrap } from "../../../domain/odoo/bootstrap.js";
 import { useQuoteStore } from "../../../domain/quote/store";
@@ -105,7 +105,7 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
   const bootstrapKind = (kind || "porton") === "otros" ? "porton" : kind;
 
   const addLine = useQuoteStore((s) => s.addLine);
-  const removeLine = useQuoteStore((s) => s.removeLine);
+  const forceRemoveLine = useQuoteStore((s) => s.forceRemoveLine);
   const lines = useQuoteStore((s) => s.lines);
   const portonType = useQuoteStore((s) => s.portonType);
   const setPortonType = useQuoteStore((s) => s.setPortonType);
@@ -116,6 +116,7 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
   const [openSectionId, setOpenSectionId] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
   const [autoloadAttempted, setAutoloadAttempted] = useState(false);
+  const pendingAutoOpenSectionIdRef = useRef(null);
 
   const sections = Array.isArray(boot?.sections) ? boot.sections : [];
   const products = Array.isArray(boot?.products) ? boot.products : [];
@@ -315,6 +316,7 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
 
     if (currentSelected.has(targetProductId) && currentSelected.size === 1) {
       const nextSectionId = downstreamSectionIds[0] || null;
+      pendingAutoOpenSectionIdRef.current = nextSectionId ? Number(nextSectionId) : null;
       setOpenSectionId(nextSectionId ? Number(nextSectionId) : null);
       return;
     }
@@ -329,7 +331,7 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
     const nextSelectionMap = cloneSelectionMap(sectionList, selectedProductIdsBySection);
 
     currentSelected.forEach((productId) => {
-      removeLine(productId);
+      forceRemoveLine(productId);
       nextSelectionMap.get(Number(sectionId))?.delete(Number(productId));
     });
 
@@ -337,7 +339,7 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
       for (const downstreamSectionId of downstreamSectionIds) {
         const selectedDownstream = [...(nextSelectionMap.get(Number(downstreamSectionId)) || new Set())];
         for (const productId of selectedDownstream) {
-          removeLine(productId);
+          forceRemoveLine(productId);
           nextSelectionMap.get(Number(downstreamSectionId))?.delete(Number(productId));
         }
       }
@@ -362,7 +364,8 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
     const nextIndex = nextOrderedIds.findIndex((id) => Number(id) === Number(sectionId));
     const nextSectionId = nextIndex >= 0 ? nextOrderedIds[nextIndex + 1] : null;
 
-    setOpenSectionId(nextSectionId ? Number(nextSectionId) : null);
+    pendingAutoOpenSectionIdRef.current = nextSectionId ? Number(nextSectionId) : null;
+    setOpenSectionId(nextSectionId ? Number(nextSectionId) : Number(sectionId));
   }
 
   const title =
