@@ -16,6 +16,7 @@ import QuoteDetailPage from "./pages/QuoteDetailPage/index.jsx";
 import AprobacionComercialPage from "./pages/AprobacionComercialPage/index.jsx";
 import AprobacionTecnicaPage from "./pages/AprobacionTecnicaPage/index.jsx";
 import DashboardPage from "./pages/DashboardPage/index.jsx";
+import PlanificacionPage from "./pages/PlanificacionPage/index.jsx";
 import SuperuserMeasurementRulesPage from "./pages/SuperuserMeasurementRulesPage/index.jsx";
 import UsersAdminPage from "./pages/UsersAdminPage/index.jsx";
 import MedicionesPage from "./pages/MedicionesPage/index.jsx";
@@ -75,6 +76,7 @@ export default function App() {
           <Route path="consultas-tecnicas" element={<TechnicalConsultsPage />} />
           <Route path="usuarios" element={<UsersAdminPage />} />
           <Route path="dashboard" element={<DashboardPage />} />
+          <Route path="planificacion" element={<PlanificacionPage />} />
           <Route path="dashboard/reglas-tecnicas" element={<SuperuserMeasurementRulesPage />} />
         </Route>
         <Route path="*" element={<Navigate to={token ? "/menu" : "/login"} replace />} />

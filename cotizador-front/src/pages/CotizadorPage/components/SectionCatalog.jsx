@@ -289,17 +289,20 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
   }, [kind, systemRules, selectedProductIdsGlobal, portonType, setPortonType]);
 
   useEffect(() => {
-    if (!visibleSections.length) return;
-    const firstVisibleSectionId = Number(visibleSections[0]?.id || 0) || null;
-    const visibleIds = new Set(visibleSections.map((section) => Number(section.id)));
-    if (firstVisibleSectionId && initialSectionId && firstVisibleSectionId === Number(initialSectionId)) {
-      setOpenSectionId(firstVisibleSectionId);
+    if (!visibleSections.length) {
+      if (openSectionId != null) setOpenSectionId(null);
       return;
     }
-    if (openSectionId == null || !visibleIds.has(Number(openSectionId))) {
-      setOpenSectionId(firstVisibleSectionId);
+
+    const firstVisibleSectionId = Number(visibleSections[0]?.id || 0) || null;
+    const visibleIds = new Set(visibleSections.map((section) => Number(section.id)));
+
+    if (openSectionId != null && visibleIds.has(Number(openSectionId))) {
+      return;
     }
-  }, [visibleSections, openSectionId, initialSectionId]);
+
+    setOpenSectionId(firstVisibleSectionId);
+  }, [visibleSections, openSectionId]);
 
   function selectProductForSection(sectionId, product) {
     const currentSelected = selectedProductIdsBySection.get(Number(sectionId)) || new Set();
@@ -315,7 +318,7 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
 
     if (currentSelected.has(targetProductId) && currentSelected.size === 1) {
       const nextSectionId = downstreamSectionIds[0] || null;
-      setOpenSectionId(nextSectionId ? Number(nextSectionId) : null);
+      setOpenSectionId(nextSectionId ? Number(nextSectionId) : Number(sectionId));
       return;
     }
 
@@ -362,7 +365,7 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
     const nextIndex = nextOrderedIds.findIndex((id) => Number(id) === Number(sectionId));
     const nextSectionId = nextIndex >= 0 ? nextOrderedIds[nextIndex + 1] : null;
 
-    setOpenSectionId(nextSectionId ? Number(nextSectionId) : null);
+    setOpenSectionId(nextSectionId ? Number(nextSectionId) : Number(sectionId));
   }
 
   const title =
