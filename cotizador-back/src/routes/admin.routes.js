@@ -31,7 +31,7 @@ export function buildAdminRouter(odoo) {
       const q = await dbQuery(`select tag_id, section_id from public.presupuestador_tag_sections where catalog_kind=$1`, [kind]);
       const map = new Map((q.rows || []).map((r) => [Number(r.tag_id), Number(r.section_id)]));
       const tags = (data.tags || []).map((t) => ({ ...t, section_id: map.get(Number(t.id)) || null }));
-      res.json({ ...data, tags });
+      res.json({ ...data, tags, type_sections: {} });
     } catch (e) { next(e); }
   });
 
@@ -160,7 +160,6 @@ export function buildAdminRouter(odoo) {
   router.put("/users/:id", requireAuth, requireEncComercialOrSuperuser, async (req, res, next) => {
     try { res.json({ ok: true, user: await updateUser(req.params.id, req.body || {}) }); } catch (e) { next(e); }
   });
-
 
   return router;
 }

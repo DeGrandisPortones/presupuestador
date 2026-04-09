@@ -32,6 +32,7 @@ export async function ensureSettingsTable() {
       surface_calc_params: {},
       section_dependency_rules: [],
       system_derivation_rules: [],
+      initial_section_id: null,
     }],
     [TECHNICAL_MEASUREMENT_FIELDS_KEY, { fields: [] }],
     [PRODUCTION_PLANNING_SETTINGS_KEY, { years: {} }],
@@ -173,6 +174,7 @@ function normalizeTechnicalMeasurementRules(raw = {}) {
   const surface_helper_rules = Array.isArray(raw?.surface_helper_rules) ? raw.surface_helper_rules : [];
   const section_dependency_rules = Array.isArray(raw?.section_dependency_rules) ? raw.section_dependency_rules : [];
   const system_derivation_rules = Array.isArray(raw?.system_derivation_rules) ? raw.system_derivation_rules : [];
+  const initial_section_id = Number(raw?.initial_section_id || 0) || null;
   return {
     rules: rules.map((r, i) => normalizeTechnicalMeasurementRule(r, i)).filter(Boolean).sort((a, b) => a.sort_order - b.sort_order),
     surface_final_formula: normalizeSurfaceFinalFormula(raw?.surface_final_formula),
@@ -180,6 +182,7 @@ function normalizeTechnicalMeasurementRules(raw = {}) {
     surface_calc_params: normalizeSurfaceCalcParams(raw?.surface_calc_params || raw?.surface_params || raw?.measurement_surface_params || {}),
     section_dependency_rules: section_dependency_rules.map((r, i) => normalizeSectionDependencyRule(r, i)).filter(Boolean).sort((a, b) => a.sort_order - b.sort_order),
     system_derivation_rules: system_derivation_rules.map((r, i) => normalizeSystemDerivationRule(r, i)).filter(Boolean).sort((a, b) => a.sort_order - b.sort_order),
+    initial_section_id,
   };
 }
 function normalizeFieldType(value) {
@@ -277,6 +280,7 @@ export async function setTechnicalMeasurementRules(payload = {}) {
     surface_calc_params: payload?.surface_calc_params !== undefined ? payload.surface_calc_params : current?.surface_calc_params,
     section_dependency_rules: payload?.section_dependency_rules !== undefined ? payload.section_dependency_rules : current?.section_dependency_rules,
     system_derivation_rules: payload?.system_derivation_rules !== undefined ? payload.system_derivation_rules : current?.system_derivation_rules,
+    initial_section_id: payload?.initial_section_id !== undefined ? payload.initial_section_id : current?.initial_section_id,
   };
   return setSetting(TECHNICAL_MEASUREMENT_RULES_KEY, normalizeTechnicalMeasurementRules(merged));
 }

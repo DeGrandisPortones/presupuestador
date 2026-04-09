@@ -79,6 +79,7 @@ export async function loadCatalogBootstrap(odoo, kind="porton") {
     kind: k,
     generated_at: new Date().toISOString(),
     sections,
+    type_sections: {},
     type_visibility: typeVisibility,
     tags,
     products,

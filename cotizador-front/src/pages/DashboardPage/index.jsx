@@ -89,6 +89,7 @@ export default function DashboardPage() {
   const [savingTolerance, setSavingTolerance] = useState(false);
   const [savingDoorFormula, setSavingDoorFormula] = useState(false);
   const [savingDependencies, setSavingDependencies] = useState(false);
+  const [savingInitialSection, setSavingInitialSection] = useState(false);
   const [newSectionName, setNewSectionName] = useState("");
   const [newSectionUseSurface, setNewSectionUseSurface] = useState(false);
   const [productQuery, setProductQuery] = useState("");
@@ -340,6 +341,19 @@ export default function DashboardPage() {
       alert("Fórmula de puerta guardada correctamente.");
     } finally {
       setSavingDoorFormula(false);
+    }
+  };
+
+  const onSaveInitialSection = async () => {
+    setSavingInitialSection(true);
+    try {
+      await adminSaveTechnicalMeasurementRules({
+        initial_section_id: Number(initialSectionId || 0) || null,
+      });
+      qc.invalidateQueries({ queryKey: ["adminTechnicalMeasurementRulesForDashboard"] });
+      alert("Sección inicial guardada.");
+    } finally {
+      setSavingInitialSection(false);
     }
   };
 
@@ -630,7 +644,9 @@ export default function DashboardPage() {
               systemRules={systemRules}
               setSystemRules={setSystemRules}
               saving={savingDependencies}
+              savingInitialSection={savingInitialSection}
               onSave={onSaveDependencies}
+              onSaveInitialSection={onSaveInitialSection}
             />
           )}
 
@@ -860,7 +876,9 @@ function DependenciesTab({
   systemRules,
   setSystemRules,
   saving,
+  savingInitialSection,
   onSave,
+  onSaveInitialSection,
 }) {
   const sectionMap = useMemo(
     () => new Map(sections.map((section) => [Number(section.id), section])),
@@ -887,20 +905,25 @@ function DependenciesTab({
           <div className="muted" style={{ marginBottom: 6 }}>
             Sección inicial del flujo
           </div>
-          <select
-            value={initialSectionId || ""}
-            onChange={(e) =>
-              setInitialSectionId(e.target.value ? Number(e.target.value) : "")
-            }
-            style={{ width: "100%", padding: 8, borderRadius: 10, border: "1px solid #ddd" }}
-          >
-            <option value="">Elegir sección inicial…</option>
-            {sections.map((section) => (
-              <option key={section.id} value={section.id}>
-                {section.name}
-              </option>
-            ))}
-          </select>
+          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+            <select
+              value={initialSectionId || ""}
+              onChange={(e) =>
+                setInitialSectionId(e.target.value ? Number(e.target.value) : "")
+              }
+              style={{ flex: 1, minWidth: 260, padding: 8, borderRadius: 10, border: "1px solid #ddd" }}
+            >
+              <option value="">Elegir sección inicial…</option>
+              {sections.map((section) => (
+                <option key={section.id} value={section.id}>
+                  {section.name}
+                </option>
+              ))}
+            </select>
+            <Button variant="primary" onClick={onSaveInitialSection} disabled={savingInitialSection}>
+              {savingInitialSection ? "Guardando..." : "Guardar inicio"}
+            </Button>
+          </div>
         </div>
 
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
