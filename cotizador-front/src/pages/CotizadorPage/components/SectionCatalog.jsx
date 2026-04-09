@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { getOdooBootstrap, setOdooBootstrap } from "../../../domain/odoo/bootstrap.js";
 import { useQuoteStore } from "../../../domain/quote/store";
@@ -61,9 +61,10 @@ function computeOrderedSectionIds({
 
   if (!sectionList.length) return [];
 
-  const startId = initialSectionId && sectionMap.has(Number(initialSectionId))
-    ? Number(initialSectionId)
-    : null;
+  const startId =
+    initialSectionId && sectionMap.has(Number(initialSectionId))
+      ? Number(initialSectionId)
+      : Number(sectionList[0]?.id || 0);
 
   if (!startId) return [];
 
@@ -115,7 +116,6 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
   const [openSectionId, setOpenSectionId] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
   const [autoloadAttempted, setAutoloadAttempted] = useState(false);
-  const pendingAutoOpenSectionIdRef = useRef(null);
 
   const sections = Array.isArray(boot?.sections) ? boot.sections : [];
   const products = Array.isArray(boot?.products) ? boot.products : [];
@@ -264,15 +264,6 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
     [orderedVisibleSectionIds, sectionMap],
   );
 
-  useEffect(() => {
-    const pendingSectionId = Number(pendingAutoOpenSectionIdRef.current || 0) || null;
-    if (!pendingSectionId) return;
-    const visibleIds = new Set(visibleSections.map((section) => Number(section.id)));
-    if (!visibleIds.has(pendingSectionId)) return;
-    if (openSectionId !== pendingSectionId) setOpenSectionId(pendingSectionId);
-    pendingAutoOpenSectionIdRef.current = null;
-  }, [visibleSections, openSectionId]);
-
   const terminalStepCompleted = useMemo(() => {
     if (!visibleSections.length) return false;
     const lastSection = visibleSections[visibleSections.length - 1];
@@ -301,14 +292,12 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
     if (!visibleSections.length) return;
     const firstVisibleSectionId = Number(visibleSections[0]?.id || 0) || null;
     const visibleIds = new Set(visibleSections.map((section) => Number(section.id)));
-    if (firstVisibleSectionId && initialSectionId && firstVisibleSectionId === Number(initialSectionId)) {
-      setOpenSectionId(firstVisibleSectionId);
-      return;
-    }
-    if (openSectionId == null || !visibleIds.has(Number(openSectionId))) {
+    const currentOpenSectionId = Number(openSectionId || 0) || null;
+    if (currentOpenSectionId && visibleIds.has(currentOpenSectionId)) return;
+    if (firstVisibleSectionId) {
       setOpenSectionId(firstVisibleSectionId);
     }
-  }, [visibleSections, openSectionId, initialSectionId]);
+  }, [visibleSections, openSectionId]);
 
   function selectProductForSection(sectionId, product) {
     const currentSelected = selectedProductIdsBySection.get(Number(sectionId)) || new Set();
@@ -324,7 +313,6 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
 
     if (currentSelected.has(targetProductId) && currentSelected.size === 1) {
       const nextSectionId = downstreamSectionIds[0] || null;
-      pendingAutoOpenSectionIdRef.current = nextSectionId ? Number(nextSectionId) : null;
       setOpenSectionId(nextSectionId ? Number(nextSectionId) : null);
       return;
     }
@@ -372,7 +360,6 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
     const nextIndex = nextOrderedIds.findIndex((id) => Number(id) === Number(sectionId));
     const nextSectionId = nextIndex >= 0 ? nextOrderedIds[nextIndex + 1] : null;
 
-    pendingAutoOpenSectionIdRef.current = nextSectionId ? Number(nextSectionId) : null;
     setOpenSectionId(nextSectionId ? Number(nextSectionId) : null);
   }
 
