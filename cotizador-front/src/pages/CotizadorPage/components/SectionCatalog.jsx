@@ -105,7 +105,7 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
   const bootstrapKind = (kind || "porton") === "otros" ? "porton" : kind;
 
   const addLine = useQuoteStore((s) => s.addLine);
-  const removeLine = useQuoteStore((s) => s.removeLine);
+  const forceRemoveLine = useQuoteStore((s) => s.forceRemoveLine);
   const lines = useQuoteStore((s) => s.lines);
   const portonType = useQuoteStore((s) => s.portonType);
   const setPortonType = useQuoteStore((s) => s.setPortonType);
@@ -289,24 +289,23 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
   }, [kind, systemRules, selectedProductIdsGlobal, portonType, setPortonType]);
 
   useEffect(() => {
-    if (!visibleSections.length) {
-      if (openSectionId != null) setOpenSectionId(null);
-      return;
-    }
-
+    if (!visibleSections.length) return;
     const firstVisibleSectionId = Number(visibleSections[0]?.id || 0) || null;
     const visibleIds = new Set(visibleSections.map((section) => Number(section.id)));
-
-    if (openSectionId != null && visibleIds.has(Number(openSectionId))) {
-      return;
+    const currentOpenSectionId = Number(openSectionId || 0) || null;
+    if (currentOpenSectionId && visibleIds.has(currentOpenSectionId)) return;
+    if (firstVisibleSectionId) {
+      setOpenSectionId(firstVisibleSectionId);
     }
-
-    setOpenSectionId(firstVisibleSectionId);
   }, [visibleSections, openSectionId]);
 
   function selectProductForSection(sectionId, product) {
     const currentSelected = selectedProductIdsBySection.get(Number(sectionId)) || new Set();
     const targetProductId = Number(product?.id);
+
+    const sectionProductIds = new Set(
+      (productsBySection.get(Number(sectionId)) || []).map((item) => Number(item.id)).filter(Boolean),
+    );
     const currentSelectedIds = [...currentSelected].filter((id) => id !== targetProductId);
 
     const currentIndex = orderedVisibleSectionIds.findIndex((id) => Number(id) === Number(sectionId));
@@ -318,7 +317,7 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
 
     if (currentSelected.has(targetProductId) && currentSelected.size === 1) {
       const nextSectionId = downstreamSectionIds[0] || null;
-      setOpenSectionId(nextSectionId ? Number(nextSectionId) : Number(sectionId));
+      if (nextSectionId) setOpenSectionId(Number(nextSectionId));
       return;
     }
 
@@ -331,16 +330,16 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
 
     const nextSelectionMap = cloneSelectionMap(sectionList, selectedProductIdsBySection);
 
-    currentSelected.forEach((productId) => {
-      removeLine(productId);
+    for (const productId of sectionProductIds) {
+      forceRemoveLine(productId);
       nextSelectionMap.get(Number(sectionId))?.delete(Number(productId));
-    });
+    }
 
     if (hasDownstreamSelections) {
       for (const downstreamSectionId of downstreamSectionIds) {
         const selectedDownstream = [...(nextSelectionMap.get(Number(downstreamSectionId)) || new Set())];
         for (const productId of selectedDownstream) {
-          removeLine(productId);
+          forceRemoveLine(productId);
           nextSelectionMap.get(Number(downstreamSectionId))?.delete(Number(productId));
         }
       }
@@ -365,7 +364,7 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
     const nextIndex = nextOrderedIds.findIndex((id) => Number(id) === Number(sectionId));
     const nextSectionId = nextIndex >= 0 ? nextOrderedIds[nextIndex + 1] : null;
 
-    setOpenSectionId(nextSectionId ? Number(nextSectionId) : Number(sectionId));
+    if (nextSectionId) setOpenSectionId(Number(nextSectionId));
   }
 
   const title =
