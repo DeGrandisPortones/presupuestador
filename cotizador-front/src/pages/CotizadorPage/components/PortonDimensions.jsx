@@ -1,10 +1,8 @@
-import { useEffect, useMemo } from "react";
+import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useQuoteStore } from "../../../domain/quote/store";
-import { useAuthStore } from "../../../domain/auth/store.js";
-import { PORTON_TYPES } from "../../../domain/quote/portonConstants.js";
-import { getCatalogBootstrap } from "../../../api/catalog.js";
 import { adminGetTechnicalMeasurementRules } from "../../../api/admin.js";
+import { portonTypeLabel } from "../../../domain/quote/portonConstants.js";
 import Input from "../../../ui/Input";
 
 function toNumber(v) {
@@ -12,15 +10,6 @@ function toNumber(v) {
   return Number.isFinite(n) ? n : 0;
 }
 function normalizeDecimal(v) { return String(v ?? "").replace(/[^0-9.,]/g, ""); }
-function isTypeVisibleForUser(flags, user) {
-  if (user?.is_superuser) return true;
-  const dv = !!flags?.disable_for_vendedor;
-  const dd = !!flags?.disable_for_distribuidor;
-  if (user?.is_vendedor && user?.is_distribuidor) return !(dv && dd);
-  if (user?.is_distribuidor) return !dd;
-  if (user?.is_vendedor) return !dv;
-  return true;
-}
 function norm(v) {
   return String(v || "").trim().toLowerCase().replace(/\s+/g, "_");
 }
@@ -74,24 +63,10 @@ export default function PortonDimensions({ kind = "porton" }) {
   const dimensions = useQuoteStore((s) => s.dimensions);
   const setDimensions = useQuoteStore((s) => s.setDimensions);
   const portonType = useQuoteStore((s) => s.portonType);
-  const setPortonType = useQuoteStore((s) => s.setPortonType);
   const lines = useQuoteStore((s) => s.lines);
-  const user = useAuthStore((s) => s.user);
 
-  const showTypeSelector = (kind || "porton") === "porton";
-  const catalogQ = useQuery({ queryKey: ["catalog-bootstrap-porton-type-select"], queryFn: () => getCatalogBootstrap("porton"), staleTime: 60 * 1000, enabled: showTypeSelector });
-  const rulesQ = useQuery({ queryKey: ["technical-rules-dimensions-preview"], queryFn: adminGetTechnicalMeasurementRules, staleTime: 60 * 1000, enabled: showTypeSelector });
-  const typeVisibility = catalogQ.data?.type_visibility || {};
-  const visibleTypes = useMemo(() => PORTON_TYPES.filter((t) => isTypeVisibleForUser(typeVisibility[t.key], user)), [typeVisibility, user]);
-
-  useEffect(() => {
-    if (!showTypeSelector) {
-      if (portonType) setPortonType("");
-      return;
-    }
-    if (!portonType) return;
-    if (!visibleTypes.some((t) => t.key === portonType)) setPortonType("");
-  }, [showTypeSelector, portonType, visibleTypes, setPortonType]);
+  const showTypeInfo = (kind || "porton") === "porton";
+  const rulesQ = useQuery({ queryKey: ["technical-rules-dimensions-preview"], queryFn: adminGetTechnicalMeasurementRules, staleTime: 60 * 1000, enabled: showTypeInfo });
 
   const width = useMemo(() => toNumber(dimensions?.width), [dimensions?.width]);
   const height = useMemo(() => toNumber(dimensions?.height), [dimensions?.height]);
@@ -107,18 +82,19 @@ export default function PortonDimensions({ kind = "porton" }) {
   const estimatedWeightKg = area > 0 && effectiveKgM2 > 0 ? area * effectiveKgM2 : 0;
   const estimatedLegs = useMemo(() => legsTypeForWeight(estimatedWeightKg, isAptoParaRevestir, params), [estimatedWeightKg, isAptoParaRevestir, params]);
 
-  const title = showTypeSelector ? "Medidas del portón" : ((kind || "") === "ipanel" ? "Medidas del Ipanel" : "Medidas del presupuesto");
+  const title = (kind || "porton") === "porton" ? "Medidas del portón" : ((kind || "") === "ipanel" ? "Medidas del Ipanel" : "Medidas del presupuesto");
 
   return (
     <div>
-      {showTypeSelector ? (
+      {showTypeInfo ? (
         <>
-          <div style={{ fontWeight: 800, marginBottom: 8 }}>Tipo / Sistema</div>
-          <select value={portonType || ""} onChange={(e) => setPortonType(e.target.value)} style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #ddd", width: "100%" }}>
-            <option value="">Seleccione un sistema</option>
-            {visibleTypes.map((t) => <option key={t.key} value={t.key}>{t.label}</option>)}
-          </select>
-          <div className="spacer" />
+          <div style={{ fontWeight: 800, marginBottom: 8 }}>Sistema derivado</div>
+          <div style={{ border: "1px solid #eee", borderRadius: 10, padding: 10, background: "#fafafa", marginBottom: 12 }}>
+            <div style={{ fontWeight: 800 }}>{portonType ? portonTypeLabel(portonType) || portonType : "Todavía no derivado"}</div>
+            <div className="muted" style={{ marginTop: 4 }}>
+              Este dato ya no lo elige el vendedor/distribuidor. Se deriva según la combinación de productos y dependencias configuradas en Dashboard.
+            </div>
+          </div>
         </>
       ) : null}
 
@@ -134,7 +110,7 @@ export default function PortonDimensions({ kind = "porton" }) {
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
           <div className="muted">Kg por m²</div>
-          <Input type="text" inputMode="decimal" value={dimensions?.kg_m2 ?? ""} onChange={(v) => setDimensions({ kg_m2: normalizeDecimal(v) })} placeholder={isAptoParaRevestir ? "Obligatorio si es apto para revestir" : "Opcional"} style={{ width: 200 }} />
+          <Input type="text" inputMode="decimal" value={dimensions?.kg_m2 ?? ""} onChange={(v) => setDimensions({ kg_m2: normalizeDecimal(v) })} placeholder={isAptoParaRevestir ? "Obligatorio si es apto para revestir" : "Opcional"} style={{ width: 220 }} />
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 180 }}>
           <div className="muted">Superficie</div>

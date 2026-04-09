@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { getOdooBootstrap, setOdooBootstrap } from "../../../domain/odoo/bootstrap.js";
 import { useQuoteStore } from "../../../domain/quote/store";
 import { useAuthStore } from "../../../domain/auth/store.js";
+import { adminGetTechnicalMeasurementRules } from "../../../api/admin.js";
 import Input from "../../../ui/Input";
 import Button from "../../../ui/Button";
 import { getCatalogBootstrap } from "../../../api/catalog.js";
@@ -17,18 +18,61 @@ function isDisabledForUser(product, user) {
   if (user.is_distribuidor && disableForDistribuidor) return true;
   return false;
 }
+function normalizeRulesPayload(raw) {
+  return {
+    section_dependency_rules: Array.isArray(raw?.section_dependency_rules) ? raw.section_dependency_rules : [],
+    system_derivation_rules: Array.isArray(raw?.system_derivation_rules) ? raw.system_derivation_rules : [],
+  };
+}
+function parseIdList(value) {
+  if (Array.isArray(value)) return value.map((x) => Number(x)).filter((x) => Number.isFinite(x) && x > 0);
+  return String(value || "").split(/[;,\s]+/).map((x) => Number(x)).filter((x) => Number.isFinite(x) && x > 0);
+}
+function ruleMatchesSelected(rule, selectedProductIds) {
+  const ids = parseIdList(rule?.required_product_ids);
+  if (!ids.length) return false;
+  const set = new Set(selectedProductIds || []);
+  const mode = String(rule?.match_mode || "any").trim().toLowerCase();
+  if (mode === "all") return ids.every((id) => set.has(Number(id)));
+  return ids.some((id) => set.has(Number(id)));
+}
+function buildVisibleSectionIds(sections, dependencyRules, selectedProductIds) {
+  const orderedIds = (Array.isArray(sections) ? sections : []).map((s) => Number(s.id)).filter(Boolean);
+  const activeRules = (Array.isArray(dependencyRules) ? dependencyRules : []).filter((r) => r?.active !== false);
+  if (!activeRules.length) return new Set(orderedIds);
+  const childIds = new Set(activeRules.flatMap((r) => parseIdList(r?.child_section_ids)));
+  const visible = new Set(orderedIds.filter((id) => !childIds.has(id)));
+  for (const rule of activeRules) {
+    if (!ruleMatchesSelected(rule, selectedProductIds)) continue;
+    for (const childId of parseIdList(rule?.child_section_ids)) visible.add(Number(childId));
+  }
+  return visible;
+}
+function deriveSystemFromRules(systemRules, selectedProductIds) {
+  const selected = new Set(selectedProductIds || []);
+  for (const rule of Array.isArray(systemRules) ? systemRules : []) {
+    if (rule?.active === false) continue;
+    const ids = parseIdList(rule?.required_product_ids);
+    const derived = String(rule?.derived_porton_type || "").trim();
+    if (!ids.length || !derived) continue;
+    const mode = String(rule?.match_mode || "all").trim().toLowerCase();
+    const matches = mode === "any" ? ids.some((id) => selected.has(Number(id))) : ids.every((id) => selected.has(Number(id)));
+    if (matches) return derived;
+  }
+  return "";
+}
 
 export default function SectionCatalog({ kind = "porton" }) {
   const bootstrapKind = (kind || "porton") === "otros" ? "porton" : kind;
   const addLine = useQuoteStore((s) => s.addLine);
   const lines = useQuoteStore((s) => s.lines);
   const portonType = useQuoteStore((s) => s.portonType);
+  const setPortonType = useQuoteStore((s) => s.setPortonType);
   const user = useAuthStore((s) => s.user);
 
   const [boot, setBoot] = useState(() => getOdooBootstrap(kind) || getOdooBootstrap(bootstrapKind));
   const sections = Array.isArray(boot?.sections) ? boot.sections : [];
   const products = Array.isArray(boot?.products) ? boot.products : [];
-  const typeSections = boot?.type_sections || {};
 
   const [openSectionId, setOpenSectionId] = useState(null);
   const [queryBySection, setQueryBySection] = useState({});
@@ -36,17 +80,26 @@ export default function SectionCatalog({ kind = "porton" }) {
   const [autoloadAttempted, setAutoloadAttempted] = useState(false);
   const [completedBySection, setCompletedBySection] = useState({});
 
+  const rulesQ = useCallback(async () => await adminGetTechnicalMeasurementRules(), []);
+  const [rulesData, setRulesData] = useState({ section_dependency_rules: [], system_derivation_rules: [] });
+
+  const refreshRules = useCallback(async () => {
+    const data = await rulesQ();
+    setRulesData(normalizeRulesPayload(data));
+  }, [rulesQ]);
+
   const refreshCatalog = useCallback(async () => {
     setRefreshing(true);
     try {
       const data = await getCatalogBootstrap(bootstrapKind);
       setOdooBootstrap(data, kind);
       setBoot(data);
+      await refreshRules();
     } finally {
       setRefreshing(false);
       setAutoloadAttempted(true);
     }
-  }, [kind, bootstrapKind]);
+  }, [kind, bootstrapKind, refreshRules]);
 
   useEffect(() => {
     setBoot(getOdooBootstrap(kind) || getOdooBootstrap(bootstrapKind));
@@ -54,6 +107,7 @@ export default function SectionCatalog({ kind = "porton" }) {
     setOpenSectionId(null);
     setQueryBySection({});
     setCompletedBySection({});
+    setRulesData({ section_dependency_rules: [], system_derivation_rules: [] });
   }, [kind, bootstrapKind]);
 
   useEffect(() => {
@@ -62,10 +116,14 @@ export default function SectionCatalog({ kind = "porton" }) {
     (async () => {
       try {
         setRefreshing(true);
-        const data = await getCatalogBootstrap(bootstrapKind);
+        const [data, technicalRules] = await Promise.all([
+          getCatalogBootstrap(bootstrapKind),
+          rulesQ(),
+        ]);
         if (cancelled) return;
         setOdooBootstrap(data, kind);
         setBoot(data);
+        setRulesData(normalizeRulesPayload(technicalRules));
       } finally {
         if (!cancelled) {
           setRefreshing(false);
@@ -74,18 +132,26 @@ export default function SectionCatalog({ kind = "porton" }) {
       }
     })();
     return () => { cancelled = true; };
-  }, [autoloadAttempted, kind, bootstrapKind]);
+  }, [autoloadAttempted, kind, bootstrapKind, rulesQ]);
+
+  const lineProductIds = useMemo(() => new Set((lines || []).map((l) => Number(l.product_id)).filter(Boolean)), [lines]);
+  const selectedProductIds = useMemo(() => Array.from(lineProductIds), [lineProductIds]);
+
+  useEffect(() => {
+    if ((kind || "porton") !== "porton") return;
+    const derived = deriveSystemFromRules(rulesData.system_derivation_rules, selectedProductIds);
+    if (derived !== String(portonType || "")) setPortonType(derived);
+  }, [kind, rulesData.system_derivation_rules, selectedProductIds, portonType, setPortonType]);
+
+  const visibleSectionIds = useMemo(
+    () => buildVisibleSectionIds(sections, rulesData.section_dependency_rules, selectedProductIds),
+    [sections, rulesData.section_dependency_rules, selectedProductIds],
+  );
 
   const sectionList = useMemo(() => {
     const ordered = [...sections].sort((a, b) => (Number(a.position || 0) - Number(b.position || 0)) || String(a.name).localeCompare(String(b.name)));
-    if ((kind || "porton") === "porton") {
-      const key = String(portonType || "").trim();
-      const allowed = key ? (typeSections[key] || []) : [];
-      const allowedSet = new Set((allowed || []).map((x) => Number(x)));
-      return ordered.filter((s) => allowedSet.has(Number(s.id)));
-    }
-    return ordered;
-  }, [sections, kind, portonType, typeSections]);
+    return ordered.filter((s) => visibleSectionIds.has(Number(s.id)));
+  }, [sections, visibleSectionIds]);
 
   const productsBySection = useMemo(() => {
     const map = new Map();
@@ -100,8 +166,6 @@ export default function SectionCatalog({ kind = "porton" }) {
     }
     return map;
   }, [products, sectionList]);
-
-  const lineProductIds = useMemo(() => new Set((lines || []).map((l) => Number(l.product_id)).filter(Boolean)), [lines]);
 
   useEffect(() => {
     if (!sectionList.length) {
@@ -187,10 +251,7 @@ export default function SectionCatalog({ kind = "porton" }) {
       {!sectionList.length ? (
         <>
           <div className="spacer" />
-          <div className="muted">
-            No hay secciones para mostrar.
-            {(kind || "porton") === "porton" ? " Elegí primero el Tipo/Sistema y asegurate de que Enc. Comercial haya asignado secciones para ese tipo." : ""}
-          </div>
+          <div className="muted">No hay secciones visibles para mostrar. Revisá las dependencias configuradas en el dashboard comercial.</div>
         </>
       ) : (
         <div className="dg-accordion">
@@ -213,7 +274,7 @@ export default function SectionCatalog({ kind = "porton" }) {
                 {isOpen ? (
                   <div className="dg-acc-body">
                     <div style={{ padding: "10px 12px", borderRadius: 10, border: "1px solid #eee", background: isCompleted ? "#eef9f3" : "#fafafa", marginBottom: 12, fontSize: 13 }}>
-                      {isCompleted ? "Sección completada. Podés seguir agregando productos o continuar con las siguientes." : nextSection ? "Completá esta sección para habilitar la siguiente según el orden definido en el dashboard." : "Esta es la última sección habilitada para este tipo."}
+                      {isCompleted ? "Sección completada. Podés seguir agregando productos o continuar con las siguientes." : nextSection ? "Completá esta sección para habilitar la siguiente según dependencias y orden." : "Esta es la última sección visible para la configuración actual."}
                     </div>
                     <Input value={q} onChange={(v) => setQueryBySection((prev) => ({ ...prev, [sid]: v }))} placeholder="Buscar dentro de esta sección (alias, nombre o código)…" style={{ width: "100%" }} />
                     <div className="spacer" />
@@ -233,7 +294,10 @@ export default function SectionCatalog({ kind = "porton" }) {
                       {!visible.length && <div className="muted">Sin productos para mostrar en esta sección</div>}
                     </div>
                     <div className="spacer" />
-                    <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center" }}>
+                      <div className="muted" style={{ fontSize: 12 }}>
+                        Sistema derivado actual: <b>{portonType || "—"}</b>
+                      </div>
                       <Button variant="secondary" onClick={() => markSectionComplete(sid)}>{nextSection ? "Completar sección y seguir" : "Marcar sección como completa"}</Button>
                     </div>
                   </div>

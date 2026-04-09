@@ -78,13 +78,13 @@ export default function HeaderBar({ showMargin }) {
         </div>
 
         <div style={{ minWidth: 240 }}>
-          <div className="muted">Financiación</div>
+          <div className="muted">Forma de pago</div>
           <select
             value={paymentMethod || ""}
             onChange={(e) => setPaymentMethod(e.target.value)}
             style={{ padding: "8px 10px", borderRadius: 8, border: "1px solid #ddd", minWidth: 220 }}
           >
-            <option value="">Seleccione financiación</option>
+            <option value="">Seleccione forma de pago</option>
             {PAYMENT_METHODS.map((x) => (
               <option key={x} value={x}>{x}</option>
             ))}
