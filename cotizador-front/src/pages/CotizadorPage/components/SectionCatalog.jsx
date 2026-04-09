@@ -121,9 +121,11 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
   const products = Array.isArray(boot?.products) ? boot.products : [];
 
   const rulesQ = useQuery({
-    queryKey: ["technical-rules-for-section-catalog"],
+    queryKey: ["technical-rules-for-section-catalog", String(kind || "porton").toLowerCase()],
     queryFn: adminGetTechnicalMeasurementRules,
-    staleTime: 60 * 1000,
+    staleTime: 0,
+    refetchOnMount: "always",
+    refetchOnWindowFocus: true,
     enabled: (kind || "porton") === "porton",
   });
 
@@ -288,11 +290,16 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
 
   useEffect(() => {
     if (!visibleSections.length) return;
+    const firstVisibleSectionId = Number(visibleSections[0]?.id || 0) || null;
     const visibleIds = new Set(visibleSections.map((section) => Number(section.id)));
-    if (openSectionId == null || !visibleIds.has(Number(openSectionId))) {
-      setOpenSectionId(Number(visibleSections[0].id));
+    if (firstVisibleSectionId && initialSectionId && firstVisibleSectionId === Number(initialSectionId)) {
+      setOpenSectionId(firstVisibleSectionId);
+      return;
     }
-  }, [visibleSections, openSectionId]);
+    if (openSectionId == null || !visibleIds.has(Number(openSectionId))) {
+      setOpenSectionId(firstVisibleSectionId);
+    }
+  }, [visibleSections, openSectionId, initialSectionId]);
 
   function selectProductForSection(sectionId, product) {
     const currentSelected = selectedProductIdsBySection.get(Number(sectionId)) || new Set();
