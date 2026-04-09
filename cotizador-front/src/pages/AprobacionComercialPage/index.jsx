@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { useNavigate, useLocation } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
 import Button from "../../ui/Button.jsx";
 import Input from "../../ui/Input.jsx";
@@ -74,12 +74,9 @@ function PdfIconButton({ onClick, disabled = false }) {
 
 export default function AprobacionComercialPage() {
   const navigate = useNavigate();
-  const location = useLocation();
   const user = useAuthStore((s) => s.user);
-  const canAccessPage = !!(user?.is_enc_comercial || user?.is_superuser);
-  const initialTab = (() => { const qs = new URLSearchParams(location.search || ""); const requested = String(qs.get("tab") || "").trim().toLowerCase(); return requested === "planificacion" ? "planificacion" : "aprobaciones"; })();
 
-  const [tab, setTab] = useState(initialTab);
+  const [tab, setTab] = useState("aprobaciones");
   const [filter, setFilter] = useState("all");
   const [searchText, setSearchText] = useState("");
   const [pageAprobaciones, setPageAprobaciones] = useState(1);
@@ -93,21 +90,19 @@ export default function AprobacionComercialPage() {
   const [planningYear, setPlanningYear] = useState(String(currentYear));
   const [planningDraft, setPlanningDraft] = useState([]);
 
-  useEffect(() => { setTab(initialTab); }, [initialTab]);
-
-  const q = useQuery({ queryKey: ["quotes", "commercial_inbox"], queryFn: () => listQuotes({ scope: "commercial_inbox" }), enabled: canAccessPage });
-  const acopioQ = useQuery({ queryKey: ["quotes", "commercial_acopio"], queryFn: () => listQuotes({ scope: "commercial_acopio" }), enabled: tab === "acopio" && canAccessPage });
-  const acopioListadoQ = useQuery({ queryKey: ["quotes", "commercial_acopio_all"], queryFn: () => listQuotes({ scope: "commercial_acopio_all" }), enabled: tab === "acopio_listado" && canAccessPage });
-  const doorsQ = useQuery({ queryKey: ["doors", "commercial_inbox"], queryFn: () => listDoors({ scope: "commercial_inbox" }), enabled: tab === "puertas" && canAccessPage });
+  const q = useQuery({ queryKey: ["quotes", "commercial_inbox"], queryFn: () => listQuotes({ scope: "commercial_inbox" }), enabled: !!user?.is_enc_comercial });
+  const acopioQ = useQuery({ queryKey: ["quotes", "commercial_acopio"], queryFn: () => listQuotes({ scope: "commercial_acopio" }), enabled: tab === "acopio" && !!user?.is_enc_comercial });
+  const acopioListadoQ = useQuery({ queryKey: ["quotes", "commercial_acopio_all"], queryFn: () => listQuotes({ scope: "commercial_acopio_all" }), enabled: tab === "acopio_listado" && !!user?.is_enc_comercial });
+  const doorsQ = useQuery({ queryKey: ["doors", "commercial_inbox"], queryFn: () => listDoors({ scope: "commercial_inbox" }), enabled: tab === "puertas" && !!user?.is_enc_comercial });
   const medicionesQ = useQuery({
     queryKey: ["measurements", "commercial_review"],
     queryFn: () => listMeasurements({ status: "commercial_review", viewer: "comercial" }),
-    enabled: tab === "mediciones" && canAccessPage,
+    enabled: tab === "mediciones" && !!user?.is_enc_comercial,
   });
   const planningQ = useQuery({
     queryKey: ["admin", "production-planning", planningYear],
     queryFn: () => adminGetProductionPlanning(Number(planningYear || currentYear)),
-    enabled: tab === "planificacion" && canAccessPage,
+    enabled: tab === "planificacion" && !!user?.is_enc_comercial,
   });
 
   const acopioM = useMutation({ mutationFn: ({ id, action, notes }) => reviewAcopioCommercial(id, { action, notes }), onSuccess: () => acopioQ.refetch() });
@@ -119,6 +114,7 @@ export default function AprobacionComercialPage() {
         weeks: planningDraft.map((row) => ({
           week_number: Number(row.week_number || row.week || 0),
           capacity: Math.max(0, Number(String(row.capacity_input ?? row.capacity ?? 0).replace(",", ".")) || 0),
+          comment: String(row.comment_input ?? row.comment ?? "").trim(),
         })),
       });
     },
@@ -127,6 +123,7 @@ export default function AprobacionComercialPage() {
         (planning?.weeks || []).map((row) => ({
           ...row,
           capacity_input: String(row.capacity ?? 0),
+          comment_input: String(row.comment ?? ""),
         })),
       );
       toast.success("Planificación guardada.");
@@ -217,6 +214,7 @@ export default function AprobacionComercialPage() {
       planningQ.data.weeks.map((row) => ({
         ...row,
         capacity_input: String(row.capacity ?? 0),
+        comment_input: String(row.comment ?? ""),
       })),
     );
   }, [planningQ.data]);
@@ -233,8 +231,8 @@ export default function AprobacionComercialPage() {
   const visibleDoorRows = useMemo(() => doorRows.slice((pagePuertas - 1) * PAGE_SIZE, pagePuertas * PAGE_SIZE), [doorRows, pagePuertas]);
   const visibleMedicionesRows = useMemo(() => medicionesRows.slice((pageMediciones - 1) * PAGE_SIZE, pageMediciones * PAGE_SIZE), [medicionesRows, pageMediciones]);
 
-  if (!canAccessPage) {
-    return <div className="container"><div className="card">No autorizado (falta rol Enc. Comercial o Superusuario).</div></div>;
+  if (!user?.is_enc_comercial) {
+    return <div className="container"><div className="card">No autorizado (falta rol Enc. Comercial).</div></div>;
   }
 
   return (
@@ -338,6 +336,7 @@ export default function AprobacionComercialPage() {
                     <th>Desde</th>
                     <th>Hasta</th>
                     <th className="right">Capacidad</th>
+                    <th>Comentarios</th>
                     <th className="right">Comprometidos</th>
                     <th className="right">Disponible</th>
                   </tr>
@@ -348,6 +347,7 @@ export default function AprobacionComercialPage() {
                     const capacity = Math.max(0, Number(String(row.capacity_input ?? row.capacity ?? 0).replace(",", ".")) || 0);
                     const committed = Math.max(0, Number(row.committed_count || 0));
                     const available = Math.max(0, Number(row.available ?? (capacity - committed)) || 0);
+                    const comment = String(row.comment_input ?? row.comment ?? "");
                     return (
                       <tr key={`${planningYear}-${week}`}>
                         <td>Semana {week}</td>
@@ -363,6 +363,18 @@ export default function AprobacionComercialPage() {
                               setPlanningDraft((prev) => prev.map((item) => Number(item.week_number || item.week || 0) === week ? { ...item, capacity_input: nextValue } : item));
                             }}
                             style={{ width: 110, textAlign: "right", padding: "8px 10px", borderRadius: 8, border: "1px solid #ddd", outline: "none" }}
+                          />
+                        </td>
+                        <td>
+                          <input
+                            type="text"
+                            value={comment}
+                            placeholder="Comentario de la semana"
+                            onChange={(e) => {
+                              const nextValue = String(e.target.value || "");
+                              setPlanningDraft((prev) => prev.map((item) => Number(item.week_number || item.week || 0) === week ? { ...item, comment_input: nextValue } : item));
+                            }}
+                            style={{ width: "100%", minWidth: 220, padding: "8px 10px", borderRadius: 8, border: "1px solid #ddd", outline: "none" }}
                           />
                         </td>
                         <td className="right">{committed}</td>

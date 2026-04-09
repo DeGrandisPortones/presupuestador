@@ -90,22 +90,26 @@ export function normalizePlanningWeeks(yearInput, rawWeeks) {
   const year = toInt(yearInput, new Date().getUTCFullYear());
   const baseWeeks = buildWeeksForYear(year);
   const capacities = new Map();
+  const comments = new Map();
   if (Array.isArray(rawWeeks)) {
     for (const item of rawWeeks) {
       const weekNumber = toInt(item?.week_number, null);
       if (!weekNumber) continue;
       capacities.set(weekNumber, toNonNegativeInt(item?.capacity, 0));
+      comments.set(weekNumber, String(item?.comment ?? item?.comment_text ?? item?.notes ?? "").trim());
     }
   } else if (rawWeeks && typeof rawWeeks === "object") {
     for (const [key, value] of Object.entries(rawWeeks)) {
       const weekNumber = toInt(key, null);
       if (!weekNumber) continue;
       capacities.set(weekNumber, toNonNegativeInt(value?.capacity ?? value, 0));
+      comments.set(weekNumber, String(value?.comment ?? value?.comment_text ?? value?.notes ?? "").trim());
     }
   }
   return baseWeeks.map((week) => ({
     ...week,
     capacity: capacities.has(week.week_number) ? capacities.get(week.week_number) : 0,
+    comment: comments.has(week.week_number) ? comments.get(week.week_number) : "",
   }));
 }
 
