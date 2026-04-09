@@ -89,6 +89,7 @@ export default function DashboardPage() {
   const [savingTolerance, setSavingTolerance] = useState(false);
   const [savingDoorFormula, setSavingDoorFormula] = useState(false);
   const [savingDependencies, setSavingDependencies] = useState(false);
+  const [savingInitialSection, setSavingInitialSection] = useState(false);
   const [newSectionName, setNewSectionName] = useState("");
   const [newSectionUseSurface, setNewSectionUseSurface] = useState(false);
   const [productQuery, setProductQuery] = useState("");
@@ -340,6 +341,24 @@ export default function DashboardPage() {
       alert("Fórmula de puerta guardada correctamente.");
     } finally {
       setSavingDoorFormula(false);
+    }
+  };
+
+  const onSaveInitialSection = async () => {
+    setSavingInitialSection(true);
+    try {
+      await adminSaveTechnicalMeasurementRules({
+        initial_section_id: Number(initialSectionId || 0) || null,
+      });
+      qc.invalidateQueries({
+        queryKey: ["adminTechnicalMeasurementRulesForDashboard"],
+      });
+      qc.invalidateQueries({
+        queryKey: ["technical-rules-for-section-catalog"],
+      });
+      alert("Sección inicial guardada.");
+    } finally {
+      setSavingInitialSection(false);
     }
   };
 
@@ -631,6 +650,8 @@ export default function DashboardPage() {
               setSystemRules={setSystemRules}
               saving={savingDependencies}
               onSave={onSaveDependencies}
+              savingInitialSection={savingInitialSection}
+              onSaveInitialSection={onSaveInitialSection}
             />
           )}
 
@@ -695,45 +716,13 @@ function TagsTab({
         </div>
         <div className="spacer" />
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          {sections.map((s) => (
-            <div
-              key={s.id}
-              style={{ border: "1px solid #eee", padding: 10, borderRadius: 10 }}
-            >
-              <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
-                <div>
-                  <div style={{ fontWeight: 800 }}>
-                    {s.name} · ID {s.id}
-                  </div>
-                </div>
-                <Button
-                  variant="ghost"
-                  onClick={async () => {
-                    if (!window.confirm(`Borrar sección "${s.name}"?`)) return;
-                    await adminDeleteSection(catalogKind, s.id);
-                    qc.invalidateQueries({ queryKey: ["adminCatalog", catalogKind] });
-                    alert("Sección borrada.");
-                  }}
-                >
-                  🗑
-                </Button>
-              </div>
-              <div className="spacer" />
-              <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                <input
-                  type="checkbox"
-                  checked={!!s.use_surface_qty}
-                  onChange={async (e) => {
-                    await adminUpdateSection(catalogKind, s.id, {
-                      use_surface_qty: e.target.checked,
-                    });
-                    qc.invalidateQueries({ queryKey: ["adminCatalog", catalogKind] });
-                    alert("Sección actualizada.");
-                  }}
-                />
-                <span className="muted">Tomar cantidad por superficie siempre</span>
-              </label>
-            </div>
+          {sections.map((section) => (
+            <EditableSectionRow
+              key={section.id}
+              catalogKind={catalogKind}
+              section={section}
+              qc={qc}
+            />
           ))}
         </div>
       </div>
@@ -746,8 +735,6 @@ function TagsTab({
             display: "flex",
             flexDirection: "column",
             gap: 8,
-            maxHeight: 560,
-            overflow: "auto",
             paddingRight: 6,
           }}
         >
@@ -791,6 +778,91 @@ function TagsTab({
           ))}
         </div>
       </div>
+    </div>
+  );
+}
+
+function EditableSectionRow({ catalogKind, section, qc }) {
+  const [name, setName] = useState(section.name || "");
+  const [savingName, setSavingName] = useState(false);
+
+  useEffect(() => {
+    setName(section.name || "");
+  }, [section.id, section.name]);
+
+  const changed =
+    !!name.trim() && name.trim() !== String(section.name || "").trim();
+
+  return (
+    <div
+      style={{ border: "1px solid #eee", padding: 10, borderRadius: 10 }}
+    >
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "1fr auto",
+          gap: 8,
+          alignItems: "end",
+        }}
+      >
+        <div>
+          <div className="muted" style={{ marginBottom: 6 }}>
+            Nombre de la sección · ID {section.id}
+          </div>
+          <Input
+            value={name}
+            onChange={setName}
+            placeholder="Nombre de la sección"
+            style={{ width: "100%" }}
+          />
+        </div>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <Button
+            variant="primary"
+            disabled={!changed || savingName}
+            onClick={async () => {
+              setSavingName(true);
+              try {
+                await adminUpdateSection(catalogKind, section.id, {
+                  name: name.trim(),
+                });
+                qc.invalidateQueries({ queryKey: ["adminCatalog", catalogKind] });
+                alert("Nombre de la sección actualizado.");
+              } finally {
+                setSavingName(false);
+              }
+            }}
+          >
+            {savingName ? "Guardando..." : "Guardar nombre"}
+          </Button>
+          <Button
+            variant="ghost"
+            onClick={async () => {
+              if (!window.confirm(`Borrar sección "${section.name}"?`)) return;
+              await adminDeleteSection(catalogKind, section.id);
+              qc.invalidateQueries({ queryKey: ["adminCatalog", catalogKind] });
+              alert("Sección borrada.");
+            }}
+          >
+            🗑
+          </Button>
+        </div>
+      </div>
+      <div className="spacer" />
+      <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
+        <input
+          type="checkbox"
+          checked={!!section.use_surface_qty}
+          onChange={async (e) => {
+            await adminUpdateSection(catalogKind, section.id, {
+              use_surface_qty: e.target.checked,
+            });
+            qc.invalidateQueries({ queryKey: ["adminCatalog", catalogKind] });
+            alert("Sección actualizada.");
+          }}
+        />
+        <span className="muted">Tomar cantidad por superficie siempre</span>
+      </label>
     </div>
   );
 }
@@ -861,6 +933,8 @@ function DependenciesTab({
   setSystemRules,
   saving,
   onSave,
+  savingInitialSection,
+  onSaveInitialSection,
 }) {
   const sectionMap = useMemo(
     () => new Map(sections.map((section) => [Number(section.id), section])),
@@ -901,6 +975,16 @@ function DependenciesTab({
               </option>
             ))}
           </select>
+          <div className="spacer" />
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <Button
+              variant="primary"
+              onClick={onSaveInitialSection}
+              disabled={savingInitialSection}
+            >
+              {savingInitialSection ? "Guardando..." : "Guardar sección inicial"}
+            </Button>
+          </div>
         </div>
 
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
