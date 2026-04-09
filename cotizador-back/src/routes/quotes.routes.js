@@ -3,6 +3,7 @@ import { requireAuth } from "../auth.js";
 import { dbQuery } from "../db.js";
 import { ensureQuotesMeasurementColumns } from "../quotesSchema.js";
 import { getCommercialFinalTolerancePercent } from "../settingsDb.js";
+import { commitQuoteProductionWeek } from "../productionPlanning.js";
 
 const MEASUREMENT_PRODUCT_ID = Number(process.env.ODOO_MEASUREMENT_PRODUCT_ID || 2865);
 const PLACEHOLDER_PRODUCT_ID = Number(process.env.ODOO_PLACEHOLDER_PRODUCT_ID || 2880);
@@ -690,7 +691,6 @@ function extractReferenceCore(value) {
   if (!raw) return "";
   return raw.replace(/^(NV|NP|S)+/i, "");
 }
-
 
 async function syncQuoteToOdoo({ odoo, quote, approverUser }) {
   const pricelistId = toIntId(quote?.pricelist_id) || 1;
@@ -1465,8 +1465,11 @@ export function buildQuotesRouter(odoo) {
         [id, Number(u.user_id), notes || null, JSON.stringify(mergedPayload)]
       );
       const q1 = upd1.rows?.[0] || (await dbQuery(`select * from public.presupuestador_quotes where id=$1`, [id])).rows?.[0];
-      const qSync = await markSyncingIfReady(id);
+      let qSync = await markSyncingIfReady(id);
       if (!qSync) return res.json({ ok: true, quote: q1 });
+
+      await commitQuoteProductionWeek(id);
+      qSync = (await dbQuery(`select * from public.presupuestador_quotes where id=$1`, [id])).rows?.[0] || qSync;
 
       if (vendedorNeedsEndCustomerName(qSync) && !getEndCustomerName(qSync)) {
         await dbQuery(`update public.presupuestador_quotes set status='draft', rejection_notes = concat_ws(E'\n', nullif(rejection_notes,''), 'VALIDACION: Falta end_customer.name (vendedor)') where id=$1 and status='syncing_odoo'`, [id]);
@@ -1507,8 +1510,11 @@ export function buildQuotesRouter(odoo) {
 
       const upd1 = await dbQuery(`update public.presupuestador_quotes set technical_decision='approved', technical_by_user_id=$2, technical_at=now(), technical_notes=$3 where id=$1 and status='pending_approvals' and technical_decision='pending' returning *`, [id, Number(u.user_id), notes || null]);
       const q1 = upd1.rows?.[0] || (await dbQuery(`select * from public.presupuestador_quotes where id=$1`, [id])).rows?.[0];
-      const qSync = await markSyncingIfReady(id);
+      let qSync = await markSyncingIfReady(id);
       if (!qSync) return res.json({ ok: true, quote: q1 });
+
+      await commitQuoteProductionWeek(id);
+      qSync = (await dbQuery(`select * from public.presupuestador_quotes where id=$1`, [id])).rows?.[0] || qSync;
 
       if (vendedorNeedsEndCustomerName(qSync) && !getEndCustomerName(qSync)) {
         await dbQuery(`update public.presupuestador_quotes set status='draft', rejection_notes = concat_ws(E'\n', nullif(rejection_notes,''), 'VALIDACION: Falta end_customer.name (vendedor)') where id=$1 and status='syncing_odoo'`, [id]);
@@ -1607,7 +1613,11 @@ export function buildQuotesRouter(odoo) {
 
       const upd1 = await dbQuery(`update public.presupuestador_quotes set acopio_to_produccion_commercial_decision='approved', acopio_to_produccion_commercial_by_user_id=$2, acopio_to_produccion_commercial_at=now(), acopio_to_produccion_commercial_notes=$3 where id=$1 and fulfillment_mode='acopio' and acopio_to_produccion_status='pending' and acopio_to_produccion_commercial_decision='pending' returning *`, [id, Number(u.user_id), notes ? String(notes) : null]);
       const q1 = upd1.rows?.[0] || quote;
-      const qFinal = await finalizeAcopioToProduccionIfReady(id);
+      let qFinal = await finalizeAcopioToProduccionIfReady(id);
+      if (qFinal) {
+        await commitQuoteProductionWeek(id);
+        qFinal = (await dbQuery(`select * from public.presupuestador_quotes where id=$1`, [id])).rows?.[0] || qFinal;
+      }
       if (qFinal && !quoteNeedsMeasurement(qFinal)) {
         await ensureFinalCopyForAcopioToProduction(qFinal);
         await syncLatestFinalCopyForApprovedAcopio({ originalQuote: qFinal, approverUser: u, odoo });
@@ -1637,7 +1647,11 @@ export function buildQuotesRouter(odoo) {
 
       const upd1 = await dbQuery(`update public.presupuestador_quotes set acopio_to_produccion_technical_decision='approved', acopio_to_produccion_technical_by_user_id=$2, acopio_to_produccion_technical_at=now(), acopio_to_produccion_technical_notes=$3 where id=$1 and fulfillment_mode='acopio' and acopio_to_produccion_status='pending' and acopio_to_produccion_technical_decision='pending' returning *`, [id, Number(u.user_id), notes ? String(notes) : null]);
       const q1 = upd1.rows?.[0] || quote;
-      const qFinal = await finalizeAcopioToProduccionIfReady(id);
+      let qFinal = await finalizeAcopioToProduccionIfReady(id);
+      if (qFinal) {
+        await commitQuoteProductionWeek(id);
+        qFinal = (await dbQuery(`select * from public.presupuestador_quotes where id=$1`, [id])).rows?.[0] || qFinal;
+      }
       if (qFinal && !quoteNeedsMeasurement(qFinal)) {
         await ensureFinalCopyForAcopioToProduction(qFinal);
         await syncLatestFinalCopyForApprovedAcopio({ originalQuote: qFinal, approverUser: u, odoo });

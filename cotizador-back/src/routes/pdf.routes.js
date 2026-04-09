@@ -270,6 +270,29 @@ function buildLines(payload, { useBasePrice }) {
   return { lines, grandTotal, subtotalNet, ivaAmount, coefPct };
 }
 
+function formatShortDate(value) {
+  const raw = safeStr(value);
+  if (!raw) return "";
+  const d = new Date(raw);
+  if (Number.isNaN(d.getTime())) return raw;
+  return d.toLocaleDateString("es-AR");
+}
+
+function getProductionPlanningNote(payload) {
+  const planning = payload?.production_planning || payload?.payload?.production_planning || null;
+  if (!planning || typeof planning !== "object") return "";
+  const weeksText = safeStr(planning.weeks_text || "");
+  const weekNumber = safeStr(planning.week_number || planning.week || "");
+  const startLabel = safeStr(planning.start_date_label || formatShortDate(planning.start_date));
+  const endLabel = safeStr(planning.end_date_label || formatShortDate(planning.end_date));
+  if (!weekNumber && !weeksText) return "";
+  const head = weeksText ? `Entrega estimada: en ${weeksText}` : "Entrega estimada";
+  const weekPart = weekNumber ? `Semana ${weekNumber}` : "Semana estimada";
+  const range = (startLabel || endLabel) ? ` (${startLabel || "—"} al ${endLabel || "—"})` : "";
+  const suffix = planning.committed === true ? "Cupo de producción comprometido." : "Estimación sujeta a aprobación comercial y técnica.";
+  return `${head} · ${weekPart}${range}. ${suffix}`;
+}
+
 async function resolveMeasurementForm(quote) {
   let form = quote?.measurement_form || null;
 
@@ -555,6 +578,7 @@ function renderPdf({ title, payload, useBasePrice }) {
   const destination = destinationRaw === "acopio" ? "Acopio" : destinationRaw === "produccion" ? "Producción" : (destinationRaw || "—");
   const showDestination = !!useBasePrice;
   const obs = stripSellerLines(safeStr(payload?.note));
+  const productionPlanningNote = getProductionPlanningNote(payload);
 
   const quoteNo = getQuoteNumber(payload);
   const { lines, grandTotal, subtotalNet, ivaAmount } = buildLines(payload, { useBasePrice });
@@ -617,6 +641,7 @@ function renderPdf({ title, payload, useBasePrice }) {
   y += infoH + 10;
 
   const extraLines = [];
+  if (productionPlanningNote) extraLines.push(productionPlanningNote);
   if (obs) extraLines.push(`Obs: ${obs}`);
 
   if (extraLines.length) {

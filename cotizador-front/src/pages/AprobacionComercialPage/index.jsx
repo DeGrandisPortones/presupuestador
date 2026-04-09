@@ -8,6 +8,7 @@ import PaginationControls from "../../ui/PaginationControls.jsx";
 import { listQuotes, reviewAcopioCommercial } from "../../api/quotes.js";
 import { listDoors, reviewDoorCommercial } from "../../api/doors.js";
 import { listMeasurements } from "../../api/measurements.js";
+import { adminGetProductionPlanning, adminSaveProductionPlanning } from "../../api/admin.js";
 import { useAuthStore } from "../../domain/auth/store.js";
 import { downloadListingDoorPdf, downloadListingQuotePdf } from "../../utils/listingPdf.js";
 
@@ -70,11 +71,17 @@ function PdfIconButton({ onClick, disabled = false }) {
     </Button>
   );
 }
+function normalizeCapacity(value) {
+  const n = Number(String(value ?? "0").replace(/[^0-9-]/g, ""));
+  if (!Number.isFinite(n) || n < 0) return 0;
+  return Math.trunc(n);
+}
 
 export default function AprobacionComercialPage() {
   const navigate = useNavigate();
   const user = useAuthStore((s) => s.user);
 
+  const currentYear = new Date().getFullYear();
   const [tab, setTab] = useState("aprobaciones");
   const [filter, setFilter] = useState("all");
   const [searchText, setSearchText] = useState("");
@@ -84,6 +91,8 @@ export default function AprobacionComercialPage() {
   const [pagePuertas, setPagePuertas] = useState(1);
   const [pageMediciones, setPageMediciones] = useState(1);
   const [downloadingPdfKey, setDownloadingPdfKey] = useState("");
+  const [planningYear, setPlanningYear] = useState(String(currentYear));
+  const [planningWeeks, setPlanningWeeks] = useState([]);
 
   const q = useQuery({ queryKey: ["quotes", "commercial_inbox"], queryFn: () => listQuotes({ scope: "commercial_inbox" }), enabled: !!user?.is_enc_comercial });
   const acopioQ = useQuery({ queryKey: ["quotes", "commercial_acopio"], queryFn: () => listQuotes({ scope: "commercial_acopio" }), enabled: tab === "acopio" && !!user?.is_enc_comercial });
@@ -94,9 +103,33 @@ export default function AprobacionComercialPage() {
     queryFn: () => listMeasurements({ status: "commercial_review", viewer: "comercial" }),
     enabled: tab === "mediciones" && !!user?.is_enc_comercial,
   });
+  const planningQ = useQuery({
+    queryKey: ["admin", "production-planning", planningYear],
+    queryFn: () => adminGetProductionPlanning(planningYear),
+    enabled: tab === "planificacion" && !!user?.is_enc_comercial,
+  });
+
+  useEffect(() => {
+    if (!planningQ.data?.weeks) return;
+    setPlanningWeeks(planningQ.data.weeks.map((week) => ({ ...week, capacity: String(week.capacity ?? 0) })));
+  }, [planningQ.data]);
 
   const acopioM = useMutation({ mutationFn: ({ id, action, notes }) => reviewAcopioCommercial(id, { action, notes }), onSuccess: () => acopioQ.refetch() });
   const doorM = useMutation({ mutationFn: ({ id, action, notes }) => reviewDoorCommercial(id, { action, notes }), onSuccess: () => doorsQ.refetch() });
+  const planningSaveM = useMutation({
+    mutationFn: async () => {
+      const payload = {
+        year: Number(planningYear || currentYear),
+        weeks: planningWeeks.map((week) => ({ ...week, capacity: normalizeCapacity(week.capacity) })),
+      };
+      return await adminSaveProductionPlanning(payload);
+    },
+    onSuccess: (saved) => {
+      setPlanningWeeks((saved?.weeks || []).map((week) => ({ ...week, capacity: String(week.capacity ?? 0) })));
+      toast.success("Planificación guardada.");
+    },
+    onError: (e) => toast.error(e?.message || "No se pudo guardar la planificación"),
+  });
 
   async function handleDownloadQuotePdf(id) {
     const key = `quote-${id}`;
@@ -192,7 +225,7 @@ export default function AprobacionComercialPage() {
     <div className="container">
       <div className="card">
         <h2 style={{ margin: 0 }}>Aprobación Comercial</h2>
-        <div className="muted">Presupuestos, portones en acopio, puertas y mediciones pendientes de tu decisión.</div>
+        <div className="muted">Presupuestos, portones en acopio, puertas, mediciones y planificación semanal.</div>
 
         <div className="spacer" />
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
@@ -201,6 +234,7 @@ export default function AprobacionComercialPage() {
           <Button variant={tab === "acopio" ? "primary" : "ghost"} onClick={() => setTab("acopio")}>Acopio → Producción</Button>
           <Button variant={tab === "acopio_listado" ? "primary" : "ghost"} onClick={() => setTab("acopio_listado")}>Portones en Acopio</Button>
           <Button variant={tab === "puertas" ? "primary" : "ghost"} onClick={() => setTab("puertas")}>Puertas</Button>
+          <Button variant={tab === "planificacion" ? "primary" : "ghost"} onClick={() => setTab("planificacion")}>Planificación</Button>
         </div>
 
         {tab === "aprobaciones" && (
@@ -214,8 +248,23 @@ export default function AprobacionComercialPage() {
           </>
         )}
 
-        <div className="spacer" />
-        <Input value={searchText} onChange={setSearchText} placeholder="Buscar por cliente, localidad, dirección, usuario, código, estado o campo..." style={{ width: "100%" }} />
+        {tab === "planificacion" ? (
+          <>
+            <div className="spacer" />
+            <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+              <div className="muted">Año</div>
+              <Input value={planningYear} onChange={setPlanningYear} style={{ width: 120 }} />
+              <Button variant="ghost" onClick={() => planningQ.refetch()} disabled={planningQ.isFetching}>Cargar</Button>
+              <Button onClick={() => planningSaveM.mutate()} disabled={planningSaveM.isPending}>{planningSaveM.isPending ? "Guardando..." : "Guardar"}</Button>
+            </div>
+            <div className="muted" style={{ marginTop: 8 }}>Cada fila representa una semana productiva que comienza en lunes. La capacidad es la cantidad máxima de portones para esa semana.</div>
+          </>
+        ) : (
+          <>
+            <div className="spacer" />
+            <Input value={searchText} onChange={setSearchText} placeholder="Buscar por cliente, localidad, dirección, usuario, código, estado o campo..." style={{ width: "100%" }} />
+          </>
+        )}
       </div>
 
       <div className="spacer" />
@@ -398,6 +447,37 @@ export default function AprobacionComercialPage() {
                   </tbody>
                 </table>
                 <PaginationControls page={pagePuertas} totalItems={doorRows.length} pageSize={PAGE_SIZE} onPageChange={setPagePuertas} />
+              </>
+            )}
+          </>
+        )}
+
+        {tab === "planificacion" && (
+          <>
+            {planningQ.isLoading && <div className="muted">Cargando planificación...</div>}
+            {planningQ.isError && <div style={{ color: "#d93025", fontSize: 13 }}>{planningQ.error.message}</div>}
+            {!planningQ.isLoading && (
+              <>
+                <table>
+                  <thead><tr><th>Semana</th><th>Desde</th><th>Hasta</th><th className="right">Capacidad</th></tr></thead>
+                  <tbody>
+                    {planningWeeks.map((week, idx) => (
+                      <tr key={`${week.week_number}-${week.start_date}`}>
+                        <td>{week.week_number}</td>
+                        <td>{fmtDate(week.start_date)}</td>
+                        <td>{fmtDate(week.end_date)}</td>
+                        <td className="right" style={{ width: 150 }}>
+                          <Input
+                            value={week.capacity}
+                            onChange={(value) => setPlanningWeeks((current) => current.map((item, itemIdx) => itemIdx === idx ? { ...item, capacity: value } : item))}
+                            style={{ width: 120, textAlign: "right" }}
+                          />
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                {!planningWeeks.length ? <div className="muted">No hay semanas para este año.</div> : null}
               </>
             )}
           </>

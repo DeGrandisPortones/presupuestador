@@ -78,6 +78,15 @@ export async function ensureQuotesMeasurementColumns() {
   await dbQuery(`alter table public.presupuestador_quotes add column if not exists final_difference_amount numeric(16,2) null;`);
   await dbQuery(`alter table public.presupuestador_quotes add column if not exists final_absorbed_by_company boolean not null default false;`);
 
+  await dbQuery(`alter table public.presupuestador_quotes add column if not exists production_delivery_year int null;`);
+  await dbQuery(`alter table public.presupuestador_quotes add column if not exists production_delivery_week int null;`);
+  await dbQuery(`alter table public.presupuestador_quotes add column if not exists production_delivery_week_start date null;`);
+  await dbQuery(`alter table public.presupuestador_quotes add column if not exists production_delivery_week_end date null;`);
+  await dbQuery(`alter table public.presupuestador_quotes add column if not exists production_delivery_weeks_out int null;`);
+  await dbQuery(`alter table public.presupuestador_quotes add column if not exists production_delivery_capacity int null;`);
+  await dbQuery(`alter table public.presupuestador_quotes add column if not exists production_delivery_committed_count int null;`);
+  await dbQuery(`alter table public.presupuestador_quotes add column if not exists production_delivery_committed_at timestamptz null;`);
+
   const measurementProductId = String(process.env.ODOO_MEASUREMENT_PRODUCT_ID || 2865);
   await dbQuery(`
     update public.presupuestador_quotes

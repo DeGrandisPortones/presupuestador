@@ -1,11 +1,13 @@
 import { dbQuery } from "./db.js";
 import { normalizeDoorQuoteFormula } from "./doorQuoteFormula.js";
+import { getPlanningYear, normalizePlanningWeeks, normalizeProductionPlanningSettings } from "./productionPlanningUtils.js";
 
 const FINAL_QUOTE_SETTINGS_KEY = "commercial_final_quote";
 const MEASUREMENT_PRODUCT_MAPPINGS_KEY = "measurement_product_mappings";
 const DOOR_QUOTE_SETTINGS_KEY = "door_quote_settings";
 const TECHNICAL_MEASUREMENT_RULES_KEY = "technical_measurement_rules";
 const TECHNICAL_MEASUREMENT_FIELDS_KEY = "technical_measurement_fields";
+const PRODUCTION_PLANNING_SETTINGS_KEY = "production_planning";
 const DEFAULT_SURFACE_FINAL_FORMULA = "surface_automatica_m2";
 
 let ensured = false;
@@ -30,9 +32,9 @@ export async function ensureSettingsTable() {
       surface_calc_params: {},
       section_dependency_rules: [],
       system_derivation_rules: [],
-      initial_section_id: null,
     }],
     [TECHNICAL_MEASUREMENT_FIELDS_KEY, { fields: [] }],
+    [PRODUCTION_PLANNING_SETTINGS_KEY, { years: {} }],
   ]) {
     await dbQuery(
       `insert into public.presupuestador_settings (key, value_json) values ($1, $2::jsonb) on conflict (key) do nothing`,
@@ -156,7 +158,7 @@ function normalizeSystemDerivationRule(rule = {}, index = 0) {
 function normalizeSurfaceCalcParams(raw = {}) {
   const out = {};
   for (const [key, value] of Object.entries(raw && typeof raw === "object" ? raw : {})) {
-    if (["inside_vano_product_ids","behind_vano_product_ids","apto_para_revestir_product_ids","sin_revestimiento_product_ids"].includes(key)) {
+    if (["inside_vano_product_ids", "behind_vano_product_ids", "apto_para_revestir_product_ids", "sin_revestimiento_product_ids"].includes(key)) {
       out[key] = normalizeIdList(value);
       continue;
     }
@@ -171,7 +173,6 @@ function normalizeTechnicalMeasurementRules(raw = {}) {
   const surface_helper_rules = Array.isArray(raw?.surface_helper_rules) ? raw.surface_helper_rules : [];
   const section_dependency_rules = Array.isArray(raw?.section_dependency_rules) ? raw.section_dependency_rules : [];
   const system_derivation_rules = Array.isArray(raw?.system_derivation_rules) ? raw.system_derivation_rules : [];
-  const initial_section_id = Number(raw?.initial_section_id || 0) || null;
   return {
     rules: rules.map((r, i) => normalizeTechnicalMeasurementRule(r, i)).filter(Boolean).sort((a, b) => a.sort_order - b.sort_order),
     surface_final_formula: normalizeSurfaceFinalFormula(raw?.surface_final_formula),
@@ -179,7 +180,6 @@ function normalizeTechnicalMeasurementRules(raw = {}) {
     surface_calc_params: normalizeSurfaceCalcParams(raw?.surface_calc_params || raw?.surface_params || raw?.measurement_surface_params || {}),
     section_dependency_rules: section_dependency_rules.map((r, i) => normalizeSectionDependencyRule(r, i)).filter(Boolean).sort((a, b) => a.sort_order - b.sort_order),
     system_derivation_rules: system_derivation_rules.map((r, i) => normalizeSystemDerivationRule(r, i)).filter(Boolean).sort((a, b) => a.sort_order - b.sort_order),
-    initial_section_id,
   };
 }
 function normalizeFieldType(value) {
@@ -277,7 +277,6 @@ export async function setTechnicalMeasurementRules(payload = {}) {
     surface_calc_params: payload?.surface_calc_params !== undefined ? payload.surface_calc_params : current?.surface_calc_params,
     section_dependency_rules: payload?.section_dependency_rules !== undefined ? payload.section_dependency_rules : current?.section_dependency_rules,
     system_derivation_rules: payload?.system_derivation_rules !== undefined ? payload.system_derivation_rules : current?.system_derivation_rules,
-    initial_section_id: payload?.initial_section_id !== undefined ? payload.initial_section_id : current?.initial_section_id,
   };
   return setSetting(TECHNICAL_MEASUREMENT_RULES_KEY, normalizeTechnicalMeasurementRules(merged));
 }
@@ -291,6 +290,33 @@ export async function getTechnicalMeasurementFieldDefinitions() {
 }
 export async function setTechnicalMeasurementFieldDefinitions(payload = {}) {
   return setSetting(TECHNICAL_MEASUREMENT_FIELDS_KEY, normalizeTechnicalMeasurementFields(payload));
+}
+
+export async function getProductionPlanningSettings() {
+  const raw = await getSetting(PRODUCTION_PLANNING_SETTINGS_KEY, { years: {} });
+  return normalizeProductionPlanningSettings(raw);
+}
+export async function getProductionPlanningYear(year) {
+  const settings = await getProductionPlanningSettings();
+  return getPlanningYear(settings, year);
+}
+export async function setProductionPlanningYear({ year, weeks = [] } = {}) {
+  const numericYear = Number(year || 0);
+  if (!Number.isFinite(numericYear) || numericYear < 2000 || numericYear > 2100) throw new Error("Año inválido para planificación.");
+  const current = await getProductionPlanningSettings();
+  const next = {
+    ...(current || {}),
+    years: {
+      ...(current?.years || {}),
+      [String(numericYear)]: {
+        year: numericYear,
+        weeks: normalizePlanningWeeks(numericYear, weeks),
+        updated_at: new Date().toISOString(),
+      },
+    },
+  };
+  const saved = await setSetting(PRODUCTION_PLANNING_SETTINGS_KEY, normalizeProductionPlanningSettings(next));
+  return getPlanningYear(saved, numericYear);
 }
 
 export async function getCommercialFinalTolerancePercent() {

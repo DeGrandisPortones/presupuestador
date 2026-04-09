@@ -20,3 +20,11 @@ export async function moveToProduccion(id, { notes } = {}) { try { return await 
 export async function reviewAcopioCommercial(id, { action, notes } = {}) { const { data } = await http.post(`/api/quotes/${id}/acopio/review/commercial`, { action, notes }); if (!data?.ok) throw new Error(data?.error || "No se pudo revisar solicitud Acopio→Producción (Comercial)"); return data.quote; }
 export async function reviewAcopioTechnical(id, { action, notes } = {}) { const { data } = await http.post(`/api/quotes/${id}/acopio/review/technical`, { action, notes }); if (!data?.ok) throw new Error(data?.error || "No se pudo revisar solicitud Acopio→Producción (Técnica)"); return data.quote; }
 export async function createRevisionQuote(id) { const { data } = await http.post(`/api/quotes/${id}/revision`); if (!data?.ok) throw new Error(data?.error || "No se pudo crear el ajuste"); return data.quote; }
+export async function getProductionPlanningEstimate({ quoteId = null, fromDate = null } = {}) {
+  const params = new URLSearchParams();
+  if (quoteId) params.set("quote_id", String(quoteId));
+  if (fromDate) params.set("from_date", String(fromDate));
+  const { data } = await http.get(`/api/production-planning/estimate?${params.toString()}`);
+  if (!data?.ok) throw new Error(data?.error || "No se pudo calcular la estimación de entrega");
+  return data.estimate || null;
+}

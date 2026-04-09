@@ -20,6 +20,7 @@ import { buildPdfRouter } from "./routes/pdf.routes.js";
 import { buildMeasurementsRouter } from "./routes/measurements.routes.js";
 import { buildDoorsRouter } from "./routes/doors.routes.js";
 import { buildTechnicalConsultsRouter } from "./routes/technicalConsults.routes.js";
+import { buildProductionPlanningRouter } from "./routes/productionPlanning.routes.js";
 
 const app = express();
 
@@ -37,6 +38,7 @@ const odoo = createOdooClient({
 
 app.use("/api/auth", buildAuthRouter());
 app.use("/api/odoo", buildOdooRouter(odoo));
+app.use("/api/production-planning", buildProductionPlanningRouter());
 app.use("/api/quotes", buildQuotesRouter(odoo));
 app.use("/api/doors", buildDoorsRouter(odoo));
 app.use("/api/measurements", buildMeasurementsRouter(odoo));

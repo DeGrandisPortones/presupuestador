@@ -66,6 +66,18 @@ export async function adminSaveTechnicalMeasurementFieldDefinitions(payload) {
   return data.fields || { fields: [] };
 }
 
+export async function adminGetProductionPlanning(year) {
+  const { data } = await http.get(`/api/admin/production-planning?year=${encodeURIComponent(String(year))}`);
+  if (!data?.ok) throw new Error(data?.error || "No se pudo cargar la planificación de producción");
+  return data.planning || { year: Number(year || 0), weeks: [] };
+}
+
+export async function adminSaveProductionPlanning(payload) {
+  const { data } = await http.put(`/api/admin/production-planning`, payload || {});
+  if (!data?.ok) throw new Error(data?.error || "No se pudo guardar la planificación de producción");
+  return data.planning || { year: Number(payload?.year || 0), weeks: [] };
+}
+
 export async function adminCreateSection(kind = "porton", { name, position = 100, use_surface_qty = false }) {
   const { data } = await http.post(`/api/admin/sections?kind=${encodeURIComponent(kind)}`, { name, position, use_surface_qty });
   if (!data?.ok) throw new Error(data?.error || "No se pudo guardar la sección");
