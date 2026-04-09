@@ -98,6 +98,7 @@ export default function DashboardPage() {
   const [fixedValueToInsert, setFixedValueToInsert] = useState("");
   const [dependencyRules, setDependencyRules] = useState([]);
   const [systemRules, setSystemRules] = useState([]);
+  const [initialSectionId, setInitialSectionId] = useState("");
 
   const enabled = !!user?.is_enc_comercial || !!user?.is_superuser;
 
@@ -164,6 +165,10 @@ export default function DashboardPage() {
 
   useEffect(() => {
     if (!technicalRulesQ.data) return;
+
+    setInitialSectionId(
+      Number(technicalRulesQ.data.initial_section_id || 0) || "",
+    );
 
     const rawDependencyRules = Array.isArray(technicalRulesQ.data.section_dependency_rules)
       ? technicalRulesQ.data.section_dependency_rules
@@ -387,6 +392,7 @@ export default function DashboardPage() {
         );
 
       await adminSaveTechnicalMeasurementRules({
+        initial_section_id: Number(initialSectionId || 0) || null,
         section_dependency_rules: normalizedDependencyRules,
         system_derivation_rules: normalizedSystemRules,
       });
@@ -620,6 +626,8 @@ export default function DashboardPage() {
             <DependenciesTab
               sections={sections}
               productsBySectionId={productsBySectionId}
+              initialSectionId={initialSectionId}
+              setInitialSectionId={setInitialSectionId}
               dependencyRules={dependencyRules}
               setDependencyRules={setDependencyRules}
               systemRules={systemRules}
@@ -857,6 +865,8 @@ function AliasesTab({
 function DependenciesTab({
   sections,
   productsBySectionId,
+  initialSectionId,
+  setInitialSectionId,
   dependencyRules,
   setDependencyRules,
   systemRules,
@@ -874,9 +884,35 @@ function DependenciesTab({
       <div className="card" style={{ flex: 1.2, minWidth: 460 }}>
         <h3 style={{ marginTop: 0 }}>Dependencias entre secciones</h3>
         <div className="muted" style={{ marginBottom: 10 }}>
-          Elegís una sección origen, después definís si la regla dispara con un
-          producto puntual o con cualquier producto de esa sección, y por último
-          tildás qué secciones siguen.
+          Elegís una sección inicial. Desde ahí, cada regla define qué sección sigue según el producto elegido.
+        </div>
+
+        <div
+          style={{
+            border: "1px solid #f0f0f0",
+            borderRadius: 10,
+            padding: 12,
+            background: "#fcfcfc",
+            marginBottom: 12,
+          }}
+        >
+          <div className="muted" style={{ marginBottom: 6 }}>
+            Sección inicial del flujo
+          </div>
+          <select
+            value={initialSectionId || ""}
+            onChange={(e) =>
+              setInitialSectionId(e.target.value ? Number(e.target.value) : "")
+            }
+            style={{ width: "100%", padding: 8, borderRadius: 10, border: "1px solid #ddd" }}
+          >
+            <option value="">Elegir sección inicial…</option>
+            {sections.map((section) => (
+              <option key={section.id} value={section.id}>
+                {section.name}
+              </option>
+            ))}
+          </select>
         </div>
 
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>

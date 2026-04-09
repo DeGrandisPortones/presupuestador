@@ -64,6 +64,8 @@ export default function SectionCatalog({ kind = "porton" }) {
     enabled: (kind || "porton") === "porton",
   });
 
+  const initialSectionId = Number(rulesQ.data?.initial_section_id || 0) || null;
+
   const dependencyRules = useMemo(() => {
     const raw = Array.isArray(rulesQ.data?.section_dependency_rules)
       ? rulesQ.data.section_dependency_rules
@@ -183,20 +185,18 @@ export default function SectionCatalog({ kind = "porton" }) {
 
     if (!sectionList.length) return new Set();
 
-    const activeRules = dependencyRules;
-    if (!activeRules.length) {
-      return new Set(sectionList.map((section) => Number(section.id)));
+    const visible = new Set();
+    const initialId = Number(initialSectionId || 0);
+
+    if (initialId && sectionList.some((section) => Number(section.id) === initialId)) {
+      visible.add(initialId);
+    } else if (sectionList[0]) {
+      visible.add(Number(sectionList[0].id));
     }
 
-    const allChildIds = new Set(
-      activeRules.flatMap((rule) => normalizeIdList(rule?.child_section_ids)),
-    );
-
-    const rootSections = sectionList.filter(
-      (section, index) => index === 0 || !allChildIds.has(Number(section.id)),
-    );
-
-    const visible = new Set(rootSections.map((section) => Number(section.id)));
+    if (!dependencyRules.length) {
+      return visible;
+    }
 
     let changed = true;
     let guard = 0;
@@ -205,7 +205,7 @@ export default function SectionCatalog({ kind = "porton" }) {
       changed = false;
       guard += 1;
 
-      for (const rule of activeRules) {
+      for (const rule of dependencyRules) {
         const parentSectionId = Number(rule?.parent_section_id || 0);
         if (!parentSectionId || !visible.has(parentSectionId)) continue;
 
@@ -224,7 +224,7 @@ export default function SectionCatalog({ kind = "porton" }) {
     }
 
     return visible;
-  }, [kind, sectionList, dependencyRules, selectedProductIdsBySection]);
+  }, [kind, sectionList, initialSectionId, dependencyRules, selectedProductIdsBySection]);
 
   const visibleSections = useMemo(
     () => sectionList.filter((section) => visibleSectionIds.has(Number(section.id))),
@@ -312,7 +312,7 @@ export default function SectionCatalog({ kind = "porton" }) {
         <>
           <div className="spacer" />
           <div className="muted">
-            No hay secciones habilitadas todavía. Revisá las reglas de dependencias en el dashboard o elegí un producto en la sección anterior.
+            No hay secciones habilitadas todavía. Elegí una sección inicial en el dashboard o configurá dependencias.
           </div>
         </>
       ) : (
