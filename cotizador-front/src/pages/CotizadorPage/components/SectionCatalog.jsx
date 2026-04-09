@@ -42,6 +42,7 @@ export default function SectionCatalog({ kind = "porton" }) {
   const bootstrapKind = (kind || "porton") === "otros" ? "porton" : kind;
 
   const addLine = useQuoteStore((s) => s.addLine);
+  const removeLine = useQuoteStore((s) => s.removeLine);
   const lines = useQuoteStore((s) => s.lines);
   const portonType = useQuoteStore((s) => s.portonType);
   const setPortonType = useQuoteStore((s) => s.setPortonType);
@@ -253,6 +254,25 @@ export default function SectionCatalog({ kind = "porton" }) {
     }
   }, [visibleSections, visibleSectionIds, openSectionId]);
 
+  function selectProductForSection(sectionId, product) {
+    const currentSelected = selectedProductIdsBySection.get(Number(sectionId)) || new Set();
+    const targetProductId = Number(product?.id);
+
+    if (currentSelected.has(targetProductId) && currentSelected.size === 1) {
+      return;
+    }
+
+    currentSelected.forEach((productId) => {
+      removeLine(productId);
+    });
+
+    addLine({
+      ...product,
+      name: getProductLabel(product),
+      raw_name: product?.name,
+    });
+  }
+
   const title =
     (kind || "porton") === "porton"
       ? "Características del portón"
@@ -292,7 +312,7 @@ export default function SectionCatalog({ kind = "porton" }) {
         <>
           <div className="spacer" />
           <div className="muted">
-            No hay secciones habilitadas todavía. Revisá las reglas de dependencias en el dashboard o completá la sección anterior.
+            No hay secciones habilitadas todavía. Revisá las reglas de dependencias en el dashboard o elegí un producto en la sección anterior.
           </div>
         </>
       ) : (
@@ -318,7 +338,7 @@ export default function SectionCatalog({ kind = "porton" }) {
                   </div>
                   <div className="dg-acc-meta">
                     {selectedInSection.size
-                      ? `${selectedInSection.size} seleccionados`
+                      ? `${selectedInSection.size} seleccionado`
                       : "Sin selección"}{" "}
                     · {sectionProducts.length}
                   </div>
@@ -330,11 +350,19 @@ export default function SectionCatalog({ kind = "porton" }) {
                     <div className="dg-product-list">
                       {sectionProducts.map((product) => {
                         const disabledForUser = isDisabledForUser(product, user);
+                        const isSelected = selectedInSection.has(Number(product.id));
+
                         return (
                           <div
                             key={product.id}
                             className="dg-product-card"
-                            style={disabledForUser ? { opacity: 0.55, background: "#f3f4f6" } : undefined}
+                            style={
+                              disabledForUser
+                                ? { opacity: 0.55, background: "#f3f4f6" }
+                                : isSelected
+                                  ? { border: "1px solid #60a5fa", background: "#eff6ff" }
+                                  : undefined
+                            }
                           >
                             <div className="dg-product-info">
                               <div className="dg-product-name">
@@ -346,21 +374,18 @@ export default function SectionCatalog({ kind = "porton" }) {
                                 {disabledForUser ? " · No habilitado para tu rol" : ""}
                               </div>
                             </div>
+
                             <Button
+                              variant={isSelected ? "primary" : "secondary"}
                               disabled={disabledForUser}
-                              onClick={() =>
-                                addLine({
-                                  ...product,
-                                  name: getProductLabel(product),
-                                  raw_name: product.name,
-                                })
-                              }
+                              onClick={() => selectProductForSection(sectionId, product)}
                             >
-                              +
+                              {isSelected ? "Elegido" : "Elegir"}
                             </Button>
                           </div>
                         );
                       })}
+
                       {!sectionProducts.length && (
                         <div className="muted">Sin productos para mostrar en esta sección</div>
                       )}
