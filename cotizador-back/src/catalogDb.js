@@ -298,9 +298,21 @@ export async function setTypeVisibility(kind, typeKey, patch = {}) {
 export async function getTypeSectionsMap(kind) {
   await ensureCatalogControls();
   const k = normKind(kind);
-  // Compatibilidad: la asignación de secciones por tipo quedó deshabilitada.
-  // Dejamos la firma y la respuesta vacía para no romper integraciones viejas.
-  return {};
+  const q = await dbQuery(
+    `select type_key, section_id
+       from public.presupuestador_type_sections
+      where catalog_kind = $1
+      order by type_key asc, section_id asc`,
+    [k]
+  );
+
+  const out = {};
+  for (const r of (q.rows || [])) {
+    const key = String(r.type_key || "");
+    if (!out[key]) out[key] = [];
+    out[key].push(Number(r.section_id));
+  }
+  return out;
 }
 
 export async function setTypeSections(kind, typeKey, sectionIds) {
@@ -309,7 +321,21 @@ export async function setTypeSections(kind, typeKey, sectionIds) {
   const key = String(typeKey || "").trim();
   if (!key) throw new Error("typeKey inválido");
 
-  // Compatibilidad: la asignación de secciones por tipo quedó deshabilitada.
-  // No persistimos nada y devolvemos vacío para no afectar el flujo nuevo por dependencias.
-  return { catalog_kind: k, type_key: key, section_ids: [] };
+  const ids = Array.isArray(sectionIds) ? sectionIds.map((x) => Number(x)).filter(Boolean) : [];
+
+  await dbQuery(
+    `delete from public.presupuestador_type_sections where catalog_kind=$1 and type_key=$2`,
+    [k, key]
+  );
+
+  for (const sid of ids) {
+    await dbQuery(
+      `insert into public.presupuestador_type_sections (catalog_kind, type_key, section_id)
+       values ($1, $2, $3)
+       on conflict do nothing`,
+      [k, key, sid]
+    );
+  }
+
+  return { catalog_kind: k, type_key: key, section_ids: ids };
 }

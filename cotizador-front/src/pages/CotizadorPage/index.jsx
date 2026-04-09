@@ -55,6 +55,17 @@ function appendMetricsToNote(note, payload) {
   filtered.push(metrics);
   return filtered.join("\n").trim();
 }
+function formatProductionDeliveryMainText(productionDelivery) {
+  if (!productionDelivery || typeof productionDelivery !== "object") return "";
+  const weekNumber = String(productionDelivery.week_number || productionDelivery.week || "").trim();
+  const startLabel = String(productionDelivery.start_date_label || "").trim();
+  const endLabel = String(productionDelivery.end_date_label || "").trim();
+  if (weekNumber && startLabel && endLabel) return `Semana ${weekNumber}, entre ${startLabel} y ${endLabel}`;
+  if (weekNumber) return `Semana ${weekNumber}`;
+  if (startLabel && endLabel) return `Entre ${startLabel} y ${endLabel}`;
+  return String(productionDelivery.summary || "").trim();
+}
+
 function buildPdfPayloadForDownload(payload, financingPercent, extras = {}) {
   const percent = Number(financingPercent || 0) || 0;
   const factor = 1 + percent / 100;
@@ -315,21 +326,18 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
         <>
           <div className="spacer" />
           <div className="card" style={{ background: "#f7fbff", border: "1px solid #d9e5f7" }}>
-            <div style={{ fontWeight: 900, marginBottom: 6 }}>
-              {productionDelivery?.committed === true ? "Producción comprometida" : "Entrega estimada"}
+            <div style={{ fontWeight: 900, fontSize: 18, marginBottom: 8, color: "#111827" }}>
+              Entrega estimada
             </div>
-            <div className="muted">
-              {productionDelivery?.summary
-                ? productionDelivery.summary
+            <div style={{ fontWeight: 900, fontSize: 28, lineHeight: 1.2, color: "#111827" }}>
+              {productionDelivery
+                ? formatProductionDeliveryMainText(productionDelivery)
                 : (productionDeliveryQ.isLoading
-                  ? "Calculando disponibilidad de producción..."
-                  : "No hay planificación de producción cargada para estimar la entrega.")}
-            </div>
-            <div className="muted" style={{ marginTop: 6 }}>
-              Este dato se actualiza automáticamente cada 2 minutos. El cupo se compromete recién cuando quedan aprobadas Comercial y Técnica.
+                  ? "Calculando entrega estimada..."
+                  : "No hay planificación de producción cargada.")}
             </div>
             {productionDeliveryQ.isError ? (
-              <div style={{ color: "#d93025", fontSize: 13, marginTop: 8 }}>{productionDeliveryQ.error.message}</div>
+              <div style={{ color: "#d93025", fontSize: 13, marginTop: 10 }}>{productionDeliveryQ.error.message}</div>
             ) : null}
           </div>
         </>

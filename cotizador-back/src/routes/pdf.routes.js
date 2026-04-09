@@ -281,16 +281,13 @@ function formatShortDate(value) {
 function getProductionPlanningNote(payload) {
   const planning = payload?.production_planning || payload?.payload?.production_planning || null;
   if (!planning || typeof planning !== "object") return "";
-  const weeksText = safeStr(planning.weeks_text || "");
   const weekNumber = safeStr(planning.week_number || planning.week || "");
   const startLabel = safeStr(planning.start_date_label || formatShortDate(planning.start_date));
   const endLabel = safeStr(planning.end_date_label || formatShortDate(planning.end_date));
-  if (!weekNumber && !weeksText) return "";
-  const head = weeksText ? `Entrega estimada: en ${weeksText}` : "Entrega estimada";
-  const weekPart = weekNumber ? `Semana ${weekNumber}` : "Semana estimada";
-  const range = (startLabel || endLabel) ? ` (${startLabel || "—"} al ${endLabel || "—"})` : "";
-  const suffix = planning.committed === true ? "Cupo de producción comprometido." : "Estimación sujeta a aprobación comercial y técnica.";
-  return `${head} · ${weekPart}${range}. ${suffix}`;
+  if (weekNumber && startLabel && endLabel) return `Entrega estimada. Semana ${weekNumber}, entre ${startLabel} y ${endLabel}`;
+  if (weekNumber) return `Entrega estimada. Semana ${weekNumber}`;
+  if (startLabel && endLabel) return `Entrega estimada. Entre ${startLabel} y ${endLabel}`;
+  return "";
 }
 
 async function resolveMeasurementForm(quote) {
@@ -640,15 +637,18 @@ function renderPdf({ title, payload, useBasePrice }) {
 
   y += infoH + 10;
 
-  const extraLines = [];
-  if (productionPlanningNote) extraLines.push(productionPlanningNote);
-  if (obs) extraLines.push(`Obs: ${obs}`);
+  if (productionPlanningNote) {
+    const planningOptions = { width: innerW - 4, lineGap: 2 };
+    const planningHeight = doc.heightOfString(productionPlanningNote, planningOptions);
+    doc.font("Helvetica-Bold").fontSize(13).fillColor("#111827").text(productionPlanningNote, margin + 2, y, planningOptions);
+    y += planningHeight + 8;
+  }
 
-  if (extraLines.length) {
-    const txt = extraLines.join("   ·   ");
+  if (obs) {
+    const obsText = `Obs: ${obs}`;
     const obsOptions = { width: innerW - 4, lineGap: 2 };
-    const obsHeight = doc.heightOfString(txt, obsOptions);
-    doc.font("Helvetica").fontSize(10).fillColor("#111827").text(txt, margin + 2, y, obsOptions);
+    const obsHeight = doc.heightOfString(obsText, obsOptions);
+    doc.font("Helvetica").fontSize(10).fillColor("#111827").text(obsText, margin + 2, y, obsOptions);
     y += obsHeight + 10;
   } else {
     y += 6;
