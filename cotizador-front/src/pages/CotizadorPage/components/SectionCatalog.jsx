@@ -142,6 +142,11 @@ export default function SectionCatalog({ kind = "porton" }) {
     );
   }, [sections]);
 
+  const sectionMap = useMemo(
+    () => new Map(sectionList.map((section) => [Number(section.id), section])),
+    [sectionList],
+  );
+
   const productsBySection = useMemo(() => {
     const map = new Map();
     for (const section of sectionList) map.set(Number(section.id), []);
@@ -178,57 +183,63 @@ export default function SectionCatalog({ kind = "porton" }) {
     return map;
   }, [lines, productsBySection, sectionList]);
 
-  const visibleSectionIds = useMemo(() => {
+  const orderedVisibleSectionIds = useMemo(() => {
     if ((kind || "porton").toLowerCase().trim() !== "porton") {
-      return new Set(sectionList.map((section) => Number(section.id)));
+      return sectionList.map((section) => Number(section.id));
     }
 
-    if (!sectionList.length) return new Set();
+    if (!sectionList.length) return [];
 
-    const visible = new Set();
-    const initialId = Number(initialSectionId || 0);
+    const startId =
+      initialSectionId && sectionMap.has(Number(initialSectionId))
+        ? Number(initialSectionId)
+        : Number(sectionList[0]?.id || 0);
 
-    if (initialId && sectionList.some((section) => Number(section.id) === initialId)) {
-      visible.add(initialId);
-    } else if (sectionList[0]) {
-      visible.add(Number(sectionList[0].id));
-    }
+    if (!startId) return [];
 
-    if (!dependencyRules.length) {
-      return visible;
-    }
+    const ordered = [startId];
+    const seen = new Set(ordered);
 
     let changed = true;
     let guard = 0;
-
     while (changed && guard < 30) {
       changed = false;
       guard += 1;
 
-      for (const rule of dependencyRules) {
-        const parentSectionId = Number(rule?.parent_section_id || 0);
-        if (!parentSectionId || !visible.has(parentSectionId)) continue;
+      for (const currentSectionId of [...ordered]) {
+        const selectedInParent = selectedProductIdsBySection.get(Number(currentSectionId)) || new Set();
 
-        const selectedInParent = selectedProductIdsBySection.get(parentSectionId) || new Set();
-        if (!matchProductIds(selectedInParent, rule?.required_product_ids, rule?.match_mode || "any")) {
-          continue;
-        }
+        for (const rule of dependencyRules) {
+          const parentSectionId = Number(rule?.parent_section_id || 0);
+          if (parentSectionId !== Number(currentSectionId)) continue;
 
-        for (const childSectionId of normalizeIdList(rule?.child_section_ids)) {
-          if (!visible.has(childSectionId)) {
-            visible.add(childSectionId);
+          if (!matchProductIds(selectedInParent, rule?.required_product_ids, rule?.match_mode || "any")) {
+            continue;
+          }
+
+          for (const childSectionId of normalizeIdList(rule?.child_section_ids)) {
+            if (!sectionMap.has(childSectionId) || seen.has(childSectionId)) continue;
+            ordered.push(childSectionId);
+            seen.add(childSectionId);
             changed = true;
           }
         }
       }
     }
 
-    return visible;
-  }, [kind, sectionList, initialSectionId, dependencyRules, selectedProductIdsBySection]);
+    return ordered;
+  }, [
+    kind,
+    initialSectionId,
+    sectionList,
+    sectionMap,
+    dependencyRules,
+    selectedProductIdsBySection,
+  ]);
 
   const visibleSections = useMemo(
-    () => sectionList.filter((section) => visibleSectionIds.has(Number(section.id))),
-    [sectionList, visibleSectionIds],
+    () => orderedVisibleSectionIds.map((id) => sectionMap.get(Number(id))).filter(Boolean),
+    [orderedVisibleSectionIds, sectionMap],
   );
 
   useEffect(() => {
@@ -249,10 +260,11 @@ export default function SectionCatalog({ kind = "porton" }) {
 
   useEffect(() => {
     if (!visibleSections.length) return;
-    if (openSectionId == null || !visibleSectionIds.has(Number(openSectionId))) {
+    const visibleIds = new Set(visibleSections.map((section) => Number(section.id)));
+    if (openSectionId == null || !visibleIds.has(Number(openSectionId))) {
       setOpenSectionId(Number(visibleSections[0].id));
     }
-  }, [visibleSections, visibleSectionIds, openSectionId]);
+  }, [visibleSections, openSectionId]);
 
   function selectProductForSection(sectionId, product) {
     const currentSelected = selectedProductIdsBySection.get(Number(sectionId)) || new Set();

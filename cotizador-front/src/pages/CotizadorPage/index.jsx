@@ -279,19 +279,24 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
 
       <div className="spacer" />
       <HeaderBar showMargin />
+
+      <div className="spacer" />
+      <div className="card">
+        <PortonDimensions />
+      </div>
+
       <div className="spacer" />
       <div className="row quote-row">
-        <div className="card" style={{ flex: 1, minWidth: 320 }}>
-          <PortonDimensions />
-          <div className="spacer" />
+        <div className="card" style={{ flex: 1, minWidth: 340 }}>
           <SectionCatalog kind={catalogKind} />
         </div>
-        <div className="card" style={{ flex: 2, minWidth: 520 }}>
+        <div className="card" style={{ flex: 2, minWidth: 560 }}>
           <LinesTable />
           <div className="spacer" />
           <SummaryBox totals={totals} paymentMethod={paymentMethod} />
         </div>
       </div>
+
       {(saveM.isError || confirmM.isError || resetReturnedM.isError || confirmReturnedM.isError) && <div className="spacer" />}
       {saveM.isError && <div style={{ color: "#d93025", fontSize: 13 }}>{saveM.error.message}</div>}
       {confirmM.isError && <div style={{ color: "#d93025", fontSize: 13 }}>{confirmM.error.message}</div>}

@@ -90,7 +90,6 @@ export default function DashboardPage() {
   const [savingDoorFormula, setSavingDoorFormula] = useState(false);
   const [savingDependencies, setSavingDependencies] = useState(false);
   const [newSectionName, setNewSectionName] = useState("");
-  const [newSectionPos, setNewSectionPos] = useState("100");
   const [newSectionUseSurface, setNewSectionUseSurface] = useState(false);
   const [productQuery, setProductQuery] = useState("");
   const [sectionFilter, setSectionFilter] = useState("all");
@@ -298,7 +297,7 @@ export default function DashboardPage() {
   const onCreateSection = async () => {
     await adminCreateSection(catalogKind, {
       name: newSectionName,
-      position: Number(newSectionPos || 100),
+      position: sections.length + 1,
       use_surface_qty: newSectionUseSurface,
     });
     setNewSectionName("");
@@ -603,8 +602,6 @@ export default function DashboardPage() {
               tags={tags}
               newSectionName={newSectionName}
               setNewSectionName={setNewSectionName}
-              newSectionPos={newSectionPos}
-              setNewSectionPos={setNewSectionPos}
               newSectionUseSurface={newSectionUseSurface}
               setNewSectionUseSurface={setNewSectionUseSurface}
               onCreateSection={onCreateSection}
@@ -661,8 +658,6 @@ function TagsTab({
   tags,
   newSectionName,
   setNewSectionName,
-  newSectionPos,
-  setNewSectionPos,
   newSectionUseSurface,
   setNewSectionUseSurface,
   onCreateSection,
@@ -679,12 +674,6 @@ function TagsTab({
             onChange={setNewSectionName}
             placeholder="Nueva sección…"
             style={{ flex: 1, minWidth: 180 }}
-          />
-          <Input
-            value={newSectionPos}
-            onChange={setNewSectionPos}
-            placeholder="Posición"
-            style={{ width: 110 }}
           />
           <label
             style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 180 }}
@@ -716,7 +705,6 @@ function TagsTab({
                   <div style={{ fontWeight: 800 }}>
                     {s.name} · ID {s.id}
                   </div>
-                  <div className="muted">Posición: {s.position}</div>
                 </div>
                 <Button
                   variant="ghost"
