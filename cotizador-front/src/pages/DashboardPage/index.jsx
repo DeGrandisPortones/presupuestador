@@ -684,6 +684,16 @@ function TagsTab({
   onCreateSection,
   qc,
 }) {
+  const sortedTags = useMemo(
+    () =>
+      [...tags].sort(
+        (a, b) => String(a?.name || "").localeCompare(String(b?.name || ""), "es", {
+          sensitivity: "base",
+        }),
+      ),
+    [tags],
+  );
+
   return (
     <div className="row">
       <div className="card" style={{ flex: 1, minWidth: 320 }}>
@@ -738,7 +748,7 @@ function TagsTab({
             paddingRight: 6,
           }}
         >
-          {tags.map((t) => (
+          {sortedTags.map((t) => (
             <div
               key={t.id}
               style={{
