@@ -81,6 +81,9 @@ function formatProductionDeliveryDisplay(planning) {
   }
   return weekPart;
 }
+function getTodayIsoDate() {
+  return new Date().toISOString().slice(0, 10);
+}
 
 export default function CotizadorPage({ catalogKind = "porton" }) {
   const navigate = useNavigate();
@@ -117,16 +120,27 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
   const visibleParentQuoteNumber = String(quoteQ.data?.parent_quote_number || quoteQ.data?.parent_quote_quote_number || quoteQ.data?.parent_odoo_sale_order_name || quoteQ.data?.parent_quote_id || "").trim();
 
   const productionPlanningQuoteId = useMemo(() => {
-    const currentQuoteId = quoteId || idParam || null;
     const parentQuoteId = String(quoteQ.data?.parent_quote_id || "").trim() || null;
     if (isRevisionQuote && parentQuoteId) return parentQuoteId;
-    return currentQuoteId;
-  }, [quoteId, idParam, isRevisionQuote, quoteQ.data?.parent_quote_id]);
+    return quoteId || idParam || null;
+  }, [isRevisionQuote, quoteQ.data?.parent_quote_id, quoteId, idParam]);
+
+  const productionPlanningFromDate = useMemo(() => {
+    return productionPlanningQuoteId ? null : getTodayIsoDate();
+  }, [productionPlanningQuoteId]);
 
   const productionDeliveryQ = useQuery({
-    queryKey: ["production-planning-estimate", productionPlanningQuoteId || "draft", String(catalogKind || "porton").toLowerCase()],
-    queryFn: () => getProductionPlanningEstimate({ quoteId: productionPlanningQuoteId || null }),
-    enabled: !!user && !!productionPlanningQuoteId && String(catalogKind || "porton").toLowerCase() === "porton",
+    queryKey: [
+      "production-planning-estimate",
+      productionPlanningQuoteId || "draft",
+      productionPlanningFromDate || "quote-date",
+      String(catalogKind || "porton").toLowerCase(),
+    ],
+    queryFn: () => getProductionPlanningEstimate({
+      quoteId: productionPlanningQuoteId || null,
+      fromDate: productionPlanningFromDate || null,
+    }),
+    enabled: !!user && String(catalogKind || "porton").toLowerCase() === "porton",
     staleTime: 60 * 1000,
     refetchInterval: 2 * 60 * 1000,
   });
@@ -264,7 +278,10 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
 
   async function getLatestProductionPlanning() {
     try {
-      return await getProductionPlanningEstimate({ quoteId: productionPlanningQuoteId || null });
+      return await getProductionPlanningEstimate({
+        quoteId: productionPlanningQuoteId || null,
+        fromDate: productionPlanningFromDate || null,
+      });
     } catch {
       return productionDelivery || null;
     }

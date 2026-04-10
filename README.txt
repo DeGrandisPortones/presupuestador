@@ -1,4 +1,4 @@
-Cambios incluidos:
-- En edición de ajuste/acopio, la entrega estimada usa el parent_quote_id cuando es una copia.
-- En presupuesto/proforma: 'Fecha estimada de entrega "Semana X, entre fechas"'.
-- En presupuesto/proforma: 'Medidas de paso: Alto x Ancho', 'Peso calculado' y 'Piernas'.
+Fix aplicado:
+- En nuevo presupuesto sin quote todavía, la entrega estimada se consulta con fromDate = hoy.
+- En ajustes/copias, la entrega estimada sigue tomando parent_quote_id.
+- También se usa la misma lógica al descargar PDF/proforma.
