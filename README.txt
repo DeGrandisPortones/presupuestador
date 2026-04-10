@@ -1,3 +1,3 @@
-Cambio aplicado:
-- Se mantiene el título 'Entrega estimada'.
-- Debajo queda solo el dato grande: 'Semana X, entre fechas'.
+Cambios aplicados:
+- La planificación solo descuenta cupo para quotes originales con fulfillment_mode='produccion'.
+- La estimación de semana sigue pudiéndose consultar también para quotes originales en acopio.

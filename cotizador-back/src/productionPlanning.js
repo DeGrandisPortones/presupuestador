@@ -48,21 +48,19 @@ function isAlreadyCommitted(quote) {
 
 function buildDisplay({ year, weekNumber, startDate, endDate, weeksOut, committed, capacity, committedCount }) {
   const safeWeeksOut = Number.isFinite(Number(weeksOut)) ? Number(weeksOut) : null;
-  const weekLabel = weekNumber ? `Semana ${weekNumber}` : "Semana estimada";
-  const startLabel = formatDateAr(startDate);
-  const endLabel = formatDateAr(endDate);
-  const rangeLabel = `entre ${startLabel || "—"} y ${endLabel || "—"}`;
   return {
     year: Number(year),
     week_number: Number(weekNumber),
     start_date: formatDateIso(startDate),
     end_date: formatDateIso(endDate),
-    start_date_label: startLabel,
-    end_date_label: endLabel,
+    start_date_label: formatDateAr(startDate),
+    end_date_label: formatDateAr(endDate),
     weeks_out: safeWeeksOut,
     weeks_text: safeWeeksOut === null ? "" : buildWeeksText(safeWeeksOut),
     label: buildPlanningLabel(weekNumber, startDate, endDate),
-    summary: `${weekLabel}, ${rangeLabel}`,
+    summary: safeWeeksOut === null
+      ? buildPlanningLabel(weekNumber, startDate, endDate)
+      : `Entrega estimada: en ${buildWeeksText(safeWeeksOut)} · ${buildPlanningLabel(weekNumber, startDate, endDate)}`,
     committed: committed === true,
     capacity: Number(capacity || 0),
     committed_count: Number(committedCount || 0),
@@ -81,6 +79,7 @@ async function fetchCommittedCounts(client, years) {
     `select production_delivery_year, production_delivery_week, count(*)::int as qty
        from public.presupuestador_quotes
       where quote_kind='original'
+        and fulfillment_mode='produccion'
         and production_delivery_year = any($1::int[])
         and production_delivery_week is not null
       group by production_delivery_year, production_delivery_week`,
@@ -159,7 +158,7 @@ export async function getProductionPlanningEstimate({ quoteId = null, fromDate =
   try {
     let quote = null;
     if (quoteId) quote = await fetchQuote(client, quoteId);
-    if (quote && !isOriginalProductionQuote(quote) && !isAlreadyCommitted(quote)) return null;
+    if (quote && String(quote.quote_kind || "original").trim().toLowerCase() !== "original" && !isAlreadyCommitted(quote)) return null;
     return await computeEstimateWithClient(client, { quote, fromDate });
   } finally {
     client.release();
