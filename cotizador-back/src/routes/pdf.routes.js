@@ -6,6 +6,7 @@ import { fileURLToPath } from "url";
 import { dbQuery } from "../db.js";
 import { requireAuth } from "../auth.js";
 import { ensureQuotesMeasurementColumns } from "../quotesSchema.js";
+import { buildBudgetExtraSummaryLines } from "../pdfBudgetExtras.js";
 
 const IVA_RATE = 0.21;
 
@@ -278,7 +279,7 @@ function formatShortDate(value) {
   return d.toLocaleDateString("es-AR");
 }
 
-function getProductionPlanningNote(payload) {
+function getProductionPlanningText(payload) {
   const planning = payload?.production_planning || payload?.payload?.production_planning || null;
   if (!planning || typeof planning !== "object") return "";
   const weekNumber = safeStr(planning.week_number || planning.week || "");
@@ -550,7 +551,7 @@ async function renderMeasurementPdf({ quote, form }) {
   });
 }
 
-function renderPdf({ title, payload, useBasePrice }) {
+async function renderPdf({ title, payload, useBasePrice }) {
   const doc = new PDFDocument({ size: "A4", margin: 0, bufferPages: true });
 
   const buffers = [];
@@ -577,7 +578,8 @@ function renderPdf({ title, payload, useBasePrice }) {
   const destination = destinationRaw === "acopio" ? "Acopio" : destinationRaw === "produccion" ? "Producción" : (destinationRaw || "—");
   const showDestination = !!useBasePrice;
   const obs = stripSellerLines(safeStr(payload?.note));
-  const productionPlanningNote = getProductionPlanningNote(payload);
+  const productionPlanningText = getProductionPlanningText(payload);
+  const calculatedSummaryLines = await buildBudgetExtraSummaryLines(payload);
 
   const quoteNo = getQuoteNumber(payload);
   const { lines, grandTotal, subtotalNet, ivaAmount } = buildLines(payload, { useBasePrice });
@@ -640,7 +642,10 @@ function renderPdf({ title, payload, useBasePrice }) {
   y += infoH + 10;
 
   const extraLines = [];
-  if (productionPlanningNote) extraLines.push(productionPlanningNote);
+  if (productionPlanningText) {
+    extraLines.push(`Fecha estimada de entrega "${productionPlanningText}"`);
+  }
+  extraLines.push(...calculatedSummaryLines);
   if (obs) extraLines.push(`Obs: ${obs}`);
 
   if (extraLines.length) {
