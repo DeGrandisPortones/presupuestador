@@ -281,16 +281,15 @@ function formatShortDate(value) {
 function getProductionPlanningNote(payload) {
   const planning = payload?.production_planning || payload?.payload?.production_planning || null;
   if (!planning || typeof planning !== "object") return "";
-  const weeksText = safeStr(planning.weeks_text || "");
   const weekNumber = safeStr(planning.week_number || planning.week || "");
   const startLabel = safeStr(planning.start_date_label || formatShortDate(planning.start_date));
   const endLabel = safeStr(planning.end_date_label || formatShortDate(planning.end_date));
-  if (!weekNumber && !weeksText) return "";
-  const head = weeksText ? `Entrega estimada: en ${weeksText}` : "Entrega estimada";
+  if (!weekNumber && !startLabel && !endLabel) return "";
   const weekPart = weekNumber ? `Semana ${weekNumber}` : "Semana estimada";
-  const range = (startLabel || endLabel) ? ` (${startLabel || "—"} al ${endLabel || "—"})` : "";
-  const suffix = planning.committed === true ? "Cupo de producción comprometido." : "Estimación sujeta a aprobación comercial y técnica.";
-  return `${head} · ${weekPart}${range}. ${suffix}`;
+  if (startLabel || endLabel) {
+    return `${weekPart}, entre ${startLabel || "—"} y ${endLabel || "—"}`;
+  }
+  return weekPart;
 }
 
 async function resolveMeasurementForm(quote) {

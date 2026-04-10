@@ -69,6 +69,18 @@ function buildPdfPayloadForDownload(payload, financingPercent, extras = {}) {
   nextPayload.note = appendMetricsToNote(nextPayload.note, nextPayload);
   return nextPayload;
 }
+function formatProductionDeliveryDisplay(planning) {
+  if (!planning || typeof planning !== "object") return "";
+  const weekNumber = String(planning.week_number || planning.week || "").trim();
+  const startLabel = String(planning.start_date_label || "").trim();
+  const endLabel = String(planning.end_date_label || "").trim();
+  if (!weekNumber && !startLabel && !endLabel) return "";
+  const weekPart = weekNumber ? `Semana ${weekNumber}` : "Semana estimada";
+  if (startLabel || endLabel) {
+    return `${weekPart}, entre ${startLabel || "—"} y ${endLabel || "—"}`;
+  }
+  return weekPart;
+}
 
 export default function CotizadorPage({ catalogKind = "porton" }) {
   const navigate = useNavigate();
@@ -315,18 +327,12 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
         <>
           <div className="spacer" />
           <div className="card" style={{ background: "#f7fbff", border: "1px solid #d9e5f7" }}>
-            <div style={{ fontWeight: 900, marginBottom: 6 }}>
-              {productionDelivery?.committed === true ? "Producción comprometida" : "Entrega estimada"}
-            </div>
-            <div className="muted">
-              {productionDelivery?.summary
-                ? productionDelivery.summary
+            <div style={{ fontWeight: 900, fontSize: 22, lineHeight: 1.25, color: "#111827" }}>
+              {productionDelivery
+                ? formatProductionDeliveryDisplay(productionDelivery)
                 : (productionDeliveryQ.isLoading
                   ? "Calculando disponibilidad de producción..."
                   : "No hay planificación de producción cargada para estimar la entrega.")}
-            </div>
-            <div className="muted" style={{ marginTop: 6 }}>
-              Este dato se actualiza automáticamente cada 2 minutos. El cupo se compromete recién cuando quedan aprobadas Comercial y Técnica.
             </div>
             {productionDeliveryQ.isError ? (
               <div style={{ color: "#d93025", fontSize: 13, marginTop: 8 }}>{productionDeliveryQ.error.message}</div>

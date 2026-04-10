@@ -1,3 +1,4 @@
-Cambio aplicado:
-- GET /api/admin/technical-measurement-rules ahora usa requireAuth
-- PUT /api/admin/technical-measurement-rules sigue restringido a Enc. Comercial / Superusuario
+Cambios aplicados:
+- UI del cotizador: se quitaron las leyendas y se agrandó la información de entrega estimada.
+- Formato visual: 'Semana X, entre dd/mm/yyyy y dd/mm/yyyy'.
+- PDF presupuesto y PDF proforma: mismo formato de entrega.

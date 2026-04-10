@@ -48,19 +48,21 @@ function isAlreadyCommitted(quote) {
 
 function buildDisplay({ year, weekNumber, startDate, endDate, weeksOut, committed, capacity, committedCount }) {
   const safeWeeksOut = Number.isFinite(Number(weeksOut)) ? Number(weeksOut) : null;
+  const weekLabel = weekNumber ? `Semana ${weekNumber}` : "Semana estimada";
+  const startLabel = formatDateAr(startDate);
+  const endLabel = formatDateAr(endDate);
+  const rangeLabel = `entre ${startLabel || "—"} y ${endLabel || "—"}`;
   return {
     year: Number(year),
     week_number: Number(weekNumber),
     start_date: formatDateIso(startDate),
     end_date: formatDateIso(endDate),
-    start_date_label: formatDateAr(startDate),
-    end_date_label: formatDateAr(endDate),
+    start_date_label: startLabel,
+    end_date_label: endLabel,
     weeks_out: safeWeeksOut,
     weeks_text: safeWeeksOut === null ? "" : buildWeeksText(safeWeeksOut),
     label: buildPlanningLabel(weekNumber, startDate, endDate),
-    summary: safeWeeksOut === null
-      ? buildPlanningLabel(weekNumber, startDate, endDate)
-      : `Entrega estimada: en ${buildWeeksText(safeWeeksOut)} · ${buildPlanningLabel(weekNumber, startDate, endDate)}`,
+    summary: `${weekLabel}, ${rangeLabel}`,
     committed: committed === true,
     capacity: Number(capacity || 0),
     committed_count: Number(committedCount || 0),
