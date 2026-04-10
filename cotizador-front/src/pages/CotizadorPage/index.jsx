@@ -327,6 +327,7 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
         <>
           <div className="spacer" />
           <div className="card" style={{ background: "#f7fbff", border: "1px solid #d9e5f7" }}>
+            <div style={{ fontWeight: 900, marginBottom: 8, color: "#111827" }}>Entrega estimada</div>
             <div style={{ fontWeight: 900, fontSize: 22, lineHeight: 1.25, color: "#111827" }}>
               {productionDelivery
                 ? formatProductionDeliveryDisplay(productionDelivery)
