@@ -48,7 +48,7 @@ export function buildAdminRouter(odoo) {
     try { res.json({ ok: true, settings: await setDoorQuoteSettings(req.body || {}) }); } catch (e) { next(e); }
   });
 
-  router.get("/technical-measurement-rules", requireAuth, requireEncComercialOrSuperuser, async (_req, res, next) => {
+  router.get("/technical-measurement-rules", requireAuth, async (_req, res, next) => {
     try { res.json({ ok: true, rules: await getTechnicalMeasurementRules() }); } catch (e) { next(e); }
   });
   router.put("/technical-measurement-rules", requireAuth, requireEncComercialOrSuperuser, async (req, res, next) => {

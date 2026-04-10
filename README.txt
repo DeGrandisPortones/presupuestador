@@ -1,3 +1,3 @@
-Cambios incluidos:
-- Se quitó el acceso a Planificación dentro de Aprobación Comercial.
-- En SectionCatalog, al elegir un producto se eliminan todas las líneas previas de esa misma sección antes de agregar la nueva, para que quede una sola opción por sección.
+Cambio aplicado:
+- GET /api/admin/technical-measurement-rules ahora usa requireAuth
+- PUT /api/admin/technical-measurement-rules sigue restringido a Enc. Comercial / Superusuario
