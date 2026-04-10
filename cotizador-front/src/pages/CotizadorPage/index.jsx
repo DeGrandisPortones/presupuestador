@@ -106,10 +106,27 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
   useEffect(() => { if (!pricelistId && pricelistsQ.data?.length) setPricelist(pricelistsQ.data[0]); }, [pricelistId, pricelistsQ.data, setPricelist]);
 
   const quoteQ = useQuery({ queryKey: ["quote", idParam], queryFn: () => getQuote(idParam), enabled: !!idParam });
+
+  const isRevisionQuote = (quoteQ.data?.quote_kind || "original") === "copy";
+  const finalStatus = String(quoteQ.data?.final_status || "");
+  const isAcopioRevision = isRevisionQuote && String(quoteQ.data?.fulfillment_mode || "").trim() === "acopio";
+  const isReturnedMeasurementQuote = !isRevisionQuote && String(quoteQ.data?.measurement_status || "") === "returned_to_seller";
+  const returnedMeasurementReason = String(quoteQ.data?.measurement_review_notes || "").trim();
+  const returnedMeasurementForced = quoteQ.data?.measurement_return_force_reason === true;
+  const visibleQuoteNumber = String(quoteQ.data?.quote_number || quoteQ.data?.odoo_sale_order_name || quoteId || idParam || "").trim();
+  const visibleParentQuoteNumber = String(quoteQ.data?.parent_quote_number || quoteQ.data?.parent_quote_quote_number || quoteQ.data?.parent_odoo_sale_order_name || quoteQ.data?.parent_quote_id || "").trim();
+
+  const productionPlanningQuoteId = useMemo(() => {
+    const currentQuoteId = quoteId || idParam || null;
+    const parentQuoteId = String(quoteQ.data?.parent_quote_id || "").trim() || null;
+    if (isRevisionQuote && parentQuoteId) return parentQuoteId;
+    return currentQuoteId;
+  }, [quoteId, idParam, isRevisionQuote, quoteQ.data?.parent_quote_id]);
+
   const productionDeliveryQ = useQuery({
-    queryKey: ["production-planning-estimate", quoteId || idParam || "draft", String(catalogKind || "porton").toLowerCase()],
-    queryFn: () => getProductionPlanningEstimate({ quoteId: quoteId || idParam || null }),
-    enabled: !!user && String(catalogKind || "porton").toLowerCase() === "porton",
+    queryKey: ["production-planning-estimate", productionPlanningQuoteId || "draft", String(catalogKind || "porton").toLowerCase()],
+    queryFn: () => getProductionPlanningEstimate({ quoteId: productionPlanningQuoteId || null }),
+    enabled: !!user && !!productionPlanningQuoteId && String(catalogKind || "porton").toLowerCase() === "porton",
     staleTime: 60 * 1000,
     refetchInterval: 2 * 60 * 1000,
   });
@@ -130,14 +147,6 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
   const financingPercent = Number(financingQ.data?.percent || 0) || 0;
   const totals = useMemo(() => calcTotals(lines, marginPercent, ivaRate, financingPercent), [lines, marginPercent, ivaRate, financingPercent]);
   const linesKey = useMemo(() => lines.map((l) => `${l.product_id}:${l.qty}`).join("|"), [lines]);
-  const isRevisionQuote = (quoteQ.data?.quote_kind || "original") === "copy";
-  const finalStatus = String(quoteQ.data?.final_status || "");
-  const isAcopioRevision = isRevisionQuote && String(quoteQ.data?.fulfillment_mode || "").trim() === "acopio";
-  const isReturnedMeasurementQuote = !isRevisionQuote && String(quoteQ.data?.measurement_status || "") === "returned_to_seller";
-  const returnedMeasurementReason = String(quoteQ.data?.measurement_review_notes || "").trim();
-  const returnedMeasurementForced = quoteQ.data?.measurement_return_force_reason === true;
-  const visibleQuoteNumber = String(quoteQ.data?.quote_number || quoteQ.data?.odoo_sale_order_name || quoteId || idParam || "").trim();
-  const visibleParentQuoteNumber = String(quoteQ.data?.parent_quote_number || quoteQ.data?.parent_quote_quote_number || quoteQ.data?.parent_odoo_sale_order_name || quoteQ.data?.parent_quote_id || "").trim();
 
   useEffect(() => {
     async function run() {
@@ -255,7 +264,7 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
 
   async function getLatestProductionPlanning() {
     try {
-      return await getProductionPlanningEstimate({ quoteId: quoteId || idParam || null });
+      return await getProductionPlanningEstimate({ quoteId: productionPlanningQuoteId || null });
     } catch {
       return productionDelivery || null;
     }

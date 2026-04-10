@@ -1,4 +1,4 @@
-Cambios aplicados:
-- En presupuesto/proforma, la fecha ahora sale como: Fecha estimada de entrega "Semana X, entre fechas".
-- En el mismo bloque se agregan: ancho calculado, largo calculado, peso calculado y piernas.
-- Los cálculos usan la misma lógica del backend de medición/superficie.
+Cambios incluidos:
+- En edición de ajuste/acopio, la entrega estimada usa el parent_quote_id cuando es una copia.
+- En presupuesto/proforma: 'Fecha estimada de entrega "Semana X, entre fechas"'.
+- En presupuesto/proforma: 'Medidas de paso: Alto x Ancho', 'Peso calculado' y 'Piernas'.

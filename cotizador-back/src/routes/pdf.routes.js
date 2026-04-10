@@ -579,7 +579,7 @@ async function renderPdf({ title, payload, useBasePrice }) {
   const showDestination = !!useBasePrice;
   const obs = stripSellerLines(safeStr(payload?.note));
   const productionPlanningText = getProductionPlanningText(payload);
-  const calculatedSummaryLines = await buildBudgetExtraSummaryLines(payload);
+  const extraCalculatedLines = await buildBudgetExtraSummaryLines(payload);
 
   const quoteNo = getQuoteNumber(payload);
   const { lines, grandTotal, subtotalNet, ivaAmount } = buildLines(payload, { useBasePrice });
@@ -642,10 +642,8 @@ async function renderPdf({ title, payload, useBasePrice }) {
   y += infoH + 10;
 
   const extraLines = [];
-  if (productionPlanningText) {
-    extraLines.push(`Fecha estimada de entrega "${productionPlanningText}"`);
-  }
-  extraLines.push(...calculatedSummaryLines);
+  if (productionPlanningText) extraLines.push(`Fecha estimada de entrega "${productionPlanningText}"`);
+  extraLines.push(...extraCalculatedLines);
   if (obs) extraLines.push(`Obs: ${obs}`);
 
   if (extraLines.length) {
