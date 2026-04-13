@@ -11,6 +11,8 @@ const EMPTY_CUSTOMER = {
   city: "",
 };
 
+const INTEGER_QTY_PRODUCT_IDS = new Set([3582, 3251]);
+
 function normMarginInput(v) {
   return String(v ?? "").replace(",", ".").trim();
 }
@@ -27,23 +29,44 @@ function parseDimensionNumber(v) {
   const n = Number(String(v ?? "").replace(",", "."));
   return Number.isFinite(n) ? n : 0;
 }
+function isIntegerQtyProductId(productId) {
+  return INTEGER_QTY_PRODUCT_IDS.has(Number(productId));
+}
 function isProtectedLine(line) {
-  return !!line?.surface_quantity || !!line?.previously_billed_line;
+  return !!line?.auto_system_item || !!line?.surface_quantity || !!line?.previously_billed_line;
+}
+function normalizeIntegerQty(value) {
+  const n = Number(String(value ?? "").replace(",", "."));
+  if (!Number.isFinite(n)) return 0;
+  return Math.max(0, Math.trunc(n));
+}
+function normalizeEditableQty({ productId, qty, surfaceQuantity = false }) {
+  if (surfaceQuantity) {
+    const n = Number(String(qty ?? "").replace(",", "."));
+    return Number.isFinite(n) ? Math.max(0, n) : 0;
+  }
+  if (isIntegerQtyProductId(productId)) {
+    return normalizeIntegerQty(qty);
+  }
+  return 1;
 }
 function getSurfaceQuantity(dimensions) {
   return round2(
     parseDimensionNumber(dimensions?.width) * parseDimensionNumber(dimensions?.height),
   );
 }
-function stripLegacyAutoSystemLines(lines) {
-  return (Array.isArray(lines) ? lines : []).filter((line) => !line?.auto_system_item);
-}
 function syncSurfaceLines(lines, dimensions) {
-  const currentLines = stripLegacyAutoSystemLines(lines);
+  const currentLines = Array.isArray(lines) ? lines : [];
   const area = getSurfaceQuantity(dimensions);
-  return currentLines.map((line) =>
-    !line?.surface_quantity ? line : { ...line, qty: area },
-  );
+  return currentLines
+    .filter((line) => !line?.auto_system_item)
+    .map((line) => {
+      if (line?.surface_quantity) return { ...line, qty: area };
+      if (isIntegerQtyProductId(line?.product_id)) {
+        return { ...line, qty: normalizeIntegerQty(line?.qty) };
+      }
+      return { ...line, qty: 1 };
+    });
 }
 function applyDerivedLines(lines, _portonType, dimensions) {
   return syncSurfaceLines(lines, dimensions);
@@ -117,24 +140,31 @@ export const useQuoteStore = create((set, get) => ({
     const condText = String(payload?.condition_text || "");
     const pay = String(payload?.payment_method || "");
     const portonType = String(payload?.porton_type || "");
-    const mappedLines = lines.map((l, idx) => {
-      const rawName = l.raw_name || l.rawName || l.raw || l.name || "";
-      const visibleName =
-        l.name || l.display_name || l.alias || rawName || `Producto ${l.product_id || idx}`;
-      return {
-        product_id: Number(l.product_id ?? idx + 1),
-        name: visibleName,
-        raw_name: rawName,
-        code: l.code || null,
-        qty: Number(l.qty || 1),
-        basePrice: Number(l.basePrice ?? l.base_price ?? l.price ?? 0) || 0,
-        auto_system_item: !!l.auto_system_item,
-        surface_quantity: !!l.surface_quantity,
-        previously_billed_line: !!l.previously_billed_line,
-        locked_line: !!l.locked_line,
-        line_key: String(l.line_key || l.product_id || idx),
-      };
-    });
+    const mappedLines = lines
+      .map((l, idx) => {
+        const rawName = l.raw_name || l.rawName || l.raw || l.name || "";
+        const visibleName =
+          l.name || l.display_name || l.alias || rawName || `Producto ${l.product_id || idx}`;
+        return {
+          product_id: Number(l.product_id ?? idx + 1),
+          name: visibleName,
+          raw_name: rawName,
+          code: l.code || null,
+          qty: normalizeEditableQty({
+            productId: l.product_id,
+            qty: l.qty || 1,
+            surfaceQuantity: !!l.surface_quantity,
+          }),
+          basePrice: Number(l.basePrice ?? l.base_price ?? l.price ?? 0) || 0,
+          auto_system_item: !!l.auto_system_item,
+          surface_quantity: !!l.surface_quantity,
+          previously_billed_line: !!l.previously_billed_line,
+          locked_line: !!l.locked_line,
+          line_key: String(l.line_key || l.product_id || idx),
+        };
+      })
+      .filter((line) => !line.auto_system_item);
+
     set({
       quoteId: q.id ?? null,
       status: q.status || "draft",
@@ -259,7 +289,9 @@ export const useQuoteStore = create((set, get) => ({
     set((s) => {
       const existing = s.lines.find((l) => l.product_id === id && !l.previously_billed_line);
       const isSurfaceQuantity = !!p.uses_surface_quantity;
+      const isIntegerQty = isIntegerQtyProductId(id);
       const surfaceQty = getSurfaceQuantity(s.dimensions);
+
       if (existing) {
         if (existing.surface_quantity) {
           return {
@@ -268,12 +300,20 @@ export const useQuoteStore = create((set, get) => ({
             ),
           };
         }
+        if (isIntegerQty) {
+          return {
+            lines: s.lines.map((l) =>
+              l.product_id === id ? { ...l, qty: normalizeIntegerQty(l.qty) } : l,
+            ),
+          };
+        }
         return {
           lines: s.lines.map((l) =>
-            l.product_id === id ? { ...l, qty: Number(l.qty || 0) + 1 } : l,
+            l.product_id === id ? { ...l, qty: 1 } : l,
           ),
         };
       }
+
       return {
         lines: [
           ...s.lines,
@@ -282,7 +322,7 @@ export const useQuoteStore = create((set, get) => ({
             name: p.display_name || p.alias || p.name || "",
             raw_name: p.raw_name || p.rawName || p.original_name || p.name || "",
             code: p.code || null,
-            qty: isSurfaceQuantity ? surfaceQty : 1,
+            qty: isSurfaceQuantity ? surfaceQty : (isIntegerQty ? 0 : 1),
             basePrice:
               Number(
                 p.price ??
@@ -319,11 +359,17 @@ export const useQuoteStore = create((set, get) => ({
     const id = Number(product_id);
     const current = get().lines.find((line) => Number(line?.product_id) === id);
     if (isProtectedLine(current)) return;
-    const q = Math.max(0, Number(qty || 0));
+
+    const q = normalizeEditableQty({
+      productId: id,
+      qty,
+      surfaceQuantity: !!current?.surface_quantity,
+    });
+
     set((s) => ({
       lines: s.lines
         .map((l) => (l.product_id === id ? { ...l, qty: q } : l))
-        .filter((l) => l.qty > 0 || l.previously_billed_line),
+        .filter((l) => l.qty > 0 || l.previously_billed_line || isIntegerQtyProductId(l.product_id)),
     }));
   },
   applyBasePrices(pricesResponse) {
@@ -346,7 +392,11 @@ export const useQuoteStore = create((set, get) => ({
       .filter((l) => !l.ui_only_line && !l.auto_system_item)
       .map((l) => ({
         product_id: l.product_id,
-        qty: l.qty,
+        qty: normalizeEditableQty({
+          productId: l.product_id,
+          qty: l.qty,
+          surfaceQuantity: !!l.surface_quantity,
+        }),
         name: l.name,
         raw_name: l.raw_name || null,
         code: l.code,
