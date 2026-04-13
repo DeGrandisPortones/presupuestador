@@ -1,14 +1,18 @@
-Patch incluido:
-- Reemplaza los iconos del menú usando las imágenes provistas por el usuario.
-- No cambia los logos de De Grandis ni de Ipanel.
-- Ajusta Medidas del portón:
-  - saca el bloque 'Apto para revestir'
-  - deja en gris los campos calculados
-  - mantiene límites y validación obligatoria de ancho/alto
-- Mantiene el encabezado sin UUID y con estado visible 'Guardado'.
+Patch: cálculo preview para sistemas doble_iny
 
-Archivos:
-- cotizador-front/src/pages/MenuPage/index.jsx
-- cotizador-front/src/pages/CotizadorPage/index.jsx
+Incluye:
 - cotizador-front/src/pages/CotizadorPage/components/PortonDimensions.jsx
-- cotizador-front/public/menu-icons/*.png
+
+Qué corrige:
+- Trata correctamente los sistemas derivados con clave doble_iny / *_iny como inyectados para inferir kg/m2.
+- Calcula y muestra en pantalla:
+  - Kg/m2 efectivo
+  - Peso estimado
+  - Piernas estimadas
+  - Medidas de paso
+- Mantiene los campos calculados en gris.
+- Usa los IDs configurados de instalación dentro/detrás del vano para la vista previa.
+
+Aplicación:
+- Copiar y reemplazar el archivo en el repo.
+- Rebuild del front.
