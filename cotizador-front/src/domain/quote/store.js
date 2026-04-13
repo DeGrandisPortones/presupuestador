@@ -10,9 +10,6 @@ const EMPTY_CUSTOMER = {
   maps_url: "",
   city: "",
 };
-const SYSTEM_STANDARD_PRODUCT_ID = 3009;
-const SYSTEM_COPLANAR_PRODUCT_ID = 3008;
-const SYSTEM_PRODUCT_IDS = new Set([SYSTEM_STANDARD_PRODUCT_ID, SYSTEM_COPLANAR_PRODUCT_ID]);
 
 function normMarginInput(v) {
   return String(v ?? "").replace(",", ".").trim();
@@ -30,64 +27,26 @@ function parseDimensionNumber(v) {
   const n = Number(String(v ?? "").replace(",", "."));
   return Number.isFinite(n) ? n : 0;
 }
-function isSystemProductId(productId) {
-  return SYSTEM_PRODUCT_IDS.has(Number(productId));
-}
 function isProtectedLine(line) {
-  return !!line?.auto_system_item || !!line?.surface_quantity || !!line?.previously_billed_line;
-}
-function getSystemProductId(portonType) {
-  const key = String(portonType || "").trim().toLowerCase();
-  if (!key) return null;
-  return key.includes("coplanar") ? SYSTEM_COPLANAR_PRODUCT_ID : SYSTEM_STANDARD_PRODUCT_ID;
-}
-function getSystemProductName(productId) {
-  return Number(productId) === SYSTEM_COPLANAR_PRODUCT_ID
-    ? "Sistema coplanar"
-    : "Sistema estándar";
+  return !!line?.surface_quantity || !!line?.previously_billed_line;
 }
 function getSurfaceQuantity(dimensions) {
   return round2(
     parseDimensionNumber(dimensions?.width) * parseDimensionNumber(dimensions?.height),
   );
 }
-function buildSystemLine(productId, area, existing = null) {
-  const safeArea = Math.max(0, round2(area));
-  const visibleName = getSystemProductName(productId);
-  return {
-    product_id: Number(productId),
-    name: String(existing?.name || visibleName),
-    raw_name: String(existing?.raw_name || visibleName),
-    code: existing?.code || null,
-    qty: safeArea,
-    basePrice: Number(existing?.basePrice ?? existing?.base_price ?? existing?.price ?? 0) || 0,
-    auto_system_item: true,
-    surface_quantity: true,
-  };
+function stripLegacyAutoSystemLines(lines) {
+  return (Array.isArray(lines) ? lines : []).filter((line) => !line?.auto_system_item);
 }
 function syncSurfaceLines(lines, dimensions) {
-  const currentLines = Array.isArray(lines) ? lines : [];
+  const currentLines = stripLegacyAutoSystemLines(lines);
   const area = getSurfaceQuantity(dimensions);
   return currentLines.map((line) =>
     !line?.surface_quantity ? line : { ...line, qty: area },
   );
 }
-function syncSystemLine(lines, portonType, dimensions) {
-  const targetProductId = getSystemProductId(portonType);
-  const area = getSurfaceQuantity(dimensions);
-  const currentLines = Array.isArray(lines) ? lines : [];
-  const kept = currentLines.filter((line) => !line?.auto_system_item);
-  if (!targetProductId) return kept;
-  const existingTarget = currentLines.find(
-    (line) =>
-      !!line?.auto_system_item &&
-      Number(line?.product_id) === Number(targetProductId),
-  );
-  return [...kept, buildSystemLine(targetProductId, area, existingTarget)];
-}
-function applyDerivedLines(lines, portonType, dimensions) {
-  const withSurface = syncSurfaceLines(lines, dimensions);
-  return syncSystemLine(withSurface, portonType, dimensions);
+function applyDerivedLines(lines, _portonType, dimensions) {
+  return syncSurfaceLines(lines, dimensions);
 }
 function splitCustomerName(endCustomer = {}) {
   const directFirst = String(endCustomer?.first_name || "").trim();
@@ -384,7 +343,7 @@ export const useQuoteStore = create((set, get) => ({
     const area_m2 = getSurfaceQuantity(s.dimensions);
     const customerName = buildCustomerName(s.endCustomer);
     const lines = s.lines
-      .filter((l) => !l.ui_only_line)
+      .filter((l) => !l.ui_only_line && !l.auto_system_item)
       .map((l) => ({
         product_id: l.product_id,
         qty: l.qty,
