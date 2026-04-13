@@ -1,18 +1,9 @@
-Patch: cálculo preview para sistemas doble_iny
+Patch: ancho mínimo del portón = 2.4 m
 
 Incluye:
 - cotizador-front/src/pages/CotizadorPage/components/PortonDimensions.jsx
 
-Qué corrige:
-- Trata correctamente los sistemas derivados con clave doble_iny / *_iny como inyectados para inferir kg/m2.
-- Calcula y muestra en pantalla:
-  - Kg/m2 efectivo
-  - Peso estimado
-  - Piernas estimadas
-  - Medidas de paso
-- Mantiene los campos calculados en gris.
-- Usa los IDs configurados de instalación dentro/detrás del vano para la vista previa.
-
-Aplicación:
-- Copiar y reemplazar el archivo en el repo.
-- Rebuild del front.
+Cambios:
+- ancho mínimo actualizado de 2.0 m a 2.4 m
+- leyenda visual actualizada a "Mínimo 2.4 m · Máximo 7 m"
+- mantiene el fix previo para doble_iny en el preview

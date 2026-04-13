@@ -4,7 +4,7 @@ import { useQuoteStore } from "../../../domain/quote/store";
 import { adminGetTechnicalMeasurementRules } from "../../../api/admin.js";
 import Input from "../../../ui/Input";
 
-const WIDTH_MIN_M = 2;
+const WIDTH_MIN_M = 2.4;
 const WIDTH_MAX_M = 7;
 const HEIGHT_MIN_M = 2;
 const HEIGHT_MAX_M = 3;
@@ -44,17 +44,10 @@ function getNumberParam(params, keys, fallback) {
   }
   return fallback;
 }
-function isInjectedDoorTypeKey(value) {
-  const key = norm(value);
-  return key.includes("inyect") || key.includes("doble_iny") || /(^|_)iny($|_)/.test(key);
-}
-function isClassicDoorTypeKey(value) {
-  const key = norm(value);
-  return key.includes("clas") || key.includes("estandar");
-}
 function inferKgM2FromType(portonType) {
-  if (isInjectedDoorTypeKey(portonType)) return 25;
-  if (isClassicDoorTypeKey(portonType)) return 15;
+  const t = norm(portonType);
+  if (t.includes("inyect") || t.includes("doble_iny") || /(^|_)iny($|_)/.test(t)) return 25;
+  if (t.includes("clas")) return 15;
   return 0;
 }
 function isAptoDerivedType(portonType) {
@@ -81,14 +74,6 @@ function resolveAptoKgM2ByProducts(lines, params) {
   }
   return 0;
 }
-function detectInstallationModeByProducts(lines, params) {
-  const ids = getBudgetProductIdSetFromLines(lines);
-  const insideId = Number(params?.installation_inside_product_id || 0);
-  const behindId = Number(params?.installation_behind_product_id || 0);
-  if (insideId && ids.has(insideId)) return "dentro_vano";
-  if (behindId && ids.has(behindId)) return "detras_vano";
-  return "sin_instalacion";
-}
 function formatNumberForInput(value) {
   const n = Number(value || 0);
   if (!Number.isFinite(n) || n <= 0) return "";
@@ -97,16 +82,12 @@ function formatNumberForInput(value) {
 function legsTypeForWeight(weightKg, isApto, params) {
   const limitAngostas = getNumberParam(
     params,
-    [
-      isApto ? "no_cladding_angostas_max_kg" : "legs_angostas_max_kg",
-      isApto ? "limit_angostas_apto_kg" : "limit_angostas_kg",
-      "piernas_angostas_hasta_kg",
-    ],
+    [isApto ? "limit_angostas_apto_kg" : "limit_angostas_kg", "piernas_angostas_hasta_kg"],
     isApto ? 80 : 140,
   );
-  const limitComunes = getNumberParam(params, ["legs_comunes_max_kg", "limit_comunes_kg", "piernas_comunes_hasta_kg"], 175);
-  const limitAnchas = getNumberParam(params, ["legs_anchas_max_kg", "limit_anchas_kg", "piernas_anchas_hasta_kg"], 240);
-  const limitSuper = getNumberParam(params, ["legs_superanchas_max_kg", "limit_superanchas_kg", "piernas_superanchas_hasta_kg"], 300);
+  const limitComunes = getNumberParam(params, ["limit_comunes_kg", "piernas_comunes_hasta_kg"], 175);
+  const limitAnchas = getNumberParam(params, ["limit_anchas_kg", "piernas_anchas_hasta_kg"], 240);
+  const limitSuper = getNumberParam(params, ["limit_superanchas_kg", "piernas_superanchas_hasta_kg"], 300);
   if (!Number.isFinite(weightKg) || weightKg <= 0) return "—";
   if (weightKg <= limitAngostas) return "Angostas";
   if (weightKg <= limitComunes) return "Comunes";
@@ -114,29 +95,18 @@ function legsTypeForWeight(weightKg, isApto, params) {
   if (weightKg <= limitSuper) return "Superanchas";
   return "Especiales";
 }
-function formatMmPair(heightMm, widthMm) {
-  const h = Number(heightMm || 0);
-  const w = Number(widthMm || 0);
-  if (!Number.isFinite(h) || !Number.isFinite(w) || h <= 0 || w <= 0) return "—";
-  return `${Math.round(h)} mm x ${Math.round(w)} mm`;
-}
-function buildPreviewContext({ width, height, lines, params, effectiveKgM2, aptoParaRevestir }) {
-  const budgetHeightMm = Math.round(Math.max(0, Number(height || 0)) * 1000);
-  const budgetWidthMm = Math.round(Math.max(0, Number(width || 0)) * 1000);
-  const installationMode = detectInstallationModeByProducts(lines, params);
+function computeStepPassMm(widthM, heightM, params, estimatedLegs) {
+  const widthMm = Math.round(Number(widthM || 0) * 1000);
+  const heightMm = Math.round(Number(heightM || 0) * 1000);
+  if (!widthMm || !heightMm) return { width: 0, height: 0 };
+
   const heightDiscountMm = Number(params?.weight_height_discount_mm || 10);
   const widthDiscountMm = Number(params?.weight_width_discount_mm || 14);
-  const discountedHeightMm = Math.max(0, budgetHeightMm - heightDiscountMm);
-  const discountedWidthMm = Math.max(0, budgetWidthMm - widthDiscountMm);
-  const discountedHeightM = discountedHeightMm / 1000;
-  const discountedWidthM = discountedWidthMm / 1000;
-  const estimatedWeightKg = effectiveKgM2 > 0 ? Number((discountedHeightM * discountedWidthM * effectiveKgM2).toFixed(2)) : 0;
-  const estimatedLegs = legsTypeForWeight(estimatedWeightKg, aptoParaRevestir, params);
+  let nextHeight = Math.max(0, heightMm - heightDiscountMm);
+  let nextWidth = Math.max(0, widthMm - widthDiscountMm);
 
-  let stepHeightMm = discountedHeightMm;
-  let stepWidthMm = discountedWidthMm;
-  if (installationMode === "detras_vano") {
-    stepHeightMm = Math.max(0, budgetHeightMm + Number(params?.behind_vano_add_height_mm || 100));
+  const legsKey = String(estimatedLegs || "").trim().toLowerCase();
+  if (legsKey) {
     const addMap = {
       angostas: Number(params?.legs_angostas_add_width_mm || 140),
       comunes: Number(params?.legs_comunes_add_width_mm || 200),
@@ -144,20 +114,14 @@ function buildPreviewContext({ width, height, lines, params, effectiveKgM2, apto
       superanchas: Number(params?.legs_superanchas_add_width_mm || 380),
       especiales: Number(params?.legs_especiales_add_width_mm || params?.legs_superanchas_add_width_mm || 380),
     };
-    stepWidthMm = Math.max(0, budgetWidthMm + Number(addMap[estimatedLegs.toLowerCase()] || 0));
-  } else if (installationMode === "dentro_vano") {
-    stepHeightMm = Math.max(0, budgetHeightMm - Number(params?.inside_vano_subtract_height_mm || 10));
-    stepWidthMm = Math.max(0, budgetWidthMm - Number(params?.inside_vano_subtract_width_mm || 20));
+    if (false) {
+      nextWidth += addMap[legsKey] || 0;
+    }
   }
 
-  return {
-    installationMode,
-    estimatedWeightKg,
-    estimatedLegs,
-    stepHeightMm,
-    stepWidthMm,
-  };
+  return { width: nextWidth, height: nextHeight };
 }
+
 function FieldBox({ label, helper, children }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 0 }}>
@@ -167,11 +131,12 @@ function FieldBox({ label, helper, children }) {
     </div>
   );
 }
-function CalculatedCard({ label, value }) {
+
+function CalculatedBox({ label, value }) {
   return (
-    <div style={{ border: "1px solid #e5e7eb", background: "#f3f4f6", borderRadius: 10, padding: 10 }}>
+    <div style={{ border: "1px solid #d7dce3", borderRadius: 10, padding: 12, background: "#f3f4f6" }}>
       <div className="muted">{label}</div>
-      <div style={{ fontWeight: 800 }}>{value || "—"}</div>
+      <div style={{ fontWeight: 800 }}>{value}</div>
     </div>
   );
 }
@@ -207,10 +172,14 @@ export default function PortonDimensions({ kind = "porton" }) {
   const effectiveKgM2 = aptoParaRevestir
     ? (configuredKgM2 > 0 ? configuredKgM2 : legacyKgM2)
     : inferredKgM2;
-
-  const preview = useMemo(
-    () => buildPreviewContext({ width, height, lines, params, effectiveKgM2, aptoParaRevestir }),
-    [width, height, lines, params, effectiveKgM2, aptoParaRevestir],
+  const estimatedWeightKg = area > 0 && effectiveKgM2 > 0 ? area * effectiveKgM2 : 0;
+  const estimatedLegs = useMemo(
+    () => legsTypeForWeight(estimatedWeightKg, aptoParaRevestir, params),
+    [estimatedWeightKg, aptoParaRevestir, params],
+  );
+  const stepPass = useMemo(
+    () => computeStepPassMm(width, height, params, estimatedLegs),
+    [width, height, params, estimatedLegs],
   );
 
   useEffect(() => {
@@ -248,7 +217,7 @@ export default function PortonDimensions({ kind = "porton" }) {
           alignItems: "start",
         }}
       >
-        <FieldBox label="Ancho (m)" helper="Mínimo 2 m · Máximo 7 m">
+        <FieldBox label="Ancho (m)" helper="Mínimo 2.4 m · Máximo 7 m">
           <Input
             type="text"
             inputMode="decimal"
@@ -277,7 +246,7 @@ export default function PortonDimensions({ kind = "porton" }) {
             value={portonType || ""}
             disabled
             placeholder="Se completa según la combinación de productos"
-            style={{ width: "100%", background: "#f3f4f6" }}
+            style={{ width: "100%", background: "#f3f4f6", color: "#6b7280" }}
           />
         </FieldBox>
 
@@ -285,24 +254,24 @@ export default function PortonDimensions({ kind = "porton" }) {
           <Input
             value={formatNumberForInput(effectiveKgM2)}
             placeholder={aptoParaRevestir ? "Se completa según la tabla de apto para revestir" : "Se calcula automáticamente según el sistema"}
-            style={{ width: "100%", background: "#f3f4f6" }}
+            style={{ width: "100%", background: "#f3f4f6", color: "#6b7280" }}
             disabled
           />
         </FieldBox>
 
         <FieldBox label="Superficie">
-          <div style={{ fontWeight: 800, fontSize: 16, minHeight: 40, display: "flex", alignItems: "center", border: "1px solid #e5e7eb", background: "#f3f4f6", borderRadius: 10, padding: "0 12px" }}>
+          <div style={{ fontWeight: 800, fontSize: 16, minHeight: 40, display: "flex", alignItems: "center", background: "#f3f4f6", color: "#334155", border: "1px solid #d7dce3", borderRadius: 10, padding: "0 12px" }}>
             {area ? `${area.toFixed(2)} m²` : "–"}
           </div>
         </FieldBox>
       </div>
 
       <div className="spacer" />
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 10 }}>
-        <CalculatedCard label="Kg/m² efectivo" value={effectiveKgM2 > 0 ? `${effectiveKgM2.toFixed(2)} kg/m²` : "—"} />
-        <CalculatedCard label="Peso estimado" value={preview.estimatedWeightKg > 0 ? `${preview.estimatedWeightKg.toFixed(2)} kg` : "—"} />
-        <CalculatedCard label="Piernas estimadas" value={preview.estimatedLegs} />
-        <CalculatedCard label="Medidas de paso" value={formatMmPair(preview.stepHeightMm, preview.stepWidthMm)} />
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 10 }}>
+        <CalculatedBox label="Kg/m² efectivo" value={effectiveKgM2 > 0 ? `${effectiveKgM2.toFixed(2)} kg/m²` : "—"} />
+        <CalculatedBox label="Peso estimado" value={estimatedWeightKg > 0 ? `${estimatedWeightKg.toFixed(2)} kg` : "—"} />
+        <CalculatedBox label="Piernas estimadas" value={estimatedLegs} />
+        <CalculatedBox label="Medidas de paso" value={stepPass.height > 0 && stepPass.width > 0 ? `${stepPass.height} mm x ${stepPass.width} mm` : "—"} />
       </div>
 
       <div className="muted" style={{ marginTop: 8 }}>
