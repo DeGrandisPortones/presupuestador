@@ -1,4 +1,3 @@
-
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import Button from "../../ui/Button.jsx";
@@ -16,13 +15,8 @@ import {
   TECHNICAL_RULE_OPERATORS,
   TECHNICAL_RULE_ACTIONS,
   VALUE_SOURCE_TYPE_OPTIONS,
-  BUDGET_FIELD_OPTIONS,
-  USER_FIELD_OPTIONS,
   EDITABLE_BY_OPTIONS,
-  ODOO_BINDING_TYPE_OPTIONS,
   FIELD_TYPE_OPTIONS,
-  BUDGET_PRODUCT_VALUE_OPTIONS,
-  BUDGET_MULTIPLE_MODE_OPTIONS,
   mergeMeasurementFields,
   parseOptions,
 } from "../../domain/measurement/technicalMeasurementRuleFields.js";
@@ -59,7 +53,30 @@ const DEFAULT_SURFACE_PARAMETERS = {
   installation_inside_product_id: "",
   installation_behind_product_id: "",
   no_cladding_product_id: "",
+  apto_revestir_kg_m2_rules: [],
 };
+
+function newAptoKgRule(index = 1) {
+  return {
+    id: `apto_rule_${Date.now()}_${index}`,
+    product_id: "",
+    product_label: "",
+    kg_m2: "",
+  };
+}
+
+function normalizeAptoKgRuleDraft(rule, index) {
+  return {
+    id: String(rule?.id || `apto_rule_${index + 1}`),
+    product_id: Number(rule?.product_id || 0) || "",
+    product_label: String(rule?.product_label || "").trim(),
+    kg_m2: rule?.kg_m2 ?? "",
+  };
+}
+
+function normalizeAptoKgRulesDraft(raw = []) {
+  return (Array.isArray(raw) ? raw : []).map((rule, index) => normalizeAptoKgRuleDraft(rule, index));
+}
 
 function normalizeSurfaceParametersDraft(raw = {}) {
   return {
@@ -68,6 +85,7 @@ function normalizeSurfaceParametersDraft(raw = {}) {
     installation_inside_product_id: raw?.installation_inside_product_id ?? "",
     installation_behind_product_id: raw?.installation_behind_product_id ?? "",
     no_cladding_product_id: raw?.no_cladding_product_id ?? "",
+    apto_revestir_kg_m2_rules: normalizeAptoKgRulesDraft(raw?.apto_revestir_kg_m2_rules),
   };
 }
 
@@ -179,6 +197,19 @@ function updateRuleAt(setRuleDraft, index, patch) {
     return { rules: next };
   });
 }
+function updateAptoKgRuleAt(setSurfaceParameters, index, patch) {
+  setSurfaceParameters((prev) => {
+    const nextRules = [...(prev?.apto_revestir_kg_m2_rules || [])];
+    nextRules[index] = { ...nextRules[index], ...patch };
+    return { ...prev, apto_revestir_kg_m2_rules: nextRules };
+  });
+}
+function removeAptoKgRuleAt(setSurfaceParameters, index) {
+  setSurfaceParameters((prev) => ({
+    ...prev,
+    apto_revestir_kg_m2_rules: (prev?.apto_revestir_kg_m2_rules || []).filter((_, i) => i !== index),
+  }));
+}
 function removeCustomField(setFieldDraft, field, index) {
   if (!field?.can_delete) return;
   const label = String(field?.label || field?.key || `Campo #${index + 1}`).trim();
@@ -259,6 +290,15 @@ function buildSurfaceParametersPayload(surfaceParameters) {
     installation_inside_product_id: numericPayload(surfaceParameters.installation_inside_product_id),
     installation_behind_product_id: numericPayload(surfaceParameters.installation_behind_product_id),
     no_cladding_product_id: numericPayload(surfaceParameters.no_cladding_product_id),
+    apto_revestir_kg_m2_rules: (Array.isArray(surfaceParameters?.apto_revestir_kg_m2_rules)
+      ? surfaceParameters.apto_revestir_kg_m2_rules
+      : [])
+      .map((rule) => ({
+        product_id: numericPayload(rule?.product_id),
+        product_label: String(rule?.product_label || "").trim(),
+        kg_m2: numericPayload(rule?.kg_m2),
+      }))
+      .filter((rule) => Number(rule.product_id || 0) > 0 && Number(rule.kg_m2 || 0) > 0),
   };
 }
 
@@ -307,24 +347,6 @@ export default function SuperuserMeasurementRulesPage() {
   }, [rulesQ.data]);
 
   const products = useMemo(() => Array.isArray(catalogQ.data?.products) ? catalogQ.data.products : [], [catalogQ.data]);
-  const budgetSections = useMemo(() => {
-    const arr = Array.isArray(catalogQ.data?.sections) ? catalogQ.data.sections.slice() : [];
-    return arr.sort((a, b) => Number(a.position || 0) - Number(b.position || 0) || String(a.name || "").localeCompare(String(b.name || ""), "es"));
-  }, [catalogQ.data]);
-
-  const productsBySectionId = useMemo(() => {
-    const map = {};
-    for (const product of products) {
-      const sectionIds = Array.isArray(product?.section_ids) ? product.section_ids : [];
-      for (const sectionIdRaw of sectionIds) {
-        const sectionId = Number(sectionIdRaw);
-        if (!sectionId) continue;
-        if (!map[sectionId]) map[sectionId] = [];
-        map[sectionId].push(product);
-      }
-    }
-    return map;
-  }, [products]);
 
   const portonTypeOptions = useMemo(() => PORTON_TYPES.slice(), []);
 
@@ -361,6 +383,7 @@ export default function SuperuserMeasurementRulesPage() {
   const targetFieldOptions = visibleFields;
   const fields = Array.isArray(fieldDraft?.fields) ? fieldDraft.fields : [];
   const rules = Array.isArray(ruleDraft?.rules) ? ruleDraft.rules : [];
+  const aptoKgRules = Array.isArray(surfaceParameters?.apto_revestir_kg_m2_rules) ? surfaceParameters.apto_revestir_kg_m2_rules : [];
 
   const filteredFields = useMemo(() => {
     const q = String(fieldSearch || "").trim().toLowerCase();
@@ -615,7 +638,7 @@ export default function SuperuserMeasurementRulesPage() {
           <div><div className="muted" style={{ marginBottom: 6 }}>ID producto Dentro del vano</div><Input value={surfaceParameters.installation_inside_product_id} onChange={(v) => setSurfaceParameters((prev) => ({ ...prev, installation_inside_product_id: v }))} style={{ width: "100%" }} /></div>
           <div><div className="muted" style={{ marginBottom: 6 }}>ID producto Detrás del vano</div><Input value={surfaceParameters.installation_behind_product_id} onChange={(v) => setSurfaceParameters((prev) => ({ ...prev, installation_behind_product_id: v }))} style={{ width: "100%" }} /></div>
           <div><div className="muted" style={{ marginBottom: 6 }}>ID producto Apto para revestir</div><Input value={surfaceParameters.no_cladding_product_id} onChange={(v) => setSurfaceParameters((prev) => ({ ...prev, no_cladding_product_id: v }))} style={{ width: "100%" }} /></div>
-          <div><div className="muted" style={{ marginBottom: 6 }}>Ruta entry kg/m² vendedor</div><Input value={surfaceParameters.seller_kg_m2_field_path} onChange={(v) => setSurfaceParameters((prev) => ({ ...prev, seller_kg_m2_field_path: v }))} style={{ width: "100%" }} /></div>
+          <div><div className="muted" style={{ marginBottom: 6 }}>Ruta entry kg/m² vendedor (legacy)</div><Input value={surfaceParameters.seller_kg_m2_field_path} onChange={(v) => setSurfaceParameters((prev) => ({ ...prev, seller_kg_m2_field_path: v }))} style={{ width: "100%" }} /></div>
 
           <div><div className="muted" style={{ marginBottom: 6 }}>kg/m² clásico</div><Input value={surfaceParameters.classic_kg_m2} onChange={(v) => setSurfaceParameters((prev) => ({ ...prev, classic_kg_m2: v }))} style={{ width: "100%" }} /></div>
           <div><div className="muted" style={{ marginBottom: 6 }}>kg/m² inyectado</div><Input value={surfaceParameters.injected_kg_m2} onChange={(v) => setSurfaceParameters((prev) => ({ ...prev, injected_kg_m2: v }))} style={{ width: "100%" }} /></div>
@@ -638,6 +661,50 @@ export default function SuperuserMeasurementRulesPage() {
           <div><div className="muted" style={{ marginBottom: 6 }}>Piernas superanchas + ancho (mm)</div><Input value={surfaceParameters.legs_superanchas_add_width_mm} onChange={(v) => setSurfaceParameters((prev) => ({ ...prev, legs_superanchas_add_width_mm: v }))} style={{ width: "100%" }} /></div>
           <div><div className="muted" style={{ marginBottom: 6 }}>Piernas especiales + ancho (mm)</div><Input value={surfaceParameters.legs_especiales_add_width_mm} onChange={(v) => setSurfaceParameters((prev) => ({ ...prev, legs_especiales_add_width_mm: v }))} style={{ width: "100%" }} /></div>
         </div>
+
+        <div className="spacer" />
+        <div style={{ border: "1px solid #e5e7eb", borderRadius: 12, padding: 12, background: "#fff" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+            <div>
+              <div style={{ fontWeight: 800, marginBottom: 6 }}>Tabla kg/m² para apto para revestir</div>
+              <div className="muted">Si el presupuesto incluye uno de estos productos y además es apto para revestir, el sistema usa este kg/m² automáticamente.</div>
+            </div>
+            <Button onClick={() => setSurfaceParameters((prev) => ({ ...prev, apto_revestir_kg_m2_rules: [...(prev?.apto_revestir_kg_m2_rules || []), newAptoKgRule((prev?.apto_revestir_kg_m2_rules || []).length + 1)] }))}>+ Agregar fila</Button>
+          </div>
+          <div className="spacer" />
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {aptoKgRules.map((rule, index) => (
+              <div key={rule.id || index} style={{ display: "grid", gridTemplateColumns: "minmax(260px, 2fr) minmax(140px, 1fr) auto", gap: 10, alignItems: "end" }}>
+                <div>
+                  <div className="muted" style={{ marginBottom: 6 }}>Producto</div>
+                  <select
+                    value={rule.product_id || ""}
+                    onChange={(e) => {
+                      const product = products.find((item) => Number(item.id) === Number(e.target.value));
+                      updateAptoKgRuleAt(setSurfaceParameters, index, {
+                        product_id: e.target.value ? Number(e.target.value) : "",
+                        product_label: product ? productLabel(product) : "",
+                      });
+                    }}
+                    style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid #ddd" }}
+                  >
+                    <option value="">Seleccione producto…</option>
+                    {products.map((product) => (
+                      <option key={product.id} value={product.id}>{productLabel(product)}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <div className="muted" style={{ marginBottom: 6 }}>kg/m²</div>
+                  <Input value={rule.kg_m2 ?? ""} onChange={(v) => updateAptoKgRuleAt(setSurfaceParameters, index, { kg_m2: v })} style={{ width: "100%" }} />
+                </div>
+                <Button variant="ghost" onClick={() => removeAptoKgRuleAt(setSurfaceParameters, index)}>Eliminar</Button>
+              </div>
+            ))}
+            {!aptoKgRules.length ? <div className="muted">Todavía no cargaste reglas para apto para revestir.</div> : null}
+          </div>
+        </div>
+
         <div className="spacer" />
         <h3 style={{ marginTop: 0 }}>Fórmula de superficie final</h3>
         <div className="muted" style={{ marginBottom: 10 }}>

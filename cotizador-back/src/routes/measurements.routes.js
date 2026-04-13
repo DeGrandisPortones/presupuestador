@@ -1,4 +1,3 @@
-
 import crypto from "crypto";
 import express from "express";
 import { requireAuth } from "../auth.js";
@@ -97,6 +96,21 @@ function detectNoCladding(quote, surfaceParameters) {
   const noCladdingId = Number(surfaceParameters?.no_cladding_product_id || 0);
   return !!(noCladdingId && ids.has(noCladdingId));
 }
+function normalizeAptoKgM2Rules(surfaceParameters) {
+  return (Array.isArray(surfaceParameters?.apto_revestir_kg_m2_rules) ? surfaceParameters.apto_revestir_kg_m2_rules : [])
+    .map((rule) => ({
+      product_id: Number(rule?.product_id || 0),
+      kg_m2: toNumberLike(rule?.kg_m2),
+    }))
+    .filter((rule) => rule.product_id > 0 && Number.isFinite(rule.kg_m2) && rule.kg_m2 > 0);
+}
+function resolveAptoKgM2ByProducts(quote, surfaceParameters) {
+  const ids = getBudgetProductIdSet(quote);
+  for (const rule of normalizeAptoKgM2Rules(surfaceParameters)) {
+    if (ids.has(rule.product_id)) return Number(rule.kg_m2 || 0);
+  }
+  return 0;
+}
 function resolveSellerKgM2Entry(quote, surfaceParameters) {
   const payload = quote?.payload || {};
   const candidates = [];
@@ -139,10 +153,16 @@ function computeSurfaceAutomaticContext({ quote, form, surfaceParameters }) {
   const noCladding = detectNoCladding(quote, surfaceParameters);
   const tipoPorton = detectDoorType(quote);
   const sellerKgM2Entry = resolveSellerKgM2Entry(quote, surfaceParameters);
+  const aptoKgM2RuleValue = noCladding ? resolveAptoKgM2ByProducts(quote, surfaceParameters) : 0;
+  const defaultKgM2Porton = tipoPorton === "inyectado"
+    ? Number(surfaceParameters?.injected_kg_m2 || 25)
+    : Number(surfaceParameters?.classic_kg_m2 || 15);
 
-  const kgM2Porton = installationMode === "sin_instalacion"
-    ? (sellerKgM2Entry > 0 ? sellerKgM2Entry : (tipoPorton === "inyectado" ? Number(surfaceParameters?.injected_kg_m2 || 25) : Number(surfaceParameters?.classic_kg_m2 || 15)))
-    : (tipoPorton === "inyectado" ? Number(surfaceParameters?.injected_kg_m2 || 25) : Number(surfaceParameters?.classic_kg_m2 || 15));
+  const kgM2Porton = noCladding
+    ? (aptoKgM2RuleValue > 0 ? aptoKgM2RuleValue : (sellerKgM2Entry > 0 ? sellerKgM2Entry : defaultKgM2Porton))
+    : (installationMode === "sin_instalacion"
+      ? (sellerKgM2Entry > 0 ? sellerKgM2Entry : defaultKgM2Porton)
+      : defaultKgM2Porton);
 
   const baseHeightForWeightMm = installationMode === "sin_instalacion" ? budgetHeightMm : altoMinMm;
   const baseWidthForWeightMm = installationMode === "sin_instalacion" ? budgetWidthMm : anchoMinMm;
@@ -187,6 +207,7 @@ function computeSurfaceAutomaticContext({ quote, form, surfaceParameters }) {
     tipo_porton: tipoPorton,
     sin_revestimiento: noCladding ? 1 : 0,
     kg_m2_entry: sellerKgM2Entry,
+    kg_m2_apto_regla: round4(aptoKgM2RuleValue),
     kg_m2_porton: round4(kgM2Porton),
     peso_estimado_kg: pesoEstimadoKg,
     piernas_tipo: piernasTipo,

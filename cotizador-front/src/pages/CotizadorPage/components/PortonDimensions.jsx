@@ -16,7 +16,7 @@ function norm(v) {
 }
 function getRulesParams(rulesData) {
   const root = rulesData || {};
-  return root.surface_calc_params || root.surface_params || root.measurement_surface_params || {};
+  return root.surface_parameters || root.surface_calc_params || root.surface_params || root.measurement_surface_params || {};
 }
 function getNumberParam(params, keys, fallback) {
   for (const key of keys) {
@@ -33,6 +33,32 @@ function inferKgM2FromType(portonType) {
 }
 function isAptoDerivedType(portonType) {
   return norm(portonType) === "para_revestir_con_al_pvc_otros";
+}
+function normalizeAptoKgRules(raw = []) {
+  return (Array.isArray(raw) ? raw : [])
+    .map((item, index) => ({
+      id: String(item?.id || `apto_rule_${index + 1}`),
+      product_id: Number(item?.product_id || 0),
+      kg_m2: Number(String(item?.kg_m2 ?? "").replace(",", ".")),
+    }))
+    .filter((item) => item.product_id > 0 && Number.isFinite(item.kg_m2) && item.kg_m2 > 0);
+}
+function getBudgetProductIdSetFromLines(lines) {
+  return new Set((Array.isArray(lines) ? lines : []).map((line) => Number(line?.product_id || 0)).filter(Boolean));
+}
+function resolveAptoKgM2ByProducts(lines, params) {
+  const rules = normalizeAptoKgRules(params?.apto_revestir_kg_m2_rules);
+  if (!rules.length) return 0;
+  const ids = getBudgetProductIdSetFromLines(lines);
+  for (const rule of rules) {
+    if (ids.has(rule.product_id)) return rule.kg_m2;
+  }
+  return 0;
+}
+function formatNumberForInput(value) {
+  const n = Number(value || 0);
+  if (!Number.isFinite(n) || n <= 0) return "";
+  return String(Math.round(n * 100) / 100).replace(/\.0+$/, "").replace(/(\.\d*[1-9])0+$/, "$1");
 }
 function legsTypeForWeight(weightKg, isApto, params) {
   const limitAngostas = getNumberParam(
@@ -55,6 +81,7 @@ export default function PortonDimensions({ kind = "porton" }) {
   const dimensions = useQuoteStore((s) => s.dimensions);
   const setDimensions = useQuoteStore((s) => s.setDimensions);
   const portonType = useQuoteStore((s) => s.portonType);
+  const lines = useQuoteStore((s) => s.lines);
 
   const rulesQ = useQuery({
     queryKey: ["technical-rules-dimensions-preview"],
@@ -72,9 +99,15 @@ export default function PortonDimensions({ kind = "porton" }) {
 
   const params = useMemo(() => getRulesParams(rulesQ.data), [rulesQ.data]);
   const aptoParaRevestir = useMemo(() => isAptoDerivedType(portonType), [portonType]);
-  const enteredKgM2 = toNumber(dimensions?.kg_m2);
+  const legacyKgM2 = toNumber(dimensions?.kg_m2);
+  const configuredKgM2 = useMemo(
+    () => (aptoParaRevestir ? resolveAptoKgM2ByProducts(lines, params) : 0),
+    [aptoParaRevestir, lines, params],
+  );
   const inferredKgM2 = inferKgM2FromType(portonType);
-  const effectiveKgM2 = aptoParaRevestir ? enteredKgM2 : inferredKgM2;
+  const effectiveKgM2 = aptoParaRevestir
+    ? (configuredKgM2 > 0 ? configuredKgM2 : legacyKgM2)
+    : inferredKgM2;
   const estimatedWeightKg = area > 0 && effectiveKgM2 > 0 ? area * effectiveKgM2 : 0;
   const estimatedLegs = useMemo(
     () => legsTypeForWeight(estimatedWeightKg, aptoParaRevestir, params),
@@ -83,10 +116,19 @@ export default function PortonDimensions({ kind = "porton" }) {
 
   useEffect(() => {
     if ((kind || "porton") !== "porton") return;
-    if (!aptoParaRevestir && String(dimensions?.kg_m2 || "").trim()) {
-      setDimensions({ kg_m2: "" });
+    if (!aptoParaRevestir) {
+      if (String(dimensions?.kg_m2 || "").trim()) {
+        setDimensions({ kg_m2: "" });
+      }
+      return;
     }
-  }, [aptoParaRevestir, dimensions?.kg_m2, kind, setDimensions]);
+    if (configuredKgM2 > 0) {
+      const nextValue = formatNumberForInput(configuredKgM2);
+      if (String(dimensions?.kg_m2 || "").trim() !== nextValue) {
+        setDimensions({ kg_m2: nextValue });
+      }
+    }
+  }, [aptoParaRevestir, configuredKgM2, dimensions?.kg_m2, kind, setDimensions]);
 
   const title =
     (kind || "porton") === "porton"
@@ -128,13 +170,10 @@ export default function PortonDimensions({ kind = "porton" }) {
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
           <div className="muted">Kg por m²</div>
           <Input
-            type="text"
-            inputMode="decimal"
-            value={dimensions?.kg_m2 ?? ""}
-            onChange={(v) => setDimensions({ kg_m2: normalizeDecimal(v) })}
-            placeholder={aptoParaRevestir ? "Obligatorio para apto para revestir" : "Se habilita solo para apto para revestir"}
+            value={formatNumberForInput(effectiveKgM2)}
+            placeholder={aptoParaRevestir ? "Se completa según la tabla de apto para revestir" : "Se calcula automáticamente según el sistema"}
             style={{ width: 240 }}
-            disabled={!aptoParaRevestir}
+            disabled
           />
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 180 }}>
@@ -170,9 +209,9 @@ export default function PortonDimensions({ kind = "porton" }) {
       <div className="muted" style={{ marginTop: 8 }}>
         Estas medidas se guardan dentro del presupuesto para usarlas después en medición, cálculo de peso y comparación de superficie.
       </div>
-      {aptoParaRevestir && enteredKgM2 <= 0 ? (
+      {aptoParaRevestir && configuredKgM2 <= 0 && legacyKgM2 <= 0 ? (
         <div style={{ marginTop: 8, color: "#b45309", fontWeight: 700 }}>
-          Este sistema derivado es apto para revestir. Declarar kg/m² es obligatorio.
+          Este sistema derivado es apto para revestir, pero no tiene una regla de kg/m² configurada.
         </div>
       ) : null}
     </div>
