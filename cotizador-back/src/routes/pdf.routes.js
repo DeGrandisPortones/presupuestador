@@ -576,6 +576,7 @@ async function renderPdf({ title, payload, useBasePrice }) {
   const sellerName = getSellerName(payload);
   const destinationRaw = safeStr(payload?.fulfillment_mode);
   const destination = destinationRaw === "acopio" ? "Acopio" : destinationRaw === "produccion" ? "Producción" : (destinationRaw || "—");
+  const paymentMethod = safeStr(payload?.payload?.payment_method ?? payload?.payment_method);
   const showDestination = !!useBasePrice;
   const obs = stripSellerLines(safeStr(payload?.note));
   const productionPlanningText = getProductionPlanningText(payload);
@@ -642,6 +643,7 @@ async function renderPdf({ title, payload, useBasePrice }) {
   y += infoH + 10;
 
   const extraLines = [];
+  if (paymentMethod) extraLines.push(`Forma de pago: ${paymentMethod}`);
   if (productionPlanningText) extraLines.push(`Fecha estimada de entrega "${productionPlanningText}"`);
   extraLines.push(...extraCalculatedLines);
   if (obs) extraLines.push(`Obs: ${obs}`);
