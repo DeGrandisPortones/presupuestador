@@ -13,20 +13,22 @@ function toNumber(v) {
   const n = Number(String(v || "").replace(",", "."));
   return Number.isFinite(n) ? n : 0;
 }
-function parseLocaleNumber(v) {
-  const n = Number(String(v || "").replace(",", "."));
-  return Number.isFinite(n) ? n : null;
-}
 function normalizeDecimal(v) {
   return String(v ?? "").replace(/[^0-9.,]/g, "");
 }
-function normalizeDimensionInput(v) {
-  const cleaned = normalizeDecimal(v);
-  if (!cleaned) return "";
-  const normalized = cleaned.replace(/,/g, ".");
-  const parts = normalized.split(".");
-  if (parts.length <= 1) return normalized;
-  return `${parts.shift()}.${parts.join("")}`;
+function normalizeDecimalWithDot(v) {
+  return normalizeDecimal(v).replace(",", ".");
+}
+function clampNumber(value, min, max) {
+  if (!Number.isFinite(value)) return 0;
+  return Math.min(max, Math.max(min, value));
+}
+function clampDimensionInput(raw, min, max) {
+  const normalized = normalizeDecimalWithDot(raw);
+  if (!normalized.trim()) return "";
+  const n = Number(normalized);
+  if (!Number.isFinite(n)) return normalized;
+  return formatNumberForInput(clampNumber(n, min, max));
 }
 function norm(v) {
   return String(v || "").trim().toLowerCase().replace(/\s+/g, "_");
@@ -77,22 +79,6 @@ function formatNumberForInput(value) {
   if (!Number.isFinite(n) || n <= 0) return "";
   return String(Math.round(n * 100) / 100).replace(/\.0+$/, "").replace(/(\.\d*[1-9])0+$/, "$1");
 }
-function clampNumber(n, min, max) {
-  return Math.min(max, Math.max(min, n));
-}
-function clampDimensionInput(value, min, max) {
-  const n = parseLocaleNumber(value);
-  if (!Number.isFinite(n)) return "";
-  return formatNumberForInput(clampNumber(n, min, max));
-}
-function handleDimensionDraft(rawValue, min, max) {
-  const normalized = normalizeDimensionInput(rawValue);
-  if (!normalized) return "";
-  const n = parseLocaleNumber(normalized);
-  if (!Number.isFinite(n)) return normalized;
-  if (n > max) return formatNumberForInput(max);
-  return normalized;
-}
 function legsTypeForWeight(weightKg, isApto, params) {
   const limitAngostas = getNumberParam(
     params,
@@ -108,6 +94,16 @@ function legsTypeForWeight(weightKg, isApto, params) {
   if (weightKg <= limitAnchas) return "Anchas";
   if (weightKg <= limitSuper) return "Superanchas";
   return "Especiales";
+}
+
+function FieldBox({ label, helper, children }) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 0 }}>
+      <div className="muted">{label}</div>
+      {children}
+      {helper ? <div className="muted" style={{ lineHeight: 1.3, minHeight: 32 }}>{helper}</div> : <div style={{ minHeight: 32 }} />}
+    </div>
+  );
 }
 
 export default function PortonDimensions({ kind = "porton" }) {
@@ -149,16 +145,6 @@ export default function PortonDimensions({ kind = "porton" }) {
 
   useEffect(() => {
     if ((kind || "porton") !== "porton") return;
-    const patch = {};
-    const nextWidth = clampDimensionInput(dimensions?.width, WIDTH_MIN_M, WIDTH_MAX_M);
-    const nextHeight = clampDimensionInput(dimensions?.height, HEIGHT_MIN_M, HEIGHT_MAX_M);
-    if (String(dimensions?.width ?? "") !== nextWidth) patch.width = nextWidth;
-    if (String(dimensions?.height ?? "") !== nextHeight) patch.height = nextHeight;
-    if (Object.keys(patch).length) setDimensions(patch);
-  }, [dimensions?.height, dimensions?.width, kind, setDimensions]);
-
-  useEffect(() => {
-    if ((kind || "porton") !== "porton") return;
     if (!aptoParaRevestir) {
       if (String(dimensions?.kg_m2 || "").trim()) {
         setDimensions({ kg_m2: "" });
@@ -183,52 +169,62 @@ export default function PortonDimensions({ kind = "porton" }) {
   return (
     <div>
       <div style={{ fontWeight: 800, marginBottom: 8 }}>{title}</div>
-      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end" }}>
-        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-          <div className="muted">Ancho (m)</div>
+
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+          gap: 12,
+          alignItems: "start",
+        }}
+      >
+        <FieldBox label="Ancho (m)" helper="Mínimo 2 m · Máximo 7 m">
           <Input
             type="text"
             inputMode="decimal"
             value={dimensions?.width ?? ""}
-            onChange={(v) => setDimensions({ width: handleDimensionDraft(v, WIDTH_MIN_M, WIDTH_MAX_M) })}
-            onBlur={() => setDimensions({ width: clampDimensionInput(dimensions?.width, WIDTH_MIN_M, WIDTH_MAX_M) })}
-            placeholder="Entre 2 y 7"
-            title="El ancho debe estar entre 2 y 7 metros"
-            style={{ width: 140 }}
+            onChange={(v) => setDimensions({ width: clampDimensionInput(v, WIDTH_MIN_M, WIDTH_MAX_M) })}
+            onBlur={(e) => setDimensions({ width: clampDimensionInput(e?.target?.value, WIDTH_MIN_M, WIDTH_MAX_M) })}
+            placeholder="Ej: 3.2"
+            style={{ width: "100%" }}
           />
-          <div className="muted">Mínimo 2 m · Máximo 7 m</div>
-        </div>
-        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-          <div className="muted">Alto (m)</div>
+        </FieldBox>
+
+        <FieldBox label="Alto (m)" helper="Mínimo 2 m · Máximo 3 m">
           <Input
             type="text"
             inputMode="decimal"
             value={dimensions?.height ?? ""}
-            onChange={(v) => setDimensions({ height: handleDimensionDraft(v, HEIGHT_MIN_M, HEIGHT_MAX_M) })}
-            onBlur={() => setDimensions({ height: clampDimensionInput(dimensions?.height, HEIGHT_MIN_M, HEIGHT_MAX_M) })}
-            placeholder="Entre 2 y 3"
-            title="La altura debe estar entre 2 y 3 metros"
-            style={{ width: 140 }}
+            onChange={(v) => setDimensions({ height: clampDimensionInput(v, HEIGHT_MIN_M, HEIGHT_MAX_M) })}
+            onBlur={(e) => setDimensions({ height: clampDimensionInput(e?.target?.value, HEIGHT_MIN_M, HEIGHT_MAX_M) })}
+            placeholder="Ej: 2.1"
+            style={{ width: "100%" }}
           />
-          <div className="muted">Mínimo 2 m · Máximo 3 m</div>
-        </div>
-        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-          <div className="muted">Tipo / Sistema derivado</div>
-          <Input value={portonType || ""} disabled placeholder="Se completa según la combinación de productos" style={{ width: 280 }} />
-        </div>
-        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-          <div className="muted">Kg por m²</div>
+        </FieldBox>
+
+        <FieldBox label="Tipo / Sistema derivado">
+          <Input
+            value={portonType || ""}
+            disabled
+            placeholder="Se completa según la combinación de productos"
+            style={{ width: "100%" }}
+          />
+        </FieldBox>
+
+        <FieldBox label="Kg por m²">
           <Input
             value={formatNumberForInput(effectiveKgM2)}
             placeholder={aptoParaRevestir ? "Se completa según la tabla de apto para revestir" : "Se calcula automáticamente según el sistema"}
-            style={{ width: 240 }}
+            style={{ width: "100%" }}
             disabled
           />
-        </div>
-        <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 180 }}>
-          <div className="muted">Superficie</div>
-          <div style={{ fontWeight: 800, fontSize: 16 }}>{area ? `${area.toFixed(2)} m²` : "–"}</div>
-        </div>
+        </FieldBox>
+
+        <FieldBox label="Superficie">
+          <div style={{ fontWeight: 800, fontSize: 16, minHeight: 40, display: "flex", alignItems: "center" }}>
+            {area ? `${area.toFixed(2)} m²` : "–"}
+          </div>
+        </FieldBox>
       </div>
 
       <div className="spacer" />

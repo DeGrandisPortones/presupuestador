@@ -29,6 +29,11 @@ import SectionCatalog from "./components/SectionCatalog";
 import LinesTable from "./components/LinesTable";
 import SummaryBox from "./components/SummaryBox";
 
+const WIDTH_MIN_M = 2;
+const WIDTH_MAX_M = 7;
+const HEIGHT_MIN_M = 2;
+const HEIGHT_MAX_M = 3;
+
 function normalizeUrl(value) { return String(value || "").trim().replace(/\/+$/, "").toLowerCase(); }
 function editorRouteForKind(kind, id, search = "") { const safeId = String(id || "").trim(); const suffix = search || ""; if (String(kind || "porton").toLowerCase().trim() === "ipanel") return `/cotizador/ipanel/${safeId}${suffix}`; if (String(kind || "porton").toLowerCase().trim() === "otros") return `/cotizador/otros/${safeId}${suffix}`; return `/cotizador/${safeId}${suffix}`; }
 function parseNum(v) { const n = Number(String(v ?? "").replace(",", ".")); return Number.isFinite(n) ? n : 0; }
@@ -81,6 +86,21 @@ function formatProductionDeliveryDisplay(planning) {
 function getTodayIsoDate() {
   return new Date().toISOString().slice(0, 10);
 }
+function validateDimensionsRequired(payload) {
+  const dims = payload?.payload?.dimensions || {};
+  const width = parseNum(dims?.width);
+  const height = parseNum(dims?.height);
+  if (!(width > 0)) throw new Error("Completá el ancho del portón.");
+  if (!(height > 0)) throw new Error("Completá el alto del portón.");
+  if (width < WIDTH_MIN_M || width > WIDTH_MAX_M) throw new Error("El ancho debe estar entre 2 m y 7 m.");
+  if (height < HEIGHT_MIN_M || height > HEIGHT_MAX_M) throw new Error("El alto debe estar entre 2 m y 3 m.");
+}
+function formatVisibleStatus(rawStatus, hasPersistedQuote) {
+  const normalized = String(rawStatus || "").trim().toLowerCase();
+  if (normalized === "draft") return hasPersistedQuote ? "Guardado" : "Draft";
+  if (!normalized) return hasPersistedQuote ? "Guardado" : "Draft";
+  return String(rawStatus || "");
+}
 
 export default function CotizadorPage({ catalogKind = "porton" }) {
   const navigate = useNavigate();
@@ -113,8 +133,9 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
   const isReturnedMeasurementQuote = !isRevisionQuote && String(quoteQ.data?.measurement_status || "") === "returned_to_seller";
   const returnedMeasurementReason = String(quoteQ.data?.measurement_review_notes || "").trim();
   const returnedMeasurementForced = quoteQ.data?.measurement_return_force_reason === true;
-  const visibleQuoteNumber = String(quoteQ.data?.quote_number || quoteQ.data?.odoo_sale_order_name || quoteId || idParam || "").trim();
-  const visibleParentQuoteNumber = String(quoteQ.data?.parent_quote_number || quoteQ.data?.parent_quote_quote_number || quoteQ.data?.parent_odoo_sale_order_name || quoteQ.data?.parent_quote_id || "").trim();
+  const visibleQuoteNumber = String(quoteQ.data?.quote_number || quoteQ.data?.odoo_sale_order_name || "").trim();
+  const visibleParentQuoteNumber = String(quoteQ.data?.parent_quote_number || quoteQ.data?.parent_quote_quote_number || quoteQ.data?.parent_odoo_sale_order_name || "").trim();
+  const visibleStatusLabel = formatVisibleStatus(isRevisionQuote ? (finalStatus || status) : status, !!(quoteQ.data?.id || quoteId || idParam));
 
   const productionPlanningQuoteId = useMemo(() => {
     const parentQuoteId = String(quoteQ.data?.parent_quote_id || "").trim() || null;
@@ -205,6 +226,7 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
     if (!String(c.phone || "").trim()) errs.push("Completá el teléfono del cliente.");
     if (!Array.isArray(payload?.lines) || payload.lines.filter((line) => !line.previously_billed_line).length === 0) errs.push("Agregá al menos un producto.");
     if (errs.length) throw new Error(errs[0]);
+    validateDimensionsRequired(payload);
     validateCustomerContact(c, { requirePhone: true, requireMaps: false, requireCity: false });
   }
   function validateConfirm(payload) {
@@ -220,6 +242,7 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
     if (String(p.condition_mode || "") === "special" && !String(p.condition_text || "").trim()) errs.push("Completá la condición especial.");
     if (!Array.isArray(payload?.lines) || payload.lines.filter((line) => !line.previously_billed_line).length === 0) errs.push("Agregá al menos un producto.");
     if (errs.length) throw new Error(errs[0]);
+    validateDimensionsRequired(payload);
     validateCustomerContact(c, { requirePhone: true, requireMaps: true, requireCity: true });
   }
   function validatePdfDownload(payload) { validateDraft(payload); }
@@ -228,15 +251,15 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
     const payload = getDraftPayload();
     validateDraft(payload);
     if (!quoteId) {
-      const q = await createQuote(payload);
-      setQuoteMeta({ quoteId: q.id, status: q.status, rejectionNotes: q.rejection_notes });
+      const created = await createQuote(payload);
+      setQuoteMeta({ quoteId: created.id, status: created.status, rejectionNotes: created.rejection_notes });
       qc.invalidateQueries({ queryKey: ["quotes", "mine"] });
-      return { quote: q, payload: { ...payload, id: q.id, quote_id: q.id, quote_number: q.quote_number || q.id, seller_name: user?.full_name || user?.username || "" } };
+      return { quote: created, payload: { ...payload, id: created.id, quote_id: created.id, quote_number: created.quote_number || "", seller_name: user?.full_name || user?.username || "" } };
     }
     const q = await updateQuote(quoteId, payload);
     setQuoteMeta({ quoteId: q.id, status: q.status, rejectionNotes: q.rejection_notes });
     qc.invalidateQueries({ queryKey: ["quotes", "mine"] });
-    return { quote: q, payload: { ...payload, id: q.id, quote_id: q.id, quote_number: q.quote_number || q.id, seller_name: user?.full_name || user?.username || "" } };
+    return { quote: q, payload: { ...payload, id: q.id, quote_id: q.id, quote_number: q.quote_number || "", seller_name: user?.full_name || user?.username || "" } };
   }
   function maybeContinueDoorWorkflow(savedQuote) {
     if (!isDoorWorkflow || (catalogKind || "") !== "ipanel" || !workflowDoorId) return false;
@@ -317,13 +340,13 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
   const canConfirm = isAcopioRevision ? false : (isReturnedMeasurementQuote ? false : (isRevisionQuote ? ["", "draft", "rejected"].includes(finalStatus || "") : ["draft", "rejected_commercial", "rejected_technical"].includes(status)));
 
   return (
-    <div className="container" style={{ maxWidth: "none", width: "100%" }}>
+    <div className="container" style={{ maxWidth: "100%", width: "100%" }}>
       <div className="card" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
           <img className="product-logo" src={catalogKind === "ipanel" ? "/brands/ipanel.png" : "/brands/degrandis.png"} alt={catalogKind === "ipanel" ? "Ipanel" : "DeGrandis Portones"} />
           <div>
             <h2 style={{ margin: 0 }}>{visibleQuoteNumber ? `${isRevisionQuote ? "Ajuste" : "Presupuesto"} #${visibleQuoteNumber}` : "Nuevo presupuesto"}</h2>
-            <div className="muted">Estado: <b>{isRevisionQuote ? (finalStatus || status) : status}</b>{isRevisionQuote && quoteQ.data?.parent_quote_id ? <> · Ref. original: <b>{visibleParentQuoteNumber || String(quoteQ.data.parent_quote_id).slice(0, 8)}</b></> : null}</div>
+            <div className="muted">Estado: <b>{visibleStatusLabel}</b>{isRevisionQuote && quoteQ.data?.parent_quote_id ? <> · Ref. original: <b>{visibleParentQuoteNumber || "—"}</b></> : null}</div>
           </div>
         </div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
