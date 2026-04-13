@@ -1,9 +1,10 @@
-Patch: ancho mínimo del portón = 2.4 m
-
-Incluye:
-- cotizador-front/src/pages/CotizadorPage/components/PortonDimensions.jsx
+Aplicar este archivo sobre el proyecto actual.
 
 Cambios:
-- ancho mínimo actualizado de 2.0 m a 2.4 m
-- leyenda visual actualizada a "Mínimo 2.4 m · Máximo 7 m"
-- mantiene el fix previo para doble_iny en el preview
+- ancho y alto aceptan decimales
+- ya no se corrigen automáticamente al mínimo/máximo
+- si quedan fuera de rango, se pinta en rojo y muestra el aviso:
+  "Se encuentra fuera de los límites de tamaño."
+- ancho mínimo actualizado a 2.4 m
+- se mantiene el cálculo visual para doble_iny y similares
+- se muestran medidas de paso, kg/m², peso estimado y piernas estimadas
