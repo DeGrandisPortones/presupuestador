@@ -83,10 +83,14 @@ function computeSurfaceAutomaticContext({ quote, form, surfaceParameters }) {
       ? (sellerKgM2Entry > 0 ? sellerKgM2Entry : defaultKgM2Porton)
       : defaultKgM2Porton);
 
+  const heightDiscountMm = Number(surfaceParameters?.weight_height_discount_mm || 10);
+  const widthDiscountMm = Number(surfaceParameters?.weight_width_discount_mm || 14);
   const baseHeightForWeightMm = installationMode === "sin_instalacion" ? budgetHeightMm : altoMinMm;
   const baseWidthForWeightMm = installationMode === "sin_instalacion" ? budgetWidthMm : anchoMinMm;
-  const discountedHeightM = Math.max(0, (baseHeightForWeightMm - Number(surfaceParameters?.weight_height_discount_mm || 10)) / 1000);
-  const discountedWidthM = Math.max(0, (baseWidthForWeightMm - Number(surfaceParameters?.weight_width_discount_mm || 14)) / 1000);
+  const discountedHeightMm = Math.max(0, baseHeightForWeightMm - heightDiscountMm);
+  const discountedWidthMm = Math.max(0, baseWidthForWeightMm - widthDiscountMm);
+  const discountedHeightM = discountedHeightMm / 1000;
+  const discountedWidthM = discountedWidthMm / 1000;
   const pesoEstimadoKg = round2(discountedHeightM * discountedWidthM * kgM2Porton);
 
   const limitAngostas = noCladding ? Number(surfaceParameters?.no_cladding_angostas_max_kg || 80) : Number(surfaceParameters?.legs_angostas_max_kg || 140);
@@ -100,8 +104,8 @@ function computeSurfaceAutomaticContext({ quote, form, surfaceParameters }) {
   else if (pesoEstimadoKg > limitComunes) piernasTipo = "anchas";
   else if (pesoEstimadoKg > limitAngostas) piernasTipo = "comunes";
 
-  let altoCalculadoMm = budgetHeightMm;
-  let anchoCalculadoMm = budgetWidthMm;
+  let altoCalculadoMm = discountedHeightMm;
+  let anchoCalculadoMm = discountedWidthMm;
   if (installationMode === "detras_vano") {
     altoCalculadoMm = Math.max(0, altoMinMm + Number(surfaceParameters?.behind_vano_add_height_mm || 100));
     const addMap = {
@@ -122,6 +126,8 @@ function computeSurfaceAutomaticContext({ quote, form, surfaceParameters }) {
     piernas_tipo: piernasTipo,
     alto_calculado_mm: Math.round(altoCalculadoMm),
     ancho_calculado_mm: Math.round(anchoCalculadoMm),
+    alto_descuento_peso_mm: Math.round(discountedHeightMm),
+    ancho_descuento_peso_mm: Math.round(discountedWidthMm),
     kg_m2_apto_regla: round4(aptoKgM2RuleValue),
     kg_m2_porton: round4(kgM2Porton),
   };

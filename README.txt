@@ -1,12 +1,9 @@
-Parche: cantidades fijas por unidad + cantidad entera para Vidrio
+Patch incluido:
+- Mantiene "Peso calculado" en el resumen extra del PDF.
+- Quita solo "Peso estimado" del texto de métricas que se anexaba a la nota antes de descargar.
+- Al descargar PDF desde un presupuesto nuevo sin guardar, crea primero el presupuesto para tomar el quote_number correlativo global.
+- Expande el cotizador para usar todo el ancho disponible de la ventana.
 
-Incluye:
-- cotizador-front/src/domain/quote/store.js
-- cotizador-front/src/pages/CotizadorPage/components/LineRow.jsx
-
-Qué hace:
-- Mantiene cantidad por superficie solo para items con surface_quantity.
-- Para el resto de los productos, fija cantidad = 1.
-- Excepción: producto Vidrio permite cantidad entera y arranca en 0.
-- Se contemplan ambos IDs 3582 y 3251 para evitar diferencias entre variante/template.
-- Conserva la eliminación previa de la línea automática de sistema.
+Archivos:
+- cotizador-back/src/pdfBudgetExtras.js
+- cotizador-front/src/pages/CotizadorPage/index.jsx

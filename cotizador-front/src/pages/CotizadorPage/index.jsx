@@ -38,13 +38,10 @@ function buildPortonMetricsText(payload) {
   const width = parseNum(dims?.width);
   const height = parseNum(dims?.height);
   const kgM2 = parseNum(dims?.kg_m2);
-  const area = width > 0 && height > 0 ? width * height : 0;
-  const weight = area > 0 && kgM2 > 0 ? area * kgM2 : 0;
   const rows = [];
   if (height > 0) rows.push(`Alto: ${formatMetric(height)} m`);
   if (width > 0) rows.push(`Ancho: ${formatMetric(width)} m`);
   if (kgM2 > 0) rows.push(`Kg/m²: ${formatMetric(kgM2)}`);
-  if (weight > 0) rows.push(`Peso estimado: ${formatMetric(weight)} kg`);
   return rows.join(" · ");
 }
 function appendMetricsToNote(note, payload) {
@@ -231,7 +228,10 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
     const payload = getDraftPayload();
     validateDraft(payload);
     if (!quoteId) {
-      return { quote: null, payload: { ...payload, id: idParam || null, quote_id: idParam || null, quote_number: visibleQuoteNumber || idParam || "", seller_name: user?.full_name || user?.username || "" } };
+      const q = await createQuote(payload);
+      setQuoteMeta({ quoteId: q.id, status: q.status, rejectionNotes: q.rejection_notes });
+      qc.invalidateQueries({ queryKey: ["quotes", "mine"] });
+      return { quote: q, payload: { ...payload, id: q.id, quote_id: q.id, quote_number: q.quote_number || q.id, seller_name: user?.full_name || user?.username || "" } };
     }
     const q = await updateQuote(quoteId, payload);
     setQuoteMeta({ quoteId: q.id, status: q.status, rejectionNotes: q.rejection_notes });
@@ -317,7 +317,7 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
   const canConfirm = isAcopioRevision ? false : (isReturnedMeasurementQuote ? false : (isRevisionQuote ? ["", "draft", "rejected"].includes(finalStatus || "") : ["draft", "rejected_commercial", "rejected_technical"].includes(status)));
 
   return (
-    <div className="container">
+    <div className="container" style={{ maxWidth: "none", width: "100%" }}>
       <div className="card" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
           <img className="product-logo" src={catalogKind === "ipanel" ? "/brands/ipanel.png" : "/brands/degrandis.png"} alt={catalogKind === "ipanel" ? "Ipanel" : "DeGrandis Portones"} />
