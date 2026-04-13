@@ -8,6 +8,29 @@ const WIDTH_MIN_M = 2;
 const WIDTH_MAX_M = 7;
 const HEIGHT_MIN_M = 2;
 const HEIGHT_MAX_M = 3;
+const CALCULATED_INPUT_STYLE = {
+  width: "100%",
+  background: "#f3f4f6",
+  color: "#6b7280",
+  borderColor: "#d1d5db",
+};
+const CALCULATED_BOX_STYLE = {
+  minHeight: 40,
+  display: "flex",
+  alignItems: "center",
+  padding: "9px 12px",
+  borderRadius: 10,
+  border: "1px solid #d1d5db",
+  background: "#f3f4f6",
+  color: "#4b5563",
+  fontWeight: 800,
+};
+const CALCULATED_CARD_STYLE = {
+  border: "1px solid #d1d5db",
+  borderRadius: 10,
+  padding: 10,
+  background: "#f3f4f6",
+};
 
 function toNumber(v) {
   const n = Number(String(v || "").replace(",", "."));
@@ -101,7 +124,7 @@ function FieldBox({ label, helper, children }) {
     <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 0 }}>
       <div className="muted">{label}</div>
       {children}
-      {helper ? <div className="muted" style={{ lineHeight: 1.3, minHeight: 32 }}>{helper}</div> : <div style={{ minHeight: 32 }} />}
+      {helper ? <div className="muted" style={{ lineHeight: 1.25, minHeight: 18 }}>{helper}</div> : <div style={{ minHeight: 18 }} />}
     </div>
   );
 }
@@ -207,47 +230,41 @@ export default function PortonDimensions({ kind = "porton" }) {
             value={portonType || ""}
             disabled
             placeholder="Se completa según la combinación de productos"
-            style={{ width: "100%" }}
+            style={CALCULATED_INPUT_STYLE}
           />
         </FieldBox>
 
         <FieldBox label="Kg por m²">
           <Input
             value={formatNumberForInput(effectiveKgM2)}
-            placeholder={aptoParaRevestir ? "Se completa según la tabla de apto para revestir" : "Se calcula automáticamente según el sistema"}
-            style={{ width: "100%" }}
+            placeholder={aptoParaRevestir ? "Se completa según la tabla configurada" : "Se calcula automáticamente según el sistema"}
+            style={CALCULATED_INPUT_STYLE}
             disabled
           />
         </FieldBox>
 
         <FieldBox label="Superficie">
-          <div style={{ fontWeight: 800, fontSize: 16, minHeight: 40, display: "flex", alignItems: "center" }}>
-            {area ? `${area.toFixed(2)} m²` : "–"}
-          </div>
+          <div style={CALCULATED_BOX_STYLE}>{area ? `${area.toFixed(2)} m²` : "–"}</div>
         </FieldBox>
       </div>
 
       <div className="spacer" />
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 10 }}>
-        <div style={{ border: "1px solid #eee", borderRadius: 10, padding: 10 }}>
+        <div style={CALCULATED_CARD_STYLE}>
           <div className="muted">Kg/m² efectivo</div>
-          <div style={{ fontWeight: 800 }}>
+          <div style={{ fontWeight: 800, color: "#374151" }}>
             {effectiveKgM2 > 0 ? `${effectiveKgM2.toFixed(2)} kg/m²` : "—"}
           </div>
         </div>
-        <div style={{ border: "1px solid #eee", borderRadius: 10, padding: 10 }}>
+        <div style={CALCULATED_CARD_STYLE}>
           <div className="muted">Peso estimado</div>
-          <div style={{ fontWeight: 800 }}>
+          <div style={{ fontWeight: 800, color: "#374151" }}>
             {estimatedWeightKg > 0 ? `${estimatedWeightKg.toFixed(2)} kg` : "—"}
           </div>
         </div>
-        <div style={{ border: "1px solid #eee", borderRadius: 10, padding: 10 }}>
+        <div style={CALCULATED_CARD_STYLE}>
           <div className="muted">Piernas estimadas</div>
-          <div style={{ fontWeight: 800 }}>{estimatedLegs}</div>
-        </div>
-        <div style={{ border: "1px solid #eee", borderRadius: 10, padding: 10 }}>
-          <div className="muted">Apto para revestir</div>
-          <div style={{ fontWeight: 800 }}>{aptoParaRevestir ? "Sí" : "No"}</div>
+          <div style={{ fontWeight: 800, color: "#374151" }}>{estimatedLegs}</div>
         </div>
       </div>
 
