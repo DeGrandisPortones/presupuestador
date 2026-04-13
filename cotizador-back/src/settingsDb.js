@@ -30,6 +30,7 @@ export async function ensureSettingsTable() {
       surface_final_formula: DEFAULT_SURFACE_FINAL_FORMULA,
       surface_helper_rules: [],
       surface_calc_params: {},
+      surface_parameters: {},
       section_dependency_rules: [],
       system_derivation_rules: [],
       initial_section_id: null,
@@ -163,6 +164,20 @@ function normalizeSurfaceCalcParams(raw = {}) {
       out[key] = normalizeIdList(value);
       continue;
     }
+    if (key === "apto_revestir_kg_m2_rules") {
+      out[key] = (Array.isArray(value) ? value : [])
+        .map((item, index) => ({
+          id: normalizeText(item?.id || `apto_rule_${index + 1}`),
+          product_id: Number(item?.product_id || 0) || null,
+          product_label: normalizeText(item?.product_label || ""),
+          kg_m2: (() => {
+            const num = Number(String(item?.kg_m2 ?? "").replace(",", "."));
+            return Number.isFinite(num) && num > 0 ? num : null;
+          })(),
+        }))
+        .filter((item) => item.product_id && item.kg_m2);
+      continue;
+    }
     const text = String(value ?? "").trim();
     const num = Number(text.replace(",", "."));
     out[key] = Number.isFinite(num) ? num : text;
@@ -175,11 +190,15 @@ function normalizeTechnicalMeasurementRules(raw = {}) {
   const section_dependency_rules = Array.isArray(raw?.section_dependency_rules) ? raw.section_dependency_rules : [];
   const system_derivation_rules = Array.isArray(raw?.system_derivation_rules) ? raw.system_derivation_rules : [];
   const initial_section_id = Number(raw?.initial_section_id || 0) || null;
+  const normalizedSurfaceParameters = normalizeSurfaceCalcParams(
+    raw?.surface_parameters ?? raw?.surface_calc_params ?? raw?.surface_params ?? raw?.measurement_surface_params ?? {},
+  );
   return {
     rules: rules.map((r, i) => normalizeTechnicalMeasurementRule(r, i)).filter(Boolean).sort((a, b) => a.sort_order - b.sort_order),
     surface_final_formula: normalizeSurfaceFinalFormula(raw?.surface_final_formula),
     surface_helper_rules: surface_helper_rules.map((r, i) => normalizeSurfaceHelperRule(r, i)).filter(Boolean).sort((a, b) => a.sort_order - b.sort_order),
-    surface_calc_params: normalizeSurfaceCalcParams(raw?.surface_calc_params || raw?.surface_params || raw?.measurement_surface_params || {}),
+    surface_parameters: normalizedSurfaceParameters,
+    surface_calc_params: normalizedSurfaceParameters,
     section_dependency_rules: section_dependency_rules.map((r, i) => normalizeSectionDependencyRule(r, i)).filter(Boolean).sort((a, b) => a.sort_order - b.sort_order),
     system_derivation_rules: system_derivation_rules.map((r, i) => normalizeSystemDerivationRule(r, i)).filter(Boolean).sort((a, b) => a.sort_order - b.sort_order),
     initial_section_id,
@@ -272,12 +291,18 @@ export async function getTechnicalMeasurementRules() {
 }
 export async function setTechnicalMeasurementRules(payload = {}) {
   const current = await getTechnicalMeasurementRules();
+  const nextSurfaceParameters = payload?.surface_parameters !== undefined
+    ? payload.surface_parameters
+    : payload?.surface_calc_params !== undefined
+      ? payload.surface_calc_params
+      : current?.surface_parameters ?? current?.surface_calc_params;
   const merged = {
     ...(current || {}),
     ...(payload && typeof payload === "object" ? payload : {}),
     surface_final_formula: payload?.surface_final_formula !== undefined ? payload.surface_final_formula : current?.surface_final_formula,
     surface_helper_rules: payload?.surface_helper_rules !== undefined ? payload.surface_helper_rules : current?.surface_helper_rules,
-    surface_calc_params: payload?.surface_calc_params !== undefined ? payload.surface_calc_params : current?.surface_calc_params,
+    surface_parameters: nextSurfaceParameters,
+    surface_calc_params: nextSurfaceParameters,
     section_dependency_rules: payload?.section_dependency_rules !== undefined ? payload.section_dependency_rules : current?.section_dependency_rules,
     system_derivation_rules: payload?.system_derivation_rules !== undefined ? payload.system_derivation_rules : current?.system_derivation_rules,
     initial_section_id: payload?.initial_section_id !== undefined ? payload.initial_section_id : current?.initial_section_id,

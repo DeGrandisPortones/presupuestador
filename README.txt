@@ -20,3 +20,9 @@ Como copiar:
 
 Nota:
 - Se actualizo tanto front como backend y PDF para evitar diferencias entre lo que se ve en pantalla y lo que calcula tecnica/PDF.
+
+
+V2 FIX:
+- Se agrega cotizador-back/src/settingsDb.js
+- Corrige persistencia de surface_parameters / apto_revestir_kg_m2_rules
+- Mantiene compatibilidad con surface_calc_params legacy
