@@ -4,12 +4,29 @@ import { useQuoteStore } from "../../../domain/quote/store";
 import { adminGetTechnicalMeasurementRules } from "../../../api/admin.js";
 import Input from "../../../ui/Input";
 
+const WIDTH_MIN_M = 2;
+const WIDTH_MAX_M = 7;
+const HEIGHT_MIN_M = 2;
+const HEIGHT_MAX_M = 3;
+
 function toNumber(v) {
   const n = Number(String(v || "").replace(",", "."));
   return Number.isFinite(n) ? n : 0;
 }
+function parseLocaleNumber(v) {
+  const n = Number(String(v || "").replace(",", "."));
+  return Number.isFinite(n) ? n : null;
+}
 function normalizeDecimal(v) {
   return String(v ?? "").replace(/[^0-9.,]/g, "");
+}
+function normalizeDimensionInput(v) {
+  const cleaned = normalizeDecimal(v);
+  if (!cleaned) return "";
+  const normalized = cleaned.replace(/,/g, ".");
+  const parts = normalized.split(".");
+  if (parts.length <= 1) return normalized;
+  return `${parts.shift()}.${parts.join("")}`;
 }
 function norm(v) {
   return String(v || "").trim().toLowerCase().replace(/\s+/g, "_");
@@ -59,6 +76,22 @@ function formatNumberForInput(value) {
   const n = Number(value || 0);
   if (!Number.isFinite(n) || n <= 0) return "";
   return String(Math.round(n * 100) / 100).replace(/\.0+$/, "").replace(/(\.\d*[1-9])0+$/, "$1");
+}
+function clampNumber(n, min, max) {
+  return Math.min(max, Math.max(min, n));
+}
+function clampDimensionInput(value, min, max) {
+  const n = parseLocaleNumber(value);
+  if (!Number.isFinite(n)) return "";
+  return formatNumberForInput(clampNumber(n, min, max));
+}
+function handleDimensionDraft(rawValue, min, max) {
+  const normalized = normalizeDimensionInput(rawValue);
+  if (!normalized) return "";
+  const n = parseLocaleNumber(normalized);
+  if (!Number.isFinite(n)) return normalized;
+  if (n > max) return formatNumberForInput(max);
+  return normalized;
 }
 function legsTypeForWeight(weightKg, isApto, params) {
   const limitAngostas = getNumberParam(
@@ -116,6 +149,16 @@ export default function PortonDimensions({ kind = "porton" }) {
 
   useEffect(() => {
     if ((kind || "porton") !== "porton") return;
+    const patch = {};
+    const nextWidth = clampDimensionInput(dimensions?.width, WIDTH_MIN_M, WIDTH_MAX_M);
+    const nextHeight = clampDimensionInput(dimensions?.height, HEIGHT_MIN_M, HEIGHT_MAX_M);
+    if (String(dimensions?.width ?? "") !== nextWidth) patch.width = nextWidth;
+    if (String(dimensions?.height ?? "") !== nextHeight) patch.height = nextHeight;
+    if (Object.keys(patch).length) setDimensions(patch);
+  }, [dimensions?.height, dimensions?.width, kind, setDimensions]);
+
+  useEffect(() => {
+    if ((kind || "porton") !== "porton") return;
     if (!aptoParaRevestir) {
       if (String(dimensions?.kg_m2 || "").trim()) {
         setDimensions({ kg_m2: "" });
@@ -147,10 +190,13 @@ export default function PortonDimensions({ kind = "porton" }) {
             type="text"
             inputMode="decimal"
             value={dimensions?.width ?? ""}
-            onChange={(v) => setDimensions({ width: normalizeDecimal(v) })}
-            placeholder="Ej: 3.2"
+            onChange={(v) => setDimensions({ width: handleDimensionDraft(v, WIDTH_MIN_M, WIDTH_MAX_M) })}
+            onBlur={() => setDimensions({ width: clampDimensionInput(dimensions?.width, WIDTH_MIN_M, WIDTH_MAX_M) })}
+            placeholder="Entre 2 y 7"
+            title="El ancho debe estar entre 2 y 7 metros"
             style={{ width: 140 }}
           />
+          <div className="muted">Mínimo 2 m · Máximo 7 m</div>
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
           <div className="muted">Alto (m)</div>
@@ -158,10 +204,13 @@ export default function PortonDimensions({ kind = "porton" }) {
             type="text"
             inputMode="decimal"
             value={dimensions?.height ?? ""}
-            onChange={(v) => setDimensions({ height: normalizeDecimal(v) })}
-            placeholder="Ej: 2.1"
+            onChange={(v) => setDimensions({ height: handleDimensionDraft(v, HEIGHT_MIN_M, HEIGHT_MAX_M) })}
+            onBlur={() => setDimensions({ height: clampDimensionInput(dimensions?.height, HEIGHT_MIN_M, HEIGHT_MAX_M) })}
+            placeholder="Entre 2 y 3"
+            title="La altura debe estar entre 2 y 3 metros"
             style={{ width: 140 }}
           />
+          <div className="muted">Mínimo 2 m · Máximo 3 m</div>
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
           <div className="muted">Tipo / Sistema derivado</div>
