@@ -450,7 +450,6 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
                 >
                   <div className="dg-acc-title">
                     {section.name}
-                    {section.use_surface_qty ? " · cantidad por superficie" : ""}
                   </div>
                   <div className="dg-acc-meta">
                     {selectedInSection.size ? `${selectedInSection.size} seleccionado` : "Sin selección"}{" "}
@@ -481,7 +480,6 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
                             <div className="dg-product-info">
                               <div className="dg-product-name">
                                 {getProductLabel(product)}
-                                {product.uses_surface_quantity ? " · cantidad por superficie" : ""}
                               </div>
                               <div className="muted" style={{ fontSize: 12 }}>
                                 {product.code ? `Código: ${product.code}` : `ID: ${product.id}`}
