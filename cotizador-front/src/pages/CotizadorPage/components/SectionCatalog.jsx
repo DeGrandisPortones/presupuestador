@@ -10,6 +10,8 @@ import {
 } from "../../../api/admin.js";
 import Button from "../../../ui/Button";
 
+const REBAJE_SECTION_ID = 56;
+
 function getProductLabel(product) {
   return product?.display_name || product?.alias || product?.name || "";
 }
@@ -120,6 +122,7 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
 
   const user = useAuthStore((s) => s.user);
   const canForceRefreshCatalog = !!(user?.is_enc_comercial || user?.is_superuser);
+  const canSeeRebajeSection = !!user?.is_distribuidor;
 
   const [boot, setBoot] = useState(
     () => getOdooBootstrap(kind) || getOdooBootstrap(bootstrapKind),
@@ -272,10 +275,13 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
     });
   }, [kind, sectionList, sectionMap, initialSectionId, dependencyRules, selectedProductIdsBySection]);
 
-  const visibleSections = useMemo(
-    () => orderedVisibleSectionIds.map((id) => sectionMap.get(Number(id))).filter(Boolean),
-    [orderedVisibleSectionIds, sectionMap],
-  );
+  const visibleSections = useMemo(() => {
+    const baseSections = orderedVisibleSectionIds
+      .map((id) => sectionMap.get(Number(id)))
+      .filter(Boolean);
+    if (canSeeRebajeSection) return baseSections;
+    return baseSections.filter((section) => Number(section?.id) !== REBAJE_SECTION_ID);
+  }, [orderedVisibleSectionIds, sectionMap, canSeeRebajeSection]);
 
   const terminalStepCompleted = useMemo(() => {
     if (!visibleSections.length) return false;

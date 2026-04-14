@@ -33,6 +33,10 @@ const WIDTH_MIN_M = 2;
 const WIDTH_MAX_M = 7;
 const HEIGHT_MIN_M = 2;
 const HEIGHT_MAX_M = 3;
+const REBAJE_AUTO_PRODUCT_ID = 2903;
+const REBAJE_AUTO_PRODUCT_NAME = "PLANCHUELA LATERAL E INFERIOR DE 40MM (Apto aluminio - Otros)";
+const REBAJE_AUTO_PRODUCT_BASE_PRICE = 400;
+const REBAJE_AUTO_MIN_WIDTH_M = 3.5;
 
 function normalizeUrl(value) { return String(value || "").trim().replace(/\/+$/, "").toLowerCase(); }
 function editorRouteForKind(kind, id, search = "") { const safeId = String(id || "").trim(); const suffix = search || ""; if (String(kind || "porton").toLowerCase().trim() === "ipanel") return `/cotizador/ipanel/${safeId}${suffix}`; if (String(kind || "porton").toLowerCase().trim() === "otros") return `/cotizador/otros/${safeId}${suffix}`; return `/cotizador/${safeId}${suffix}`; }
@@ -116,7 +120,25 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
   const workflowDoorId = String(searchParams.get("door_id") || "").trim();
   const workflowPortonId = String(searchParams.get("porton_id") || "").trim();
 
-  const { quoteId, status, pricelistId, marginPercent, partnerId, paymentMethod, lines, setPricelist, applyBasePrices, loadFromQuote, reset, setEndCustomer, buildPayloadForBack, setQuoteMeta } = useQuoteStore();
+  const {
+    quoteId,
+    status,
+    pricelistId,
+    marginPercent,
+    partnerId,
+    paymentMethod,
+    lines,
+    dimensions,
+    setPricelist,
+    applyBasePrices,
+    loadFromQuote,
+    reset,
+    setEndCustomer,
+    buildPayloadForBack,
+    setQuoteMeta,
+    addLine,
+    forceRemoveLine,
+  } = useQuoteStore();
   const [ivaRate] = useState(IVA_RATE_DEFAULT);
   const [confirmChoiceOpen, setConfirmChoiceOpen] = useState(false);
 
@@ -179,6 +201,37 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
   const financingPercent = Number(financingQ.data?.percent || 0) || 0;
   const totals = useMemo(() => calcTotals(lines, marginPercent, ivaRate, financingPercent), [lines, marginPercent, ivaRate, financingPercent]);
   const linesKey = useMemo(() => lines.map((l) => `${l.product_id}:${l.qty}`).join("|"), [lines]);
+
+  const currentWidthMeters = parseNum(dimensions?.width);
+  const autoRebajeEnabled = String(catalogKind || "porton").toLowerCase() === "porton"
+    && !user?.is_distribuidor
+    && !!(user?.is_vendedor || user?.is_enc_comercial)
+    && currentWidthMeters >= REBAJE_AUTO_MIN_WIDTH_M;
+  const rebajeLine = useMemo(
+    () => (Array.isArray(lines) ? lines.find((line) => Number(line?.product_id) === REBAJE_AUTO_PRODUCT_ID && !line?.previously_billed_line) : null) || null,
+    [lines],
+  );
+
+  useEffect(() => {
+    const hasRebajeLine = !!rebajeLine;
+    if (!autoRebajeEnabled) {
+      if (hasRebajeLine) {
+        forceRemoveLine(REBAJE_AUTO_PRODUCT_ID);
+      }
+      return;
+    }
+    if (rebajeLine?.surface_quantity) return;
+    if (hasRebajeLine) {
+      forceRemoveLine(REBAJE_AUTO_PRODUCT_ID);
+    }
+    addLine({
+      id: REBAJE_AUTO_PRODUCT_ID,
+      name: REBAJE_AUTO_PRODUCT_NAME,
+      raw_name: REBAJE_AUTO_PRODUCT_NAME,
+      price: REBAJE_AUTO_PRODUCT_BASE_PRICE,
+      uses_surface_quantity: true,
+    });
+  }, [autoRebajeEnabled, rebajeLine, addLine, forceRemoveLine]);
 
   useEffect(() => {
     async function run() {
