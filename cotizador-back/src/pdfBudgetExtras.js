@@ -53,12 +53,23 @@ function resolveSellerKgM2Entry(quote, surfaceParameters) {
 }
 function detectDoorType(quote) {
   const payloadType = normalizeFormulaText(quote?.payload?.porton_type || quote?.payload?.tipo_porton || "");
-  if (payloadType.includes("inyect")) return "inyectado";
+  if (payloadType.includes("inyect") || payloadType.includes("doble_iny") || /(^|_)iny($|_)/.test(payloadType)) return "inyectado";
   if (payloadType.includes("clas")) return "clasico";
   const lines = Array.isArray(quote?.lines) ? quote.lines : [];
   const hay = lines.map((l) => normalizeFormulaText(l?.name || l?.raw_name || "")).join(" ");
-  if (hay.includes("inyect")) return "inyectado";
+  if (hay.includes("inyect") || hay.includes("doble_iny") || /(^|_)iny($|_)/.test(hay)) return "inyectado";
   return "clasico";
+}
+function getLegWidthMmByType(piernasTipo) {
+  const key = String(piernasTipo || "").trim().toLowerCase();
+  const map = {
+    angostas: 230,
+    comunes: 270,
+    anchas: 370,
+    superanchas: 370,
+    especiales: 370,
+  };
+  return Number(map[key] || 0);
 }
 function computeSurfaceAutomaticContext({ quote, form, surfaceParameters }) {
   const budgetHeightMm = extractBudgetDimensionMm(quote, "alto") || 0;
@@ -121,13 +132,18 @@ function computeSurfaceAutomaticContext({ quote, form, surfaceParameters }) {
     anchoCalculadoMm = Math.max(0, anchoMinMm - Number(surfaceParameters?.inside_vano_subtract_width_mm || 20));
   }
 
+  const legWidthMm = getLegWidthMmByType(piernasTipo);
+  const altoPasoMm = Math.max(0, Math.round(altoCalculadoMm - 200));
+  const anchoPasoMm = Math.max(0, Math.round(anchoCalculadoMm - (legWidthMm * 2)));
+
   return {
     peso_estimado_kg: pesoEstimadoKg,
     piernas_tipo: piernasTipo,
     alto_calculado_mm: Math.round(altoCalculadoMm),
     ancho_calculado_mm: Math.round(anchoCalculadoMm),
-    alto_descuento_peso_mm: Math.round(discountedHeightMm),
-    ancho_descuento_peso_mm: Math.round(discountedWidthMm),
+    alto_paso_mm: altoPasoMm,
+    ancho_paso_mm: anchoPasoMm,
+    ancho_pierna_mm: legWidthMm,
     kg_m2_apto_regla: round4(aptoKgM2RuleValue),
     kg_m2_porton: round4(kgM2Porton),
   };
@@ -166,8 +182,8 @@ export async function buildBudgetExtraSummaryLines(payload) {
   });
 
   const lines = [];
-  const alto = formatMm(calculated?.alto_calculado_mm);
-  const ancho = formatMm(calculated?.ancho_calculado_mm);
+  const alto = formatMm(calculated?.alto_paso_mm || calculated?.alto_calculado_mm);
+  const ancho = formatMm(calculated?.ancho_paso_mm || calculated?.ancho_calculado_mm);
   const peso = formatKg(calculated?.peso_estimado_kg);
   const piernas = formatPiernas(calculated?.piernas_tipo);
 
