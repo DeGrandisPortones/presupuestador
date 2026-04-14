@@ -148,6 +148,8 @@ function drawRow(doc, { x, y, w, h, cols, borderColor = "#D1D5DB", fill = null, 
       width: tw,
       height: h - pad * 2,
       align: c.align || "left",
+      lineBreak: c.lineBreak ?? true,
+      ellipsis: c.ellipsis ?? false,
     });
 
     cx += c.w;
@@ -661,10 +663,10 @@ async function renderPdf({ title, payload, useBasePrice }) {
   const tableX = margin;
   let tableY = y;
 
-  const colDesc = innerW * 0.58;
-  const colQty = innerW * 0.12;
-  const colUnit = innerW * 0.15;
-  const colTot = innerW * 0.15;
+  const colDesc = innerW * 0.54;
+  const colQty = innerW * 0.10;
+  const colUnit = innerW * 0.18;
+  const colTot = innerW * 0.18;
   const SAFE_BOTTOM_GAP = 56;
   const SUBTOTAL_ROW_H = 28;
   const IVA_ROW_H = 28;
@@ -678,9 +680,9 @@ async function renderPdf({ title, payload, useBasePrice }) {
       h: 28,
       cols: [
         { w: colDesc, text: "DESCRIPCIÓN", align: "left" },
-        { w: colQty, text: "CANT", align: "right" },
-        { w: colUnit, text: "PRECIO c/IVA", align: "right" },
-        { w: colTot, text: "TOTAL c/IVA", align: "right" },
+        { w: colQty, text: "CANT", align: "right", lineBreak: false },
+        { w: colUnit, text: "PRECIO c/IVA", align: "right", lineBreak: false },
+        { w: colTot, text: "TOTAL c/IVA", align: "right", lineBreak: false },
       ],
       fill: "#E5E7EB",
       textStyle: { font: "Helvetica-Bold", size: 10, color: "#111827", pad: 8 },
@@ -706,7 +708,7 @@ async function renderPdf({ title, payload, useBasePrice }) {
 
   for (const l of lines) {
     const descHeight = doc.heightOfString(l.name, { width: colDesc - pad * 2 });
-    const rowH = Math.max(26, descHeight + pad * 2);
+    const rowH = Math.max(28, descHeight + pad * 2);
 
     ensureSpace(rowH);
 
@@ -717,12 +719,12 @@ async function renderPdf({ title, payload, useBasePrice }) {
       h: rowH,
       cols: [
         { w: colDesc, text: l.name, align: "left" },
-        { w: colQty, text: formatQty(l.qty), align: "right" },
-        { w: colUnit, text: `$ ${formatMoney(l.unit)}`, align: "right" },
-        { w: colTot, text: `$ ${formatMoney(l.total)}`, align: "right" },
+        { w: colQty, text: formatQty(l.qty), align: "right", lineBreak: false },
+        { w: colUnit, text: `$ ${formatMoney(l.unit)}`, align: "right", lineBreak: false },
+        { w: colTot, text: `$ ${formatMoney(l.total)}`, align: "right", lineBreak: false },
       ],
       fill: null,
-      textStyle: { font: "Helvetica", size: 10, color: "#111827", pad },
+      textStyle: { font: "Helvetica", size: 9.5, color: "#111827", pad },
     });
 
     tableY += rowH;
@@ -737,7 +739,7 @@ async function renderPdf({ title, payload, useBasePrice }) {
     h: SUBTOTAL_ROW_H,
     cols: [
       { w: innerW * 0.68, text: "Subtotal s/IVA", align: "right" },
-      { w: innerW * 0.32, text: `$ ${formatMoney(subtotalNet)}`, align: "right" },
+      { w: innerW * 0.32, text: `$ ${formatMoney(subtotalNet)}`, align: "right", lineBreak: false },
     ],
     fill: null,
     textStyle: { font: "Helvetica", size: 10, color: "#111827", pad: 8 },
@@ -751,7 +753,7 @@ async function renderPdf({ title, payload, useBasePrice }) {
     h: IVA_ROW_H,
     cols: [
       { w: innerW * 0.68, text: "IVA", align: "right" },
-      { w: innerW * 0.32, text: `$ ${formatMoney(ivaAmount)}`, align: "right" },
+      { w: innerW * 0.32, text: `$ ${formatMoney(ivaAmount)}`, align: "right", lineBreak: false },
     ],
     fill: null,
     textStyle: { font: "Helvetica", size: 10, color: "#111827", pad: 8 },
@@ -765,7 +767,7 @@ async function renderPdf({ title, payload, useBasePrice }) {
     h: TOTAL_ROW_H,
     cols: [
       { w: innerW * 0.68, text: "TOTAL (IVA incluido)", align: "right" },
-      { w: innerW * 0.32, text: `$ ${formatMoney(grandTotal)}`, align: "right" },
+      { w: innerW * 0.32, text: `$ ${formatMoney(grandTotal)}`, align: "right", lineBreak: false },
     ],
     fill: "#F3F4F6",
     textStyle: { font: "Helvetica-Bold", size: 11, color: "#111827", pad: 8 },
