@@ -9,17 +9,8 @@ import {
 const PLACEHOLDER_PRODUCT_ID = Number(
   process.env.ODOO_PLACEHOLDER_PRODUCT_ID || 2880,
 );
-function parseMeasurementProductIds(raw) {
-  return String(raw || "2865,2961")
-    .split(",")
-    .map((item) => Number(String(item || "").trim()))
-    .filter((item) => Number.isFinite(item) && item > 0);
-}
-
-const MEASUREMENT_PRODUCT_IDS = parseMeasurementProductIds(
-  process.env.ODOO_MEASUREMENT_PRODUCT_IDS ||
-    process.env.ODOO_MEASUREMENT_PRODUCT_ID ||
-    "2865,2961",
+const MEASUREMENT_PRODUCT_ID = Number(
+  process.env.ODOO_MEASUREMENT_PRODUCT_ID || 2865,
 );
 const IVA_RATE = 0.21;
 
@@ -230,7 +221,7 @@ function buildBasePositiveLinesFromQuote(sourceQuote) {
     .filter((line) => {
       const productId = Number(line?.product_id || 0);
       if (!productId) return false;
-      if (MEASUREMENT_PRODUCT_IDS.includes(productId)) return false;
+      if (productId === MEASUREMENT_PRODUCT_ID) return false;
       if (productId === PLACEHOLDER_PRODUCT_ID) return false;
       return true;
     });
@@ -617,7 +608,7 @@ function buildMeasurementApprovedMessage({ quote }) {
   const link = buildMeasurementPublicUrl(quote);
   const lines = [
     `Hola ${customerName}.`,
-    reference ? `Ya quedó aprobada la planilla técnica de la nota ${reference}.` : "Ya quedó aprobada la planilla técnica.",
+    reference ? `Ya quedó aprobada la planilla de medición / detalle técnico de la nota ${reference}.` : "Ya quedó aprobada la planilla de medición / detalle técnico.",
     link ? `Podés verla acá: ${link}` : "",
     "Muchas gracias.",
   ].filter(Boolean);

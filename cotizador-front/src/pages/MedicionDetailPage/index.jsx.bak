@@ -576,55 +576,6 @@ function formatARS(value) {
 function normalizeDiffItems(items) {
   return Array.isArray(items) ? items : [];
 }
-const MEDIDOR_BUILTIN_EDITABLE_KEYS = new Set([
-  "fecha",
-  "alto_final_mm",
-  "ancho_final_mm",
-  "esquema.alto",
-  "esquema.ancho",
-  "observaciones",
-]);
-const ALLOWED_MEDIDOR_SECTION_IDS = new Set([18, 23, 39, 45]);
-const ITEM_18_WARNING_MESSAGE =
-  "El cambio en el item 18 puede ocasionar costos adicionales y debe pasar al vendedor para negociación con el cliente.";
-
-function isAllowedMedidorFieldKey(key) {
-  const normalized = String(key || "").trim();
-  if (!normalized) return false;
-  if (MEDIDOR_BUILTIN_EDITABLE_KEYS.has(normalized)) return true;
-  if (normalized.startsWith("esquema.alto")) return true;
-  if (normalized.startsWith("esquema.ancho")) return true;
-  return false;
-}
-function valuesDiffer(a, b) {
-  return JSON.stringify(a ?? null) !== JSON.stringify(b ?? null);
-}
-function buildMapsUrl(lat, lng) {
-  return `https://www.google.com/maps?q=${lat},${lng}`;
-}
-function getCurrentPositionAsync() {
-  return new Promise((resolve, reject) => {
-    if (!navigator?.geolocation) {
-      reject(new Error("Geolocalización no disponible"));
-      return;
-    }
-    navigator.geolocation.getCurrentPosition(resolve, reject, {
-      enableHighAccuracy: true,
-      timeout: 12000,
-      maximumAge: 0,
-    });
-  });
-}
-function extractBudgetProducts(lines = []) {
-  return (Array.isArray(lines) ? lines : [])
-    .filter((line) => Number(line?.product_id || 0) > 0)
-    .map((line, idx) => ({
-      key: `${line?.product_id || "line"}-${idx}`,
-      name: line?.name || line?.raw_name || "Producto",
-      product_id: line?.product_id ?? "—",
-      qty: line?.qty ?? 1,
-    }));
-}
 
 export default function MedicionDetailPage() {
   const { id } = useParams();
@@ -733,59 +684,13 @@ export default function MedicionDetailPage() {
       quote?.measurement_requires_budget_update === true,
     );
   }, [quote]);
-  const baselineForm = useMemo(
-    () =>
-      quote?.measurement_original_form ||
-      buildInitialForm(quote, quote?.measurement_form || {}),
-    [quote],
-  );
-  const allowedMedidorDynamicKeys = useMemo(
-    () =>
-      new Set(
-        allFields
-          .filter((field) =>
-            ALLOWED_MEDIDOR_SECTION_IDS.has(Number(field?.budget_section_id || 0)),
-          )
-          .map((field) => String(field?.key || "").trim())
-          .filter(Boolean),
-      ),
-    [allFields],
-  );
-  const sensitiveItem18FieldKeys = useMemo(
-    () =>
-      allFields
-        .filter((field) => Number(field?.budget_section_id || 0) === 18)
-        .map((field) => String(field?.key || "").trim())
-        .filter(Boolean),
-    [allFields],
-  );
-  const item18Changed = useMemo(() => {
-    if (!form || !baselineForm) return false;
-    return sensitiveItem18FieldKeys.some((key) =>
-      valuesDiffer(getByPath(form, key), getByPath(baselineForm, key)),
-    );
-  }, [form, baselineForm, sensitiveItem18FieldKeys]);
-  const medidorLockedAfterMeasurement = useMemo(
-    () => !!(isMedidor && !isTechnical && quote?.measurement_at),
-    [isMedidor, isTechnical, quote],
-  );
-  const budgetProducts = useMemo(
-    () => extractBudgetProducts(quote?.lines || []),
-    [quote?.lines],
-  );
 
   function getConfiguredField(key) {
     return fieldConfigByKey.get(String(key || "").trim()) || null;
   }
   function canEditField(key) {
-    const normalizedKey = String(key || "").trim();
-    const field = getConfiguredField(normalizedKey);
-    if (medidorLockedAfterMeasurement) return false;
-    if (isCommercialReviewer) return commercialEditableKeys.has(normalizedKey);
-    if (isMedidor && !isTechnical) {
-      if (!field) return isAllowedMedidorFieldKey(normalizedKey);
-      return allowedMedidorDynamicKeys.has(normalizedKey);
-    }
+    const field = getConfiguredField(key);
+    if (isCommercialReviewer) return commercialEditableKeys.has(String(key || "").trim());
     if (!field) return isTechnical || isMedidor;
     const mode = String(field?.editable_by || "both");
     if (mode === "none") return false;
@@ -898,12 +803,7 @@ export default function MedicionDetailPage() {
     const sectionFields = fieldsBySection[sectionKey] || [];
     const visibleFields = isCommercialReviewer
       ? sectionFields.filter((field) => commercialEditableKeys.has(String(field?.key || "").trim()))
-      : sectionFields.filter((field) => {
-          const fieldKey = String(field?.key || "").trim();
-          if (dynamicUi.hidden.has(field.key)) return false;
-          if (isMedidor && !isTechnical) return allowedMedidorDynamicKeys.has(fieldKey);
-          return true;
-        });
+      : sectionFields.filter((field) => !dynamicUi.hidden.has(field.key));
     if (!visibleFields.length) return null;
     return (
       <>
@@ -978,31 +878,15 @@ export default function MedicionDetailPage() {
   }
 
   const saveM = useMutation({
-    mutationFn: async ({ submit, returnToSeller = false, returnReason = "" }) => {
-      let nextEndCustomer = { ...(quote?.end_customer || {}) };
-
-      if (submit && isMedidor) {
-        try {
-          const pos = await getCurrentPositionAsync();
-          const lat = pos?.coords?.latitude;
-          const lng = pos?.coords?.longitude;
-          if (Number.isFinite(lat) && Number.isFinite(lng)) {
-            nextEndCustomer.maps_url = buildMapsUrl(lat, lng);
-          }
-        } catch {
-          // si no hay permiso o falla GPS, se envía igual
-        }
-      }
-
-      return saveMeasurementDetailed(quoteId, {
+    mutationFn: ({ submit, returnToSeller = false, returnReason = "" }) =>
+      saveMeasurementDetailed(quoteId, {
         form,
         submit,
         returnToSeller,
         returnReason,
-        endCustomer: nextEndCustomer,
-        baselineForm,
-      });
-    },
+        endCustomer: quote?.end_customer || {},
+        baselineForm: quote?.measurement_original_form || buildInitialForm(quote, quote.measurement_original_form || quote.measurement_form || {}),
+      }),
     onSuccess: (response) => {
       if (response?.returned_to_seller) {
         setLastMessage("El portón fue devuelto al vendedor para rehacer el presupuesto.");
@@ -1099,19 +983,7 @@ export default function MedicionDetailPage() {
             {!forceReturnToSeller && (
               <Button
                 disabled={saveM.isPending}
-                onClick={() => {
-                  if (medidorLockedAfterMeasurement) return;
-                  if (isMedidor && item18Changed) {
-                    window.alert(ITEM_18_WARNING_MESSAGE);
-                    saveM.mutate({
-                      submit: false,
-                      returnToSeller: true,
-                      returnReason: ITEM_18_WARNING_MESSAGE,
-                    });
-                    return;
-                  }
-                  saveM.mutate({ submit: true });
-                }}
+                onClick={() => saveM.mutate({ submit: true })}
               >
                 {saveM.isPending
                   ? "Procesando..."
@@ -1268,96 +1140,6 @@ export default function MedicionDetailPage() {
         ) : null}
 
         <div className="spacer" />
-        {medidorLockedAfterMeasurement ? (
-          <>
-            <div className="spacer" />
-            <div
-              style={{
-                border: "1px solid #d7e3f7",
-                background: "#f6f9ff",
-                borderRadius: 12,
-                padding: 12,
-              }}
-            >
-              <div style={{ fontWeight: 900, marginBottom: 6 }}>
-                Medición ya realizada
-              </div>
-              <div className="muted">
-                Este portón ya fue medido y no vuelve a edición de medición. Desde ahora sigue el circuito de técnica / vendedor según corresponda.
-              </div>
-            </div>
-          </>
-        ) : null}
-
-        {item18Changed ? (
-          <>
-            <div className="spacer" />
-            <div
-              style={{
-                border: "1px solid #f2d3bf",
-                background: "#fff8f3",
-                borderRadius: 12,
-                padding: 12,
-              }}
-            >
-              <div style={{ fontWeight: 900, marginBottom: 6 }}>
-                Cambio sensible detectado
-              </div>
-              <div className="muted">
-                {ITEM_18_WARNING_MESSAGE}
-              </div>
-            </div>
-          </>
-        ) : null}
-
-        <div className="spacer" />
-        <Section title="Resumen del presupuesto a medir">
-          <Row>
-            <Field label="Cliente">
-              <div>{quote?.end_customer?.name || "—"}</div>
-            </Field>
-            <Field label="Teléfono">
-              <div>{quote?.end_customer?.phone || "—"}</div>
-            </Field>
-            <Field label="Dirección">
-              <div>{quote?.end_customer?.address || "—"}</div>
-            </Field>
-          </Row>
-          <div className="spacer" />
-          <Row>
-            <Field label="Presupuesto">
-              <div>{quote?.quote_number || quote?.odoo_sale_order_name || "—"}</div>
-            </Field>
-            <Field label="Vendedor / Distribuidor">
-              <div>{quote?.created_by_full_name || quote?.created_by_username || "—"}</div>
-            </Field>
-            <Field label="Google Maps">
-              <div style={{ wordBreak: "break-all" }}>
-                {quote?.end_customer?.maps_url || "—"}
-              </div>
-            </Field>
-          </Row>
-          <div className="spacer" />
-          <div className="muted" style={{ marginBottom: 6 }}>
-            Productos presupuestados
-          </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-            {budgetProducts.length ? budgetProducts.map((line) => (
-              <div
-                key={line.key}
-                style={{ border: "1px solid #eee", borderRadius: 10, padding: 10 }}
-              >
-                <b>{line.name}</b>
-                <div className="muted">
-                  ID producto: {line.product_id} · Cantidad: {line.qty}
-                </div>
-              </div>
-            )) : (
-              <div className="muted">Sin productos.</div>
-            )}
-          </div>
-        </Section>
-
         <Section title="Datos generales">
           <Row>
             {renderBuiltInField(

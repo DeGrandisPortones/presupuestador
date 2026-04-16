@@ -4,20 +4,9 @@ import { requireAuth } from "../auth.js";
 import { dbQuery } from "../db.js";
 import { ensureQuotesMeasurementColumns } from "../quotesSchema.js";
 import { finalizeMeasurementToRevisionQuote } from "../measurementFinalization.js";
-import { getCommercialFinalToleranceAreaM2, getTechnicalMeasurementRules, getTechnicalMeasurementFieldDefinitions } from "../settingsDb.js";
+import { getCommercialFinalToleranceAreaM2, getTechnicalMeasurementRules } from "../settingsDb.js";
 
-function parseMeasurementProductIds(raw) {
-  return String(raw || "2865,2961")
-    .split(",")
-    .map((item) => Number(String(item || "").trim()))
-    .filter((item) => Number.isFinite(item) && item > 0);
-}
-
-const MEASUREMENT_PRODUCT_IDS = parseMeasurementProductIds(
-  process.env.ODOO_MEASUREMENT_PRODUCT_IDS ||
-    process.env.ODOO_MEASUREMENT_PRODUCT_ID ||
-    "2865,2961",
-);
+const MEASUREMENT_PRODUCT_ID = Number(process.env.ODOO_MEASUREMENT_PRODUCT_ID || 2865);
 const PREVIOUSLY_BILLED_PRODUCT_ID = -900001;
 const DEFAULT_RETURN_REASON = "El tamaño del portón es mayor al presupuestado originalmente";
 
@@ -44,59 +33,7 @@ function validatePhone(phone, { required = false } = {}) { const raw = String(ph
 function validateEmail(email) { const raw = String(email || "").trim(); if (!raw) return null; return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(raw) ? null : "Correo inválido"; }
 function validateMaps(url, { required = false } = {}) { const raw = String(url || "").trim(); if (!raw) return required ? "Falta end_customer.maps_url" : null; try { const parsed = new URL(raw); const host = String(parsed.hostname || "").toLowerCase(); const path = String(parsed.pathname || "").toLowerCase(); if (["maps.app.goo.gl", "www.google.com", "google.com", "maps.google.com", "g.page"].includes(host)) return null; if (host.endsWith(".google.com") && path.includes("maps")) return null; } catch {} return "Google Maps inválido"; }
 function validateEndCustomerForMeasurement(endCustomer, { requireWhatsapp = false } = {}) { const phoneErr = validatePhone(endCustomer?.phone, { required: requireWhatsapp }); if (phoneErr) return phoneErr; const emailErr = validateEmail(endCustomer?.email); if (emailErr) return emailErr; const mapsErr = validateMaps(endCustomer?.maps_url, { required: false }); if (mapsErr) return mapsErr; return null; }
-function hasMeasurementLine(lines) {
-  return (Array.isArray(lines) ? lines : []).some((l) =>
-    MEASUREMENT_PRODUCT_IDS.includes(Number(l?.product_id)),
-  );
-}
-function normalizeMeasurementFieldKey(value) {
-  return String(value || "").trim().toLowerCase();
-}
-function valuesDiffer(a, b) {
-  return JSON.stringify(a ?? null) !== JSON.stringify(b ?? null);
-}
-async function getTechnicalMeasurementFieldsSafe() {
-  try {
-    const payload = await getTechnicalMeasurementFieldDefinitions();
-    return Array.isArray(payload?.fields) ? payload.fields : [];
-  } catch {
-    return [];
-  }
-}
-function getConfiguredSensitiveItem18Keys(fields = []) {
-  const envKeys = String(process.env.MEASUREMENT_ITEM_18_KEYS || "")
-    .split(",")
-    .map((item) => normalizeMeasurementFieldKey(item))
-    .filter(Boolean);
-  const inferredKeys = (Array.isArray(fields) ? fields : [])
-    .filter((field) => Number(field?.budget_section_id || 0) === 18)
-    .map((field) => normalizeMeasurementFieldKey(field?.key))
-    .filter(Boolean);
-  return [...new Set([...envKeys, ...inferredKeys])];
-}
-function pickByPath(obj, path) {
-  const parts = String(path || "").split(".").filter(Boolean);
-  let cur = obj;
-  for (const part of parts) {
-    if (!cur || typeof cur !== "object") return undefined;
-    cur = cur[part];
-  }
-  return cur;
-}
-function detectSensitiveItem18Change({ form, baselineForm, sensitiveKeys }) {
-  const keys = Array.isArray(sensitiveKeys) ? sensitiveKeys : [];
-  for (const key of keys) {
-    if (valuesDiffer(pickByPath(form, key), pickByPath(baselineForm, key))) {
-      return {
-        changed: true,
-        key,
-        message:
-          "El cambio en el item 18 puede ocasionar costos adicionales y debe pasar al vendedor.",
-      };
-    }
-  }
-  return { changed: false, key: null, message: "" };
-}
+function hasMeasurementLine(lines) { return (Array.isArray(lines) ? lines : []).some((l) => Number(l?.product_id) === Number(MEASUREMENT_PRODUCT_ID)); }
 function isTecnicaOnlyQuote(quote) { return normalizeMeasurementMode(quote?.measurement_mode) === "tecnica_only" || normalizeMeasurementSubtype(quote?.measurement_subtype) === "sin_medicion"; }
 function isMeasurementReadyQuote(quote) { const status = String(quote?.status || "").toLowerCase().trim(); if (status === "synced_odoo" || status === "draft") return true; return status === "pending_approvals" && String(quote?.commercial_decision || "").toLowerCase().trim() === "approved" && String(quote?.technical_decision || "").toLowerCase().trim() === "approved"; }
 function quoteAllowsMeasurementWorkflow(quote) { return String(quote?.catalog_kind || "").toLowerCase().trim() === "porton" && String(quote?.fulfillment_mode || "").toLowerCase().trim() === "produccion" && isMeasurementReadyQuote(quote) && (quote?.requires_measurement === true || hasMeasurementLine(quote?.lines) || isTecnicaOnlyQuote(quote)); }
@@ -463,19 +400,9 @@ export function buildMeasurementsRouter(odoo = null) {
       if (viewer === "medidor" && !u?.is_medidor) return res.status(403).json({ ok: false, error: "No autorizado" });
       if (viewer === "tecnica" && !u?.is_rev_tecnica) return res.status(403).json({ ok: false, error: "No autorizado" });
       if (viewer === "comercial" && !u?.is_enc_comercial) return res.status(403).json({ ok: false, error: "No autorizado" });
-      const where = [
-        "q.catalog_kind = 'porton'",
-        "q.fulfillment_mode = 'produccion'",
-        "(q.status = 'synced_odoo' or (q.status = 'pending_approvals' and q.commercial_decision = 'approved' and q.technical_decision = 'approved'))",
-        `(q.requires_measurement = true or coalesce(q.measurement_mode, 'medidor') = 'tecnica_only' or coalesce(q.measurement_subtype, 'normal') = 'sin_medicion' or exists (select 1 from jsonb_array_elements(coalesce(q.lines, '[]'::jsonb)) elem where (elem->>'product_id') = any($1::text[])))`,
-      ];
-      const params = [MEASUREMENT_PRODUCT_IDS.map(String)];
-      if (viewer === "medidor") {
-        where.push(`coalesce(q.measurement_mode, 'medidor') <> 'tecnica_only'`);
-        where.push(`q.measurement_at is null`);
-        params.push(Number(u.user_id));
-        where.push(`(q.measurement_assigned_to_user_id is null or q.measurement_assigned_to_user_id = $${params.length})`);
-      }
+      const where = ["q.catalog_kind = 'porton'", "q.fulfillment_mode = 'produccion'", "(q.status = 'synced_odoo' or (q.status = 'pending_approvals' and q.commercial_decision = 'approved' and q.technical_decision = 'approved'))", `(q.requires_measurement = true or coalesce(q.measurement_mode, 'medidor') = 'tecnica_only' or coalesce(q.measurement_subtype, 'normal') = 'sin_medicion' or exists (select 1 from jsonb_array_elements(coalesce(q.lines, '[]'::jsonb)) elem where (elem->>'product_id') = $1))`];
+      const params = [String(MEASUREMENT_PRODUCT_ID)];
+      if (viewer === "medidor") { where.push(`coalesce(q.measurement_mode, 'medidor') <> 'tecnica_only'`); params.push(Number(u.user_id)); where.push(`(q.measurement_assigned_to_user_id is null or q.measurement_assigned_to_user_id = $${params.length})`); }
       if (status !== "all") { params.push(status); where.push(`q.measurement_status = $${params.length}`); } else { where.push(`q.measurement_status <> 'none'`); }
       if (customer) { params.push(`%${customer}%`); where.push(`(coalesce(q.end_customer->>'name', '')) ilike $${params.length}`); }
       if (locality) { params.push(`%${locality}%`); where.push(`(coalesce(q.end_customer->>'city', '') ilike $${params.length} or coalesce(q.end_customer->>'address', '') ilike $${params.length})`); }
@@ -519,46 +446,19 @@ export function buildMeasurementsRouter(odoo = null) {
       const submit = body.submit === true; const returnToSeller = body.return_to_seller === true; const returnReason = String(body.return_reason || "").trim(); const endCustomer = body.end_customer ?? null;
       const cur = await dbQuery(`select * from public.presupuestador_quotes where id=$1 limit 1`, [id]); const quote = cur.rows?.[0]; if (!quote) return res.status(404).json({ ok: false, error: "Presupuesto no encontrado" }); if (!quoteAllowsMeasurementWorkflow(quote)) return res.status(400).json({ ok: false, error: "Este presupuesto no requiere medición" });
       const currentStatus = String(quote.measurement_status || "none").toLowerCase().trim();
-      const baselineForm = body.baseline_form ?? quote?.measurement_original_form ?? quote?.measurement_form ?? {};
-      const technicalFields = await getTechnicalMeasurementFieldsSafe();
-      const sensitiveItem18Keys = getConfiguredSensitiveItem18Keys(technicalFields);
-      const item18Change = detectSensitiveItem18Change({ form, baselineForm, sensitiveKeys: sensitiveItem18Keys });
       const nextCustomer = mergeEndCustomer(quote.end_customer || {}, endCustomer); const customerErr = validateEndCustomerForMeasurement(nextCustomer, { requireWhatsapp: submit && !!u?.is_rev_tecnica }); if (customerErr) return res.status(400).json({ ok: false, error: customerErr });
       if (!u?.is_rev_tecnica && !u?.is_medidor) return res.status(403).json({ ok: false, error: "No autorizado" });
       if (u?.is_medidor && isTecnicaOnlyQuote(quote)) return res.status(403).json({ ok: false, error: "Este portón sin medición solo puede completarlo Técnica" });
-      if (u?.is_medidor && quote?.measurement_at) {
-        return res.status(409).json({
-          ok: false,
-          error: "La medición ya fue realizada y no puede volver a edición de medición.",
-        });
-      }
       if (["approved", "submitted"].includes(currentStatus) && !u?.is_rev_tecnica) return res.status(409).json({ ok: false, error: "La medición ya fue enviada o aprobada" });
 
       const areaGuard = await buildMeasurementSurfaceGuard({ quote, form });
-      const forceSellerReturnByItem18 = item18Change.changed === true;
-      const forceSellerReturn =
-        areaGuard.forced_return_to_seller === true || forceSellerReturnByItem18;
+      const forceSellerReturn = areaGuard.forced_return_to_seller === true;
       if (submit && forceSellerReturn && !returnToSeller) {
-        const item18Message =
-          forceSellerReturnByItem18
-            ? item18Change.message || "El cambio en el item 18 puede ocasionar costos adicionales y debe pasar al vendedor."
-            : DEFAULT_RETURN_REASON;
-        return res.status(400).json({
-          ok: false,
-          error: item18Message,
-          force_return_to_seller: true,
-          default_return_reason: item18Message,
-          measurement_surface_guard: areaGuard,
-          item18_change: item18Change,
-        });
+        return res.status(400).json({ ok: false, error: DEFAULT_RETURN_REASON, force_return_to_seller: true, default_return_reason: DEFAULT_RETURN_REASON, measurement_surface_guard: areaGuard });
       }
 
       if (returnToSeller || forceSellerReturn) {
-        const reason =
-          returnReason ||
-          (forceSellerReturnByItem18
-            ? item18Change.message || "El cambio en el item 18 puede ocasionar costos adicionales y debe pasar al vendedor."
-            : areaGuard.default_return_reason || DEFAULT_RETURN_REASON);
+        const reason = returnReason || areaGuard.default_return_reason || DEFAULT_RETURN_REASON;
         const ctx = buildReturnContext(quote);
         const cleanLines = stripPreviouslyBilledLines(ctx.original_lines || quote.lines);
         const nextLines = [...cleanLines, buildPreviouslyBilledLine(quote)];
