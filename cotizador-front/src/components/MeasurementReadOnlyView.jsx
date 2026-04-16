@@ -75,18 +75,29 @@ export default function MeasurementReadOnlyView({ quote }) {
           )) : <div className="muted">Sin datos presupuestados.</div>}
         </div>
       </Section>
+      <Section title="Datos del cliente">
+        <Row>
+          <Field label="Nombre" value={quote?.end_customer?.name || form.cliente_nombre || split.first} />
+          <Field label="Apellido" value={form.cliente_apellido || split.last} />
+          <Field label="Teléfono" value={end.phone} />
+        </Row>
+        <div className="spacer" />
+        <Row>
+          <Field label="Email" value={end.email} />
+          <Field label="Localidad" value={end.city} />
+          <Field label="Dirección" value={end.address} />
+        </Row>
+        <div className="spacer" />
+        <Row>
+          <Field label="Google Maps" value={end.maps_url} />
+        </Row>
+      </Section>
       <Section title="Datos generales">
         <Row>
           <Field label="Fecha de Nota de Pedido" value={form.fecha_nota_pedido || (quote?.confirmed_at ? String(quote.confirmed_at).slice(0, 10) : "")} />
           <Field label="Fecha de medición" value={form.fecha} />
           <Field label="Nombre del cliente" value={form.cliente_nombre || split.first} />
           <Field label="Apellido del cliente" value={form.cliente_apellido || split.last} />
-        </Row>
-        <div className="spacer" />
-        <Row>
-          <Field label="Teléfono" value={end.phone} />
-          <Field label="Localidad" value={end.city} />
-          <Field label="Google Maps" value={end.maps_url} />
         </Row>
       </Section>
       <Section title="Esquema de medidas">

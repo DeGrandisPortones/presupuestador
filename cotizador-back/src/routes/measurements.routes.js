@@ -290,9 +290,16 @@ export function buildMeasurementsRouter(odoo = null) {
 
       if (viewer === "medidor") {
         where.push(`coalesce(q.measurement_mode, 'medidor') <> 'tecnica_only'`);
-        where.push(`q.measurement_at is null`);
         params.push(Number(u.user_id));
-        where.push(`(q.measurement_assigned_to_user_id is null or q.measurement_assigned_to_user_id = $${params.length})`);
+        const medidorParam = `$${params.length}`;
+        if (["pending", "needs_fix"].includes(status)) {
+          where.push(`q.measurement_at is null`);
+          where.push(`(q.measurement_assigned_to_user_id is null or q.measurement_assigned_to_user_id = ${medidorParam})`);
+        } else if (["submitted", "approved", "returned_to_seller"].includes(status)) {
+          where.push(`q.measurement_by_user_id = ${medidorParam}`);
+        } else {
+          where.push(`((q.measurement_at is null and (q.measurement_assigned_to_user_id is null or q.measurement_assigned_to_user_id = ${medidorParam})) or q.measurement_by_user_id = ${medidorParam})`);
+        }
       }
 
       if (status !== "all") {
@@ -460,7 +467,9 @@ export function buildMeasurementsRouter(odoo = null) {
                   measurement_status='returned_to_seller',
                   measurement_review_notes=$7,
                   measurement_review_by_user_id=$8,
-                  measurement_review_at=now()
+                  measurement_review_at=now(),
+                  measurement_by_user_id=coalesce(measurement_by_user_id, $8),
+                  measurement_at=coalesce(measurement_at, now())
             where id=$1
             returning *`,
           [

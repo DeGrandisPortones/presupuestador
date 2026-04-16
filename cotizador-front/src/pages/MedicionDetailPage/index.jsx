@@ -254,6 +254,16 @@ function resolveEditableSectionIds(budgetContext) {
   else if (byId[40]?.selected_products?.length) ids.add(40);
   return ids;
 }
+function customerMapsHref(endCustomer = {}) {
+  const raw = text(endCustomer?.maps_url);
+  return raw || null;
+}
+function customerFullAddress(endCustomer = {}) {
+  const address = text(endCustomer?.address);
+  const city = text(endCustomer?.city);
+  if (address && city) return `${address} · ${city}`;
+  return address || city || '';
+}
 function firstCatalogProductsForSection(sectionId, catalog) {
   return (Array.isArray(catalog?.products) ? catalog.products : []).filter((product) =>
     Array.isArray(product?.section_ids)
@@ -557,16 +567,6 @@ export default function MedicionDetailPage() {
           </div>
         </div>
 
-        {item18Changed ? (
-          <>
-            <div className="spacer" />
-            <div style={{ border: "1px solid #f2d3bf", background: "#fff8f3", borderRadius: 12, padding: 12 }}>
-              <div style={{ fontWeight: 900, marginBottom: 6 }}>Atención</div>
-              <div className="muted">Cambiaste un producto de la sección 18. Esto puede ocasionar costos adicionales y debe volver al vendedor.</div>
-            </div>
-          </>
-        ) : null}
-
         <div className="spacer" />
         <Section title="Resumen del presupuesto">
           <Row>
@@ -582,6 +582,27 @@ export default function MedicionDetailPage() {
               </div>
             ))}
           </div>
+        </Section>
+
+        <Section title="Datos del cliente">
+          <Row>
+            <Field label="Cliente"><div>{quote?.end_customer?.name || "—"}</div></Field>
+            <Field label="Teléfono"><div>{quote?.end_customer?.phone || "—"}</div></Field>
+            <Field label="Email"><div>{quote?.end_customer?.email || "—"}</div></Field>
+          </Row>
+          <div className="spacer" />
+          <Row>
+            <Field label="Dirección"><div>{customerFullAddress(quote?.end_customer) || "—"}</div></Field>
+            <Field label="Google Maps">
+              <div>
+                {customerMapsHref(quote?.end_customer) ? (
+                  <a href={customerMapsHref(quote?.end_customer)} target="_blank" rel="noreferrer">
+                    Abrir ubicación del cliente
+                  </a>
+                ) : "—"}
+              </div>
+            </Field>
+          </Row>
         </Section>
 
         <Section title="Esquema de medidas">
@@ -702,6 +723,26 @@ export default function MedicionDetailPage() {
 
           {!editableConfiguredFields.length && !fallbackSections.length ? (
             <div className="muted">No se encontraron productos editables para las secciones 18, 23 y 39 o 40.</div>
+          ) : null}
+
+          {item18Changed ? (
+            <div
+              style={{
+                marginTop: 14,
+                border: "2px solid #b71c1c",
+                background: "#ffebee",
+                color: "#7f0000",
+                borderRadius: 12,
+                padding: 14,
+                boxShadow: "0 0 0 2px rgba(183,28,28,0.08)",
+              }}
+            >
+              <div style={{ fontWeight: 900, fontSize: 15, marginBottom: 6 }}>ATENCIÓN: CAMBIO CON COSTOS ADICIONALES</div>
+              <div style={{ fontWeight: 700, lineHeight: 1.45 }}>
+                Cambiaste un producto de la sección 18. Este cambio puede ocasionar costos adicionales.
+                No lo envíes a técnica: debe enviarse al vendedor para revisión y actualización del presupuesto.
+              </div>
+            </div>
           ) : null}
         </Section>
 
