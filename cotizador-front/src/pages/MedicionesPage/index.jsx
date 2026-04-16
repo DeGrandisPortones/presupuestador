@@ -28,11 +28,12 @@ function buildWhatsappUrl(phone) {
 }
 
 function labelMeasurementStatus(s) {
-  if (s === "pending") return "Pendiente";
-  if (s === "needs_fix") return "A corregir";
-  if (s === "submitted") return "Enviada a técnica";
-  if (s === "returned_to_seller") return "Enviada a vendedor";
-  if (s === "approved") return "Aprobada";
+  const v = String(s || "").toLowerCase();
+  if (v === "pending") return "Pendiente";
+  if (v === "returned_to_seller") return "Enviada al vendedor";
+  if (v === "submitted") return "Enviada a técnica";
+  if (v === "needs_fix") return "Devuelta por técnica";
+  if (v === "approved") return "Aprobada";
   return s || "—";
 }
 
@@ -82,7 +83,7 @@ export default function MedicionesPage() {
       const ta = a?.measurement_scheduled_for ? new Date(`${a.measurement_scheduled_for}T00:00:00`).getTime() : Number.MAX_SAFE_INTEGER;
       const tb = b?.measurement_scheduled_for ? new Date(`${b.measurement_scheduled_for}T00:00:00`).getTime() : Number.MAX_SAFE_INTEGER;
       if (ta !== tb) return ta - tb;
-      return (b?.measurement_at ? new Date(b.measurement_at).getTime() : 0) - (a?.measurement_at ? new Date(a.measurement_at).getTime() : 0);
+      return (b?.created_at ? new Date(b.created_at).getTime() : 0) - (a?.created_at ? new Date(a.created_at).getTime() : 0);
     });
     return arr.filter((item) => matchesSearch(item, searchText));
   }, [measQ.data, searchText]);
@@ -112,15 +113,14 @@ export default function MedicionesPage() {
     <div className="container">
       <div className="card">
         <h2 style={{ margin: 0 }}>Mediciones</h2>
-        <div className="muted">Listado del medidor con pendientes y con las planillas ya enviadas a vendedor o a técnica.</div>
+        <div className="muted">Portones en producción que requieren medición o seguimiento del envío.</div>
 
         <div className="spacer" />
 
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           <Button variant={status === "pending" ? "primary" : "ghost"} onClick={() => setStatus("pending")}>Pendientes</Button>
-          <Button variant={status === "needs_fix" ? "primary" : "ghost"} onClick={() => setStatus("needs_fix")}>A corregir</Button>
-          <Button variant={status === "submitted" ? "primary" : "ghost"} onClick={() => setStatus("submitted")}>Enviadas a técnica</Button>
           <Button variant={status === "returned_to_seller" ? "primary" : "ghost"} onClick={() => setStatus("returned_to_seller")}>Enviadas a vendedor</Button>
+          <Button variant={status === "submitted" ? "primary" : "ghost"} onClick={() => setStatus("submitted")}>Enviadas a técnica</Button>
           <Button variant={status === "approved" ? "primary" : "ghost"} onClick={() => setStatus("approved")}>Aprobadas</Button>
           <Button variant={status === "all" ? "primary" : "ghost"} onClick={() => setStatus("all")}>Todas</Button>
           <Button variant="ghost" onClick={() => measQ.refetch()} disabled={measQ.isFetching}>↻</Button>
@@ -143,7 +143,7 @@ export default function MedicionesPage() {
               <thead>
                 <tr>
                   <th>Fecha visita</th>
-                  <th>Enviada</th>
+                  <th>Alta</th>
                   <th>Cliente</th>
                   <th>Localidad</th>
                   <th>Dirección</th>
@@ -157,7 +157,7 @@ export default function MedicionesPage() {
                 {visibleRows.map((r) => (
                   <tr key={r.id}>
                     <td>{fmtDate(r.measurement_scheduled_for)}</td>
-                    <td>{fmtDate(r.measurement_at || r.measurement_review_at || r.updated_at)}</td>
+                    <td>{fmtDate(r.created_at)}</td>
                     <td style={{ fontWeight: 800 }}>{r.end_customer?.name || "(sin nombre)"}</td>
                     <td>{localityLabel(r)}</td>
                     <td>{r.end_customer?.address || "—"}</td>
@@ -174,7 +174,7 @@ export default function MedicionesPage() {
                       ) : "—"}
                     </td>
                     <td>{labelMeasurementStatus(r.measurement_status)}</td>
-                    <td className="right"><Button onClick={() => navigate(`/mediciones/${r.id}`, { state: { from: "/mediciones" } })}>Planilla</Button></td>
+                    <td className="right"><Button onClick={() => navigate(`/mediciones/${r.id}`)}>Formulario</Button></td>
                   </tr>
                 ))}
               </tbody>
