@@ -23,19 +23,25 @@ function quoteEditorPath(q) {
   return `/cotizador/${q.id}`;
 }
 
+function isReturnedFromMeasurement(q) {
+  return String(q?.measurement_status || "").toLowerCase() === "returned_to_seller";
+}
+
 function labelMeasurementStatus(q) {
   const s = String(q?.measurement_status || "none").toLowerCase();
   if (s === "pending") return "Pendiente";
-  if (s === "submitted") return "Realizada";
+  if (s === "submitted") return "Enviada a técnica";
   if (s === "needs_fix") return "Realizada / corregir";
   if (s === "approved") return "Realizada";
+  if (s === "returned_to_seller") return "Pendiente por hacer cambios postmedición";
   if (s === "none") return "—";
-  return s;
+  return s || "—";
 }
 function quoteWaitingMeasurement(q) {
   return q?.status === "pending_approvals" && q?.commercial_decision === "approved" && q?.technical_decision === "approved" && q?.requires_measurement === true && String(q?.measurement_status || "none").toLowerCase() !== "approved";
 }
 function labelQuoteStatus(q) {
+  if (isReturnedFromMeasurement(q)) return "Pendiente por hacer cambios postmedición";
   const s = q?.status;
   const c = q?.commercial_decision;
   const t = q?.technical_decision;
@@ -95,7 +101,7 @@ function matchesRowSearch(item, searchText) {
     return haystack.includes(s);
   }
   const q = item.raw;
-  const haystack = [quoteTypeLabel(q), q?.end_customer?.name, q?.end_customer?.city, q?.end_customer?.address, q?.end_customer?.phone, labelQuoteStatus(q), q?.fulfillment_mode === "acopio" ? "acopio" : "produccion"].filter(Boolean).join(" ").toLowerCase();
+  const haystack = [quoteTypeLabel(q), q?.end_customer?.name, q?.end_customer?.city, q?.end_customer?.address, q?.end_customer?.phone, labelQuoteStatus(q), labelMeasurementStatus(q), q?.fulfillment_mode === "acopio" ? "acopio" : "produccion"].filter(Boolean).join(" ").toLowerCase();
   return haystack.includes(s);
 }
 function toTimeDesc(value) { if (!value) return 0; const d = new Date(value); if (Number.isNaN(d.getTime())) return 0; return d.getTime(); }
@@ -151,8 +157,32 @@ export default function PresupuestosPage() {
   useEffect(() => { setPage(1); }, [filter, typeFilter, searchText]);
 
   const rows = useMemo(() => {
-    const quoteRows = (quotesQ.data || []).map((q) => ({ rowKind: "quote", id: q.id, raw: q, createdAt: q.created_at, typeLabel: quoteTypeLabel(q), clientName: q?.end_customer?.name || "", locality: localityLabelFromQuote(q), statusLabel: labelQuoteStatus(q), destinationLabel: q?.fulfillment_mode === "acopio" ? "Acopio" : "Producción", measurementDate: fmtDate(q?.measurement_scheduled_for), measurementStatus: labelMeasurementStatus(q) }));
-    const doorRows = (doorsQ.data || []).map((d) => ({ rowKind: "door", id: d.id, raw: d, createdAt: d?.created_at || d?.updated_at, typeLabel: doorTypeLabel(), clientName: d?.record?.end_customer?.name || d?.record?.obra_cliente || "", locality: localityLabelFromDoor(d), statusLabel: labelDoorStatus(d), destinationLabel: "Puerta", measurementDate: "—", measurementStatus: "—" }));
+    const quoteRows = (quotesQ.data || []).map((q) => ({
+      rowKind: "quote",
+      id: q.id,
+      raw: q,
+      createdAt: q.created_at,
+      typeLabel: quoteTypeLabel(q),
+      clientName: q?.end_customer?.name || "",
+      locality: localityLabelFromQuote(q),
+      statusLabel: labelQuoteStatus(q),
+      destinationLabel: q?.fulfillment_mode === "acopio" ? "Acopio" : "Producción",
+      measurementDate: fmtDate(q?.measurement_scheduled_for),
+      measurementStatus: labelMeasurementStatus(q),
+    }));
+    const doorRows = (doorsQ.data || []).map((d) => ({
+      rowKind: "door",
+      id: d.id,
+      raw: d,
+      createdAt: d?.created_at || d?.updated_at,
+      typeLabel: doorTypeLabel(),
+      clientName: d?.record?.end_customer?.name || d?.record?.obra_cliente || "",
+      locality: localityLabelFromDoor(d),
+      statusLabel: labelDoorStatus(d),
+      destinationLabel: "Puerta",
+      measurementDate: "—",
+      measurementStatus: "—",
+    }));
     const merged = [...quoteRows, ...doorRows];
     merged.sort((a, b) => toTimeDesc(b.createdAt) - toTimeDesc(a.createdAt));
     let filtered = merged;
@@ -161,7 +191,13 @@ export default function PresupuestosPage() {
     else if (filter === "rejected") filtered = filtered.filter((item) => (item.rowKind === "door" ? isDoorRejected(item.raw) : isQuoteRejected(item.raw)));
     else if (filter === "acopio") filtered = filtered.filter((item) => item.rowKind === "quote" && item.raw?.fulfillment_mode === "acopio" && item.raw?.status !== "draft" && effectiveQuoteKind(item.raw) === "porton");
     else if (filter === "produccion") filtered = filtered.filter((item) => item.rowKind === "quote" && item.raw?.fulfillment_mode === "produccion" && item.raw?.status !== "draft" && effectiveQuoteKind(item.raw) === "porton");
-    else if (filter === "mediciones") filtered = filtered.filter((item) => item.rowKind === "quote" && item.raw?.fulfillment_mode === "produccion" && item.raw?.status !== "draft" && item.raw?.requires_measurement === true && effectiveQuoteKind(item.raw) === "porton");
+    else if (filter === "mediciones") {
+      filtered = filtered.filter((item) => item.rowKind === "quote" && effectiveQuoteKind(item.raw) === "porton").filter((item) => {
+        const q = item.raw;
+        if (isReturnedFromMeasurement(q)) return true;
+        return q?.fulfillment_mode === "produccion" && q?.status !== "draft" && q?.requires_measurement === true;
+      });
+    }
     if (typeFilter === "porton") filtered = filtered.filter((item) => item.rowKind === "quote" && effectiveQuoteKind(item.raw) === "porton");
     if (typeFilter === "ipanel") filtered = filtered.filter((item) => item.rowKind === "quote" && effectiveQuoteKind(item.raw) === "ipanel");
     if (typeFilter === "otros") filtered = filtered.filter((item) => item.rowKind === "quote" && effectiveQuoteKind(item.raw) === "otros");
@@ -197,7 +233,7 @@ export default function PresupuestosPage() {
           <Button variant={typeFilter === "otros" ? "primary" : "ghost"} onClick={() => setTypeFilter("otros")}>Otros</Button>
           <Button variant={typeFilter === "door" ? "primary" : "ghost"} onClick={() => setTypeFilter("door")}>Puerta</Button>
         </div>
-        <input value={searchText} onChange={(e) => setSearchText(e.target.value)} placeholder="Buscar por tipo, cliente, localidad, dirección, teléfono, código o estado…" style={{ width: "100%", padding: 10, borderRadius: 12, border: "1px solid #ddd" }} />
+        <input value={searchText} onChange={(e) => setSearchText(e.target.value)} placeholder="Buscar por tipo, cliente, localidad, dirección, teléfono o estado…" style={{ width: "100%", padding: 10, borderRadius: 12, border: "1px solid #ddd" }} />
       </div>
 
       <div className="spacer" />

@@ -29,8 +29,8 @@ function n2(v) {
   return Number.isFinite(n) ? n : 0;
 }
 
-function yn(v) {
-  return v ? "Sí" : "No";
+function textOrDash(v) {
+  return safeStr(v) || "—";
 }
 
 function pick(obj, pathValue, fallback = "") {
@@ -41,42 +41,8 @@ function pick(obj, pathValue, fallback = "") {
   }
 }
 
-function textOrDash(v) {
-  return safeStr(v) || "—";
-}
-
-function prettyMeasurementValue(key, value) {
-  const raw = safeStr(value);
-  const maps = {
-    colocacion: {
-      dentro_vano: "Por dentro del vano",
-      detras_vano: "Por detrás del vano",
-    },
-    accionamiento: {
-      manual: "Manual",
-      automatico: "Automático",
-    },
-    levadizo: {
-      coplanar: "Coplanar",
-      comun: "Común",
-    },
-    anclaje: {
-      lateral: "Lateral",
-      frontal: "Frontal",
-      sin: "Sin anclajes",
-    },
-    orientacion_revestimiento: {
-      lamas_horizontales: "Lamas horizontales",
-      lamas_verticales: "Lamas verticales",
-      varillado_vertical: "Varillado vertical",
-    },
-    tipo_revestimiento: {
-      lamas: "Lamas",
-      varillado_inyectado: "Varillado inyectado",
-      varillado_simple: "Varillado simple",
-    },
-  };
-  return maps[key]?.[raw] || textOrDash(raw);
+function yn(v) {
+  return v ? "Sí" : "No";
 }
 
 function getLogoPath() {
@@ -85,82 +51,11 @@ function getLogoPath() {
   return path.join(__dirname, "../assets/logo-degrandis.png");
 }
 
-function drawFrame(doc, { margin }) {
-  const w = doc.page.width;
-  const h = doc.page.height;
-
-  doc
-    .save()
-    .lineWidth(1)
-    .strokeColor("#B7BABC")
-    .roundedRect(margin, margin, w - margin * 2, h - margin * 2, 10)
-    .stroke()
-    .restore();
-}
-
-function drawFooter(doc, { margin, pageNo, pageCount, footerLeft = "De Grandis Portones" }) {
-  const w = doc.page.width;
-  const h = doc.page.height;
-
-  doc
-    .save()
-    .font("Helvetica")
-    .fontSize(9)
-    .fillColor("#6B7280")
-    .text(footerLeft, margin, h - margin - 16, {
-      width: w - margin * 2,
-      align: "left",
-    })
-    .text(`Página ${pageNo} de ${pageCount}`, margin, h - margin - 16, {
-      width: w - margin * 2,
-      align: "right",
-    })
-    .restore();
-}
-
-function drawRow(doc, { x, y, w, h, cols, borderColor = "#D1D5DB", fill = null, textStyle = {} }) {
-  const pad = textStyle?.pad ?? 6;
-
-  if (fill) {
-    doc.save().fillColor(fill).rect(x, y, w, h).fill().restore();
-  }
-
-  doc.save().strokeColor(borderColor).lineWidth(1).rect(x, y, w, h).stroke().restore();
-
-  let cx = x;
-  for (let i = 0; i < cols.length - 1; i++) {
-    cx += cols[i].w;
-    doc.save().strokeColor(borderColor).moveTo(cx, y).lineTo(cx, y + h).stroke().restore();
-  }
-
-  doc.save();
-  doc.fillColor(textStyle?.color || "#111827");
-  doc.font(textStyle?.font || "Helvetica");
-  doc.fontSize(textStyle?.size || 10);
-
-  cx = x;
-  for (const c of cols) {
-    const tx = cx + pad;
-    const tw = c.w - pad * 2;
-    const ty = y + pad;
-
-    doc.text(c.text ?? "", tx, ty, {
-      width: tw,
-      height: h - pad * 2,
-      align: c.align || "left",
-      lineBreak: c.lineBreak ?? true,
-      ellipsis: c.ellipsis ?? false,
-    });
-
-    cx += c.w;
-  }
-  doc.restore();
-}
-
-function addDays(date, days) {
-  const d = new Date(date);
-  d.setDate(d.getDate() + Number(days || 0));
-  return d;
+function normalizePhoneForWhatsApp(phone) {
+  const digits = String(phone || "").replace(/\D/g, "");
+  if (!digits) return "";
+  if (digits.startsWith("54")) return digits;
+  return `54${digits}`;
 }
 
 function formatMoney(value) {
@@ -194,7 +89,7 @@ function getQuoteNumber(payload) {
       payload?.id ??
       payload?.payload?.quote_number ??
       payload?.payload?.quote_id ??
-      ""
+      "",
   );
 }
 
@@ -205,7 +100,7 @@ function getSellerName(payload) {
       payload?.created_by_full_name ??
       payload?.created_by_username ??
       payload?.payload?.seller_name ??
-      ""
+      "",
   );
 }
 
@@ -233,46 +128,6 @@ function stripSellerLines(value) {
     .join("\n");
 }
 
-function buildLines(payload, { useBasePrice }) {
-  const coefPct = getMarginPct(payload);
-  const coefFactor = 1 + coefPct / 100;
-
-  const rawLines = Array.isArray(payload?.lines) ? payload.lines : [];
-
-  const lines = rawLines
-    .map((l) => {
-      const qty = n2(l?.qty);
-      const basePrice = n2(
-        l?.base_price ??
-          l?.basePrice ??
-          l?.base_price_unit ??
-          l?.price_unit ??
-          l?.priceUnit ??
-          l?.price ??
-          0
-      );
-
-      const unitNet = useBasePrice ? basePrice : basePrice * coefFactor;
-      const unit = unitNet * (1 + IVA_RATE);
-      const totalNet = unitNet * qty;
-      const total = unit * qty;
-
-      return {
-        qty,
-        name: safeStr(l?.name || l?.display_name || l?.alias || l?.raw_name || l?.rawName || l?.raw || ""),
-        unit,
-        total,
-        totalNet,
-      };
-    })
-    .filter((l) => l.qty > 0);
-
-  const subtotalNet = lines.reduce((acc, l) => acc + l.totalNet, 0);
-  const ivaAmount = subtotalNet * IVA_RATE;
-  const grandTotal = subtotalNet + ivaAmount;
-  return { lines, grandTotal, subtotalNet, ivaAmount, coefPct };
-}
-
 function formatShortDate(value) {
   const raw = safeStr(value);
   if (!raw) return "";
@@ -289,9 +144,7 @@ function getProductionPlanningText(payload) {
   const endLabel = safeStr(planning.end_date_label || formatShortDate(planning.end_date));
   if (!weekNumber && !startLabel && !endLabel) return "";
   const weekPart = weekNumber ? `Semana ${weekNumber}` : "Semana estimada";
-  if (startLabel || endLabel) {
-    return `${weekPart}, entre ${startLabel || "—"} y ${endLabel || "—"}`;
-  }
+  if (startLabel || endLabel) return `${weekPart}, entre ${startLabel || "—"} y ${endLabel || "—"}`;
   return weekPart;
 }
 
@@ -319,381 +172,177 @@ async function resolveMeasurementForm(quote) {
   return form;
 }
 
-function drawMeasurementHeader(doc, { quote, form, margin, innerW, compact = false }) {
+async function readLiveOdooProductNames(odoo, rawLines = []) {
+  const out = new Map();
+  if (!odoo) return out;
+  const ids = [...new Set((Array.isArray(rawLines) ? rawLines : []).map((line) => Number(line?.product_id || 0)).filter((n) => Number.isFinite(n) && n > 0))];
+  if (!ids.length) return out;
+  try {
+    const products = await odoo.executeKw("product.product", "read", [ids], { fields: ["id", "name"] });
+    for (const p of Array.isArray(products) ? products : []) {
+      const id = Number(p?.id || 0);
+      if (id > 0) out.set(id, safeStr(p?.name));
+    }
+  } catch (e) {
+    console.error("PDF live Odoo names error:", e?.message || e);
+  }
+  return out;
+}
+
+async function buildLines(payload, { useBasePrice, odoo }) {
+  const coefPct = getMarginPct(payload);
+  const coefFactor = 1 + coefPct / 100;
+  const rawLines = Array.isArray(payload?.lines) ? payload.lines : [];
+  const liveNames = await readLiveOdooProductNames(odoo, rawLines);
+
+  const lines = rawLines
+    .map((l) => {
+      const qty = n2(l?.qty);
+      const basePrice = n2(l?.base_price ?? l?.basePrice ?? l?.base_price_unit ?? l?.price_unit ?? l?.priceUnit ?? l?.price ?? 0);
+      const unitNet = useBasePrice ? basePrice : basePrice * coefFactor;
+      const unit = unitNet * (1 + IVA_RATE);
+      const totalNet = unitNet * qty;
+      const total = unit * qty;
+      const productId = Number(l?.product_id || 0);
+      const liveOdooName = liveNames.get(productId);
+      return {
+        qty,
+        name: safeStr(liveOdooName || l?.raw_name || l?.rawName || l?.name || l?.display_name || l?.alias || ""),
+        unit,
+        total,
+        totalNet,
+      };
+    })
+    .filter((l) => l.qty > 0);
+
+  const subtotalNet = lines.reduce((acc, l) => acc + l.totalNet, 0);
+  const ivaAmount = subtotalNet * IVA_RATE;
+  const grandTotal = subtotalNet + ivaAmount;
+  return { lines, grandTotal, subtotalNet, ivaAmount, coefPct };
+}
+
+function drawPageFrame(doc, margin, pageNo, pageCount, footerLeft = "De Grandis Portones") {
+  const w = doc.page.width;
+  const h = doc.page.height;
+  doc.save().lineWidth(1).strokeColor("#B7BABC").roundedRect(margin, margin, w - margin * 2, h - margin * 2, 10).stroke().restore();
+  doc.save().font("Helvetica").fontSize(9).fillColor("#6B7280")
+    .text(footerLeft, margin, h - margin - 16, { width: w - margin * 2, align: "left" })
+    .text(`Página ${pageNo} de ${pageCount}`, margin, h - margin - 16, { width: w - margin * 2, align: "right" })
+    .restore();
+}
+
+function drawHeader(doc, { title, payload, margin, innerW, dateStr, validStr }) {
   const logoPath = getLogoPath();
-  const title = "PLANILLA DE MEDICIÓN";
-  const c = quote?.end_customer || {};
-  const quoteNo = safeStr(quote?.odoo_sale_order_name || quote?.quote_number || quote?.id || "—");
-
-  const headerH = compact ? 56 : 66;
-  doc.save().strokeColor("#111827").lineWidth(1).moveTo(margin, margin + headerH).lineTo(margin + innerW, margin + headerH).stroke().restore();
-
-  if (fs.existsSync(logoPath)) {
-    doc.image(logoPath, margin + 8, margin + 8, { width: compact ? 148 : 172, height: compact ? 38 : 46, fit: [compact ? 148 : 172, compact ? 38 : 46] });
-  } else {
-    doc.save().fillColor("#0EA5A4").roundedRect(margin + 8, margin + 10, 54, 44, 8).fill().restore();
-    doc.font("Helvetica-Bold").fontSize(18).fillColor("white").text("DG", margin + 18, margin + 22);
-  }
-
-  doc
-    .font("Helvetica-Bold")
-    .fillColor("#111827")
-    .fontSize(compact ? 14 : 16)
-    .text(title, margin, margin + (compact ? 18 : 20), { width: innerW, align: "center" });
-
-  doc
-    .font("Helvetica-Bold")
-    .fontSize(11)
-    .fillColor("#111827")
-    .text(`NÚMERO ${quoteNo}`, margin, margin + 18, { width: innerW - 10, align: "right" });
-
-  let y = margin + headerH + 12;
-  if (compact) return y;
-
-  const clientName = textOrDash(c.name).toUpperCase();
-  const dateStr = textOrDash(pick(form, "fecha"));
-  const phone = textOrDash(c.phone);
-  const address = textOrDash(c.address);
-  const mapsUrl = textOrDash(c.maps_url);
-  const distribuidor = textOrDash(pick(form, "distribuidor"));
-
-  doc.font("Helvetica-Bold").fontSize(18).fillColor("#111827").text(clientName, margin + 8, y);
-  doc
-    .font("Helvetica")
-    .fontSize(10)
-    .fillColor("#111827")
-    .text(`Fecha ${dateStr}`, margin, y + 2, { width: innerW - 8, align: "right" })
-    .text(`Distribuidor ${distribuidor}`, margin, y + 16, { width: innerW - 8, align: "right" });
-
-  y += 46;
-
-  drawRow(doc, {
-    x: margin,
-    y,
-    w: innerW,
-    h: 54,
-    cols: [
-      { w: innerW * 0.42, text: `Cliente\n${textOrDash(c.name)}` },
-      { w: innerW * 0.22, text: `Teléfono\n${phone}` },
-      { w: innerW * 0.36, text: `Odoo\n${textOrDash(quote?.odoo_sale_order_name || (quote?.odoo_sale_order_id ? `SO#${quote?.odoo_sale_order_id}` : ""))}` },
-    ],
-    fill: "#F3F4F6",
-    textStyle: { font: "Helvetica", size: 10, color: "#111827", pad: 8 },
-  });
-  y += 64;
-
-  const extras = [`Dirección: ${address}`];
-  if (mapsUrl !== "—") extras.push(`Maps: ${mapsUrl}`);
-  const extraText = extras.join("   ·   ");
-  const extraH = Math.max(24, doc.heightOfString(extraText, { width: innerW - 20 }) + 12);
-
-  doc.save().fillColor("#FAFAFA").roundedRect(margin, y, innerW, extraH, 8).fill().restore();
-  doc.save().strokeColor("#E5E7EB").roundedRect(margin, y, innerW, extraH, 8).stroke().restore();
-  doc.font("Helvetica").fontSize(10).fillColor("#111827").text(extraText, margin + 10, y + 7, { width: innerW - 20 });
-
-  return y + extraH + 16;
-}
-
-function ensureMeasurementSpace(doc, y, needed, ctx) {
-  const pageBottom = doc.page.height - ctx.margin - 34;
-  if (y + needed <= pageBottom) return y;
-  doc.addPage();
-  return drawMeasurementHeader(doc, { ...ctx, compact: true });
-}
-
-function drawSectionBanner(doc, y, title, ctx) {
-  y = ensureMeasurementSpace(doc, y, 34, ctx);
-  doc.save().fillColor("#E6FFFB").roundedRect(ctx.margin, y, ctx.innerW, 26, 8).fill().restore();
-  doc.save().strokeColor("#99F6E4").roundedRect(ctx.margin, y, ctx.innerW, 26, 8).stroke().restore();
-  doc.font("Helvetica-Bold").fontSize(11).fillColor("#0F172A").text(title, ctx.margin + 10, y + 7, { width: ctx.innerW - 20 });
-  return y + 34;
-}
-
-function drawInfoCell(doc, { x, y, w, h, label, value }) {
-  doc.save().fillColor("white").roundedRect(x, y, w, h, 8).fill().restore();
-  doc.save().strokeColor("#E5E7EB").roundedRect(x, y, w, h, 8).stroke().restore();
-  doc.font("Helvetica-Bold").fontSize(8).fillColor("#6B7280").text(label.toUpperCase(), x + 10, y + 8, { width: w - 20 });
-  doc.font("Helvetica").fontSize(10).fillColor("#111827").text(textOrDash(value), x + 10, y + 22, { width: w - 20 });
-}
-
-function drawInfoGrid(doc, y, items, ctx, columns = 2) {
-  const gap = 10;
-  const colW = (ctx.innerW - gap * (columns - 1)) / columns;
-
-  for (let i = 0; i < items.length; i += columns) {
-    const rowItems = items.slice(i, i + columns);
-    const rowH = Math.max(
-      42,
-      ...rowItems.map((it) => {
-        const valueH = doc.heightOfString(textOrDash(it.value), { width: colW - 20, align: "left" });
-        return 26 + valueH + 10;
-      })
-    );
-
-    y = ensureMeasurementSpace(doc, y, rowH + 8, ctx);
-
-    rowItems.forEach((it, idx) => {
-      const x = ctx.margin + idx * (colW + gap);
-      drawInfoCell(doc, { x, y, w: colW, h: rowH, label: it.label, value: it.value });
-    });
-
-    y += rowH + 8;
-  }
-
-  return y;
-}
-
-function drawWideTextBox(doc, y, { title, value }, ctx) {
-  const valueText = textOrDash(value);
-  const valueH = doc.heightOfString(valueText, { width: ctx.innerW - 20 });
-  const boxH = Math.max(64, valueH + 34);
-  y = ensureMeasurementSpace(doc, y, boxH + 8, ctx);
-
-  doc.save().fillColor("white").roundedRect(ctx.margin, y, ctx.innerW, boxH, 8).fill().restore();
-  doc.save().strokeColor("#E5E7EB").roundedRect(ctx.margin, y, ctx.innerW, boxH, 8).stroke().restore();
-  doc.font("Helvetica-Bold").fontSize(8).fillColor("#6B7280").text(title.toUpperCase(), ctx.margin + 10, y + 8, { width: ctx.innerW - 20 });
-  doc.font("Helvetica").fontSize(10).fillColor("#111827").text(valueText, ctx.margin + 10, y + 24, { width: ctx.innerW - 20 });
-
-  return y + boxH + 8;
-}
-
-async function renderMeasurementPdf({ quote, form }) {
-  const doc = new PDFDocument({ size: "A4", margin: 0, bufferPages: true });
-  const buffers = [];
-  doc.on("data", buffers.push.bind(buffers));
-
-  const ctx = {
-    margin: 28,
-    innerW: doc.page.width - 56,
-    quote,
-    form,
-  };
-
-  let y = drawMeasurementHeader(doc, ctx);
-
-  y = drawSectionBanner(doc, y, "Datos generales", ctx);
-  y = drawInfoGrid(doc, y, [
-    { label: "Fecha", value: pick(form, "fecha") },
-    { label: "Distribuidor", value: pick(form, "distribuidor") },
-    { label: "Cliente", value: quote?.end_customer?.name },
-    { label: "N° de portón", value: pick(form, "nro_porton") },
-  ], ctx, 2);
-
-  y = drawSectionBanner(doc, y, "Parantes / Laterales", ctx);
-  y = drawInfoGrid(doc, y, [
-    { label: "Parantes (cant)", value: pick(form, "parantes.cant") },
-    { label: "Lado de la puerta", value: pick(form, "lado_puerta") },
-    { label: "Lado de motor o soporte", value: pick(form, "lado_motor") },
-    { label: "Toma corriente", value: pick(form, "toma_corriente") },
-  ], ctx, 2);
-
-  const alto = Array.isArray(pick(form, "esquema.alto", [])) ? pick(form, "esquema.alto", []) : [];
-  const ancho = Array.isArray(pick(form, "esquema.ancho", [])) ? pick(form, "esquema.ancho", []) : [];
-  y = drawSectionBanner(doc, y, "Esquema (medidas)", ctx);
-  y = drawInfoGrid(doc, y, [
-    { label: "Alto 1 (mm)", value: alto[0] },
-    { label: "Ancho 1 (mm)", value: ancho[0] },
-    { label: "Alto 2 (mm)", value: alto[1] },
-    { label: "Ancho 2 (mm)", value: ancho[1] },
-    { label: "Alto 3 (mm)", value: alto[2] },
-    { label: "Ancho 3 (mm)", value: ancho[2] },
-  ], ctx, 2);
-
-  y = drawSectionBanner(doc, y, "Instalación / Sistema", ctx);
-  y = drawInfoGrid(doc, y, [
-    { label: "Tipo de colocación", value: prettyMeasurementValue("colocacion", pick(form, "colocacion")) },
-    { label: "Portón en acopio", value: yn(!!pick(form, "en_acopio")) },
-    { label: "Tipo de accionamiento", value: prettyMeasurementValue("accionamiento", pick(form, "accionamiento")) },
-    { label: "Sistema levadizo", value: prettyMeasurementValue("levadizo", pick(form, "levadizo")) },
-    { label: "Estructura metálica", value: yn(!!pick(form, "estructura_metalica")) },
-    { label: "Anclaje de fijación", value: prettyMeasurementValue("anclaje", pick(form, "anclaje")) },
-    { label: "Rebaje lateral (mm)", value: pick(form, "rebaje_lateral_mm") },
-    { label: "Rebaje inferior (mm)", value: pick(form, "rebaje_inferior_mm") },
-    { label: "Color de sistema", value: pick(form, "color_sistema") },
-  ], ctx, 2);
-
-  const colorRev = safeStr(pick(form, "color_revestimiento"));
-  const colorRevOtro = safeStr(pick(form, "color_revestimiento_otro"));
-  y = drawSectionBanner(doc, y, "Revestimiento", ctx);
-  y = drawInfoGrid(doc, y, [
-    { label: "Tipo de revestimiento", value: prettyMeasurementValue("tipo_revestimiento", pick(form, "tipo_revestimiento")) },
-    { label: "Medida (varillado)", value: pick(form, "varillado_medida") },
-    { label: "Orientación", value: prettyMeasurementValue("orientacion_revestimiento", pick(form, "orientacion_revestimiento")) },
-    { label: "Revestimiento", value: pick(form, "revestimiento") },
-    { label: "Color de revestimiento", value: colorRev === "Otros" && colorRevOtro ? `${colorRev} (${colorRevOtro})` : colorRev },
-    { label: "Lucera con vidrios", value: yn(!!pick(form, "lucera")) },
-    { label: "Cantidad lucera", value: pick(form, "lucera") ? pick(form, "lucera_cantidad") : "—" },
-    { label: "Peso de revestimiento", value: pick(form, "peso_revestimiento") },
-  ], ctx, 2);
-
-  y = drawSectionBanner(doc, y, "Servicios / Contacto", ctx);
-  y = drawInfoGrid(doc, y, [
-    { label: "Servicio de traslado", value: yn(!!pick(form, "traslado")) },
-    { label: "Servicio de relevamiento", value: yn(!!pick(form, "relevamiento")) },
-    { label: "Contacto en obra", value: pick(form, "contacto_obra_nombre") },
-    { label: "Teléfono contacto obra", value: pick(form, "contacto_obra_tel") },
-  ], ctx, 2);
-
-  y = drawSectionBanner(doc, y, "Observaciones", ctx);
-  y = drawWideTextBox(doc, y, { title: "Observaciones", value: pick(form, "observaciones") }, ctx);
-
-  const range = doc.bufferedPageRange();
-  for (let i = range.start; i < range.start + range.count; i++) {
-    doc.switchToPage(i);
-    drawFrame(doc, { margin: ctx.margin });
-    drawFooter(doc, { margin: ctx.margin, pageNo: i + 1, pageCount: range.count, footerLeft: "Planilla de medición · De Grandis Portones" });
-  }
-
-  doc.end();
-
-  return new Promise((resolve) => {
-    doc.on("end", () => {
-      resolve(Buffer.concat(buffers));
-    });
-  });
-}
-
-async function renderPdf({ title, payload, useBasePrice }) {
-  const doc = new PDFDocument({ size: "A4", margin: 0, bufferPages: true });
-
-  const buffers = [];
-  doc.on("data", buffers.push.bind(buffers));
-
-  const margin = 28;
-  const innerW = doc.page.width - margin * 2;
-
-  const now = new Date();
-  const dateStr = now.toLocaleDateString("es-AR");
-
-  const validityDays = n2(payload?.payload?.validity_days ?? payload?.validity_days ?? 1);
-  const validUntil = (payload?.payload?.valid_until || payload?.valid_until)
-    ? new Date(payload?.payload?.valid_until || payload?.valid_until)
-    : addDays(now, validityDays);
-  const validStr = validUntil.toLocaleDateString("es-AR");
-
-  const endCustomer = payload?.end_customer || {};
-  const customerName = safeStr(endCustomer?.name) || "(sin nombre)";
-  const customerPhone = safeStr(endCustomer?.phone);
-  const customerEmail = safeStr(endCustomer?.email);
-  const sellerName = getSellerName(payload);
-  const destinationRaw = safeStr(payload?.fulfillment_mode);
-  const destination = destinationRaw === "acopio" ? "Acopio" : destinationRaw === "produccion" ? "Producción" : (destinationRaw || "—");
-  const paymentMethod = safeStr(payload?.payload?.payment_method ?? payload?.payment_method);
-  const showDestination = !!useBasePrice;
-  const obs = stripSellerLines(safeStr(payload?.note));
-  const productionPlanningText = getProductionPlanningText(payload);
-  const extraCalculatedLines = await buildBudgetExtraSummaryLines(payload);
-
-  const quoteNo = getQuoteNumber(payload);
-  const { lines, grandTotal, subtotalNet, ivaAmount } = buildLines(payload, { useBasePrice });
-
-  doc.x = margin;
-  doc.y = margin;
-
   const headerH = 64;
-  const logoPath = getLogoPath();
-  const logoW = 180;
-  const logoH = 48;
-
+  const quoteNo = getQuoteNumber(payload);
   doc.save().strokeColor("#111827").lineWidth(1).moveTo(margin, margin + headerH).lineTo(margin + innerW, margin + headerH).stroke().restore();
-
   if (fs.existsSync(logoPath)) {
-    doc.image(logoPath, margin + 8, margin + 8, { width: logoW, height: logoH, fit: [logoW, logoH] });
-  } else {
-    doc.save().fillColor("#0EA5A4").roundedRect(margin + 8, margin + 10, 54, 44, 8).fill().restore();
-    doc.font("Helvetica-Bold").fontSize(18).fillColor("white").text("DG", margin + 18, margin + 22);
+    doc.image(logoPath, margin + 8, margin + 8, { width: 180, height: 48, fit: [180, 48] });
   }
-
   doc.font("Helvetica-Bold").fillColor("#111827").fontSize(16).text(title, margin, margin + 18, { width: innerW, align: "center" });
   doc.font("Helvetica-Bold").fontSize(11).text(`NÚMERO ${quoteNo || "—"}`, margin, margin + 16, { width: innerW - 10, align: "right" });
 
   let y = margin + headerH + 12;
-
+  const customerName = safeStr(payload?.end_customer?.name) || "(sin nombre)";
   doc.font("Helvetica-Bold").fontSize(18).fillColor("#111827").text(customerName.toUpperCase(), margin + 8, y);
-  doc.font("Helvetica").fontSize(10).fillColor("#111827").text(`Fecha ${dateStr}`, margin, y + 2, { width: innerW - 8, align: "right" }).text(`Vigencia ${validStr}`, margin, y + 16, { width: innerW - 8, align: "right" });
+  doc.font("Helvetica").fontSize(10).fillColor("#111827")
+    .text(`Fecha ${dateStr}`, margin, y + 2, { width: innerW - 8, align: "right" })
+    .text(`Vigencia ${validStr}`, margin, y + 16, { width: innerW - 8, align: "right" });
+  return y + 44;
+}
 
-  y += 44;
-
-  const infoH = 54;
-  const rowW = innerW;
-
-  const cols1 = showDestination
+function drawInfoTable(doc, payload, y, margin, innerW, useBasePrice) {
+  const endCustomer = payload?.end_customer || {};
+  const customerName = safeStr(endCustomer?.name) || "(sin nombre)";
+  const customerPhone = safeStr(endCustomer?.phone) || "—";
+  const customerEmail = safeStr(endCustomer?.email) || "—";
+  const sellerName = getSellerName(payload) || "—";
+  const destinationRaw = safeStr(payload?.fulfillment_mode);
+  const destination = destinationRaw === "acopio" ? "Acopio" : destinationRaw === "produccion" ? "Producción" : (destinationRaw || "—");
+  const cols = useBasePrice
     ? [
-        { w: rowW * 0.35, text: `Cliente\n${customerName}` },
-        { w: rowW * 0.18, text: `Teléfono\n${customerPhone || "—"}` },
-        { w: rowW * 0.22, text: `Email\n${customerEmail || "—"}` },
-        { w: rowW * 0.13, text: `Destino\n${destination || "—"}` },
-        { w: rowW * 0.12, text: `Vendedor\n${sellerName || "—"}` },
+        { w: innerW * 0.35, label: "Cliente", value: customerName },
+        { w: innerW * 0.18, label: "Teléfono", value: customerPhone },
+        { w: innerW * 0.22, label: "Email", value: customerEmail },
+        { w: innerW * 0.13, label: "Destino", value: destination },
+        { w: innerW * 0.12, label: "Vendedor", value: sellerName },
       ]
     : [
-        { w: rowW * 0.38, text: `Cliente\n${customerName}` },
-        { w: rowW * 0.22, text: `Teléfono\n${customerPhone || "—"}` },
-        { w: rowW * 0.22, text: `Email\n${customerEmail || "—"}` },
-        { w: rowW * 0.18, text: `Vendedor\n${sellerName || "—"}` },
+        { w: innerW * 0.38, label: "Cliente", value: customerName },
+        { w: innerW * 0.22, label: "Teléfono", value: customerPhone },
+        { w: innerW * 0.22, label: "Email", value: customerEmail },
+        { w: innerW * 0.18, label: "Vendedor", value: sellerName },
       ];
+  let x = margin;
+  const h = 54;
+  doc.save().fillColor("#F3F4F6").rect(margin, y, innerW, h).fill().restore();
+  doc.save().strokeColor("#D1D5DB").rect(margin, y, innerW, h).stroke().restore();
+  for (let i = 0; i < cols.length; i += 1) {
+    const c = cols[i];
+    if (i > 0) doc.save().strokeColor("#D1D5DB").moveTo(x, y).lineTo(x, y + h).stroke().restore();
+    doc.font("Helvetica-Bold").fontSize(8).fillColor("#6B7280").text(c.label.toUpperCase(), x + 8, y + 8, { width: c.w - 16 });
+    doc.font("Helvetica").fontSize(10).fillColor("#111827").text(c.value, x + 8, y + 24, { width: c.w - 16 });
+    x += c.w;
+  }
+  return y + h + 10;
+}
 
-  drawRow(doc, {
-    x: margin,
-    y,
-    w: rowW,
-    h: infoH,
-    cols: cols1,
-    fill: "#F3F4F6",
-    textStyle: { font: "Helvetica", size: 10, color: "#111827", pad: 8 },
-  });
+async function renderPdf({ title, payload, useBasePrice, odoo }) {
+  const doc = new PDFDocument({ size: "A4", margin: 0, bufferPages: true });
+  const buffers = [];
+  doc.on("data", buffers.push.bind(buffers));
+  const margin = 28;
+  const innerW = doc.page.width - margin * 2;
+  const now = new Date();
+  const dateStr = now.toLocaleDateString("es-AR");
+  const validityDays = n2(payload?.payload?.validity_days ?? payload?.validity_days ?? 1);
+  const validUntil = (payload?.payload?.valid_until || payload?.valid_until)
+    ? new Date(payload?.payload?.valid_until || payload?.valid_until)
+    : new Date(now.getTime() + validityDays * 86400000);
+  const validStr = validUntil.toLocaleDateString("es-AR");
+  const extraCalculatedLines = await buildBudgetExtraSummaryLines(payload);
+  const paymentMethod = safeStr(payload?.payload?.payment_method ?? payload?.payment_method);
+  const productionPlanningText = getProductionPlanningText(payload);
+  const obs = stripSellerLines(safeStr(payload?.note));
+  const { lines, grandTotal, subtotalNet, ivaAmount } = await buildLines(payload, { useBasePrice, odoo });
 
-  y += infoH + 10;
+  let y = drawHeader(doc, { title, payload, margin, innerW, dateStr, validStr });
+  y = drawInfoTable(doc, payload, y, margin, innerW, useBasePrice);
 
   const extraLines = [];
   if (paymentMethod) extraLines.push(`Forma de pago: ${paymentMethod}`);
   if (productionPlanningText) extraLines.push(`Fecha estimada de entrega "${productionPlanningText}"`);
   extraLines.push(...extraCalculatedLines);
   if (obs) extraLines.push(`Obs: ${obs}`);
-
   if (extraLines.length) {
     const txt = extraLines.join("   ·   ");
-    const obsOptions = { width: innerW - 4, lineGap: 2 };
-    const obsHeight = doc.heightOfString(txt, obsOptions);
-    doc.font("Helvetica").fontSize(10).fillColor("#111827").text(txt, margin + 2, y, obsOptions);
-    y += obsHeight + 10;
-  } else {
-    y += 6;
+    doc.font("Helvetica").fontSize(10).fillColor("#111827").text(txt, margin + 2, y, { width: innerW - 4, lineGap: 2 });
+    y = doc.y + 10;
   }
-
-  const tableX = margin;
-  let tableY = y;
 
   const colDesc = innerW * 0.54;
   const colQty = innerW * 0.10;
   const colUnit = innerW * 0.18;
   const colTot = innerW * 0.18;
   const SAFE_BOTTOM_GAP = 56;
-  const SUBTOTAL_ROW_H = 28;
-  const IVA_ROW_H = 28;
-  const TOTAL_ROW_H = 36;
-
-  function drawTableHeader() {
-    drawRow(doc, {
-      x: tableX,
-      y: tableY,
-      w: innerW,
-      h: 28,
-      cols: [
-        { w: colDesc, text: "DESCRIPCIÓN", align: "left" },
-        { w: colQty, text: "CANT", align: "right", lineBreak: false },
-        { w: colUnit, text: "PRECIO c/IVA", align: "right", lineBreak: false },
-        { w: colTot, text: "TOTAL c/IVA", align: "right", lineBreak: false },
-      ],
-      fill: "#E5E7EB",
-      textStyle: { font: "Helvetica-Bold", size: 10, color: "#111827", pad: 8 },
-    });
-    tableY += 28;
-  }
+  let tableY = y;
 
   function pageBottom() {
     return doc.page.height - margin - SAFE_BOTTOM_GAP;
   }
-
+  function drawTableHeader() {
+    doc.save().fillColor("#E5E7EB").rect(margin, tableY, innerW, 28).fill().restore();
+    doc.save().strokeColor("#D1D5DB").rect(margin, tableY, innerW, 28).stroke().restore();
+    const headers = [
+      [margin + 8, colDesc - 16, "DESCRIPCIÓN", "left"],
+      [margin + colDesc + 8, colQty - 16, "CANT", "right"],
+      [margin + colDesc + colQty + 8, colUnit - 16, "PRECIO c/IVA", "right"],
+      [margin + colDesc + colQty + colUnit + 8, colTot - 16, "TOTAL c/IVA", "right"],
+    ];
+    doc.font("Helvetica-Bold").fontSize(10).fillColor("#111827");
+    headers.forEach(([x, w, text, align]) => doc.text(text, x, tableY + 8, { width: w, align }));
+    tableY += 28;
+  }
   function ensureSpace(h) {
     if (tableY + h <= pageBottom()) return;
     doc.addPage();
@@ -702,124 +351,127 @@ async function renderPdf({ title, payload, useBasePrice }) {
   }
 
   drawTableHeader();
-
-  doc.font("Helvetica").fontSize(10).fillColor("#111827");
-  const pad = 8;
-
-  for (const l of lines) {
-    const descHeight = doc.heightOfString(l.name, { width: colDesc - pad * 2 });
-    const rowH = Math.max(28, descHeight + pad * 2);
-
+  for (const line of lines) {
+    const rowH = Math.max(28, doc.heightOfString(line.name, { width: colDesc - 16 }) + 16);
     ensureSpace(rowH);
-
-    drawRow(doc, {
-      x: tableX,
-      y: tableY,
-      w: innerW,
-      h: rowH,
-      cols: [
-        { w: colDesc, text: l.name, align: "left" },
-        { w: colQty, text: formatQty(l.qty), align: "right", lineBreak: false },
-        { w: colUnit, text: `$ ${formatMoney(l.unit)}`, align: "right", lineBreak: false },
-        { w: colTot, text: `$ ${formatMoney(l.total)}`, align: "right", lineBreak: false },
-      ],
-      fill: null,
-      textStyle: { font: "Helvetica", size: 9.5, color: "#111827", pad },
-    });
-
+    doc.save().strokeColor("#D1D5DB").rect(margin, tableY, innerW, rowH).stroke().restore();
+    const xQty = margin + colDesc;
+    const xUnit = xQty + colQty;
+    const xTot = xUnit + colUnit;
+    [xQty, xUnit, xTot].forEach((x) => doc.save().strokeColor("#D1D5DB").moveTo(x, tableY).lineTo(x, tableY + rowH).stroke().restore());
+    doc.font("Helvetica").fontSize(9.5).fillColor("#111827")
+      .text(line.name, margin + 8, tableY + 8, { width: colDesc - 16 })
+      .text(formatQty(line.qty), xQty + 8, tableY + 8, { width: colQty - 16, align: "right" })
+      .text(`$ ${formatMoney(line.unit)}`, xUnit + 8, tableY + 8, { width: colUnit - 16, align: "right" })
+      .text(`$ ${formatMoney(line.total)}`, xTot + 8, tableY + 8, { width: colTot - 16, align: "right" });
     tableY += rowH;
   }
 
-  ensureSpace(SUBTOTAL_ROW_H + IVA_ROW_H + TOTAL_ROW_H + 8);
-
-  drawRow(doc, {
-    x: tableX,
-    y: tableY,
-    w: innerW,
-    h: SUBTOTAL_ROW_H,
-    cols: [
-      { w: innerW * 0.68, text: "Subtotal s/IVA", align: "right" },
-      { w: innerW * 0.32, text: `$ ${formatMoney(subtotalNet)}`, align: "right", lineBreak: false },
-    ],
-    fill: null,
-    textStyle: { font: "Helvetica", size: 10, color: "#111827", pad: 8 },
-  });
-  tableY += SUBTOTAL_ROW_H;
-
-  drawRow(doc, {
-    x: tableX,
-    y: tableY,
-    w: innerW,
-    h: IVA_ROW_H,
-    cols: [
-      { w: innerW * 0.68, text: "IVA", align: "right" },
-      { w: innerW * 0.32, text: `$ ${formatMoney(ivaAmount)}`, align: "right", lineBreak: false },
-    ],
-    fill: null,
-    textStyle: { font: "Helvetica", size: 10, color: "#111827", pad: 8 },
-  });
-  tableY += IVA_ROW_H;
-
-  drawRow(doc, {
-    x: tableX,
-    y: tableY,
-    w: innerW,
-    h: TOTAL_ROW_H,
-    cols: [
-      { w: innerW * 0.68, text: "TOTAL (IVA incluido)", align: "right" },
-      { w: innerW * 0.32, text: `$ ${formatMoney(grandTotal)}`, align: "right", lineBreak: false },
-    ],
-    fill: "#F3F4F6",
-    textStyle: { font: "Helvetica-Bold", size: 11, color: "#111827", pad: 8 },
-  });
-
-  doc.addPage();
-  doc.x = margin;
-  doc.y = margin + 10;
-
-  doc.font("Helvetica-Bold").fontSize(14).fillColor("#111827").text("Términos y Condiciones de Venta:");
-  doc.moveDown(0.8);
-
-  const terms = [
-    "1. Formas de Pago: Aceptamos pagos en efectivo (pesos o dólares billete), transferencia bancaria, cheques o tarjeta de crédito (consultar por planes vigentes). Para confirmar el pedido se requiere una seña del 70% del valor total. El saldo restante deberá abonarse en su totalidad antes de la entrega del producto.",
-    "2. Plazos de Entrega: El plazo estimado de entrega es de 40 días para portones en lamas, y 60 días para portones en paneles, y puede estar sujeto a variaciones debido a la disponibilidad de materiales o condiciones externas. Los plazos comienzan a contar a partir de la recepción de la seña.",
-    "3. Condiciones de Envío: El envío puede ser coordinado por el cliente o gestionado por la empresa, con costos adicionales según el destino. Los productos deben ser revisados al momento de la entrega; no se aceptarán reclamos posteriores por daños durante el transporte.",
-    "4. Garantía: Ofrecemos una garantía de 3 años por defectos de fabricación. La garantía no cubre daños causados por instalación incorrecta, falta de mantenimiento, uso indebido o condiciones climáticas extremas.",
-    "5. Instalación: La instalación no está incluida en el presupuesto, salvo que se indique explícitamente. La empresa puede ofrecer el servicio de instalación con un costo adicional.",
-    "6. Cancelación y Devoluciones: No se aceptan devoluciones una vez confirmado el pedido, ya que los productos son fabricados a medida. En caso de cancelación, la seña no será reembolsada.",
+  ensureSpace(100);
+  const summaryX = margin + innerW * 0.68;
+  const summaryW = innerW * 0.32;
+  const rows = [
+    ["Subtotal s/IVA", subtotalNet, 28, false],
+    ["IVA", ivaAmount, 28, false],
+    ["TOTAL (IVA incluido)", grandTotal, 36, true],
   ];
-
-  doc.font("Helvetica").fontSize(10).fillColor("#111827");
-  for (const t of terms) {
-    doc.text(t, { width: innerW, lineGap: 3 });
-    doc.moveDown(0.5);
+  for (const [label, amount, h, bold] of rows) {
+    if (bold) doc.save().fillColor("#F3F4F6").rect(margin, tableY, innerW, h).fill().restore();
+    doc.save().strokeColor("#D1D5DB").rect(margin, tableY, innerW, h).stroke().restore();
+    doc.font(bold ? "Helvetica-Bold" : "Helvetica").fontSize(bold ? 11 : 10).fillColor("#111827")
+      .text(label, margin + 8, tableY + 8, { width: innerW * 0.68 - 16, align: "right" })
+      .text(`$ ${formatMoney(amount)}`, summaryX + 8, tableY + 8, { width: summaryW - 16, align: "right" });
+    tableY += h;
   }
 
   const range = doc.bufferedPageRange();
-  for (let i = range.start; i < range.start + range.count; i++) {
+  for (let i = range.start; i < range.start + range.count; i += 1) {
     doc.switchToPage(i);
-    drawFrame(doc, { margin });
-    drawFooter(doc, { margin, pageNo: i + 1, pageCount: range.count });
+    drawPageFrame(doc, margin, i + 1, range.count);
   }
 
   doc.end();
-
-  return new Promise((resolve) => {
-    doc.on("end", () => {
-      resolve(Buffer.concat(buffers));
-    });
-  });
+  return new Promise((resolve) => doc.on("end", () => resolve(Buffer.concat(buffers))));
 }
 
-export function buildPdfRouter() {
+function prettyMeasurementValue(key, value) {
+  const raw = safeStr(value);
+  const maps = {
+    colocacion: { dentro_vano: "Por dentro del vano", detras_vano: "Por detrás del vano" },
+    accionamiento: { manual: "Manual", automatico: "Automático" },
+    levadizo: { coplanar: "Coplanar", comun: "Común" },
+  };
+  return maps[key]?.[raw] || textOrDash(raw);
+}
+
+async function renderMeasurementPdf({ quote, form }) {
+  const doc = new PDFDocument({ size: "A4", margin: 32, bufferPages: true });
+  const buffers = [];
+  doc.on("data", buffers.push.bind(buffers));
+  const logoPath = getLogoPath();
+  if (fs.existsSync(logoPath)) doc.image(logoPath, 32, 20, { width: 160, height: 42, fit: [160, 42] });
+  doc.font("Helvetica-Bold").fontSize(18).fillColor("#111827").text("PLANILLA DE MEDICIÓN", 32, 34, { width: doc.page.width - 64, align: "center" });
+  doc.moveDown(2);
+
+  const c = quote?.end_customer || {};
+  const rows = [
+    ["Cliente", c.name],
+    ["Teléfono", c.phone],
+    ["Dirección", c.address],
+    ["Localidad", c.city],
+    ["Maps", c.maps_url],
+    ["Fecha", pick(form, "fecha")],
+    ["Distribuidor", pick(form, "distribuidor")],
+    ["Nota de venta", quote?.odoo_sale_order_name || quote?.quote_number],
+    ["Alto final (mm)", form?.alto_final_mm],
+    ["Ancho final (mm)", form?.ancho_final_mm],
+    ["Accionamiento", prettyMeasurementValue("accionamiento", pick(form, "accionamiento"))],
+    ["Colocación", prettyMeasurementValue("colocacion", pick(form, "colocacion"))],
+  ];
+
+  rows.forEach(([label, value]) => {
+    doc.font("Helvetica-Bold").fontSize(9).fillColor("#6B7280").text(String(label || "").toUpperCase());
+    doc.font("Helvetica").fontSize(11).fillColor("#111827").text(textOrDash(value));
+    doc.moveDown(0.4);
+  });
+
+  const altos = Array.isArray(form?.esquema?.alto) ? form.esquema.alto : [];
+  const anchos = Array.isArray(form?.esquema?.ancho) ? form.esquema.ancho : [];
+  doc.moveDown(0.5);
+  doc.font("Helvetica-Bold").fontSize(12).text("Esquema de medidas");
+  doc.moveDown(0.4);
+  doc.font("Helvetica").fontSize(11).text(`Altos: ${(altos.filter(Boolean).join(" / ")) || "—"}`);
+  doc.text(`Anchos: ${(anchos.filter(Boolean).join(" / ")) || "—"}`);
+
+  const range = doc.bufferedPageRange();
+  for (let i = range.start; i < range.start + range.count; i += 1) {
+    doc.switchToPage(i);
+    drawPageFrame(doc, 20, i + 1, range.count, "Planilla de medición · De Grandis Portones");
+  }
+
+  doc.end();
+  return new Promise((resolve) => doc.on("end", () => resolve(Buffer.concat(buffers))));
+}
+
+export function buildPdfRouter(odoo = null) {
   const router = express.Router();
 
   router.post("/presupuesto", async (req, res, next) => {
     try {
       const payload = req.body || {};
-      const pdf = await renderPdf({ title: "PRESUPUESTO", payload, useBasePrice: false });
+      const pdf = await renderPdf({ title: "PRESUPUESTO", payload, useBasePrice: false, odoo });
       res.setHeader("Content-Type", "application/pdf");
       res.setHeader("Content-Disposition", `attachment; filename="${buildDownloadFilename(payload, "presupuesto")}"`);
+      res.send(pdf);
+    } catch (e) { next(e); }
+  });
+
+  router.post("/proforma", async (req, res, next) => {
+    try {
+      const payload = req.body || {};
+      const pdf = await renderPdf({ title: "PROFORMA", payload, useBasePrice: true, odoo });
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader("Content-Disposition", `attachment; filename="${buildDownloadFilename(payload, "proforma")}"`);
       res.send(pdf);
     } catch (e) { next(e); }
   });
@@ -857,16 +509,6 @@ export function buildPdfRouter() {
       const pdf = await renderMeasurementPdf({ quote, form });
       res.setHeader("Content-Type", "application/pdf");
       res.setHeader("Content-Disposition", `attachment; filename="medicion_${id}.pdf"`);
-      res.send(pdf);
-    } catch (e) { next(e); }
-  });
-
-  router.post("/proforma", async (req, res, next) => {
-    try {
-      const payload = req.body || {};
-      const pdf = await renderPdf({ title: "PROFORMA", payload, useBasePrice: true });
-      res.setHeader("Content-Type", "application/pdf");
-      res.setHeader("Content-Disposition", `attachment; filename="${buildDownloadFilename(payload, "proforma")}"`);
       res.send(pdf);
     } catch (e) { next(e); }
   });

@@ -45,7 +45,7 @@ app.use("/api/measurements", buildMeasurementsRouter(odoo));
 app.use("/api/catalog", buildCatalogRouter(odoo));
 app.use("/api/admin", buildAdminRouter(odoo));
 app.use("/api/technical-consults", buildTechnicalConsultsRouter());
-app.use("/api/pdf", buildPdfRouter());
+app.use("/api/pdf", buildPdfRouter(odoo));
 app.get("/health", (_req, res) => res.json({ ok: true }));
 
 app.use((err, _req, res, _next) => {
