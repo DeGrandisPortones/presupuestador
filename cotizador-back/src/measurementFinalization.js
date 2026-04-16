@@ -206,6 +206,31 @@ function normalizeStoredSelectedBindingProduct(value) {
     use_surface_qty: value?.use_surface_qty === true || value?.uses_surface_quantity === true,
   };
 }
+function replaceFallbackSectionProductsInBaseLines({ baseLines, measurementForm }) {
+  const selectedBySection = measurementForm?.__fallback_selected_section_products || {};
+  let nextBase = Array.isArray(baseLines) ? baseLines.slice() : [];
+  for (const [sectionIdRaw, selectedRaw] of Object.entries(selectedBySection || {})) {
+    const sectionId = Number(sectionIdRaw || 0);
+    const selectedProduct = normalizeStoredSelectedBindingProduct(selectedRaw);
+    if (!sectionId || !selectedProduct?.product_id) continue;
+    const boundProducts = normalizeStoredBindingProducts(
+      getByPath(measurementForm, `__fallback_budget_binding_products.${sectionId}`),
+    );
+    const removeIds = new Set(boundProducts.map((item) => Number(item.product_id)).filter(Boolean));
+    nextBase = nextBase.filter((line) => !removeIds.has(Number(line?.product_id || 0)));
+    nextBase.push({
+      product_id: Number(selectedProduct.product_id),
+      qty: Number(selectedProduct.qty || 1) || 1,
+      name: String(selectedProduct.display_name || selectedProduct.alias || selectedProduct.raw_name || `Producto ${selectedProduct.product_id}`).trim(),
+      raw_name: String(selectedProduct.raw_name || selectedProduct.display_name || `Producto ${selectedProduct.product_id}`).trim(),
+      code: selectedProduct.code || null,
+      basePrice: 0,
+      uses_surface_quantity: selectedProduct.uses_surface_quantity === true,
+      use_surface_qty: selectedProduct.use_surface_qty === true,
+    });
+  }
+  return nextBase;
+}
 function cloneBudgetLine(line = {}) {
   const productId = Number(line?.product_id || 0) || null;
   if (!productId) return null;
@@ -708,6 +733,11 @@ async function buildMeasurementFinalizationBase({ odoo, originalQuote, measureme
       measurementForm: measurementForm || {},
     });
   }
+
+  baseLines = replaceFallbackSectionProductsInBaseLines({
+    baseLines,
+    measurementForm: measurementForm || {},
+  });
 
   const legacySeeds = buildMeasurementLineSeedsFromLegacyMappings(
     measurementForm || {},
