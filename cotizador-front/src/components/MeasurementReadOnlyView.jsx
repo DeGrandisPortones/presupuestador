@@ -1,5 +1,4 @@
 function text(v) { return String(v ?? "").trim(); }
-function boolLabel(v) { return v === true || String(v || "").toLowerCase() === "si" ? "Sí" : "No"; }
 function Field({ label, value }) {
   return <div style={{ flex: 1, minWidth: 220 }}><div className="muted" style={{ marginBottom: 6 }}>{label}</div><div style={{ minHeight: 42, padding: "10px 12px", borderRadius: 10, border: "1px solid #e3e3e3", background: "#fff", whiteSpace: "pre-wrap" }}>{value || <span className="muted">—</span>}</div></div>;
 }
@@ -11,9 +10,6 @@ function splitName(endCustomer = {}) {
   if (first || last) return { first, last };
   const parts = text(endCustomer.name).split(/\s+/).filter(Boolean);
   return { first: parts[0] || "", last: parts.slice(1).join(" ") };
-}
-function normalizeNameKey(value) {
-  return String(value || "").trim().toLowerCase().replace(/\s+/g, " ");
 }
 function buildBudgetSectionsContext(quote, catalog) {
   const sections = Array.isArray(catalog?.sections) ? catalog.sections.slice() : [];
@@ -48,9 +44,14 @@ function buildBudgetSummaryItems(quote) {
     .filter((section) => Array.isArray(section?.selected_products) && section.selected_products.length)
     .map((section) => ({
       key: `section-${section.id}`,
+      sectionId: Number(section.id),
       sectionName: section.name || `Sección ${section.id}`,
       value: section.selected_products.map((product) => product.display_name).filter(Boolean).join(", "),
-    }));
+    }))
+    .sort((a, b) => Number(a.sectionId || 0) - Number(b.sectionId || 0));
+}
+function sectionDisplayValue(form, item) {
+  return text(form?.__budget_section_override?.[item?.sectionId]?.value) || text(item?.value);
 }
 export default function MeasurementReadOnlyView({ quote }) {
   const form = quote?.measurement_form || {};
@@ -69,7 +70,7 @@ export default function MeasurementReadOnlyView({ quote }) {
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           {budgetSummaryItems.length ? budgetSummaryItems.map((item) => (
             <div key={item.key} style={{ border: "1px solid #eee", borderRadius: 10, padding: 10 }}>
-              <b>{item.sectionName}:</b> {item.value || "—"}
+              <b>{item.sectionName} · ID {item.sectionId}:</b> {sectionDisplayValue(form, item) || "—"}
             </div>
           )) : <div className="muted">Sin datos presupuestados.</div>}
         </div>

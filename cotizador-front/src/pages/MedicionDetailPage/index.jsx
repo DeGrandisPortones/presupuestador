@@ -526,6 +526,30 @@ function buildBudgetSummaryItems(budgetContext) {
     })
     .sort((a, b) => Number(a.sectionId || 0) - Number(b.sectionId || 0));
 }
+function summaryItemDisplayValue(item, form) {
+  const override = text(getByPath(form, `__budget_section_override.${item?.sectionId}.value`));
+  return override || text(item?.value);
+}
+function buildFallbackSectionFields({ summaryItems, dynamicFields }) {
+  const dynamicSectionIds = new Set(
+    (Array.isArray(dynamicFields) ? dynamicFields : [])
+      .map((field) => Number(field?.budget_section_id || 0))
+      .filter((sectionId) => ALLOWED_MEDIDOR_SECTION_IDS.has(sectionId)),
+  );
+  return (Array.isArray(summaryItems) ? summaryItems : [])
+    .filter((item) => {
+      const sectionId = Number(item?.sectionId || 0);
+      return sectionId > 0 && ALLOWED_MEDIDOR_SECTION_IDS.has(sectionId) && !dynamicSectionIds.has(sectionId);
+    })
+    .map((item) => ({
+      kind: "fallback_section",
+      key: `__budget_section_override.${item.sectionId}.value`,
+      label: item.sectionName || `Sección ${item.sectionId}`,
+      budget_section_id: Number(item.sectionId || 0),
+      budget_section_name: item.sectionName || `Sección ${item.sectionId}`,
+      type: "text",
+    }));
+}
 function allowedEditableFields(fields, dynamicUi, commercialReviewer) {
   return (Array.isArray(fields) ? fields : []).filter((field) => {
     const fieldKey = String(field?.key || "").trim();
@@ -536,9 +560,15 @@ function allowedEditableFields(fields, dynamicUi, commercialReviewer) {
   });
 }
 function editableFieldLabel(field) {
+  const sectionId = Number(field?.budget_section_id || 0);
   const sectionName = text(field?.budget_section_name);
   const label = text(field?.label || field?.key);
-  return sectionName ? `${sectionName}: ${label}` : label;
+  if (String(field?.kind || "") === "fallback_section") {
+    return `${sectionName || `Sección ${sectionId}`} · ID ${sectionId}`;
+  }
+  if (sectionName && sectionId) return `${sectionName} · ID ${sectionId}: ${label}`;
+  if (sectionName) return `${sectionName}: ${label}`;
+  return label;
 }
 
 export default function MedicionDetailPage() {
@@ -606,17 +636,29 @@ export default function MedicionDetailPage() {
     () => allowedEditableFields(allFields, dynamicUi, isCommercialReviewer),
     [allFields, dynamicUi, isCommercialReviewer],
   );
+  const budgetSummaryItems = useMemo(
+    () => buildBudgetSummaryItems(budgetContext),
+    [budgetContext],
+  );
+  const fallbackSectionFields = useMemo(
+    () => buildFallbackSectionFields({ summaryItems: budgetSummaryItems, dynamicFields: allowedFields }),
+    [budgetSummaryItems, allowedFields],
+  );
+  const editableFields = useMemo(
+    () => [...allowedFields, ...fallbackSectionFields],
+    [allowedFields, fallbackSectionFields],
+  );
   const baselineForm = useMemo(
     () => quote?.measurement_original_form || buildInitialForm(quote, quote?.measurement_form || {}),
     [quote],
   );
   const sensitiveItem18FieldKeys = useMemo(
     () =>
-      allFields
+      editableFields
         .filter((field) => Number(field?.budget_section_id || 0) === 18)
         .map((field) => String(field?.key || "").trim())
         .filter(Boolean),
-    [allFields],
+    [editableFields],
   );
   const item18Changed = useMemo(() => {
     if (!form || !baselineForm) return false;
@@ -627,10 +669,6 @@ export default function MedicionDetailPage() {
   const medidorLockedAfterMeasurement = useMemo(
     () => !!(isMedidor && !isTechnical && quote?.measurement_at),
     [isMedidor, isTechnical, quote],
-  );
-  const budgetSummaryItems = useMemo(
-    () => buildBudgetSummaryItems(budgetContext),
-    [budgetContext],
   );
   const defaultReturnReason = "El tamaño del portón es mayor al presupuestado originalmente";
   const forceReturnToSeller = useMemo(() => {
@@ -681,6 +719,24 @@ export default function MedicionDetailPage() {
     }
     if (changed) setForm(next);
   }, [form, allowedFields, budgetContext]);
+
+  useEffect(() => {
+    if (!form || !fallbackSectionFields.length) return;
+    let next = form;
+    let changed = false;
+    for (const field of fallbackSectionFields) {
+      const currentValue = text(getByPath(next, field.key));
+      if (currentValue) continue;
+      const summaryItem = budgetSummaryItems.find(
+        (item) => Number(item?.sectionId || 0) === Number(field?.budget_section_id || 0),
+      );
+      const initialValue = text(summaryItem?.value);
+      if (!initialValue) continue;
+      next = setByPath(next, field.key, initialValue);
+      changed = true;
+    }
+    if (changed) setForm(next);
+  }, [form, fallbackSectionFields, budgetSummaryItems]);
 
   useEffect(() => {
     if (!form) return;
@@ -971,7 +1027,7 @@ export default function MedicionDetailPage() {
                     background: "#fff",
                   }}
                 >
-                  <b>{item.sectionName}:</b> {item.value || "—"}
+                  <b>{item.sectionName} · ID {item.sectionId}:</b> {summaryItemDisplayValue(item, form) || "—"}
                 </div>
               ))
             ) : (
@@ -1083,11 +1139,11 @@ export default function MedicionDetailPage() {
         </Section>
 
         <Section title="Campos que puede cambiar el medidor">
-          {!allowedFields.length ? (
-            <div className="muted">No hay campos configurados para secciones 39/45, 23 y 18.</div>
+          {!editableFields.length ? (
+            <div className="muted">No hay opciones editables detectadas para secciones 39/45, 23 y 18.</div>
           ) : (
             <Row>
-              {allowedFields.map((field) => {
+              {editableFields.map((field) => {
                 const value = getByPath(form, field.key);
                 const allowed = dynamicUi.allowedOptions[field.key];
                 const disabled = medidorLockedAfterMeasurement;
@@ -1105,6 +1161,19 @@ export default function MedicionDetailPage() {
                       String(field?.odoo_binding_type || "") === "selected_measurement_product"
                     )) &&
                   sectionCatalogProducts.length > 0;
+
+                if (String(field?.kind || "") === "fallback_section") {
+                  return (
+                    <Field key={field.key} label={editableFieldLabel(field)}>
+                      <Input
+                        value={text(value)}
+                        onChange={(nextValue) => setForm((prev) => setByPath(prev, field.key, nextValue))}
+                        disabled={disabled}
+                        style={{ width: "100%" }}
+                      />
+                    </Field>
+                  );
+                }
 
                 return (
                   <Field key={field.key} label={editableFieldLabel(field)}>
