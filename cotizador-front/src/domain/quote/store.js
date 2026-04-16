@@ -147,7 +147,7 @@ export const useQuoteStore = create((set, get) => ({
           l.name || l.display_name || l.alias || rawName || `Producto ${l.product_id || idx}`;
         return {
           product_id: Number(l.product_id ?? idx + 1),
-          odoo_id: Number(l.odoo_id || l.odoo_template_id || l.product_id ?? idx + 1),
+          odoo_id: Number(l.odoo_id || l.odoo_template_id || l.product_id || (idx + 1)),
           name: visibleName,
           raw_name: rawName,
           code: l.code || null,

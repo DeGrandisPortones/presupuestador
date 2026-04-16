@@ -1,13 +1,9 @@
-Cambios incluidos:
-- Se agrega el ID de Odoo (template) al bootstrap de productos.
-- En el catálogo se muestra:
-  - ID Presupuestador
-  - ID Odoo
-- En la tabla de ítems también se muestran ambos IDs.
-- Al agregar y guardar líneas, se conserva el ID Odoo para que no se pierda en el presupuesto.
+Hotfix Vercel:
+- Se corrigió la expresión que mezclaba || con ?? sin paréntesis.
+- Cambio mínimo: solo store.js.
 
-Archivos:
-- cotizador-back/src/odooBootstrap.js
-- cotizador-front/src/pages/CotizadorPage/components/SectionCatalog.jsx
+Línea corregida:
+- odoo_id: Number(l.odoo_id || l.odoo_template_id || l.product_id || (idx + 1))
+
+Archivo:
 - cotizador-front/src/domain/quote/store.js
-- cotizador-front/src/pages/CotizadorPage/components/LineRow.jsx
