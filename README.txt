@@ -1,13 +1,16 @@
-Fix incluido:
-- El endpoint de precios ya trae el nombre actualizado desde Odoo.
-- El front estaba actualizando solo el precio, no el nombre.
-- El PDF además priorizaba raw_name antes que name.
+Reemplazo directo solicitado por Esteban.
 
-Con este patch:
-- al recalcular precios, también se sincroniza el nombre actual desde Odoo
-- el PDF prioriza name antes que raw_name
-- queda incorporado el hotfix de Vercel en store.js para no reintroducir el error de build
+Cambios incluidos:
+- Medición simplificada: se quitan los bloques estáticos de revestimiento / puerta / rebajes / observaciones del formulario de medición.
+- Arriba aparece un resumen del presupuesto a medir con la sección de donde viene cada opción elegida.
+- El medidor ve solo:
+  - fecha
+  - alto final / ancho final
+  - 3 altos + 3 anchos
+  - los campos dinámicos asociados a secciones 39/45, 23 y 18
+- Si cambia un campo de la sección 18, se muestra advertencia y se devuelve al vendedor.
+- Al enviar, intenta guardar la ubicación del celular como Google Maps.
 
-Archivos:
-- cotizador-front/src/domain/quote/store.js
-- cotizador-back/src/routes/pdf.routes.js
+Archivos para copiar y pegar:
+- cotizador-front/src/pages/MedicionDetailPage/index.jsx
+- cotizador-front/src/components/MeasurementReadOnlyView.jsx
