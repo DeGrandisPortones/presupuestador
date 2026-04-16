@@ -10,6 +10,12 @@ function parseMeasurementProductIds(raw) {
     .filter((item) => Number.isFinite(item) && item > 0);
 }
 
+const MEASUREMENT_PRODUCT_IDS = parseMeasurementProductIds(
+  process.env.ODOO_MEASUREMENT_PRODUCT_IDS ||
+    process.env.ODOO_MEASUREMENT_PRODUCT_ID ||
+    "2865,2961",
+);
+
 export async function ensureQuotesMeasurementColumns() {
   if (ensured) return;
 
@@ -94,30 +100,25 @@ export async function ensureQuotesMeasurementColumns() {
   await dbQuery(`alter table public.presupuestador_quotes add column if not exists production_delivery_committed_count int null;`);
   await dbQuery(`alter table public.presupuestador_quotes add column if not exists production_delivery_committed_at timestamptz null;`);
 
-  const measurementProductIds = parseMeasurementProductIds(
-    process.env.ODOO_MEASUREMENT_PRODUCT_IDS ||
-      process.env.ODOO_MEASUREMENT_PRODUCT_ID ||
-      "2865,2961",
+  const measurementProductIds = MEASUREMENT_PRODUCT_IDS.map(String);
+  await dbQuery(
+    `
+      update public.presupuestador_quotes
+      set requires_measurement = true,
+          measurement_mode = 'medidor',
+          measurement_subtype = 'normal',
+          measurement_status = case when measurement_status = 'none' then 'pending' else measurement_status end
+      where catalog_kind = 'porton'
+        and status = 'synced_odoo'
+        and fulfillment_mode = 'produccion'
+        and exists (
+          select 1
+          from jsonb_array_elements(coalesce(lines, '[]'::jsonb)) elem
+          where (elem->>'product_id') = any($1::text[])
+        )
+    `,
+    [measurementProductIds],
   );
-  const measurementProductIdsSql = measurementProductIds
-    .map((item) => `'${String(item).replace(/'/g, "''")}'`)
-    .join(", ");
-
-  await dbQuery(`
-    update public.presupuestador_quotes
-    set requires_measurement = true,
-        measurement_mode = 'medidor',
-        measurement_subtype = 'normal',
-        measurement_status = case when measurement_status = 'none' then 'pending' else measurement_status end
-    where catalog_kind = 'porton'
-      and status = 'synced_odoo'
-      and fulfillment_mode = 'produccion'
-      and exists (
-        select 1
-        from jsonb_array_elements(coalesce(lines, '[]'::jsonb)) elem
-        where (elem->>'product_id') = any(array[${measurementProductIdsSql}])
-      )
-  `);
 
   await ensureSettingsTable();
   ensured = true;

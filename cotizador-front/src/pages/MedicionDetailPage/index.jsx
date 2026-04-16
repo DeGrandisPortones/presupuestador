@@ -309,6 +309,7 @@ export default function MedicionDetailPage() {
   const quote = q.data;
   const [form, setForm] = useState(null);
   const [lastMessage, setLastMessage] = useState("");
+  const [technicalDimensionEditEnabled, setTechnicalDimensionEditEnabled] = useState({ alto: false, ancho: false });
 
   useEffect(() => {
     if (!quote) return;
@@ -421,6 +422,36 @@ export default function MedicionDetailPage() {
     return !!(currentFallback && baseFallback && currentFallback !== baseFallback);
   }, [form, baselineForm, editableConfiguredFields]);
 
+
+  function ensureTechnicalDimensionEditAllowed(axis) {
+    if (!isTechnical) return true;
+    const key = axis === "alto" ? "alto" : "ancho";
+    if (technicalDimensionEditEnabled[key]) return true;
+    const ok = window.confirm("¿Desea modificar el dato de alto y ancho finales?");
+    if (ok) {
+      setTechnicalDimensionEditEnabled((prev) => ({ ...prev, [key]: true }));
+    }
+    return ok;
+  }
+
+  const approveM = useMutation({
+    mutationFn: async () => {
+      await saveMeasurementDetailed(quoteId, {
+        form,
+        submit: false,
+        returnToSeller: false,
+        returnReason: "",
+        endCustomer: quote?.end_customer || {},
+        baselineForm,
+      });
+      return reviewMeasurement(quoteId, { action: "approve", notes: "" });
+    },
+    onSuccess: () => {
+      setLastMessage("La planilla técnica fue aprobada y enviada a Odoo.");
+      q.refetch();
+    },
+  });
+
   const saveM = useMutation({
     mutationFn: async ({ submit, returnToSeller = false, returnReason = "" }) => {
       let nextEndCustomer = { ...(quote?.end_customer || {}) };
@@ -462,8 +493,21 @@ export default function MedicionDetailPage() {
   });
 
   const rejectM = useMutation({
-    mutationFn: (notes) => reviewMeasurement(quoteId, { action: "reject", notes }),
-    onSuccess: () => q.refetch(),
+    mutationFn: async (notes) => {
+      await saveMeasurementDetailed(quoteId, {
+        form,
+        submit: false,
+        returnToSeller: false,
+        returnReason: "",
+        endCustomer: quote?.end_customer || {},
+        baselineForm,
+      });
+      return reviewMeasurement(quoteId, { action: "reject", notes });
+    },
+    onSuccess: () => {
+      setLastMessage("El portón fue devuelto al vendedor para rehacer el presupuesto.");
+      q.refetch();
+    },
   });
 
   if (q.isLoading) return <div className="container"><div className="card"><div className="muted">Cargando medición...</div></div></div>;
@@ -484,21 +528,32 @@ export default function MedicionDetailPage() {
           </div>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             <Button variant="ghost" onClick={() => navigate(returnPath)}>Volver</Button>
-            <Button variant="secondary" disabled={saveM.isPending} onClick={() => saveM.mutate({ submit: false })}>
-              {saveM.isPending ? "Guardando..." : "Guardar"}
+            <Button variant="secondary" disabled={saveM.isPending || approveM.isPending || rejectM.isPending} onClick={() => saveM.mutate({ submit: false })}>
+              {saveM.isPending ? "Guardando..." : isTechnical ? "Guardar cambios técnicos" : "Guardar"}
             </Button>
-            <Button disabled={saveM.isPending} onClick={() => saveM.mutate({ submit: true })}>
-              {saveM.isPending ? "Procesando..." : isTechnical ? "Confirmar datos técnicos" : "Guardar y Enviar"}
-            </Button>
+
             {isTechnical ? (
-              <Button variant="ghost" disabled={rejectM.isPending} onClick={() => {
-                const notes = window.prompt("Motivo de corrección:", "") || "";
-                if (!notes) return;
-                rejectM.mutate(notes);
-              }}>
-                {rejectM.isPending ? "Devolviendo..." : "Devolver para corregir"}
+              <>
+                <Button disabled={approveM.isPending || saveM.isPending || rejectM.isPending} onClick={() => approveM.mutate()}>
+                  {approveM.isPending ? "Aprobando..." : "Aprobar"}
+                </Button>
+                <Button
+                  variant="ghost"
+                  disabled={rejectM.isPending || saveM.isPending || approveM.isPending}
+                  onClick={() => {
+                    const notes = window.prompt("Motivo de rechazo / devolución al vendedor:", "") || "";
+                    if (!notes) return;
+                    rejectM.mutate(notes);
+                  }}
+                >
+                  {rejectM.isPending ? "Devolviendo..." : "Rechazar"}
+                </Button>
+              </>
+            ) : (
+              <Button disabled={saveM.isPending} onClick={() => saveM.mutate({ submit: true })}>
+                {saveM.isPending ? "Procesando..." : item18Changed ? "Enviar al vendedor" : "Enviar al técnico"}
               </Button>
-            ) : null}
+            )}
           </div>
         </div>
 
@@ -531,8 +586,8 @@ export default function MedicionDetailPage() {
 
         <Section title="Esquema de medidas">
           <Row>
-            <Field label="Alto final (mm)"><Input value={form.alto_final_mm || ""} onChange={(v) => setForm((prev) => ({ ...prev, alto_final_mm: v }))} style={{ width: "100%" }} /></Field>
-            <Field label="Ancho final (mm)"><Input value={form.ancho_final_mm || ""} onChange={(v) => setForm((prev) => ({ ...prev, ancho_final_mm: v }))} style={{ width: "100%" }} /></Field>
+            <Field label="Alto final (mm)"><Input value={form.alto_final_mm || ""} onChange={(v) => { if (!ensureTechnicalDimensionEditAllowed("alto")) return; setForm((prev) => ({ ...prev, alto_final_mm: v })); }} style={{ width: "100%" }} /></Field>
+            <Field label="Ancho final (mm)"><Input value={form.ancho_final_mm || ""} onChange={(v) => { if (!ensureTechnicalDimensionEditAllowed("ancho")) return; setForm((prev) => ({ ...prev, ancho_final_mm: v })); }} style={{ width: "100%" }} /></Field>
           </Row>
           <div className="spacer" />
           <Row>
@@ -595,6 +650,7 @@ export default function MedicionDetailPage() {
                         return next;
                       });
                     }}
+                    disabled={isTechnical}
                     style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid #ddd" }}
                   >
                     <option value="">Seleccione producto…</option>
@@ -631,6 +687,7 @@ export default function MedicionDetailPage() {
                         return next;
                       });
                     }}
+                    disabled={isTechnical}
                     style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid #ddd" }}
                   >
                     <option value="">Seleccione producto…</option>

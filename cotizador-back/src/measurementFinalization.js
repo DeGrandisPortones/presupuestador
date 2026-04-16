@@ -276,6 +276,19 @@ function scaleSurfaceLinesByArea(lines, { sourceAreaM2, finalAreaM2 }) {
     };
   });
 }
+
+function dedupeLines(lines) {
+  const seen = new Set();
+  const out = [];
+  for (const line of Array.isArray(lines) ? lines : []) {
+    const productId = Number(line?.product_id || 0);
+    if (!productId || seen.has(productId)) continue;
+    seen.add(productId);
+    out.push({ ...line, qty: Number(line?.qty || 1) || 1 });
+  }
+  return out;
+}
+
 function mergeByProductId(lines) {
   const map = new Map();
   for (const line of Array.isArray(lines) ? lines : []) {
