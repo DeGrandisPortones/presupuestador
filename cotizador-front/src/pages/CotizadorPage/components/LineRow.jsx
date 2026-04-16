@@ -7,6 +7,7 @@ const INTEGER_QTY_PRODUCT_IDS = new Set([3582, 3251]);
 export default function LineRow({ line, finalUnit, total, formatARS }) {
   const { setQty, removeLine } = useQuoteStore();
   const visibleName = String(line.name || line.raw_name || `Producto ${line.product_id}`).trim();
+  const visibleOdooId = Number(line.odoo_id || line.product_id || 0) || Number(line.product_id || 0);
   const isProtectedLine = !!line.auto_system_item || !!line.surface_quantity || !!line.previously_billed_line || SYSTEM_PRODUCT_IDS.has(Number(line.product_id));
   const isIntegerQtyLine = !isProtectedLine && INTEGER_QTY_PRODUCT_IDS.has(Number(line.product_id));
   const isUnitOnlyLine = !isProtectedLine && !isIntegerQtyLine;
@@ -16,7 +17,10 @@ export default function LineRow({ line, finalUnit, total, formatARS }) {
       <td style={{ maxWidth: 420 }}>
         <div style={{ fontWeight: 600 }}>{visibleName}</div>
         <div className="muted">
-          ID: {line.product_id} {line.code ? `| ${line.code}` : ""}
+          ID Presupuestador: {line.product_id}
+          {" · "}
+          ID Odoo: {visibleOdooId}
+          {line.code ? ` · ${line.code}` : ""}
           {line.auto_system_item ? " · Auto por sistema y superficie" : ""}
           {!line.auto_system_item && line.surface_quantity ? " · Cantidad por superficie" : ""}
           {isUnitOnlyLine ? " · Unidad fija" : ""}

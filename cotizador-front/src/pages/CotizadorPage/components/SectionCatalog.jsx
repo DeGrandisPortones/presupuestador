@@ -10,10 +10,12 @@ import {
 } from "../../../api/admin.js";
 import Button from "../../../ui/Button";
 
-const REBAJE_SECTION_ID = 56;
-
 function getProductLabel(product) {
   return product?.display_name || product?.alias || product?.name || "";
+}
+
+function getVisibleOdooId(product) {
+  return Number(product?.odoo_id || product?.odoo_template_id || product?.id || 0) || 0;
 }
 
 function isDisabledForUser(product, user) {
@@ -122,7 +124,6 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
 
   const user = useAuthStore((s) => s.user);
   const canForceRefreshCatalog = !!(user?.is_enc_comercial || user?.is_superuser);
-  const canSeeRebajeSection = !!user?.is_distribuidor;
 
   const [boot, setBoot] = useState(
     () => getOdooBootstrap(kind) || getOdooBootstrap(bootstrapKind),
@@ -275,13 +276,10 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
     });
   }, [kind, sectionList, sectionMap, initialSectionId, dependencyRules, selectedProductIdsBySection]);
 
-  const visibleSections = useMemo(() => {
-    const baseSections = orderedVisibleSectionIds
-      .map((id) => sectionMap.get(Number(id)))
-      .filter(Boolean);
-    if (canSeeRebajeSection) return baseSections;
-    return baseSections.filter((section) => Number(section?.id) !== REBAJE_SECTION_ID);
-  }, [orderedVisibleSectionIds, sectionMap, canSeeRebajeSection]);
+  const visibleSections = useMemo(
+    () => orderedVisibleSectionIds.map((id) => sectionMap.get(Number(id))).filter(Boolean),
+    [orderedVisibleSectionIds, sectionMap],
+  );
 
   const terminalStepCompleted = useMemo(() => {
     if (!visibleSections.length) return false;
@@ -470,6 +468,7 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
                       {sectionProducts.map((product) => {
                         const disabledForUser = isDisabledForUser(product, user);
                         const isSelected = selectedInSection.has(Number(product.id));
+                        const visibleOdooId = getVisibleOdooId(product);
 
                         return (
                           <div
@@ -488,7 +487,10 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
                                 {getProductLabel(product)}
                               </div>
                               <div className="muted" style={{ fontSize: 12 }}>
-                                {product.code ? `Código: ${product.code}` : `ID: ${product.id}`}
+                                ID Presupuestador: {product.id}
+                                {" · "}
+                                ID Odoo: {visibleOdooId || product.id}
+                                {product.code ? ` · ${product.code}` : ""}
                                 {disabledForUser ? " · No habilitado para tu rol" : ""}
                               </div>
                             </div>

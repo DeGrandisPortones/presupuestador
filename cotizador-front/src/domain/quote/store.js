@@ -147,6 +147,7 @@ export const useQuoteStore = create((set, get) => ({
           l.name || l.display_name || l.alias || rawName || `Producto ${l.product_id || idx}`;
         return {
           product_id: Number(l.product_id ?? idx + 1),
+          odoo_id: Number(l.odoo_id || l.odoo_template_id || l.product_id ?? idx + 1),
           name: visibleName,
           raw_name: rawName,
           code: l.code || null,
@@ -319,6 +320,7 @@ export const useQuoteStore = create((set, get) => ({
           ...s.lines,
           {
             product_id: id,
+            odoo_id: Number(p.odoo_id || p.odoo_template_id || p.id || 0) || id,
             name: p.display_name || p.alias || p.name || "",
             raw_name: p.raw_name || p.rawName || p.original_name || p.name || "",
             code: p.code || null,
@@ -392,6 +394,7 @@ export const useQuoteStore = create((set, get) => ({
       .filter((l) => !l.ui_only_line && !l.auto_system_item)
       .map((l) => ({
         product_id: l.product_id,
+        odoo_id: Number(l.odoo_id || l.product_id || 0) || 0,
         qty: normalizeEditableQty({
           productId: l.product_id,
           qty: l.qty,

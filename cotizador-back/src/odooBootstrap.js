@@ -6,7 +6,6 @@ export async function loadOdooBootstrap(odoo) {
   const now = Date.now();
   if (cache && (now - cacheAt) < TTL_MS) return cache;
 
-  // 1) Products (básicos)
   const products = await odoo.executeKw(
     "product.product",
     "search_read",
@@ -16,7 +15,6 @@ export async function loadOdooBootstrap(odoo) {
 
   const tmplIds = [...new Set(products.map(p => Array.isArray(p.product_tmpl_id) ? p.product_tmpl_id[0] : p.product_tmpl_id).filter(Boolean))];
 
-  // 2) Templates con tags
   let tmplRows = [];
   if (tmplIds.length) {
     tmplRows = await odoo.executeKw(
@@ -32,7 +30,6 @@ export async function loadOdooBootstrap(odoo) {
 
   const allTagIds = [...new Set(tmplRows.flatMap(t => Array.isArray(t.product_tag_ids) ? t.product_tag_ids : []).map(Number))];
 
-  // 3) Tag names
   let tagsRows = [];
   if (allTagIds.length) {
     const domain = [[["id", "in", allTagIds]]];
@@ -41,7 +38,6 @@ export async function loadOdooBootstrap(odoo) {
     try {
       tagsRows = await odoo.executeKw("product.tag", "search_read", domain, kwargs);
     } catch (e) {
-      // Algunas instalaciones usan product.template.tag
       tagsRows = await odoo.executeKw("product.template.tag", "search_read", domain, kwargs);
     }
   }
@@ -57,6 +53,9 @@ export async function loadOdooBootstrap(odoo) {
       code: p.default_code || null,
       list_price: Number(p.list_price || 0),
       tag_ids,
+      odoo_id: Number(tmplId || p.id) || Number(p.id),
+      odoo_template_id: Number(tmplId || p.id) || Number(p.id),
+      odoo_variant_id: Number(p.id) || 0,
     };
   });
 
