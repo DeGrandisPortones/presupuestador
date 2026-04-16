@@ -259,7 +259,7 @@ function buildLines(payload, { useBasePrice }) {
 
       return {
         qty,
-        name: safeStr(l?.raw_name || l?.rawName || l?.raw || l?.name || ""),
+        name: safeStr(l?.name || l?.display_name || l?.alias || l?.raw_name || l?.rawName || l?.raw || ""),
         unit,
         total,
         totalNet,

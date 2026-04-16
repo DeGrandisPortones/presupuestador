@@ -375,14 +375,36 @@ export const useQuoteStore = create((set, get) => ({
     }));
   },
   applyBasePrices(pricesResponse) {
-    const arr = pricesResponse?.prices || [];
-    const map = new Map(arr.map((x) => [Number(x.product_id), Number(x.price ?? 0)]));
+    const arr = Array.isArray(pricesResponse?.prices) ? pricesResponse.prices : [];
+    const map = new Map(
+      arr.map((x) => [
+        Number(x.product_id),
+        {
+          price: Number(x.price ?? 0),
+          name: String(x.name || "").trim(),
+          code: x.code || null,
+        },
+      ]),
+    );
+
     set((s) => ({
       lines: s.lines.map((l) => {
         const next = map.get(l.product_id);
-        return typeof next === "number" && !l.previously_billed_line
-          ? { ...l, basePrice: next }
-          : l;
+        if (!next || l.previously_billed_line) return l;
+
+        const currentName = String(l.name || "").trim();
+        const currentRawName = String(l.raw_name || "").trim();
+        const nextName = String(next.name || "").trim();
+        const shouldSyncVisibleName =
+          !currentName || !currentRawName || currentName === currentRawName;
+
+        return {
+          ...l,
+          basePrice: typeof next.price === "number" ? next.price : l.basePrice,
+          code: next.code ?? l.code,
+          raw_name: nextName || l.raw_name,
+          name: shouldSyncVisibleName ? (nextName || l.name) : l.name,
+        };
       }),
     }));
   },
