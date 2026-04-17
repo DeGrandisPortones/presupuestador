@@ -11,11 +11,9 @@ import {
   adminGetTechnicalMeasurementRules,
 } from "../../api/admin.js";
 import { getCatalogBootstrap } from "../../api/catalog.js";
+import { getProductionPlanningEstimate } from "../../api/quotes.js";
 import { useAuthStore } from "../../domain/auth/store.js";
-import {
-  mergeMeasurementFields,
-  parseOptions,
-} from "../../domain/measurement/technicalMeasurementRuleFields.js";
+import { mergeMeasurementFields, parseOptions } from "../../domain/measurement/technicalMeasurementRuleFields.js";
 import Button from "../../ui/Button.jsx";
 import Input from "../../ui/Input.jsx";
 
@@ -23,6 +21,33 @@ const DEFAULT_RETURN_REASON_ITEM_18 =
   "El cambio en el item 18 puede ocasionar costos adicionales y debe pasar al vendedor.";
 const DEFAULT_RETURN_REASON_OBSERVATIONS =
   "El medidor dejó observaciones y debe revisarlo el vendedor antes de seguir.";
+
+const SCHEME_RECT_PCTS = {
+  alto: [
+    { left: 9.22, top: 43.73, width: 14.4, height: 14.24 },
+    { left: 27.02, top: 43.73, width: 14.4, height: 14.24 },
+    { left: 44.5, top: 43.73, width: 14.24, height: 14.24 },
+  ],
+  ancho: [
+    { left: 71.36, top: 22.71, width: 14.4, height: 14.24 },
+    { left: 71.36, top: 48.14, width: 14.4, height: 13.9 },
+    { left: 71.36, top: 82.71, width: 14.4, height: 14.24 },
+  ],
+};
+
+const schemeOverlayBaseStyle = {
+  position: "absolute",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  fontWeight: 900,
+  color: "#111",
+  textShadow: "0 1px 0 rgba(255,255,255,0.9)",
+  background: "rgba(255,255,255,0.65)",
+  borderRadius: 6,
+  pointerEvents: "none",
+  border: "1px solid rgba(15,23,42,0.12)",
+};
 
 function text(v) {
   return String(v ?? "").trim();
@@ -44,12 +69,21 @@ function toNumberLike(value) {
   const n = Number(String(value ?? "").replace(",", "."));
   return Number.isFinite(n) ? n : null;
 }
+function round2(n) {
+  return Math.round(Number(n || 0) * 100) / 100;
+}
 function averageTriple(values = []) {
   const nums = (Array.isArray(values) ? values : [])
     .map((v) => toNumberLike(v))
     .filter((n) => Number.isFinite(n) && n > 0);
   if (!nums.length) return "";
   return String(Math.round(nums.reduce((acc, n) => acc + n, 0) / nums.length));
+}
+function minMm(values = []) {
+  const nums = (Array.isArray(values) ? values : [])
+    .map((v) => toNumberLike(v))
+    .filter((n) => Number.isFinite(n) && n > 0);
+  return nums.length ? Math.min(...nums) : 0;
 }
 function extractBudgetDimensionMm(quote, key) {
   const dims = quote?.payload?.dimensions || {};
@@ -221,10 +255,24 @@ function Row({ children }) {
 function Field({ label, children }) {
   return (
     <div style={{ flex: 1, minWidth: 220 }}>
-      <div className="muted" style={{ marginBottom: 6 }}>
-        {label}
-      </div>
+      <div className="muted" style={{ marginBottom: 6 }}>{label}</div>
       {children}
+    </div>
+  );
+}
+function StaticValue({ value }) {
+  return (
+    <div
+      style={{
+        minHeight: 42,
+        padding: "10px 12px",
+        borderRadius: 10,
+        border: "1px solid #e3e3e3",
+        background: "#fff",
+        whiteSpace: "pre-wrap",
+      }}
+    >
+      {value || <span className="muted">—</span>}
     </div>
   );
 }
@@ -242,10 +290,7 @@ function getCurrentPositionAsync() {
   });
 }
 function normalizeNameKey(value) {
-  return String(value || "")
-    .trim()
-    .toLowerCase()
-    .replace(/\s+/g, " ");
+  return String(value || "").trim().toLowerCase().replace(/\s+/g, " ");
 }
 function buildBudgetSectionsContext(quote, catalog) {
   const sections = Array.isArray(catalog?.sections) ? catalog.sections.slice() : [];
@@ -292,6 +337,7 @@ function buildBudgetContext(quote, catalog, user) {
       odoo_sale_order_name: quote?.odoo_sale_order_name || "",
       final_sale_order_name: quote?.final_sale_order_name || "",
       confirmed_at: quote?.confirmed_at || "",
+      fulfillment_mode: quote?.fulfillment_mode || "",
     },
     current_user: {
       is_medidor: !!user?.is_medidor,
@@ -334,22 +380,176 @@ function productDisplayLabel(product) {
   const code = String(product?.code || "").trim();
   return `${alias || display}${code ? ` · ${code}` : ""}`.trim();
 }
+function getBudgetProductIdSet(quote) {
+  const lines = Array.isArray(quote?.lines) ? quote.lines : [];
+  return new Set(lines.map((line) => Number(line?.product_id || 0)).filter(Boolean));
+}
+function detectInstallationModeByProducts(quote, surfaceParameters) {
+  const ids = getBudgetProductIdSet(quote);
+  const insideId = Number(surfaceParameters?.installation_inside_product_id || 0);
+  const behindId = Number(surfaceParameters?.installation_behind_product_id || 0);
+  if (insideId && ids.has(insideId)) return "dentro_vano";
+  if (behindId && ids.has(behindId)) return "detras_vano";
+  return "sin_instalacion";
+}
+function detectNoCladding(quote, surfaceParameters) {
+  const ids = getBudgetProductIdSet(quote);
+  const noCladdingId = Number(surfaceParameters?.no_cladding_product_id || 0);
+  return !!(noCladdingId && ids.has(noCladdingId));
+}
+function normalizeAptoKgM2Rules(surfaceParameters) {
+  return (Array.isArray(surfaceParameters?.apto_revestir_kg_m2_rules)
+    ? surfaceParameters.apto_revestir_kg_m2_rules
+    : [])
+    .map((rule) => ({
+      product_id: Number(rule?.product_id || 0),
+      kg_m2: toNumberLike(rule?.kg_m2),
+    }))
+    .filter((rule) => rule.product_id > 0 && Number.isFinite(rule.kg_m2) && rule.kg_m2 > 0);
+}
+function resolveAptoKgM2ByProducts(quote, surfaceParameters) {
+  const ids = getBudgetProductIdSet(quote);
+  for (const rule of normalizeAptoKgM2Rules(surfaceParameters)) {
+    if (ids.has(rule.product_id)) return Number(rule.kg_m2 || 0);
+  }
+  return 0;
+}
+function resolveSellerKgM2Entry(quote, surfaceParameters) {
+  const payload = quote?.payload || {};
+  const candidates = [];
+  if (surfaceParameters?.seller_kg_m2_field_path) candidates.push(surfaceParameters.seller_kg_m2_field_path);
+  candidates.push("kg_m2_entry", "kg_m2", "entry_kg_m2", "custom_kg_m2", "peso_m2", "payload.kg_m2_entry");
+  for (const path of candidates) {
+    const value = path.includes(".") ? getByPath(payload, path.replace(/^payload\./, "")) : payload?.[path];
+    const n = toNumberLike(value);
+    if (Number.isFinite(n) && n > 0) return n;
+  }
+  return 0;
+}
+function detectDoorType(quote) {
+  const payloadType = String(quote?.payload?.porton_type || quote?.payload?.tipo_porton || "")
+    .trim()
+    .toLowerCase();
+  if (payloadType.includes("inyect") || payloadType.includes("doble_iny") || payloadType.includes("iny")) return "inyectado";
+  if (payloadType.includes("clas")) return "clasico";
+  const lines = Array.isArray(quote?.lines) ? quote.lines : [];
+  const hay = lines.map((l) => String(l?.name || l?.raw_name || "").toLowerCase()).join(" ");
+  if (hay.includes("inyect") || hay.includes("doble_iny") || hay.includes("iny")) return "inyectado";
+  return "clasico";
+}
+function getLegWidthMmByType(piernasTipo) {
+  const key = String(piernasTipo || "").trim().toLowerCase();
+  const map = { angostas: 230, comunes: 270, anchas: 370, superanchas: 370, especiales: 370 };
+  return Number(map[key] || 0);
+}
+function computeAutomaticSummary({ quote, form, surfaceParameters = {} }) {
+  const budgetHeightMm = Math.round(toNumberLike(quote?.payload?.dimensions?.height) * 1000) || 0;
+  const budgetWidthMm = Math.round(toNumberLike(quote?.payload?.dimensions?.width) * 1000) || 0;
+  const altos = Array.isArray(form?.esquema?.alto) ? form.esquema.alto : [];
+  const anchos = Array.isArray(form?.esquema?.ancho) ? form.esquema.ancho : [];
+  const altoMinMm = minMm(altos) || budgetHeightMm;
+  const anchoMinMm = minMm(anchos) || budgetWidthMm;
+
+  const installationMode = detectInstallationModeByProducts(quote, surfaceParameters);
+  const noCladding = detectNoCladding(quote, surfaceParameters);
+  const tipoPorton = detectDoorType(quote);
+  const sellerKgM2Entry = resolveSellerKgM2Entry(quote, surfaceParameters);
+  const aptoKgM2RuleValue = noCladding ? resolveAptoKgM2ByProducts(quote, surfaceParameters) : 0;
+  const defaultKgM2Porton = tipoPorton === "inyectado"
+    ? Number(surfaceParameters?.injected_kg_m2 || 25)
+    : Number(surfaceParameters?.classic_kg_m2 || 15);
+
+  const kgM2Porton = noCladding
+    ? (aptoKgM2RuleValue > 0 ? aptoKgM2RuleValue : (sellerKgM2Entry > 0 ? sellerKgM2Entry : defaultKgM2Porton))
+    : (installationMode === "sin_instalacion"
+      ? (sellerKgM2Entry > 0 ? sellerKgM2Entry : defaultKgM2Porton)
+      : defaultKgM2Porton);
+
+  const heightDiscountMm = Number(surfaceParameters?.weight_height_discount_mm || 10);
+  const widthDiscountMm = Number(surfaceParameters?.weight_width_discount_mm || 14);
+  const baseHeightForWeightMm = installationMode === "sin_instalacion" ? budgetHeightMm : altoMinMm;
+  const baseWidthForWeightMm = installationMode === "sin_instalacion" ? budgetWidthMm : anchoMinMm;
+  const discountedHeightMm = Math.max(0, baseHeightForWeightMm - heightDiscountMm);
+  const discountedWidthMm = Math.max(0, baseWidthForWeightMm - widthDiscountMm);
+  const pesoEstimadoKg = round2((discountedHeightMm / 1000) * (discountedWidthMm / 1000) * kgM2Porton);
+
+  const limitAngostas = noCladding
+    ? Number(surfaceParameters?.no_cladding_angostas_max_kg || 80)
+    : Number(surfaceParameters?.legs_angostas_max_kg || 140);
+  const limitComunes = Number(surfaceParameters?.legs_comunes_max_kg || 175);
+  const limitAnchas = Number(surfaceParameters?.legs_anchas_max_kg || 240);
+  const limitSuperanchas = Number(surfaceParameters?.legs_superanchas_max_kg || 300);
+
+  let piernasTipo = "angostas";
+  if (pesoEstimadoKg > limitSuperanchas) piernasTipo = "especiales";
+  else if (pesoEstimadoKg > limitAnchas) piernasTipo = "superanchas";
+  else if (pesoEstimadoKg > limitComunes) piernasTipo = "anchas";
+  else if (pesoEstimadoKg > limitAngostas) piernasTipo = "comunes";
+
+  let altoCalculadoMm = discountedHeightMm;
+  let anchoCalculadoMm = discountedWidthMm;
+  if (installationMode === "detras_vano") {
+    altoCalculadoMm = Math.max(0, altoMinMm + Number(surfaceParameters?.behind_vano_add_height_mm || 100));
+    const addMap = {
+      angostas: Number(surfaceParameters?.legs_angostas_add_width_mm || 140),
+      comunes: Number(surfaceParameters?.legs_comunes_add_width_mm || 200),
+      anchas: Number(surfaceParameters?.legs_anchas_add_width_mm || 280),
+      superanchas: Number(surfaceParameters?.legs_superanchas_add_width_mm || 380),
+      especiales: Number(surfaceParameters?.legs_especiales_add_width_mm || surfaceParameters?.legs_superanchas_add_width_mm || 380),
+    };
+    anchoCalculadoMm = Math.max(0, anchoMinMm + (addMap[piernasTipo] || 0));
+  } else if (installationMode === "dentro_vano") {
+    altoCalculadoMm = Math.max(0, altoMinMm - Number(surfaceParameters?.inside_vano_subtract_height_mm || 10));
+    anchoCalculadoMm = Math.max(0, anchoMinMm - Number(surfaceParameters?.inside_vano_subtract_width_mm || 20));
+  }
+
+  const legWidthMm = getLegWidthMmByType(piernasTipo);
+  const altoPasoMm = Math.max(0, Math.round(altoCalculadoMm - 200));
+  const anchoPasoMm = Math.max(0, Math.round(anchoCalculadoMm - legWidthMm * 2));
+
+  return {
+    alto_calculado_mm: Math.round(altoCalculadoMm || 0),
+    ancho_calculado_mm: Math.round(anchoCalculadoMm || 0),
+    alto_paso_mm: Math.round(altoPasoMm || 0),
+    ancho_paso_mm: Math.round(anchoPasoMm || 0),
+    peso_estimado_kg: round2(pesoEstimadoKg || 0),
+    piernas_tipo: piernasTipo,
+    ancho_pierna_mm: legWidthMm,
+    installation_mode: installationMode,
+  };
+}
+function formatMm(value) {
+  const n = Number(value || 0);
+  return Number.isFinite(n) && n > 0 ? `${Math.round(n)} mm` : "";
+}
+function formatKg(value) {
+  const n = Number(value || 0);
+  return Number.isFinite(n) && n > 0 ? `${n.toFixed(2)} kg` : "";
+}
+function formatPiernas(value) {
+  const key = String(value || "").trim().toLowerCase();
+  const map = {
+    angostas: "angostas",
+    comunes: "comunes",
+    anchas: "anchas",
+    superanchas: "superanchas",
+    especiales: "especiales",
+  };
+  return map[key] || "";
+}
+function formatProductionDeliveryDisplay(planning) {
+  if (!planning || typeof planning !== "object") return "";
+  const weekNumber = String(planning.week_number || planning.week || "").trim();
+  const startLabel = String(planning.start_date_label || "").trim();
+  const endLabel = String(planning.end_date_label || "").trim();
+  if (!weekNumber && !startLabel && !endLabel) return "";
+  const weekPart = weekNumber ? `Semana ${weekNumber}` : "Semana estimada";
+  if (startLabel || endLabel) return `${weekPart}, entre ${startLabel || "—"} y ${endLabel || "—"}`;
+  return weekPart;
+}
 function MeasurementSchemeVisual({ form }) {
   const altos = normalizeTriple(form?.esquema?.alto || []);
   const anchos = normalizeTriple(form?.esquema?.ancho || []);
-  const cellStyle = {
-    width: 64,
-    minHeight: 28,
-    borderRadius: 8,
-    border: "1px solid #d8d8d8",
-    background: "#fff",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    fontWeight: 700,
-    fontSize: 12,
-    padding: "4px 8px",
-  };
   return (
     <div
       style={{
@@ -360,31 +560,32 @@ function MeasurementSchemeVisual({ form }) {
         marginBottom: 12,
       }}
     >
-      <div style={{ display: "flex", justifyContent: "center", gap: 14, marginBottom: 12 }}>
-        {anchos.map((value, idx) => (
-          <div key={`va-${idx}`} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
-            <div className="muted" style={{ fontSize: 11 }}>{`Ancho ${idx + 1}`}</div>
-            <div style={cellStyle}>{value || "—"}</div>
-          </div>
-        ))}
+      <div className="muted" style={{ fontSize: 12, marginBottom: 10 }}>
+        Esquema de 3 medidas de alto y 3 de ancho
       </div>
-      <div style={{ display: "flex", gap: 16, alignItems: "stretch", justifyContent: "center" }}>
-        <div style={{ display: "flex", flexDirection: "column", gap: 14, justifyContent: "center" }}>
-          {altos.map((value, idx) => (
-            <div key={`vh-${idx}`} style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <div className="muted" style={{ width: 54, fontSize: 11 }}>{`Alto ${idx + 1}`}</div>
-              <div style={cellStyle}>{value || "—"}</div>
-            </div>
-          ))}
-        </div>
+      <div
+        style={{
+          position: "relative",
+          width: "100%",
+          maxWidth: 780,
+          height: 300,
+          margin: "0 auto",
+          background: "linear-gradient(180deg, #e2e8f0 0%, #cbd5e1 100%)",
+          borderRadius: 18,
+          overflow: "hidden",
+          border: "2px solid #64748b",
+        }}
+      >
         <div
           style={{
-            width: 230,
-            minHeight: 180,
-            borderRadius: 18,
-            border: "3px solid #64748b",
+            position: "absolute",
+            left: "6%",
+            top: "12%",
+            width: "56%",
+            height: "74%",
+            borderRadius: 16,
+            border: "3px solid #475569",
             background: "linear-gradient(180deg, #f8fafc 0%, #eef2f7 100%)",
-            position: "relative",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
@@ -393,34 +594,45 @@ function MeasurementSchemeVisual({ form }) {
             fontSize: 14,
           }}
         >
-          Esquema del portón
-          <div style={{ position: "absolute", left: 12, top: 12, width: 10, height: 10, borderRadius: 999, background: "#94a3b8" }} />
-          <div style={{ position: "absolute", right: 12, top: 12, width: 10, height: 10, borderRadius: 999, background: "#94a3b8" }} />
-          <div style={{ position: "absolute", left: 12, bottom: 12, width: 10, height: 10, borderRadius: 999, background: "#94a3b8" }} />
-          <div style={{ position: "absolute", right: 12, bottom: 12, width: 10, height: 10, borderRadius: 999, background: "#94a3b8" }} />
+          Portón
+        </div>
+        {SCHEME_RECT_PCTS.alto.map((rect, idx) => (
+          <div
+            key={`alto-overlay-${idx}`}
+            style={{
+              ...schemeOverlayBaseStyle,
+              left: `${rect.left}%`,
+              top: `${rect.top}%`,
+              width: `${rect.width}%`,
+              height: `${rect.height}%`,
+            }}
+          >
+            {altos[idx] || "—"}
+          </div>
+        ))}
+        {SCHEME_RECT_PCTS.ancho.map((rect, idx) => (
+          <div
+            key={`ancho-overlay-${idx}`}
+            style={{
+              ...schemeOverlayBaseStyle,
+              left: `${rect.left}%`,
+              top: `${rect.top}%`,
+              width: `${rect.width}%`,
+              height: `${rect.height}%`,
+            }}
+          >
+            {anchos[idx] || "—"}
+          </div>
+        ))}
+        <div style={{ position: "absolute", left: "8%", top: "8%", fontWeight: 800, color: "#334155" }}>
+          Altos
+        </div>
+        <div style={{ position: "absolute", right: "8%", top: "8%", fontWeight: 800, color: "#334155" }}>
+          Anchos
         </div>
       </div>
     </div>
   );
-}
-function computeTechnicalSummary({ quote, form }) {
-  const kgM2 = toNumberLike(quote?.payload?.dimensions?.kg_m2) || 0;
-  const altoFinal = toNumberLike(form?.alto_final_mm) || toNumberLike(averageTriple(form?.esquema?.alto || [])) || 0;
-  const anchoFinal = toNumberLike(form?.ancho_final_mm) || toNumberLike(averageTriple(form?.esquema?.ancho || [])) || 0;
-  const areaM2 = altoFinal > 0 && anchoFinal > 0 ? (altoFinal * anchoFinal) / 1000000 : 0;
-  const pesoAprox = kgM2 > 0 && areaM2 > 0 ? Math.round(areaM2 * kgM2) : 0;
-  const tipoPiernas =
-    text(quote?.payload?.dimensions?.tipo_piernas) ||
-    text(quote?.payload?.tipo_piernas) ||
-    text(form?.tipo_piernas) ||
-    (anchoFinal > 4500 ? "Piernas dobles" : "Piernas simples");
-  return {
-    altoFinal: altoFinal ? String(Math.round(altoFinal)) : "",
-    anchoFinal: anchoFinal ? String(Math.round(anchoFinal)) : "",
-    areaM2: areaM2 ? areaM2.toFixed(2) : "",
-    pesoAprox: pesoAprox ? String(pesoAprox) : "",
-    tipoPiernas,
-  };
 }
 
 export default function MedicionDetailPage() {
@@ -452,6 +664,12 @@ export default function MedicionDetailPage() {
     queryFn: () => getCatalogBootstrap("porton"),
     enabled: !!quoteId,
   });
+  const planningQ = useQuery({
+    queryKey: ["production-planning-estimate-medicion", quoteId],
+    queryFn: () => getProductionPlanningEstimate({ quoteId }),
+    enabled: !!quoteId,
+    staleTime: 60 * 1000,
+  });
 
   const quote = q.data;
   const [form, setForm] = useState(null);
@@ -470,22 +688,13 @@ export default function MedicionDetailPage() {
     () => mergeMeasurementFields(configuredFieldDefinitions).filter((field) => field?.active !== false),
     [configuredFieldDefinitions],
   );
-  const budgetContext = useMemo(
-    () => buildBudgetContext(quote, catalogQ.data, user),
-    [quote, catalogQ.data, user],
-  );
-  const allowedSectionIds = useMemo(
-    () => chooseAllowedSections(budgetContext?.budget_sections?.by_id || {}),
-    [budgetContext],
-  );
+  const budgetContext = useMemo(() => buildBudgetContext(quote, catalogQ.data, user), [quote, catalogQ.data, user]);
+  const allowedSectionIds = useMemo(() => chooseAllowedSections(budgetContext?.budget_sections?.by_id || {}), [budgetContext]);
   const dynamicUi = useMemo(() => {
     if (!form || !quote) return { hidden: new Set(), forcedValues: {}, allowedOptions: {} };
     return evaluateDynamicRules({ form, quote, user, rules: dynamicRulesQ.data?.rules || [] });
   }, [form, quote, user, dynamicRulesQ.data]);
-  const budgetSummaryItems = useMemo(
-    () => buildBudgetSummaryItems(budgetContext, form),
-    [budgetContext, form],
-  );
+  const budgetSummaryItems = useMemo(() => buildBudgetSummaryItems(budgetContext, form), [budgetContext, form]);
 
   const editableConfiguredFields = useMemo(() => {
     return allFields.filter((field) => {
@@ -578,9 +787,7 @@ export default function MedicionDetailPage() {
 
   const item18Changed = useMemo(() => {
     if (!form) return false;
-    const configured18 = editableConfiguredFields.filter(
-      (field) => Number(field?.budget_section_id || 0) === 18,
-    );
+    const configured18 = editableConfiguredFields.filter((field) => Number(field?.budget_section_id || 0) === 18);
     for (const field of configured18) {
       const current = Number(getByPath(form, `__selected_binding_product.${field.key}.product_id`) || 0);
       const base = Number(
@@ -601,7 +808,28 @@ export default function MedicionDetailPage() {
 
   const hasObservationsForSeller = !!text(form?.observaciones_medicion);
   const mustGoToSeller = item18Changed || hasObservationsForSeller;
-  const technicalSummary = useMemo(() => computeTechnicalSummary({ quote, form }), [quote, form]);
+
+  const technicalRules = dynamicRulesQ.data || {};
+  const technicalSummary = useMemo(
+    () => computeAutomaticSummary({ quote, form, surfaceParameters: technicalRules?.surface_parameters || {} }),
+    [quote, form, technicalRules],
+  );
+
+  useEffect(() => {
+    if (!isTechnical || !form) return;
+    const calcHigh = Number(technicalSummary?.alto_calculado_mm || 0);
+    const calcWidth = Number(technicalSummary?.ancho_calculado_mm || 0);
+    if (!calcHigh || !calcWidth) return;
+    setForm((prev) => {
+      if (!prev || prev.__technical_defaults_applied) return prev;
+      return {
+        ...prev,
+        alto_final_mm: text(prev?.alto_final_mm) || String(calcHigh),
+        ancho_final_mm: text(prev?.ancho_final_mm) || String(calcWidth),
+        __technical_defaults_applied: true,
+      };
+    });
+  }, [isTechnical, form, technicalSummary]);
 
   function handleTechnicalFinalDimensionChange(key, value) {
     if (!isTechnical) {
@@ -628,9 +856,7 @@ export default function MedicionDetailPage() {
           const pos = await getCurrentPositionAsync();
           const lat = pos?.coords?.latitude;
           const lng = pos?.coords?.longitude;
-          if (Number.isFinite(lat) && Number.isFinite(lng)) {
-            nextEndCustomer.maps_url = buildMapsUrl(lat, lng);
-          }
+          if (Number.isFinite(lat) && Number.isFinite(lng)) nextEndCustomer.maps_url = buildMapsUrl(lat, lng);
         } catch {
           // sin ubicación, no bloquea el guardado
         }
@@ -734,6 +960,7 @@ export default function MedicionDetailPage() {
       ? "Enviar al vendedor"
       : "Enviar al técnico";
   const pageTitle = isTechnical ? "Revisión técnica final" : "Medición";
+  const planningLabel = formatProductionDeliveryDisplay(planningQ.data);
 
   return (
     <div className="container">
@@ -750,7 +977,8 @@ export default function MedicionDetailPage() {
           <div>
             <h2 style={{ margin: 0 }}>{pageTitle}</h2>
             <div className="muted" style={{ marginTop: 6 }}>
-              Cliente: <b>{quote?.end_customer?.name || "—"}</b> · Estado: <b>{quote?.measurement_status || "pending"}</b>
+              Cliente: <b>{quote?.end_customer?.name || "—"}</b> · Estado:{" "}
+              <b>{quote?.measurement_status || "pending"}</b>
             </div>
           </div>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
@@ -794,40 +1022,30 @@ export default function MedicionDetailPage() {
         <div className="spacer" />
         <Section title="Datos del cliente">
           <Row>
-            <Field label="Cliente">
-              <div>{quote?.end_customer?.name || "—"}</div>
-            </Field>
-            <Field label="Teléfono">
-              <div>{quote?.end_customer?.phone || "—"}</div>
-            </Field>
-            <Field label="Dirección">
-              <div>{quote?.end_customer?.address || "—"}</div>
-            </Field>
+            <Field label="Cliente"><StaticValue value={quote?.end_customer?.name} /></Field>
+            <Field label="Teléfono"><StaticValue value={quote?.end_customer?.phone} /></Field>
+            <Field label="Dirección"><StaticValue value={quote?.end_customer?.address} /></Field>
           </Row>
           <div className="spacer" />
           <Row>
-            <Field label="Localidad">
-              <div>{quote?.end_customer?.city || "—"}</div>
-            </Field>
-            <Field label="Maps">
-              <div>{quote?.end_customer?.maps_url || "—"}</div>
-            </Field>
+            <Field label="Localidad"><StaticValue value={quote?.end_customer?.city} /></Field>
+            <Field label="Maps"><StaticValue value={quote?.end_customer?.maps_url} /></Field>
             <Field label="Vendedor / Distribuidor">
-              <div>{form.distribuidor || quote?.created_by_full_name || quote?.created_by_username || "—"}</div>
+              <StaticValue value={form.distribuidor || quote?.created_by_full_name || quote?.created_by_username} />
             </Field>
           </Row>
         </Section>
 
         <Section title="Resumen del presupuesto">
           <Row>
-            <Field label="Nota de venta">
-              <div>{form.nota_venta || quote?.odoo_sale_order_name || quote?.quote_number || "—"}</div>
+            <Field label="Nota de pedido / referencia">
+              <StaticValue value={form.nota_venta || quote?.odoo_sale_order_name || quote?.quote_number} />
             </Field>
-            <Field label="Cliente">
-              <div>{quote?.end_customer?.name || "—"}</div>
+            <Field label="Semana presupuestada">
+              <StaticValue value={planningLabel || "Sin semana calculada"} />
             </Field>
-            <Field label="Vendedor / Distribuidor">
-              <div>{form.distribuidor || quote?.created_by_full_name || quote?.created_by_username || "—"}</div>
+            <Field label="Modo">
+              <StaticValue value={text(quote?.fulfillment_mode || "").toLowerCase() === "acopio" ? "Acopio" : "Producción"} />
             </Field>
           </Row>
           <div className="spacer" />
@@ -843,14 +1061,14 @@ export default function MedicionDetailPage() {
         <Section title="Esquema de medidas">
           <MeasurementSchemeVisual form={form} />
           <Row>
-            <Field label="Alto final (mm)">
+            <Field label="Alto final editable (mm)">
               <Input
                 value={form.alto_final_mm || ""}
                 onChange={(v) => handleTechnicalFinalDimensionChange("alto_final_mm", v)}
                 style={{ width: "100%" }}
               />
             </Field>
-            <Field label="Ancho final (mm)">
+            <Field label="Ancho final editable (mm)">
               <Input
                 value={form.ancho_final_mm || ""}
                 onChange={(v) => handleTechnicalFinalDimensionChange("ancho_final_mm", v)}
@@ -884,19 +1102,36 @@ export default function MedicionDetailPage() {
           </Row>
         </Section>
 
-        <Section title="Datos técnicos finales">
+        <Section title="Cálculo técnico automático">
           <Row>
-            <Field label="Alto final calculado (mm)">
-              <div>{technicalSummary.altoFinal || "—"}</div>
+            <Field label="Medidas finales del portón">
+              <StaticValue value={
+                technicalSummary.alto_calculado_mm && technicalSummary.ancho_calculado_mm
+                  ? `${formatMm(technicalSummary.alto_calculado_mm)} x ${formatMm(technicalSummary.ancho_calculado_mm)}`
+                  : ""
+              } />
             </Field>
-            <Field label="Ancho final calculado (mm)">
-              <div>{technicalSummary.anchoFinal || "—"}</div>
+            <Field label="Medidas de paso">
+              <StaticValue value={
+                technicalSummary.alto_paso_mm && technicalSummary.ancho_paso_mm
+                  ? `${formatMm(technicalSummary.alto_paso_mm)} x ${formatMm(technicalSummary.ancho_paso_mm)}`
+                  : ""
+              } />
             </Field>
-            <Field label="Peso aproximado (kg)">
-              <div>{technicalSummary.pesoAprox || "—"}</div>
-            </Field>
-            <Field label="Tipo de piernas">
-              <div>{technicalSummary.tipoPiernas || "—"}</div>
+          </Row>
+          <div className="spacer" />
+          <Row>
+            <Field label="Peso aproximado"><StaticValue value={formatKg(technicalSummary.peso_estimado_kg)} /></Field>
+            <Field label="Tipo de piernas"><StaticValue value={formatPiernas(technicalSummary.piernas_tipo)} /></Field>
+            <Field label="Ancho de pierna"><StaticValue value={formatMm(technicalSummary.ancho_pierna_mm)} /></Field>
+            <Field label="Tipo de instalación">
+              <StaticValue value={
+                technicalSummary.installation_mode === "detras_vano"
+                  ? "Detrás del vano"
+                  : technicalSummary.installation_mode === "dentro_vano"
+                    ? "Dentro del vano"
+                    : "Sin instalación"
+              } />
             </Field>
           </Row>
         </Section>
@@ -1074,7 +1309,10 @@ export default function MedicionDetailPage() {
           <>
             <div className="spacer" />
             <div style={{ color: "#d93025", fontSize: 13 }}>
-              {saveMedicionM.error?.message || approveTechnicalM.error?.message || rejectTechnicalM.error?.message || "No se pudo completar la acción"}
+              {saveMedicionM.error?.message ||
+                approveTechnicalM.error?.message ||
+                rejectTechnicalM.error?.message ||
+                "No se pudo completar la acción"}
             </div>
           </>
         ) : null}

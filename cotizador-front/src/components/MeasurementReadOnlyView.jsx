@@ -5,17 +5,44 @@ function toNumberLike(value) {
   const n = Number(String(value ?? "").replace(",", "."));
   return Number.isFinite(n) ? n : null;
 }
+function round2(n) {
+  return Math.round(Number(n || 0) * 100) / 100;
+}
 function normalizeTriple(values = []) {
   const arr = Array.isArray(values) ? values.slice(0, 3).map((v) => text(v)) : [];
   while (arr.length < 3) arr.push("");
   return arr;
 }
+const SCHEME_RECT_PCTS = {
+  alto: [
+    { left: 9.22, top: 43.73, width: 14.4, height: 14.24 },
+    { left: 27.02, top: 43.73, width: 14.4, height: 14.24 },
+    { left: 44.5, top: 43.73, width: 14.24, height: 14.24 },
+  ],
+  ancho: [
+    { left: 71.36, top: 22.71, width: 14.4, height: 14.24 },
+    { left: 71.36, top: 48.14, width: 14.4, height: 13.9 },
+    { left: 71.36, top: 82.71, width: 14.4, height: 14.24 },
+  ],
+};
+const schemeOverlayBaseStyle = {
+  position: "absolute",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  fontWeight: 900,
+  color: "#111",
+  textShadow: "0 1px 0 rgba(255,255,255,0.9)",
+  background: "rgba(255,255,255,0.65)",
+  borderRadius: 6,
+  pointerEvents: "none",
+  border: "1px solid rgba(15,23,42,0.12)",
+};
+
 function Field({ label, value }) {
   return (
     <div style={{ flex: 1, minWidth: 220 }}>
-      <div className="muted" style={{ marginBottom: 6 }}>
-        {label}
-      </div>
+      <div className="muted" style={{ marginBottom: 6 }}>{label}</div>
       <div
         style={{
           minHeight: 42,
@@ -91,22 +118,139 @@ function buildBudgetSummaryItems(quote) {
 function sectionDisplayValue(form, item) {
   return text(form?.__budget_section_override?.[item?.sectionId]?.value) || text(item?.value);
 }
+function getBudgetProductIdSet(quote) {
+  const lines = Array.isArray(quote?.lines) ? quote.lines : [];
+  return new Set(lines.map((line) => Number(line?.product_id || 0)).filter(Boolean));
+}
+function detectInstallationModeByProducts(quote, surfaceParameters) {
+  const ids = getBudgetProductIdSet(quote);
+  const insideId = Number(surfaceParameters?.installation_inside_product_id || 0);
+  const behindId = Number(surfaceParameters?.installation_behind_product_id || 0);
+  if (insideId && ids.has(insideId)) return "dentro_vano";
+  if (behindId && ids.has(behindId)) return "detras_vano";
+  return "sin_instalacion";
+}
+function detectNoCladding(quote, surfaceParameters) {
+  const ids = getBudgetProductIdSet(quote);
+  const noCladdingId = Number(surfaceParameters?.no_cladding_product_id || 0);
+  return !!(noCladdingId && ids.has(noCladdingId));
+}
+function normalizeAptoKgM2Rules(surfaceParameters) {
+  return (Array.isArray(surfaceParameters?.apto_revestir_kg_m2_rules)
+    ? surfaceParameters.apto_revestir_kg_m2_rules
+    : [])
+    .map((rule) => ({ product_id: Number(rule?.product_id || 0), kg_m2: toNumberLike(rule?.kg_m2) }))
+    .filter((rule) => rule.product_id > 0 && Number.isFinite(rule.kg_m2) && rule.kg_m2 > 0);
+}
+function resolveAptoKgM2ByProducts(quote, surfaceParameters) {
+  const ids = getBudgetProductIdSet(quote);
+  for (const rule of normalizeAptoKgM2Rules(surfaceParameters)) {
+    if (ids.has(rule.product_id)) return Number(rule.kg_m2 || 0);
+  }
+  return 0;
+}
+function resolveSellerKgM2Entry(quote, surfaceParameters) {
+  const payload = quote?.payload || {};
+  const candidates = [];
+  if (surfaceParameters?.seller_kg_m2_field_path) candidates.push(surfaceParameters.seller_kg_m2_field_path);
+  candidates.push("kg_m2_entry", "kg_m2", "entry_kg_m2", "custom_kg_m2", "peso_m2", "payload.kg_m2_entry");
+  for (const path of candidates) {
+    const value = path.includes(".")
+      ? path.replace(/^payload\./, "").split(".").filter(Boolean).reduce((acc, part) => (acc && typeof acc === "object" ? acc[part] : undefined), payload)
+      : payload?.[path];
+    const n = toNumberLike(value);
+    if (Number.isFinite(n) && n > 0) return n;
+  }
+  return 0;
+}
+function detectDoorType(quote) {
+  const payloadType = String(quote?.payload?.porton_type || quote?.payload?.tipo_porton || "").trim().toLowerCase();
+  if (payloadType.includes("inyect") || payloadType.includes("doble_iny") || payloadType.includes("iny")) return "inyectado";
+  if (payloadType.includes("clas")) return "clasico";
+  const lines = Array.isArray(quote?.lines) ? quote.lines : [];
+  const hay = lines.map((l) => String(l?.name || l?.raw_name || "").toLowerCase()).join(" ");
+  if (hay.includes("inyect") || hay.includes("doble_iny") || hay.includes("iny")) return "inyectado";
+  return "clasico";
+}
+function getLegWidthMmByType(piernasTipo) {
+  const map = { angostas: 230, comunes: 270, anchas: 370, superanchas: 370, especiales: 370 };
+  return Number(map[String(piernasTipo || "").trim().toLowerCase()] || 0);
+}
+function minMm(values = []) {
+  const nums = (Array.isArray(values) ? values : []).map((v) => toNumberLike(v)).filter((n) => Number.isFinite(n) && n > 0);
+  return nums.length ? Math.min(...nums) : 0;
+}
+function computeAutomaticSummary({ quote, form, surfaceParameters = {} }) {
+  const budgetHeightMm = Math.round(toNumberLike(quote?.payload?.dimensions?.height) * 1000) || 0;
+  const budgetWidthMm = Math.round(toNumberLike(quote?.payload?.dimensions?.width) * 1000) || 0;
+  const altos = Array.isArray(form?.esquema?.alto) ? form.esquema.alto : [];
+  const anchos = Array.isArray(form?.esquema?.ancho) ? form.esquema.ancho : [];
+  const altoMinMm = minMm(altos) || budgetHeightMm;
+  const anchoMinMm = minMm(anchos) || budgetWidthMm;
+  const installationMode = detectInstallationModeByProducts(quote, surfaceParameters);
+  const noCladding = detectNoCladding(quote, surfaceParameters);
+  const tipoPorton = detectDoorType(quote);
+  const sellerKgM2Entry = resolveSellerKgM2Entry(quote, surfaceParameters);
+  const aptoKgM2RuleValue = noCladding ? resolveAptoKgM2ByProducts(quote, surfaceParameters) : 0;
+  const defaultKgM2Porton = tipoPorton === "inyectado"
+    ? Number(surfaceParameters?.injected_kg_m2 || 25)
+    : Number(surfaceParameters?.classic_kg_m2 || 15);
+  const kgM2Porton = noCladding
+    ? (aptoKgM2RuleValue > 0 ? aptoKgM2RuleValue : (sellerKgM2Entry > 0 ? sellerKgM2Entry : defaultKgM2Porton))
+    : (installationMode === "sin_instalacion" ? (sellerKgM2Entry > 0 ? sellerKgM2Entry : defaultKgM2Porton) : defaultKgM2Porton);
+
+  const heightDiscountMm = Number(surfaceParameters?.weight_height_discount_mm || 10);
+  const widthDiscountMm = Number(surfaceParameters?.weight_width_discount_mm || 14);
+  const baseHeightForWeightMm = installationMode === "sin_instalacion" ? budgetHeightMm : altoMinMm;
+  const baseWidthForWeightMm = installationMode === "sin_instalacion" ? budgetWidthMm : anchoMinMm;
+  const discountedHeightMm = Math.max(0, baseHeightForWeightMm - heightDiscountMm);
+  const discountedWidthMm = Math.max(0, baseWidthForWeightMm - widthDiscountMm);
+  const pesoEstimadoKg = round2((discountedHeightMm / 1000) * (discountedWidthMm / 1000) * kgM2Porton);
+
+  const limitAngostas = noCladding
+    ? Number(surfaceParameters?.no_cladding_angostas_max_kg || 80)
+    : Number(surfaceParameters?.legs_angostas_max_kg || 140);
+  const limitComunes = Number(surfaceParameters?.legs_comunes_max_kg || 175);
+  const limitAnchas = Number(surfaceParameters?.legs_anchas_max_kg || 240);
+  const limitSuperanchas = Number(surfaceParameters?.legs_superanchas_max_kg || 300);
+
+  let piernasTipo = "angostas";
+  if (pesoEstimadoKg > limitSuperanchas) piernasTipo = "especiales";
+  else if (pesoEstimadoKg > limitAnchas) piernasTipo = "superanchas";
+  else if (pesoEstimadoKg > limitComunes) piernasTipo = "anchas";
+  else if (pesoEstimadoKg > limitAngostas) piernasTipo = "comunes";
+
+  let altoCalculadoMm = discountedHeightMm;
+  let anchoCalculadoMm = discountedWidthMm;
+  if (installationMode === "detras_vano") {
+    altoCalculadoMm = Math.max(0, altoMinMm + Number(surfaceParameters?.behind_vano_add_height_mm || 100));
+    const addMap = {
+      angostas: Number(surfaceParameters?.legs_angostas_add_width_mm || 140),
+      comunes: Number(surfaceParameters?.legs_comunes_add_width_mm || 200),
+      anchas: Number(surfaceParameters?.legs_anchas_add_width_mm || 280),
+      superanchas: Number(surfaceParameters?.legs_superanchas_add_width_mm || 380),
+      especiales: Number(surfaceParameters?.legs_especiales_add_width_mm || surfaceParameters?.legs_superanchas_add_width_mm || 380),
+    };
+    anchoCalculadoMm = Math.max(0, anchoMinMm + (addMap[piernasTipo] || 0));
+  } else if (installationMode === "dentro_vano") {
+    altoCalculadoMm = Math.max(0, altoMinMm - Number(surfaceParameters?.inside_vano_subtract_height_mm || 10));
+    anchoCalculadoMm = Math.max(0, anchoMinMm - Number(surfaceParameters?.inside_vano_subtract_width_mm || 20));
+  }
+
+  const legWidthMm = getLegWidthMmByType(piernasTipo);
+  return {
+    alto_calculado_mm: Math.round(altoCalculadoMm || 0),
+    ancho_calculado_mm: Math.round(anchoCalculadoMm || 0),
+    alto_paso_mm: Math.max(0, Math.round(altoCalculadoMm - 200)),
+    ancho_paso_mm: Math.max(0, Math.round(anchoCalculadoMm - legWidthMm * 2)),
+    peso_estimado_kg: round2(pesoEstimadoKg || 0),
+    piernas_tipo: piernasTipo,
+    ancho_pierna_mm: legWidthMm,
+  };
+}
 function MeasurementSchemeVisual({ form }) {
   const altos = normalizeTriple(form?.esquema?.alto || []);
   const anchos = normalizeTriple(form?.esquema?.ancho || []);
-  const cellStyle = {
-    width: 64,
-    minHeight: 28,
-    borderRadius: 8,
-    border: "1px solid #d8d8d8",
-    background: "#fff",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    fontWeight: 700,
-    fontSize: 12,
-    padding: "4px 8px",
-  };
   return (
     <div
       style={{
@@ -116,29 +260,28 @@ function MeasurementSchemeVisual({ form }) {
         padding: 16,
       }}
     >
-      <div style={{ display: "flex", justifyContent: "center", gap: 14, marginBottom: 12 }}>
-        {anchos.map((value, idx) => (
-          <div key={`va-${idx}`} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
-            <div className="muted" style={{ fontSize: 11 }}>{`Ancho ${idx + 1}`}</div>
-            <div style={cellStyle}>{value || "—"}</div>
-          </div>
-        ))}
-      </div>
-      <div style={{ display: "flex", gap: 16, alignItems: "stretch", justifyContent: "center" }}>
-        <div style={{ display: "flex", flexDirection: "column", gap: 14, justifyContent: "center" }}>
-          {altos.map((value, idx) => (
-            <div key={`vh-${idx}`} style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <div className="muted" style={{ width: 54, fontSize: 11 }}>{`Alto ${idx + 1}`}</div>
-              <div style={cellStyle}>{value || "—"}</div>
-            </div>
-          ))}
-        </div>
+      <div
+        style={{
+          position: "relative",
+          width: "100%",
+          maxWidth: 780,
+          height: 300,
+          margin: "0 auto",
+          background: "linear-gradient(180deg, #e2e8f0 0%, #cbd5e1 100%)",
+          borderRadius: 18,
+          overflow: "hidden",
+          border: "2px solid #64748b",
+        }}
+      >
         <div
           style={{
-            width: 230,
-            minHeight: 180,
-            borderRadius: 18,
-            border: "3px solid #64748b",
+            position: "absolute",
+            left: "6%",
+            top: "12%",
+            width: "56%",
+            height: "74%",
+            borderRadius: 16,
+            border: "3px solid #475569",
             background: "linear-gradient(180deg, #f8fafc 0%, #eef2f7 100%)",
             display: "flex",
             alignItems: "center",
@@ -148,66 +291,94 @@ function MeasurementSchemeVisual({ form }) {
             fontSize: 14,
           }}
         >
-          Esquema del portón
+          Portón
         </div>
+        {SCHEME_RECT_PCTS.alto.map((rect, idx) => (
+          <div
+            key={`alto-overlay-${idx}`}
+            style={{
+              ...schemeOverlayBaseStyle,
+              left: `${rect.left}%`,
+              top: `${rect.top}%`,
+              width: `${rect.width}%`,
+              height: `${rect.height}%`,
+            }}
+          >
+            {altos[idx] || "—"}
+          </div>
+        ))}
+        {SCHEME_RECT_PCTS.ancho.map((rect, idx) => (
+          <div
+            key={`ancho-overlay-${idx}`}
+            style={{
+              ...schemeOverlayBaseStyle,
+              left: `${rect.left}%`,
+              top: `${rect.top}%`,
+              width: `${rect.width}%`,
+              height: `${rect.height}%`,
+            }}
+          >
+            {anchos[idx] || "—"}
+          </div>
+        ))}
       </div>
     </div>
   );
 }
-function buildTechnicalSummary(quote, form) {
-  const kgM2 = toNumberLike(quote?.payload?.dimensions?.kg_m2) || 0;
-  const altoFinal = toNumberLike(form?.alto_final_mm) || 0;
-  const anchoFinal = toNumberLike(form?.ancho_final_mm) || 0;
-  const areaM2 = altoFinal > 0 && anchoFinal > 0 ? (altoFinal * anchoFinal) / 1000000 : 0;
-  const pesoAprox = kgM2 > 0 && areaM2 > 0 ? Math.round(areaM2 * kgM2) : 0;
-  const tipoPiernas =
-    text(quote?.payload?.dimensions?.tipo_piernas) ||
-    text(quote?.payload?.tipo_piernas) ||
-    text(form?.tipo_piernas) ||
-    (anchoFinal > 4500 ? "Piernas dobles" : "Piernas simples");
-  return {
-    pesoAprox: pesoAprox ? `${pesoAprox} kg` : "",
-    tipoPiernas,
-    area: areaM2 ? `${areaM2.toFixed(2)} m²` : "",
-  };
+function formatMm(value) {
+  const n = Number(value || 0);
+  return Number.isFinite(n) && n > 0 ? `${Math.round(n)} mm` : "";
+}
+function formatKg(value) {
+  const n = Number(value || 0);
+  return Number.isFinite(n) && n > 0 ? `${n.toFixed(2)} kg` : "";
+}
+function formatPiernas(value) {
+  const key = String(value || "").trim().toLowerCase();
+  const map = { angostas: "angostas", comunes: "comunes", anchas: "anchas", superanchas: "superanchas", especiales: "especiales" };
+  return map[key] || "";
+}
+function formatPlanning(planning) {
+  if (!planning || typeof planning !== "object") return "";
+  const week = String(planning.week_number || planning.week || "").trim();
+  const start = String(planning.start_date_label || "").trim();
+  const end = String(planning.end_date_label || "").trim();
+  if (!week && !start && !end) return "";
+  const weekPart = week ? `Semana ${week}` : "Semana estimada";
+  if (start || end) return `${weekPart}, entre ${start || "—"} y ${end || "—"}`;
+  return weekPart;
 }
 export default function MeasurementReadOnlyView({ quote }) {
   const form = quote?.measurement_form || {};
   const end = quote?.end_customer || {};
   const split = splitName(end);
   const budgetSummaryItems = buildBudgetSummaryItems(quote);
-  const technicalSummary = buildTechnicalSummary(quote, form);
+  const technicalSummary = computeAutomaticSummary({
+    quote,
+    form,
+    surfaceParameters: quote?.technical_rules?.surface_parameters || {},
+  });
+  const planningLabel = formatPlanning(quote?.production_planning);
   return (
     <div>
       <Section title="Resumen del presupuesto">
         <Row>
           <Field label="Cliente" value={quote?.end_customer?.name} />
-          <Field
-            label="Vendedor / Distribuidor"
-            value={form.distribuidor || quote?.created_by_full_name || quote?.created_by_username}
-          />
-          <Field
-            label="Nota de Venta / NV"
-            value={
-              form.nota_venta ||
-              form.nro_porton ||
-              quote?.final_sale_order_name ||
-              quote?.odoo_sale_order_name ||
-              quote?.quote_number
-            }
-          />
+          <Field label="Vendedor / Distribuidor" value={form.distribuidor || quote?.created_by_full_name || quote?.created_by_username} />
+          <Field label="Referencia" value={form.nota_venta || form.nro_porton || quote?.final_sale_order_name || quote?.odoo_sale_order_name || quote?.quote_number} />
+        </Row>
+        <div className="spacer" />
+        <Row>
+          <Field label="Semana presupuestada" value={planningLabel} />
+          <Field label="Modo" value={String(quote?.fulfillment_mode || "").toLowerCase() === "acopio" ? "Acopio" : "Producción"} />
         </Row>
         <div className="spacer" />
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          {budgetSummaryItems.length ? (
-            budgetSummaryItems.map((item) => (
-              <div key={item.key} style={{ border: "1px solid #eee", borderRadius: 10, padding: 10 }}>
-                <b>{item.sectionName} · ID {item.sectionId}:</b> {sectionDisplayValue(form, item) || "—"}
-              </div>
-            ))
-          ) : (
-            <div className="muted">Sin datos presupuestados.</div>
-          )}
+          {budgetSummaryItems.length ? budgetSummaryItems.map((item) => (
+            <div key={item.key} style={{ border: "1px solid #eee", borderRadius: 10, padding: 10 }}>
+              <b>{item.sectionName} · ID {item.sectionId}:</b> {sectionDisplayValue(form, item) || "—"}
+            </div>
+          )) : <div className="muted">Sin datos presupuestados.</div>}
         </div>
       </Section>
       <Section title="Datos del cliente">
@@ -229,10 +400,7 @@ export default function MeasurementReadOnlyView({ quote }) {
       </Section>
       <Section title="Datos generales">
         <Row>
-          <Field
-            label="Fecha de Nota de Pedido"
-            value={form.fecha_nota_pedido || (quote?.confirmed_at ? String(quote.confirmed_at).slice(0, 10) : "")}
-          />
+          <Field label="Fecha de Nota de Pedido" value={form.fecha_nota_pedido || (quote?.confirmed_at ? String(quote.confirmed_at).slice(0, 10) : "")} />
           <Field label="Fecha de medición" value={form.fecha} />
           <Field label="Nombre del cliente" value={form.cliente_nombre || split.first} />
           <Field label="Apellido del cliente" value={form.cliente_apellido || split.last} />
@@ -242,10 +410,23 @@ export default function MeasurementReadOnlyView({ quote }) {
         <MeasurementSchemeVisual form={form} />
         <div className="spacer" />
         <Row>
-          <Field label="Alto final (mm)" value={form.alto_final_mm} />
-          <Field label="Ancho final (mm)" value={form.ancho_final_mm} />
-          <Field label="Peso aproximado" value={technicalSummary.pesoAprox} />
-          <Field label="Tipo de piernas" value={technicalSummary.tipoPiernas} />
+          <Field label="Medidas finales del portón" value={
+            technicalSummary.alto_calculado_mm && technicalSummary.ancho_calculado_mm
+              ? `${formatMm(technicalSummary.alto_calculado_mm)} x ${formatMm(technicalSummary.ancho_calculado_mm)}`
+              : ""
+          } />
+          <Field label="Medidas de paso" value={
+            technicalSummary.alto_paso_mm && technicalSummary.ancho_paso_mm
+              ? `${formatMm(technicalSummary.alto_paso_mm)} x ${formatMm(technicalSummary.ancho_paso_mm)}`
+              : ""
+          } />
+        </Row>
+        <div className="spacer" />
+        <Row>
+          <Field label="Alto final editable (mm)" value={form.alto_final_mm} />
+          <Field label="Ancho final editable (mm)" value={form.ancho_final_mm} />
+          <Field label="Peso aproximado" value={formatKg(technicalSummary.peso_estimado_kg)} />
+          <Field label="Tipo de piernas" value={formatPiernas(technicalSummary.piernas_tipo)} />
         </Row>
       </Section>
       <Section title="Observaciones del medidor">

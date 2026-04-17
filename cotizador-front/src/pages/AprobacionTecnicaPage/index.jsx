@@ -45,7 +45,7 @@ function createdByLabel(r) {
 function measurementStatusLabel(s, row) {
   if (s === "pending") return String(row?.measurement_subtype || "").toLowerCase().trim() === "sin_medicion" ? "Pendiente detalle técnico" : "Pendiente";
   if (s === "needs_fix") return "A corregir";
-  if (s === "submitted") return "Pendiente control";
+  if (s === "submitted") return "Pendiente aprobación final";
   if (s === "approved") return "Aprobada";
   return s || "—";
 }
@@ -72,6 +72,14 @@ function toTimeDesc(value) {
   if (Number.isNaN(d.getTime())) return 0;
   return d.getTime();
 }
+function measurementSortWeight(row) {
+  const status = String(row?.measurement_status || "").toLowerCase().trim();
+  if (status === "submitted") return 0;
+  if (status === "pending") return 1;
+  if (status === "needs_fix") return 2;
+  if (status === "approved") return 3;
+  return 4;
+}
 
 export default function AprobacionTecnicaPage() {
   const navigate = useNavigate();
@@ -81,7 +89,7 @@ export default function AprobacionTecnicaPage() {
   const [tab, setTab] = useState(initialTab);
   const [filter, setFilter] = useState("all");
   const [searchText, setSearchText] = useState("");
-  const [measurementStatus, setMeasurementStatus] = useState(initialTab === "aprobaciones_mediciones" ? "por_realizar" : "all");
+  const [measurementStatus, setMeasurementStatus] = useState(initialTab === "aprobaciones_mediciones" ? "all" : "all");
   const [measurementDates, setMeasurementDates] = useState({});
   const [pageAprobaciones, setPageAprobaciones] = useState(1);
   const [pageMediciones, setPageMediciones] = useState(1);
@@ -108,7 +116,7 @@ export default function AprobacionTecnicaPage() {
     const normalized = normalizeTab(nextTab);
     setTab(normalized);
     setSearchParams({ tab: normalized });
-    if (normalized === "aprobaciones_mediciones") setMeasurementStatus("por_realizar");
+    if (normalized === "aprobaciones_mediciones") setMeasurementStatus("all");
   }
 
   useEffect(() => { setPageAprobaciones(1); }, [filter, searchText]);
@@ -133,7 +141,11 @@ export default function AprobacionTecnicaPage() {
     else if (measurementStatus === "sin_medicion") arr = arr.filter((x) => String(x?.measurement_subtype || "normal").toLowerCase().trim() === "sin_medicion");
     return arr
       .filter((r) => matchesSearch([r?.end_customer?.name, r?.end_customer?.city, r?.end_customer?.address, measurementStatusLabel(r?.measurement_status, r), measurementSubtypeLabel(r), createdByLabel(r)], searchText))
-      .sort((a, b) => toTimeDesc(b?.measurement_scheduled_for || b?.created_at) - toTimeDesc(a?.measurement_scheduled_for || a?.created_at));
+      .sort((a, b) => {
+        const weightDiff = measurementSortWeight(a) - measurementSortWeight(b);
+        if (weightDiff !== 0) return weightDiff;
+        return toTimeDesc(b?.measurement_scheduled_for || b?.created_at) - toTimeDesc(a?.measurement_scheduled_for || a?.created_at);
+      });
   }, [measQ.data, measurementStatus, searchText]);
 
   const acopioRows = useMemo(() => {
@@ -198,11 +210,11 @@ export default function AprobacionTecnicaPage() {
           <>
             <div className="spacer" />
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <Button variant={measurementStatus === "all" ? "primary" : "ghost"} onClick={() => setMeasurementStatus("all")}>Todas</Button>
+              <Button variant={measurementStatus === "por_controlar" ? "primary" : "ghost"} onClick={() => setMeasurementStatus("por_controlar")}>Pendientes aprobación final</Button>
               <Button variant={measurementStatus === "por_realizar" ? "primary" : "ghost"} onClick={() => setMeasurementStatus("por_realizar")}>Pendientes por realizar</Button>
               <Button variant={measurementStatus === "sin_medicion" ? "primary" : "ghost"} onClick={() => setMeasurementStatus("sin_medicion")}>Detalles técnicos</Button>
-              <Button variant={measurementStatus === "por_controlar" ? "primary" : "ghost"} onClick={() => setMeasurementStatus("por_controlar")}>Pendientes por controlar</Button>
               <Button variant={measurementStatus === "approved" ? "primary" : "ghost"} onClick={() => setMeasurementStatus("approved")}>Aprobadas</Button>
-              <Button variant={measurementStatus === "all" ? "primary" : "ghost"} onClick={() => setMeasurementStatus("all")}>Todas</Button>
             </div>
           </>
         )}
@@ -243,6 +255,7 @@ export default function AprobacionTecnicaPage() {
                     {visibleMeasurements.map((r) => {
                       const dateValue = measurementDates[r.id] ?? r.measurement_scheduled_for ?? "";
                       const isSinMedicion = String(r?.measurement_subtype || "normal").toLowerCase().trim() === "sin_medicion";
+                      const isSubmitted = String(r?.measurement_status || "").toLowerCase().trim() === "submitted";
                       return (
                         <tr key={r.id}>
                           <td style={{ fontWeight: 800 }}>{r.end_customer?.name || "(sin nombre)"}</td>
@@ -252,7 +265,7 @@ export default function AprobacionTecnicaPage() {
                           <td>{measurementStatusLabel(r.measurement_status, r)}</td>
                           {!hideScheduleColumns ? <td>{fmtDate(r.measurement_scheduled_for)}</td> : null}
                           {!hideScheduleColumns ? <td style={{ minWidth: 220 }}><div style={{ display: "flex", gap: 8, alignItems: "center" }}><Input type="date" value={dateValue} onChange={(v) => setMeasurementDates((prev) => ({ ...prev, [r.id]: v }))} style={{ width: "100%" }} /><Button disabled={scheduleM.isPending || !dateValue} onClick={() => scheduleM.mutate({ id: r.id, scheduledFor: dateValue })}>Guardar</Button></div></td> : null}
-                          <td className="right" style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}><Button variant="ghost" onClick={() => navigate(`/mediciones/${r.id}`)}>{isSinMedicion ? "Completar detalle técnico" : (r.measurement_status === "submitted" ? "Revisar" : "Abrir")}</Button></td>
+                          <td className="right" style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}><Button variant={isSubmitted ? "primary" : "ghost"} onClick={() => navigate(`/mediciones/${r.id}`, { state: { from: "/aprobacion/tecnica" } })}>{isSinMedicion ? "Completar detalle técnico" : (isSubmitted ? "Aprobar final" : "Abrir")}</Button></td>
                         </tr>
                       );
                     })}
