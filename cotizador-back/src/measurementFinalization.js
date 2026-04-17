@@ -649,30 +649,100 @@ function normalizePhoneForWhatsApp(phone) {
   if (digits.startsWith("54")) return digits;
   return `54${digits}`;
 }
-function buildMeasurementApprovedMessage({ quote }) {
-  const customerName = String(quote?.end_customer?.name || "cliente").trim();
-  const reference = String(quote?.odoo_sale_order_name || quote?.quote_number || "").trim();
-  const link = buildMeasurementPublicUrl(quote);
+function resolveClientAcceptanceBaseUrl() {
+  return (
+    normalizeUrl(process.env.CLIENT_ACCEPTANCE_BASE_URL) ||
+    normalizeUrl(process.env.PUBLIC_BASE_URL) ||
+    normalizeUrl(process.env.APP_PUBLIC_URL) ||
+    normalizeUrl(process.env.FRONTEND_PUBLIC_URL) ||
+    ""
+  );
+}
+function buildClientAcceptanceUrl(quote) {
+  const base = resolveClientAcceptanceBaseUrl();
+  const token = String(quote?.measurement_share_token || "").trim();
+  if (base && token) return `${base}/aceptacion-cliente/${token}`;
+  return buildMeasurementPublicUrl(quote);
+}
+async function readPartnerNotificationData(odoo, partnerId) {
+  const id = toIntId(partnerId);
+  if (!id || !odoo) return null;
+  try {
+    const rows = await odoo.executeKw("res.partner", "read", [[id]], {
+      fields: ["id", "name", "phone", "mobile"],
+    });
+    return rows?.[0] || null;
+  } catch {
+    return null;
+  }
+}
+async function resolveMeasurementNotificationTarget({ odoo, quote }) {
+  const createdByRole = String(quote?.created_by_role || "").trim().toLowerCase();
+  if (createdByRole === "distribuidor") {
+    const partner = await readPartnerNotificationData(odoo, quote?.bill_to_odoo_partner_id);
+    const partnerPhone = normalizePhoneForWhatsApp(partner?.phone || partner?.mobile);
+    if (partnerPhone) {
+      return {
+        to: partnerPhone,
+        recipient_name: String(partner?.name || "distribuidor").trim() || "distribuidor",
+        recipient_type: "distribuidor",
+      };
+    }
+  }
+  return {
+    to: normalizePhoneForWhatsApp(quote?.end_customer?.phone),
+    recipient_name: String(quote?.end_customer?.name || "cliente").trim() || "cliente",
+    recipient_type: createdByRole === "distribuidor" ? "distribuidor" : "cliente",
+  };
+}
+function buildMeasurementApprovedMessage({ quote, acceptanceUrl, recipientName, recipientType }) {
+  const reference = String(quote?.final_sale_order_name || quote?.odoo_sale_order_name || quote?.quote_number || "").trim();
+  const salutation = recipientName || (recipientType === "distribuidor" ? "distribuidor" : "cliente");
   const lines = [
-    `Hola ${customerName}.`,
+    `Hola ${salutation}.`,
     reference ? `Ya quedó aprobada la planilla técnica de la nota ${reference}.` : "Ya quedó aprobada la planilla técnica.",
-    link ? `Podés verla acá: ${link}` : "",
+    acceptanceUrl ? `Podés revisar los datos técnicos y la aceptación del cliente acá: ${acceptanceUrl}` : "",
     "Muchas gracias.",
   ].filter(Boolean);
-  return lines.join("\n");
+  return lines.join("
+");
 }
-async function maybeSendMeasurementApprovedWhatsApp({ quote }) {
-  const to = normalizePhoneForWhatsApp(quote?.end_customer?.phone);
-  const link = buildMeasurementPublicUrl(quote);
-  const message = buildMeasurementApprovedMessage({ quote });
+async function maybeSendMeasurementApprovedWhatsApp({ odoo, quote }) {
+  const recipient = await resolveMeasurementNotificationTarget({ odoo, quote });
+  const to = recipient?.to || "";
+  const publicUrl = buildMeasurementPublicUrl(quote);
+  const acceptanceUrl = buildClientAcceptanceUrl(quote);
+  const message = buildMeasurementApprovedMessage({
+    quote,
+    acceptanceUrl,
+    recipientName: recipient?.recipient_name,
+    recipientType: recipient?.recipient_type,
+  });
   if (!to) {
-    return { sent: false, reason: "missing_phone", public_url: link, message };
+    return {
+      sent: false,
+      reason: "missing_phone",
+      public_url: publicUrl,
+      acceptance_url: acceptanceUrl,
+      message,
+      recipient_type: recipient?.recipient_type || "cliente",
+      recipient_name: recipient?.recipient_name || "",
+    };
   }
   const token = String(process.env.WHATSAPP_CLOUD_API_TOKEN || "").trim();
   const phoneNumberId = String(process.env.WHATSAPP_CLOUD_PHONE_NUMBER_ID || "").trim();
   const graphVersion = String(process.env.WHATSAPP_GRAPH_VERSION || "v20.0").trim();
   if (!token || !phoneNumberId) {
-    return { sent: false, reason: "whatsapp_not_configured", public_url: link, message, to };
+    return {
+      sent: false,
+      reason: "whatsapp_not_configured",
+      public_url: publicUrl,
+      acceptance_url: acceptanceUrl,
+      message,
+      to,
+      recipient_type: recipient?.recipient_type || "cliente",
+      recipient_name: recipient?.recipient_name || "",
+    };
   }
   try {
     const response = await fetch(`https://graph.facebook.com/${graphVersion}/${phoneNumberId}/messages`, {
@@ -687,7 +757,7 @@ async function maybeSendMeasurementApprovedWhatsApp({ quote }) {
         to,
         type: "text",
         text: {
-          preview_url: !!link,
+          preview_url: !!acceptanceUrl,
           body: message,
         },
       }),
@@ -699,27 +769,36 @@ async function maybeSendMeasurementApprovedWhatsApp({ quote }) {
         reason: "whatsapp_api_error",
         status: response.status,
         error: data,
-        public_url: link,
+        public_url: publicUrl,
+        acceptance_url: acceptanceUrl,
         message,
         to,
+        recipient_type: recipient?.recipient_type || "cliente",
+        recipient_name: recipient?.recipient_name || "",
       };
     }
     return {
       sent: true,
       provider: "meta_cloud_api",
       response: data,
-      public_url: link,
+      public_url: publicUrl,
+      acceptance_url: acceptanceUrl,
       message,
       to,
+      recipient_type: recipient?.recipient_type || "cliente",
+      recipient_name: recipient?.recipient_name || "",
     };
   } catch (error) {
     return {
       sent: false,
       reason: "whatsapp_request_failed",
       error: error?.message || String(error || "Error enviando WhatsApp"),
-      public_url: link,
+      public_url: publicUrl,
+      acceptance_url: acceptanceUrl,
       message,
       to,
+      recipient_type: recipient?.recipient_type || "cliente",
+      recipient_name: recipient?.recipient_name || "",
     };
   }
 }
@@ -841,7 +920,7 @@ export async function previewMeasurementRevisionQuote({ odoo, originalQuote, mea
 export async function finalizeMeasurementToRevisionQuote({ odoo, originalQuote, measurementForm }) {
   const base = await buildMeasurementFinalizationBase({ odoo, originalQuote, measurementForm });
   const finalLines = base.generated_lines || [];
-  const whatsappNotification = await maybeSendMeasurementApprovedWhatsApp({ quote: originalQuote });
+  const whatsappNotification = await maybeSendMeasurementApprovedWhatsApp({ odoo, quote: originalQuote });
 
   if (!finalLines.length) {
     return {

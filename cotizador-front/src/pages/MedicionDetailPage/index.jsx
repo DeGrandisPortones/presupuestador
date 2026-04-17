@@ -8,20 +8,40 @@ import {
 } from "../../api/measurements.js";
 import {
   adminGetTechnicalMeasurementFieldDefinitions,
-  adminGetTechnicalMeasurementRules,
 } from "../../api/admin.js";
 import { getCatalogBootstrap } from "../../api/catalog.js";
 import { useAuthStore } from "../../domain/auth/store.js";
-import {
-  mergeMeasurementFields,
-  parseOptions,
-} from "../../domain/measurement/technicalMeasurementRuleFields.js";
+import { mergeMeasurementFields } from "../../domain/measurement/technicalMeasurementRuleFields.js";
 import Button from "../../ui/Button.jsx";
 import Input from "../../ui/Input.jsx";
 
-const BASE_ALLOWED_SECTION_IDS = [18, 23, 39, 40];
+const BASE_EDITABLE_SECTION_IDS = new Set([18, 23]);
 const DEFAULT_RETURN_REASON_ITEM_18 =
-  "El cambio en el item 18 puede ocasionar costos adicionales y debe pasar al vendedor.";
+  "El medidor cambió un producto de la sección 18. Esto puede ocasionar costos adicionales y debe revisarlo el vendedor.";
+const SCHEME_RECT_PCTS = {
+  alto: [
+    { left: 9.22, top: 43.73, width: 14.4, height: 14.24 },
+    { left: 27.02, top: 43.73, width: 14.4, height: 14.24 },
+    { left: 44.5, top: 43.73, width: 14.24, height: 14.24 },
+  ],
+  ancho: [
+    { left: 71.36, top: 22.71, width: 14.4, height: 14.24 },
+    { left: 71.36, top: 48.14, width: 14.4, height: 13.9 },
+    { left: 71.36, top: 82.71, width: 14.4, height: 14.24 },
+  ],
+};
+const schemeOverlayBaseStyle = {
+  position: "absolute",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  fontWeight: 900,
+  color: "#111",
+  textShadow: "0 1px 0 rgba(255,255,255,0.9)",
+  background: "rgba(255,255,255,0.55)",
+  borderRadius: 6,
+  pointerEvents: "none",
+};
 
 function text(v) {
   return String(v ?? "").trim();
@@ -45,9 +65,7 @@ function extractBudgetDimensionMm(quote, key) {
   return String(Math.round(n * 1000));
 }
 function normalizeTriple(values = [], suggested = "") {
-  const arr = Array.isArray(values)
-    ? values.slice(0, 3).map((v) => text(v))
-    : [];
+  const arr = Array.isArray(values) ? values.slice(0, 3).map((v) => text(v)) : [];
   while (arr.length < 3) arr.push("");
   if (!arr.some(Boolean) && suggested) arr[1] = suggested;
   return arr;
@@ -89,68 +107,81 @@ function setByPath(obj, path, value) {
   cur[lastKey] = value;
   return root;
 }
-function compareRule(currentRaw, operator, compareRaw) {
-  const currentText = String(currentRaw ?? "").trim().toLowerCase();
-  const expectedText = String(compareRaw ?? "").trim().toLowerCase();
-  const currentNum = Number(String(currentRaw ?? "").replace(",", "."));
-  const expectedNum = Number(String(compareRaw ?? "").replace(",", "."));
-  switch (String(operator || "=").trim()) {
-    case "=":
-      return currentText === expectedText;
-    case "!=":
-      return currentText !== expectedText;
-    case ">":
-      return Number.isFinite(currentNum) && Number.isFinite(expectedNum) && currentNum > expectedNum;
-    case ">=":
-      return Number.isFinite(currentNum) && Number.isFinite(expectedNum) && currentNum >= expectedNum;
-    case "<":
-      return Number.isFinite(currentNum) && Number.isFinite(expectedNum) && currentNum < expectedNum;
-    case "<=":
-      return Number.isFinite(currentNum) && Number.isFinite(expectedNum) && currentNum <= expectedNum;
-    case "contains":
-      return currentText.includes(expectedText);
-    default:
-      return currentText === expectedText;
-  }
-}
-function evaluateDynamicRules({ form, quote, user, rules }) {
-  const dims = quote?.payload?.dimensions || {};
-  const budgetWidth = Number(String(dims?.width ?? "").replace(",", "."));
-  const budgetHeight = Number(String(dims?.height ?? "").replace(",", "."));
-  const context = {
-    ...form,
-    surface_m2:
-      Number.isFinite(budgetWidth) && Number.isFinite(budgetHeight)
-        ? budgetWidth * budgetHeight
-        : 0,
-    budget_width_m: Number.isFinite(budgetWidth) ? budgetWidth : 0,
-    budget_height_m: Number.isFinite(budgetHeight) ? budgetHeight : 0,
-    payment_method: quote?.payload?.payment_method || "",
-    porton_type: quote?.payload?.porton_type || "",
-    current_user: {
-      is_medidor: !!user?.is_medidor,
-      is_rev_tecnica: !!user?.is_rev_tecnica,
-      is_enc_comercial: !!user?.is_enc_comercial,
-    },
+function updateSchemeValue(form, axis, index, value) {
+  const next = {
+    ...(form.esquema || {}),
+    alto: normalizeTriple(form.esquema?.alto || []),
+    ancho: normalizeTriple(form.esquema?.ancho || []),
   };
-  const hidden = new Set();
-  const forcedValues = {};
-  const allowedOptions = {};
-  for (const rule of Array.isArray(rules) ? rules : []) {
-    if (!rule?.active || !rule?.source_key) continue;
-    const current = getByPath(context, rule.source_key);
-    if (!compareRule(current, rule.operator, rule.compare_value)) continue;
-    if (rule.action_type === "set_value" && rule.target_field) forcedValues[rule.target_field] = rule.target_value;
-    if (rule.action_type === "show_field" && rule.target_field) hidden.delete(rule.target_field);
-    if (rule.action_type === "hide_field" && rule.target_field) hidden.add(rule.target_field);
-    if (rule.action_type === "allow_options" && rule.target_field) {
-      const options = Array.isArray(rule.target_options)
-        ? rule.target_options
-        : parseOptions(rule.target_value || "").map((item) => item.value);
-      allowedOptions[rule.target_field] = options;
-    }
+  next[axis][index] = value;
+  return { ...form, esquema: next };
+}
+function buildMapsUrl(lat, lng) {
+  return `https://www.google.com/maps?q=${lat},${lng}`;
+}
+function getCurrentPositionAsync() {
+  return new Promise((resolve, reject) => {
+    if (!navigator?.geolocation) return reject(new Error("Geolocalización no disponible"));
+    navigator.geolocation.getCurrentPosition(resolve, reject, {
+      enableHighAccuracy: true,
+      timeout: 12000,
+      maximumAge: 0,
+    });
+  });
+}
+
+function toNumberLike(value) {
+  const n = Number(String(value ?? "").replace(",", "."));
+  return Number.isFinite(n) ? n : 0;
+}
+function averageMm(values = []) {
+  const nums = (Array.isArray(values) ? values : []).map((item) => toNumberLike(item)).filter((item) => item > 0);
+  if (!nums.length) return 0;
+  return Math.round(nums.reduce((acc, item) => acc + item, 0) / nums.length);
+}
+function suggestedFinalFromCurrent(currentValues = [], fallback = "") {
+  const avg = averageMm(currentValues);
+  return avg > 0 ? String(avg) : text(fallback);
+}
+function formatApproxWeight(weightKg) {
+  const value = Number(weightKg || 0);
+  if (!(value > 0)) return "—";
+  return `${Math.round(value)} kg`;
+}
+function findTipoPiernas(form, budgetSummaryItems = []) {
+  const match = (Array.isArray(budgetSummaryItems) ? budgetSummaryItems : []).find((item) => {
+    const hay = `${item?.sectionName || ""} ${item?.value || ""}`.toLowerCase();
+    return hay.includes("pierna") || hay.includes("parante") || hay.includes("soporte");
+  });
+  if (match?.value) return String(match.value).trim();
+  const parantes = text(form?.parantes?.cant);
+  if (parantes) return parantes;
+  return "—";
+}
+function buildTechnicalSummary({ quote, form, budgetSummaryItems }) {
+  const finalHeight = toNumberLike(form?.alto_final_mm) || averageMm(form?.esquema?.alto || []);
+  const finalWidth = toNumberLike(form?.ancho_final_mm) || averageMm(form?.esquema?.ancho || []);
+  const kgM2 = toNumberLike(quote?.payload?.dimensions?.kg_m2);
+  const surfaceM2 = finalHeight > 0 && finalWidth > 0 ? (finalHeight * finalWidth) / 1000000 : 0;
+  const approxWeightKg = kgM2 > 0 && surfaceM2 > 0 ? kgM2 * surfaceM2 : 0;
+  return {
+    finalHeight: finalHeight > 0 ? String(Math.round(finalHeight)) : "",
+    finalWidth: finalWidth > 0 ? String(Math.round(finalWidth)) : "",
+    approxWeightLabel: formatApproxWeight(approxWeightKg),
+    tipoPiernas: findTipoPiernas(form, budgetSummaryItems),
+    kgM2: kgM2 > 0 ? `${kgM2}` : "—",
+    surfaceLabel: surfaceM2 > 0 ? `${surfaceM2.toFixed(2)} m²` : "—",
+  };
+}
+function goToMenuHard(navigate) {
+  try {
+    navigate("/menu", { replace: true });
+    setTimeout(() => {
+      if (window.location.pathname !== "/menu") window.location.assign("/menu");
+    }, 30);
+  } catch {
+    window.location.assign("/menu");
   }
-  return { hidden, forcedValues, allowedOptions };
 }
 function buildInitialForm(quote, current = {}) {
   const end = quote?.end_customer || {};
@@ -183,50 +214,9 @@ function buildInitialForm(quote, current = {}) {
       alto: normalizeTriple(current?.esquema?.alto || [], suggestedAlto),
       ancho: normalizeTriple(current?.esquema?.ancho || [], suggestedAncho),
     },
-    alto_final_mm: text(current.alto_final_mm) || suggestedAlto,
-    ancho_final_mm: text(current.ancho_final_mm) || suggestedAncho,
+    alto_final_mm: text(current.alto_final_mm) || suggestedFinalFromCurrent(current?.esquema?.alto || [], suggestedAlto),
+    ancho_final_mm: text(current.ancho_final_mm) || suggestedFinalFromCurrent(current?.esquema?.ancho || [], suggestedAncho),
   };
-}
-function updateSchemeValue(form, axis, index, value) {
-  const next = {
-    ...(form.esquema || {}),
-    alto: normalizeTriple(form.esquema?.alto || []),
-    ancho: normalizeTriple(form.esquema?.ancho || []),
-  };
-  next[axis][index] = value;
-  return { ...form, esquema: next };
-}
-function Section({ title, children }) {
-  return (
-    <div className="card" style={{ background: "#fafafa", marginBottom: 12 }}>
-      <div style={{ fontWeight: 900, marginBottom: 8 }}>{title}</div>
-      {children}
-    </div>
-  );
-}
-function Row({ children }) {
-  return <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>{children}</div>;
-}
-function Field({ label, children }) {
-  return (
-    <div style={{ flex: 1, minWidth: 220 }}>
-      <div className="muted" style={{ marginBottom: 6 }}>{label}</div>
-      {children}
-    </div>
-  );
-}
-function buildMapsUrl(lat, lng) {
-  return `https://www.google.com/maps?q=${lat},${lng}`;
-}
-function getCurrentPositionAsync() {
-  return new Promise((resolve, reject) => {
-    if (!navigator?.geolocation) return reject(new Error("Geolocalización no disponible"));
-    navigator.geolocation.getCurrentPosition(resolve, reject, {
-      enableHighAccuracy: true,
-      timeout: 12000,
-      maximumAge: 0,
-    });
-  });
 }
 function normalizeNameKey(value) {
   return String(value || "").trim().toLowerCase().replace(/\s+/g, " ");
@@ -283,14 +273,6 @@ function buildBudgetContext(quote, catalog, user) {
     budget_sections: buildBudgetSectionsContext(quote, catalog),
   };
 }
-function chooseAllowedSections(budgetSectionsById = {}) {
-  const present39 = !!budgetSectionsById[39];
-  const present40 = !!budgetSectionsById[40];
-  const out = new Set([18, 23]);
-  if (present39) out.add(39);
-  else if (present40) out.add(40);
-  return out;
-}
 function buildBudgetSummaryItems(budgetContext, form) {
   const sectionsById = budgetContext?.budget_sections?.by_id || {};
   return Object.values(sectionsById)
@@ -316,6 +298,42 @@ function productDisplayLabel(product) {
   const code = String(product?.code || "").trim();
   return `${alias || display}${code ? ` · ${code}` : ""}`.trim();
 }
+function resolveEditableSectionIds(budgetContext) {
+  const byId = budgetContext?.budget_sections?.by_id || {};
+  const ids = new Set();
+  for (const sectionId of BASE_EDITABLE_SECTION_IDS) {
+    if (byId[sectionId]?.selected_products?.length) ids.add(sectionId);
+  }
+  if (byId[39]?.selected_products?.length) ids.add(39);
+  else if (byId[40]?.selected_products?.length) ids.add(40);
+  return ids;
+}
+function firstCatalogProductsForSection(sectionId, catalog) {
+  return (Array.isArray(catalog?.products) ? catalog.products : []).filter((product) =>
+    Array.isArray(product?.section_ids)
+      ? product.section_ids.some((sid) => Number(sid) === Number(sectionId))
+      : false,
+  );
+}
+function Section({ title, children }) {
+  return (
+    <div className="card" style={{ background: "#fafafa", marginBottom: 12 }}>
+      <div style={{ fontWeight: 900, marginBottom: 8 }}>{title}</div>
+      {children}
+    </div>
+  );
+}
+function Row({ children }) {
+  return <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>{children}</div>;
+}
+function Field({ label, children }) {
+  return (
+    <div style={{ flex: 1, minWidth: 220 }}>
+      <div className="muted" style={{ marginBottom: 6 }}>{label}</div>
+      {children}
+    </div>
+  );
+}
 
 export default function MedicionDetailPage() {
   const { id } = useParams();
@@ -336,11 +354,6 @@ export default function MedicionDetailPage() {
     queryFn: adminGetTechnicalMeasurementFieldDefinitions,
     enabled: !!quoteId,
   });
-  const dynamicRulesQ = useQuery({
-    queryKey: ["technicalMeasurementRulesForMeasurement"],
-    queryFn: adminGetTechnicalMeasurementRules,
-    enabled: !!quoteId,
-  });
   const catalogQ = useQuery({
     queryKey: ["catalogBootstrapForMeasurement", "porton"],
     queryFn: () => getCatalogBootstrap("porton"),
@@ -350,10 +363,12 @@ export default function MedicionDetailPage() {
   const quote = q.data;
   const [form, setForm] = useState(null);
   const [lastMessage, setLastMessage] = useState("");
+  const [technicalDimensionEditEnabled, setTechnicalDimensionEditEnabled] = useState({ alto: false, ancho: false });
 
   useEffect(() => {
     if (!quote) return;
     setForm(buildInitialForm(quote, quote.measurement_form || {}));
+    setTechnicalDimensionEditEnabled({ alto: false, ancho: false });
   }, [quote]);
 
   const configuredFieldDefinitions = useMemo(
@@ -368,47 +383,42 @@ export default function MedicionDetailPage() {
     () => buildBudgetContext(quote, catalogQ.data, user),
     [quote, catalogQ.data, user],
   );
-  const allowedSectionIds = useMemo(
-    () => chooseAllowedSections(budgetContext?.budget_sections?.by_id || {}),
-    [budgetContext],
-  );
-  const dynamicUi = useMemo(() => {
-    if (!form || !quote) return { hidden: new Set(), forcedValues: {}, allowedOptions: {} };
-    return evaluateDynamicRules({ form, quote, user, rules: dynamicRulesQ.data?.rules || [] });
-  }, [form, quote, user, dynamicRulesQ.data]);
   const budgetSummaryItems = useMemo(
     () => buildBudgetSummaryItems(budgetContext, form),
     [budgetContext, form],
+  );
+  const editableSectionIds = useMemo(
+    () => resolveEditableSectionIds(budgetContext),
+    [budgetContext],
   );
 
   const editableConfiguredFields = useMemo(() => {
     return allFields.filter((field) => {
       const sectionId = Number(field?.budget_section_id || 0);
-      if (!allowedSectionIds.has(sectionId)) return false;
-      if (dynamicUi.hidden.has(String(field?.key || "").trim())) return false;
-      const bindingType = String(field?.odoo_binding_type || (String(field?.type || "") === "odoo_product" ? "selected_measurement_product" : "none")).trim().toLowerCase();
+      if (!editableSectionIds.has(sectionId)) return false;
+      const bindingType = String(
+        field?.odoo_binding_type ||
+          (String(field?.type || "") === "odoo_product" ? "selected_measurement_product" : "none"),
+      )
+        .trim()
+        .toLowerCase();
       return String(field?.type || "") === "odoo_product" || bindingType === "selected_measurement_product";
     });
-  }, [allFields, dynamicUi.hidden, allowedSectionIds]);
+  }, [allFields, editableSectionIds]);
 
   const fallbackSections = useMemo(() => {
     const byId = budgetContext?.budget_sections?.by_id || {};
     const configuredIds = new Set(editableConfiguredFields.map((field) => Number(field?.budget_section_id || 0)));
-    return Object.values(byId)
-      .filter((section) => allowedSectionIds.has(Number(section?.id || 0)))
-      .filter((section) => Array.isArray(section?.selected_products) && section.selected_products.length > 0)
-      .filter((section) => !configuredIds.has(Number(section?.id || 0)))
-      .map((section) => ({
-        id: Number(section.id),
-        name: String(section.name || `Sección ${section.id}`),
-        currentProducts: section.selected_products,
-        catalogProducts: (Array.isArray(catalogQ.data?.products) ? catalogQ.data.products : []).filter((product) =>
-          Array.isArray(product?.section_ids)
-            ? product.section_ids.some((sid) => Number(sid) === Number(section.id))
-            : false,
-        ),
-      }));
-  }, [budgetContext, editableConfiguredFields, catalogQ.data, allowedSectionIds]);
+    return [...editableSectionIds]
+      .filter((sectionId) => !configuredIds.has(sectionId))
+      .map((sectionId) => ({
+        id: sectionId,
+        name: String(byId?.[sectionId]?.name || `Sección ${sectionId}`),
+        currentProducts: Array.isArray(byId?.[sectionId]?.selected_products) ? byId[sectionId].selected_products : [],
+        catalogProducts: firstCatalogProductsForSection(sectionId, catalogQ.data),
+      }))
+      .filter((section) => section.currentProducts.length > 0);
+  }, [editableSectionIds, editableConfiguredFields, budgetContext, catalogQ.data]);
 
   useEffect(() => {
     if (!form) return;
@@ -427,7 +437,8 @@ export default function MedicionDetailPage() {
       const currentSelected = getByPath(next, `__selected_binding_product.${field.key}`);
       if (!currentSelected?.product_id && selectedProducts[0]?.product_id) {
         next = setByPath(next, `__selected_binding_product.${field.key}`, selectedProducts[0]);
-        next = setByPath(next, `__budget_section_override.${sectionId}.value`, selectedProducts[0]?.display_name || selectedProducts[0]?.alias || selectedProducts[0]?.raw_name || "");
+        next = setByPath(next, field.key, text(selectedProducts[0]?.alias || selectedProducts[0]?.display_name || selectedProducts[0]?.raw_name));
+        next = setByPath(next, `__budget_section_override.${sectionId}.value`, text(selectedProducts[0]?.display_name || selectedProducts[0]?.alias || selectedProducts[0]?.raw_name));
         changed = true;
       }
     }
@@ -441,7 +452,7 @@ export default function MedicionDetailPage() {
       const currentSelected = getByPath(next, `__fallback_selected_section_products.${section.id}`);
       if (!currentSelected?.product_id && section.currentProducts[0]?.product_id) {
         next = setByPath(next, `__fallback_selected_section_products.${section.id}`, section.currentProducts[0]);
-        next = setByPath(next, `__budget_section_override.${section.id}.value`, section.currentProducts[0]?.display_name || section.currentProducts[0]?.alias || section.currentProducts[0]?.raw_name || "");
+        next = setByPath(next, `__budget_section_override.${section.id}.value`, text(section.currentProducts[0]?.display_name || section.currentProducts[0]?.alias || section.currentProducts[0]?.raw_name));
         changed = true;
       }
     }
@@ -456,8 +467,7 @@ export default function MedicionDetailPage() {
 
   const item18Changed = useMemo(() => {
     if (!form) return false;
-    const configured18 = editableConfiguredFields.filter((field) => Number(field?.budget_section_id || 0) === 18);
-    for (const field of configured18) {
+    for (const field of editableConfiguredFields.filter((item) => Number(item?.budget_section_id || 0) === 18)) {
       const current = Number(getByPath(form, `__selected_binding_product.${field.key}.product_id`) || 0);
       const base = Number(getByPath(baselineForm, `__selected_binding_product.${field.key}.product_id`) || getByPath(form, `__budget_binding_products.${field.key}.0.product_id`) || 0);
       if (current && base && current !== base) return true;
@@ -467,26 +477,64 @@ export default function MedicionDetailPage() {
     return !!(currentFallback && baseFallback && currentFallback !== baseFallback);
   }, [form, baselineForm, editableConfiguredFields]);
 
+  const technicalSummary = useMemo(
+    () => buildTechnicalSummary({ quote, form, budgetSummaryItems }),
+    [quote, form, budgetSummaryItems],
+  );
+
+  function ensureTechnicalDimensionEditAllowed(axis) {
+    if (!isTechnical) return true;
+    const key = axis === "alto" ? "alto" : "ancho";
+    if (technicalDimensionEditEnabled[key]) return true;
+    const ok = window.confirm("¿Desea modificar el dato de alto y ancho finales?");
+    if (ok) {
+      setTechnicalDimensionEditEnabled((prev) => ({ ...prev, [key]: true }));
+    }
+    return ok;
+  }
+
+  const approveM = useMutation({
+    mutationFn: async () => {
+      await saveMeasurementDetailed(quoteId, {
+        form,
+        submit: false,
+        returnToSeller: false,
+        returnReason: "",
+        endCustomer: quote?.end_customer || {},
+        baselineForm,
+      });
+      return reviewMeasurement(quoteId, { action: "approve", notes: "" });
+    },
+    onSuccess: () => {
+      window.alert("La revisión técnica fue aprobada correctamente.");
+      goToMenuHard(navigate);
+    },
+  });
+
   const saveM = useMutation({
     mutationFn: async ({ submit, returnToSeller = false, returnReason = "" }) => {
       let nextEndCustomer = { ...(quote?.end_customer || {}) };
       let shouldReturnToSeller = returnToSeller;
       let finalReason = returnReason;
+
       if (submit && isMedidor) {
         try {
           const pos = await getCurrentPositionAsync();
           const lat = pos?.coords?.latitude;
           const lng = pos?.coords?.longitude;
-          if (Number.isFinite(lat) && Number.isFinite(lng)) nextEndCustomer.maps_url = buildMapsUrl(lat, lng);
+          if (Number.isFinite(lat) && Number.isFinite(lng)) {
+            nextEndCustomer.maps_url = buildMapsUrl(lat, lng);
+          }
         } catch {}
         if (item18Changed) {
           shouldReturnToSeller = true;
           finalReason = finalReason || DEFAULT_RETURN_REASON_ITEM_18;
         }
       }
+
       return saveMeasurementDetailed(quoteId, {
         form,
-        submit,
+        submit: shouldReturnToSeller ? false : submit,
         returnToSeller: shouldReturnToSeller,
         returnReason: finalReason,
         endCustomer: nextEndCustomer,
@@ -494,21 +542,18 @@ export default function MedicionDetailPage() {
       });
     },
     onSuccess: (response, variables) => {
-      const isFinalSend = variables?.submit === true;
-      if (isFinalSend) {
+      if (variables?.submit === true) {
         const sentToSeller = response?.returned_to_seller === true || response?.moved_to_seller === true;
         window.alert(
           sentToSeller
             ? "La medición fue enviada al vendedor correctamente."
             : "La medición fue enviada al técnico correctamente.",
         );
-        navigate("/menu", { replace: true });
+        goToMenuHard(navigate);
         return;
       }
       if (response?.returned_to_seller) {
-        setLastMessage("La medición fue enviada al vendedor correctamente.");
-      } else if (response?.moved_to_tecnica) {
-        setLastMessage("La medición fue enviada al técnico correctamente.");
+        setLastMessage("El portón fue devuelto al vendedor para rehacer el presupuesto.");
       } else {
         setLastMessage("Guardado.");
       }
@@ -517,10 +562,20 @@ export default function MedicionDetailPage() {
   });
 
   const rejectM = useMutation({
-    mutationFn: (notes) => reviewMeasurement(quoteId, { action: "return_to_seller", notes }),
+    mutationFn: async (notes) => {
+      await saveMeasurementDetailed(quoteId, {
+        form,
+        submit: false,
+        returnToSeller: false,
+        returnReason: "",
+        endCustomer: quote?.end_customer || {},
+        baselineForm,
+      });
+      return reviewMeasurement(quoteId, { action: "reject", notes });
+    },
     onSuccess: () => {
-      window.alert("La medición fue enviada al vendedor correctamente.");
-      navigate("/menu", { replace: true });
+      window.alert("La revisión técnica fue enviada al vendedor correctamente.");
+      goToMenuHard(navigate);
     },
   });
 
@@ -529,10 +584,6 @@ export default function MedicionDetailPage() {
   if (!quote || !form) return <div className="container"><div className="card"><div className="muted">Sin datos de medición.</div></div></div>;
 
   const returnPath = (typeof location.state?.from === "string" && location.state.from.trim()) || "/mediciones";
-  const editableCount = editableConfiguredFields.length + fallbackSections.length;
-  const submitButtonLabel = isTechnical
-    ? "Aprobar"
-    : (item18Changed ? "Enviar al vendedor" : "Enviar al técnico");
 
   return (
     <div className="container">
@@ -546,39 +597,46 @@ export default function MedicionDetailPage() {
           </div>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             <Button variant="ghost" onClick={() => navigate(returnPath)}>Volver</Button>
-            <Button variant="secondary" disabled={saveM.isPending} onClick={() => saveM.mutate({ submit: false })}>
-              {saveM.isPending ? "Guardando..." : "Guardar"}
+            <Button variant="secondary" disabled={saveM.isPending || approveM.isPending || rejectM.isPending} onClick={() => saveM.mutate({ submit: false })}>
+              {saveM.isPending ? "Guardando..." : isTechnical ? "Guardar cambios técnicos" : "Guardar"}
             </Button>
-            <Button disabled={saveM.isPending} onClick={() => saveM.mutate({ submit: true })}>
-              {saveM.isPending ? "Procesando..." : submitButtonLabel}
-            </Button>
+
             {isTechnical ? (
-              <Button variant="ghost" disabled={rejectM.isPending} onClick={() => {
-                const notes = window.prompt("Motivo de devolución al vendedor:", "") || "";
-                if (!notes) return;
-                rejectM.mutate(notes);
-              }}>
-                {rejectM.isPending ? "Enviando..." : "Rechazar"}
+              <>
+                <Button disabled={approveM.isPending || saveM.isPending || rejectM.isPending} onClick={() => approveM.mutate()}>
+                  {approveM.isPending ? "Aprobando..." : "Aprobar"}
+                </Button>
+                <Button
+                  variant="ghost"
+                  disabled={rejectM.isPending || saveM.isPending || approveM.isPending}
+                  onClick={() => {
+                    const notes = window.prompt("Motivo de rechazo / devolución al vendedor:", "") || "";
+                    if (!notes) return;
+                    rejectM.mutate(notes);
+                  }}
+                >
+                  {rejectM.isPending ? "Devolviendo..." : "Rechazar"}
+                </Button>
+              </>
+            ) : (
+              <Button disabled={saveM.isPending} onClick={() => saveM.mutate({ submit: true })}>
+                {saveM.isPending ? "Procesando..." : item18Changed ? "Enviar al vendedor" : "Enviar al técnico"}
               </Button>
-            ) : null}
+            )}
           </div>
         </div>
 
-        <div className="spacer" />
-        <Section title="Datos del cliente">
-          <Row>
-            <Field label="Cliente"><div>{quote?.end_customer?.name || "—"}</div></Field>
-            <Field label="Teléfono"><div>{quote?.end_customer?.phone || "—"}</div></Field>
-            <Field label="Dirección"><div>{quote?.end_customer?.address || "—"}</div></Field>
-          </Row>
-          <div className="spacer" />
-          <Row>
-            <Field label="Localidad"><div>{quote?.end_customer?.city || "—"}</div></Field>
-            <Field label="Maps"><div>{quote?.end_customer?.maps_url || "—"}</div></Field>
-            <Field label="Vendedor / Distribuidor"><div>{form.distribuidor || quote?.created_by_full_name || quote?.created_by_username || "—"}</div></Field>
-          </Row>
-        </Section>
+        {item18Changed ? (
+          <>
+            <div className="spacer" />
+            <div style={{ border: "2px solid #b91c1c", background: "#fee2e2", borderRadius: 12, padding: 14, color: "#7f1d1d" }}>
+              <div style={{ fontWeight: 900, marginBottom: 6, fontSize: 18 }}>Atención</div>
+              <div style={{ fontWeight: 800 }}>Cambiaste un producto de la sección 18. Esto puede ocasionar costos adicionales y debe volver al vendedor.</div>
+            </div>
+          </>
+        ) : null}
 
+        <div className="spacer" />
         <Section title="Resumen del presupuesto">
           <Row>
             <Field label="Nota de venta"><div>{form.nota_venta || quote?.odoo_sale_order_name || quote?.quote_number || "—"}</div></Field>
@@ -595,10 +653,26 @@ export default function MedicionDetailPage() {
           </div>
         </Section>
 
+        {isTechnical ? (
+          <Section title="Resumen técnico del portón">
+            <Row>
+              <Field label="Alto final calculado (mm)"><div>{technicalSummary.finalHeight || "—"}</div></Field>
+              <Field label="Ancho final calculado (mm)"><div>{technicalSummary.finalWidth || "—"}</div></Field>
+              <Field label="Peso aproximado"><div>{technicalSummary.approxWeightLabel}</div></Field>
+            </Row>
+            <div className="spacer" />
+            <Row>
+              <Field label="Tipo de piernas"><div>{technicalSummary.tipoPiernas}</div></Field>
+              <Field label="Kg/m²"><div>{technicalSummary.kgM2}</div></Field>
+              <Field label="Superficie final aprox."><div>{technicalSummary.surfaceLabel}</div></Field>
+            </Row>
+          </Section>
+        ) : null}
+
         <Section title="Esquema de medidas">
           <Row>
-            <Field label="Alto final (mm)"><Input value={form.alto_final_mm || ""} onChange={(v) => setForm((prev) => ({ ...prev, alto_final_mm: v }))} style={{ width: "100%" }} /></Field>
-            <Field label="Ancho final (mm)"><Input value={form.ancho_final_mm || ""} onChange={(v) => setForm((prev) => ({ ...prev, ancho_final_mm: v }))} style={{ width: "100%" }} /></Field>
+            <Field label="Alto final (mm)"><Input value={form.alto_final_mm || ""} onChange={(v) => { if (!ensureTechnicalDimensionEditAllowed("alto")) return; setForm((prev) => ({ ...prev, alto_final_mm: v })); }} style={{ width: "100%" }} /></Field>
+            <Field label="Ancho final (mm)"><Input value={form.ancho_final_mm || ""} onChange={(v) => { if (!ensureTechnicalDimensionEditAllowed("ancho")) return; setForm((prev) => ({ ...prev, ancho_final_mm: v })); }} style={{ width: "100%" }} /></Field>
           </Row>
           <div className="spacer" />
           <Row>
@@ -616,19 +690,27 @@ export default function MedicionDetailPage() {
               </Field>
             ))}
           </Row>
+          <div className="spacer" />
+          <div style={{ position: "relative", width: "100%", maxWidth: 780, margin: "0 auto" }}>
+            <img src="/measurement_scheme.png" alt="Esquema de medición" style={{ width: "100%", height: "auto", display: "block" }} />
+            {SCHEME_RECT_PCTS.alto.map((rect, idx) => (
+              <div key={`overlay-alto-${idx}`} style={{ ...schemeOverlayBaseStyle, left: `${rect.left}%`, top: `${rect.top}%`, width: `${rect.width}%`, height: `${rect.height}%` }}>
+                {form.esquema?.alto?.[idx] || ""}
+              </div>
+            ))}
+            {SCHEME_RECT_PCTS.ancho.map((rect, idx) => (
+              <div key={`overlay-ancho-${idx}`} style={{ ...schemeOverlayBaseStyle, left: `${rect.left}%`, top: `${rect.top}%`, width: `${rect.width}%`, height: `${rect.height}%` }}>
+                {form.esquema?.ancho?.[idx] || ""}
+              </div>
+            ))}
+          </div>
         </Section>
 
         <Section title="Productos que puede cambiar el medidor">
-          {editableCount ? null : <div className="muted">No hay campos configurados de tipo producto para las secciones permitidas.</div>}
-
           {editableConfiguredFields.map((field) => {
             const sectionId = Number(field?.budget_section_id || 0);
             const sectionName = text(field?.budget_section_name) || `Sección ${sectionId}`;
-            const sectionCatalogProducts = (Array.isArray(catalogQ.data?.products) ? catalogQ.data.products : []).filter((product) =>
-              Array.isArray(product?.section_ids)
-                ? product.section_ids.some((sid) => Number(sid) === sectionId)
-                : false,
-            );
+            const sectionCatalogProducts = firstCatalogProductsForSection(sectionId, catalogQ.data);
             const selectedProductId = String(getByPath(form, `__selected_binding_product.${field.key}.product_id`) || "");
             return (
               <div key={field.key} style={{ marginBottom: 12 }}>
@@ -653,6 +735,7 @@ export default function MedicionDetailPage() {
                         return next;
                       });
                     }}
+                    disabled={isTechnical}
                     style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid #ddd" }}
                   >
                     <option value="">Seleccione producto…</option>
@@ -685,11 +768,11 @@ export default function MedicionDetailPage() {
                           code: text(product.code),
                           qty: 1,
                         });
-                        next = setByPath(next, `fallback_section_${section.id}`, text(product.alias || product.display_name || product.name));
                         next = setByPath(next, `__budget_section_override.${section.id}.value`, text(product.display_name || product.alias || product.name));
                         return next;
                       });
                     }}
+                    disabled={isTechnical}
                     style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid #ddd" }}
                   >
                     <option value="">Seleccione producto…</option>
@@ -702,23 +785,14 @@ export default function MedicionDetailPage() {
             );
           })}
 
-          {item18Changed ? (
-            <div style={{
-              marginTop: 14,
-              border: "2px solid #b91c1c",
-              background: "#fee2e2",
-              color: "#7f1d1d",
-              borderRadius: 12,
-              padding: 14,
-              fontWeight: 800,
-              boxShadow: "0 0 0 2px rgba(185,28,28,0.08) inset",
-            }}>
-              Atención: cambiaste un producto de la sección 18. Este cambio puede ocasionar costos adicionales y debe enviarse al vendedor.
-            </div>
+          {!editableConfiguredFields.length && !fallbackSections.length ? (
+            <div className="muted">No se encontraron productos editables para las secciones 18, 23 y 39 o 40.</div>
           ) : null}
         </Section>
 
         {saveM.isError ? (<><div className="spacer" /><div style={{ color: "#d93025", fontSize: 13 }}>{saveM.error?.message || "No se pudo guardar la medición"}</div></>) : null}
+        {approveM.isError ? (<><div className="spacer" /><div style={{ color: "#d93025", fontSize: 13 }}>{approveM.error?.message || "No se pudo aprobar la revisión técnica"}</div></>) : null}
+        {rejectM.isError ? (<><div className="spacer" /><div style={{ color: "#d93025", fontSize: 13 }}>{rejectM.error?.message || "No se pudo devolver al vendedor"}</div></>) : null}
         {lastMessage ? (<><div className="spacer" /><div className="muted">{lastMessage}</div></>) : null}
       </div>
     </div>
