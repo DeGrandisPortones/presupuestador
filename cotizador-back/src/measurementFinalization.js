@@ -704,8 +704,7 @@ function buildMeasurementApprovedMessage({ quote, acceptanceUrl, recipientName, 
     acceptanceUrl ? `Podés revisar los datos técnicos y la aceptación del cliente acá: ${acceptanceUrl}` : "",
     "Muchas gracias.",
   ].filter(Boolean);
-  return lines.join("
-");
+  return lines.join("\\n");
 }
 async function maybeSendMeasurementApprovedWhatsApp({ odoo, quote }) {
   const recipient = await resolveMeasurementNotificationTarget({ odoo, quote });
