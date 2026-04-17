@@ -559,6 +559,20 @@ async function getOrCreateRevisionQuote({ originalQuote, sourceQuote, finalLines
   );
   return ins.rows?.[0] || null;
 }
+async function renameOrderToReference(odoo, orderId, reference) {
+  const ref = toText(reference);
+  if (!orderId || !ref) return null;
+  try {
+    await odoo.executeKw("sale.order", "write", [[Number(orderId)], { name: ref, origin: ref, client_order_ref: ref }]);
+  } catch {
+    // Si Odoo no deja escribir el name, al menos quedan origin/client_order_ref.
+  }
+  const rows = await odoo.executeKw("sale.order", "read", [[Number(orderId)]], {
+    fields: ["id", "name", "origin", "client_order_ref"],
+  });
+  return rows?.[0] || null;
+}
+
 async function syncFinalQuoteToOdoo({ odoo, revisionQuote, originalQuote, sourceQuote, precomputedMetrics }) {
   const partnerId =
     toIntId(revisionQuote?.bill_to_odoo_partner_id) ||
@@ -614,7 +628,13 @@ async function syncFinalQuoteToOdoo({ odoo, revisionQuote, originalQuote, source
     origin: referenceNv,
     client_order_ref: referenceNv,
   }]);
-  const order = { id: Number(createdOrderId), name: referenceNv };
+  const orderId = Number(createdOrderId);
+  const order = (await renameOrderToReference(odoo, orderId, referenceNv)) || {
+    id: orderId,
+    name: referenceNv,
+    origin: referenceNv,
+    client_order_ref: referenceNv,
+  };
   return {
     order,
     metrics: {

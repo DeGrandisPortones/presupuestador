@@ -260,42 +260,11 @@ function MeasurementSchemeVisual({ form }) {
         padding: 16,
       }}
     >
-      <div
-        style={{
-          position: "relative",
-          width: "100%",
-          maxWidth: 780,
-          height: 300,
-          margin: "0 auto",
-          background: "linear-gradient(180deg, #e2e8f0 0%, #cbd5e1 100%)",
-          borderRadius: 18,
-          overflow: "hidden",
-          border: "2px solid #64748b",
-        }}
-      >
-        <div
-          style={{
-            position: "absolute",
-            left: "6%",
-            top: "12%",
-            width: "56%",
-            height: "74%",
-            borderRadius: 16,
-            border: "3px solid #475569",
-            background: "linear-gradient(180deg, #f8fafc 0%, #eef2f7 100%)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            color: "#475569",
-            fontWeight: 800,
-            fontSize: 14,
-          }}
-        >
-          Portón
-        </div>
+      <div style={{ position: "relative", width: "100%", maxWidth: 780, margin: "0 auto" }}>
+        <img src="/measurement_scheme.png" alt="Esquema de medición" style={{ width: "100%", height: "auto", display: "block" }} />
         {SCHEME_RECT_PCTS.alto.map((rect, idx) => (
           <div
-            key={`alto-overlay-${idx}`}
+            key={`overlay-alto-${idx}`}
             style={{
               ...schemeOverlayBaseStyle,
               left: `${rect.left}%`,
@@ -309,7 +278,7 @@ function MeasurementSchemeVisual({ form }) {
         ))}
         {SCHEME_RECT_PCTS.ancho.map((rect, idx) => (
           <div
-            key={`ancho-overlay-${idx}`}
+            key={`overlay-ancho-${idx}`}
             style={{
               ...schemeOverlayBaseStyle,
               left: `${rect.left}%`,
