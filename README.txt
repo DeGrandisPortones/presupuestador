@@ -1,9 +1,5 @@
-Reemplazo directo.
-
-Cambios:
-- En Medicion y en Revision tecnica final se quita el ID de seccion.
-- Ahora se muestra solo: nombre de la seccion y producto/opcion elegida.
-
-Archivos:
+Reemplazo directo:
 - cotizador-front/src/pages/MedicionDetailPage/index.jsx
-- cotizador-front/src/components/MeasurementReadOnlyView.jsx
+
+Cambio aplicado:
+- En medicion, las secciones editables del medidor quedan: 18, 23, 17 si existe, y 39 o 40 segun cual este en el presupuesto.

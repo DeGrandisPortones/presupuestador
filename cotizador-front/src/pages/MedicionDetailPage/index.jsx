@@ -348,9 +348,11 @@ function buildBudgetContext(quote, catalog, user) {
   };
 }
 function chooseAllowedSections(budgetSectionsById = {}) {
+  const present17 = !!budgetSectionsById[17];
   const present39 = !!budgetSectionsById[39];
   const present40 = !!budgetSectionsById[40];
   const out = new Set([18, 23]);
+  if (present17) out.add(17);
   if (present39) out.add(39);
   else if (present40) out.add(40);
   return out;
