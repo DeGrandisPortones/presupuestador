@@ -8,47 +8,30 @@ import {
 } from "../../api/measurements.js";
 import {
   adminGetTechnicalMeasurementFieldDefinitions,
+  adminGetTechnicalMeasurementRules,
 } from "../../api/admin.js";
 import { getCatalogBootstrap } from "../../api/catalog.js";
 import { useAuthStore } from "../../domain/auth/store.js";
-import { mergeMeasurementFields } from "../../domain/measurement/technicalMeasurementRuleFields.js";
+import {
+  mergeMeasurementFields,
+  parseOptions,
+} from "../../domain/measurement/technicalMeasurementRuleFields.js";
 import Button from "../../ui/Button.jsx";
 import Input from "../../ui/Input.jsx";
 
-const BASE_EDITABLE_SECTION_IDS = new Set([18, 23]);
 const DEFAULT_RETURN_REASON_ITEM_18 =
-  "El medidor cambió un producto de la sección 18. Esto puede ocasionar costos adicionales y debe revisarlo el vendedor.";
-const SCHEME_RECT_PCTS = {
-  alto: [
-    { left: 9.22, top: 43.73, width: 14.4, height: 14.24 },
-    { left: 27.02, top: 43.73, width: 14.4, height: 14.24 },
-    { left: 44.5, top: 43.73, width: 14.24, height: 14.24 },
-  ],
-  ancho: [
-    { left: 71.36, top: 22.71, width: 14.4, height: 14.24 },
-    { left: 71.36, top: 48.14, width: 14.4, height: 13.9 },
-    { left: 71.36, top: 82.71, width: 14.4, height: 14.24 },
-  ],
-};
-const schemeOverlayBaseStyle = {
-  position: "absolute",
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-  fontWeight: 900,
-  color: "#111",
-  textShadow: "0 1px 0 rgba(255,255,255,0.9)",
-  background: "rgba(255,255,255,0.55)",
-  borderRadius: 6,
-  pointerEvents: "none",
-};
+  "El cambio en el item 18 puede ocasionar costos adicionales y debe pasar al vendedor.";
+const DEFAULT_RETURN_REASON_OBSERVATIONS =
+  "El medidor dejó observaciones y debe revisarlo el vendedor antes de seguir.";
 
 function text(v) {
   return String(v ?? "").trim();
 }
 function todayISO() {
   const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(
+    d.getDate(),
+  ).padStart(2, "0")}`;
 }
 function splitName(endCustomer = {}) {
   const first = text(endCustomer.first_name);
@@ -57,10 +40,21 @@ function splitName(endCustomer = {}) {
   const parts = text(endCustomer.name).split(/\s+/).filter(Boolean);
   return { first: parts[0] || "", last: parts.slice(1).join(" ") };
 }
+function toNumberLike(value) {
+  const n = Number(String(value ?? "").replace(",", "."));
+  return Number.isFinite(n) ? n : null;
+}
+function averageTriple(values = []) {
+  const nums = (Array.isArray(values) ? values : [])
+    .map((v) => toNumberLike(v))
+    .filter((n) => Number.isFinite(n) && n > 0);
+  if (!nums.length) return "";
+  return String(Math.round(nums.reduce((acc, n) => acc + n, 0) / nums.length));
+}
 function extractBudgetDimensionMm(quote, key) {
   const dims = quote?.payload?.dimensions || {};
   const raw = key === "ancho" ? dims?.width : dims?.height;
-  const n = Number(String(raw ?? "").replace(",", "."));
+  const n = toNumberLike(raw);
   if (!Number.isFinite(n) || n <= 0) return "";
   return String(Math.round(n * 1000));
 }
@@ -107,6 +101,103 @@ function setByPath(obj, path, value) {
   cur[lastKey] = value;
   return root;
 }
+function compareRule(currentRaw, operator, compareRaw) {
+  const currentText = String(currentRaw ?? "").trim().toLowerCase();
+  const expectedText = String(compareRaw ?? "").trim().toLowerCase();
+  const currentNum = Number(String(currentRaw ?? "").replace(",", "."));
+  const expectedNum = Number(String(compareRaw ?? "").replace(",", "."));
+  switch (String(operator || "=").trim()) {
+    case "=":
+      return currentText === expectedText;
+    case "!=":
+      return currentText !== expectedText;
+    case ">":
+      return Number.isFinite(currentNum) && Number.isFinite(expectedNum) && currentNum > expectedNum;
+    case ">=":
+      return Number.isFinite(currentNum) && Number.isFinite(expectedNum) && currentNum >= expectedNum;
+    case "<":
+      return Number.isFinite(currentNum) && Number.isFinite(expectedNum) && currentNum < expectedNum;
+    case "<=":
+      return Number.isFinite(currentNum) && Number.isFinite(expectedNum) && currentNum <= expectedNum;
+    case "contains":
+      return currentText.includes(expectedText);
+    default:
+      return currentText === expectedText;
+  }
+}
+function evaluateDynamicRules({ form, quote, user, rules }) {
+  const dims = quote?.payload?.dimensions || {};
+  const budgetWidth = Number(String(dims?.width ?? "").replace(",", "."));
+  const budgetHeight = Number(String(dims?.height ?? "").replace(",", "."));
+  const context = {
+    ...form,
+    surface_m2:
+      Number.isFinite(budgetWidth) && Number.isFinite(budgetHeight)
+        ? budgetWidth * budgetHeight
+        : 0,
+    budget_width_m: Number.isFinite(budgetWidth) ? budgetWidth : 0,
+    budget_height_m: Number.isFinite(budgetHeight) ? budgetHeight : 0,
+    payment_method: quote?.payload?.payment_method || "",
+    porton_type: quote?.payload?.porton_type || "",
+    current_user: {
+      is_medidor: !!user?.is_medidor,
+      is_rev_tecnica: !!user?.is_rev_tecnica,
+      is_enc_comercial: !!user?.is_enc_comercial,
+    },
+  };
+  const hidden = new Set();
+  const forcedValues = {};
+  const allowedOptions = {};
+  for (const rule of Array.isArray(rules) ? rules : []) {
+    if (!rule?.active || !rule?.source_key) continue;
+    const current = getByPath(context, rule.source_key);
+    if (!compareRule(current, rule.operator, rule.compare_value)) continue;
+    if (rule.action_type === "set_value" && rule.target_field) forcedValues[rule.target_field] = rule.target_value;
+    if (rule.action_type === "show_field" && rule.target_field) hidden.delete(rule.target_field);
+    if (rule.action_type === "hide_field" && rule.target_field) hidden.add(rule.target_field);
+    if (rule.action_type === "allow_options" && rule.target_field) {
+      const options = Array.isArray(rule.target_options)
+        ? rule.target_options
+        : parseOptions(rule.target_value || "").map((item) => item.value);
+      allowedOptions[rule.target_field] = options;
+    }
+  }
+  return { hidden, forcedValues, allowedOptions };
+}
+function buildInitialForm(quote, current = {}) {
+  const end = quote?.end_customer || {};
+  const split = splitName(end);
+  const suggestedAlto = extractBudgetDimensionMm(quote, "alto");
+  const suggestedAncho = extractBudgetDimensionMm(quote, "ancho");
+  const esquemaAlto = normalizeTriple(current?.esquema?.alto || [], suggestedAlto);
+  const esquemaAncho = normalizeTriple(current?.esquema?.ancho || [], suggestedAncho);
+  return {
+    ...current,
+    fecha: text(current.fecha) || todayISO(),
+    fecha_nota_pedido:
+      text(current.fecha_nota_pedido) ||
+      (quote?.confirmed_at ? String(quote.confirmed_at).slice(0, 10) : ""),
+    nota_venta:
+      text(current.nota_venta) ||
+      text(quote?.final_sale_order_name || quote?.odoo_sale_order_name || quote?.quote_number),
+    cliente_nombre: text(current.cliente_nombre) || split.first,
+    cliente_apellido: text(current.cliente_apellido) || split.last,
+    distribuidor:
+      text(current.distribuidor) ||
+      text(
+        quote?.created_by_full_name ||
+          quote?.created_by_username ||
+          (quote?.created_by_role === "vendedor" ? "De Grandis Portones" : ""),
+      ),
+    esquema: {
+      alto: esquemaAlto,
+      ancho: esquemaAncho,
+    },
+    alto_final_mm: text(current.alto_final_mm) || averageTriple(esquemaAlto) || suggestedAlto,
+    ancho_final_mm: text(current.ancho_final_mm) || averageTriple(esquemaAncho) || suggestedAncho,
+    observaciones_medicion: text(current.observaciones_medicion),
+  };
+}
 function updateSchemeValue(form, axis, index, value) {
   const next = {
     ...(form.esquema || {}),
@@ -115,6 +206,27 @@ function updateSchemeValue(form, axis, index, value) {
   };
   next[axis][index] = value;
   return { ...form, esquema: next };
+}
+function Section({ title, children }) {
+  return (
+    <div className="card" style={{ background: "#fafafa", marginBottom: 12 }}>
+      <div style={{ fontWeight: 900, marginBottom: 8 }}>{title}</div>
+      {children}
+    </div>
+  );
+}
+function Row({ children }) {
+  return <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>{children}</div>;
+}
+function Field({ label, children }) {
+  return (
+    <div style={{ flex: 1, minWidth: 220 }}>
+      <div className="muted" style={{ marginBottom: 6 }}>
+        {label}
+      </div>
+      {children}
+    </div>
+  );
 }
 function buildMapsUrl(lat, lng) {
   return `https://www.google.com/maps?q=${lat},${lng}`;
@@ -129,97 +241,11 @@ function getCurrentPositionAsync() {
     });
   });
 }
-
-function toNumberLike(value) {
-  const n = Number(String(value ?? "").replace(",", "."));
-  return Number.isFinite(n) ? n : 0;
-}
-function averageMm(values = []) {
-  const nums = (Array.isArray(values) ? values : []).map((item) => toNumberLike(item)).filter((item) => item > 0);
-  if (!nums.length) return 0;
-  return Math.round(nums.reduce((acc, item) => acc + item, 0) / nums.length);
-}
-function suggestedFinalFromCurrent(currentValues = [], fallback = "") {
-  const avg = averageMm(currentValues);
-  return avg > 0 ? String(avg) : text(fallback);
-}
-function formatApproxWeight(weightKg) {
-  const value = Number(weightKg || 0);
-  if (!(value > 0)) return "—";
-  return `${Math.round(value)} kg`;
-}
-function findTipoPiernas(form, budgetSummaryItems = []) {
-  const match = (Array.isArray(budgetSummaryItems) ? budgetSummaryItems : []).find((item) => {
-    const hay = `${item?.sectionName || ""} ${item?.value || ""}`.toLowerCase();
-    return hay.includes("pierna") || hay.includes("parante") || hay.includes("soporte");
-  });
-  if (match?.value) return String(match.value).trim();
-  const parantes = text(form?.parantes?.cant);
-  if (parantes) return parantes;
-  return "—";
-}
-function buildTechnicalSummary({ quote, form, budgetSummaryItems }) {
-  const finalHeight = toNumberLike(form?.alto_final_mm) || averageMm(form?.esquema?.alto || []);
-  const finalWidth = toNumberLike(form?.ancho_final_mm) || averageMm(form?.esquema?.ancho || []);
-  const kgM2 = toNumberLike(quote?.payload?.dimensions?.kg_m2);
-  const surfaceM2 = finalHeight > 0 && finalWidth > 0 ? (finalHeight * finalWidth) / 1000000 : 0;
-  const approxWeightKg = kgM2 > 0 && surfaceM2 > 0 ? kgM2 * surfaceM2 : 0;
-  return {
-    finalHeight: finalHeight > 0 ? String(Math.round(finalHeight)) : "",
-    finalWidth: finalWidth > 0 ? String(Math.round(finalWidth)) : "",
-    approxWeightLabel: formatApproxWeight(approxWeightKg),
-    tipoPiernas: findTipoPiernas(form, budgetSummaryItems),
-    kgM2: kgM2 > 0 ? `${kgM2}` : "—",
-    surfaceLabel: surfaceM2 > 0 ? `${surfaceM2.toFixed(2)} m²` : "—",
-  };
-}
-function goToMenuHard(navigate) {
-  try {
-    navigate("/menu", { replace: true });
-    setTimeout(() => {
-      if (window.location.pathname !== "/menu") window.location.assign("/menu");
-    }, 30);
-  } catch {
-    window.location.assign("/menu");
-  }
-}
-function buildInitialForm(quote, current = {}) {
-  const end = quote?.end_customer || {};
-  const split = splitName(end);
-  const suggestedAlto = extractBudgetDimensionMm(quote, "alto");
-  const suggestedAncho = extractBudgetDimensionMm(quote, "ancho");
-  return {
-    ...current,
-    fecha: text(current.fecha) || todayISO(),
-    fecha_nota_pedido:
-      text(current.fecha_nota_pedido) ||
-      (quote?.confirmed_at ? String(quote.confirmed_at).slice(0, 10) : ""),
-    nota_venta:
-      text(current.nota_venta) ||
-      text(
-        quote?.final_sale_order_name ||
-          quote?.odoo_sale_order_name ||
-          quote?.quote_number,
-      ),
-    cliente_nombre: text(current.cliente_nombre) || split.first,
-    cliente_apellido: text(current.cliente_apellido) || split.last,
-    distribuidor:
-      text(current.distribuidor) ||
-      text(
-        quote?.created_by_full_name ||
-          quote?.created_by_username ||
-          (quote?.created_by_role === "vendedor" ? "De Grandis Portones" : ""),
-      ),
-    esquema: {
-      alto: normalizeTriple(current?.esquema?.alto || [], suggestedAlto),
-      ancho: normalizeTriple(current?.esquema?.ancho || [], suggestedAncho),
-    },
-    alto_final_mm: text(current.alto_final_mm) || suggestedFinalFromCurrent(current?.esquema?.alto || [], suggestedAlto),
-    ancho_final_mm: text(current.ancho_final_mm) || suggestedFinalFromCurrent(current?.esquema?.ancho || [], suggestedAncho),
-  };
-}
 function normalizeNameKey(value) {
-  return String(value || "").trim().toLowerCase().replace(/\s+/g, " ");
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, " ");
 }
 function buildBudgetSectionsContext(quote, catalog) {
   const sections = Array.isArray(catalog?.sections) ? catalog.sections.slice() : [];
@@ -240,7 +266,9 @@ function buildBudgetSectionsContext(quote, catalog) {
     for (const sectionIdRaw of sectionIds) {
       const sectionId = Number(sectionIdRaw);
       if (!byId[sectionId]) byId[sectionId] = { id: sectionId, name: "", selected_products: [] };
-      const displayName = String(line?.name || product?.display_name || product?.alias || product?.name || "").trim();
+      const displayName = String(
+        line?.name || product?.display_name || product?.alias || product?.name || "",
+      ).trim();
       byId[sectionId].selected_products.push({
         product_id: Number(product?.id),
         display_name: displayName,
@@ -273,6 +301,14 @@ function buildBudgetContext(quote, catalog, user) {
     budget_sections: buildBudgetSectionsContext(quote, catalog),
   };
 }
+function chooseAllowedSections(budgetSectionsById = {}) {
+  const present39 = !!budgetSectionsById[39];
+  const present40 = !!budgetSectionsById[40];
+  const out = new Set([18, 23]);
+  if (present39) out.add(39);
+  else if (present40) out.add(40);
+  return out;
+}
 function buildBudgetSummaryItems(budgetContext, form) {
   const sectionsById = budgetContext?.budget_sections?.by_id || {};
   return Object.values(sectionsById)
@@ -298,41 +334,93 @@ function productDisplayLabel(product) {
   const code = String(product?.code || "").trim();
   return `${alias || display}${code ? ` · ${code}` : ""}`.trim();
 }
-function resolveEditableSectionIds(budgetContext) {
-  const byId = budgetContext?.budget_sections?.by_id || {};
-  const ids = new Set();
-  for (const sectionId of BASE_EDITABLE_SECTION_IDS) {
-    if (byId[sectionId]?.selected_products?.length) ids.add(sectionId);
-  }
-  if (byId[39]?.selected_products?.length) ids.add(39);
-  else if (byId[40]?.selected_products?.length) ids.add(40);
-  return ids;
-}
-function firstCatalogProductsForSection(sectionId, catalog) {
-  return (Array.isArray(catalog?.products) ? catalog.products : []).filter((product) =>
-    Array.isArray(product?.section_ids)
-      ? product.section_ids.some((sid) => Number(sid) === Number(sectionId))
-      : false,
-  );
-}
-function Section({ title, children }) {
+function MeasurementSchemeVisual({ form }) {
+  const altos = normalizeTriple(form?.esquema?.alto || []);
+  const anchos = normalizeTriple(form?.esquema?.ancho || []);
+  const cellStyle = {
+    width: 64,
+    minHeight: 28,
+    borderRadius: 8,
+    border: "1px solid #d8d8d8",
+    background: "#fff",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    fontWeight: 700,
+    fontSize: 12,
+    padding: "4px 8px",
+  };
   return (
-    <div className="card" style={{ background: "#fafafa", marginBottom: 12 }}>
-      <div style={{ fontWeight: 900, marginBottom: 8 }}>{title}</div>
-      {children}
+    <div
+      style={{
+        border: "1px dashed #cbd5e1",
+        borderRadius: 14,
+        background: "#ffffff",
+        padding: 16,
+        marginBottom: 12,
+      }}
+    >
+      <div style={{ display: "flex", justifyContent: "center", gap: 14, marginBottom: 12 }}>
+        {anchos.map((value, idx) => (
+          <div key={`va-${idx}`} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
+            <div className="muted" style={{ fontSize: 11 }}>{`Ancho ${idx + 1}`}</div>
+            <div style={cellStyle}>{value || "—"}</div>
+          </div>
+        ))}
+      </div>
+      <div style={{ display: "flex", gap: 16, alignItems: "stretch", justifyContent: "center" }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 14, justifyContent: "center" }}>
+          {altos.map((value, idx) => (
+            <div key={`vh-${idx}`} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <div className="muted" style={{ width: 54, fontSize: 11 }}>{`Alto ${idx + 1}`}</div>
+              <div style={cellStyle}>{value || "—"}</div>
+            </div>
+          ))}
+        </div>
+        <div
+          style={{
+            width: 230,
+            minHeight: 180,
+            borderRadius: 18,
+            border: "3px solid #64748b",
+            background: "linear-gradient(180deg, #f8fafc 0%, #eef2f7 100%)",
+            position: "relative",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            color: "#475569",
+            fontWeight: 800,
+            fontSize: 14,
+          }}
+        >
+          Esquema del portón
+          <div style={{ position: "absolute", left: 12, top: 12, width: 10, height: 10, borderRadius: 999, background: "#94a3b8" }} />
+          <div style={{ position: "absolute", right: 12, top: 12, width: 10, height: 10, borderRadius: 999, background: "#94a3b8" }} />
+          <div style={{ position: "absolute", left: 12, bottom: 12, width: 10, height: 10, borderRadius: 999, background: "#94a3b8" }} />
+          <div style={{ position: "absolute", right: 12, bottom: 12, width: 10, height: 10, borderRadius: 999, background: "#94a3b8" }} />
+        </div>
+      </div>
     </div>
   );
 }
-function Row({ children }) {
-  return <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>{children}</div>;
-}
-function Field({ label, children }) {
-  return (
-    <div style={{ flex: 1, minWidth: 220 }}>
-      <div className="muted" style={{ marginBottom: 6 }}>{label}</div>
-      {children}
-    </div>
-  );
+function computeTechnicalSummary({ quote, form }) {
+  const kgM2 = toNumberLike(quote?.payload?.dimensions?.kg_m2) || 0;
+  const altoFinal = toNumberLike(form?.alto_final_mm) || toNumberLike(averageTriple(form?.esquema?.alto || [])) || 0;
+  const anchoFinal = toNumberLike(form?.ancho_final_mm) || toNumberLike(averageTriple(form?.esquema?.ancho || [])) || 0;
+  const areaM2 = altoFinal > 0 && anchoFinal > 0 ? (altoFinal * anchoFinal) / 1000000 : 0;
+  const pesoAprox = kgM2 > 0 && areaM2 > 0 ? Math.round(areaM2 * kgM2) : 0;
+  const tipoPiernas =
+    text(quote?.payload?.dimensions?.tipo_piernas) ||
+    text(quote?.payload?.tipo_piernas) ||
+    text(form?.tipo_piernas) ||
+    (anchoFinal > 4500 ? "Piernas dobles" : "Piernas simples");
+  return {
+    altoFinal: altoFinal ? String(Math.round(altoFinal)) : "",
+    anchoFinal: anchoFinal ? String(Math.round(anchoFinal)) : "",
+    areaM2: areaM2 ? areaM2.toFixed(2) : "",
+    pesoAprox: pesoAprox ? String(pesoAprox) : "",
+    tipoPiernas,
+  };
 }
 
 export default function MedicionDetailPage() {
@@ -354,6 +442,11 @@ export default function MedicionDetailPage() {
     queryFn: adminGetTechnicalMeasurementFieldDefinitions,
     enabled: !!quoteId,
   });
+  const dynamicRulesQ = useQuery({
+    queryKey: ["technicalMeasurementRulesForMeasurement"],
+    queryFn: adminGetTechnicalMeasurementRules,
+    enabled: !!quoteId,
+  });
   const catalogQ = useQuery({
     queryKey: ["catalogBootstrapForMeasurement", "porton"],
     queryFn: () => getCatalogBootstrap("porton"),
@@ -363,12 +456,10 @@ export default function MedicionDetailPage() {
   const quote = q.data;
   const [form, setForm] = useState(null);
   const [lastMessage, setLastMessage] = useState("");
-  const [technicalDimensionEditEnabled, setTechnicalDimensionEditEnabled] = useState({ alto: false, ancho: false });
 
   useEffect(() => {
     if (!quote) return;
     setForm(buildInitialForm(quote, quote.measurement_form || {}));
-    setTechnicalDimensionEditEnabled({ alto: false, ancho: false });
   }, [quote]);
 
   const configuredFieldDefinitions = useMemo(
@@ -383,19 +474,24 @@ export default function MedicionDetailPage() {
     () => buildBudgetContext(quote, catalogQ.data, user),
     [quote, catalogQ.data, user],
   );
+  const allowedSectionIds = useMemo(
+    () => chooseAllowedSections(budgetContext?.budget_sections?.by_id || {}),
+    [budgetContext],
+  );
+  const dynamicUi = useMemo(() => {
+    if (!form || !quote) return { hidden: new Set(), forcedValues: {}, allowedOptions: {} };
+    return evaluateDynamicRules({ form, quote, user, rules: dynamicRulesQ.data?.rules || [] });
+  }, [form, quote, user, dynamicRulesQ.data]);
   const budgetSummaryItems = useMemo(
     () => buildBudgetSummaryItems(budgetContext, form),
     [budgetContext, form],
-  );
-  const editableSectionIds = useMemo(
-    () => resolveEditableSectionIds(budgetContext),
-    [budgetContext],
   );
 
   const editableConfiguredFields = useMemo(() => {
     return allFields.filter((field) => {
       const sectionId = Number(field?.budget_section_id || 0);
-      if (!editableSectionIds.has(sectionId)) return false;
+      if (!allowedSectionIds.has(sectionId)) return false;
+      if (dynamicUi.hidden.has(String(field?.key || "").trim())) return false;
       const bindingType = String(
         field?.odoo_binding_type ||
           (String(field?.type || "") === "odoo_product" ? "selected_measurement_product" : "none"),
@@ -404,21 +500,26 @@ export default function MedicionDetailPage() {
         .toLowerCase();
       return String(field?.type || "") === "odoo_product" || bindingType === "selected_measurement_product";
     });
-  }, [allFields, editableSectionIds]);
+  }, [allFields, dynamicUi.hidden, allowedSectionIds]);
 
   const fallbackSections = useMemo(() => {
     const byId = budgetContext?.budget_sections?.by_id || {};
     const configuredIds = new Set(editableConfiguredFields.map((field) => Number(field?.budget_section_id || 0)));
-    return [...editableSectionIds]
-      .filter((sectionId) => !configuredIds.has(sectionId))
-      .map((sectionId) => ({
-        id: sectionId,
-        name: String(byId?.[sectionId]?.name || `Sección ${sectionId}`),
-        currentProducts: Array.isArray(byId?.[sectionId]?.selected_products) ? byId[sectionId].selected_products : [],
-        catalogProducts: firstCatalogProductsForSection(sectionId, catalogQ.data),
-      }))
-      .filter((section) => section.currentProducts.length > 0);
-  }, [editableSectionIds, editableConfiguredFields, budgetContext, catalogQ.data]);
+    return Object.values(byId)
+      .filter((section) => allowedSectionIds.has(Number(section?.id || 0)))
+      .filter((section) => Array.isArray(section?.selected_products) && section.selected_products.length > 0)
+      .filter((section) => !configuredIds.has(Number(section?.id || 0)))
+      .map((section) => ({
+        id: Number(section.id),
+        name: String(section.name || `Sección ${section.id}`),
+        currentProducts: section.selected_products,
+        catalogProducts: (Array.isArray(catalogQ.data?.products) ? catalogQ.data.products : []).filter((product) =>
+          Array.isArray(product?.section_ids)
+            ? product.section_ids.some((sid) => Number(sid) === Number(section.id))
+            : false,
+        ),
+      }));
+  }, [budgetContext, editableConfiguredFields, catalogQ.data, allowedSectionIds]);
 
   useEffect(() => {
     if (!form) return;
@@ -437,8 +538,11 @@ export default function MedicionDetailPage() {
       const currentSelected = getByPath(next, `__selected_binding_product.${field.key}`);
       if (!currentSelected?.product_id && selectedProducts[0]?.product_id) {
         next = setByPath(next, `__selected_binding_product.${field.key}`, selectedProducts[0]);
-        next = setByPath(next, field.key, text(selectedProducts[0]?.alias || selectedProducts[0]?.display_name || selectedProducts[0]?.raw_name));
-        next = setByPath(next, `__budget_section_override.${sectionId}.value`, text(selectedProducts[0]?.display_name || selectedProducts[0]?.alias || selectedProducts[0]?.raw_name));
+        next = setByPath(
+          next,
+          `__budget_section_override.${sectionId}.value`,
+          selectedProducts[0]?.display_name || selectedProducts[0]?.alias || selectedProducts[0]?.raw_name || "",
+        );
         changed = true;
       }
     }
@@ -452,7 +556,14 @@ export default function MedicionDetailPage() {
       const currentSelected = getByPath(next, `__fallback_selected_section_products.${section.id}`);
       if (!currentSelected?.product_id && section.currentProducts[0]?.product_id) {
         next = setByPath(next, `__fallback_selected_section_products.${section.id}`, section.currentProducts[0]);
-        next = setByPath(next, `__budget_section_override.${section.id}.value`, text(section.currentProducts[0]?.display_name || section.currentProducts[0]?.alias || section.currentProducts[0]?.raw_name));
+        next = setByPath(
+          next,
+          `__budget_section_override.${section.id}.value`,
+          section.currentProducts[0]?.display_name ||
+            section.currentProducts[0]?.alias ||
+            section.currentProducts[0]?.raw_name ||
+            "",
+        );
         changed = true;
       }
     }
@@ -467,56 +578,51 @@ export default function MedicionDetailPage() {
 
   const item18Changed = useMemo(() => {
     if (!form) return false;
-    for (const field of editableConfiguredFields.filter((item) => Number(item?.budget_section_id || 0) === 18)) {
+    const configured18 = editableConfiguredFields.filter(
+      (field) => Number(field?.budget_section_id || 0) === 18,
+    );
+    for (const field of configured18) {
       const current = Number(getByPath(form, `__selected_binding_product.${field.key}.product_id`) || 0);
-      const base = Number(getByPath(baselineForm, `__selected_binding_product.${field.key}.product_id`) || getByPath(form, `__budget_binding_products.${field.key}.0.product_id`) || 0);
+      const base = Number(
+        getByPath(baselineForm, `__selected_binding_product.${field.key}.product_id`) ||
+          getByPath(form, `__budget_binding_products.${field.key}.0.product_id`) ||
+          0,
+      );
       if (current && base && current !== base) return true;
     }
     const currentFallback = Number(getByPath(form, `__fallback_selected_section_products.18.product_id`) || 0);
-    const baseFallback = Number(getByPath(baselineForm, `__fallback_selected_section_products.18.product_id`) || getByPath(form, `__fallback_budget_binding_products.18.0.product_id`) || 0);
+    const baseFallback = Number(
+      getByPath(baselineForm, `__fallback_selected_section_products.18.product_id`) ||
+        getByPath(form, `__fallback_budget_binding_products.18.0.product_id`) ||
+        0,
+    );
     return !!(currentFallback && baseFallback && currentFallback !== baseFallback);
   }, [form, baselineForm, editableConfiguredFields]);
 
-  const technicalSummary = useMemo(
-    () => buildTechnicalSummary({ quote, form, budgetSummaryItems }),
-    [quote, form, budgetSummaryItems],
-  );
+  const hasObservationsForSeller = !!text(form?.observaciones_medicion);
+  const mustGoToSeller = item18Changed || hasObservationsForSeller;
+  const technicalSummary = useMemo(() => computeTechnicalSummary({ quote, form }), [quote, form]);
 
-  function ensureTechnicalDimensionEditAllowed(axis) {
-    if (!isTechnical) return true;
-    const key = axis === "alto" ? "alto" : "ancho";
-    if (technicalDimensionEditEnabled[key]) return true;
-    const ok = window.confirm("¿Desea modificar el dato de alto y ancho finales?");
-    if (ok) {
-      setTechnicalDimensionEditEnabled((prev) => ({ ...prev, [key]: true }));
+  function handleTechnicalFinalDimensionChange(key, value) {
+    if (!isTechnical) {
+      setForm((prev) => ({ ...prev, [key]: value }));
+      return;
     }
-    return ok;
+    const previous = text(form?.[key]);
+    if (value === previous) {
+      setForm((prev) => ({ ...prev, [key]: value }));
+      return;
+    }
+    const confirmed = window.confirm("¿Desea modificar el dato de alto y ancho finales?");
+    if (!confirmed) return;
+    setForm((prev) => ({ ...prev, [key]: value }));
   }
 
-  const approveM = useMutation({
-    mutationFn: async () => {
-      await saveMeasurementDetailed(quoteId, {
-        form,
-        submit: false,
-        returnToSeller: false,
-        returnReason: "",
-        endCustomer: quote?.end_customer || {},
-        baselineForm,
-      });
-      return reviewMeasurement(quoteId, { action: "approve", notes: "" });
-    },
-    onSuccess: () => {
-      window.alert("La revisión técnica fue aprobada correctamente.");
-      goToMenuHard(navigate);
-    },
-  });
-
-  const saveM = useMutation({
-    mutationFn: async ({ submit, returnToSeller = false, returnReason = "" }) => {
+  const saveMedicionM = useMutation({
+    mutationFn: async ({ submit }) => {
       let nextEndCustomer = { ...(quote?.end_customer || {}) };
-      let shouldReturnToSeller = returnToSeller;
-      let finalReason = returnReason;
-
+      let returnToSeller = false;
+      let returnReason = "";
       if (submit && isMedidor) {
         try {
           const pos = await getCurrentPositionAsync();
@@ -525,18 +631,24 @@ export default function MedicionDetailPage() {
           if (Number.isFinite(lat) && Number.isFinite(lng)) {
             nextEndCustomer.maps_url = buildMapsUrl(lat, lng);
           }
-        } catch {}
+        } catch {
+          // sin ubicación, no bloquea el guardado
+        }
         if (item18Changed) {
-          shouldReturnToSeller = true;
-          finalReason = finalReason || DEFAULT_RETURN_REASON_ITEM_18;
+          returnToSeller = true;
+          returnReason = DEFAULT_RETURN_REASON_ITEM_18;
+        } else if (hasObservationsForSeller) {
+          returnToSeller = true;
+          returnReason = `${DEFAULT_RETURN_REASON_OBSERVATIONS}\n\nObservación del medidor: ${text(
+            form?.observaciones_medicion,
+          )}`;
         }
       }
-
       return saveMeasurementDetailed(quoteId, {
         form,
-        submit: shouldReturnToSeller ? false : submit,
-        returnToSeller: shouldReturnToSeller,
-        returnReason: finalReason,
+        submit,
+        returnToSeller,
+        returnReason,
         endCustomer: nextEndCustomer,
         baselineForm,
       });
@@ -549,20 +661,16 @@ export default function MedicionDetailPage() {
             ? "La medición fue enviada al vendedor correctamente."
             : "La medición fue enviada al técnico correctamente.",
         );
-        goToMenuHard(navigate);
+        navigate("/menu", { replace: true });
         return;
       }
-      if (response?.returned_to_seller) {
-        setLastMessage("El portón fue devuelto al vendedor para rehacer el presupuesto.");
-      } else {
-        setLastMessage("Guardado.");
-      }
+      setLastMessage("Guardado.");
       q.refetch();
     },
   });
 
-  const rejectM = useMutation({
-    mutationFn: async (notes) => {
+  const approveTechnicalM = useMutation({
+    mutationFn: async () => {
       await saveMeasurementDetailed(quoteId, {
         form,
         submit: false,
@@ -571,77 +679,156 @@ export default function MedicionDetailPage() {
         endCustomer: quote?.end_customer || {},
         baselineForm,
       });
-      return reviewMeasurement(quoteId, { action: "reject", notes });
+      return reviewMeasurement(quoteId, { action: "approve", notes: null });
     },
     onSuccess: () => {
-      window.alert("La revisión técnica fue enviada al vendedor correctamente.");
-      goToMenuHard(navigate);
+      window.alert("La revisión técnica final fue aprobada correctamente.");
+      navigate("/menu", { replace: true });
     },
   });
 
-  if (q.isLoading) return <div className="container"><div className="card"><div className="muted">Cargando medición...</div></div></div>;
-  if (q.isError) return <div className="container"><div className="card"><div style={{ color: "#d93025", fontSize: 13 }}>{q.error?.message || "No se pudo cargar la medición"}</div></div></div>;
-  if (!quote || !form) return <div className="container"><div className="card"><div className="muted">Sin datos de medición.</div></div></div>;
+  const rejectTechnicalM = useMutation({
+    mutationFn: (notes) => reviewMeasurement(quoteId, { action: "return_to_seller", notes }),
+    onSuccess: () => {
+      window.alert("La revisión técnica final fue enviada al vendedor correctamente.");
+      navigate("/menu", { replace: true });
+    },
+  });
 
-  const returnPath = (typeof location.state?.from === "string" && location.state.from.trim()) || "/mediciones";
+  if (q.isLoading) {
+    return (
+      <div className="container">
+        <div className="card">
+          <div className="muted">Cargando medición...</div>
+        </div>
+      </div>
+    );
+  }
+  if (q.isError) {
+    return (
+      <div className="container">
+        <div className="card">
+          <div style={{ color: "#d93025", fontSize: 13 }}>
+            {q.error?.message || "No se pudo cargar la medición"}
+          </div>
+        </div>
+      </div>
+    );
+  }
+  if (!quote || !form) {
+    return (
+      <div className="container">
+        <div className="card">
+          <div className="muted">Sin datos de medición.</div>
+        </div>
+      </div>
+    );
+  }
+
+  const returnPath =
+    (typeof location.state?.from === "string" && location.state.from.trim()) || "/mediciones";
+  const editableCount = editableConfiguredFields.length + fallbackSections.length;
+  const submitButtonLabel = isTechnical
+    ? "Aprobar revisión final"
+    : mustGoToSeller
+      ? "Enviar al vendedor"
+      : "Enviar al técnico";
+  const pageTitle = isTechnical ? "Revisión técnica final" : "Medición";
 
   return (
     <div className="container">
       <div className="card">
-        <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start", flexWrap: "wrap" }}>
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            gap: 12,
+            alignItems: "flex-start",
+            flexWrap: "wrap",
+          }}
+        >
           <div>
-            <h2 style={{ margin: 0 }}>Medición</h2>
+            <h2 style={{ margin: 0 }}>{pageTitle}</h2>
             <div className="muted" style={{ marginTop: 6 }}>
               Cliente: <b>{quote?.end_customer?.name || "—"}</b> · Estado: <b>{quote?.measurement_status || "pending"}</b>
             </div>
           </div>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <Button variant="ghost" onClick={() => navigate(returnPath)}>Volver</Button>
-            <Button variant="secondary" disabled={saveM.isPending || approveM.isPending || rejectM.isPending} onClick={() => saveM.mutate({ submit: false })}>
-              {saveM.isPending ? "Guardando..." : isTechnical ? "Guardar cambios técnicos" : "Guardar"}
+            <Button variant="ghost" onClick={() => navigate(returnPath)}>
+              Volver
             </Button>
-
+            {!isTechnical ? (
+              <Button
+                variant="secondary"
+                disabled={saveMedicionM.isPending}
+                onClick={() => saveMedicionM.mutate({ submit: false })}
+              >
+                {saveMedicionM.isPending ? "Guardando..." : "Guardar"}
+              </Button>
+            ) : null}
             {isTechnical ? (
               <>
-                <Button disabled={approveM.isPending || saveM.isPending || rejectM.isPending} onClick={() => approveM.mutate()}>
-                  {approveM.isPending ? "Aprobando..." : "Aprobar"}
+                <Button disabled={approveTechnicalM.isPending} onClick={() => approveTechnicalM.mutate()}>
+                  {approveTechnicalM.isPending ? "Aprobando..." : submitButtonLabel}
                 </Button>
                 <Button
                   variant="ghost"
-                  disabled={rejectM.isPending || saveM.isPending || approveM.isPending}
+                  disabled={rejectTechnicalM.isPending}
                   onClick={() => {
-                    const notes = window.prompt("Motivo de rechazo / devolución al vendedor:", "") || "";
+                    const notes = window.prompt("Motivo de devolución al vendedor:", "") || "";
                     if (!notes) return;
-                    rejectM.mutate(notes);
+                    rejectTechnicalM.mutate(notes);
                   }}
                 >
-                  {rejectM.isPending ? "Devolviendo..." : "Rechazar"}
+                  {rejectTechnicalM.isPending ? "Enviando..." : "Rechazar y enviar al vendedor"}
                 </Button>
               </>
             ) : (
-              <Button disabled={saveM.isPending} onClick={() => saveM.mutate({ submit: true })}>
-                {saveM.isPending ? "Procesando..." : item18Changed ? "Enviar al vendedor" : "Enviar al técnico"}
+              <Button disabled={saveMedicionM.isPending} onClick={() => saveMedicionM.mutate({ submit: true })}>
+                {saveMedicionM.isPending ? "Procesando..." : submitButtonLabel}
               </Button>
             )}
           </div>
         </div>
 
-        {item18Changed ? (
-          <>
-            <div className="spacer" />
-            <div style={{ border: "2px solid #b91c1c", background: "#fee2e2", borderRadius: 12, padding: 14, color: "#7f1d1d" }}>
-              <div style={{ fontWeight: 900, marginBottom: 6, fontSize: 18 }}>Atención</div>
-              <div style={{ fontWeight: 800 }}>Cambiaste un producto de la sección 18. Esto puede ocasionar costos adicionales y debe volver al vendedor.</div>
-            </div>
-          </>
-        ) : null}
-
         <div className="spacer" />
+        <Section title="Datos del cliente">
+          <Row>
+            <Field label="Cliente">
+              <div>{quote?.end_customer?.name || "—"}</div>
+            </Field>
+            <Field label="Teléfono">
+              <div>{quote?.end_customer?.phone || "—"}</div>
+            </Field>
+            <Field label="Dirección">
+              <div>{quote?.end_customer?.address || "—"}</div>
+            </Field>
+          </Row>
+          <div className="spacer" />
+          <Row>
+            <Field label="Localidad">
+              <div>{quote?.end_customer?.city || "—"}</div>
+            </Field>
+            <Field label="Maps">
+              <div>{quote?.end_customer?.maps_url || "—"}</div>
+            </Field>
+            <Field label="Vendedor / Distribuidor">
+              <div>{form.distribuidor || quote?.created_by_full_name || quote?.created_by_username || "—"}</div>
+            </Field>
+          </Row>
+        </Section>
+
         <Section title="Resumen del presupuesto">
           <Row>
-            <Field label="Nota de venta"><div>{form.nota_venta || quote?.odoo_sale_order_name || quote?.quote_number || "—"}</div></Field>
-            <Field label="Cliente"><div>{quote?.end_customer?.name || "—"}</div></Field>
-            <Field label="Vendedor / Distribuidor"><div>{form.distribuidor || quote?.created_by_full_name || quote?.created_by_username || "—"}</div></Field>
+            <Field label="Nota de venta">
+              <div>{form.nota_venta || quote?.odoo_sale_order_name || quote?.quote_number || "—"}</div>
+            </Field>
+            <Field label="Cliente">
+              <div>{quote?.end_customer?.name || "—"}</div>
+            </Field>
+            <Field label="Vendedor / Distribuidor">
+              <div>{form.distribuidor || quote?.created_by_full_name || quote?.created_by_username || "—"}</div>
+            </Field>
           </Row>
           <div className="spacer" />
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -653,32 +840,33 @@ export default function MedicionDetailPage() {
           </div>
         </Section>
 
-        {isTechnical ? (
-          <Section title="Resumen técnico del portón">
-            <Row>
-              <Field label="Alto final calculado (mm)"><div>{technicalSummary.finalHeight || "—"}</div></Field>
-              <Field label="Ancho final calculado (mm)"><div>{technicalSummary.finalWidth || "—"}</div></Field>
-              <Field label="Peso aproximado"><div>{technicalSummary.approxWeightLabel}</div></Field>
-            </Row>
-            <div className="spacer" />
-            <Row>
-              <Field label="Tipo de piernas"><div>{technicalSummary.tipoPiernas}</div></Field>
-              <Field label="Kg/m²"><div>{technicalSummary.kgM2}</div></Field>
-              <Field label="Superficie final aprox."><div>{technicalSummary.surfaceLabel}</div></Field>
-            </Row>
-          </Section>
-        ) : null}
-
         <Section title="Esquema de medidas">
+          <MeasurementSchemeVisual form={form} />
           <Row>
-            <Field label="Alto final (mm)"><Input value={form.alto_final_mm || ""} onChange={(v) => { if (!ensureTechnicalDimensionEditAllowed("alto")) return; setForm((prev) => ({ ...prev, alto_final_mm: v })); }} style={{ width: "100%" }} /></Field>
-            <Field label="Ancho final (mm)"><Input value={form.ancho_final_mm || ""} onChange={(v) => { if (!ensureTechnicalDimensionEditAllowed("ancho")) return; setForm((prev) => ({ ...prev, ancho_final_mm: v })); }} style={{ width: "100%" }} /></Field>
+            <Field label="Alto final (mm)">
+              <Input
+                value={form.alto_final_mm || ""}
+                onChange={(v) => handleTechnicalFinalDimensionChange("alto_final_mm", v)}
+                style={{ width: "100%" }}
+              />
+            </Field>
+            <Field label="Ancho final (mm)">
+              <Input
+                value={form.ancho_final_mm || ""}
+                onChange={(v) => handleTechnicalFinalDimensionChange("ancho_final_mm", v)}
+                style={{ width: "100%" }}
+              />
+            </Field>
           </Row>
           <div className="spacer" />
           <Row>
             {[0, 1, 2].map((idx) => (
               <Field key={`alto-${idx}`} label={`Alto ${idx + 1} (mm)`}>
-                <Input value={form.esquema?.alto?.[idx] || ""} onChange={(v) => setForm((prev) => updateSchemeValue(prev, "alto", idx, v))} style={{ width: "100%" }} />
+                <Input
+                  value={form.esquema?.alto?.[idx] || ""}
+                  onChange={(v) => setForm((prev) => updateSchemeValue(prev, "alto", idx, v))}
+                  style={{ width: "100%" }}
+                />
               </Field>
             ))}
           </Row>
@@ -686,43 +874,71 @@ export default function MedicionDetailPage() {
           <Row>
             {[0, 1, 2].map((idx) => (
               <Field key={`ancho-${idx}`} label={`Ancho ${idx + 1} (mm)`}>
-                <Input value={form.esquema?.ancho?.[idx] || ""} onChange={(v) => setForm((prev) => updateSchemeValue(prev, "ancho", idx, v))} style={{ width: "100%" }} />
+                <Input
+                  value={form.esquema?.ancho?.[idx] || ""}
+                  onChange={(v) => setForm((prev) => updateSchemeValue(prev, "ancho", idx, v))}
+                  style={{ width: "100%" }}
+                />
               </Field>
             ))}
           </Row>
-          <div className="spacer" />
-          <div style={{ position: "relative", width: "100%", maxWidth: 780, margin: "0 auto" }}>
-            <img src="/measurement_scheme.png" alt="Esquema de medición" style={{ width: "100%", height: "auto", display: "block" }} />
-            {SCHEME_RECT_PCTS.alto.map((rect, idx) => (
-              <div key={`overlay-alto-${idx}`} style={{ ...schemeOverlayBaseStyle, left: `${rect.left}%`, top: `${rect.top}%`, width: `${rect.width}%`, height: `${rect.height}%` }}>
-                {form.esquema?.alto?.[idx] || ""}
-              </div>
-            ))}
-            {SCHEME_RECT_PCTS.ancho.map((rect, idx) => (
-              <div key={`overlay-ancho-${idx}`} style={{ ...schemeOverlayBaseStyle, left: `${rect.left}%`, top: `${rect.top}%`, width: `${rect.width}%`, height: `${rect.height}%` }}>
-                {form.esquema?.ancho?.[idx] || ""}
-              </div>
-            ))}
-          </div>
+        </Section>
+
+        <Section title="Datos técnicos finales">
+          <Row>
+            <Field label="Alto final calculado (mm)">
+              <div>{technicalSummary.altoFinal || "—"}</div>
+            </Field>
+            <Field label="Ancho final calculado (mm)">
+              <div>{technicalSummary.anchoFinal || "—"}</div>
+            </Field>
+            <Field label="Peso aproximado (kg)">
+              <div>{technicalSummary.pesoAprox || "—"}</div>
+            </Field>
+            <Field label="Tipo de piernas">
+              <div>{technicalSummary.tipoPiernas || "—"}</div>
+            </Field>
+          </Row>
         </Section>
 
         <Section title="Productos que puede cambiar el medidor">
+          {editableCount ? null : (
+            <div className="muted">
+              No hay campos configurados de tipo producto para las secciones permitidas.
+            </div>
+          )}
+
           {editableConfiguredFields.map((field) => {
             const sectionId = Number(field?.budget_section_id || 0);
             const sectionName = text(field?.budget_section_name) || `Sección ${sectionId}`;
-            const sectionCatalogProducts = firstCatalogProductsForSection(sectionId, catalogQ.data);
-            const selectedProductId = String(getByPath(form, `__selected_binding_product.${field.key}.product_id`) || "");
+            const sectionCatalogProducts = (Array.isArray(catalogQ.data?.products)
+              ? catalogQ.data.products
+              : []
+            ).filter((product) =>
+              Array.isArray(product?.section_ids)
+                ? product.section_ids.some((sid) => Number(sid) === sectionId)
+                : false,
+            );
+            const selectedProductId = String(
+              getByPath(form, `__selected_binding_product.${field.key}.product_id`) || "",
+            );
             return (
               <div key={field.key} style={{ marginBottom: 12 }}>
                 <Field label={`${sectionName} · ID ${sectionId}`}>
                   <select
                     value={selectedProductId}
                     onChange={(e) => {
-                      const product = sectionCatalogProducts.find((item) => String(item.id) === String(e.target.value));
+                      const product = sectionCatalogProducts.find(
+                        (item) => String(item.id) === String(e.target.value),
+                      );
                       setForm((prev) => {
                         let next = prev;
                         if (!product) return next;
-                        next = setByPath(next, field.key, text(product.alias || product.display_name || product.name));
+                        next = setByPath(
+                          next,
+                          field.key,
+                          text(product.alias || product.display_name || product.name),
+                        );
                         next = setByPath(next, `__selected_binding_product.${field.key}`, {
                           product_id: Number(product.id),
                           display_name: text(product.display_name || product.alias || product.name),
@@ -731,16 +947,21 @@ export default function MedicionDetailPage() {
                           code: text(product.code),
                           qty: 1,
                         });
-                        next = setByPath(next, `__budget_section_override.${sectionId}.value`, text(product.display_name || product.alias || product.name));
+                        next = setByPath(
+                          next,
+                          `__budget_section_override.${sectionId}.value`,
+                          text(product.display_name || product.alias || product.name),
+                        );
                         return next;
                       });
                     }}
-                    disabled={isTechnical}
                     style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid #ddd" }}
                   >
                     <option value="">Seleccione producto…</option>
                     {sectionCatalogProducts.map((product) => (
-                      <option key={product.id} value={product.id}>{productDisplayLabel(product)}</option>
+                      <option key={product.id} value={product.id}>
+                        {productDisplayLabel(product)}
+                      </option>
                     ))}
                   </select>
                 </Field>
@@ -749,14 +970,18 @@ export default function MedicionDetailPage() {
           })}
 
           {fallbackSections.map((section) => {
-            const selectedProductId = String(getByPath(form, `__fallback_selected_section_products.${section.id}.product_id`) || "");
+            const selectedProductId = String(
+              getByPath(form, `__fallback_selected_section_products.${section.id}.product_id`) || "",
+            );
             return (
               <div key={`fallback-${section.id}`} style={{ marginBottom: 12 }}>
                 <Field label={`${section.name} · ID ${section.id}`}>
                   <select
                     value={selectedProductId}
                     onChange={(e) => {
-                      const product = section.catalogProducts.find((item) => String(item.id) === String(e.target.value));
+                      const product = section.catalogProducts.find(
+                        (item) => String(item.id) === String(e.target.value),
+                      );
                       setForm((prev) => {
                         let next = prev;
                         if (!product) return next;
@@ -768,16 +993,26 @@ export default function MedicionDetailPage() {
                           code: text(product.code),
                           qty: 1,
                         });
-                        next = setByPath(next, `__budget_section_override.${section.id}.value`, text(product.display_name || product.alias || product.name));
+                        next = setByPath(
+                          next,
+                          `fallback_section_${section.id}`,
+                          text(product.alias || product.display_name || product.name),
+                        );
+                        next = setByPath(
+                          next,
+                          `__budget_section_override.${section.id}.value`,
+                          text(product.display_name || product.alias || product.name),
+                        );
                         return next;
                       });
                     }}
-                    disabled={isTechnical}
                     style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid #ddd" }}
                   >
                     <option value="">Seleccione producto…</option>
                     {section.catalogProducts.map((product) => (
-                      <option key={product.id} value={product.id}>{productDisplayLabel(product)}</option>
+                      <option key={product.id} value={product.id}>
+                        {productDisplayLabel(product)}
+                      </option>
                     ))}
                   </select>
                 </Field>
@@ -785,15 +1020,70 @@ export default function MedicionDetailPage() {
             );
           })}
 
-          {!editableConfiguredFields.length && !fallbackSections.length ? (
-            <div className="muted">No se encontraron productos editables para las secciones 18, 23 y 39 o 40.</div>
+          {item18Changed ? (
+            <div
+              style={{
+                marginTop: 14,
+                border: "2px solid #b91c1c",
+                background: "#fee2e2",
+                color: "#7f1d1d",
+                borderRadius: 12,
+                padding: 14,
+                fontWeight: 800,
+                boxShadow: "0 0 0 2px rgba(185,28,28,0.08) inset",
+              }}
+            >
+              Atención: cambiaste un producto de la sección 18. Este cambio puede ocasionar costos adicionales y debe enviarse al vendedor.
+            </div>
           ) : null}
         </Section>
 
-        {saveM.isError ? (<><div className="spacer" /><div style={{ color: "#d93025", fontSize: 13 }}>{saveM.error?.message || "No se pudo guardar la medición"}</div></>) : null}
-        {approveM.isError ? (<><div className="spacer" /><div style={{ color: "#d93025", fontSize: 13 }}>{approveM.error?.message || "No se pudo aprobar la revisión técnica"}</div></>) : null}
-        {rejectM.isError ? (<><div className="spacer" /><div style={{ color: "#d93025", fontSize: 13 }}>{rejectM.error?.message || "No se pudo devolver al vendedor"}</div></>) : null}
-        {lastMessage ? (<><div className="spacer" /><div className="muted">{lastMessage}</div></>) : null}
+        <Section title="Observaciones del medidor">
+          <textarea
+            value={form.observaciones_medicion || ""}
+            onChange={(e) => setForm((prev) => ({ ...prev, observaciones_medicion: e.target.value }))}
+            rows={4}
+            style={{
+              width: "100%",
+              borderRadius: 12,
+              border: "1px solid #d7d7d7",
+              padding: 12,
+              resize: "vertical",
+              fontFamily: "inherit",
+            }}
+            placeholder="Escribí una observación para el vendedor si necesitás devolver el portón por un motivo adicional."
+          />
+          {hasObservationsForSeller ? (
+            <div
+              style={{
+                marginTop: 12,
+                border: "2px solid #b91c1c",
+                background: "#fee2e2",
+                color: "#7f1d1d",
+                borderRadius: 12,
+                padding: 14,
+                fontWeight: 800,
+              }}
+            >
+              Hay observaciones cargadas. Al enviar, este portón se derivará al vendedor para revisión.
+            </div>
+          ) : null}
+        </Section>
+
+        {(saveMedicionM.isError || approveTechnicalM.isError || rejectTechnicalM.isError) ? (
+          <>
+            <div className="spacer" />
+            <div style={{ color: "#d93025", fontSize: 13 }}>
+              {saveMedicionM.error?.message || approveTechnicalM.error?.message || rejectTechnicalM.error?.message || "No se pudo completar la acción"}
+            </div>
+          </>
+        ) : null}
+        {lastMessage ? (
+          <>
+            <div className="spacer" />
+            <div className="muted">{lastMessage}</div>
+          </>
+        ) : null}
       </div>
     </div>
   );

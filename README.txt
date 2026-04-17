@@ -4,18 +4,14 @@ Archivos incluidos:
 - cotizador-front/src/pages/MedicionDetailPage/index.jsx
 - cotizador-front/src/components/MeasurementReadOnlyView.jsx
 - cotizador-back/src/routes/measurements.routes.js
-- cotizador-back/src/measurementFinalization.js
 
-Incluye:
-- esquema visual de las 3 medidas de alto y 3 de ancho en medicion y vista de solo lectura
-- flujo correcto medidor -> vendedor o tecnica
-- tecnica ve resumen tecnico con alto/ancho finales, peso aproximado y tipo de piernas
-- tecnica puede modificar alto/ancho finales con confirmacion previa
-- aprobar tecnica dispara el endpoint correcto de aprobacion final
-- si falla la generacion de la venta final en Odoo, la aprobacion ya no queda marcada como exitosa
-- WhatsApp de aprobacion usando link de aceptacion del cliente
-
-Nota de link de aceptacion:
-- Si existe CLIENT_ACCEPTANCE_BASE_URL, el mensaje usa:
-  <CLIENT_ACCEPTANCE_BASE_URL>/aceptacion-cliente/<measurement_share_token>
-- Si no existe, usa el link publico actual de la planilla tecnica/PDF.
+Qué corrige en esta versión:
+- restaura el esquemita visual de 3 altos y 3 anchos sin sacar los 6 inputs
+- agrega observaciones del medidor
+- si hay observaciones, al enviar se deriva al vendedor con el motivo
+- el vendedor sigue viendo el motivo porque se guarda en measurement_review_notes
+- el técnico ya no usa el flujo incorrecto de “enviar a técnica” al aprobar
+- el técnico ahora aprueba por review final y rechaza al vendedor
+- el técnico ve alto/ancho final, peso aproximado y tipo de piernas
+- el técnico puede modificar alto/ancho final con confirmación
+- el listado y el backend de medición admiten también portones con medición en acopio si tienen línea de medición

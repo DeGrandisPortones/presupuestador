@@ -4,6 +4,10 @@ import { requireAuth } from "../auth.js";
 import { dbQuery } from "../db.js";
 import { ensureQuotesMeasurementColumns } from "../quotesSchema.js";
 import { finalizeMeasurementToRevisionQuote } from "../measurementFinalization.js";
+import {
+  getCommercialFinalToleranceAreaM2,
+  getTechnicalMeasurementFieldDefinitions,
+} from "../settingsDb.js";
 
 function parseMeasurementProductIds(raw) {
   return String(raw || "2865,2961")
@@ -18,9 +22,9 @@ const MEASUREMENT_PRODUCT_IDS = parseMeasurementProductIds(
     "2865,2961",
 );
 const PREVIOUSLY_BILLED_PRODUCT_ID = -900001;
-const DEFAULT_RETURN_REASON_ITEM_18 =
-  "El cambio en la sección 18 puede ocasionar costos adicionales y debe pasar al vendedor.";
-const DEFAULT_RETURN_REASON_TECHNICAL = "Devuelto por Técnica";
+const DEFAULT_RETURN_REASON = "El tamaño del portón es mayor al presupuestado originalmente";
+const DEFAULT_ITEM18_REASON = "El cambio en el item 18 puede ocasionar costos adicionales y debe pasar al vendedor.";
+const DEFAULT_OBSERVATION_REASON = "El medidor dejó observaciones y debe revisarlo el vendedor antes de seguir.";
 
 function requireMeasurementEditor(req, res, next) {
   if (
@@ -35,9 +39,7 @@ function requireMeasurementEditor(req, res, next) {
   next();
 }
 function requireTechnicalReviewer(req, res, next) {
-  if (!req.user?.is_rev_tecnica) {
-    return res.status(403).json({ ok: false, error: "No autorizado" });
-  }
+  if (!req.user?.is_rev_tecnica) return res.status(403).json({ ok: false, error: "No autorizado" });
   next();
 }
 function isUuid(v) {
@@ -60,9 +62,7 @@ function normalizeViewer(v) {
   return ["medidor", "tecnica", "comercial"].includes(s) ? s : "medidor";
 }
 function normalizeMeasurementMode(v) {
-  return String(v || "medidor").toLowerCase().trim() === "tecnica_only"
-    ? "tecnica_only"
-    : "medidor";
+  return String(v || "medidor").toLowerCase().trim() === "tecnica_only" ? "tecnica_only" : "medidor";
 }
 function normalizeMeasurementSubtype(v) {
   return String(v || "normal").toLowerCase().trim() === "sin_medicion" ? "sin_medicion" : "normal";
@@ -105,9 +105,13 @@ function validateMaps(url, { required = false } = {}) {
     const parsed = new URL(raw);
     const host = String(parsed.hostname || "").toLowerCase();
     const path = String(parsed.pathname || "").toLowerCase();
-    if (["maps.app.goo.gl", "www.google.com", "google.com", "maps.google.com", "g.page"].includes(host)) return null;
+    if (["maps.app.goo.gl", "www.google.com", "google.com", "maps.google.com", "g.page"].includes(host)) {
+      return null;
+    }
     if (host.endsWith(".google.com") && path.includes("maps")) return null;
-  } catch {}
+  } catch {
+    return "Google Maps inválido";
+  }
   return "Google Maps inválido";
 }
 function validateEndCustomerForMeasurement(endCustomer, { requireWhatsapp = false } = {}) {
@@ -120,8 +124,61 @@ function validateEndCustomerForMeasurement(endCustomer, { requireWhatsapp = fals
   return null;
 }
 function hasMeasurementLine(lines) {
-  return (Array.isArray(lines) ? lines : []).some((line) =>
-    MEASUREMENT_PRODUCT_IDS.includes(Number(line?.product_id)),
+  return (Array.isArray(lines) ? lines : []).some((l) =>
+    MEASUREMENT_PRODUCT_IDS.includes(Number(l?.product_id)),
+  );
+}
+function normalizeMeasurementFieldKey(value) {
+  return String(value || "").trim().toLowerCase();
+}
+function valuesDiffer(a, b) {
+  return JSON.stringify(a ?? null) !== JSON.stringify(b ?? null);
+}
+async function getTechnicalMeasurementFieldsSafe() {
+  try {
+    const payload = await getTechnicalMeasurementFieldDefinitions();
+    return Array.isArray(payload?.fields) ? payload.fields : [];
+  } catch {
+    return [];
+  }
+}
+function getConfiguredSensitiveItem18Keys(fields = []) {
+  const envKeys = String(process.env.MEASUREMENT_ITEM_18_KEYS || "")
+    .split(",")
+    .map((item) => normalizeMeasurementFieldKey(item))
+    .filter(Boolean);
+  const inferredKeys = (Array.isArray(fields) ? fields : [])
+    .filter((field) => Number(field?.budget_section_id || 0) === 18)
+    .map((field) => normalizeMeasurementFieldKey(field?.key))
+    .filter(Boolean);
+  return [...new Set([...envKeys, ...inferredKeys])];
+}
+function pickByPath(obj, path) {
+  const parts = String(path || "").split(".").filter(Boolean);
+  let cur = obj;
+  for (const part of parts) {
+    if (!cur || typeof cur !== "object") return undefined;
+    cur = cur[part];
+  }
+  return cur;
+}
+function detectSensitiveItem18Change({ form, baselineForm, sensitiveKeys }) {
+  const keys = Array.isArray(sensitiveKeys) ? sensitiveKeys : [];
+  for (const key of keys) {
+    if (valuesDiffer(pickByPath(form, key), pickByPath(baselineForm, key))) {
+      return {
+        changed: true,
+        key,
+        message: DEFAULT_ITEM18_REASON,
+      };
+    }
+  }
+  return { changed: false, key: null, message: "" };
+}
+function isTecnicaOnlyQuote(quote) {
+  return (
+    normalizeMeasurementMode(quote?.measurement_mode) === "tecnica_only" ||
+    normalizeMeasurementSubtype(quote?.measurement_subtype) === "sin_medicion"
   );
 }
 function isMeasurementReadyQuote(quote) {
@@ -133,18 +190,18 @@ function isMeasurementReadyQuote(quote) {
     String(quote?.technical_decision || "").toLowerCase().trim() === "approved"
   );
 }
-function isTecnicaOnlyQuote(quote) {
+function quoteRequiresMeasurementWorkflow(quote) {
+  if (!quote) return false;
+  if (hasMeasurementLine(quote?.lines)) return true;
   return (
-    normalizeMeasurementMode(quote?.measurement_mode) === "tecnica_only" ||
-    normalizeMeasurementSubtype(quote?.measurement_subtype) === "sin_medicion"
+    String(quote?.fulfillment_mode || "").toLowerCase().trim() === "produccion" && isTecnicaOnlyQuote(quote)
   );
 }
 function quoteAllowsMeasurementWorkflow(quote) {
   return (
     String(quote?.catalog_kind || "").toLowerCase().trim() === "porton" &&
-    String(quote?.fulfillment_mode || "").toLowerCase().trim() === "produccion" &&
     isMeasurementReadyQuote(quote) &&
-    (quote?.requires_measurement === true || hasMeasurementLine(quote?.lines) || isTecnicaOnlyQuote(quote))
+    quoteRequiresMeasurementWorkflow(quote)
   );
 }
 function canReadMeasurement({ user, quote }) {
@@ -166,8 +223,40 @@ function extractBudgetDimensionMm(quote, key) {
   if (!Number.isFinite(n) || n <= 0) return null;
   return Math.round(n * 1000);
 }
+function normalizeText(v) {
+  return String(v || "").trim().toLowerCase();
+}
+function averageMm(values = []) {
+  const list = (Array.isArray(values) ? values : [])
+    .map((v) => Number(String(v || "").replace(",", ".")))
+    .filter((n) => Number.isFinite(n) && n > 0);
+  if (!list.length) return 0;
+  return list.reduce((acc, n) => acc + n, 0) / list.length;
+}
+function maxMm(values = []) {
+  const list = (Array.isArray(values) ? values : [])
+    .map((v) => Number(String(v || "").replace(",", ".")))
+    .filter((n) => Number.isFinite(n) && n > 0);
+  return list.length ? Math.max(...list) : 0;
+}
+function minMm(values = []) {
+  const list = (Array.isArray(values) ? values : [])
+    .map((v) => Number(String(v || "").replace(",", ".")))
+    .filter((n) => Number.isFinite(n) && n > 0);
+  return list.length ? Math.min(...list) : 0;
+}
+function round4(n) {
+  return Math.round(Number(n || 0) * 10000) / 10000;
+}
 function deriveMeasurementPrefill(quote) {
+  const payload = quote?.payload || {};
+  const lines = Array.isArray(quote?.lines) ? quote.lines : [];
+  const portonType = normalizeText(payload.porton_type);
+  const names = lines.map((l) => normalizeText(l.name || l.raw_name || "")).join(" ");
   const out = {};
+  if (names.includes("motor") || names.includes("automat")) out.accionamiento = "automatico";
+  if (portonType.includes("coplanar")) out.levadizo = "coplanar";
+  else if (portonType) out.levadizo = "comun";
   const altoMm = extractBudgetDimensionMm(quote, "alto");
   const anchoMm = extractBudgetDimensionMm(quote, "ancho");
   if (altoMm) out.alto_mm = altoMm;
@@ -181,10 +270,34 @@ function validateFinalDimensions(form) {
   if (!anchoFinal) return "Falta ancho_final_mm";
   return null;
 }
-function stripPreviouslyBilledLines(lines) {
-  return (Array.isArray(lines) ? lines : []).filter(
-    (line) => line?.previously_billed_line !== true && Number(line?.product_id) !== PREVIOUSLY_BILLED_PRODUCT_ID,
-  );
+async function buildMeasurementSurfaceGuard({ quote, form }) {
+  const tolerance_area_m2 = Number(await getCommercialFinalToleranceAreaM2()) || 0;
+  const dims = quote?.payload?.dimensions || {};
+  const originalArea = round4((Number(dims?.width || 0) || 0) * (Number(dims?.height || 0) || 0));
+  const altoFinal = Number(String(form?.alto_final_mm || 0).replace(",", ".")) || 0;
+  const anchoFinal = Number(String(form?.ancho_final_mm || 0).replace(",", ".")) || 0;
+  const finalArea = altoFinal > 0 && anchoFinal > 0 ? round4((altoFinal * anchoFinal) / 1000000) : originalArea;
+  const difference_m2 = Math.max(0, Number((finalArea - originalArea).toFixed(4)));
+  const forced_return_to_seller = difference_m2 > tolerance_area_m2 && finalArea > originalArea;
+  return {
+    surface_original_m2: originalArea,
+    surface_final_m2: finalArea,
+    difference_m2,
+    tolerance_area_m2,
+    surface_final_formula: "alto_final_mm * ancho_final_mm / 1000000",
+    forced_return_to_seller,
+    default_return_reason: forced_return_to_seller ? DEFAULT_RETURN_REASON : "",
+    helper_values: {
+      alto_final_mm: altoFinal,
+      ancho_final_mm: anchoFinal,
+      alto_prom_mm: averageMm(form?.esquema?.alto || []),
+      ancho_prom_mm: averageMm(form?.esquema?.ancho || []),
+      alto_max_mm: maxMm(form?.esquema?.alto || []),
+      ancho_max_mm: maxMm(form?.esquema?.ancho || []),
+      alto_min_mm: minMm(form?.esquema?.alto || []),
+      ancho_min_mm: minMm(form?.esquema?.ancho || []),
+    },
+  };
 }
 function buildPreviouslyBilledLine(quote) {
   const amount = Number(quote?.deposit_amount || 0) || 0;
@@ -200,11 +313,15 @@ function buildPreviouslyBilledLine(quote) {
     line_key: "previously_billed_line",
   };
 }
+function stripPreviouslyBilledLines(lines) {
+  return (Array.isArray(lines) ? lines : []).filter(
+    (line) => line?.previously_billed_line !== true && Number(line?.product_id) !== PREVIOUSLY_BILLED_PRODUCT_ID,
+  );
+}
 function buildReturnContext(quote) {
   const currentPayload = quote?.payload && typeof quote.payload === "object" ? { ...quote.payload } : {};
   const existing =
-    currentPayload.measurement_return_context &&
-    typeof currentPayload.measurement_return_context === "object"
+    currentPayload.measurement_return_context && typeof currentPayload.measurement_return_context === "object"
       ? currentPayload.measurement_return_context
       : {};
   return {
@@ -225,32 +342,20 @@ function payloadWithoutReturnContext(basePayload) {
   delete next.measurement_return_context;
   return next;
 }
-function detectItem18Change(form, baselineForm) {
-  const currentFallback = Number(form?.__fallback_selected_section_products?.["18"]?.product_id || form?.__fallback_selected_section_products?.[18]?.product_id || 0);
-  const baseFallback = Number(
-    baselineForm?.__fallback_selected_section_products?.["18"]?.product_id ||
-      baselineForm?.__fallback_selected_section_products?.[18]?.product_id ||
-      form?.__fallback_budget_binding_products?.["18"]?.[0]?.product_id ||
-      form?.__fallback_budget_binding_products?.[18]?.[0]?.product_id ||
-      0,
+function quoteLooksLikeReturnedToSeller(quote) {
+  const status = String(quote?.measurement_status || "").toLowerCase().trim();
+  if (status === "returned_to_seller") return true;
+  const payload = quote?.payload && typeof quote.payload === "object" ? quote.payload : {};
+  if (payload?.measurement_return_context) return true;
+  const lines = Array.isArray(quote?.lines) ? quote.lines : [];
+  return lines.some(
+    (line) => line?.previously_billed_line === true || Number(line?.product_id) === PREVIOUSLY_BILLED_PRODUCT_ID,
   );
-  if (currentFallback && baseFallback && currentFallback !== baseFallback) return true;
-
-  const currentByKey = form?.__selected_binding_product || {};
-  const baseByKey = baselineForm?.__selected_binding_product || {};
-  const boundByKey = form?.__budget_binding_products || {};
-  for (const [fieldKey, currentRaw] of Object.entries(currentByKey || {})) {
-    const currentProductId = Number(currentRaw?.product_id || 0);
-    const baseProductId = Number(
-      baseByKey?.[fieldKey]?.product_id ||
-        boundByKey?.[fieldKey]?.[0]?.product_id ||
-        0,
-    );
-    const currentBindings = Array.isArray(boundByKey?.[fieldKey]) ? boundByKey[fieldKey] : [];
-    const contains18 = currentBindings.some((item) => Number(item?.product_id || 0) === baseProductId);
-    if (contains18 && currentProductId && baseProductId && currentProductId !== baseProductId) return true;
-  }
-  return false;
+}
+function buildObservationReturnReason(form) {
+  const note = String(form?.observaciones_medicion || "").trim();
+  if (!note) return "";
+  return `${DEFAULT_OBSERVATION_REASON}\n\nObservación del medidor: ${note}`;
 }
 
 export function buildMeasurementsRouter(odoo = null) {
@@ -275,24 +380,42 @@ export function buildMeasurementsRouter(odoo = null) {
       const locality = String(req.query.locality || "").trim();
       const dateFrom = normalizeDateOnly(req.query.date_from);
       const dateTo = normalizeDateOnly(req.query.date_to);
-
-      if (viewer === "medidor" && !u?.is_medidor) return res.status(403).json({ ok: false, error: "No autorizado" });
-      if (viewer === "tecnica" && !u?.is_rev_tecnica) return res.status(403).json({ ok: false, error: "No autorizado" });
-      if (viewer === "comercial" && !u?.is_enc_comercial) return res.status(403).json({ ok: false, error: "No autorizado" });
-
+      if (viewer === "medidor" && !u?.is_medidor) {
+        return res.status(403).json({ ok: false, error: "No autorizado" });
+      }
+      if (viewer === "tecnica" && !u?.is_rev_tecnica) {
+        return res.status(403).json({ ok: false, error: "No autorizado" });
+      }
+      if (viewer === "comercial" && !u?.is_enc_comercial) {
+        return res.status(403).json({ ok: false, error: "No autorizado" });
+      }
       const where = [
         "q.catalog_kind = 'porton'",
-        "q.fulfillment_mode = 'produccion'",
-        "(q.status = 'synced_odoo' or (q.status = 'pending_approvals' and q.commercial_decision = 'approved' and q.technical_decision = 'approved'))",
-        "(q.requires_measurement = true or coalesce(q.measurement_mode, 'medidor') = 'tecnica_only' or coalesce(q.measurement_subtype, 'normal') = 'sin_medicion' or exists (select 1 from jsonb_array_elements(coalesce(q.lines, '[]'::jsonb)) elem where (elem->>'product_id') = any($1::text[])))",
+        "(q.status = 'synced_odoo' or (q.status = 'pending_approvals' and q.commercial_decision = 'approved' and q.technical_decision = 'approved') or (q.status = 'draft' and q.measurement_status = 'returned_to_seller'))",
+        `(
+          exists (select 1 from jsonb_array_elements(coalesce(q.lines, '[]'::jsonb)) elem where (elem->>'product_id') = any($1::text[]))
+          or (q.fulfillment_mode = 'produccion' and (coalesce(q.measurement_mode, 'medidor') = 'tecnica_only' or coalesce(q.measurement_subtype, 'normal') = 'sin_medicion'))
+          or q.requires_measurement = true
+        )`,
       ];
       const params = [MEASUREMENT_PRODUCT_IDS.map(String)];
 
       if (viewer === "medidor") {
-        where.push(`coalesce(q.measurement_mode, 'medidor') <> 'tecnica_only'`);
-        where.push(`q.measurement_at is null`);
         params.push(Number(u.user_id));
-        where.push(`(q.measurement_assigned_to_user_id is null or q.measurement_assigned_to_user_id = $${params.length})`);
+        const medidorParam = params.length;
+        where.push(`coalesce(q.measurement_mode, 'medidor') <> 'tecnica_only'`);
+        if (status === "pending") {
+          where.push(`q.measurement_at is null`);
+          where.push(`(q.measurement_assigned_to_user_id is null or q.measurement_assigned_to_user_id = $${medidorParam})`);
+        } else if (["returned_to_seller", "submitted", "approved", "needs_fix"].includes(status)) {
+          where.push(`coalesce(q.measurement_by_user_id, q.measurement_assigned_to_user_id) = $${medidorParam}`);
+        } else if (status === "all") {
+          where.push(`(
+            (q.measurement_status = 'pending' and q.measurement_at is null and (q.measurement_assigned_to_user_id is null or q.measurement_assigned_to_user_id = $${medidorParam}))
+            or
+            (q.measurement_status in ('returned_to_seller','submitted','approved','needs_fix') and coalesce(q.measurement_by_user_id, q.measurement_assigned_to_user_id) = $${medidorParam})
+          )`);
+        }
       }
 
       if (status !== "all") {
@@ -317,18 +440,9 @@ export function buildMeasurementsRouter(odoo = null) {
         params.push(dateTo);
         where.push(`q.measurement_scheduled_for <= $${params.length}::date`);
       }
-
-      const sql = `
-        select q.*, u.username as created_by_username, u.full_name as created_by_full_name
-        from public.presupuestador_quotes q
-        left join public.presupuestador_users u on u.id = q.created_by_user_id
-        where ${where.join(" and ")}
-        order by case when q.measurement_scheduled_for is null then 1 else 0 end asc,
-                 q.measurement_scheduled_for asc,
-                 q.created_at desc nulls last,
-                 q.id desc
-        limit 300
-      `;
+      const sql = `select q.*, u.username as created_by_username, u.full_name as created_by_full_name from public.presupuestador_quotes q left join public.presupuestador_users u on u.id = q.created_by_user_id where ${where.join(
+        " and ",
+      )} order by case when q.measurement_scheduled_for is null then 1 else 0 end asc, q.measurement_scheduled_for asc, q.created_at desc nulls last, q.id desc limit 300`;
       const r = await dbQuery(sql, params);
       res.json({ ok: true, quotes: r.rows || [] });
     } catch (e) {
@@ -341,20 +455,17 @@ export function buildMeasurementsRouter(odoo = null) {
       const u = req.user;
       const id = String(req.params.id || "").trim();
       if (!isUuid(id)) return res.status(400).json({ ok: false, error: "id inválido" });
-
       const r = await dbQuery(
-        `select q.*, u.username as created_by_username, u.full_name as created_by_full_name
-           from public.presupuestador_quotes q
-           left join public.presupuestador_users u on u.id = q.created_by_user_id
-          where q.id = $1
-          limit 1`,
+        `select q.*, u.username as created_by_username, u.full_name as created_by_full_name from public.presupuestador_quotes q left join public.presupuestador_users u on u.id = q.created_by_user_id where q.id = $1 limit 1`,
         [id],
       );
       const quote = r.rows?.[0];
       if (!quote) return res.status(404).json({ ok: false, error: "Presupuesto no encontrado" });
-      if (!canReadMeasurement({ user: u, quote })) return res.status(403).json({ ok: false, error: "No autorizado" });
-
+      if (!canReadMeasurement({ user: u, quote })) {
+        return res.status(403).json({ ok: false, error: "No autorizado" });
+      }
       quote.measurement_prefill = deriveMeasurementPrefill(quote);
+      quote.measurement_surface_guard = await buildMeasurementSurfaceGuard({ quote, form: quote.measurement_form || {} });
       res.json({ ok: true, quote });
     } catch (e) {
       next(e);
@@ -367,24 +478,17 @@ export function buildMeasurementsRouter(odoo = null) {
       const id = String(req.params.id || "").trim();
       if (!isUuid(id)) return res.status(400).json({ ok: false, error: "id inválido" });
       const scheduledFor = normalizeDateOnly(req.body?.scheduled_for);
-      if (!scheduledFor) return res.status(400).json({ ok: false, error: "Falta scheduled_for (YYYY-MM-DD)" });
-
+      if (!scheduledFor) {
+        return res.status(400).json({ ok: false, error: "Falta scheduled_for (YYYY-MM-DD)" });
+      }
       const cur = await dbQuery(`select * from public.presupuestador_quotes where id=$1 limit 1`, [id]);
       const quote = cur.rows?.[0];
       if (!quote) return res.status(404).json({ ok: false, error: "Presupuesto no encontrado" });
       if (!quoteAllowsMeasurementWorkflow(quote)) {
         return res.status(400).json({ ok: false, error: "Este presupuesto no requiere medición" });
       }
-
       const upd = await dbQuery(
-        `update public.presupuestador_quotes
-            set requires_measurement = true,
-                measurement_status = case when measurement_status = 'none' then 'pending' else measurement_status end,
-                measurement_scheduled_for = $2::date,
-                measurement_scheduled_by_user_id = $3,
-                measurement_scheduled_at = now()
-          where id = $1
-          returning *`,
+        `update public.presupuestador_quotes set requires_measurement = true, measurement_status = case when measurement_status = 'none' then 'pending' else measurement_status end, measurement_scheduled_for = $2::date, measurement_scheduled_by_user_id = $3, measurement_scheduled_at = now() where id = $1 returning *`,
         [id, scheduledFor, Number(u.user_id)],
       );
       return res.json({ ok: true, quote: upd.rows?.[0] || null });
@@ -398,32 +502,29 @@ export function buildMeasurementsRouter(odoo = null) {
       const u = req.user;
       const id = String(req.params.id || "").trim();
       if (!isUuid(id)) return res.status(400).json({ ok: false, error: "id inválido" });
-
       const body = req.body || {};
       const form = body.form ?? null;
       if (!form || typeof form !== "object") {
         return res.status(400).json({ ok: false, error: "Falta form (objeto)" });
       }
       const submit = body.submit === true;
-      const returnToSeller = body.return_to_seller === true;
-      const returnReason = String(body.return_reason || "").trim();
       const endCustomer = body.end_customer ?? null;
-
       const cur = await dbQuery(`select * from public.presupuestador_quotes where id=$1 limit 1`, [id]);
       const quote = cur.rows?.[0];
       if (!quote) return res.status(404).json({ ok: false, error: "Presupuesto no encontrado" });
       if (!quoteAllowsMeasurementWorkflow(quote)) {
         return res.status(400).json({ ok: false, error: "Este presupuesto no requiere medición" });
       }
-
       const currentStatus = String(quote.measurement_status || "none").toLowerCase().trim();
       const baselineForm = body.baseline_form ?? quote?.measurement_original_form ?? quote?.measurement_form ?? {};
+      const technicalFields = await getTechnicalMeasurementFieldsSafe();
+      const sensitiveItem18Keys = getConfiguredSensitiveItem18Keys(technicalFields);
+      const item18Change = detectSensitiveItem18Change({ form, baselineForm, sensitiveKeys: sensitiveItem18Keys });
       const nextCustomer = mergeEndCustomer(quote.end_customer || {}, endCustomer);
       const customerErr = validateEndCustomerForMeasurement(nextCustomer, {
         requireWhatsapp: submit && !!u?.is_rev_tecnica,
       });
       if (customerErr) return res.status(400).json({ ok: false, error: customerErr });
-
       if (!u?.is_rev_tecnica && !u?.is_medidor) {
         return res.status(403).json({ ok: false, error: "No autorizado" });
       }
@@ -440,10 +541,21 @@ export function buildMeasurementsRouter(odoo = null) {
         return res.status(409).json({ ok: false, error: "La medición ya fue enviada o aprobada" });
       }
 
-      const item18Changed = detectItem18Change(form, baselineForm);
+      const areaGuard = await buildMeasurementSurfaceGuard({ quote, form });
+      const observationReason = buildObservationReturnReason(form);
+      const forceSellerReturnByObservations = !!observationReason && !!u?.is_medidor;
+      const forceSellerReturnByItem18 = item18Change.changed === true;
+      const forceSellerReturn =
+        areaGuard.forced_return_to_seller === true ||
+        forceSellerReturnByItem18 ||
+        forceSellerReturnByObservations;
 
-      if (returnToSeller || (submit && item18Changed && u?.is_medidor)) {
-        const reason = returnReason || DEFAULT_RETURN_REASON_ITEM_18;
+      if (submit && forceSellerReturn) {
+        const reason = forceSellerReturnByItem18
+          ? item18Change.message || DEFAULT_ITEM18_REASON
+          : forceSellerReturnByObservations
+            ? observationReason
+            : areaGuard.default_return_reason || DEFAULT_RETURN_REASON;
         const ctx = buildReturnContext(quote);
         const cleanLines = stripPreviouslyBilledLines(ctx.original_lines || quote.lines);
         const nextLines = [...cleanLines, buildPreviouslyBilledLine(quote)];
@@ -460,7 +572,10 @@ export function buildMeasurementsRouter(odoo = null) {
                   measurement_status='returned_to_seller',
                   measurement_review_notes=$7,
                   measurement_review_by_user_id=$8,
-                  measurement_review_at=now()
+                  measurement_review_at=now(),
+                  measurement_by_user_id=coalesce(measurement_by_user_id, $8),
+                  measurement_assigned_to_user_id=coalesce(measurement_assigned_to_user_id, $8),
+                  measurement_at=coalesce(measurement_at, now())
             where id=$1
             returning *`,
           [
@@ -478,57 +593,34 @@ export function buildMeasurementsRouter(odoo = null) {
           ok: true,
           quote: upd.rows?.[0] || null,
           returned_to_seller: true,
-          item18_changed: item18Changed,
+          moved_to_seller: true,
+          measurement_surface_guard: areaGuard,
+          item18_change: item18Change,
         });
       }
 
       if (submit) {
         const finalDimsErr = validateFinalDimensions(form);
         if (finalDimsErr) return res.status(400).json({ ok: false, error: finalDimsErr });
-
-        const updates = [
-          `end_customer=$2::jsonb`,
-          `measurement_form=$3::jsonb`,
-          `measurement_original_form=coalesce(measurement_original_form, $4::jsonb)`,
-          `measurement_status='submitted'`,
-          `measurement_review_notes=null`,
-          `measurement_review_by_user_id=null`,
-          `measurement_review_at=null`,
-        ];
-        const params = [
-          id,
-          JSON.stringify(nextCustomer),
-          JSON.stringify(form),
-          JSON.stringify(quote.measurement_original_form || quote.measurement_form || {}),
-        ];
-
-        if (u?.is_medidor) {
-          updates.push(`measurement_assigned_to_user_id=coalesce(measurement_assigned_to_user_id, $5)`);
-          updates.push(`measurement_by_user_id=$5`);
-          updates.push(`measurement_at=now()`);
-          params.push(Number(u.user_id));
-        }
         const upd = await dbQuery(
-          `update public.presupuestador_quotes
-              set ${updates.join(", ")}
-            where id=$1
-            returning *`,
-          params,
+          `update public.presupuestador_quotes set end_customer=$2::jsonb, measurement_form=$3::jsonb, measurement_original_form=coalesce(measurement_original_form, $4::jsonb), measurement_status='submitted', measurement_review_notes=null, measurement_review_by_user_id=null, measurement_review_at=null, measurement_assigned_to_user_id=coalesce(measurement_assigned_to_user_id, $5), measurement_by_user_id=$5, measurement_at=now() where id=$1 returning *`,
+          [
+            id,
+            JSON.stringify(nextCustomer),
+            JSON.stringify(form),
+            JSON.stringify(quote.measurement_original_form || quote.measurement_form || {}),
+            Number(u.user_id),
+          ],
         );
-        return res.json({ ok: true, quote: upd.rows?.[0] || null });
+        return res.json({ ok: true, quote: upd.rows?.[0] || null, moved_to_tecnica: true, measurement_surface_guard: areaGuard });
       }
 
       const statusToKeep = currentStatus === "none" ? "pending" : currentStatus;
       const upd = await dbQuery(
-        `update public.presupuestador_quotes
-            set end_customer=$2::jsonb,
-                measurement_form=$3::jsonb,
-                measurement_status=$4
-          where id=$1
-          returning *`,
+        `update public.presupuestador_quotes set end_customer=$2::jsonb, measurement_form=$3::jsonb, measurement_status=$4 where id=$1 returning *`,
         [id, JSON.stringify(nextCustomer), JSON.stringify(form), statusToKeep],
       );
-      return res.json({ ok: true, quote: upd.rows?.[0] || null });
+      return res.json({ ok: true, quote: upd.rows?.[0] || null, measurement_surface_guard: areaGuard });
     } catch (e) {
       next(e);
     }
@@ -539,101 +631,65 @@ export function buildMeasurementsRouter(odoo = null) {
       const u = req.user;
       const id = String(req.params.id || "").trim();
       if (!isUuid(id)) return res.status(400).json({ ok: false, error: "id inválido" });
-
       const { action, notes } = req.body || {};
       const act = String(action || "").toLowerCase().trim();
       if (!["approve", "reject", "return_to_seller"].includes(act)) {
         return res.status(400).json({ ok: false, error: "action inválida" });
       }
-
       const cur = await dbQuery(`select * from public.presupuestador_quotes where id=$1 limit 1`, [id]);
       const quote = cur.rows?.[0];
       if (!quote) return res.status(404).json({ ok: false, error: "Presupuesto no encontrado" });
       if (!quoteAllowsMeasurementWorkflow(quote)) {
         return res.status(400).json({ ok: false, error: "Este presupuesto no requiere medición" });
       }
+      if (!["submitted", "approved"].includes(String(quote.measurement_status || "").toLowerCase()) && act !== "return_to_seller") {
+        return res.status(409).json({ ok: false, error: "La medición no está lista para revisar" });
+      }
+
+      if (act === "return_to_seller") {
+        const reason = String(notes || "").trim() || "Devuelto por Técnica";
+        const ctx = buildReturnContext(quote);
+        const cleanLines = stripPreviouslyBilledLines(ctx.original_lines || quote.lines);
+        const nextLines = [...cleanLines, buildPreviouslyBilledLine(quote)];
+        const payloadSource = quote.payload && typeof quote.payload === "object" ? { ...quote.payload } : {};
+        const nextPayload = payloadWithReturnContext(payloadWithoutReturnContext(payloadSource), ctx);
+        const upd = await dbQuery(
+          `update public.presupuestador_quotes set status='draft', lines=$2::jsonb, payload=$3::jsonb, measurement_status='returned_to_seller', measurement_review_notes=$4, measurement_review_by_user_id=$5, measurement_review_at=now() where id=$1 returning *`,
+          [id, JSON.stringify(nextLines), JSON.stringify(nextPayload), reason, Number(u.user_id)],
+        );
+        return res.json({ ok: true, quote: upd.rows?.[0] || null, returned_to_seller: true });
+      }
 
       if (act === "approve") {
-        if (!["submitted", "approved"].includes(String(quote.measurement_status || "").toLowerCase())) {
-          return res.status(409).json({ ok: false, error: "La medición no está lista para revisar" });
-        }
         const form = quote?.measurement_form || {};
         const finalDimsErr = validateFinalDimensions(form);
         if (finalDimsErr) return res.status(400).json({ ok: false, error: finalDimsErr });
-
         const shareToken = String(quote.measurement_share_token || makeShareToken());
         const upd = await dbQuery(
-          `update public.presupuestador_quotes
-              set measurement_status='approved',
-                  measurement_review_by_user_id=$2,
-                  measurement_review_at=now(),
-                  measurement_review_notes=null,
-                  measurement_share_token=coalesce($3, measurement_share_token),
-                  measurement_share_enabled_at=coalesce(measurement_share_enabled_at, now()),
-                  status='synced_odoo'
-            where id=$1
-            returning *`,
+          `update public.presupuestador_quotes set measurement_status='approved', measurement_review_by_user_id=$2, measurement_review_at=now(), measurement_review_notes=null, measurement_share_token=coalesce($3, measurement_share_token), measurement_share_enabled_at=coalesce(measurement_share_enabled_at, now()), status='synced_odoo' where id=$1 returning *`,
           [id, Number(u.user_id), shareToken],
         );
         const savedQuote = upd.rows?.[0] || null;
+        let finalization = null;
         try {
-          const finalization = await finalizeMeasurementToRevisionQuote({
+          finalization = await finalizeMeasurementToRevisionQuote({
             odoo,
             originalQuote: savedQuote,
             measurementForm: savedQuote?.measurement_form || {},
           });
-          if (!finalization?.synced) {
-            const reason = String(finalization?.reason || "No se pudo generar la venta final en Odoo.").trim();
-            await dbQuery(
-              `update public.presupuestador_quotes
-                  set measurement_status='submitted',
-                      measurement_review_by_user_id=null,
-                      measurement_review_at=null,
-                      measurement_review_notes=$2,
-                      status='synced_odoo'
-                where id=$1`,
-              [id, reason],
-            );
-            return res.status(502).json({ ok: false, error: reason, finalization });
-          }
-          return res.json({ ok: true, quote: savedQuote, finalization, integradorSync: null });
         } catch (e) {
-          const reason = String(e?.message || "No se pudo generar la venta final en Odoo.").trim();
-          console.error("MEASUREMENT FINALIZATION ERROR:", reason);
-          await dbQuery(
-            `update public.presupuestador_quotes
-                set measurement_status='submitted',
-                    measurement_review_by_user_id=null,
-                    measurement_review_at=null,
-                    measurement_review_notes=$2,
-                    status='synced_odoo'
-              where id=$1`,
-            [id, reason],
-          );
-          return res.status(502).json({ ok: false, error: reason });
+          console.error("MEASUREMENT FINALIZATION ERROR:", e?.message || e);
+          throw e;
         }
+        return res.json({ ok: true, quote: savedQuote, finalization });
       }
 
-      const reason = String(notes || "").trim() || DEFAULT_RETURN_REASON_TECHNICAL;
-      const ctx = buildReturnContext(quote);
-      const cleanLines = stripPreviouslyBilledLines(ctx.original_lines || quote.lines);
-      const nextLines = [...cleanLines, buildPreviouslyBilledLine(quote)];
-      const payloadSource = quote.payload && typeof quote.payload === "object" ? { ...quote.payload } : {};
-      const nextPayload = payloadWithReturnContext(payloadWithoutReturnContext(payloadSource), ctx);
+      const msg = String(notes || "Corregir").trim();
       const upd = await dbQuery(
-        `update public.presupuestador_quotes
-            set status='draft',
-                lines=$2::jsonb,
-                payload=$3::jsonb,
-                measurement_status='returned_to_seller',
-                measurement_review_notes=$4,
-                measurement_review_by_user_id=$5,
-                measurement_review_at=now()
-          where id=$1
-          returning *`,
-        [id, JSON.stringify(nextLines), JSON.stringify(nextPayload), reason, Number(u.user_id)],
+        `update public.presupuestador_quotes set measurement_status='needs_fix', measurement_review_by_user_id=$2, measurement_review_at=now(), measurement_review_notes=$3 where id=$1 returning *`,
+        [id, Number(u.user_id), msg],
       );
-      return res.json({ ok: true, quote: upd.rows?.[0] || null, returned_to_seller: true });
+      return res.json({ ok: true, quote: upd.rows?.[0] || null });
     } catch (e) {
       next(e);
     }
@@ -644,31 +700,20 @@ export function buildMeasurementsRouter(odoo = null) {
       const u = req.user;
       const id = String(req.params.id || "").trim();
       if (!isUuid(id)) return res.status(400).json({ ok: false, error: "id inválido" });
-
       const cur = await dbQuery(`select * from public.presupuestador_quotes where id=$1 limit 1`, [id]);
       const quote = cur.rows?.[0];
       if (!quote) return res.status(404).json({ ok: false, error: "Presupuesto no encontrado" });
-
       const isOwner = String(quote.created_by_user_id) === String(u.user_id);
       if (!isOwner || !(u?.is_vendedor || u?.is_distribuidor)) {
         return res.status(403).json({ ok: false, error: "No autorizado" });
       }
-
       const payloadSource = quote.payload && typeof quote.payload === "object" ? { ...quote.payload } : {};
       const ctx = payloadSource.measurement_return_context || {};
       const restoredLines = [...stripPreviouslyBilledLines(ctx.original_lines || quote.lines), buildPreviouslyBilledLine(quote)];
       const restoredPayload = payloadWithReturnContext(payloadWithoutReturnContext(ctx.original_payload || payloadSource), ctx);
       const upd = await dbQuery(
-        `update public.presupuestador_quotes
-            set lines=$2::jsonb, payload=$3::jsonb, note=$4
-          where id=$1
-          returning *`,
-        [
-          id,
-          JSON.stringify(restoredLines),
-          JSON.stringify(restoredPayload),
-          ctx.original_note !== undefined ? ctx.original_note : quote.note,
-        ],
+        `update public.presupuestador_quotes set lines=$2::jsonb, payload=$3::jsonb, note=$4 where id=$1 returning *`,
+        [id, JSON.stringify(restoredLines), JSON.stringify(restoredPayload), ctx.original_note !== undefined ? ctx.original_note : quote.note],
       );
       return res.json({ ok: true, quote: upd.rows?.[0] || null });
     } catch (e) {
@@ -681,31 +726,61 @@ export function buildMeasurementsRouter(odoo = null) {
       const u = req.user;
       const id = String(req.params.id || "").trim();
       if (!isUuid(id)) return res.status(400).json({ ok: false, error: "id inválido" });
-
       const cur = await dbQuery(`select * from public.presupuestador_quotes where id=$1 limit 1`, [id]);
       const quote = cur.rows?.[0];
       if (!quote) return res.status(404).json({ ok: false, error: "Presupuesto no encontrado" });
-
       const isOwner = String(quote.created_by_user_id) === String(u.user_id);
       if (!isOwner || !(u?.is_vendedor || u?.is_distribuidor)) {
         return res.status(403).json({ ok: false, error: "No autorizado" });
       }
-      if (String(quote.measurement_status || "") !== "returned_to_seller") {
+      if (!quoteLooksLikeReturnedToSeller(quote)) {
         return res.status(409).json({ ok: false, error: "El portón no está devuelto al vendedor" });
       }
 
-      const cleanedLines = stripPreviouslyBilledLines(quote.lines);
-      const payloadSource = quote.payload && typeof quote.payload === "object" ? { ...quote.payload } : {};
+      const quoteUpdate = req.body?.quote_update && typeof req.body.quote_update === "object" ? req.body.quote_update : null;
+      const nextEndCustomer = quoteUpdate?.end_customer !== undefined ? quoteUpdate.end_customer : quote.end_customer;
+      const nextLinesRaw = quoteUpdate?.lines !== undefined ? quoteUpdate.lines : quote.lines;
+      const cleanedLines = stripPreviouslyBilledLines(nextLinesRaw);
+      const payloadSource = quoteUpdate?.payload !== undefined ? quoteUpdate.payload : quote.payload;
+      const nextPayload = payloadWithoutReturnContext(payloadSource && typeof payloadSource === "object" ? payloadSource : {});
+      const nextFulfillmentMode = quoteUpdate?.fulfillment_mode !== undefined ? quoteUpdate.fulfillment_mode : quote.fulfillment_mode;
+      const nextPricelistId =
+        quoteUpdate?.pricelist_id !== undefined ? Number(quoteUpdate.pricelist_id || 0) || null : quote.pricelist_id;
+      const nextBillToPartnerId =
+        quoteUpdate?.bill_to_odoo_partner_id !== undefined
+          ? quoteUpdate.bill_to_odoo_partner_id
+            ? Number(quoteUpdate.bill_to_odoo_partner_id)
+            : null
+          : quote.bill_to_odoo_partner_id;
+      const nextNote = quoteUpdate?.note !== undefined ? quoteUpdate.note : quote.note;
+      const nextCatalogKind = quoteUpdate?.catalog_kind !== undefined ? quoteUpdate.catalog_kind : quote.catalog_kind;
+
       const upd = await dbQuery(
         `update public.presupuestador_quotes
             set status='synced_odoo',
-                lines=$2::jsonb,
-                payload=$3::jsonb,
+                fulfillment_mode=$2,
+                pricelist_id=$3,
+                bill_to_odoo_partner_id=$4,
+                end_customer=$5::jsonb,
+                lines=$6::jsonb,
+                payload=$7::jsonb,
+                note=$8,
+                catalog_kind=$9,
                 measurement_status='submitted',
                 measurement_review_notes=null
           where id=$1
           returning *`,
-        [id, JSON.stringify(cleanedLines), JSON.stringify(payloadWithoutReturnContext(payloadSource))],
+        [
+          id,
+          nextFulfillmentMode,
+          nextPricelistId,
+          nextBillToPartnerId,
+          JSON.stringify(nextEndCustomer || {}),
+          JSON.stringify(cleanedLines),
+          JSON.stringify(nextPayload),
+          nextNote,
+          nextCatalogKind,
+        ],
       );
       return res.json({ ok: true, quote: upd.rows?.[0] || null, moved_to_tecnica: true });
     } catch (e) {
