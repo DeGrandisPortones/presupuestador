@@ -8,6 +8,13 @@ function toNumberLike(value) {
 function round2(n) {
   return Math.round(Number(n || 0) * 100) / 100;
 }
+function smallestTriple(values = []) {
+  const nums = (Array.isArray(values) ? values : [])
+    .map((v) => toNumberLike(v))
+    .filter((n) => Number.isFinite(n) && n > 0);
+  if (!nums.length) return "";
+  return String(Math.round(Math.min(...nums)));
+}
 function normalizeTriple(values = []) {
   const arr = Array.isArray(values) ? values.slice(0, 3).map((v) => text(v)) : [];
   while (arr.length < 3) arr.push("");
@@ -319,6 +326,8 @@ function formatPlanning(planning) {
 }
 export default function MeasurementReadOnlyView({ quote }) {
   const form = quote?.measurement_form || {};
+  const derivedFinalHigh = text(form?.alto_final_mm) || smallestTriple(form?.esquema?.alto || []);
+  const derivedFinalWidth = text(form?.ancho_final_mm) || smallestTriple(form?.esquema?.ancho || []);
   const end = quote?.end_customer || {};
   const split = splitName(end);
   const budgetSummaryItems = buildBudgetSummaryItems(quote);
@@ -392,8 +401,8 @@ export default function MeasurementReadOnlyView({ quote }) {
         </Row>
         <div className="spacer" />
         <Row>
-          <Field label="Alto final editable (mm)" value={form.alto_final_mm} />
-          <Field label="Ancho final editable (mm)" value={form.ancho_final_mm} />
+          <Field label="Alto final editable (mm, toma la menor medida)" value={derivedFinalHigh} />
+          <Field label="Ancho final editable (mm, toma la menor medida)" value={derivedFinalWidth} />
           <Field label="Peso aproximado" value={formatKg(technicalSummary.peso_estimado_kg)} />
           <Field label="Tipo de piernas" value={formatPiernas(technicalSummary.piernas_tipo)} />
         </Row>

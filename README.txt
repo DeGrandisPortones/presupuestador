@@ -1,8 +1,10 @@
-Reemplazo directo:
+Reemplazo directo.
+
+Archivos:
 - cotizador-front/src/pages/MedicionDetailPage/index.jsx
 - cotizador-front/src/components/MeasurementReadOnlyView.jsx
-- cotizador-back/src/measurementFinalization.js
 
-Incluye:
-- NV final forzada en Odoo como NVxxxx
-- esquema de medición restaurado al formato anterior con measurement_scheme.png y overlays
+Cambio aplicado:
+- las medidas finales toman la menor medida ingresada por el medidor en alto y en ancho
+- en medicion se sincroniza automaticamente con la menor medida cargada
+- se mantiene el esquema original restaurado

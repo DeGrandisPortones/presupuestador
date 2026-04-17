@@ -79,6 +79,13 @@ function averageTriple(values = []) {
   if (!nums.length) return "";
   return String(Math.round(nums.reduce((acc, n) => acc + n, 0) / nums.length));
 }
+function smallestTriple(values = []) {
+  const nums = (Array.isArray(values) ? values : [])
+    .map((v) => toNumberLike(v))
+    .filter((n) => Number.isFinite(n) && n > 0);
+  if (!nums.length) return "";
+  return String(Math.round(Math.min(...nums)));
+}
 function minMm(values = []) {
   const nums = (Array.isArray(values) ? values : [])
     .map((v) => toNumberLike(v))
@@ -227,8 +234,8 @@ function buildInitialForm(quote, current = {}) {
       alto: esquemaAlto,
       ancho: esquemaAncho,
     },
-    alto_final_mm: text(current.alto_final_mm) || averageTriple(esquemaAlto) || suggestedAlto,
-    ancho_final_mm: text(current.ancho_final_mm) || averageTriple(esquemaAncho) || suggestedAncho,
+    alto_final_mm: text(current.alto_final_mm) || smallestTriple(esquemaAlto) || suggestedAlto,
+    ancho_final_mm: text(current.ancho_final_mm) || smallestTriple(esquemaAncho) || suggestedAncho,
     observaciones_medicion: text(current.observaciones_medicion),
   };
 }
@@ -743,6 +750,28 @@ export default function MedicionDetailPage() {
     if (changed) setForm(next);
   }, [form, editableConfiguredFields, fallbackSections, budgetContext]);
 
+  useEffect(() => {
+    if (!form || isTechnical) return;
+    const derivedAlto = smallestTriple(form?.esquema?.alto || []) || extractBudgetDimensionMm(quote, "alto");
+    const derivedAncho = smallestTriple(form?.esquema?.ancho || []) || extractBudgetDimensionMm(quote, "ancho");
+    const currentAlto = text(form?.alto_final_mm);
+    const currentAncho = text(form?.ancho_final_mm);
+    if (currentAlto === String(derivedAlto || "") && currentAncho === String(derivedAncho || "")) return;
+    setForm((prev) => {
+      if (!prev) return prev;
+      const nextAlto = smallestTriple(prev?.esquema?.alto || []) || extractBudgetDimensionMm(quote, "alto");
+      const nextAncho = smallestTriple(prev?.esquema?.ancho || []) || extractBudgetDimensionMm(quote, "ancho");
+      if (text(prev?.alto_final_mm) === String(nextAlto || "") && text(prev?.ancho_final_mm) === String(nextAncho || "")) {
+        return prev;
+      }
+      return {
+        ...prev,
+        alto_final_mm: String(nextAlto || ""),
+        ancho_final_mm: String(nextAncho || ""),
+      };
+    });
+  }, [form, isTechnical, quote]);
+
   const baselineForm = useMemo(
     () => quote?.measurement_original_form || buildInitialForm(quote, quote?.measurement_form || {}),
     [quote],
@@ -1024,14 +1053,14 @@ export default function MedicionDetailPage() {
         <Section title="Esquema de medidas">
           <MeasurementSchemeVisual form={form} />
           <Row>
-            <Field label="Alto final editable (mm)">
+            <Field label="Alto final editable (mm, toma la menor medida)">
               <Input
                 value={form.alto_final_mm || ""}
                 onChange={(v) => handleTechnicalFinalDimensionChange("alto_final_mm", v)}
                 style={{ width: "100%" }}
               />
             </Field>
-            <Field label="Ancho final editable (mm)">
+            <Field label="Ancho final editable (mm, toma la menor medida)">
               <Input
                 value={form.ancho_final_mm || ""}
                 onChange={(v) => handleTechnicalFinalDimensionChange("ancho_final_mm", v)}
