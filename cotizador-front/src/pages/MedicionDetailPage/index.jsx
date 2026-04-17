@@ -79,13 +79,6 @@ function averageTriple(values = []) {
   if (!nums.length) return "";
   return String(Math.round(nums.reduce((acc, n) => acc + n, 0) / nums.length));
 }
-function smallestTriple(values = []) {
-  const nums = (Array.isArray(values) ? values : [])
-    .map((v) => toNumberLike(v))
-    .filter((n) => Number.isFinite(n) && n > 0);
-  if (!nums.length) return "";
-  return String(Math.round(Math.min(...nums)));
-}
 function minMm(values = []) {
   const nums = (Array.isArray(values) ? values : [])
     .map((v) => toNumberLike(v))
@@ -234,8 +227,8 @@ function buildInitialForm(quote, current = {}) {
       alto: esquemaAlto,
       ancho: esquemaAncho,
     },
-    alto_final_mm: text(current.alto_final_mm) || smallestTriple(esquemaAlto) || suggestedAlto,
-    ancho_final_mm: text(current.ancho_final_mm) || smallestTriple(esquemaAncho) || suggestedAncho,
+    alto_final_mm: text(current.alto_final_mm) || averageTriple(esquemaAlto) || suggestedAlto,
+    ancho_final_mm: text(current.ancho_final_mm) || averageTriple(esquemaAncho) || suggestedAncho,
     observaciones_medicion: text(current.observaciones_medicion),
   };
 }
@@ -750,28 +743,6 @@ export default function MedicionDetailPage() {
     if (changed) setForm(next);
   }, [form, editableConfiguredFields, fallbackSections, budgetContext]);
 
-  useEffect(() => {
-    if (!form || isTechnical) return;
-    const derivedAlto = smallestTriple(form?.esquema?.alto || []) || extractBudgetDimensionMm(quote, "alto");
-    const derivedAncho = smallestTriple(form?.esquema?.ancho || []) || extractBudgetDimensionMm(quote, "ancho");
-    const currentAlto = text(form?.alto_final_mm);
-    const currentAncho = text(form?.ancho_final_mm);
-    if (currentAlto === String(derivedAlto || "") && currentAncho === String(derivedAncho || "")) return;
-    setForm((prev) => {
-      if (!prev) return prev;
-      const nextAlto = smallestTriple(prev?.esquema?.alto || []) || extractBudgetDimensionMm(quote, "alto");
-      const nextAncho = smallestTriple(prev?.esquema?.ancho || []) || extractBudgetDimensionMm(quote, "ancho");
-      if (text(prev?.alto_final_mm) === String(nextAlto || "") && text(prev?.ancho_final_mm) === String(nextAncho || "")) {
-        return prev;
-      }
-      return {
-        ...prev,
-        alto_final_mm: String(nextAlto || ""),
-        ancho_final_mm: String(nextAncho || ""),
-      };
-    });
-  }, [form, isTechnical, quote]);
-
   const baselineForm = useMemo(
     () => quote?.measurement_original_form || buildInitialForm(quote, quote?.measurement_form || {}),
     [quote],
@@ -808,26 +779,42 @@ export default function MedicionDetailPage() {
   );
 
   useEffect(() => {
-    if (!isTechnical || !form) return;
     const calcHigh = Number(technicalSummary?.alto_calculado_mm || 0);
     const calcWidth = Number(technicalSummary?.ancho_calculado_mm || 0);
     if (!calcHigh || !calcWidth) return;
+
     setForm((prev) => {
-      if (!prev || prev.__technical_defaults_applied) return prev;
+      if (!prev) return prev;
+      const nextHigh = String(calcHigh);
+      const nextWidth = String(calcWidth);
+
+      if (isTechnical) {
+        let changed = false;
+        const next = { ...prev };
+        if (!text(prev?.alto_final_mm)) {
+          next.alto_final_mm = nextHigh;
+          changed = true;
+        }
+        if (!text(prev?.ancho_final_mm)) {
+          next.ancho_final_mm = nextWidth;
+          changed = true;
+        }
+        return changed ? next : prev;
+      }
+
+      if (text(prev?.alto_final_mm) === nextHigh && text(prev?.ancho_final_mm) === nextWidth) {
+        return prev;
+      }
       return {
         ...prev,
-        alto_final_mm: text(prev?.alto_final_mm) || String(calcHigh),
-        ancho_final_mm: text(prev?.ancho_final_mm) || String(calcWidth),
-        __technical_defaults_applied: true,
+        alto_final_mm: nextHigh,
+        ancho_final_mm: nextWidth,
       };
     });
-  }, [isTechnical, form, technicalSummary]);
+  }, [isTechnical, technicalSummary]);
 
   function handleTechnicalFinalDimensionChange(key, value) {
-    if (!isTechnical) {
-      setForm((prev) => ({ ...prev, [key]: value }));
-      return;
-    }
+    if (!isTechnical) return;
     const previous = text(form?.[key]);
     if (value === previous) {
       setForm((prev) => ({ ...prev, [key]: value }));
@@ -843,6 +830,13 @@ export default function MedicionDetailPage() {
       let nextEndCustomer = { ...(quote?.end_customer || {}) };
       let returnToSeller = false;
       let returnReason = "";
+      const normalizedForm = !isTechnical && technicalSummary?.alto_calculado_mm && technicalSummary?.ancho_calculado_mm
+        ? {
+            ...form,
+            alto_final_mm: String(technicalSummary.alto_calculado_mm),
+            ancho_final_mm: String(technicalSummary.ancho_calculado_mm),
+          }
+        : form;
       if (submit && isMedidor) {
         try {
           const pos = await getCurrentPositionAsync();
@@ -863,7 +857,7 @@ export default function MedicionDetailPage() {
         }
       }
       return saveMeasurementDetailed(quoteId, {
-        form,
+        form: normalizedForm,
         submit,
         returnToSeller,
         returnReason,
@@ -1053,19 +1047,27 @@ export default function MedicionDetailPage() {
         <Section title="Esquema de medidas">
           <MeasurementSchemeVisual form={form} />
           <Row>
-            <Field label="Alto final editable (mm, toma la menor medida)">
-              <Input
-                value={form.alto_final_mm || ""}
-                onChange={(v) => handleTechnicalFinalDimensionChange("alto_final_mm", v)}
-                style={{ width: "100%" }}
-              />
+            <Field label="Alto final editable (mm)">
+              {isTechnical ? (
+                <Input
+                  value={form.alto_final_mm || ""}
+                  onChange={(v) => handleTechnicalFinalDimensionChange("alto_final_mm", v)}
+                  style={{ width: "100%" }}
+                />
+              ) : (
+                <StaticValue value={formatMm(technicalSummary.alto_calculado_mm)} />
+              )}
             </Field>
-            <Field label="Ancho final editable (mm, toma la menor medida)">
-              <Input
-                value={form.ancho_final_mm || ""}
-                onChange={(v) => handleTechnicalFinalDimensionChange("ancho_final_mm", v)}
-                style={{ width: "100%" }}
-              />
+            <Field label="Ancho final editable (mm)">
+              {isTechnical ? (
+                <Input
+                  value={form.ancho_final_mm || ""}
+                  onChange={(v) => handleTechnicalFinalDimensionChange("ancho_final_mm", v)}
+                  style={{ width: "100%" }}
+                />
+              ) : (
+                <StaticValue value={formatMm(technicalSummary.ancho_calculado_mm)} />
+              )}
             </Field>
           </Row>
           <div className="spacer" />
