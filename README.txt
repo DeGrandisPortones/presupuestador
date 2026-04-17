@@ -1,5 +1,7 @@
 Reemplazo directo:
-- cotizador-front/src/pages/MedicionDetailPage/index.jsx
+- cotizador-front/src/pages/CotizadorPage/index.jsx
+- cotizador-back/src/measurementFinalization.js
 
-Cambio aplicado:
-- En medicion, las secciones editables del medidor quedan: 18, 23, 17 si existe, y 39 o 40 segun cual este en el presupuesto.
+Corrige:
+- al confirmar cambios postmedicion como vendedor/distribuidor, ya no abre la planilla de medicion; muestra aviso y vuelve al menu
+- la NV final desde revision tecnica postmedicion toma el mismo cliente/partner de la NP original en Odoo

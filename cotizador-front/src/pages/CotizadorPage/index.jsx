@@ -37,6 +37,7 @@ const REBAJE_AUTO_PRODUCT_ID = 2903;
 const REBAJE_AUTO_PRODUCT_NAME = "PLANCHUELA LATERAL E INFERIOR DE 40MM (Apto aluminio - Otros)";
 const REBAJE_AUTO_PRODUCT_BASE_PRICE = 400;
 const REBAJE_AUTO_MIN_WIDTH_M = 3.5;
+const PREVIOUSLY_BILLED_PRODUCT_ID = -900001;
 
 function normalizeUrl(value) { return String(value || "").trim().replace(/\/+$/, "").toLowerCase(); }
 function editorRouteForKind(kind, id, search = "") { const safeId = String(id || "").trim(); const suffix = search || ""; if (String(kind || "porton").toLowerCase().trim() === "ipanel") return `/cotizador/ipanel/${safeId}${suffix}`; if (String(kind || "porton").toLowerCase().trim() === "otros") return `/cotizador/otros/${safeId}${suffix}`; return `/cotizador/${safeId}${suffix}`; }
@@ -105,6 +106,14 @@ function formatVisibleStatus(rawStatus, hasPersistedQuote) {
   if (!normalized) return hasPersistedQuote ? "Guardado" : "Draft";
   return String(rawStatus || "");
 }
+function quoteLooksLikeReturnedMeasurement(quote) {
+  if (!quote || typeof quote !== "object") return false;
+  if (String(quote?.measurement_status || "").trim().toLowerCase() === "returned_to_seller") return true;
+  const payload = quote?.payload && typeof quote.payload === "object" ? quote.payload : {};
+  if (payload?.measurement_return_context) return true;
+  const lines = Array.isArray(quote?.lines) ? quote.lines : [];
+  return lines.some((line) => line?.previously_billed_line === true || Number(line?.product_id) === PREVIOUSLY_BILLED_PRODUCT_ID);
+}
 
 export default function CotizadorPage({ catalogKind = "porton" }) {
   const navigate = useNavigate();
@@ -152,7 +161,7 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
   const isRevisionQuote = (quoteQ.data?.quote_kind || "original") === "copy";
   const finalStatus = String(quoteQ.data?.final_status || "");
   const isAcopioRevision = isRevisionQuote && String(quoteQ.data?.fulfillment_mode || "").trim() === "acopio";
-  const isReturnedMeasurementQuote = !isRevisionQuote && String(quoteQ.data?.measurement_status || "") === "returned_to_seller";
+  const isReturnedMeasurementQuote = !isRevisionQuote && quoteLooksLikeReturnedMeasurement(quoteQ.data);
   const returnedMeasurementReason = String(quoteQ.data?.measurement_review_notes || "").trim();
   const returnedMeasurementForced = quoteQ.data?.measurement_return_force_reason === true;
   const visibleQuoteNumber = String(quoteQ.data?.quote_number || quoteQ.data?.odoo_sale_order_name || "").trim();
@@ -349,8 +358,8 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
     onError: (e) => toast.error(e?.message || (isRevisionQuote ? "No se pudo enviar la cotización final" : "No se pudo confirmar")),
   });
 
-  const resetReturnedM = useMutation({ mutationFn: async () => { if (!quoteId) throw new Error("Quote inválida"); return await resetReturnedMeasurementQuote(quoteId); }, onSuccess: async () => { await qc.invalidateQueries({ queryKey: ["quote", quoteId] }); toast.success("Se restableció el presupuesto original."); }, onError: (e) => toast.error(e?.message || "No se pudo restablecer") });
-  const confirmReturnedM = useMutation({ mutationFn: async () => { const payload = getDraftPayload(); validateConfirm(payload); if (!quoteId) throw new Error("Quote inválida"); await updateQuote(quoteId, payload); return await confirmReturnedMeasurementQuote(quoteId); }, onSuccess: async () => { await qc.invalidateQueries({ queryKey: ["quote", quoteId] }); await qc.invalidateQueries({ queryKey: ["quotes", "mine"] }); navigate(`/mediciones/${quoteId}`); toast.success("Presupuesto actualizado. La planilla volvió a Técnica."); }, onError: (e) => toast.error(e?.message || "No se pudo enviar a técnica") });
+  const resetReturnedM = useMutation({ mutationFn: async () => { if (!quoteId) throw new Error("Quote inválida"); return await resetReturnedMeasurementQuote(quoteId); }, onSuccess: async () => { await qc.invalidateQueries({ queryKey: ["quote", quoteId] }); toast.success("Se restablecieron los productos originales del presupuesto."); }, onError: (e) => toast.error(e?.message || "No se pudo restablecer") });
+  const confirmReturnedM = useMutation({ mutationFn: async () => { const payload = getDraftPayload(); validateConfirm(payload); if (!quoteId) throw new Error("Quote inválida"); await updateQuote(quoteId, payload); return await confirmReturnedMeasurementQuote(quoteId); }, onSuccess: async () => { await qc.invalidateQueries({ queryKey: ["quote", quoteId] }); await qc.invalidateQueries({ queryKey: ["quotes", "mine"] }); navigate("/menu", { replace: true }); toast.success("Se envió a su aprobación técnica final."); }, onError: (e) => toast.error(e?.message || "No se pudo enviar a técnica") });
 
   async function getLatestProductionPlanning() {
     try {

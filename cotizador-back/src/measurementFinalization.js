@@ -573,11 +573,26 @@ async function renameOrderToReference(odoo, orderId, reference) {
   return rows?.[0] || null;
 }
 
+async function readOriginalNpPartnerId(odoo, originalQuote) {
+  const orderId = toIntId(originalQuote?.odoo_sale_order_id);
+  if (!odoo || !orderId) return null;
+  try {
+    const rows = await odoo.executeKw("sale.order", "read", [[Number(orderId)]], {
+      fields: ["id", "partner_id"],
+    });
+    return toIntId(rows?.[0]?.partner_id) || null;
+  } catch {
+    return null;
+  }
+}
+
 async function syncFinalQuoteToOdoo({ odoo, revisionQuote, originalQuote, sourceQuote, precomputedMetrics }) {
+  const originalNpPartnerId = await readOriginalNpPartnerId(odoo, originalQuote);
   const partnerId =
+    originalNpPartnerId ||
+    toIntId(originalQuote?.bill_to_odoo_partner_id) ||
     toIntId(revisionQuote?.bill_to_odoo_partner_id) ||
     toIntId(sourceQuote?.bill_to_odoo_partner_id) ||
-    toIntId(originalQuote?.bill_to_odoo_partner_id) ||
     1;
   const lines = Array.isArray(revisionQuote.lines) ? revisionQuote.lines : [];
   if (!lines.length) throw new Error("La cotización final no tiene items");
