@@ -1038,7 +1038,7 @@ export default function MedicionDetailPage() {
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
             {budgetSummaryItems.map((item) => (
               <div key={item.key} style={{ border: "1px solid #eee", borderRadius: 10, padding: 10 }}>
-                <b>{item.sectionName} · ID {item.sectionId}:</b> {item.value || "—"}
+                <b>{item.sectionName}:</b> {item.value || "—"}
               </div>
             ))}
           </div>
@@ -1153,7 +1153,7 @@ export default function MedicionDetailPage() {
             );
             return (
               <div key={field.key} style={{ marginBottom: 12 }}>
-                <Field label={`${sectionName} · ID ${sectionId}`}>
+                <Field label={sectionName}>
                   <select
                     value={selectedProductId}
                     onChange={(e) => {
@@ -1204,7 +1204,7 @@ export default function MedicionDetailPage() {
             );
             return (
               <div key={`fallback-${section.id}`} style={{ marginBottom: 12 }}>
-                <Field label={`${section.name} · ID ${section.id}`}>
+                <Field label={section.name}>
                   <select
                     value={selectedProductId}
                     onChange={(e) => {
