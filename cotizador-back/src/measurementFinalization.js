@@ -697,7 +697,6 @@ async function resolveMeasurementNotificationTarget({ odoo, quote }) {
 }
 function buildMeasurementApprovedMessage({ quote, acceptanceUrl, recipientName, recipientType }) {
   const link = String(acceptanceUrl || buildClientAcceptanceUrl(quote) || "").trim();
-  const recipientLabel = recipientType === "distribuidor" ? "su portón" : "su portón";
   const lines = [
     "Se ha realizado el relevamiento de medidas de la obra para poder comenzar la producción de su portón.",
     "",
@@ -706,8 +705,7 @@ function buildMeasurementApprovedMessage({ quote, acceptanceUrl, recipientName, 
     "",
     "Gracias por confiar en De Grandis Portones.",
   ].filter((line, index) => line || [1, 4].includes(index));
-  return lines.join("
-");
+  return lines.join("\\n");
 }
 async function maybeSendMeasurementApprovedWhatsApp({ odoo, quote }) {
   const recipient = await resolveMeasurementNotificationTarget({ odoo, quote });
