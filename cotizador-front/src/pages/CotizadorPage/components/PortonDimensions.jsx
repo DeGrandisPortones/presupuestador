@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useQuoteStore } from "../../../domain/quote/store";
 import { adminGetTechnicalMeasurementRules } from "../../../api/admin.js";
@@ -254,6 +254,7 @@ export default function PortonDimensions({ kind = "porton" }) {
   const setDimensions = useQuoteStore((s) => s.setDimensions);
   const portonType = useQuoteStore((s) => s.portonType);
   const lines = useQuoteStore((s) => s.lines);
+  const lastAutoParantesRef = useRef("");
 
   const rulesQ = useQuery({
     queryKey: ["technical-rules-dimensions-preview"],
@@ -321,9 +322,15 @@ export default function PortonDimensions({ kind = "porton" }) {
     }
     if (orientation === "verticales") {
       const nextCount = String(autoParantesCount);
-      if (String(dimensions?.cantidad_parantes || "").trim() !== nextCount) {
-        patch.cantidad_parantes = nextCount;
+      const currentCount = String(dimensions?.cantidad_parantes ?? "").trim();
+      if (!currentCount || currentCount === String(lastAutoParantesRef.current || "").trim()) {
+        if (currentCount !== nextCount) {
+          patch.cantidad_parantes = nextCount;
+        }
       }
+      lastAutoParantesRef.current = nextCount;
+    } else {
+      lastAutoParantesRef.current = String(autoParantesCount);
     }
     if (Object.keys(patch).length) {
       setDimensions(patch);
@@ -349,8 +356,8 @@ export default function PortonDimensions({ kind = "porton" }) {
     orientation === "verticales"
       ? (
           hasSpecialParantesProduct(lines)
-            ? "Se usa el ancho del portón completo y se calcula 1 parante por cada metro."
-            : "Se descuenta 0.80 m al ancho del portón y luego se calcula 1 parante por cada metro."
+            ? "Se sugiere automáticamente usando el ancho completo. Si querés, podés cambiar el valor manualmente."
+            : "Se sugiere automáticamente restando 0.80 m al ancho. Si querés, podés cambiar el valor manualmente."
         )
       : "En horizontal podés ajustar manualmente la cantidad de parantes.";
 
@@ -477,15 +484,12 @@ export default function PortonDimensions({ kind = "porton" }) {
             inputMode="numeric"
             value={String(dimensions?.cantidad_parantes ?? "")}
             onChange={(v) => {
-              if (orientation === "verticales") return;
               setDimensions({ cantidad_parantes: normalizeIntegerInput(v) });
             }}
             onBlur={(e) => {
-              if (orientation === "verticales") return;
               setDimensions({ cantidad_parantes: normalizeIntegerInput(e?.target?.value) });
             }}
-            disabled={orientation === "verticales"}
-            style={orientation === "verticales" ? disabledComputedInputStyle() : { width: "100%" }}
+            style={{ width: "100%" }}
             placeholder="Ej: 3"
           />
         </FieldBox>
