@@ -845,6 +845,55 @@ export default function MedicionDetailPage() {
     setForm((prev) => ({ ...prev, [key]: value }));
   }
 
+  function normalizePhoneForWhatsApp(phone) {
+    const digits = String(phone || "").replace(/\D/g, "");
+    if (!digits) return "";
+    if (digits.startsWith("54")) return digits;
+    return `54${digits}`;
+  }
+
+  function buildWhatsAppWebUrl({ to, message }) {
+    const phone = normalizePhoneForWhatsApp(to);
+    const body = String(message || "").trim();
+    if (!phone || !body) return "";
+    return `https://web.whatsapp.com/send?phone=${encodeURIComponent(phone)}&text=${encodeURIComponent(body)}`;
+  }
+
+  function buildFallbackApprovalMessage(response) {
+    const notification = response?.finalization?.whatsappNotification || {};
+    const link = text(notification.acceptance_url) || text(notification.public_url);
+    const recipientName = text(notification.recipient_name) || text(quote?.end_customer?.name) || "cliente";
+    const reference =
+      text(response?.finalization?.order?.name) ||
+      text(quote?.final_sale_order_name) ||
+      text(quote?.odoo_sale_order_name) ||
+      text(quote?.quote_number);
+    return [
+      `Hola ${recipientName}.`,
+      reference ? `Ya quedó aprobada la planilla técnica de la nota ${reference}.` : "Ya quedó aprobada la planilla técnica.",
+      link ? `Podés revisar los datos técnicos y aceptarlos acá: ${link}` : "",
+      "Muchas gracias.",
+    ].filter(Boolean).join("\n");
+  }
+
+  function openWhatsAppWebForFinalApproval(response, popupWindow = null) {
+    const notification = response?.finalization?.whatsappNotification || {};
+    const url = buildWhatsAppWebUrl({
+      to: notification.to,
+      message: text(notification.message) || buildFallbackApprovalMessage(response),
+    });
+    if (!url) {
+      if (popupWindow && !popupWindow.closed) popupWindow.close();
+      return false;
+    }
+    if (popupWindow && !popupWindow.closed) {
+      popupWindow.location.href = url;
+      return true;
+    }
+    const win = window.open(url, "_blank", "noopener,noreferrer");
+    return !!win;
+  }
+
   const saveMedicionM = useMutation({
     mutationFn: async ({ submit }) => {
       let nextEndCustomer = { ...(quote?.end_customer || {}) };
@@ -902,7 +951,7 @@ export default function MedicionDetailPage() {
   });
 
   const approveTechnicalM = useMutation({
-    mutationFn: async () => {
+    mutationFn: async ({ whatsappWindow = null } = {}) => {
       await saveMeasurementDetailed(quoteId, {
         form,
         submit: false,
@@ -911,11 +960,24 @@ export default function MedicionDetailPage() {
         endCustomer: quote?.end_customer || {},
         baselineForm,
       });
-      return reviewMeasurement(quoteId, { action: "approve", notes: null });
+      return {
+        ...(await reviewMeasurement(quoteId, { action: "approve", notes: null })),
+        __whatsappWindow: whatsappWindow || null,
+      };
     },
-    onSuccess: () => {
-      window.alert("La revisión técnica final fue aprobada correctamente.");
+    onSuccess: (response) => {
+      const opened = openWhatsAppWebForFinalApproval(response, response?.__whatsappWindow || null);
+      if (!opened) {
+        window.alert("La revisión técnica final fue aprobada correctamente. No se pudo abrir WhatsApp Web automáticamente.");
+      } else {
+        window.alert("La revisión técnica final fue aprobada correctamente. Se abrió WhatsApp Web con el mensaje para el cliente.");
+      }
       navigate("/menu", { replace: true });
+    },
+    onError: (_error, variables) => {
+      if (variables?.whatsappWindow && !variables.whatsappWindow.closed) {
+        variables.whatsappWindow.close();
+      }
     },
   });
 
@@ -1002,7 +1064,10 @@ export default function MedicionDetailPage() {
             ) : null}
             {isTechnical ? (
               <>
-                <Button disabled={approveTechnicalM.isPending} onClick={() => approveTechnicalM.mutate()}>
+                <Button disabled={approveTechnicalM.isPending} onClick={() => {
+                  const whatsappWindow = window.open("about:blank", "_blank", "noopener,noreferrer");
+                  approveTechnicalM.mutate({ whatsappWindow });
+                }}>
                   {approveTechnicalM.isPending ? "Aprobando..." : submitButtonLabel}
                 </Button>
                 <Button
