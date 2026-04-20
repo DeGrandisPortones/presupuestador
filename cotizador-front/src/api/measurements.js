@@ -71,3 +71,18 @@ export async function confirmReturnedMeasurementQuote(id) {
   const res = await http.post(`/api/measurements/${id}/return/confirm`, {});
   return res.data;
 }
+
+export async function getPublicMeasurementAcceptance(token) {
+  const res = await http.get(`/api/client-acceptance/${token}`);
+  if (!res.data?.ok) throw new Error(res.data?.error || "No se pudo cargar la aceptación del cliente");
+  return res.data;
+}
+
+export async function submitPublicMeasurementAcceptance(token, { fullName, dni } = {}) {
+  const res = await http.post(`/api/client-acceptance/${token}/accept`, {
+    full_name: fullName,
+    dni,
+  });
+  if (!res.data?.ok) throw new Error(res.data?.error || "No se pudo registrar la aceptación del cliente");
+  return res.data;
+}

@@ -21,6 +21,7 @@ import SuperuserMeasurementRulesPage from "./pages/SuperuserMeasurementRulesPage
 import UsersAdminPage from "./pages/UsersAdminPage/index.jsx";
 import MedicionesPage from "./pages/MedicionesPage/index.jsx";
 import MedicionDetailPage from "./pages/MedicionDetailPage/index.jsx";
+import ClientAcceptancePage from "./pages/ClientAcceptancePage/index.jsx";
 import PuertaChecklistPage from "./pages/PuertaChecklistPage/index.jsx";
 import PuertaWorkflowPage from "./pages/PuertaWorkflowPage/index.jsx";
 import PuertaPanelPage from "./pages/PuertaPanelPage/index.jsx";
@@ -54,6 +55,7 @@ export default function App() {
     <BrowserRouter>
       <Routes>
         <Route path="/login" element={<LoginPage />} />
+        <Route path="/aceptacion-cliente/:token" element={<ClientAcceptancePage />} />
         <Route path="/" element={<RequireAuth><AppLayout /></RequireAuth>}>
           <Route index element={<Navigate to="/menu" replace />} />
           <Route path="menu" element={<MenuPage />} />

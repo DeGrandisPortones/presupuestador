@@ -230,6 +230,7 @@ function buildInitialForm(quote, current = {}) {
     alto_final_mm: text(current.alto_final_mm) || averageTriple(esquemaAlto) || suggestedAlto,
     ancho_final_mm: text(current.ancho_final_mm) || averageTriple(esquemaAncho) || suggestedAncho,
     observaciones_medicion: text(current.observaciones_medicion),
+    cantidad_parantes: text(current.cantidad_parantes),
   };
 }
 function updateSchemeValue(form, axis, index, value) {
@@ -597,6 +598,23 @@ function MeasurementSchemeVisual({ form }) {
         ))}
       </div>
     </div>
+  );
+}
+
+function ParantesSelect({ value, onChange }) {
+  return (
+    <select
+      value={value || ""}
+      onChange={(e) => onChange(e.target.value)}
+      style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid #ddd", background: "#fff" }}
+    >
+      <option value="">Seleccione cantidad…</option>
+      {Array.from({ length: 7 }, (_, idx) => (
+        <option key={idx} value={String(idx)}>
+          {idx}
+        </option>
+      ))}
+    </select>
   );
 }
 
@@ -1071,6 +1089,14 @@ export default function MedicionDetailPage() {
                 <StaticValue value={formatMm(technicalSummary.ancho_calculado_mm)} />
               )}
             </Field>
+            {isTechnical ? (
+              <Field label="Cantidad de parantes">
+                <ParantesSelect
+                  value={form.cantidad_parantes || ""}
+                  onChange={(value) => setForm((prev) => ({ ...prev, cantidad_parantes: value }))}
+                />
+              </Field>
+            ) : null}
           </Row>
           <div className="spacer" />
           <Row>
