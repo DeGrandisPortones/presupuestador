@@ -559,40 +559,11 @@ async function getOrCreateRevisionQuote({ originalQuote, sourceQuote, finalLines
   );
   return ins.rows?.[0] || null;
 }
-async function renameOrderToReference(odoo, orderId, reference) {
-  const ref = toText(reference);
-  if (!orderId || !ref) return null;
-  try {
-    await odoo.executeKw("sale.order", "write", [[Number(orderId)], { name: ref, origin: ref, client_order_ref: ref }]);
-  } catch {
-    // Si Odoo no deja escribir el name, al menos quedan origin/client_order_ref.
-  }
-  const rows = await odoo.executeKw("sale.order", "read", [[Number(orderId)]], {
-    fields: ["id", "name", "origin", "client_order_ref"],
-  });
-  return rows?.[0] || null;
-}
-
-async function readOriginalNpPartnerId(odoo, originalQuote) {
-  const orderId = toIntId(originalQuote?.odoo_sale_order_id);
-  if (!odoo || !orderId) return null;
-  try {
-    const rows = await odoo.executeKw("sale.order", "read", [[Number(orderId)]], {
-      fields: ["id", "partner_id"],
-    });
-    return toIntId(rows?.[0]?.partner_id) || null;
-  } catch {
-    return null;
-  }
-}
-
 async function syncFinalQuoteToOdoo({ odoo, revisionQuote, originalQuote, sourceQuote, precomputedMetrics }) {
-  const originalNpPartnerId = await readOriginalNpPartnerId(odoo, originalQuote);
   const partnerId =
-    originalNpPartnerId ||
-    toIntId(originalQuote?.bill_to_odoo_partner_id) ||
     toIntId(revisionQuote?.bill_to_odoo_partner_id) ||
     toIntId(sourceQuote?.bill_to_odoo_partner_id) ||
+    toIntId(originalQuote?.bill_to_odoo_partner_id) ||
     1;
   const lines = Array.isArray(revisionQuote.lines) ? revisionQuote.lines : [];
   if (!lines.length) throw new Error("La cotización final no tiene items");
@@ -643,13 +614,7 @@ async function syncFinalQuoteToOdoo({ odoo, revisionQuote, originalQuote, source
     origin: referenceNv,
     client_order_ref: referenceNv,
   }]);
-  const orderId = Number(createdOrderId);
-  const order = (await renameOrderToReference(odoo, orderId, referenceNv)) || {
-    id: orderId,
-    name: referenceNv,
-    origin: referenceNv,
-    client_order_ref: referenceNv,
-  };
+  const order = { id: Number(createdOrderId), name: referenceNv };
   return {
     order,
     metrics: {
@@ -731,15 +696,18 @@ async function resolveMeasurementNotificationTarget({ odoo, quote }) {
   };
 }
 function buildMeasurementApprovedMessage({ quote, acceptanceUrl, recipientName, recipientType }) {
-  const reference = String(quote?.final_sale_order_name || quote?.odoo_sale_order_name || quote?.quote_number || "").trim();
-  const salutation = recipientName || (recipientType === "distribuidor" ? "distribuidor" : "cliente");
+  const link = String(acceptanceUrl || buildClientAcceptanceUrl(quote) || "").trim();
+  const recipientLabel = recipientType === "distribuidor" ? "su portón" : "su portón";
   const lines = [
-    `Hola ${salutation}.`,
-    reference ? `Ya quedó aprobada la planilla técnica de la nota ${reference}.` : "Ya quedó aprobada la planilla técnica.",
-    acceptanceUrl ? `Podés revisar los datos técnicos y la aceptación del cliente acá: ${acceptanceUrl}` : "",
-    "Muchas gracias.",
-  ].filter(Boolean);
-  return lines.join("\\n");
+    "Se ha realizado el relevamiento de medidas de la obra para poder comenzar la producción de su portón.",
+    "",
+    "En el siguiente link podrá ver la planilla de medición online y aceptarla:",
+    link || "",
+    "",
+    "Gracias por confiar en De Grandis Portones.",
+  ].filter((line, index) => line || [1, 4].includes(index));
+  return lines.join("
+");
 }
 async function maybeSendMeasurementApprovedWhatsApp({ odoo, quote }) {
   const recipient = await resolveMeasurementNotificationTarget({ odoo, quote });
