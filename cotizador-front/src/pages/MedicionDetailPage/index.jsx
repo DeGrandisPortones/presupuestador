@@ -862,35 +862,32 @@ export default function MedicionDetailPage() {
   function buildFallbackApprovalMessage(response) {
     const notification = response?.finalization?.whatsappNotification || {};
     const link = text(notification.acceptance_url) || text(notification.public_url);
-    const recipientName = text(notification.recipient_name) || text(quote?.end_customer?.name) || "cliente";
-    const reference =
-      text(response?.finalization?.order?.name) ||
-      text(quote?.final_sale_order_name) ||
-      text(quote?.odoo_sale_order_name) ||
-      text(quote?.quote_number);
     return [
-      `Hola ${recipientName}.`,
-      reference ? `Ya quedó aprobada la planilla técnica de la nota ${reference}.` : "Ya quedó aprobada la planilla técnica.",
-      link ? `Podés revisar los datos técnicos y aceptarlos acá: ${link}` : "",
-      "Muchas gracias.",
-    ].filter(Boolean).join("\n");
+      "Se ha realizado el relevamiento de medidas de la obra para poder comenzar la producción de su portón.",
+      "",
+      "En el siguiente link podrá ver la planilla de medición online y aceptarla:",
+      link,
+      "",
+      "Gracias por confiar en De Grandis Portones.",
+    ].join("\n");
   }
 
   function openWhatsAppWebForFinalApproval(response, popupWindow = null) {
     const notification = response?.finalization?.whatsappNotification || {};
+    const message = text(notification.message) || buildFallbackApprovalMessage(response);
     const url = buildWhatsAppWebUrl({
       to: notification.to,
-      message: text(notification.message) || buildFallbackApprovalMessage(response),
+      message,
     });
-    if (!url) {
+    if (!url || !text(notification.acceptance_url || notification.public_url)) {
       if (popupWindow && !popupWindow.closed) popupWindow.close();
       return false;
     }
     if (popupWindow && !popupWindow.closed) {
-      popupWindow.location.href = url;
+      popupWindow.location.replace(url);
       return true;
     }
-    const win = window.open(url, "_blank", "noopener,noreferrer");
+    const win = window.open(url, "dgp_whatsapp");
     return !!win;
   }
 
@@ -1065,7 +1062,7 @@ export default function MedicionDetailPage() {
             {isTechnical ? (
               <>
                 <Button disabled={approveTechnicalM.isPending} onClick={() => {
-                  const whatsappWindow = window.open("about:blank", "_blank", "noopener,noreferrer");
+                  const whatsappWindow = window.open("", "dgp_whatsapp");
                   approveTechnicalM.mutate({ whatsappWindow });
                 }}>
                   {approveTechnicalM.isPending ? "Aprobando..." : submitButtonLabel}

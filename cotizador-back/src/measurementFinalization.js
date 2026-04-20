@@ -655,7 +655,9 @@ function resolveClientAcceptanceBaseUrl() {
     normalizeUrl(process.env.PUBLIC_BASE_URL) ||
     normalizeUrl(process.env.APP_PUBLIC_URL) ||
     normalizeUrl(process.env.FRONTEND_PUBLIC_URL) ||
-    ""
+    normalizeUrl(process.env.FRONTEND_URL) ||
+    normalizeUrl(process.env.VERCEL_FRONTEND_URL) ||
+    "https://presupuestador-degrandisportones.vercel.app"
   );
 }
 function buildClientAcceptanceUrl(quote) {
@@ -701,11 +703,11 @@ function buildMeasurementApprovedMessage({ quote, acceptanceUrl, recipientName, 
     "Se ha realizado el relevamiento de medidas de la obra para poder comenzar la producción de su portón.",
     "",
     "En el siguiente link podrá ver la planilla de medición online y aceptarla:",
-    link || "",
+    link,
     "",
     "Gracias por confiar en De Grandis Portones.",
-  ].filter((line, index) => line || [1, 4].includes(index));
-  return lines.join("\\n");
+  ];
+  return lines.join("\n");
 }
 async function maybeSendMeasurementApprovedWhatsApp({ odoo, quote }) {
   const recipient = await resolveMeasurementNotificationTarget({ odoo, quote });
