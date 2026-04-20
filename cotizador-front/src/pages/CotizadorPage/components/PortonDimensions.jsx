@@ -1,4 +1,3 @@
-
 import { useEffect, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useQuoteStore } from "../../../domain/quote/store";
@@ -9,6 +8,7 @@ const WIDTH_MIN_M = 2.4;
 const WIDTH_MAX_M = 7;
 const HEIGHT_MIN_M = 2;
 const HEIGHT_MAX_M = 3;
+const PARANTES_SPECIAL_PRODUCT_ID = 3006;
 
 function parseOptionalNumber(v) {
   const raw = String(v ?? "").trim();
@@ -25,6 +25,9 @@ function normalizeDecimal(v) {
 }
 function normalizeDecimalWithDot(v) {
   return normalizeDecimal(v).replace(",", ".");
+}
+function normalizeIntegerInput(v) {
+  return String(v ?? "").replace(/\D+/g, "");
 }
 function norm(v) {
   return String(v || "").trim().toLowerCase().replace(/\s+/g, "_");
@@ -227,6 +230,24 @@ function ComputedCard({ label, value }) {
     </div>
   );
 }
+function normalizeOrientation(value) {
+  const raw = String(value || "").trim().toLowerCase();
+  if (raw === "horizontal" || raw === "horizontales") return "horizontal";
+  return "verticales";
+}
+function normalizeDistribution(value) {
+  const raw = String(value || "").trim().toLowerCase();
+  return raw === "especial" ? "especial" : "repartido";
+}
+function hasSpecialParantesProduct(lines) {
+  return getBudgetProductIdSetFromLines(lines).has(PARANTES_SPECIAL_PRODUCT_ID);
+}
+function computeVerticalParantesCount(widthM, lines) {
+  const width = Number(widthM || 0) || 0;
+  if (!(width > 0)) return 0;
+  const baseWidth = hasSpecialParantesProduct(lines) ? width : Math.max(0, width - 0.8);
+  return Math.max(0, Math.floor(baseWidth));
+}
 
 export default function PortonDimensions({ kind = "porton" }) {
   const dimensions = useQuoteStore((s) => s.dimensions);
@@ -255,6 +276,19 @@ export default function PortonDimensions({ kind = "porton" }) {
     return Number.isFinite(a) ? a : 0;
   }, [width, height]);
 
+  const orientation = useMemo(
+    () => normalizeOrientation(dimensions?.orientacion_parantes),
+    [dimensions?.orientacion_parantes],
+  );
+  const distribution = useMemo(
+    () => normalizeDistribution(dimensions?.distribucion_parantes),
+    [dimensions?.distribucion_parantes],
+  );
+  const autoParantesCount = useMemo(
+    () => computeVerticalParantesCount(width, lines),
+    [width, lines],
+  );
+
   const params = useMemo(() => getRulesParams(rulesQ.data), [rulesQ.data]);
   const preview = useMemo(
     () => buildCalculatedPreview({ widthM: width, heightM: height, lines, params, portonType }),
@@ -276,12 +310,49 @@ export default function PortonDimensions({ kind = "porton" }) {
     }
   }, [kind, portonType, dimensions?.kg_m2, lines, params, setDimensions]);
 
+  useEffect(() => {
+    if ((kind || "porton") !== "porton") return;
+    const patch = {};
+    if (!String(dimensions?.orientacion_parantes || "").trim()) {
+      patch.orientacion_parantes = "verticales";
+    }
+    if (!String(dimensions?.distribucion_parantes || "").trim()) {
+      patch.distribucion_parantes = "repartido";
+    }
+    if (orientation === "verticales") {
+      const nextCount = String(autoParantesCount);
+      if (String(dimensions?.cantidad_parantes || "").trim() !== nextCount) {
+        patch.cantidad_parantes = nextCount;
+      }
+    }
+    if (Object.keys(patch).length) {
+      setDimensions(patch);
+    }
+  }, [
+    kind,
+    orientation,
+    autoParantesCount,
+    dimensions?.orientacion_parantes,
+    dimensions?.distribucion_parantes,
+    dimensions?.cantidad_parantes,
+    setDimensions,
+  ]);
+
   const title =
     (kind || "porton") === "porton"
       ? "Medidas del portón"
       : (kind || "") === "ipanel"
         ? "Medidas del Ipanel"
         : "Medidas del presupuesto";
+
+  const parantesHelper =
+    orientation === "verticales"
+      ? (
+          hasSpecialParantesProduct(lines)
+            ? "Se usa el ancho del portón completo y se calcula 1 parante por cada metro."
+            : "Se descuenta 0.80 m al ancho del portón y luego se calcula 1 parante por cada metro."
+        )
+      : "En horizontal podés ajustar manualmente la cantidad de parantes.";
 
   return (
     <div
@@ -385,7 +456,73 @@ export default function PortonDimensions({ kind = "porton" }) {
             {area ? `${area.toFixed(2)} m²` : "—"}
           </div>
         </FieldBox>
+
+        <FieldBox label="Orientación de los parantes">
+          <select
+            value={orientation}
+            onChange={(e) => setDimensions({ orientacion_parantes: e.target.value })}
+            style={{ width: "100%", padding: "10px 12px", borderRadius: 8, border: "1px solid #ddd", background: "#fff" }}
+          >
+            <option value="verticales">Verticales</option>
+            <option value="horizontal">Horizontal</option>
+          </select>
+        </FieldBox>
+
+        <FieldBox
+          label="Cantidad de parantes"
+          helper={parantesHelper}
+        >
+          <Input
+            type="text"
+            inputMode="numeric"
+            value={String(dimensions?.cantidad_parantes ?? "")}
+            onChange={(v) => {
+              if (orientation === "verticales") return;
+              setDimensions({ cantidad_parantes: normalizeIntegerInput(v) });
+            }}
+            onBlur={(e) => {
+              if (orientation === "verticales") return;
+              setDimensions({ cantidad_parantes: normalizeIntegerInput(e?.target?.value) });
+            }}
+            disabled={orientation === "verticales"}
+            style={orientation === "verticales" ? disabledComputedInputStyle() : { width: "100%" }}
+            placeholder="Ej: 3"
+          />
+        </FieldBox>
+
+        <FieldBox label="Distribución de los parantes">
+          <select
+            value={distribution}
+            onChange={(e) => setDimensions({ distribucion_parantes: e.target.value })}
+            style={{ width: "100%", padding: "10px 12px", borderRadius: 8, border: "1px solid #ddd", background: "#fff" }}
+          >
+            <option value="repartido">Repartido</option>
+            <option value="especial">Especial</option>
+          </select>
+        </FieldBox>
       </div>
+
+      {distribution === "especial" ? (
+        <>
+          <div className="spacer" />
+          <FieldBox label="Observaciones de distribución especial">
+            <textarea
+              value={String(dimensions?.observaciones_parantes ?? "")}
+              onChange={(e) => setDimensions({ observaciones_parantes: e.target.value })}
+              rows={3}
+              style={{
+                width: "100%",
+                borderRadius: 10,
+                border: "1px solid #ddd",
+                padding: "10px 12px",
+                resize: "vertical",
+                fontFamily: "inherit",
+              }}
+              placeholder="Indicá cómo debe ser la distribución especial de los parantes."
+            />
+          </FieldBox>
+        </>
+      ) : null}
 
       <div className="spacer" />
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 10 }}>

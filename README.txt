@@ -1,6 +1,10 @@
 Reemplazo directo:
-- cotizador-back/src/measurementFinalization.js
+- cotizador-front/src/pages/CotizadorPage/components/PortonDimensions.jsx
+- cotizador-front/src/components/MeasurementReadOnlyView.jsx
+- cotizador-front/src/pages/MedicionDetailPage/index.jsx
 
-Cambio aplicado:
-- texto del mensaje de WhatsApp de aprobación técnica final actualizado al formato pedido
-- mantiene el link de aceptación del cliente
+Cambios:
+- vendedor/distribuidor: cantidad/orientacion/distribucion de parantes en Medidas del porton
+- logica automatica de cantidad si orientacion = verticales
+- tecnica final: puede editar los tres campos y observaciones de distribucion especial
+- planilla tecnica final muestra los tres campos

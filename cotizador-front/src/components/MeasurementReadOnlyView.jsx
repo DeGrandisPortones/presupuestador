@@ -317,6 +317,19 @@ function formatPlanning(planning) {
   if (start || end) return `${weekPart}, entre ${start || "—"} y ${end || "—"}`;
   return weekPart;
 }
+function normalizeOrientation(value) {
+  const raw = String(value || "").trim().toLowerCase();
+  if (raw === "horizontal" || raw === "horizontales") return "Horizontal";
+  return "Verticales";
+}
+function normalizeDistribution(value) {
+  return String(value || "").trim().toLowerCase() === "especial" ? "Especial" : "Repartido";
+}
+function getTechnicalFieldValue(form, quote, key, fallback = "") {
+  const current = text(form?.[key]);
+  if (current) return current;
+  return text(quote?.payload?.dimensions?.[key] || fallback);
+}
 export default function MeasurementReadOnlyView({ quote }) {
   const form = quote?.measurement_form || {};
   const end = quote?.end_customer || {};
@@ -328,6 +341,10 @@ export default function MeasurementReadOnlyView({ quote }) {
     surfaceParameters: quote?.technical_rules?.surface_parameters || {},
   });
   const planningLabel = formatPlanning(quote?.production_planning);
+  const cantidadParantes = getTechnicalFieldValue(form, quote, "cantidad_parantes");
+  const orientacionParantes = normalizeOrientation(getTechnicalFieldValue(form, quote, "orientacion_parantes", "verticales"));
+  const distribucionParantes = normalizeDistribution(getTechnicalFieldValue(form, quote, "distribucion_parantes", "repartido"));
+  const observacionesParantes = getTechnicalFieldValue(form, quote, "observaciones_parantes");
   return (
     <div>
       <Section title="Resumen del presupuesto">
@@ -397,6 +414,20 @@ export default function MeasurementReadOnlyView({ quote }) {
           <Field label="Peso aproximado" value={formatKg(technicalSummary.peso_estimado_kg)} />
           <Field label="Tipo de piernas" value={formatPiernas(technicalSummary.piernas_tipo)} />
         </Row>
+        <div className="spacer" />
+        <Row>
+          <Field label="Cantidad de parantes" value={cantidadParantes} />
+          <Field label="Orientación de los parantes" value={orientacionParantes} />
+          <Field label="Distribución de los parantes" value={distribucionParantes} />
+        </Row>
+        {observacionesParantes ? (
+          <>
+            <div className="spacer" />
+            <Row>
+              <Field label="Observaciones de distribución especial" value={observacionesParantes} />
+            </Row>
+          </>
+        ) : null}
       </Section>
       <Section title="Observaciones del medidor">
         <Row>
