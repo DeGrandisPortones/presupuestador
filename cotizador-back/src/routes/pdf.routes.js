@@ -41,21 +41,10 @@ function pick(obj, pathValue, fallback = "") {
   }
 }
 
-function yn(v) {
-  return v ? "Sí" : "No";
-}
-
 function getLogoPath() {
   const __filename = fileURLToPath(import.meta.url);
   const __dirname = path.dirname(__filename);
   return path.join(__dirname, "../assets/logo-degrandis.png");
-}
-
-function normalizePhoneForWhatsApp(phone) {
-  const digits = String(phone || "").replace(/\D/g, "");
-  if (!digits) return "";
-  if (digits.startsWith("54")) return digits;
-  return `54${digits}`;
 }
 
 function formatMoney(value) {
@@ -181,67 +170,15 @@ function collectUniquePositiveInts(values = []) {
   return [...new Set(values.map(toPositiveInt).filter(Boolean))];
 }
 
-async function readModelNames(odoo, model, ids = []) {
+async function readTemplateNamesStrict(odoo, templateIds = []) {
+  const ids = collectUniquePositiveInts(templateIds);
   const out = new Map();
-  const safeIds = collectUniquePositiveInts(ids);
-  if (!odoo || !safeIds.length) return out;
-  try {
-    const rows = await odoo.executeKw(model, "read", [safeIds], { fields: ["id", "name"] });
-    for (const row of Array.isArray(rows) ? rows : []) {
-      const id = toPositiveInt(row?.id);
-      if (id) out.set(id, safeStr(row?.name));
-    }
-  } catch (e) {
-    console.error(`PDF live ${model} names error:`, e?.message || e);
-  }
-  return out;
-}
+  if (!odoo || !ids.length) return out;
 
-async function readLiveOdooProductNames(odoo, rawLines = []) {
-  const lines = Array.isArray(rawLines) ? rawLines : [];
-  const variantCandidateIds = collectUniquePositiveInts(
-    lines.flatMap((line) => [
-      line?.odoo_variant_id,
-      line?.odoo_product_id,
-    ]),
-  );
-  const templateCandidateIds = collectUniquePositiveInts(
-    lines.flatMap((line) => [
-      line?.odoo_template_id,
-      line?.odoo_id,
-    ]),
-  );
-  const fallbackVariantIds = collectUniquePositiveInts(lines.map((line) => line?.product_id));
-
-  const variantNames = await readModelNames(
-    odoo,
-    "product.product",
-    [...variantCandidateIds, ...fallbackVariantIds],
-  );
-  const templateNames = await readModelNames(
-    odoo,
-    "product.template",
-    templateCandidateIds,
-  );
-
-  const out = new Map();
-  for (const line of lines) {
-    const key = JSON.stringify([
-      toPositiveInt(line?.product_id),
-      toPositiveInt(line?.odoo_id),
-      toPositiveInt(line?.odoo_template_id),
-      toPositiveInt(line?.odoo_variant_id),
-    ]);
-
-    const candidateName =
-      safeStr(variantNames.get(toPositiveInt(line?.odoo_variant_id))) ||
-      safeStr(variantNames.get(toPositiveInt(line?.odoo_product_id))) ||
-      safeStr(variantNames.get(toPositiveInt(line?.odoo_id))) ||
-      safeStr(templateNames.get(toPositiveInt(line?.odoo_template_id))) ||
-      safeStr(templateNames.get(toPositiveInt(line?.odoo_id))) ||
-      safeStr(variantNames.get(toPositiveInt(line?.product_id)));
-
-    if (candidateName) out.set(key, candidateName);
+  const rows = await odoo.executeKw("product.template", "read", [ids], { fields: ["id", "name"] });
+  for (const row of Array.isArray(rows) ? rows : []) {
+    const id = toPositiveInt(row?.id);
+    if (id) out.set(id, safeStr(row?.name));
   }
   return out;
 }
@@ -250,7 +187,16 @@ async function buildLines(payload, { useBasePrice, odoo }) {
   const coefPct = getMarginPct(payload);
   const coefFactor = 1 + coefPct / 100;
   const rawLines = Array.isArray(payload?.lines) ? payload.lines : [];
-  const liveNames = await readLiveOdooProductNames(odoo, rawLines);
+
+  const templateIds = collectUniquePositiveInts(
+    rawLines.map((line) => line?.odoo_id || line?.odoo_template_id),
+  );
+
+  if (!templateIds.length) {
+    throw new Error("No llegaron ids de Odoo en las líneas del presupuesto para generar el PDF.");
+  }
+
+  const templateNames = await readTemplateNamesStrict(odoo, templateIds);
 
   const lines = rawLines
     .map((l) => {
@@ -260,16 +206,22 @@ async function buildLines(payload, { useBasePrice, odoo }) {
       const unit = unitNet * (1 + IVA_RATE);
       const totalNet = unitNet * qty;
       const total = unit * qty;
-      const lookupKey = JSON.stringify([
-        toPositiveInt(l?.product_id),
-        toPositiveInt(l?.odoo_id),
-        toPositiveInt(l?.odoo_template_id),
-        toPositiveInt(l?.odoo_variant_id),
-      ]);
-      const liveOdooName = liveNames.get(lookupKey);
+
+      const templateId = toPositiveInt(l?.odoo_id || l?.odoo_template_id);
+      if (!templateId) {
+        throw new Error(`Falta el ID Odoo del producto en la línea ${l?.product_id || "sin product_id"}.`);
+      }
+
+      const liveOdooName = safeStr(templateNames.get(templateId));
+      if (!liveOdooName) {
+        throw new Error(
+          `No se pudo obtener desde Odoo el nombre del producto template ${templateId} para la línea ${l?.product_id || "sin product_id"}.`,
+        );
+      }
+
       return {
         qty,
-        name: safeStr(liveOdooName || l?.raw_name || l?.rawName || l?.name || l?.display_name || l?.alias || ""),
+        name: liveOdooName,
         unit,
         total,
         totalNet,
