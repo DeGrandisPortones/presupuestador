@@ -114,6 +114,10 @@ function getClientFacingName(product = {}) {
     ""
   );
 }
+function toPositiveInt(value) {
+  const n = Number(value || 0);
+  return Number.isFinite(n) && n > 0 ? Math.trunc(n) : 0;
+}
 
 export const useQuoteStore = create((set, get) => ({
   quoteId: null,
@@ -173,10 +177,10 @@ export const useQuoteStore = create((set, get) => ({
           cleanText(l.name || l.display_name || l.alias || rawName) || `Producto ${l.product_id || idx}`;
         return {
           product_id: Number(l.product_id ?? idx + 1),
-          odoo_external_id: Number(l.odoo_external_id || l.odoo_id || 0) || 0,
-          odoo_id: Number(l.odoo_id || 0) || 0,
-          odoo_template_id: Number(l.odoo_template_id || 0) || 0,
-          odoo_variant_id: Number(l.odoo_variant_id || 0) || 0,
+          odoo_external_id: toPositiveInt(l.odoo_external_id || l.odoo_id),
+          odoo_id: toPositiveInt(l.odoo_id),
+          odoo_template_id: toPositiveInt(l.odoo_template_id),
+          odoo_variant_id: toPositiveInt(l.odoo_variant_id),
           name: visibleName,
           raw_name: rawName,
           code: l.code || null,
@@ -344,7 +348,7 @@ export const useQuoteStore = create((set, get) => ({
         };
       }
 
-      const odooExternalId = Number(p.odoo_id || 0) || 0;
+      const odooExternalId = toPositiveInt(p.odoo_id || p.odoo_external_id);
 
       return {
         lines: [
@@ -352,9 +356,9 @@ export const useQuoteStore = create((set, get) => ({
           {
             product_id: id,
             odoo_external_id: odooExternalId,
-            odoo_id: odooExternalId,
-            odoo_template_id: Number(p.odoo_template_id || p.odoo_id || 0) || 0,
-            odoo_variant_id: Number(p.odoo_variant_id || 0) || 0,
+            odoo_id: toPositiveInt(p.odoo_id),
+            odoo_template_id: toPositiveInt(p.odoo_template_id),
+            odoo_variant_id: toPositiveInt(p.odoo_variant_id),
             name: getInternalVisibleName(p),
             raw_name: getClientFacingName(p),
             code: p.code || null,
@@ -444,10 +448,10 @@ export const useQuoteStore = create((set, get) => ({
       .filter((l) => !l.ui_only_line && !l.auto_system_item)
       .map((l) => ({
         product_id: l.product_id,
-        odoo_external_id: Number(l.odoo_external_id || l.odoo_id || 0) || 0,
-        odoo_id: Number(l.odoo_id || 0) || 0,
-        odoo_template_id: Number(l.odoo_template_id || 0) || 0,
-        odoo_variant_id: Number(l.odoo_variant_id || 0) || 0,
+        odoo_external_id: toPositiveInt(l.odoo_external_id || l.odoo_id),
+        odoo_id: toPositiveInt(l.odoo_id),
+        odoo_template_id: toPositiveInt(l.odoo_template_id),
+        odoo_variant_id: toPositiveInt(l.odoo_variant_id),
         qty: normalizeEditableQty({
           productId: l.product_id,
           qty: l.qty,

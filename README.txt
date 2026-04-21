@@ -1,9 +1,8 @@
 Reemplazo directo:
-- cotizador-front/src/pages/CotizadorPage/index.jsx
-- cotizador-front/src/api/pdf.js
+- cotizador-front/src/domain/quote/store.js
 - cotizador-back/src/routes/pdf.routes.js
 
-Agrega logs para depurar PDF:
-- front: payload completo y lineas antes de pedir el PDF
-- front api: payload y lineas justo antes del POST
-- back: body recibido, lineas recibidas, ids detectados y nombre devuelto por Odoo
+Fix:
+- odoo_external_id viaja desde el front con el mismo valor que ID Odoo del producto.
+- el PDF deja de consultar product.template y consulta product.product usando odoo_external_id / odoo_id.
+- para el caso 3287, el back va a leer product.product(3287).name.

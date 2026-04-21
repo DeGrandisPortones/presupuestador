@@ -14,25 +14,20 @@ function isUuid(v) {
   const s = String(v || "").trim();
   return /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(s);
 }
-
 function isShareToken(v) {
   const s = String(v || "").trim();
   return /^[a-zA-Z0-9_-]{24,128}$/.test(s);
 }
-
 function safeStr(v) {
   return String(v ?? "").trim();
 }
-
 function n2(v) {
   const n = Number(v);
   return Number.isFinite(n) ? n : 0;
 }
-
 function textOrDash(v) {
   return safeStr(v) || "—";
 }
-
 function pick(obj, pathValue, fallback = "") {
   try {
     return pathValue.split(".").reduce((a, k) => (a && a[k] !== undefined ? a[k] : undefined), obj) ?? fallback;
@@ -40,13 +35,11 @@ function pick(obj, pathValue, fallback = "") {
     return fallback;
   }
 }
-
 function getLogoPath() {
   const __filename = fileURLToPath(import.meta.url);
   const __dirname = path.dirname(__filename);
   return path.join(__dirname, "../assets/logo-degrandis.png");
 }
-
 function formatMoney(value) {
   const n = n2(value);
   try {
@@ -55,7 +48,6 @@ function formatMoney(value) {
     return n.toFixed(2);
   }
 }
-
 function formatQty(value) {
   const n = n2(value);
   try {
@@ -64,11 +56,9 @@ function formatQty(value) {
     return n.toFixed(2);
   }
 }
-
 function getMarginPct(payload) {
   return n2(payload?.payload?.margin_percent_ui ?? payload?.margin_percent_ui ?? payload?.marginPercent ?? 0);
 }
-
 function getQuoteNumber(payload) {
   return safeStr(
     payload?.quote_number ??
@@ -81,7 +71,6 @@ function getQuoteNumber(payload) {
       "",
   );
 }
-
 function getSellerName(payload) {
   return safeStr(
     payload?.seller_name ??
@@ -92,7 +81,6 @@ function getSellerName(payload) {
       "",
   );
 }
-
 function sanitizeFilenamePart(value, fallback = "archivo") {
   const normalized = String(value || "")
     .normalize("NFD")
@@ -102,13 +90,11 @@ function sanitizeFilenamePart(value, fallback = "archivo") {
     .trim();
   return normalized || fallback;
 }
-
 function buildDownloadFilename(payload, fallbackPrefix = "presupuesto") {
   const customerName = sanitizeFilenamePart(payload?.end_customer?.name, "cliente");
   const quoteNo = sanitizeFilenamePart(getQuoteNumber(payload), fallbackPrefix);
   return `${customerName}_${quoteNo}.pdf`;
 }
-
 function stripSellerLines(value) {
   return String(value || "")
     .split(/\r?\n/)
@@ -116,7 +102,6 @@ function stripSellerLines(value) {
     .filter((line) => line && !/^vendedor\s*:/i.test(line))
     .join("\n");
 }
-
 function formatShortDate(value) {
   const raw = safeStr(value);
   if (!raw) return "";
@@ -124,7 +109,6 @@ function formatShortDate(value) {
   if (Number.isNaN(d.getTime())) return raw;
   return d.toLocaleDateString("es-AR");
 }
-
 function getProductionPlanningText(payload) {
   const planning = payload?.production_planning || payload?.payload?.production_planning || null;
   if (!planning || typeof planning !== "object") return "";
@@ -136,10 +120,8 @@ function getProductionPlanningText(payload) {
   if (startLabel || endLabel) return `${weekPart}, entre ${startLabel || "—"} y ${endLabel || "—"}`;
   return weekPart;
 }
-
 async function resolveMeasurementForm(quote) {
   let form = quote?.measurement_form || null;
-
   if (!form && quote?.measurement_source_quote_id) {
     const src = quote.measurement_source_quote_id;
     const srcId = isUuid(src) ? String(src) : Number(src);
@@ -148,7 +130,6 @@ async function resolveMeasurementForm(quote) {
       form = r2.rows?.[0]?.measurement_form || null;
     }
   }
-
   if (!form && quote?.original_quote_id) {
     const src = quote.original_quote_id;
     const srcId = isUuid(src) ? String(src) : Number(src);
@@ -157,69 +138,55 @@ async function resolveMeasurementForm(quote) {
       form = r3.rows?.[0]?.measurement_form || null;
     }
   }
-
   return form;
 }
-
 function toPositiveInt(value) {
   const n = Number(value || 0);
   return Number.isFinite(n) && n > 0 ? Math.trunc(n) : 0;
 }
-
 function collectUniquePositiveInts(values = []) {
   return [...new Set(values.map(toPositiveInt).filter(Boolean))];
 }
-
-async function readTemplateNamesStrict(odoo, templateIds = []) {
-  const ids = collectUniquePositiveInts(templateIds);
+function summarizePdfLines(rawLines = []) {
+  return (Array.isArray(rawLines) ? rawLines : []).map((line) => ({
+    product_id: line?.product_id,
+    odoo_external_id: line?.odoo_external_id,
+    odoo_id: line?.odoo_id,
+    odoo_template_id: line?.odoo_template_id,
+    odoo_variant_id: line?.odoo_variant_id,
+    name: line?.name,
+    raw_name: line?.raw_name,
+    qty: line?.qty,
+  }));
+}
+async function readProductNamesStrict(odoo, productIds = []) {
+  const ids = collectUniquePositiveInts(productIds);
   const out = new Map();
   if (!odoo || !ids.length) return out;
 
-  const rows = await odoo.executeKw("product.template", "read", [ids], { fields: ["id", "name"] });
+  const rows = await odoo.executeKw("product.product", "read", [ids], { fields: ["id", "name"] });
   for (const row of Array.isArray(rows) ? rows : []) {
     const id = toPositiveInt(row?.id);
     if (id) out.set(id, safeStr(row?.name));
   }
   return out;
 }
-
-function summarizePdfLines(rawLines = []) {
-  return (Array.isArray(rawLines) ? rawLines : []).map((line) => ({
-    product_id: line?.product_id,
-    odoo_id: line?.odoo_id,
-    odoo_template_id: line?.odoo_template_id,
-    odoo_variant_id: line?.odoo_variant_id,
-    odoo_external_id: line?.odoo_external_id,
-    name: line?.name,
-    raw_name: line?.raw_name,
-    qty: line?.qty,
-  }));
-}
-
 async function buildLines(payload, { useBasePrice, odoo }) {
   const coefPct = getMarginPct(payload);
   const coefFactor = 1 + coefPct / 100;
   const rawLines = Array.isArray(payload?.lines) ? payload.lines : [];
 
-  console.log("[PDF BACK] payload recibido", {
-    quote_number: payload?.quote_number || payload?.quoteNumber || payload?.quote_id || payload?.id || null,
-    seller_name: payload?.seller_name || payload?.sellerName || null,
-    lines_count: rawLines.length,
-  });
-  console.log("[PDF BACK] lineas recibidas", summarizePdfLines(rawLines));
+  console.log("[PDF BACK STRICT] lineas recibidas", summarizePdfLines(rawLines));
 
-  const templateIds = collectUniquePositiveInts(
-    rawLines.map((line) => line?.odoo_id || line?.odoo_template_id),
-  );
+  const productIds = collectUniquePositiveInts(rawLines.map((line) => line?.odoo_external_id || line?.odoo_id));
+  console.log("[PDF BACK STRICT] productIds detectados", productIds);
 
-  console.log("[PDF BACK] templateIds detectados", templateIds);
-
-  if (!templateIds.length) {
-    throw new Error("No llegaron ids de Odoo en las líneas del presupuesto para generar el PDF.");
+  if (!productIds.length) {
+    throw new Error("No llegaron ids de Odoo del producto en las líneas del presupuesto para generar el PDF.");
   }
 
-  const templateNames = await readTemplateNamesStrict(odoo, templateIds);
-  console.log("[PDF BACK] nombres recibidos desde Odoo", Array.from(templateNames.entries()));
+  const productNames = await readProductNamesStrict(odoo, productIds);
+  console.log("[PDF BACK STRICT] nombres recibidos desde product.product", Array.from(productNames.entries()));
 
   const lines = rawLines
     .map((l) => {
@@ -230,27 +197,22 @@ async function buildLines(payload, { useBasePrice, odoo }) {
       const totalNet = unitNet * qty;
       const total = unit * qty;
 
-      const templateId = toPositiveInt(l?.odoo_id || l?.odoo_template_id);
-      if (!templateId) {
+      const odooExternalId = toPositiveInt(l?.odoo_external_id || l?.odoo_id);
+      if (!odooExternalId) {
         throw new Error(`Falta el ID Odoo del producto en la línea ${l?.product_id || "sin product_id"}.`);
       }
 
-      const liveOdooName = safeStr(templateNames.get(templateId));
+      const liveOdooName = safeStr(productNames.get(odooExternalId));
       if (!liveOdooName) {
-        throw new Error(
-          `No se pudo obtener desde Odoo el nombre del producto template ${templateId} para la línea ${l?.product_id || "sin product_id"}.`,
-        );
+        throw new Error(`No se pudo obtener desde Odoo el nombre del producto ${odooExternalId} para la línea ${l?.product_id || "sin product_id"}.`);
       }
 
-      console.log("[PDF BACK] linea resuelta", {
+      console.log("[PDF BACK STRICT] linea resuelta", {
         product_id: l?.product_id,
-        odoo_id: l?.odoo_id,
-        odoo_template_id: l?.odoo_template_id,
-        odoo_variant_id: l?.odoo_variant_id,
-        odoo_external_id: l?.odoo_external_id,
+        odoo_external_id: odooExternalId,
         incoming_name: l?.name,
         incoming_raw_name: l?.raw_name,
-        resolved_name_from_odoo: liveOdooName,
+        resolved_name_from_odoo_product: liveOdooName,
       });
 
       return {
@@ -268,7 +230,6 @@ async function buildLines(payload, { useBasePrice, odoo }) {
   const grandTotal = subtotalNet + ivaAmount;
   return { lines, grandTotal, subtotalNet, ivaAmount, coefPct };
 }
-
 function drawPageFrame(doc, margin, pageNo, pageCount, footerLeft = "De Grandis Portones") {
   const w = doc.page.width;
   const h = doc.page.height;
@@ -278,7 +239,6 @@ function drawPageFrame(doc, margin, pageNo, pageCount, footerLeft = "De Grandis 
     .text(`Página ${pageNo} de ${pageCount}`, margin, h - margin - 16, { width: w - margin * 2, align: "right" })
     .restore();
 }
-
 function drawHeader(doc, { title, payload, margin, innerW, dateStr, validStr }) {
   const logoPath = getLogoPath();
   const headerH = 64;
@@ -298,7 +258,6 @@ function drawHeader(doc, { title, payload, margin, innerW, dateStr, validStr }) 
     .text(`Vigencia ${validStr}`, margin, y + 16, { width: innerW - 8, align: "right" });
   return y + 44;
 }
-
 function drawInfoTable(doc, payload, y, margin, innerW, useBasePrice) {
   const endCustomer = payload?.end_customer || {};
   const customerName = safeStr(endCustomer?.name) || "(sin nombre)";
@@ -334,7 +293,6 @@ function drawInfoTable(doc, payload, y, margin, innerW, useBasePrice) {
   }
   return y + h + 10;
 }
-
 async function renderPdf({ title, payload, useBasePrice, odoo }) {
   const doc = new PDFDocument({ size: "A4", margin: 0, bufferPages: true });
   const buffers = [];
@@ -374,7 +332,6 @@ async function renderPdf({ title, payload, useBasePrice, odoo }) {
   const colTot = innerW * 0.18;
   const SAFE_BOTTOM_GAP = 56;
   let tableY = y;
-
   function pageBottom() {
     return doc.page.height - margin - SAFE_BOTTOM_GAP;
   }
@@ -441,7 +398,6 @@ async function renderPdf({ title, payload, useBasePrice, odoo }) {
   doc.end();
   return new Promise((resolve) => doc.on("end", () => resolve(Buffer.concat(buffers))));
 }
-
 function prettyMeasurementValue(key, value) {
   const raw = safeStr(value);
   const maps = {
@@ -451,7 +407,6 @@ function prettyMeasurementValue(key, value) {
   };
   return maps[key]?.[raw] || textOrDash(raw);
 }
-
 async function renderMeasurementPdf({ quote, form }) {
   const doc = new PDFDocument({ size: "A4", margin: 32, bufferPages: true });
   const buffers = [];
@@ -500,18 +455,12 @@ async function renderMeasurementPdf({ quote, form }) {
   doc.end();
   return new Promise((resolve) => doc.on("end", () => resolve(Buffer.concat(buffers))));
 }
-
 export function buildPdfRouter(odoo = null) {
   const router = express.Router();
 
   router.post("/presupuesto", async (req, res, next) => {
     try {
       const payload = req.body || {};
-      console.log("[PDF BACK] POST /api/pdf/presupuesto body", {
-        quote_number: payload?.quote_number || payload?.quoteNumber || payload?.quote_id || payload?.id || null,
-        lines_count: Array.isArray(payload?.lines) ? payload.lines.length : 0,
-      });
-      console.log("[PDF BACK] POST /api/pdf/presupuesto body lines", summarizePdfLines(payload?.lines || []));
       const pdf = await renderPdf({ title: "PRESUPUESTO", payload, useBasePrice: false, odoo });
       res.setHeader("Content-Type", "application/pdf");
       res.setHeader("Content-Disposition", `attachment; filename="${buildDownloadFilename(payload, "presupuesto")}"`);
@@ -522,11 +471,6 @@ export function buildPdfRouter(odoo = null) {
   router.post("/proforma", async (req, res, next) => {
     try {
       const payload = req.body || {};
-      console.log("[PDF BACK] POST /api/pdf/proforma body", {
-        quote_number: payload?.quote_number || payload?.quoteNumber || payload?.quote_id || payload?.id || null,
-        lines_count: Array.isArray(payload?.lines) ? payload.lines.length : 0,
-      });
-      console.log("[PDF BACK] POST /api/pdf/proforma body lines", summarizePdfLines(payload?.lines || []));
       const pdf = await renderPdf({ title: "PROFORMA", payload, useBasePrice: true, odoo });
       res.setHeader("Content-Type", "application/pdf");
       res.setHeader("Content-Disposition", `attachment; filename="${buildDownloadFilename(payload, "proforma")}"`);
