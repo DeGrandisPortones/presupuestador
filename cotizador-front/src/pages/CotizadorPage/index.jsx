@@ -115,6 +115,19 @@ function quoteLooksLikeReturnedMeasurement(quote) {
   return lines.some((line) => line?.previously_billed_line === true || Number(line?.product_id) === PREVIOUSLY_BILLED_PRODUCT_ID);
 }
 
+function summarizeLinesForDebug(lines = []) {
+  return (Array.isArray(lines) ? lines : []).map((line) => ({
+    product_id: line?.product_id,
+    odoo_id: line?.odoo_id,
+    odoo_template_id: line?.odoo_template_id,
+    odoo_variant_id: line?.odoo_variant_id,
+    odoo_external_id: line?.odoo_external_id,
+    name: line?.name,
+    raw_name: line?.raw_name,
+    qty: line?.qty,
+  }));
+}
+
 export default function CotizadorPage({ catalogKind = "porton" }) {
   const navigate = useNavigate();
   const location = useLocation();
@@ -382,6 +395,8 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
         financingPercent,
         latestProductionPlanning ? { production_planning: latestProductionPlanning } : {},
       );
+      console.log("[PDF FRONT] payload completo presupuesto", pdfPayload);
+      console.log("[PDF FRONT] lineas presupuesto", summarizeLinesForDebug(pdfPayload?.lines || []));
       await downloadPresupuestoPdf(pdfPayload);
     } catch (e) { toast.error(e?.response?.data?.error || e.message); }
   };
@@ -395,6 +410,8 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
         financingPercent,
         latestProductionPlanning ? { production_planning: latestProductionPlanning } : {},
       );
+      console.log("[PDF FRONT] payload completo proforma", pdfPayload);
+      console.log("[PDF FRONT] lineas proforma", summarizeLinesForDebug(pdfPayload?.lines || []));
       await downloadProformaPdf(pdfPayload);
     } catch (e) { toast.error(e?.response?.data?.error || e.message); }
   };

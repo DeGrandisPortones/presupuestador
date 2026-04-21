@@ -183,20 +183,43 @@ async function readTemplateNamesStrict(odoo, templateIds = []) {
   return out;
 }
 
+function summarizePdfLines(rawLines = []) {
+  return (Array.isArray(rawLines) ? rawLines : []).map((line) => ({
+    product_id: line?.product_id,
+    odoo_id: line?.odoo_id,
+    odoo_template_id: line?.odoo_template_id,
+    odoo_variant_id: line?.odoo_variant_id,
+    odoo_external_id: line?.odoo_external_id,
+    name: line?.name,
+    raw_name: line?.raw_name,
+    qty: line?.qty,
+  }));
+}
+
 async function buildLines(payload, { useBasePrice, odoo }) {
   const coefPct = getMarginPct(payload);
   const coefFactor = 1 + coefPct / 100;
   const rawLines = Array.isArray(payload?.lines) ? payload.lines : [];
 
+  console.log("[PDF BACK] payload recibido", {
+    quote_number: payload?.quote_number || payload?.quoteNumber || payload?.quote_id || payload?.id || null,
+    seller_name: payload?.seller_name || payload?.sellerName || null,
+    lines_count: rawLines.length,
+  });
+  console.log("[PDF BACK] lineas recibidas", summarizePdfLines(rawLines));
+
   const templateIds = collectUniquePositiveInts(
     rawLines.map((line) => line?.odoo_id || line?.odoo_template_id),
   );
+
+  console.log("[PDF BACK] templateIds detectados", templateIds);
 
   if (!templateIds.length) {
     throw new Error("No llegaron ids de Odoo en las líneas del presupuesto para generar el PDF.");
   }
 
   const templateNames = await readTemplateNamesStrict(odoo, templateIds);
+  console.log("[PDF BACK] nombres recibidos desde Odoo", Array.from(templateNames.entries()));
 
   const lines = rawLines
     .map((l) => {
@@ -218,6 +241,17 @@ async function buildLines(payload, { useBasePrice, odoo }) {
           `No se pudo obtener desde Odoo el nombre del producto template ${templateId} para la línea ${l?.product_id || "sin product_id"}.`,
         );
       }
+
+      console.log("[PDF BACK] linea resuelta", {
+        product_id: l?.product_id,
+        odoo_id: l?.odoo_id,
+        odoo_template_id: l?.odoo_template_id,
+        odoo_variant_id: l?.odoo_variant_id,
+        odoo_external_id: l?.odoo_external_id,
+        incoming_name: l?.name,
+        incoming_raw_name: l?.raw_name,
+        resolved_name_from_odoo: liveOdooName,
+      });
 
       return {
         qty,
@@ -473,6 +507,11 @@ export function buildPdfRouter(odoo = null) {
   router.post("/presupuesto", async (req, res, next) => {
     try {
       const payload = req.body || {};
+      console.log("[PDF BACK] POST /api/pdf/presupuesto body", {
+        quote_number: payload?.quote_number || payload?.quoteNumber || payload?.quote_id || payload?.id || null,
+        lines_count: Array.isArray(payload?.lines) ? payload.lines.length : 0,
+      });
+      console.log("[PDF BACK] POST /api/pdf/presupuesto body lines", summarizePdfLines(payload?.lines || []));
       const pdf = await renderPdf({ title: "PRESUPUESTO", payload, useBasePrice: false, odoo });
       res.setHeader("Content-Type", "application/pdf");
       res.setHeader("Content-Disposition", `attachment; filename="${buildDownloadFilename(payload, "presupuesto")}"`);
@@ -483,6 +522,11 @@ export function buildPdfRouter(odoo = null) {
   router.post("/proforma", async (req, res, next) => {
     try {
       const payload = req.body || {};
+      console.log("[PDF BACK] POST /api/pdf/proforma body", {
+        quote_number: payload?.quote_number || payload?.quoteNumber || payload?.quote_id || payload?.id || null,
+        lines_count: Array.isArray(payload?.lines) ? payload.lines.length : 0,
+      });
+      console.log("[PDF BACK] POST /api/pdf/proforma body lines", summarizePdfLines(payload?.lines || []));
       const pdf = await renderPdf({ title: "PROFORMA", payload, useBasePrice: true, odoo });
       res.setHeader("Content-Type", "application/pdf");
       res.setHeader("Content-Disposition", `attachment; filename="${buildDownloadFilename(payload, "proforma")}"`);

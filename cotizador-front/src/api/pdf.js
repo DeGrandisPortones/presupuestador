@@ -35,6 +35,17 @@ function triggerDownload(blob, filename) {
 }
 
 export async function downloadPresupuestoPdf(payload) {
+  console.log("[PDF API] POST /api/pdf/presupuesto payload", payload);
+  console.log("[PDF API] POST /api/pdf/presupuesto lines", (payload?.lines || []).map((line) => ({
+    product_id: line?.product_id,
+    odoo_id: line?.odoo_id,
+    odoo_template_id: line?.odoo_template_id,
+    odoo_variant_id: line?.odoo_variant_id,
+    odoo_external_id: line?.odoo_external_id,
+    name: line?.name,
+    raw_name: line?.raw_name,
+    qty: line?.qty,
+  })));
   const res = await http.post("/api/pdf/presupuesto", payload, {
     responseType: "blob",
   });
@@ -42,6 +53,17 @@ export async function downloadPresupuestoPdf(payload) {
 }
 
 export async function downloadProformaPdf(payload) {
+  console.log("[PDF API] POST /api/pdf/proforma payload", payload);
+  console.log("[PDF API] POST /api/pdf/proforma lines", (payload?.lines || []).map((line) => ({
+    product_id: line?.product_id,
+    odoo_id: line?.odoo_id,
+    odoo_template_id: line?.odoo_template_id,
+    odoo_variant_id: line?.odoo_variant_id,
+    odoo_external_id: line?.odoo_external_id,
+    name: line?.name,
+    raw_name: line?.raw_name,
+    qty: line?.qty,
+  })));
   const res = await http.post("/api/pdf/proforma", payload, {
     responseType: "blob",
   });
