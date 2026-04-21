@@ -1,10 +1,6 @@
 Reemplazo directo:
-- cotizador-back/src/catalogBootstrap.js
-- cotizador-back/src/odooBootstrap.js
-- cotizador-front/src/domain/quote/store.js
+- cotizador-back/src/routes/pdf.routes.js
 
-Resultado:
-- vendedor/distribuidor sigue viendo alias en pantalla
-- raw_name y client_display_name quedan con nombre Odoo
-- PDF/proforma y cliente toman nombre Odoo
-- cache corto para reflejar cambios de nombre en Odoo mas rapido
+Fix:
+- el PDF busca el nombre live de Odoo usando odoo_variant_id / odoo_id / odoo_template_id antes de product_id.
+- evita que salga el alias corto interno (por ejemplo N) cuando el producto real en Odoo es Negro Semimate.
