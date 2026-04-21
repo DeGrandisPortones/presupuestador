@@ -114,6 +114,13 @@ function getClientFacingName(product = {}) {
     ""
   );
 }
+function looksLikeAliasOnly(value) {
+  const raw = cleanText(value);
+  if (!raw) return true;
+  if (raw.length <= 2) return true;
+  if (/^[A-Z0-9]{1,3}$/.test(raw)) return true;
+  return false;
+}
 
 export const useQuoteStore = create((set, get) => ({
   quoteId: null,
@@ -168,16 +175,15 @@ export const useQuoteStore = create((set, get) => ({
     const portonType = String(payload?.porton_type || "");
     const mappedLines = lines
       .map((l, idx) => {
-        const rawName = cleanText(l.raw_name || l.rawName || l.raw || l.original_name || l.name || "");
-        const visibleName =
-          cleanText(l.name || l.display_name || l.alias || rawName) || `Producto ${l.product_id || idx}`;
+        const rawName = cleanText(l.raw_name || l.rawName || l.raw || l.original_name || "");
+        const fallbackName = cleanText(l.name || l.display_name || l.alias || rawName) || `Producto ${l.product_id || idx}`;
         return {
           product_id: Number(l.product_id ?? idx + 1),
           odoo_id: Number(l.odoo_id || l.odoo_template_id || l.product_id || (idx + 1)),
           odoo_template_id: Number(l.odoo_template_id || l.odoo_id || l.product_id || (idx + 1)),
           odoo_variant_id: Number(l.odoo_variant_id || l.product_id || 0) || 0,
-          name: visibleName,
-          raw_name: rawName,
+          name: fallbackName,
+          raw_name: rawName || fallbackName,
           code: l.code || null,
           qty: normalizeEditableQty({
             productId: l.product_id,
@@ -412,7 +418,9 @@ export const useQuoteStore = create((set, get) => ({
         {
           price: Number(x.price ?? 0),
           name: String(x.name || "").trim(),
+          raw_name: String(x.raw_name || x.name || "").trim(),
           code: x.code || null,
+          odoo_template_id: Number(x.odoo_template_id || 0) || 0,
         },
       ]),
     );
@@ -422,11 +430,14 @@ export const useQuoteStore = create((set, get) => ({
         const next = map.get(l.product_id);
         if (!next || l.previously_billed_line) return l;
 
+        const nextRawName = cleanText(next.raw_name || next.name);
+        const preserveExistingRaw = !looksLikeAliasOnly(l.raw_name);
         return {
           ...l,
           basePrice: typeof next.price === "number" ? next.price : l.basePrice,
           code: next.code ?? l.code,
-          raw_name: next.name || l.raw_name,
+          odoo_template_id: next.odoo_template_id || l.odoo_template_id,
+          raw_name: preserveExistingRaw ? l.raw_name : (nextRawName || l.raw_name),
           name: l.name || next.name || l.raw_name,
         };
       }),

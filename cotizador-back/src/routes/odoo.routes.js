@@ -3,6 +3,14 @@ import { requireAuth } from "../auth.js";
 
 const TACA_TACA_PLAN_NAME = String(process.env.ODOO_TACA_TACA_PLAN_NAME || "Taca Taca").trim();
 
+function cleanText(value) {
+  return String(value || "").trim();
+}
+function toPositiveInt(value) {
+  const n = Number(value || 0);
+  return Number.isFinite(n) && n > 0 ? Math.trunc(n) : 0;
+}
+
 export function buildOdooRouter(odoo) {
   const router = express.Router();
 
@@ -17,9 +25,6 @@ export function buildOdooRouter(odoo) {
     }
   });
 
-  // -------------------------
-  // Pricelists
-  // -------------------------
   router.get("/pricelists", async (_req, res, next) => {
     try {
       const pls = await odoo.executeKw(
@@ -44,9 +49,6 @@ export function buildOdooRouter(odoo) {
     }
   });
 
-  // -------------------------
-  // Products (búsqueda)
-  // -------------------------
   router.get("/products", async (req, res, next) => {
     try {
       const query = (req.query.query || "").toString().trim();
@@ -178,11 +180,26 @@ export function buildOdooRouter(odoo) {
         if (!pricelistId) throw new Error(`No existe la lista de precios "${name}"`);
       }
 
-      const productIds = [...new Set(lines.map((l) => Number(l.product_id)))];
+      const productIds = [...new Set(lines.map((l) => Number(l.product_id)).filter(Boolean))];
       const products = await odoo.executeKw("product.product", "read", [productIds], {
-        fields: ["id", "name", "default_code"],
+        fields: ["id", "name", "default_code", "product_tmpl_id"],
       });
-      const byId = new Map(products.map((p) => [p.id, p]));
+      const byId = new Map((Array.isArray(products) ? products : []).map((p) => [Number(p.id), p]));
+
+      const templateIds = [...new Set(
+        (Array.isArray(products) ? products : [])
+          .map((p) => Array.isArray(p.product_tmpl_id) ? Number(p.product_tmpl_id[0]) : 0)
+          .filter(Boolean)
+      )];
+      let templates = [];
+      if (templateIds.length) {
+        templates = await odoo.executeKw("product.template", "read", [templateIds], {
+          fields: ["id", "name"],
+        });
+      }
+      const templateNameById = new Map(
+        (Array.isArray(templates) ? templates : []).map((t) => [Number(t.id), cleanText(t.name)])
+      );
 
       const out = [];
       for (const l of lines) {
@@ -192,13 +209,19 @@ export function buildOdooRouter(odoo) {
         if (!p) throw new Error(`Producto no encontrado: ${productId}`);
 
         const price = await getPriceFromPricelist({ odoo, pricelistId, productId, qty, partnerId });
+        const templateId = Array.isArray(p.product_tmpl_id) ? Number(p.product_tmpl_id[0]) : 0;
+        const templateName = cleanText(templateNameById.get(templateId));
+        const productName = cleanText(p.name);
+        const resolvedName = templateName || productName;
 
         out.push({
           product_id: productId,
           qty,
           price: round2(price),
-          name: p.name,
+          name: resolvedName,
+          raw_name: resolvedName,
           code: p.default_code || null,
+          odoo_template_id: templateId || null,
         });
       }
 
