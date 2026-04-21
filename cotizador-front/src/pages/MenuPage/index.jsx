@@ -40,6 +40,7 @@ export default function MenuPage() {
   const showDoors = !!(isSuperuser || user?.is_vendedor);
   const showMediciones = !!(isSuperuser || user?.is_medidor);
   const showTechnicalRules = !!isSuperuser;
+  const showHistoryViewer = !!isSuperuser;
 
   return (
     <div className="container">
@@ -133,6 +134,16 @@ export default function MenuPage() {
             buttonText="Abrir reglas"
             onClick={() => navigate("/dashboard/reglas-tecnicas")}
             iconSrc="/menu-icons/reglas-tecnicas.png"
+          />
+        )}
+
+        {showHistoryViewer && (
+          <MenuTile
+            title="Visualizador de portón"
+            description="Buscá por NP o NV y mirá el historial completo del portón, cliente, técnica y estado."
+            buttonText="Abrir visualizador"
+            onClick={() => navigate("/visualizador-porton")}
+            icon="🔎"
           />
         )}
 

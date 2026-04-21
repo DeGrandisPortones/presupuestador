@@ -13,6 +13,7 @@ import LoginPage from "./pages/LoginPage/index.jsx";
 
 import PresupuestosPage from "./pages/PresupuestosPage/index.jsx";
 import QuoteDetailPage from "./pages/QuoteDetailPage/index.jsx";
+import QuoteHistoryViewerPage from "./pages/QuoteHistoryViewerPage/index.jsx";
 import AprobacionComercialPage from "./pages/AprobacionComercialPage/index.jsx";
 import AprobacionTecnicaPage from "./pages/AprobacionTecnicaPage/index.jsx";
 import DashboardPage from "./pages/DashboardPage/index.jsx";
@@ -71,6 +72,7 @@ export default function App() {
           <Route path="puertas/:id/marco" element={<PuertaChecklistPage />} />
           <Route path="presupuestos" element={<PresupuestosPage />} />
           <Route path="presupuestos/:id" element={<QuoteDetailPage />} />
+          <Route path="visualizador-porton" element={<QuoteHistoryViewerPage />} />
           <Route path="mediciones" element={<MedicionesPage />} />
           <Route path="mediciones/:id" element={<MedicionDetailPage />} />
           <Route path="aprobacion/comercial" element={<AprobacionComercialPage />} />

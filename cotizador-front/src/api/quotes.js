@@ -28,3 +28,11 @@ export async function getProductionPlanningEstimate({ quoteId = null, fromDate =
   if (!data?.ok) throw new Error(data?.error || "No se pudo calcular la estimación de entrega");
   return data.estimate || null;
 }
+export async function getQuoteViewer({ reference = "", quoteId = "" } = {}) {
+  const params = new URLSearchParams();
+  if (reference) params.set("reference", String(reference));
+  if (quoteId) params.set("quote_id", String(quoteId));
+  const { data } = await http.get(`/api/quote-viewer?${params.toString()}`);
+  if (!data?.ok) throw new Error(data?.error || "No se pudo cargar el historial del portón");
+  return data;
+}
