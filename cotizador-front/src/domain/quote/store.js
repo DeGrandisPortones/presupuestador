@@ -173,9 +173,8 @@ export const useQuoteStore = create((set, get) => ({
           cleanText(l.name || l.display_name || l.alias || rawName) || `Producto ${l.product_id || idx}`;
         return {
           product_id: Number(l.product_id ?? idx + 1),
-          odoo_external_id: Number(l.odoo_external_id || l.odoo_id || 0) || 0,
           odoo_id: Number(l.odoo_id || 0) || 0,
-          odoo_template_id: Number(l.odoo_template_id || 0) || 0,
+          odoo_template_id: Number(l.odoo_template_id || l.odoo_id || 0) || 0,
           odoo_variant_id: Number(l.odoo_variant_id || 0) || 0,
           name: visibleName,
           raw_name: rawName,
@@ -344,15 +343,12 @@ export const useQuoteStore = create((set, get) => ({
         };
       }
 
-      const odooExternalId = Number(p.odoo_id || 0) || 0;
-
       return {
         lines: [
           ...s.lines,
           {
             product_id: id,
-            odoo_external_id: odooExternalId,
-            odoo_id: odooExternalId,
+            odoo_id: Number(p.odoo_id || 0) || 0,
             odoo_template_id: Number(p.odoo_template_id || p.odoo_id || 0) || 0,
             odoo_variant_id: Number(p.odoo_variant_id || 0) || 0,
             name: getInternalVisibleName(p),
@@ -444,9 +440,8 @@ export const useQuoteStore = create((set, get) => ({
       .filter((l) => !l.ui_only_line && !l.auto_system_item)
       .map((l) => ({
         product_id: l.product_id,
-        odoo_external_id: Number(l.odoo_external_id || l.odoo_id || 0) || 0,
         odoo_id: Number(l.odoo_id || 0) || 0,
-        odoo_template_id: Number(l.odoo_template_id || 0) || 0,
+        odoo_template_id: Number(l.odoo_template_id || l.odoo_id || 0) || 0,
         odoo_variant_id: Number(l.odoo_variant_id || 0) || 0,
         qty: normalizeEditableQty({
           productId: l.product_id,

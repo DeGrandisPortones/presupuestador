@@ -2,7 +2,8 @@ Reemplazo directo:
 - cotizador-back/src/routes/pdf.routes.js
 - cotizador-front/src/domain/quote/store.js
 
-Cambio pedido:
-- el front manda odoo_external_id = ID Odoo del producto
-- el PDF usa SOLO ese id para consultar product.product en Odoo
-- si Odoo devuelve un nombre raro/corto como N, el PDF falla y muestra error en lugar de usarlo
+Cambios:
+- el PDF usa SOLO odoo_id / odoo_template_id para buscar el nombre en Odoo (product.template)
+- ya no usa raw_name, alias ni nombre de variant para el PDF
+- si no encuentra el nombre en Odoo, tira error y no genera PDF
+- el front deja de mandar fallback a product_id como si fuera id de Odoo
