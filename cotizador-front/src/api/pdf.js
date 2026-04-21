@@ -34,9 +34,8 @@ function triggerDownload(blob, filename) {
   window.URL.revokeObjectURL(url);
 }
 
-export async function downloadPresupuestoPdf(payload) {
-  console.log("[PDF API] POST /api/pdf/presupuesto payload", payload);
-  console.log("[PDF API] POST /api/pdf/presupuesto lines", (payload?.lines || []).map((line) => ({
+function summarizePdfLines(payload) {
+  return (payload?.lines || []).map((line) => ({
     product_id: line?.product_id,
     odoo_id: line?.odoo_id,
     odoo_template_id: line?.odoo_template_id,
@@ -45,28 +44,51 @@ export async function downloadPresupuestoPdf(payload) {
     name: line?.name,
     raw_name: line?.raw_name,
     qty: line?.qty,
-  })));
+  }));
+}
+
+function logPdfApiRequest(kind, payload) {
+  console.log(`[PDF API] POST /api/pdf/${kind} payload`, payload);
+  console.log(`[PDF API] POST /api/pdf/${kind} summary`, {
+    quote_id: payload?.id || payload?.quote_id || payload?.quoteId || payload?.quote_number || payload?.quoteNumber || null,
+    customer: payload?.end_customer?.name || null,
+    line_count: Array.isArray(payload?.lines) ? payload.lines.length : 0,
+    lines: summarizePdfLines(payload),
+  });
+}
+
+function logPdfApiResponse(kind, payload, res) {
+  try {
+    const headers = res?.headers || {};
+    console.log(`[PDF API] POST /api/pdf/${kind} response`, {
+      quote_id: payload?.id || payload?.quote_id || payload?.quoteId || payload?.quote_number || payload?.quoteNumber || null,
+      status: res?.status,
+      statusText: res?.statusText,
+      contentType: headers["content-type"] || headers["Content-Type"] || null,
+      contentLength: headers["content-length"] || headers["Content-Length"] || null,
+      filename: buildPdfFilename(payload, kind),
+      blobSize: Number(res?.data?.size || 0) || 0,
+    });
+  } catch (e) {
+    console.log(`[PDF API] POST /api/pdf/${kind} response log error`, e?.message || e);
+  }
+}
+
+export async function downloadPresupuestoPdf(payload) {
+  logPdfApiRequest("presupuesto", payload);
   const res = await http.post("/api/pdf/presupuesto", payload, {
     responseType: "blob",
   });
+  logPdfApiResponse("presupuesto", payload, res);
   triggerDownload(res.data, buildPdfFilename(payload, "presupuesto"));
 }
 
 export async function downloadProformaPdf(payload) {
-  console.log("[PDF API] POST /api/pdf/proforma payload", payload);
-  console.log("[PDF API] POST /api/pdf/proforma lines", (payload?.lines || []).map((line) => ({
-    product_id: line?.product_id,
-    odoo_id: line?.odoo_id,
-    odoo_template_id: line?.odoo_template_id,
-    odoo_variant_id: line?.odoo_variant_id,
-    odoo_external_id: line?.odoo_external_id,
-    name: line?.name,
-    raw_name: line?.raw_name,
-    qty: line?.qty,
-  })));
+  logPdfApiRequest("proforma", payload);
   const res = await http.post("/api/pdf/proforma", payload, {
     responseType: "blob",
   });
+  logPdfApiResponse("proforma", payload, res);
   triggerDownload(res.data, buildPdfFilename(payload, "proforma"));
 }
 
