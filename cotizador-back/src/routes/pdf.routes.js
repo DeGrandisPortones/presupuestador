@@ -148,19 +148,13 @@ function collectUniquePositiveInts(values = []) {
   return [...new Set(values.map(toPositiveInt).filter(Boolean))];
 }
 function resolveProductVariantId(line = {}) {
-  return toPositiveInt(line?.odoo_external_id || line?.odoo_variant_id || 0);
-}
-function summarizePdfLines(rawLines = []) {
-  return (Array.isArray(rawLines) ? rawLines : []).map((line) => ({
-    product_id: line?.product_id,
-    odoo_external_id: line?.odoo_external_id,
-    odoo_id: line?.odoo_id,
-    odoo_template_id: line?.odoo_template_id,
-    odoo_variant_id: line?.odoo_variant_id,
-    name: line?.name,
-    raw_name: line?.raw_name,
-    qty: line?.qty,
-  }));
+  return toPositiveInt(
+    line?.odoo_variant_id ||
+    line?.odoo_external_id ||
+    line?.product_id ||
+    line?.odoo_id ||
+    0
+  );
 }
 async function readProductNamesStrict(odoo, productIds = []) {
   const ids = collectUniquePositiveInts(productIds);
@@ -177,18 +171,13 @@ async function buildLines(payload, { useBasePrice, odoo }) {
   const coefPct = getMarginPct(payload);
   const coefFactor = 1 + coefPct / 100;
   const rawLines = Array.isArray(payload?.lines) ? payload.lines : [];
-
-  console.log("[PDF BACK VARIANT] lineas recibidas", summarizePdfLines(rawLines));
-
   const productIds = collectUniquePositiveInts(rawLines.map((line) => resolveProductVariantId(line)));
-  console.log("[PDF BACK VARIANT] product.product ids detectados", productIds);
 
   if (!productIds.length) {
-    throw new Error("No llegaron IDs variant de Odoo en las líneas del presupuesto para generar el PDF.");
+    throw new Error("No llegaron IDs product.product de Odoo en las líneas del presupuesto para generar el PDF.");
   }
 
   const productNames = await readProductNamesStrict(odoo, productIds);
-  console.log("[PDF BACK VARIANT] nombres recibidos desde product.product", Array.from(productNames.entries()));
 
   const lines = rawLines
     .map((l) => {
@@ -198,31 +187,16 @@ async function buildLines(payload, { useBasePrice, odoo }) {
       const unit = unitNet * (1 + IVA_RATE);
       const totalNet = unitNet * qty;
       const total = unit * qty;
-
       const variantId = resolveProductVariantId(l);
+
       if (!variantId) {
-        throw new Error(
-          `Falta odoo_external_id / odoo_variant_id en la línea ${l?.product_id || "sin product_id"} (odoo_id ${l?.odoo_id || "sin odoo_id"}).`,
-        );
+        throw new Error(`Falta odoo_variant_id en la línea ${l?.product_id || "sin product_id"}.`);
       }
 
       const liveOdooName = safeStr(productNames.get(variantId));
       if (!liveOdooName) {
-        throw new Error(
-          `No se pudo obtener desde Odoo el nombre del product.product ${variantId} para la línea ${l?.product_id || "sin product_id"}.`,
-        );
+        throw new Error(`No se pudo obtener desde Odoo el nombre del product.product ${variantId} para la línea ${l?.product_id || "sin product_id"}.`);
       }
-
-      console.log("[PDF BACK VARIANT] linea resuelta", {
-        product_id: l?.product_id,
-        odoo_external_id: l?.odoo_external_id,
-        odoo_variant_id: l?.odoo_variant_id,
-        odoo_id: l?.odoo_id,
-        resolved_variant_id: variantId,
-        incoming_name: l?.name,
-        incoming_raw_name: l?.raw_name,
-        resolved_name_from_odoo_product: liveOdooName,
-      });
 
       return {
         qty,

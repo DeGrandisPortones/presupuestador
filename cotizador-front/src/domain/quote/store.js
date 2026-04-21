@@ -119,7 +119,14 @@ function toPositiveInt(value) {
   return Number.isFinite(n) && n > 0 ? Math.trunc(n) : 0;
 }
 function resolveOdooExternalId(source = {}) {
-  return toPositiveInt(source?.odoo_external_id || source?.odoo_variant_id || source?.odoo_product_id || 0);
+  return toPositiveInt(
+    source?.odoo_variant_id ||
+    source?.odoo_product_id ||
+    source?.odoo_external_id ||
+    source?.product_id ||
+    source?.odoo_id ||
+    0
+  );
 }
 
 export const useQuoteStore = create((set, get) => ({
@@ -344,7 +351,7 @@ export const useQuoteStore = create((set, get) => ({
           ...s.lines,
           {
             product_id: id,
-            odoo_external_id: resolveOdooExternalId(p) || toPositiveInt(p.id),
+            odoo_external_id: resolveOdooExternalId({ ...p, product_id: id }),
             odoo_id: toPositiveInt(p.odoo_id),
             odoo_template_id: toPositiveInt(p.odoo_template_id),
             odoo_variant_id: toPositiveInt(p.odoo_variant_id),
@@ -437,7 +444,7 @@ export const useQuoteStore = create((set, get) => ({
       .filter((l) => !l.ui_only_line && !l.auto_system_item)
       .map((l) => ({
         product_id: l.product_id,
-        odoo_external_id: resolveOdooExternalId(l) || toPositiveInt(l.product_id),
+        odoo_external_id: resolveOdooExternalId(l),
         odoo_id: toPositiveInt(l.odoo_id),
         odoo_template_id: toPositiveInt(l.odoo_template_id),
         odoo_variant_id: toPositiveInt(l.odoo_variant_id),
