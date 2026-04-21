@@ -2,7 +2,7 @@ Reemplazo directo:
 - cotizador-front/src/domain/quote/store.js
 - cotizador-back/src/routes/pdf.routes.js
 
-Fix:
-- odoo_external_id viaja desde el front con el mismo valor que ID Odoo del producto.
-- el PDF deja de consultar product.template y consulta product.product usando odoo_external_id / odoo_id.
-- para el caso 3287, el back va a leer product.product(3287).name.
+Fix real segun logs:
+- el PDF ahora usa odoo_external_id / odoo_variant_id para consultar product.product.
+- ya no usa odoo_id (template) para buscar el nombre.
+- el front llena odoo_external_id con odoo_variant_id cuando existe.
