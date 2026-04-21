@@ -9,11 +9,15 @@ import {
 } from "./catalogDb.js";
 
 let cacheByKind = new Map();
-const TTL_MS = Number(process.env.CATALOG_BOOTSTRAP_TTL_MS || 5 * 60 * 1000);
+const TTL_MS = Number(process.env.CATALOG_BOOTSTRAP_TTL_MS || 60 * 1000);
 
 function nowMs(){ return Date.now(); }
 
 function normTagName(x){ return (x||"").toString().trim().toLowerCase(); }
+
+function cleanText(value) {
+  return String(value || "").trim();
+}
 
 export async function loadCatalogBootstrap(odoo, kind="porton") {
   const k = normKind(kind);
@@ -53,7 +57,8 @@ export async function loadCatalogBootstrap(odoo, kind="porton") {
 
   const products = productsFiltered.map((p) => {
     const pid = Number(p.id);
-    const alias = aliasMap.get(pid) || null;
+    const alias = cleanText(aliasMap.get(pid) || "");
+    const odooName = cleanText(p?.name);
     const visibility = visibilityMap.get(pid) || { disable_for_vendedor: false, disable_for_distribuidor: false };
     const tids = Array.isArray(p.tag_ids) ? p.tag_ids.map(Number) : [];
     const sectionIds = [...new Set(tids.map((tid) => tagSection.get(tid)).filter(Boolean).map(Number))];
@@ -63,8 +68,12 @@ export async function loadCatalogBootstrap(odoo, kind="porton") {
 
     return {
       ...p,
-      alias,
-      display_name: alias || p.name,
+      alias: alias || null,
+      internal_alias: alias || null,
+      display_name: alias || odooName,
+      client_display_name: odooName,
+      original_name: odooName,
+      raw_name: odooName,
       section_ids: sectionIds,
       sections: sectionNames,
       tags: tagNames,

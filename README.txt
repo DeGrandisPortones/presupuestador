@@ -1,12 +1,10 @@
 Reemplazo directo:
-- cotizador-back/src/routes/quoteViewer.routes.js
-- cotizador-back/src/index.js
-- cotizador-front/src/api/quoteViewer.js
-- cotizador-front/src/App.jsx
-- cotizador-front/src/pages/MenuPage/index.jsx
-- cotizador-front/src/pages/QuoteHistoryViewerPage/index.jsx
-- cotizador-front/src/pages/SalesActorActivityPage/index.jsx
+- cotizador-back/src/catalogBootstrap.js
+- cotizador-back/src/odooBootstrap.js
+- cotizador-front/src/domain/quote/store.js
 
-Agrega:
-- visualizador de portones para superusuario
-- actividad de vendedores/distribuidores para superusuario
+Resultado:
+- vendedor/distribuidor sigue viendo alias en pantalla
+- raw_name y client_display_name quedan con nombre Odoo
+- PDF/proforma y cliente toman nombre Odoo
+- cache corto para reflejar cambios de nombre en Odoo mas rapido

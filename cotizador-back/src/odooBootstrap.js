@@ -1,6 +1,6 @@
 let cache = null;
 let cacheAt = 0;
-const TTL_MS = Number(process.env.ODOO_BOOTSTRAP_TTL_MS || 10 * 60 * 1000);
+const TTL_MS = Number(process.env.ODOO_BOOTSTRAP_TTL_MS || 60 * 1000);
 
 export async function loadOdooBootstrap(odoo) {
   const now = Date.now();

@@ -88,6 +88,32 @@ function buildCustomerName(customer = {}) {
   if (combined) return combined;
   return String(customer?.name || "").trim();
 }
+function cleanText(value) {
+  return String(value || "").trim();
+}
+function getInternalVisibleName(product = {}) {
+  return cleanText(
+    product?.display_name ||
+    product?.alias ||
+    product?.internal_alias ||
+    product?.name ||
+    product?.client_display_name ||
+    product?.raw_name ||
+    product?.original_name ||
+    ""
+  );
+}
+function getClientFacingName(product = {}) {
+  return cleanText(
+    product?.client_display_name ||
+    product?.raw_name ||
+    product?.rawName ||
+    product?.original_name ||
+    product?.name ||
+    product?.display_name ||
+    ""
+  );
+}
 
 export const useQuoteStore = create((set, get) => ({
   quoteId: null,
@@ -142,9 +168,9 @@ export const useQuoteStore = create((set, get) => ({
     const portonType = String(payload?.porton_type || "");
     const mappedLines = lines
       .map((l, idx) => {
-        const rawName = l.raw_name || l.rawName || l.raw || l.name || "";
+        const rawName = cleanText(l.raw_name || l.rawName || l.raw || l.original_name || l.name || "");
         const visibleName =
-          l.name || l.display_name || l.alias || rawName || `Producto ${l.product_id || idx}`;
+          cleanText(l.name || l.display_name || l.alias || rawName) || `Producto ${l.product_id || idx}`;
         return {
           product_id: Number(l.product_id ?? idx + 1),
           odoo_id: Number(l.odoo_id || l.odoo_template_id || l.product_id || (idx + 1)),
@@ -321,8 +347,8 @@ export const useQuoteStore = create((set, get) => ({
           {
             product_id: id,
             odoo_id: Number(p.odoo_id || p.odoo_template_id || p.id || 0) || id,
-            name: p.display_name || p.alias || p.name || "",
-            raw_name: p.raw_name || p.rawName || p.original_name || p.name || "",
+            name: getInternalVisibleName(p),
+            raw_name: getClientFacingName(p),
             code: p.code || null,
             qty: isSurfaceQuantity ? surfaceQty : (isIntegerQty ? 0 : 1),
             basePrice:
@@ -392,18 +418,12 @@ export const useQuoteStore = create((set, get) => ({
         const next = map.get(l.product_id);
         if (!next || l.previously_billed_line) return l;
 
-        const currentName = String(l.name || "").trim();
-        const currentRawName = String(l.raw_name || "").trim();
-        const nextName = String(next.name || "").trim();
-        const shouldSyncVisibleName =
-          !currentName || !currentRawName || currentName === currentRawName;
-
         return {
           ...l,
           basePrice: typeof next.price === "number" ? next.price : l.basePrice,
           code: next.code ?? l.code,
-          raw_name: nextName || l.raw_name,
-          name: shouldSyncVisibleName ? (nextName || l.name) : l.name,
+          raw_name: next.name || l.raw_name,
+          name: l.name || next.name || l.raw_name,
         };
       }),
     }));
