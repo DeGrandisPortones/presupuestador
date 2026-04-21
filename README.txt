@@ -1,5 +1,12 @@
 Reemplazo directo:
-- cotizador-front/src/pages/CotizadorPage/components/PortonDimensions.jsx
+- cotizador-back/src/routes/quoteViewer.routes.js
+- cotizador-back/src/index.js
+- cotizador-front/src/api/quoteViewer.js
+- cotizador-front/src/App.jsx
+- cotizador-front/src/pages/MenuPage/index.jsx
+- cotizador-front/src/pages/QuoteHistoryViewerPage/index.jsx
+- cotizador-front/src/pages/SalesActorActivityPage/index.jsx
 
-Cambio:
-- en orientacion vertical, la cantidad de parantes se sugiere automaticamente, pero queda editable por el usuario.
+Agrega:
+- visualizador de portones para superusuario
+- actividad de vendedores/distribuidores para superusuario

@@ -1,318 +1,521 @@
 import express from "express";
 import { requireAuth } from "../auth.js";
 import { dbQuery } from "../db.js";
-import { ensureQuotesMeasurementColumns } from "../quotesSchema.js";
 
 function requireSuperuser(req, res, next) {
   if (!req.user?.is_superuser) return res.status(403).json({ ok: false, error: "No autorizado" });
   next();
 }
-function text(v) { return String(v ?? "").trim(); }
-function upper(v) { return text(v).toUpperCase(); }
-function digitsOnly(v) { return String(v || "").replace(/\D+/g, ""); }
-function isUuid(v) {
-  return /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(String(v || "").trim());
+function toText(value) {
+  return String(value ?? "").trim();
 }
-function toDateIso(value) {
-  if (!value) return "";
-  const d = new Date(value);
-  return Number.isNaN(d.getTime()) ? "" : d.toISOString();
+function toInt(value) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
 }
-function safeJson(obj) {
-  return obj && typeof obj === "object" ? obj : {};
+function normalizeRef(value) {
+  return toText(value).toUpperCase();
 }
-function normalizeDecision(value) {
-  const raw = String(value || "pending").toLowerCase().trim();
-  if (raw === "approved") return "Aprobado";
-  if (raw === "rejected") return "Rechazado";
-  return "Pendiente";
+function stripReferencePrefix(value) {
+  return normalizeRef(value).replace(/^(NP|NV|S)+/i, "");
 }
-function normalizeMeasurementStatus(value) {
-  const raw = String(value || "none").toLowerCase().trim();
-  const map = {
-    none: "Sin medición",
-    pending: "Pendiente",
-    submitted: "En revisión técnica final",
-    approved: "Aprobada",
-    needs_fix: "A corregir",
-    returned_to_seller: "Devuelta al vendedor",
-  };
-  return map[raw] || raw || "—";
+function quoteReferenceLabel(quote) {
+  const nv = toText(quote?.final_sale_order_name);
+  if (nv) return nv;
+  const np = toText(quote?.odoo_sale_order_name);
+  if (np) return np;
+  const number = quote?.quote_number === null || quote?.quote_number === undefined ? "" : String(quote.quote_number).trim();
+  return number ? `NP${number}` : String(quote?.id || "").slice(0, 8);
 }
-function fulfillmentLabel(value) {
+function customerName(quote) {
+  return toText(quote?.end_customer?.name);
+}
+function pushEvent(out, {
+  at,
+  type,
+  title,
+  description = "",
+  quoteId = null,
+  reference = "",
+  customer = "",
+}) {
+  const when = toText(at);
+  if (!when) return;
+  out.push({
+    key: `${type}-${quoteId || "noquote"}-${when}`,
+    at: when,
+    type,
+    title,
+    description,
+    quote_id: quoteId,
+    reference,
+    customer,
+  });
+}
+function formatMode(value) {
   return String(value || "").toLowerCase().trim() === "acopio" ? "Acopio" : "Producción";
 }
-function currentStateLabel(original, finalCopy) {
-  if (text(finalCopy?.final_sale_order_name || original?.final_sale_order_name)) return "NV emitida";
-  if (String(original?.measurement_status || "").toLowerCase() === "approved") return "Revisión técnica final aprobada";
-  if (String(original?.measurement_status || "").toLowerCase() === "submitted") return "Pendiente de revisión técnica final";
-  if (String(original?.measurement_status || "").toLowerCase() === "returned_to_seller") return "Pendiente por cambios postmedición";
-  if (String(original?.status || "").toLowerCase() === "synced_odoo") return "NP emitida";
-  if (String(original?.status || "").toLowerCase() === "pending_approvals") return "En aprobaciones";
-  return text(original?.status) || "—";
+function buildTechnicalSnapshot(quote, finalCopy = null) {
+  const measurementForm = quote?.measurement_form && typeof quote.measurement_form === "object" ? quote.measurement_form : {};
+  const dimensions = finalCopy?.payload?.dimensions || quote?.payload?.dimensions || {};
+  return {
+    measurement_form: measurementForm,
+    budget_dimensions: dimensions,
+    alto_final_mm: toText(measurementForm?.alto_final_mm),
+    ancho_final_mm: toText(measurementForm?.ancho_final_mm),
+    cantidad_parantes: toText(measurementForm?.cantidad_parantes || dimensions?.cantidad_parantes),
+    orientacion_parantes: toText(measurementForm?.orientacion_parantes || dimensions?.orientacion_parantes),
+    distribucion_parantes: toText(measurementForm?.distribucion_parantes || dimensions?.distribucion_parantes),
+    observaciones_parantes: toText(measurementForm?.observaciones_parantes || dimensions?.observaciones_parantes),
+    observaciones_medicion: toText(measurementForm?.observaciones_medicion),
+  };
 }
-function buildReferenceVariants(reference) {
-  const clean = upper(reference).replace(/\s+/g, "");
-  const digits = digitsOnly(clean);
-  const variants = new Set();
-  if (clean) variants.add(clean);
-  if (digits) {
-    variants.add(digits);
-    variants.add(`NP${digits}`);
-    variants.add(`NV${digits}`);
-    variants.add(`S${digits}`);
+function buildTimeline({ originalQuote, finalCopies = [], linkedDoors = [] }) {
+  const out = [];
+  const originalRef = quoteReferenceLabel(originalQuote);
+  const customer = customerName(originalQuote);
+
+  pushEvent(out, {
+    at: originalQuote?.created_at,
+    type: "quote_saved",
+    title: "Presupuesto guardado",
+    description: `Cliente: ${customer || "—"} · Modo: ${formatMode(originalQuote?.fulfillment_mode)}`,
+    quoteId: originalQuote?.id,
+    reference: originalRef,
+    customer,
+  });
+  pushEvent(out, {
+    at: originalQuote?.confirmed_at,
+    type: "quote_confirmed",
+    title: "Presupuesto confirmado",
+    description: `Se envió a aprobación inicial.`,
+    quoteId: originalQuote?.id,
+    reference: originalRef,
+    customer,
+  });
+  pushEvent(out, {
+    at: originalQuote?.commercial_at,
+    type: "commercial_approved",
+    title: "Aprobación comercial",
+    description: toText(originalQuote?.commercial_notes) || "Aprobado comercialmente.",
+    quoteId: originalQuote?.id,
+    reference: originalRef,
+    customer,
+  });
+  pushEvent(out, {
+    at: originalQuote?.technical_at,
+    type: "technical_approved",
+    title: "Aprobación técnica",
+    description: toText(originalQuote?.technical_notes) || "Aprobado técnicamente.",
+    quoteId: originalQuote?.id,
+    reference: originalRef,
+    customer,
+  });
+  pushEvent(out, {
+    at: originalQuote?.measurement_scheduled_at,
+    type: "measurement_scheduled",
+    title: "Medición asignada",
+    description: toText(originalQuote?.measurement_scheduled_for)
+      ? `Fecha asignada: ${originalQuote.measurement_scheduled_for}`
+      : "Se asignó fecha de medición.",
+    quoteId: originalQuote?.id,
+    reference: originalRef,
+    customer,
+  });
+  pushEvent(out, {
+    at: originalQuote?.measurement_at,
+    type: "measurement_completed",
+    title: "Medición realizada",
+    description: toText(originalQuote?.measurement_status) || "Medición completada.",
+    quoteId: originalQuote?.id,
+    reference: originalRef,
+    customer,
+  });
+  pushEvent(out, {
+    at: originalQuote?.measurement_review_at,
+    type: "measurement_review",
+    title: (
+      String(originalQuote?.measurement_status || "").toLowerCase().trim() === "approved"
+        ? "Revisión técnica final aprobada"
+        : String(originalQuote?.measurement_status || "").toLowerCase().trim() === "returned_to_seller"
+          ? "Medición devuelta al vendedor"
+          : "Revisión de medición"
+    ),
+    description: toText(originalQuote?.measurement_review_notes) || "Se revisó la medición.",
+    quoteId: originalQuote?.id,
+    reference: originalRef,
+    customer,
+  });
+  pushEvent(out, {
+    at: originalQuote?.acopio_to_produccion_requested_at,
+    type: "acopio_requested",
+    title: "Solicitud de salida de acopio",
+    description: toText(originalQuote?.acopio_to_produccion_notes) || "Se solicitó pasar el portón a producción.",
+    quoteId: originalQuote?.id,
+    reference: originalRef,
+    customer,
+  });
+
+  for (const copy of (Array.isArray(finalCopies) ? finalCopies : [])) {
+    const copyRef = toText(copy?.final_sale_order_name) || quoteReferenceLabel(originalQuote);
+    pushEvent(out, {
+      at: copy?.created_at,
+      type: "revision_created",
+      title: "Ajuste creado",
+      description: "Se creó una revisión / presupuesto final.",
+      quoteId: copy?.id,
+      reference: copyRef,
+      customer,
+    });
+    pushEvent(out, {
+      at: copy?.final_synced_at,
+      type: "final_nv_generated",
+      title: "NV final generada",
+      description: copy?.final_sale_order_name
+        ? `Se generó ${copy.final_sale_order_name} en Odoo.`
+        : "Se generó la NV final en Odoo.",
+      quoteId: copy?.id,
+      reference: copyRef,
+      customer,
+    });
   }
-  return [...variants].filter(Boolean);
-}
-async function getOriginalQuoteById(id) {
-  const r = await dbQuery(
-    `select q.*, u.username as created_by_username, u.full_name as created_by_full_name
-       from public.presupuestador_quotes q
-       left join public.presupuestador_users u on u.id = q.created_by_user_id
-      where q.id=$1 and q.quote_kind='original'
-      limit 1`,
-    [id],
-  );
-  return r.rows?.[0] || null;
-}
-async function getFinalCopyForOriginal(originalId) {
-  const r = await dbQuery(
-    `select q.*, u.username as created_by_username, u.full_name as created_by_full_name
-       from public.presupuestador_quotes q
-       left join public.presupuestador_users u on u.id = q.created_by_user_id
-      where q.quote_kind='copy' and q.parent_quote_id=$1
-      order by q.created_at desc nulls last, q.id desc
-      limit 1`,
-    [originalId],
-  );
-  return r.rows?.[0] || null;
-}
-async function getLinkedDoors(originalId) {
-  const r = await dbQuery(
-    `select d.*, u.username as created_by_username, u.full_name as created_by_full_name
-       from public.presupuestador_doors d
-       left join public.presupuestador_users u on u.id = d.created_by_user_id
-      where d.linked_quote_id=$1
-      order by d.id desc`,
-    [originalId],
-  );
-  return r.rows || [];
-}
-async function findMatchingOriginalIds(reference) {
-  const variants = buildReferenceVariants(reference);
-  if (!variants.length) return [];
-  const likeNeedle = `%${variants[0]}%`;
-  const digits = digitsOnly(reference);
-  const params = [variants, digits || null, likeNeedle];
-  const r = await dbQuery(
-    `with original_hits as (
-       select q.id as original_id,
-              case
-                when upper(coalesce(q.odoo_sale_order_name, '')) = any($1::text[]) then 'np'
-                when upper(coalesce(q.final_sale_order_name, '')) = any($1::text[]) then 'nv_directa'
-                when coalesce(q.quote_number::text, '') = any($1::text[]) then 'numero'
-                else 'referencia'
-              end as match_type
-         from public.presupuestador_quotes q
-        where q.quote_kind='original'
-          and (
-            upper(coalesce(q.odoo_sale_order_name, '')) = any($1::text[])
-            or upper(coalesce(q.final_sale_order_name, '')) = any($1::text[])
-            or coalesce(q.quote_number::text, '') = any($1::text[])
-            or upper(coalesce(q.odoo_sale_order_name, '')) like $3
-            or upper(coalesce(q.final_sale_order_name, '')) like $3
-          )
-       union all
-       select q.parent_quote_id as original_id,
-              case
-                when upper(coalesce(q.final_sale_order_name, '')) = any($1::text[]) then 'nv'
-                when coalesce(q.quote_number::text, '') = any($1::text[]) then 'numero_copia'
-                else 'referencia_copia'
-              end as match_type
-         from public.presupuestador_quotes q
-        where q.quote_kind='copy'
-          and q.parent_quote_id is not null
-          and (
-            upper(coalesce(q.final_sale_order_name, '')) = any($1::text[])
-            or coalesce(q.quote_number::text, '') = any($1::text[])
-            or upper(coalesce(q.final_sale_order_name, '')) like $3
-          )
-      )
-      select distinct on (original_id) original_id, match_type
-        from original_hits
-       where original_id is not null
-       order by original_id,
-         case match_type
-           when 'np' then 1
-           when 'nv' then 2
-           when 'nv_directa' then 3
-           when 'numero' then 4
-           when 'numero_copia' then 5
-           else 9
-         end`,
-    params,
-  );
-  return r.rows || [];
-}
-function buildDocuments(original, finalCopy) {
-  return {
-    presupuesto_original: text(original?.odoo_sale_order_name) || (original?.quote_number ? `NP${original.quote_number}` : ""),
-    venta_final:
-      text(finalCopy?.final_sale_order_name) ||
-      text(original?.final_sale_order_name) ||
-      "",
-    numero_interno: text(original?.quote_number),
-    presupuesto_id: text(original?.id),
-    ajuste_final_id: text(finalCopy?.id),
-  };
-}
-function buildTechnicalData(original, finalCopy) {
-  const payload = safeJson(original?.payload);
-  const dims = safeJson(payload?.dimensions);
-  const form = safeJson(original?.measurement_form);
-  const acceptance = safeJson(payload?.measurement_client_acceptance);
-  return {
-    ancho_presupuestado_m: dims?.width ?? "",
-    alto_presupuestado_m: dims?.height ?? "",
-    cantidad_parantes: form?.cantidad_parantes ?? dims?.cantidad_parantes ?? "",
-    orientacion_parantes: form?.orientacion_parantes ?? dims?.orientacion_parantes ?? "",
-    distribucion_parantes: form?.distribucion_parantes ?? dims?.distribucion_parantes ?? "",
-    observaciones_parantes: form?.observaciones_parantes ?? dims?.observaciones_parantes ?? "",
-    alto_final_mm: form?.alto_final_mm ?? "",
-    ancho_final_mm: form?.ancho_final_mm ?? "",
-    observaciones_medicion: form?.observaciones_medicion ?? "",
-    fecha_medicion: form?.fecha ?? "",
-    fecha_nota_pedido: form?.fecha_nota_pedido ?? "",
-    acceptance_full_name: acceptance?.full_name ?? "",
-    acceptance_dni: acceptance?.dni ?? "",
-    acceptance_at: acceptance?.accepted_at ?? "",
-    measurement_form: form,
-    payload_dimensions: dims,
-    final_copy_lines: Array.isArray(finalCopy?.lines) ? finalCopy.lines : [],
-  };
-}
-function pushEvent(events, when, title, description, section = "general") {
-  const iso = toDateIso(when);
-  if (!iso) return;
-  events.push({ when: iso, title, description: text(description), section });
-}
-function buildTimeline(original, finalCopy, doors) {
-  const events = [];
-  pushEvent(events, original?.created_at, "Presupuesto creado", `Creado por ${text(original?.created_by_full_name || original?.created_by_username || "—")}`, "comercial");
-  pushEvent(events, original?.confirmed_at, "Presupuesto confirmado", `Destino: ${fulfillmentLabel(original?.fulfillment_mode)}`, "comercial");
-  pushEvent(events, original?.commercial_at, `Aprobación comercial: ${normalizeDecision(original?.commercial_decision)}`, original?.commercial_notes, "aprobaciones");
-  pushEvent(events, original?.technical_at, `Aprobación técnica: ${normalizeDecision(original?.technical_decision)}`, original?.technical_notes, "aprobaciones");
-  pushEvent(events, original?.measurement_scheduled_at, "Fecha de medición asignada", original?.measurement_scheduled_for, "medicion");
-  pushEvent(events, original?.measurement_at, "Medición realizada", text(original?.measurement_status), "medicion");
-  pushEvent(events, original?.measurement_review_at, `Revisión de medición / técnica final`, original?.measurement_review_notes, "medicion");
-  pushEvent(events, original?.final_synced_at, "NV final emitida", text(original?.final_sale_order_name), "odoo");
-  pushEvent(events, finalCopy?.created_at, "Ajuste final creado", `Copia final ${text(finalCopy?.id)}`, "final");
-  pushEvent(events, finalCopy?.final_synced_at, "NV final emitida", text(finalCopy?.final_sale_order_name), "odoo");
-  pushEvent(events, original?.payload?.measurement_client_acceptance?.accepted_at, "Aceptación del cliente", text(original?.payload?.measurement_client_acceptance?.full_name), "cliente");
-  for (const door of Array.isArray(doors) ? doors : []) {
-    pushEvent(events, door?.synced_at || door?.updated_at, "Puerta vinculada", `${text(door?.door_code)} · ${text(door?.status)}`, "puertas");
+
+  for (const door of (Array.isArray(linkedDoors) ? linkedDoors : [])) {
+    pushEvent(out, {
+      at: door?.created_at,
+      type: "linked_door_created",
+      title: "Puerta vinculada creada",
+      description: toText(door?.door_code) || "Puerta vinculada al portón.",
+      quoteId: originalQuote?.id,
+      reference: originalRef,
+      customer,
+    });
   }
-  return events.sort((a, b) => String(a.when).localeCompare(String(b.when)));
+
+  const acceptance = originalQuote?.payload?.measurement_client_acceptance || finalCopies?.[0]?.payload?.measurement_client_acceptance || null;
+  pushEvent(out, {
+    at: acceptance?.accepted_at,
+    type: "client_acceptance",
+    title: "Aceptación del cliente",
+    description: [
+      toText(acceptance?.full_name) ? `Nombre: ${acceptance.full_name}` : "",
+      toText(acceptance?.dni) ? `DNI: ${acceptance.dni}` : "",
+    ].filter(Boolean).join(" · "),
+    quoteId: originalQuote?.id,
+    reference: originalRef,
+    customer,
+  });
+
+  return out.sort((a, b) => String(b.at).localeCompare(String(a.at)));
 }
-function buildCandidateSummary(original, finalCopy, matchType) {
-  return {
-    quote_id: original?.id,
-    client_name: text(original?.end_customer?.name),
-    seller_name: text(original?.created_by_full_name || original?.created_by_username),
-    np: text(original?.odoo_sale_order_name) || (original?.quote_number ? `NP${original.quote_number}` : ""),
-    nv: text(finalCopy?.final_sale_order_name || original?.final_sale_order_name),
-    current_state: currentStateLabel(original, finalCopy),
-    match_type: matchType,
-  };
-}
-async function buildViewerPayloadForOriginal(original, matchType = "manual") {
-  const finalCopy = await getFinalCopyForOriginal(original.id);
-  const doors = await getLinkedDoors(original.id);
-  return {
-    match_type: matchType,
-    current_state: currentStateLabel(original, finalCopy),
-    documents: buildDocuments(original, finalCopy),
-    customer: safeJson(original?.end_customer),
-    seller: {
-      created_by_role: text(original?.created_by_role),
-      name: text(original?.created_by_full_name || original?.created_by_username),
-      username: text(original?.created_by_username),
-      user_id: text(original?.created_by_user_id),
-      bill_to_odoo_partner_id: text(original?.bill_to_odoo_partner_id),
-    },
-    status: {
-      quote_status: text(original?.status),
-      fulfillment_mode: fulfillmentLabel(original?.fulfillment_mode),
-      commercial_decision: normalizeDecision(original?.commercial_decision),
-      technical_decision: normalizeDecision(original?.technical_decision),
-      measurement_status: normalizeMeasurementStatus(original?.measurement_status),
-      acopio_to_produccion_status: text(original?.acopio_to_produccion_status),
-      rejection_notes: text(original?.rejection_notes),
-      commercial_notes: text(original?.commercial_notes),
-      technical_notes: text(original?.technical_notes),
-    },
-    technical: buildTechnicalData(original, finalCopy),
-    original_quote: original,
-    final_copy: finalCopy,
-    linked_doors: doors,
-    timeline: buildTimeline(original, finalCopy, doors),
-  };
+function buildActionTimelineForUser({ userRow, originalQuotes = [], copyQuotes = [] }) {
+  const actions = [];
+
+  for (const quote of (Array.isArray(originalQuotes) ? originalQuotes : [])) {
+    const reference = quoteReferenceLabel(quote);
+    const customer = customerName(quote);
+    pushEvent(actions, {
+      at: quote?.created_at,
+      type: "quote_saved",
+      title: "Presupuesto guardado",
+      description: `Cliente: ${customer || "—"} · ${formatMode(quote?.fulfillment_mode)} · ${String(quote?.catalog_kind || "porton")}`,
+      quoteId: quote?.id,
+      reference,
+      customer,
+    });
+    pushEvent(actions, {
+      at: quote?.confirmed_at,
+      type: "quote_confirmed",
+      title: "Presupuesto confirmado",
+      description: `Se confirmó ${reference}.`,
+      quoteId: quote?.id,
+      reference,
+      customer,
+    });
+    pushEvent(actions, {
+      at: quote?.acopio_to_produccion_requested_at,
+      type: "acopio_requested",
+      title: "Portón solicitado para salir de acopio",
+      description: toText(quote?.acopio_to_produccion_notes) || `Pedido ${reference}.`,
+      quoteId: quote?.id,
+      reference,
+      customer,
+    });
+  }
+
+  for (const quote of (Array.isArray(copyQuotes) ? copyQuotes : [])) {
+    const parentReference = toText(quote?.parent_odoo_sale_order_name) || quoteReferenceLabel(quote);
+    const customer = customerName(quote);
+    pushEvent(actions, {
+      at: quote?.created_at,
+      type: "revision_created",
+      title: "Ajuste creado",
+      description: `Sobre ${parentReference}.`,
+      quoteId: quote?.id,
+      reference: parentReference,
+      customer,
+    });
+  }
+
+  return actions.sort((a, b) => String(b.at).localeCompare(String(a.at)));
 }
 
 export function buildQuoteViewerRouter() {
   const router = express.Router();
 
-  router.use(async (_req, _res, next) => {
+  router.use(requireAuth);
+  router.use(requireSuperuser);
+
+  router.get("/search", async (req, res, next) => {
     try {
-      await ensureQuotesMeasurementColumns();
-      next();
+      const ref = toText(req.query.ref);
+      if (!ref) return res.status(400).json({ ok: false, error: "Falta ref" });
+
+      const refLike = `%${normalizeRef(ref)}%`;
+      const refCore = stripReferencePrefix(ref);
+      const coreLike = refCore ? `%${refCore}%` : refLike;
+
+      const q = await dbQuery(
+        `
+        select distinct on (orig.id)
+               orig.id,
+               orig.quote_number,
+               orig.odoo_sale_order_name,
+               orig.final_sale_order_name,
+               orig.status,
+               orig.final_status,
+               orig.fulfillment_mode,
+               orig.created_at,
+               orig.confirmed_at,
+               orig.end_customer,
+               fc.final_copy_id,
+               fc.final_copy_status,
+               fc.final_copy_sale_order_name
+          from public.presupuestador_quotes cand
+          join public.presupuestador_quotes orig
+            on orig.id = case
+              when cand.quote_kind = 'copy' and cand.parent_quote_id is not null then cand.parent_quote_id
+              else cand.id
+            end
+          left join lateral (
+            select c.id as final_copy_id,
+                   c.final_status as final_copy_status,
+                   c.final_sale_order_name as final_copy_sale_order_name
+              from public.presupuestador_quotes c
+             where c.quote_kind = 'copy'
+               and c.parent_quote_id = orig.id
+             order by c.created_at desc nulls last, c.id desc
+             limit 1
+          ) fc on true
+         where orig.quote_kind = 'original'
+           and orig.catalog_kind = 'porton'
+           and (
+             upper(coalesce(orig.odoo_sale_order_name, '')) like $1
+             or upper(coalesce(orig.final_sale_order_name, '')) like $1
+             or upper(coalesce(fc.final_copy_sale_order_name, '')) like $1
+             or upper(coalesce(cand.odoo_sale_order_name, '')) like $1
+             or upper(coalesce(cand.final_sale_order_name, '')) like $1
+             or cast(coalesce(orig.quote_number, 0) as text) like $2
+             or cast(coalesce(cand.quote_number, 0) as text) like $2
+           )
+         order by orig.id, orig.created_at desc nulls last
+         limit 100
+        `,
+        [refLike, coreLike],
+      );
+
+      const quotes = (q.rows || []).map((row) => ({
+        ...row,
+        customer_name: customerName(row),
+        reference: quoteReferenceLabel(row),
+      }));
+
+      return res.json({ ok: true, quotes });
     } catch (e) {
       next(e);
     }
   });
-  router.use(requireAuth);
-  router.use(requireSuperuser);
 
-  router.get("/", async (req, res, next) => {
+  router.get("/history/:id", async (req, res, next) => {
     try {
-      const quoteId = text(req.query.quote_id);
-      const reference = text(req.query.reference);
-      let original = null;
-      let matches = [];
+      const quoteId = req.params.id;
+      const q = await dbQuery(
+        `
+        select q.*,
+               u.username as created_by_username,
+               u.full_name as created_by_full_name
+          from public.presupuestador_quotes q
+          left join public.presupuestador_users u on u.id = q.created_by_user_id
+         where q.id = $1
+           and q.quote_kind = 'original'
+         limit 1
+        `,
+        [quoteId],
+      );
+      const originalQuote = q.rows?.[0] || null;
+      if (!originalQuote) return res.status(404).json({ ok: false, error: "Portón no encontrado" });
 
-      if (quoteId) {
-        if (!isUuid(quoteId)) return res.status(400).json({ ok: false, error: "quote_id inválido" });
-        original = await getOriginalQuoteById(quoteId);
-        if (!original) {
-          const copyRow = await dbQuery(`select parent_quote_id from public.presupuestador_quotes where id=$1 and quote_kind='copy' limit 1`, [quoteId]);
-          const parentId = copyRow.rows?.[0]?.parent_quote_id || null;
-          if (parentId) original = await getOriginalQuoteById(parentId);
-        }
-        if (!original) return res.status(404).json({ ok: false, error: "Portón no encontrado" });
-        const viewer = await buildViewerPayloadForOriginal(original, "quote_id");
-        return res.json({ ok: true, viewer, matches: [buildCandidateSummary(original, viewer.final_copy, "quote_id")] });
-      }
+      const copiesQ = await dbQuery(
+        `
+        select c.*
+          from public.presupuestador_quotes c
+         where c.quote_kind = 'copy'
+           and c.parent_quote_id = $1
+         order by c.created_at asc nulls last, c.id asc
+        `,
+        [quoteId],
+      );
+      const finalCopies = copiesQ.rows || [];
+      const latestFinalCopy = finalCopies.length ? finalCopies[finalCopies.length - 1] : null;
 
-      if (!reference) return res.status(400).json({ ok: false, error: "Ingresá número de pedido o número de venta" });
+      const doorsQ = await dbQuery(
+        `
+        select d.id,
+               d.door_code,
+               d.status,
+               d.odoo_sale_order_name,
+               d.odoo_purchase_order_name,
+               d.created_at,
+               d.record
+          from public.presupuestador_doors d
+         where d.linked_quote_id = $1
+         order by d.created_at asc nulls last, d.id asc
+        `,
+        [quoteId],
+      );
+      const linkedDoors = doorsQ.rows || [];
 
-      const hitRows = await findMatchingOriginalIds(reference);
-      if (!hitRows.length) return res.status(404).json({ ok: false, error: "No se encontró ningún portón con esa referencia" });
+      const response = {
+        original_quote: originalQuote,
+        final_copy: latestFinalCopy,
+        final_copies: finalCopies,
+        linked_doors: linkedDoors,
+        seller: {
+          user_id: originalQuote.created_by_user_id,
+          role: originalQuote.created_by_role,
+          username: toText(originalQuote.created_by_username),
+          full_name: toText(originalQuote.created_by_full_name),
+        },
+        customer: originalQuote.end_customer || {},
+        technical: buildTechnicalSnapshot(originalQuote, latestFinalCopy),
+        timeline: buildTimeline({ originalQuote, finalCopies, linkedDoors }),
+      };
 
-      const hydrated = [];
-      for (const row of hitRows.slice(0, 10)) {
-        const candidateOriginal = await getOriginalQuoteById(row.original_id);
-        if (!candidateOriginal) continue;
-        const finalCopy = await getFinalCopyForOriginal(candidateOriginal.id);
-        hydrated.push({ original: candidateOriginal, finalCopy, matchType: row.match_type });
-      }
-      matches = hydrated.map((item) => buildCandidateSummary(item.original, item.finalCopy, item.matchType));
+      return res.json({ ok: true, history: response });
+    } catch (e) {
+      next(e);
+    }
+  });
 
-      if (hydrated.length === 1) {
-        const viewer = await buildViewerPayloadForOriginal(hydrated[0].original, hydrated[0].matchType);
-        return res.json({ ok: true, viewer, matches });
-      }
+  router.get("/activity/users", async (_req, res, next) => {
+    try {
+      const q = await dbQuery(
+        `
+        select id,
+               username,
+               full_name,
+               coalesce(is_active, true) as is_active,
+               coalesce(is_vendedor, false) as is_vendedor,
+               coalesce(is_distribuidor, false) as is_distribuidor
+          from public.presupuestador_users
+         where coalesce(is_vendedor, false) = true
+            or coalesce(is_distribuidor, false) = true
+         order by coalesce(full_name, username), username
+        `,
+        [],
+      );
+      return res.json({ ok: true, users: q.rows || [] });
+    } catch (e) {
+      next(e);
+    }
+  });
 
-      return res.json({ ok: true, viewer: null, matches, ambiguous: true });
+  router.get("/activity/:userId", async (req, res, next) => {
+    try {
+      const userId = toInt(req.params.userId);
+      if (!userId) return res.status(400).json({ ok: false, error: "userId inválido" });
+
+      const userQ = await dbQuery(
+        `
+        select id,
+               username,
+               full_name,
+               coalesce(is_active, true) as is_active,
+               coalesce(is_vendedor, false) as is_vendedor,
+               coalesce(is_distribuidor, false) as is_distribuidor
+          from public.presupuestador_users
+         where id = $1
+         limit 1
+        `,
+        [userId],
+      );
+      const userRow = userQ.rows?.[0] || null;
+      if (!userRow) return res.status(404).json({ ok: false, error: "Usuario no encontrado" });
+
+      const originalQ = await dbQuery(
+        `
+        select q.*
+          from public.presupuestador_quotes q
+         where q.quote_kind = 'original'
+           and q.created_by_user_id = $1
+           and q.catalog_kind = 'porton'
+         order by q.created_at desc nulls last, q.id desc
+         limit 1000
+        `,
+        [userId],
+      );
+      const originalQuotes = originalQ.rows || [];
+
+      const copyQ = await dbQuery(
+        `
+        select c.*,
+               p.odoo_sale_order_name as parent_odoo_sale_order_name,
+               p.quote_number as parent_quote_number,
+               p.end_customer as parent_end_customer
+          from public.presupuestador_quotes c
+          left join public.presupuestador_quotes p on p.id = c.parent_quote_id
+         where c.quote_kind = 'copy'
+           and c.created_by_user_id = $1
+           and coalesce(c.catalog_kind, 'porton') = 'porton'
+         order by c.created_at desc nulls last, c.id desc
+         limit 1000
+        `,
+        [userId],
+      );
+      const copyQuotes = copyQ.rows || [];
+
+      const summary = {
+        saved_quotes: originalQuotes.length,
+        confirmed_quotes: originalQuotes.filter((quote) => toText(quote.confirmed_at)).length,
+        acopio_requests: originalQuotes.filter((quote) => toText(quote.acopio_to_produccion_requested_at)).length,
+        created_revisions: copyQuotes.length,
+        pending_measurements: originalQuotes.filter((quote) => String(quote.measurement_status || "").toLowerCase().trim() === "pending").length,
+        returned_measurements: originalQuotes.filter((quote) => String(quote.measurement_status || "").toLowerCase().trim() === "returned_to_seller").length,
+      };
+
+      const actions = buildActionTimelineForUser({ userRow, originalQuotes, copyQuotes });
+
+      return res.json({
+        ok: true,
+        activity: {
+          user: userRow,
+          summary,
+          actions,
+          original_quotes: originalQuotes.slice(0, 200).map((quote) => ({
+            id: quote.id,
+            quote_number: quote.quote_number,
+            odoo_sale_order_name: quote.odoo_sale_order_name,
+            final_sale_order_name: quote.final_sale_order_name,
+            customer_name: customerName(quote),
+            fulfillment_mode: quote.fulfillment_mode,
+            status: quote.status,
+            measurement_status: quote.measurement_status,
+            created_at: quote.created_at,
+            confirmed_at: quote.confirmed_at,
+            acopio_to_produccion_requested_at: quote.acopio_to_produccion_requested_at,
+          })),
+        },
+      });
     } catch (e) {
       next(e);
     }

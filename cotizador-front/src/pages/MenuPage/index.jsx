@@ -40,7 +40,8 @@ export default function MenuPage() {
   const showDoors = !!(isSuperuser || user?.is_vendedor);
   const showMediciones = !!(isSuperuser || user?.is_medidor);
   const showTechnicalRules = !!isSuperuser;
-  const showHistoryViewer = !!isSuperuser;
+  const showQuoteViewer = !!isSuperuser;
+  const showSellerActivity = !!isSuperuser;
 
   return (
     <div className="container">
@@ -137,13 +138,23 @@ export default function MenuPage() {
           />
         )}
 
-        {showHistoryViewer && (
+        {showQuoteViewer && (
           <MenuTile
-            title="Visualizador de portón"
-            description="Buscá por NP o NV y mirá el historial completo del portón, cliente, técnica y estado."
+            title="Visualizador de portones"
+            description="Buscá por NP o NV y mirá el historial completo del portón."
             buttonText="Abrir visualizador"
-            onClick={() => navigate("/visualizador-porton")}
+            onClick={() => navigate("/superuser/visualizador-porton")}
             icon="🔎"
+          />
+        )}
+
+        {showSellerActivity && (
+          <MenuTile
+            title="Actividad vendedores / distribuidores"
+            description="Elegí un usuario y mirá las acciones realizadas con sus portones."
+            buttonText="Abrir actividad"
+            onClick={() => navigate("/superuser/actividad-vendedores")}
+            icon="📊"
           />
         )}
 
