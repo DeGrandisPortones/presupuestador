@@ -172,19 +172,76 @@ async function resolveMeasurementForm(quote) {
   return form;
 }
 
-async function readLiveOdooProductNames(odoo, rawLines = []) {
+function toPositiveInt(value) {
+  const n = Number(value || 0);
+  return Number.isFinite(n) && n > 0 ? Math.trunc(n) : 0;
+}
+
+function collectUniquePositiveInts(values = []) {
+  return [...new Set(values.map(toPositiveInt).filter(Boolean))];
+}
+
+async function readModelNames(odoo, model, ids = []) {
   const out = new Map();
-  if (!odoo) return out;
-  const ids = [...new Set((Array.isArray(rawLines) ? rawLines : []).map((line) => Number(line?.product_id || 0)).filter((n) => Number.isFinite(n) && n > 0))];
-  if (!ids.length) return out;
+  const safeIds = collectUniquePositiveInts(ids);
+  if (!odoo || !safeIds.length) return out;
   try {
-    const products = await odoo.executeKw("product.product", "read", [ids], { fields: ["id", "name"] });
-    for (const p of Array.isArray(products) ? products : []) {
-      const id = Number(p?.id || 0);
-      if (id > 0) out.set(id, safeStr(p?.name));
+    const rows = await odoo.executeKw(model, "read", [safeIds], { fields: ["id", "name"] });
+    for (const row of Array.isArray(rows) ? rows : []) {
+      const id = toPositiveInt(row?.id);
+      if (id) out.set(id, safeStr(row?.name));
     }
   } catch (e) {
-    console.error("PDF live Odoo names error:", e?.message || e);
+    console.error(`PDF live ${model} names error:`, e?.message || e);
+  }
+  return out;
+}
+
+async function readLiveOdooProductNames(odoo, rawLines = []) {
+  const lines = Array.isArray(rawLines) ? rawLines : [];
+  const variantCandidateIds = collectUniquePositiveInts(
+    lines.flatMap((line) => [
+      line?.odoo_variant_id,
+      line?.odoo_product_id,
+    ]),
+  );
+  const templateCandidateIds = collectUniquePositiveInts(
+    lines.flatMap((line) => [
+      line?.odoo_template_id,
+      line?.odoo_id,
+    ]),
+  );
+  const fallbackVariantIds = collectUniquePositiveInts(lines.map((line) => line?.product_id));
+
+  const variantNames = await readModelNames(
+    odoo,
+    "product.product",
+    [...variantCandidateIds, ...fallbackVariantIds],
+  );
+  const templateNames = await readModelNames(
+    odoo,
+    "product.template",
+    templateCandidateIds,
+  );
+
+  const out = new Map();
+  for (const line of lines) {
+    const key = JSON.stringify([
+      toPositiveInt(line?.product_id),
+      toPositiveInt(line?.odoo_id),
+      toPositiveInt(line?.odoo_template_id),
+      toPositiveInt(line?.odoo_variant_id),
+    ]);
+
+    const candidateName =
+      safeStr(variantNames.get(toPositiveInt(line?.odoo_variant_id))) ||
+      safeStr(variantNames.get(toPositiveInt(line?.odoo_product_id))) ||
+      safeStr(variantNames.get(toPositiveInt(line?.odoo_id))) ||
+      safeStr(templateNames.get(toPositiveInt(line?.odoo_template_id))) ||
+      safeStr(templateNames.get(toPositiveInt(line?.odoo_id))) ||
+      safeStr(variantNames.get(toPositiveInt(line?.product_id)));
+
+    if (candidateName) out.set(key, candidateName);
   }
   return out;
 }
@@ -203,8 +260,13 @@ async function buildLines(payload, { useBasePrice, odoo }) {
       const unit = unitNet * (1 + IVA_RATE);
       const totalNet = unitNet * qty;
       const total = unit * qty;
-      const productId = Number(l?.product_id || 0);
-      const liveOdooName = liveNames.get(productId);
+      const lookupKey = JSON.stringify([
+        toPositiveInt(l?.product_id),
+        toPositiveInt(l?.odoo_id),
+        toPositiveInt(l?.odoo_template_id),
+        toPositiveInt(l?.odoo_variant_id),
+      ]);
+      const liveOdooName = liveNames.get(lookupKey);
       return {
         qty,
         name: safeStr(liveOdooName || l?.raw_name || l?.rawName || l?.name || l?.display_name || l?.alias || ""),

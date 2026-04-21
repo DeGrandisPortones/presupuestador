@@ -174,6 +174,8 @@ export const useQuoteStore = create((set, get) => ({
         return {
           product_id: Number(l.product_id ?? idx + 1),
           odoo_id: Number(l.odoo_id || l.odoo_template_id || l.product_id || (idx + 1)),
+          odoo_template_id: Number(l.odoo_template_id || l.odoo_id || l.product_id || (idx + 1)),
+          odoo_variant_id: Number(l.odoo_variant_id || l.product_id || 0) || 0,
           name: visibleName,
           raw_name: rawName,
           code: l.code || null,
@@ -347,6 +349,8 @@ export const useQuoteStore = create((set, get) => ({
           {
             product_id: id,
             odoo_id: Number(p.odoo_id || p.odoo_template_id || p.id || 0) || id,
+            odoo_template_id: Number(p.odoo_template_id || p.odoo_id || p.id || 0) || id,
+            odoo_variant_id: Number(p.odoo_variant_id || p.id || 0) || 0,
             name: getInternalVisibleName(p),
             raw_name: getClientFacingName(p),
             code: p.code || null,
@@ -436,7 +440,9 @@ export const useQuoteStore = create((set, get) => ({
       .filter((l) => !l.ui_only_line && !l.auto_system_item)
       .map((l) => ({
         product_id: l.product_id,
-        odoo_id: Number(l.odoo_id || l.product_id || 0) || 0,
+        odoo_id: Number(l.odoo_id || l.odoo_template_id || l.product_id || 0) || 0,
+        odoo_template_id: Number(l.odoo_template_id || l.odoo_id || l.product_id || 0) || 0,
+        odoo_variant_id: Number(l.odoo_variant_id || l.product_id || 0) || 0,
         qty: normalizeEditableQty({
           productId: l.product_id,
           qty: l.qty,

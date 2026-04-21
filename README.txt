@@ -1,6 +1,8 @@
 Reemplazo directo:
 - cotizador-back/src/routes/pdf.routes.js
+- cotizador-front/src/domain/quote/store.js
 
 Fix:
-- el PDF busca el nombre live de Odoo usando odoo_variant_id / odoo_id / odoo_template_id antes de product_id.
-- evita que salga el alias corto interno (por ejemplo N) cuando el producto real en Odoo es Negro Semimate.
+- el PDF deja de resolver nombres live usando solo product_id del presupuestador
+- ahora usa odoo_variant_id / odoo_template_id / odoo_id y fallback por modelo product.template
+- el frontend guarda esos ids de Odoo dentro de cada linea para que el PDF pueda encontrar el nombre real
