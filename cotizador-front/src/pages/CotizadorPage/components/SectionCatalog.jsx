@@ -3,14 +3,64 @@ import { useQuery } from "@tanstack/react-query";
 import { getOdooBootstrap, setOdooBootstrap } from "../../../domain/odoo/bootstrap.js";
 import { useQuoteStore } from "../../../domain/quote/store";
 import { useAuthStore } from "../../../domain/auth/store.js";
-import { getCatalogBootstrap, refreshCatalogBootstrap } from "../../../api/catalog.js";
+import { getCatalogBootstrap } from "../../../api/catalog.js";
 import {
   adminGetTechnicalMeasurementRules,
+  adminRefreshCatalog,
 } from "../../../api/admin.js";
 import Button from "../../../ui/Button";
 
+function getClientFacingProductName(product) {
+  return (
+    product?.client_display_name ||
+    product?.raw_name ||
+    product?.original_name ||
+    product?.name ||
+    ""
+  );
+}
+
 function getProductLabel(product) {
-  return product?.display_name || product?.alias || product?.name || "";
+  return (
+    product?.display_name ||
+    product?.alias ||
+    product?.internal_alias ||
+    getClientFacingProductName(product)
+  );
+}
+
+function syncQuoteLinesFromCatalogProducts(products = []) {
+  const byId = new Map(
+    (Array.isArray(products) ? products : [])
+      .map((product) => [Number(product?.id), product])
+      .filter(([id]) => Number.isFinite(id) && id > 0)
+  );
+
+  if (!byId.size) return;
+
+  useQuoteStore.setState((state) => {
+    const currentLines = Array.isArray(state?.lines) ? state.lines : [];
+    const nextLines = currentLines.map((line) => {
+      const product = byId.get(Number(line?.product_id));
+      if (!product) return line;
+
+      const nextRawName = getClientFacingProductName(product) || line?.raw_name || null;
+      const nextName = getProductLabel(product) || line?.name || null;
+
+      return {
+        ...line,
+        odoo_external_id: Number(product?.odoo_variant_id || line?.odoo_external_id || line?.product_id || 0) || 0,
+        odoo_variant_id: Number(product?.odoo_variant_id || line?.odoo_variant_id || line?.odoo_external_id || line?.product_id || 0) || 0,
+        odoo_id: Number(product?.odoo_id || line?.odoo_id || 0) || 0,
+        odoo_template_id: Number(product?.odoo_template_id || line?.odoo_template_id || 0) || 0,
+        name: nextName,
+        raw_name: nextRawName,
+        code: product?.code ?? line?.code ?? null,
+      };
+    });
+
+    return { lines: nextLines };
+  });
 }
 
 function getVisibleOdooId(product) {
@@ -175,12 +225,11 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
   const refreshCatalog = useCallback(async () => {
     setRefreshing(true);
     try {
-      const data = await refreshCatalogBootstrap(bootstrapKind);
+      await adminRefreshCatalog();
+      const data = await getCatalogBootstrap(bootstrapKind);
       setOdooBootstrap(data, kind);
-      if (bootstrapKind !== kind) {
-        setOdooBootstrap(data, bootstrapKind);
-      }
       setBoot(data);
+      syncQuoteLinesFromCatalogProducts(data?.products || []);
     } finally {
       setRefreshing(false);
       setAutoloadAttempted(true);
@@ -203,6 +252,7 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
         if (cancelled) return;
         setOdooBootstrap(data, kind);
         setBoot(data);
+        syncQuoteLinesFromCatalogProducts(data?.products || []);
       } finally {
         if (!cancelled) {
           setRefreshing(false);
@@ -214,6 +264,10 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
       cancelled = true;
     };
   }, [autoloadAttempted, kind, bootstrapKind]);
+
+  useEffect(() => {
+    syncQuoteLinesFromCatalogProducts(products);
+  }, [products]);
 
   const sectionList = useMemo(() => {
     return [...sections].sort(
@@ -374,7 +428,7 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
     addLine({
       ...product,
       name: getProductLabel(product),
-      raw_name: product?.name,
+      raw_name: getClientFacingProductName(product),
     });
     nextSelectionMap.set(Number(sectionId), new Set([targetProductId]));
 

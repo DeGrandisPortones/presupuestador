@@ -1,48 +1,26 @@
-Presupuestador - fix nombres Odoo en PDF + refresh manual
+Presupuestador - refresh de raw_name + PDF
 
 Qué corrige
 -----------
-1) El PDF ahora toma el nombre del product.template de Odoo cuando existe.
-   Esto evita el caso donde product.product sigue con un nombre corto/viejo
-   como "N", pero la ficha del producto en Odoo muestra el nombre actualizado
-   en el template.
-
-2) El botón "Actualizar catálogo" del presupuestador ahora refresca realmente
-   desde Odoo para cualquier usuario autenticado, limpiando cache de backend
-   y recargando el catálogo.
+1. El botón "Actualizar catálogo" ahora puede forzar el refresh para cualquier usuario autenticado.
+2. Al refrescar, el catálogo vuelve a leer los nombres desde Odoo y actualiza las líneas ya seleccionadas del presupuesto:
+   - raw_name
+   - name
+   - ids de Odoo
+3. El PDF pasa a priorizar raw_name del payload (que ahora queda resyncado con el refresh), y si falta usa Odoo como fallback.
+4. El bootstrap de Odoo prioriza display_name / nombre de template para traer nombres más actuales.
 
 Archivos incluidos
 ------------------
 - cotizador-back/src/odooBootstrap.js
-- cotizador-back/src/routes/catalog.routes.js
+- cotizador-back/src/routes/admin.routes.js
 - cotizador-back/src/routes/pdf.routes.js
-- cotizador-front/src/api/catalog.js
 - cotizador-front/src/pages/CotizadorPage/components/SectionCatalog.jsx
-
-Resultado esperado para tu caso
--------------------------------
-Para el item:
-- ID Presupuestador: 3618
-- ID Odoo template: 3287
-- ID Odoo variant: 3618
-
-El PDF ya no debería imprimir "N".
-Debería usar el nombre del template en Odoo:
-"Negro Semimate Color del revestimiento"
-
-Cómo probar
------------
-1) Reemplazá estos archivos.
-2) Reiniciá front y back.
-3) Entrá al cotizador.
-4) Tocá "Actualizar catálogo".
-5) Volvé a generar PDF presupuesto / proforma.
-6) En logs del backend deberías ver:
-   - lectura de product.product
-   - lectura de product.template
-   - live_odoo_name con el nombre del template
 
 Notas
 -----
-- El alias visible para vendedor/distribuidor sigue igual.
-- El cambio impacta en el PDF y en el refresh del catálogo.
+Tus logs muestran que raw_name llega viejo como "N" y que ese valor queda en las líneas del presupuesto fileciteturn28file0.
+También muestran que incluso la lectura backend a Odoo devolvió "N" para ese producto en esa prueba fileciteturn28file0.
+Por eso esta solución hace dos cosas a la vez:
+- refresca el catálogo y sobreescribe raw_name en el quote abierto
+- usa raw_name en el PDF como fuente principal, para que el refresh impacte directamente

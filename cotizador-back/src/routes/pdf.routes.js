@@ -156,60 +156,23 @@ function resolveProductVariantId(line = {}) {
     0
   );
 }
-function summarizePdfLines(rawLines = []) {
-  return (Array.isArray(rawLines) ? rawLines : []).map((line) => ({
-    product_id: line?.product_id,
-    odoo_external_id: line?.odoo_external_id,
-    odoo_id: line?.odoo_id,
-    odoo_template_id: line?.odoo_template_id,
-    odoo_variant_id: line?.odoo_variant_id,
-    name: line?.name,
-    raw_name: line?.raw_name,
-    qty: line?.qty,
-  }));
+function resolvePayloadPdfName(line = {}) {
+  return safeStr(
+    line?.raw_name ||
+    line?.original_name ||
+    line?.client_display_name ||
+    line?.name ||
+    ""
+  );
 }
-function summarizeRenderedPdfLines(lines = []) {
-  return (Array.isArray(lines) ? lines : []).map((line) => ({
-    name: line?.name,
-    qty: line?.qty,
-    unit: line?.unit,
-    total: line?.total,
-  }));
-}
-function logPdfRouteRequest(kind, payload) {
-  console.log(`[PDF ROUTE] /${kind} request`, {
-    quote_id: payload?.id || payload?.quote_id || payload?.quoteId || payload?.quote_number || payload?.quoteNumber || null,
-    customer: payload?.end_customer?.name || null,
-    line_count: Array.isArray(payload?.lines) ? payload.lines.length : 0,
-    lines: summarizePdfLines(payload?.lines || []),
-  });
-}
-function logPdfRouteResponse(kind, payload, pdf) {
-  console.log(`[PDF ROUTE] /${kind} response`, {
-    quote_id: payload?.id || payload?.quote_id || payload?.quoteId || payload?.quote_number || payload?.quoteNumber || null,
-    filename: buildDownloadFilename(payload, kind),
-    bytes: Number(pdf?.length || 0) || 0,
-  });
-}
-async function readProductDisplayNamesStrict(odoo, productIds = []) {
+async function readProductNamesStrict(odoo, productIds = []) {
   const ids = collectUniquePositiveInts(productIds);
   const out = new Map();
   if (!odoo || !ids.length) return out;
 
-  console.log("[PDF ODOO] product.product read request", {
-    ids,
-    fields: ["id", "name", "product_tmpl_id"],
-  });
-
   const variantRows = await odoo.executeKw("product.product", "read", [ids], {
-    fields: ["id", "name", "product_tmpl_id"],
+    fields: ["id", "name", "display_name", "product_tmpl_id"],
   });
-
-  console.log("[PDF ODOO] product.product read response", Array.isArray(variantRows) ? variantRows.map((row) => ({
-    id: row?.id,
-    name: row?.name,
-    product_tmpl_id: Array.isArray(row?.product_tmpl_id) ? row.product_tmpl_id[0] : row?.product_tmpl_id,
-  })) : variantRows);
 
   const templateIds = collectUniquePositiveInts(
     (Array.isArray(variantRows) ? variantRows : []).map((row) =>
@@ -219,36 +182,29 @@ async function readProductDisplayNamesStrict(odoo, productIds = []) {
 
   let templateRows = [];
   if (templateIds.length) {
-    console.log("[PDF ODOO] product.template read request", {
-      ids: templateIds,
-      fields: ["id", "name"],
-    });
-
     templateRows = await odoo.executeKw("product.template", "read", [templateIds], {
-      fields: ["id", "name"],
+      fields: ["id", "name", "display_name"],
     });
-
-    console.log("[PDF ODOO] product.template read response", Array.isArray(templateRows) ? templateRows.map((row) => ({
-      id: row?.id,
-      name: row?.name,
-    })) : templateRows);
   }
 
   const templateNameById = new Map(
-    (Array.isArray(templateRows) ? templateRows : []).map((row) => [toPositiveInt(row?.id), safeStr(row?.name)])
+    (Array.isArray(templateRows) ? templateRows : []).map((row) => [
+      toPositiveInt(row?.id),
+      safeStr(row?.display_name || row?.name),
+    ])
   );
 
   for (const row of Array.isArray(variantRows) ? variantRows : []) {
     const variantId = toPositiveInt(row?.id);
     const templateId = toPositiveInt(Array.isArray(row?.product_tmpl_id) ? row.product_tmpl_id[0] : row?.product_tmpl_id);
-    const variantName = safeStr(row?.name);
-    const templateName = safeStr(templateNameById.get(templateId));
-    if (variantId) {
-      out.set(variantId, templateName || variantName);
+    const displayName =
+      templateNameById.get(templateId) ||
+      safeStr(row?.display_name || row?.name);
+
+    if (variantId && displayName) {
+      out.set(variantId, displayName);
     }
   }
-
-  console.log("[PDF ODOO] mapped display names", Object.fromEntries(out));
 
   return out;
 }
@@ -258,14 +214,11 @@ async function buildLines(payload, { useBasePrice, odoo }) {
   const rawLines = Array.isArray(payload?.lines) ? payload.lines : [];
   const productIds = collectUniquePositiveInts(rawLines.map((line) => resolveProductVariantId(line)));
 
-  console.log("[PDF BUILD] raw payload lines", summarizePdfLines(rawLines));
-  console.log("[PDF BUILD] resolved product.product ids", productIds);
-
   if (!productIds.length) {
     throw new Error("No llegaron IDs product.product de Odoo en las líneas del presupuesto para generar el PDF.");
   }
 
-  const productNames = await readProductDisplayNamesStrict(odoo, productIds);
+  const productNames = await readProductNamesStrict(odoo, productIds);
 
   const lines = rawLines
     .map((l) => {
@@ -281,28 +234,17 @@ async function buildLines(payload, { useBasePrice, odoo }) {
         throw new Error(`Falta odoo_variant_id en la línea ${l?.product_id || "sin product_id"}.`);
       }
 
+      const payloadPdfName = resolvePayloadPdfName(l);
       const liveOdooName = safeStr(productNames.get(variantId));
-      if (!liveOdooName) {
-        throw new Error(`No se pudo obtener desde Odoo el nombre del product.product ${variantId} para la línea ${l?.product_id || "sin product_id"}.`);
-      }
+      const resolvedPdfName = payloadPdfName || liveOdooName;
 
-      console.log("[PDF BUILD] line resolved", {
-        product_id: l?.product_id,
-        odoo_external_id: l?.odoo_external_id,
-        odoo_id: l?.odoo_id,
-        odoo_template_id: l?.odoo_template_id,
-        odoo_variant_id: l?.odoo_variant_id,
-        resolved_variant_id: variantId,
-        payload_name: l?.name,
-        payload_raw_name: l?.raw_name,
-        live_odoo_name: liveOdooName,
-        qty,
-        base_price: basePrice,
-      });
+      if (!resolvedPdfName) {
+        throw new Error(`No se pudo obtener desde Odoo ni desde el payload el nombre del product.product ${variantId} para la línea ${l?.product_id || "sin product_id"}.`);
+      }
 
       return {
         qty,
-        name: liveOdooName,
+        name: resolvedPdfName,
         unit,
         total,
         totalNet,
@@ -313,9 +255,6 @@ async function buildLines(payload, { useBasePrice, odoo }) {
   const subtotalNet = lines.reduce((acc, l) => acc + l.totalNet, 0);
   const ivaAmount = subtotalNet * IVA_RATE;
   const grandTotal = subtotalNet + ivaAmount;
-
-  console.log("[PDF BUILD] rendered lines", summarizeRenderedPdfLines(lines));
-
   return { lines, grandTotal, subtotalNet, ivaAmount, coefPct };
 }
 function drawPageFrame(doc, margin, pageNo, pageCount, footerLeft = "De Grandis Portones") {
@@ -549,9 +488,7 @@ export function buildPdfRouter(odoo = null) {
   router.post("/presupuesto", async (req, res, next) => {
     try {
       const payload = req.body || {};
-      logPdfRouteRequest("presupuesto", payload);
       const pdf = await renderPdf({ title: "PRESUPUESTO", payload, useBasePrice: false, odoo });
-      logPdfRouteResponse("presupuesto", payload, pdf);
       res.setHeader("Content-Type", "application/pdf");
       res.setHeader("Content-Disposition", `attachment; filename="${buildDownloadFilename(payload, "presupuesto")}"`);
       res.send(pdf);
@@ -561,9 +498,7 @@ export function buildPdfRouter(odoo = null) {
   router.post("/proforma", async (req, res, next) => {
     try {
       const payload = req.body || {};
-      logPdfRouteRequest("proforma", payload);
       const pdf = await renderPdf({ title: "PROFORMA", payload, useBasePrice: true, odoo });
-      logPdfRouteResponse("proforma", payload, pdf);
       res.setHeader("Content-Type", "application/pdf");
       res.setHeader("Content-Disposition", `attachment; filename="${buildDownloadFilename(payload, "proforma")}"`);
       res.send(pdf);

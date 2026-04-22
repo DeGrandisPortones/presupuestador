@@ -134,9 +134,14 @@ export function buildAdminRouter(odoo) {
       res.json({ ok: true, visibility: saved });
     } catch (e) { next(e); }
   });
-  router.post("/refresh", requireAuth, requireEncComercialOrSuperuser, async (_req, res, next) => {
+  router.post("/refresh", requireAuth, async (req, res, next) => {
     try {
       clearCatalogBootstrapCache();
+      const kind = req.body?.kind ? normKind(req.body.kind) : null;
+      if (kind) {
+        const catalog = await loadCatalogBootstrap(odoo, kind);
+        return res.json({ ok: true, catalog });
+      }
       res.json({ ok: true });
     } catch (e) { next(e); }
   });
