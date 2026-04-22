@@ -147,78 +147,40 @@ function toPositiveInt(value) {
 function collectUniquePositiveInts(values = []) {
   return [...new Set(values.map(toPositiveInt).filter(Boolean))];
 }
-function resolveProductVariantId(line = {}) {
+function resolveProductTemplateId(line = {}) {
   return toPositiveInt(
-    line?.odoo_variant_id ||
-    line?.odoo_external_id ||
-    line?.product_id ||
     line?.odoo_id ||
+    line?.odoo_template_id ||
     0
   );
 }
-function resolvePayloadPdfName(line = {}) {
-  return safeStr(
-    line?.raw_name ||
-    line?.original_name ||
-    line?.client_display_name ||
-    line?.name ||
-    ""
-  );
-}
-async function readProductNamesStrict(odoo, productIds = []) {
-  const ids = collectUniquePositiveInts(productIds);
+async function readProductTemplateNamesStrict(odoo, templateIds = []) {
+  const ids = collectUniquePositiveInts(templateIds);
   const out = new Map();
   if (!odoo || !ids.length) return out;
 
-  const variantRows = await odoo.executeKw("product.product", "read", [ids], {
-    fields: ["id", "name", "display_name", "product_tmpl_id"],
+  const rows = await odoo.executeKw("product.template", "read", [ids], {
+    fields: ["id", "name", "display_name"],
   });
 
-  const templateIds = collectUniquePositiveInts(
-    (Array.isArray(variantRows) ? variantRows : []).map((row) =>
-      Array.isArray(row?.product_tmpl_id) ? row.product_tmpl_id[0] : row?.product_tmpl_id
-    )
-  );
-
-  let templateRows = [];
-  if (templateIds.length) {
-    templateRows = await odoo.executeKw("product.template", "read", [templateIds], {
-      fields: ["id", "name", "display_name"],
-    });
+  for (const row of Array.isArray(rows) ? rows : []) {
+    const id = toPositiveInt(row?.id);
+    const name = safeStr(row?.display_name || row?.name);
+    if (id && name) out.set(id, name);
   }
-
-  const templateNameById = new Map(
-    (Array.isArray(templateRows) ? templateRows : []).map((row) => [
-      toPositiveInt(row?.id),
-      safeStr(row?.display_name || row?.name),
-    ])
-  );
-
-  for (const row of Array.isArray(variantRows) ? variantRows : []) {
-    const variantId = toPositiveInt(row?.id);
-    const templateId = toPositiveInt(Array.isArray(row?.product_tmpl_id) ? row.product_tmpl_id[0] : row?.product_tmpl_id);
-    const displayName =
-      templateNameById.get(templateId) ||
-      safeStr(row?.display_name || row?.name);
-
-    if (variantId && displayName) {
-      out.set(variantId, displayName);
-    }
-  }
-
   return out;
 }
 async function buildLines(payload, { useBasePrice, odoo }) {
   const coefPct = getMarginPct(payload);
   const coefFactor = 1 + coefPct / 100;
   const rawLines = Array.isArray(payload?.lines) ? payload.lines : [];
-  const productIds = collectUniquePositiveInts(rawLines.map((line) => resolveProductVariantId(line)));
+  const templateIds = collectUniquePositiveInts(rawLines.map((line) => resolveProductTemplateId(line)));
 
-  if (!productIds.length) {
-    throw new Error("No llegaron IDs product.product de Odoo en las líneas del presupuesto para generar el PDF.");
+  if (!templateIds.length) {
+    throw new Error("No llegaron odoo_id / odoo_template_id en las líneas del presupuesto para generar el PDF.");
   }
 
-  const productNames = await readProductNamesStrict(odoo, productIds);
+  const productNames = await readProductTemplateNamesStrict(odoo, templateIds);
 
   const lines = rawLines
     .map((l) => {
@@ -228,23 +190,20 @@ async function buildLines(payload, { useBasePrice, odoo }) {
       const unit = unitNet * (1 + IVA_RATE);
       const totalNet = unitNet * qty;
       const total = unit * qty;
-      const variantId = resolveProductVariantId(l);
+      const templateId = resolveProductTemplateId(l);
 
-      if (!variantId) {
-        throw new Error(`Falta odoo_variant_id en la línea ${l?.product_id || "sin product_id"}.`);
+      if (!templateId) {
+        throw new Error(`Falta odoo_id / odoo_template_id en la línea ${l?.product_id || "sin product_id"}.`);
       }
 
-      const payloadPdfName = resolvePayloadPdfName(l);
-      const liveOdooName = safeStr(productNames.get(variantId));
-      const resolvedPdfName = payloadPdfName || liveOdooName;
-
-      if (!resolvedPdfName) {
-        throw new Error(`No se pudo obtener desde Odoo ni desde el payload el nombre del product.product ${variantId} para la línea ${l?.product_id || "sin product_id"}.`);
+      const liveOdooName = safeStr(productNames.get(templateId));
+      if (!liveOdooName) {
+        throw new Error(`No se pudo obtener desde Odoo el nombre del product.template ${templateId} para la línea ${l?.product_id || "sin product_id"}.`);
       }
 
       return {
         qty,
-        name: resolvedPdfName,
+        name: liveOdooName,
         unit,
         total,
         totalNet,

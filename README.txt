@@ -1,15 +1,21 @@
-Presupuestador - debug de entorno Odoo
+Cambio minimo pedido
 
-Incluye:
-- cotizador-back/src/index.js
-- cotizador-back/src/routes/odoo.routes.js
+Objetivo:
+- el front ya envia odoo_id / odoo_template_id
+- el servidor usa ese id para consultar Odoo
+- el PDF usa ese name
 
-Qué agrega:
-- log [ODOO ENV] al arrancar backend
-- endpoint GET /api/odoo/debug-product/:id
+Este zip reemplaza solo:
+- cotizador-back/src/routes/pdf.routes.js
 
-Uso:
-1. Reemplazá estos archivos
-2. Reiniciá backend
-3. Revisá logs del arranque
-4. Abrí /api/odoo/debug-product/3618
+Que hace:
+- deja de resolver el nombre por odoo_variant_id
+- consulta product.template usando odoo_id / odoo_template_id
+- pone ese nombre directo en el PDF
+
+Para tu caso:
+- si la linea trae odoo_id: 3287
+- el backend consulta product.template 3287
+- el nombre del PDF sale de ahi
+
+No usa raw_name ni name del payload para el nombre del PDF.
