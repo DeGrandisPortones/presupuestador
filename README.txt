@@ -1,21 +1,29 @@
-Cambio minimo pedido
+Agrega una nueva pantalla solo para superusuario para definir el nombre que sale en PDF por producto.
 
-Objetivo:
-- el front ya envia odoo_id / odoo_template_id
-- el servidor usa ese id para consultar Odoo
-- el PDF usa ese name
-
-Este zip reemplaza solo:
+Incluye:
+- cotizador-back/src/catalogDb.js
+- cotizador-back/src/routes/admin.routes.js
 - cotizador-back/src/routes/pdf.routes.js
+- cotizador-front/src/api/admin.js
+- cotizador-front/src/App.jsx
+- cotizador-front/src/pages/MenuPage/index.jsx
+- cotizador-front/src/pages/SuperuserProductPdfNamesPage/index.jsx
 
-Que hace:
-- deja de resolver el nombre por odoo_variant_id
-- consulta product.template usando odoo_id / odoo_template_id
-- pone ese nombre directo en el PDF
+Qué hace:
+- agrega item de menú: "Nombres PDF productos"
+- lista productos con:
+  - ID Presupuestador
+  - ID Odoo
+  - nombre Odoo
+  - nombre presupuestador / alias
+  - campo editable "Nombre PDF"
+- guarda override por producto en base de datos
+- al generar PDF:
+  - si hay nombre PDF configurado, usa ese
+  - si no hay override, usa nombre de Odoo
 
-Para tu caso:
-- si la linea trae odoo_id: 3287
-- el backend consulta product.template 3287
-- el nombre del PDF sale de ahi
+Permiso:
+- solo superusuario
 
-No usa raw_name ni name del payload para el nombre del PDF.
+Ruta:
+- /superuser/nombres-pdf

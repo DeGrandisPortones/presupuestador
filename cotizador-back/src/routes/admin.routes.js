@@ -1,7 +1,7 @@
 import express from "express";
 import { requireAuth } from "../auth.js";
 import { loadCatalogBootstrap, clearCatalogBootstrapCache } from "../catalogBootstrap.js";
-import { normKind, createSection, updateSection, deleteSection, setTagSection, setProductAlias, setProductVisibility, setTypeVisibility } from "../catalogDb.js";
+import { normKind, createSection, updateSection, deleteSection, setTagSection, setProductAlias, setProductVisibility, setTypeVisibility, getProductPdfNameMap, setProductPdfName } from "../catalogDb.js";
 import { dbQuery } from "../db.js";
 import { listUsers, createUser, updateUser } from "../usersDb.js";
 import {
@@ -21,6 +21,13 @@ function requireEncComercial(req, res, next) { if (!req.user?.is_enc_comercial) 
 function requireSuperuser(req, res, next) { if (!req.user?.is_superuser) return res.status(403).json({ ok: false, error: "No autorizado" }); next(); }
 function requireEncComercialOrSuperuser(req, res, next) { if (!req.user?.is_enc_comercial && !req.user?.is_superuser) return res.status(403).json({ ok: false, error: "No autorizado" }); next(); }
 
+function getOdooName(product = {}) {
+  return String(product?.client_display_name || product?.raw_name || product?.original_name || product?.name || "").trim();
+}
+function getPresupuestadorName(product = {}) {
+  return String(product?.display_name || product?.alias || product?.internal_alias || product?.name || "").trim();
+}
+
 export function buildAdminRouter(odoo) {
   const router = express.Router();
 
@@ -32,6 +39,43 @@ export function buildAdminRouter(odoo) {
       const map = new Map((q.rows || []).map((r) => [Number(r.tag_id), Number(r.section_id)]));
       const tags = (data.tags || []).map((t) => ({ ...t, section_id: map.get(Number(t.id)) || null }));
       res.json({ ...data, tags, type_sections: {} });
+    } catch (e) { next(e); }
+  });
+
+  router.get("/product-pdf-names", requireAuth, requireSuperuser, async (req, res, next) => {
+    try {
+      const kind = normKind(req.query.kind || "porton");
+      const data = await loadCatalogBootstrap(odoo, kind);
+      const pdfNameMap = await getProductPdfNameMap(kind);
+
+      const items = (Array.isArray(data?.products) ? data.products : [])
+        .map((product) => ({
+          product_id: Number(product?.id || 0) || 0,
+          odoo_id: Number(product?.odoo_id || product?.odoo_template_id || 0) || 0,
+          odoo_template_id: Number(product?.odoo_template_id || product?.odoo_id || 0) || 0,
+          odoo_variant_id: Number(product?.odoo_variant_id || product?.id || 0) || 0,
+          odoo_name: getOdooName(product),
+          presupuestador_name: getPresupuestadorName(product),
+          alias: String(product?.alias || product?.internal_alias || "").trim(),
+          pdf_name: String(pdfNameMap.get(Number(product?.id || 0)) || "").trim(),
+        }))
+        .sort((a, b) =>
+          String(a.presupuestador_name || a.odoo_name || "").localeCompare(
+            String(b.presupuestador_name || b.odoo_name || ""),
+            "es",
+          ) || Number(a.product_id || 0) - Number(b.product_id || 0)
+        );
+
+      res.json({ ok: true, kind, items });
+    } catch (e) { next(e); }
+  });
+
+  router.put("/products/:productId/pdf-name", requireAuth, requireSuperuser, async (req, res, next) => {
+    try {
+      const kind = normKind(req.query.kind || req.body?.kind || "porton");
+      const pdfName = req.body?.pdf_name ?? "";
+      const saved = await setProductPdfName(kind, req.params.productId, pdfName);
+      res.json({ ok: true, pdf_name: saved.pdf_name || null });
     } catch (e) { next(e); }
   });
 

@@ -44,6 +44,17 @@ async function ensureCatalogControls() {
     );
   `);
 
+  await dbQuery(`
+    create table if not exists public.presupuestador_product_pdf_names (
+      catalog_kind text not null,
+      product_id integer not null,
+      pdf_name text not null,
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now(),
+      primary key (catalog_kind, product_id)
+    );
+  `);
+
   catalogControlsEnsured = true;
 }
 
@@ -245,6 +256,58 @@ export async function setProductVisibility(kind, productId, patch = {}) {
     disable_for_vendedor: disableForVendedor,
     disable_for_distribuidor: disableForDistribuidor,
   };
+}
+
+export async function getProductPdfNameMap(kind, productIds = null) {
+  await ensureCatalogControls();
+  const k = normKind(kind);
+  const ids = Array.isArray(productIds) ? productIds.map((x) => Number(x)).filter(Boolean) : [];
+
+  const q = ids.length
+    ? await dbQuery(
+        `select product_id, pdf_name
+           from public.presupuestador_product_pdf_names
+          where catalog_kind = $1
+            and product_id = any($2::int[])`,
+        [k, ids]
+      )
+    : await dbQuery(
+        `select product_id, pdf_name
+           from public.presupuestador_product_pdf_names
+          where catalog_kind = $1`,
+        [k]
+      );
+
+  const map = new Map();
+  for (const r of (q.rows || [])) map.set(Number(r.product_id), String(r.pdf_name || ""));
+  return map;
+}
+
+export async function setProductPdfName(kind, productId, pdfName) {
+  await ensureCatalogControls();
+  const k = normKind(kind);
+  const pid = Number(productId);
+  if (!pid) throw new Error("productId inválido");
+
+  const value = String(pdfName || "").trim();
+  if (!value) {
+    await dbQuery(
+      `delete from public.presupuestador_product_pdf_names
+        where catalog_kind = $1
+          and product_id = $2`,
+      [k, pid]
+    );
+    return { catalog_kind: k, product_id: pid, pdf_name: null };
+  }
+
+  await dbQuery(
+    `insert into public.presupuestador_product_pdf_names (catalog_kind, product_id, pdf_name)
+     values ($1, $2, $3)
+     on conflict (catalog_kind, product_id)
+     do update set pdf_name = excluded.pdf_name, updated_at = now()`,
+    [k, pid, value]
+  );
+  return { catalog_kind: k, product_id: pid, pdf_name: value };
 }
 
 export async function getTypeVisibilityMap(kind) {

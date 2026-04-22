@@ -7,6 +7,7 @@ import { dbQuery } from "../db.js";
 import { requireAuth } from "../auth.js";
 import { ensureQuotesMeasurementColumns } from "../quotesSchema.js";
 import { buildBudgetExtraSummaryLines } from "../pdfBudgetExtras.js";
+import { getProductPdfNameMap, normKind } from "../catalogDb.js";
 
 const IVA_RATE = 0.21;
 
@@ -148,11 +149,7 @@ function collectUniquePositiveInts(values = []) {
   return [...new Set(values.map(toPositiveInt).filter(Boolean))];
 }
 function resolveProductTemplateId(line = {}) {
-  return toPositiveInt(
-    line?.odoo_id ||
-    line?.odoo_template_id ||
-    0
-  );
+  return toPositiveInt(line?.odoo_id || line?.odoo_template_id || 0);
 }
 async function readProductTemplateNamesStrict(odoo, templateIds = []) {
   const ids = collectUniquePositiveInts(templateIds);
@@ -175,12 +172,21 @@ async function buildLines(payload, { useBasePrice, odoo }) {
   const coefFactor = 1 + coefPct / 100;
   const rawLines = Array.isArray(payload?.lines) ? payload.lines : [];
   const templateIds = collectUniquePositiveInts(rawLines.map((line) => resolveProductTemplateId(line)));
+  const productIds = collectUniquePositiveInts(rawLines.map((line) => line?.product_id));
+  const catalogKind = (() => {
+    try {
+      return normKind(payload?.catalog_kind || "porton");
+    } catch {
+      return "porton";
+    }
+  })();
 
   if (!templateIds.length) {
     throw new Error("No llegaron odoo_id / odoo_template_id en las líneas del presupuesto para generar el PDF.");
   }
 
   const productNames = await readProductTemplateNamesStrict(odoo, templateIds);
+  const pdfNameMap = await getProductPdfNameMap(catalogKind, productIds);
 
   const lines = rawLines
     .map((l) => {
@@ -191,19 +197,23 @@ async function buildLines(payload, { useBasePrice, odoo }) {
       const totalNet = unitNet * qty;
       const total = unit * qty;
       const templateId = resolveProductTemplateId(l);
+      const productId = toPositiveInt(l?.product_id);
 
       if (!templateId) {
         throw new Error(`Falta odoo_id / odoo_template_id en la línea ${l?.product_id || "sin product_id"}.`);
       }
 
+      const overrideName = safeStr(pdfNameMap.get(productId));
       const liveOdooName = safeStr(productNames.get(templateId));
-      if (!liveOdooName) {
+      const resolvedName = overrideName || liveOdooName;
+
+      if (!resolvedName) {
         throw new Error(`No se pudo obtener desde Odoo el nombre del product.template ${templateId} para la línea ${l?.product_id || "sin product_id"}.`);
       }
 
       return {
         qty,
-        name: liveOdooName,
+        name: resolvedName,
         unit,
         total,
         totalNet,

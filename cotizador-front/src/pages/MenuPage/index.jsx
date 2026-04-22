@@ -42,6 +42,7 @@ export default function MenuPage() {
   const showTechnicalRules = !!isSuperuser;
   const showQuoteViewer = !!isSuperuser;
   const showSellerActivity = !!isSuperuser;
+  const showPdfNamesAdmin = !!isSuperuser;
 
   return (
     <div className="container">
@@ -135,6 +136,16 @@ export default function MenuPage() {
             buttonText="Abrir reglas"
             onClick={() => navigate("/dashboard/reglas-tecnicas")}
             iconSrc="/menu-icons/reglas-tecnicas.png"
+          />
+        )}
+
+        {showPdfNamesAdmin && (
+          <MenuTile
+            title="Nombres PDF productos"
+            description="Definí el nombre exacto que querés que salga en los PDF por producto."
+            buttonText="Abrir nombres PDF"
+            onClick={() => navigate("/superuser/nombres-pdf")}
+            icon="📝"
           />
         )}
 
