@@ -3,10 +3,9 @@ import { useQuery } from "@tanstack/react-query";
 import { getOdooBootstrap, setOdooBootstrap } from "../../../domain/odoo/bootstrap.js";
 import { useQuoteStore } from "../../../domain/quote/store";
 import { useAuthStore } from "../../../domain/auth/store.js";
-import { getCatalogBootstrap } from "../../../api/catalog.js";
+import { getCatalogBootstrap, refreshCatalogBootstrap } from "../../../api/catalog.js";
 import {
   adminGetTechnicalMeasurementRules,
-  adminRefreshCatalog,
 } from "../../../api/admin.js";
 import Button from "../../../ui/Button";
 
@@ -123,7 +122,6 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
   const setPortonType = useQuoteStore((s) => s.setPortonType);
 
   const user = useAuthStore((s) => s.user);
-  const canForceRefreshCatalog = !!(user?.is_enc_comercial || user?.is_superuser);
 
   const [boot, setBoot] = useState(
     () => getOdooBootstrap(kind) || getOdooBootstrap(bootstrapKind),
@@ -177,17 +175,17 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
   const refreshCatalog = useCallback(async () => {
     setRefreshing(true);
     try {
-      if (canForceRefreshCatalog) {
-        await adminRefreshCatalog();
-      }
-      const data = await getCatalogBootstrap(bootstrapKind);
+      const data = await refreshCatalogBootstrap(bootstrapKind);
       setOdooBootstrap(data, kind);
+      if (bootstrapKind !== kind) {
+        setOdooBootstrap(data, bootstrapKind);
+      }
       setBoot(data);
     } finally {
       setRefreshing(false);
       setAutoloadAttempted(true);
     }
-  }, [bootstrapKind, canForceRefreshCatalog, kind]);
+  }, [bootstrapKind, kind]);
 
   useEffect(() => {
     setBoot(getOdooBootstrap(kind) || getOdooBootstrap(bootstrapKind));
