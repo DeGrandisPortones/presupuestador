@@ -25,6 +25,57 @@ export function buildOdooRouter(odoo) {
     }
   });
 
+  router.get("/debug-product/:id", async (req, res, next) => {
+    try {
+      const variantId = Number(req.params.id || 0);
+      if (!variantId) throw new Error("id inválido");
+
+      const variantRows = await odoo.executeKw("product.product", "read", [[variantId]], {
+        fields: ["id", "name", "display_name", "product_tmpl_id", "write_date"],
+      });
+
+      const variant = Array.isArray(variantRows) ? variantRows[0] || null : null;
+      const templateId = Array.isArray(variant?.product_tmpl_id)
+        ? Number(variant.product_tmpl_id[0])
+        : Number(variant?.product_tmpl_id || 0);
+
+      let template = null;
+      if (templateId) {
+        const templateRows = await odoo.executeKw("product.template", "read", [[templateId]], {
+          fields: ["id", "name", "display_name", "write_date"],
+        });
+        template = Array.isArray(templateRows) ? templateRows[0] || null : null;
+      }
+
+      console.log("[ODOO DEBUG PRODUCT]", {
+        env: {
+          url: process.env.ODOO_URL,
+          db: process.env.ODOO_DB,
+          username: process.env.ODOO_USERNAME,
+          companyId: process.env.ODOO_COMPANY_ID || null,
+        },
+        requested_variant_id: variantId,
+        variant,
+        template,
+      });
+
+      res.json({
+        ok: true,
+        env: {
+          url: process.env.ODOO_URL,
+          db: process.env.ODOO_DB,
+          username: process.env.ODOO_USERNAME,
+          companyId: process.env.ODOO_COMPANY_ID || null,
+        },
+        requested_variant_id: variantId,
+        variant,
+        template,
+      });
+    } catch (e) {
+      next(e);
+    }
+  });
+
   router.get("/pricelists", async (_req, res, next) => {
     try {
       const pls = await odoo.executeKw(

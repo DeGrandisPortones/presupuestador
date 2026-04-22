@@ -30,6 +30,13 @@ app.use(cors({ origin: true }));
 app.use(express.json({ limit: "2mb" }));
 app.use(morgan("dev"));
 
+console.log("[ODOO ENV]", {
+  url: process.env.ODOO_URL,
+  db: process.env.ODOO_DB,
+  username: process.env.ODOO_USERNAME,
+  companyId: process.env.ODOO_COMPANY_ID || null,
+});
+
 const odoo = createOdooClient({
   url: process.env.ODOO_URL,
   db: process.env.ODOO_DB,
