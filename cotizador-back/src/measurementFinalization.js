@@ -79,6 +79,28 @@ function referenceNumberFromQuote(originalQuote, revisionQuote) {
   if (digits) return digits;
   return direct || "";
 }
+async function renameOrderToReference(odoo, orderId, reference) {
+  const ref = toText(reference);
+  if (!orderId || !ref) return null;
+  try {
+    await odoo.executeKw("sale.order", "write", [[Number(orderId)], {
+      name: ref,
+      origin: ref,
+      client_order_ref: ref,
+    }]);
+  } catch {
+    try {
+      await odoo.executeKw("sale.order", "write", [[Number(orderId)], {
+        origin: ref,
+        client_order_ref: ref,
+      }]);
+    } catch {}
+  }
+  const [order] = await odoo.executeKw("sale.order", "read", [[Number(orderId)]], {
+    fields: ["id", "name", "amount_total", "partner_id", "state", "pricelist_id", "origin", "client_order_ref"],
+  });
+  return order || null;
+}
 function calcDetailedUnitWithIva(line, payload) {
   if (typeof line?.price_unit === "number") return round2(line.price_unit);
   if (typeof line?.unit_price === "number") return round2(line.unit_price);
@@ -614,7 +636,12 @@ async function syncFinalQuoteToOdoo({ odoo, revisionQuote, originalQuote, source
     origin: referenceNv,
     client_order_ref: referenceNv,
   }]);
-  const order = { id: Number(createdOrderId), name: referenceNv };
+
+  const orderId = Number(createdOrderId);
+  if (!orderId) throw new Error("No se pudo crear sale.order final en Odoo");
+
+  const order = await renameOrderToReference(odoo, orderId, referenceNv);
+  if (!order?.id) throw new Error("No se pudo leer/renombrar la sale.order final en Odoo");
   return {
     order,
     metrics: {
