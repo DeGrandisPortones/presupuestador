@@ -1,11 +1,17 @@
-Archivo completo modificado a partir del archivo que subiste.
+Fix PDF 400 por líneas sin odoo_id / odoo_template_id
 
-Qué agrega:
-- cuando se genera la NV final, hace upsert en public.preproduccion_valores
-- usa nv como id y nv de la fila
-- guarda data con info del portón, cliente, dimensiones, measurement_form, lineas y metricas
-- si existen mappings en public.preproduccion_property_mappings, también resuelve esos valores y los deja en el JSON
-- no crea filas en public.portones
+Qué pasaba:
+- el PDF estaba exigiendo odoo_id / odoo_template_id en todas las líneas
+- algunas quotes viejas o algunas líneas llegan solo con product_id / odoo_variant_id
+- eso disparaba el error:
+  Falta odoo_id / odoo_template_id en la línea ...
 
-Además:
-- intenta renombrar la sale.order final en Odoo a NVxxxx
+Qué cambia:
+- primero intenta usar override de nombre PDF
+- si no, intenta product.template por odoo_id / odoo_template_id
+- si no, intenta product.product por odoo_variant_id / product_id
+- si tampoco, usa name / raw_name del payload
+- así deja de romper el PDF con 400
+
+Archivo:
+- cotizador-back/src/routes/pdf.routes.js

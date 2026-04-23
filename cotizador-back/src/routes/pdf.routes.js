@@ -151,28 +151,69 @@ function collectUniquePositiveInts(values = []) {
 function resolveProductTemplateId(line = {}) {
   return toPositiveInt(line?.odoo_id || line?.odoo_template_id || 0);
 }
-async function readProductTemplateNamesStrict(odoo, templateIds = []) {
-  const ids = collectUniquePositiveInts(templateIds);
-  const out = new Map();
-  if (!odoo || !ids.length) return out;
+function resolveVariantId(line = {}) {
+  return toPositiveInt(line?.odoo_variant_id || line?.product_id || 0);
+}
+async function readOdooNamesFlexible(odoo, rawLines = []) {
+  const out = {
+    templateNameById: new Map(),
+    variantNameById: new Map(),
+    templateIdByVariantId: new Map(),
+  };
+  if (!odoo) return out;
 
-  const rows = await odoo.executeKw("product.template", "read", [ids], {
-    fields: ["id", "name", "display_name"],
-  });
+  const explicitTemplateIds = collectUniquePositiveInts(rawLines.map((line) => resolveProductTemplateId(line)));
+  const variantIds = collectUniquePositiveInts(rawLines.map((line) => resolveVariantId(line)));
 
-  for (const row of Array.isArray(rows) ? rows : []) {
-    const id = toPositiveInt(row?.id);
-    const name = safeStr(row?.display_name || row?.name);
-    if (id && name) out.set(id, name);
+  let variantRows = [];
+  if (variantIds.length) {
+    try {
+      variantRows = await odoo.executeKw("product.product", "read", [variantIds], {
+        fields: ["id", "name", "display_name", "product_tmpl_id"],
+      });
+    } catch {
+      variantRows = [];
+    }
   }
+
+  const templateIdsFromVariants = [];
+  for (const row of Array.isArray(variantRows) ? variantRows : []) {
+    const variantId = toPositiveInt(row?.id);
+    const variantName = safeStr(row?.display_name || row?.name);
+    const templateId = Array.isArray(row?.product_tmpl_id)
+      ? toPositiveInt(row.product_tmpl_id[0])
+      : toPositiveInt(row?.product_tmpl_id);
+
+    if (variantId && variantName) out.variantNameById.set(variantId, variantName);
+    if (variantId && templateId) out.templateIdByVariantId.set(variantId, templateId);
+    if (templateId) templateIdsFromVariants.push(templateId);
+  }
+
+  const templateIds = collectUniquePositiveInts([...explicitTemplateIds, ...templateIdsFromVariants]);
+
+  let templateRows = [];
+  if (templateIds.length) {
+    try {
+      templateRows = await odoo.executeKw("product.template", "read", [templateIds], {
+        fields: ["id", "name", "display_name"],
+      });
+    } catch {
+      templateRows = [];
+    }
+  }
+
+  for (const row of Array.isArray(templateRows) ? templateRows : []) {
+    const templateId = toPositiveInt(row?.id);
+    const templateName = safeStr(row?.display_name || row?.name);
+    if (templateId && templateName) out.templateNameById.set(templateId, templateName);
+  }
+
   return out;
 }
 async function buildLines(payload, { useBasePrice, odoo }) {
   const coefPct = getMarginPct(payload);
   const coefFactor = 1 + coefPct / 100;
   const rawLines = Array.isArray(payload?.lines) ? payload.lines : [];
-  const templateIds = collectUniquePositiveInts(rawLines.map((line) => resolveProductTemplateId(line)));
-  const productIds = collectUniquePositiveInts(rawLines.map((line) => line?.product_id));
   const catalogKind = (() => {
     try {
       return normKind(payload?.catalog_kind || "porton");
@@ -181,12 +222,9 @@ async function buildLines(payload, { useBasePrice, odoo }) {
     }
   })();
 
-  if (!templateIds.length) {
-    throw new Error("No llegaron odoo_id / odoo_template_id en las líneas del presupuesto para generar el PDF.");
-  }
-
-  const productNames = await readProductTemplateNamesStrict(odoo, templateIds);
+  const productIds = collectUniquePositiveInts(rawLines.map((line) => line?.product_id));
   const pdfNameMap = await getProductPdfNameMap(catalogKind, productIds);
+  const odooNames = await readOdooNamesFlexible(odoo, rawLines);
 
   const lines = rawLines
     .map((l) => {
@@ -196,19 +234,21 @@ async function buildLines(payload, { useBasePrice, odoo }) {
       const unit = unitNet * (1 + IVA_RATE);
       const totalNet = unitNet * qty;
       const total = unit * qty;
-      const templateId = resolveProductTemplateId(l);
-      const productId = toPositiveInt(l?.product_id);
 
-      if (!templateId) {
-        throw new Error(`Falta odoo_id / odoo_template_id en la línea ${l?.product_id || "sin product_id"}.`);
-      }
+      const productId = toPositiveInt(l?.product_id);
+      const variantId = resolveVariantId(l);
+      const explicitTemplateId = resolveProductTemplateId(l);
+      const derivedTemplateId = odooNames.templateIdByVariantId.get(variantId) || 0;
+      const templateId = explicitTemplateId || derivedTemplateId;
 
       const overrideName = safeStr(pdfNameMap.get(productId));
-      const liveOdooName = safeStr(productNames.get(templateId));
-      const resolvedName = overrideName || liveOdooName;
+      const liveTemplateName = safeStr(odooNames.templateNameById.get(templateId));
+      const liveVariantName = safeStr(odooNames.variantNameById.get(variantId));
+      const payloadName = safeStr(l?.name || l?.raw_name);
+      const resolvedName = overrideName || liveTemplateName || liveVariantName || payloadName;
 
       if (!resolvedName) {
-        throw new Error(`No se pudo obtener desde Odoo el nombre del product.template ${templateId} para la línea ${l?.product_id || "sin product_id"}.`);
+        throw new Error(`No se pudo resolver el nombre para la línea ${productId || variantId || "sin id"}.`);
       }
 
       return {
