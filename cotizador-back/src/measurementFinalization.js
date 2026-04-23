@@ -23,6 +23,25 @@ const MEASUREMENT_PRODUCT_IDS = parseMeasurementProductIds(
 );
 const IVA_RATE = 0.21;
 
+const PORTON_TYPE_LABELS = Object.freeze({
+  acero_simil_aluminio_clasico: "ACERO SIMIL ALUMINIO CLASICO",
+  coplanar_acero_simil_aluminio_clasico: "COPLANAR ACERO SIMIL ALUMINIO CLASICO",
+  acero_simil_aluminio_doble_iny: "ACERO SIMIL ALUMINIO DOBLE INY",
+  coplanar_acero_simil_aluminio_doble_iny: "COPLANAR ACERO SIMIL ALUMINIO DOBLE INY",
+  para_revestir_con_al_pvc_otros: "Para revestir con AL-PVC-OTROS",
+  estandar_acero_simil_aluminio: "ESTANDAR ACERO SIMIL ALUMINIO",
+  estandar_acero_simil_madera: "ESTANDAR ACERO SIMIL MADERA",
+  acero_simil_madera_clasico: "ACERO SIMIL MADERA CLASICO",
+  coplanar_acero_simil_madera_clasico: "COPLANAR ACERO SIMIL MADERA CLASICO",
+  acero_simil_madera_doble_iny: "ACERO SIMIL MADERA DOBLE INY",
+  coplanar_acero_simil_madera_doble_iny: "COPLANAR ACERO SIMIL MADERA DOBLE INY",
+  revestimiento_wpc: "REVESTIMIENTO WPC",
+  corredizo_simil_madera: "CORREDIZO SIMIL MADERA",
+  corredizo_simil_aluminio_doble: "CORREDIZO SIMIL ALUMINIO DOBLE",
+  corredizo_simil_madera_doble: "CORREDIZO SIMIL MADERA DOBLE",
+  corredizo_simil_aluminio: "CORREDIZO SIMIL ALUMINIO",
+});
+
 function toScalar(v) {
   return Array.isArray(v) ? v[0] : v;
 }
@@ -46,6 +65,11 @@ function normalizeBoolish(v) {
   if (["true", "1", "si", "sí", "yes"].includes(s)) return "si";
   if (["false", "0", "no"].includes(s)) return "no";
   return s;
+}
+function formatPortonTypeLabel(value) {
+  const key = toText(value);
+  if (!key) return "";
+  return PORTON_TYPE_LABELS[key] || key;
 }
 function getByPath(obj, path) {
   const parts = String(path || "").split(".").filter(Boolean);
@@ -289,7 +313,12 @@ function buildPreproduccionPayload({ originalQuote, sourceQuote, revisionQuote, 
     cliente_direccion: toText(endCustomer?.address || endCustomer?.street),
     cliente_localidad: toText(endCustomer?.city),
     cliente_maps_url: toText(endCustomer?.maps_url),
-    porton_type:
+    porton_type: formatPortonTypeLabel(
+      toText(revisionPayload?.porton_type) ||
+      toText(sourcePayload?.porton_type) ||
+      toText(originalPayload?.porton_type)
+    ),
+    porton_type_key:
       toText(revisionPayload?.porton_type) ||
       toText(sourcePayload?.porton_type) ||
       toText(originalPayload?.porton_type),

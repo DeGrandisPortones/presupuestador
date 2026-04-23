@@ -1,12 +1,12 @@
-Fix nombre vendedor/distribuidor en presupuesto y proforma
+Cambio aplicado sobre el archivo completo que ya veníamos usando para preproduccion_valores.
 
 Qué cambia:
-- /api/pdf/presupuesto y /api/pdf/proforma ahora requieren auth
-- el backend toma el usuario logeado desde req.user
-- inyecta seller_name con:
-  - full_name del usuario
-  - si no, username
-- así en el PDF deja de salir "-" y muestra el nombre del usuario logeado
+- En el JSON que se manda a preproduccion_valores, `porton_type` ahora sale con la etiqueta visible del desplegable de sistema.
+- Ejemplo:
+  - antes: `acero_simil_aluminio_clasico`
+  - ahora: `ACERO SIMIL ALUMINIO CLASICO`
+- Además se conserva el valor técnico original en `porton_type_key`.
 
-Archivo:
-- cotizador-back/src/routes/pdf.routes.js
+Campos:
+- `porton_type`: etiqueta visible para mapear a propiedades como `Sistema`
+- `porton_type_key`: key interna original del presupuestador
