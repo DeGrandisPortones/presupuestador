@@ -82,6 +82,18 @@ function getSellerName(payload) {
       "",
   );
 }
+function resolveLoggedUserSellerName(user, payload) {
+  return safeStr(
+    user?.full_name ??
+    user?.username ??
+    payload?.seller_name ??
+    payload?.sellerName ??
+    payload?.created_by_full_name ??
+    payload?.created_by_username ??
+    payload?.payload?.seller_name ??
+    ""
+  );
+}
 function sanitizeFilenamePart(value, fallback = "archivo") {
   const normalized = String(value || "")
     .normalize("NFD")
@@ -494,9 +506,13 @@ async function renderMeasurementPdf({ quote, form }) {
 export function buildPdfRouter(odoo = null) {
   const router = express.Router();
 
-  router.post("/presupuesto", async (req, res, next) => {
+  router.post("/presupuesto", requireAuth, async (req, res, next) => {
     try {
-      const payload = req.body || {};
+      const rawPayload = req.body || {};
+      const payload = {
+        ...rawPayload,
+        seller_name: resolveLoggedUserSellerName(req.user, rawPayload),
+      };
       const pdf = await renderPdf({ title: "PRESUPUESTO", payload, useBasePrice: false, odoo });
       res.setHeader("Content-Type", "application/pdf");
       res.setHeader("Content-Disposition", `attachment; filename="${buildDownloadFilename(payload, "presupuesto")}"`);
@@ -504,9 +520,13 @@ export function buildPdfRouter(odoo = null) {
     } catch (e) { next(e); }
   });
 
-  router.post("/proforma", async (req, res, next) => {
+  router.post("/proforma", requireAuth, async (req, res, next) => {
     try {
-      const payload = req.body || {};
+      const rawPayload = req.body || {};
+      const payload = {
+        ...rawPayload,
+        seller_name: resolveLoggedUserSellerName(req.user, rawPayload),
+      };
       const pdf = await renderPdf({ title: "PROFORMA", payload, useBasePrice: true, odoo });
       res.setHeader("Content-Type", "application/pdf");
       res.setHeader("Content-Disposition", `attachment; filename="${buildDownloadFilename(payload, "proforma")}"`);
