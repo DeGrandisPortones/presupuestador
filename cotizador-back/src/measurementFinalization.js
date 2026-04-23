@@ -79,27 +79,308 @@ function referenceNumberFromQuote(originalQuote, revisionQuote) {
   if (digits) return digits;
   return direct || "";
 }
-async function renameOrderToReference(odoo, orderId, reference) {
-  const ref = toText(reference);
-  if (!orderId || !ref) return null;
-  try {
-    await odoo.executeKw("sale.order", "write", [[Number(orderId)], {
-      name: ref,
-      origin: ref,
-      client_order_ref: ref,
-    }]);
-  } catch {
-    try {
-      await odoo.executeKw("sale.order", "write", [[Number(orderId)], {
-        origin: ref,
-        client_order_ref: ref,
-      }]);
-    } catch {}
+function extractNvInteger(value) {
+  const digits = onlyDigits(value);
+  const n = Number(digits);
+  return Number.isFinite(n) && n > 0 ? Math.trunc(n) : null;
+}
+function toNumericArray(value) {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => toNumberLike(item))
+    .filter((item) => item !== null);
+}
+function applyMeasurementResolver(value, resolver) {
+  const mode = String(resolver || "identity").trim().toLowerCase();
+  if (mode === "identity") return value;
+  if (mode === "first_non_empty") {
+    if (!Array.isArray(value)) return value;
+    for (const item of value) {
+      if (item !== null && item !== undefined && String(item).trim() !== "") return item;
+    }
+    return null;
   }
-  const [order] = await odoo.executeKw("sale.order", "read", [[Number(orderId)]], {
-    fields: ["id", "name", "amount_total", "partner_id", "state", "pricelist_id", "origin", "client_order_ref"],
+  if (mode === "join_csv") {
+    if (!Array.isArray(value)) return value;
+    return value
+      .filter((item) => item !== null && item !== undefined && String(item).trim() !== "")
+      .join(", ");
+  }
+  const numeric = toNumericArray(value);
+  if (!numeric.length) return null;
+  if (mode === "min") return Math.min(...numeric);
+  if (mode === "max") return Math.max(...numeric);
+  if (mode === "sum") return numeric.reduce((acc, item) => acc + item, 0);
+  return value;
+}
+async function listActivePreproduccionPropertyMappings() {
+  try {
+    const q = await dbQuery(
+      `select target_property, source_path, resolver, is_active
+         from public.preproduccion_property_mappings
+        where coalesce(is_active, true) = true
+          and coalesce(source_app, 'presupuestador') = 'presupuestador'
+        order by target_property asc`
+    );
+    return q.rows || [];
+  } catch {
+    return [];
+  }
+}
+function computeMeasurementMappedValues(measurementForm, mappings) {
+  const out = {};
+  const safeForm = measurementForm && typeof measurementForm === "object" ? measurementForm : null;
+  if (!safeForm) return out;
+
+  for (const mapping of Array.isArray(mappings) ? mappings : []) {
+    const targetProperty = String(mapping?.target_property || "").trim();
+    const sourcePath = String(mapping?.source_path || "").trim();
+    if (!targetProperty || !sourcePath) continue;
+
+    const raw = getByPath(safeForm, sourcePath);
+    const resolved = applyMeasurementResolver(raw, mapping?.resolver);
+
+    if (resolved === undefined || resolved === null || resolved === "") continue;
+    out[targetProperty] = resolved;
+  }
+
+  return out;
+}
+function buildNormalizedMeasurementForm({ originalQuote, sourceQuote, revisionQuote, order }) {
+  const rawMeasurementForm =
+    originalQuote?.measurement_form && typeof originalQuote.measurement_form === "object"
+      ? originalQuote.measurement_form
+      : {};
+  const originalPayload =
+    originalQuote?.payload && typeof originalQuote.payload === "object"
+      ? originalQuote.payload
+      : {};
+  const sourcePayload =
+    sourceQuote?.payload && typeof sourceQuote.payload === "object"
+      ? sourceQuote.payload
+      : {};
+  const revisionPayload =
+    revisionQuote?.payload && typeof revisionQuote.payload === "object"
+      ? revisionQuote.payload
+      : {};
+  const dimensions =
+    revisionPayload?.dimensions && typeof revisionPayload.dimensions === "object"
+      ? revisionPayload.dimensions
+      : sourcePayload?.dimensions && typeof sourcePayload.dimensions === "object"
+        ? sourcePayload.dimensions
+        : originalPayload?.dimensions && typeof originalPayload.dimensions === "object"
+          ? originalPayload.dimensions
+          : {};
+
+  const referenceNv = toText(order?.name || revisionQuote?.final_sale_order_name);
+  const normalized = {
+    ...rawMeasurementForm,
+    fecha: toText(rawMeasurementForm?.fecha) || new Date().toISOString().slice(0, 10),
+    distribuidor:
+      toText(rawMeasurementForm?.distribuidor) ||
+      toText(sourceQuote?.created_by_full_name) ||
+      toText(sourceQuote?.created_by_username) ||
+      toText(originalQuote?.created_by_full_name) ||
+      toText(originalQuote?.created_by_username),
+    nro_porton: toText(rawMeasurementForm?.nro_porton) || referenceNv,
+    en_acopio:
+      rawMeasurementForm?.en_acopio !== undefined && rawMeasurementForm?.en_acopio !== null
+        ? rawMeasurementForm.en_acopio
+        : String(revisionQuote?.fulfillment_mode || sourceQuote?.fulfillment_mode || originalQuote?.fulfillment_mode || "").trim() === "acopio"
+          ? "si"
+          : "no",
+    alto_final_mm:
+      toText(rawMeasurementForm?.alto_final_mm) ||
+      toText(dimensions?.height_mm) ||
+      toText(dimensions?.alto_final_mm),
+    ancho_final_mm:
+      toText(rawMeasurementForm?.ancho_final_mm) ||
+      toText(dimensions?.width_mm) ||
+      toText(dimensions?.ancho_final_mm),
+  };
+
+  normalized.parantes = {
+    ...(rawMeasurementForm?.parantes && typeof rawMeasurementForm.parantes === "object" ? rawMeasurementForm.parantes : {}),
+    cant:
+      rawMeasurementForm?.parantes?.cant ??
+      rawMeasurementForm?.cantidad_parantes ??
+      dimensions?.cantidad_parantes ??
+      "",
+    orientacion:
+      rawMeasurementForm?.parantes?.orientacion ??
+      rawMeasurementForm?.orientacion_parantes ??
+      dimensions?.orientacion_parantes ??
+      "",
+    distribucion:
+      rawMeasurementForm?.parantes?.distribucion ??
+      rawMeasurementForm?.distribucion_parantes ??
+      dimensions?.distribucion_parantes ??
+      "",
+    observaciones:
+      rawMeasurementForm?.parantes?.observaciones ??
+      rawMeasurementForm?.observaciones_parantes ??
+      dimensions?.observaciones_parantes ??
+      "",
+  };
+
+  return normalized;
+}
+function buildPreproduccionPayload({ originalQuote, sourceQuote, revisionQuote, order, metrics, generatedLines, mappedValues }) {
+  const originalPayload =
+    originalQuote?.payload && typeof originalQuote.payload === "object"
+      ? originalQuote.payload
+      : {};
+  const sourcePayload =
+    sourceQuote?.payload && typeof sourceQuote.payload === "object"
+      ? sourceQuote.payload
+      : {};
+  const revisionPayload =
+    revisionQuote?.payload && typeof revisionQuote.payload === "object"
+      ? revisionQuote.payload
+      : {};
+  const dimensions =
+    revisionPayload?.dimensions && typeof revisionPayload.dimensions === "object"
+      ? revisionPayload.dimensions
+      : sourcePayload?.dimensions && typeof sourcePayload.dimensions === "object"
+        ? sourcePayload.dimensions
+        : originalPayload?.dimensions && typeof originalPayload.dimensions === "object"
+          ? originalPayload.dimensions
+          : {};
+  const endCustomer =
+    revisionQuote?.end_customer && typeof revisionQuote.end_customer === "object"
+      ? revisionQuote.end_customer
+      : sourceQuote?.end_customer && typeof sourceQuote.end_customer === "object"
+        ? sourceQuote.end_customer
+        : originalQuote?.end_customer && typeof originalQuote.end_customer === "object"
+          ? originalQuote.end_customer
+          : {};
+  const measurementForm = buildNormalizedMeasurementForm({ originalQuote, sourceQuote, revisionQuote, order });
+  const lines = Array.isArray(generatedLines)
+    ? generatedLines
+    : Array.isArray(revisionQuote?.lines)
+      ? revisionQuote.lines
+      : [];
+
+  return {
+    nv: extractNvInteger(order?.name || metrics?.reference_nv),
+    referencia_nv: toText(order?.name || metrics?.reference_nv),
+    referencia_np:
+      toText(sourceQuote?.odoo_sale_order_name) ||
+      toText(originalQuote?.odoo_sale_order_name),
+    quote_id_original: originalQuote?.id ?? null,
+    quote_id_source: sourceQuote?.id ?? null,
+    quote_id_revision: revisionQuote?.id ?? null,
+    quote_number:
+      toText(originalQuote?.quote_number) ||
+      toText(sourceQuote?.quote_number) ||
+      toText(revisionQuote?.quote_number),
+    catalog_kind:
+      toText(revisionQuote?.catalog_kind) ||
+      toText(sourceQuote?.catalog_kind) ||
+      toText(originalQuote?.catalog_kind) ||
+      "porton",
+    fulfillment_mode:
+      toText(revisionQuote?.fulfillment_mode) ||
+      toText(sourceQuote?.fulfillment_mode) ||
+      toText(originalQuote?.fulfillment_mode),
+    cliente_nombre: toText(endCustomer?.name),
+    cliente_telefono: toText(endCustomer?.phone),
+    cliente_email: toText(endCustomer?.email),
+    cliente_direccion: toText(endCustomer?.address || endCustomer?.street),
+    cliente_localidad: toText(endCustomer?.city),
+    cliente_maps_url: toText(endCustomer?.maps_url),
+    porton_type:
+      toText(revisionPayload?.porton_type) ||
+      toText(sourcePayload?.porton_type) ||
+      toText(originalPayload?.porton_type),
+    alto_final_mm: toText(measurementForm?.alto_final_mm),
+    ancho_final_mm: toText(measurementForm?.ancho_final_mm),
+    cantidad_parantes: toText(measurementForm?.parantes?.cant || measurementForm?.cantidad_parantes),
+    orientacion_parantes: toText(measurementForm?.parantes?.orientacion || measurementForm?.orientacion_parantes),
+    distribucion_parantes: toText(measurementForm?.parantes?.distribucion || measurementForm?.distribucion_parantes),
+    observaciones_parantes: toText(measurementForm?.parantes?.observaciones || measurementForm?.observaciones_parantes),
+    measurement_form: measurementForm,
+    dimensions,
+    lines: lines.map((line) => ({
+      product_id: Number(line?.product_id || 0) || null,
+      odoo_id: Number(line?.odoo_id || line?.odoo_template_id || 0) || null,
+      odoo_template_id: Number(line?.odoo_template_id || line?.odoo_id || 0) || null,
+      odoo_variant_id: Number(line?.odoo_variant_id || 0) || null,
+      qty: Number(line?.qty || 0) || 0,
+      name: toText(line?.name),
+      raw_name: toText(line?.raw_name),
+      code: toText(line?.code),
+      price_unit:
+        typeof line?.price_unit === "number"
+          ? line.price_unit
+          : typeof line?.unit_price === "number"
+            ? line.unit_price
+            : null,
+    })),
+    metrics: {
+      tolerance_percent: Number(metrics?.tolerance_percent ?? 0) || 0,
+      tolerance_amount: Number(metrics?.tolerance_amount ?? 0) || 0,
+      difference_amount: Number(metrics?.difference_amount ?? 0) || 0,
+      absorbed_by_company: metrics?.absorbed_by_company === true,
+      final_amount_to_charge: Number(metrics?.final_amount_to_charge ?? 0) || 0,
+    },
+    mapped_from_measurement: mappedValues || {},
+    original_quote_snapshot: {
+      id: originalQuote?.id ?? null,
+      odoo_sale_order_name: toText(originalQuote?.odoo_sale_order_name),
+      final_sale_order_name: toText(originalQuote?.final_sale_order_name),
+      status: toText(originalQuote?.status),
+      final_status: toText(originalQuote?.final_status),
+    },
+    revision_quote_snapshot: {
+      id: revisionQuote?.id ?? null,
+      final_sale_order_id: Number(order?.id || 0) || null,
+      final_sale_order_name: toText(order?.name),
+      status: toText(revisionQuote?.status),
+      final_status: toText(revisionQuote?.final_status),
+    },
+    ...Object.fromEntries(
+      Object.entries(mappedValues || {}).map(([key, value]) => [String(key), value])
+    ),
+  };
+}
+async function upsertPreproduccionValoresForNv({ originalQuote, sourceQuote, revisionQuote, order, metrics, generatedLines }) {
+  const nv = extractNvInteger(order?.name || metrics?.reference_nv);
+  if (!nv) {
+    return { ok: false, skipped: true, reason: "missing_nv" };
+  }
+
+  const mappings = await listActivePreproduccionPropertyMappings();
+  const measurementForm = buildNormalizedMeasurementForm({ originalQuote, sourceQuote, revisionQuote, order });
+  const mappedValues = computeMeasurementMappedValues(measurementForm, mappings);
+  const payload = buildPreproduccionPayload({
+    originalQuote,
+    sourceQuote,
+    revisionQuote,
+    order,
+    metrics,
+    generatedLines,
+    mappedValues,
   });
-  return order || null;
+
+  const q = await dbQuery(
+    `insert into public.preproduccion_valores (id, nv, data)
+     values ($1, $2, $3::jsonb)
+     on conflict (nv)
+     do update set
+       data = excluded.data,
+       updated_at = now()
+     returning id, nv, updated_at`,
+    [nv, nv, JSON.stringify(payload)],
+  );
+
+  return {
+    ok: true,
+    nv,
+    id: q.rows?.[0]?.id ?? nv,
+    mapped_properties_count: Object.keys(mappedValues || {}).length,
+    updated_at: q.rows?.[0]?.updated_at || null,
+  };
 }
 function calcDetailedUnitWithIva(line, payload) {
   if (typeof line?.price_unit === "number") return round2(line.price_unit);
@@ -640,8 +921,27 @@ async function syncFinalQuoteToOdoo({ odoo, revisionQuote, originalQuote, source
   const orderId = Number(createdOrderId);
   if (!orderId) throw new Error("No se pudo crear sale.order final en Odoo");
 
-  const order = await renameOrderToReference(odoo, orderId, referenceNv);
-  if (!order?.id) throw new Error("No se pudo leer/renombrar la sale.order final en Odoo");
+  let order = { id: orderId, name: referenceNv };
+  try {
+    await odoo.executeKw("sale.order", "write", [[orderId], {
+      name: referenceNv,
+      origin: referenceNv,
+      client_order_ref: referenceNv,
+    }]);
+  } catch {
+    try {
+      await odoo.executeKw("sale.order", "write", [[orderId], {
+        origin: referenceNv,
+        client_order_ref: referenceNv,
+      }]);
+    } catch {}
+  }
+  try {
+    const rows = await odoo.executeKw("sale.order", "read", [[orderId]], {
+      fields: ["id", "name", "amount_total", "partner_id", "state", "pricelist_id", "origin", "client_order_ref"],
+    });
+    if (rows?.[0]?.id) order = rows[0];
+  } catch {}
   return {
     order,
     metrics: {
@@ -1024,13 +1324,36 @@ export async function finalizeMeasurementToRevisionQuote({ odoo, originalQuote, 
       metrics.absorbed_by_company === true,
     ],
   );
+  const finalRevisionQuote = updFinal.rows?.[0] || qSync;
+
+  let preproductionSync = { ok: false, skipped: true, reason: "not_attempted" };
+  try {
+    preproductionSync = await upsertPreproduccionValoresForNv({
+      originalQuote,
+      sourceQuote: base.source_quote,
+      revisionQuote: finalRevisionQuote,
+      order,
+      metrics,
+      generatedLines: finalLines,
+    });
+  } catch (error) {
+    preproductionSync = {
+      ok: false,
+      skipped: false,
+      reason: "write_failed",
+      error: error?.message || String(error || "Error escribiendo preproduccion_valores"),
+    };
+    console.error("No se pudo escribir preproduccion_valores:", preproductionSync.error);
+  }
+
   return {
-    revisionQuote: updFinal.rows?.[0] || qSync,
+    revisionQuote: finalRevisionQuote,
     generated_lines: finalLines,
     synced: true,
     order,
     metrics,
     whatsappNotification,
     source_quote_id: base.source_quote_id,
+    preproductionSync,
   };
 }
