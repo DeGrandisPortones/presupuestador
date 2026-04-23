@@ -5,6 +5,10 @@ import {
   getTechnicalMeasurementRules,
   getTechnicalMeasurementFieldDefinitions,
 } from "./settingsDb.js";
+import {
+  getProductionPropertyAssignmentsMap,
+  applyProductionPropertyAssignments,
+} from "./productionPropertyAssignments.js";
 
 const PLACEHOLDER_PRODUCT_ID = Number(
   process.env.ODOO_PLACEHOLDER_PRODUCT_ID || 2880,
@@ -22,25 +26,6 @@ const MEASUREMENT_PRODUCT_IDS = parseMeasurementProductIds(
     "2865,2961",
 );
 const IVA_RATE = 0.21;
-
-const PORTON_TYPE_LABELS = Object.freeze({
-  acero_simil_aluminio_clasico: "ACERO SIMIL ALUMINIO CLASICO",
-  coplanar_acero_simil_aluminio_clasico: "COPLANAR ACERO SIMIL ALUMINIO CLASICO",
-  acero_simil_aluminio_doble_iny: "ACERO SIMIL ALUMINIO DOBLE INY",
-  coplanar_acero_simil_aluminio_doble_iny: "COPLANAR ACERO SIMIL ALUMINIO DOBLE INY",
-  para_revestir_con_al_pvc_otros: "Para revestir con AL-PVC-OTROS",
-  estandar_acero_simil_aluminio: "ESTANDAR ACERO SIMIL ALUMINIO",
-  estandar_acero_simil_madera: "ESTANDAR ACERO SIMIL MADERA",
-  acero_simil_madera_clasico: "ACERO SIMIL MADERA CLASICO",
-  coplanar_acero_simil_madera_clasico: "COPLANAR ACERO SIMIL MADERA CLASICO",
-  acero_simil_madera_doble_iny: "ACERO SIMIL MADERA DOBLE INY",
-  coplanar_acero_simil_madera_doble_iny: "COPLANAR ACERO SIMIL MADERA DOBLE INY",
-  revestimiento_wpc: "REVESTIMIENTO WPC",
-  corredizo_simil_madera: "CORREDIZO SIMIL MADERA",
-  corredizo_simil_aluminio_doble: "CORREDIZO SIMIL ALUMINIO DOBLE",
-  corredizo_simil_madera_doble: "CORREDIZO SIMIL MADERA DOBLE",
-  corredizo_simil_aluminio: "CORREDIZO SIMIL ALUMINIO",
-});
 
 function toScalar(v) {
   return Array.isArray(v) ? v[0] : v;
@@ -65,11 +50,6 @@ function normalizeBoolish(v) {
   if (["true", "1", "si", "sí", "yes"].includes(s)) return "si";
   if (["false", "0", "no"].includes(s)) return "no";
   return s;
-}
-function formatPortonTypeLabel(value) {
-  const key = toText(value);
-  if (!key) return "";
-  return PORTON_TYPE_LABELS[key] || key;
 }
 function getByPath(obj, path) {
   const parts = String(path || "").split(".").filter(Boolean);
@@ -108,168 +88,38 @@ function extractNvInteger(value) {
   const n = Number(digits);
   return Number.isFinite(n) && n > 0 ? Math.trunc(n) : null;
 }
-function toNumericArray(value) {
-  if (!Array.isArray(value)) return [];
-  return value
-    .map((item) => toNumberLike(item))
-    .filter((item) => item !== null);
+function formatPortonTypeLabel(value) {
+  return String(value || "")
+    .replace(/_/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toUpperCase();
 }
-function applyMeasurementResolver(value, resolver) {
-  const mode = String(resolver || "identity").trim().toLowerCase();
-  if (mode === "identity") return value;
-  if (mode === "first_non_empty") {
-    if (!Array.isArray(value)) return value;
-    for (const item of value) {
-      if (item !== null && item !== undefined && String(item).trim() !== "") return item;
-    }
-    return null;
-  }
-  if (mode === "join_csv") {
-    if (!Array.isArray(value)) return value;
-    return value
-      .filter((item) => item !== null && item !== undefined && String(item).trim() !== "")
-      .join(", ");
-  }
-  const numeric = toNumericArray(value);
-  if (!numeric.length) return null;
-  if (mode === "min") return Math.min(...numeric);
-  if (mode === "max") return Math.max(...numeric);
-  if (mode === "sum") return numeric.reduce((acc, item) => acc + item, 0);
-  return value;
-}
-async function listActivePreproduccionPropertyMappings() {
-  try {
-    const q = await dbQuery(
-      `select target_property, source_path, resolver, is_active
-         from public.preproduccion_property_mappings
-        where coalesce(is_active, true) = true
-          and coalesce(source_app, 'presupuestador') = 'presupuestador'
-        order by target_property asc`
-    );
-    return q.rows || [];
-  } catch {
-    return [];
-  }
-}
-function computeMeasurementMappedValues(measurementForm, mappings) {
-  const out = {};
-  const safeForm = measurementForm && typeof measurementForm === "object" ? measurementForm : null;
-  if (!safeForm) return out;
-
-  for (const mapping of Array.isArray(mappings) ? mappings : []) {
-    const targetProperty = String(mapping?.target_property || "").trim();
-    const sourcePath = String(mapping?.source_path || "").trim();
-    if (!targetProperty || !sourcePath) continue;
-
-    const raw = getByPath(safeForm, sourcePath);
-    const resolved = applyMeasurementResolver(raw, mapping?.resolver);
-
-    if (resolved === undefined || resolved === null || resolved === "") continue;
-    out[targetProperty] = resolved;
-  }
-
-  return out;
-}
-function buildNormalizedMeasurementForm({ originalQuote, sourceQuote, revisionQuote, order }) {
-  const rawMeasurementForm =
+function buildPreproduccionPayload({ originalQuote, sourceQuote, revisionQuote, order, metrics, generatedLines }) {
+  const originalPayload =
+    originalQuote?.payload && typeof originalQuote.payload === "object"
+      ? originalQuote.payload
+      : {};
+  const sourcePayload =
+    sourceQuote?.payload && typeof sourceQuote.payload === "object"
+      ? sourceQuote.payload
+      : {};
+  const revisionPayload =
+    revisionQuote?.payload && typeof revisionQuote.payload === "object"
+      ? revisionQuote.payload
+      : {};
+  const dimensions =
+    revisionPayload?.dimensions && typeof revisionPayload.dimensions === "object"
+      ? revisionPayload.dimensions
+      : sourcePayload?.dimensions && typeof sourcePayload.dimensions === "object"
+        ? sourcePayload.dimensions
+        : originalPayload?.dimensions && typeof originalPayload.dimensions === "object"
+          ? originalPayload.dimensions
+          : {};
+  const measurementForm =
     originalQuote?.measurement_form && typeof originalQuote.measurement_form === "object"
       ? originalQuote.measurement_form
       : {};
-  const originalPayload =
-    originalQuote?.payload && typeof originalQuote.payload === "object"
-      ? originalQuote.payload
-      : {};
-  const sourcePayload =
-    sourceQuote?.payload && typeof sourceQuote.payload === "object"
-      ? sourceQuote.payload
-      : {};
-  const revisionPayload =
-    revisionQuote?.payload && typeof revisionQuote.payload === "object"
-      ? revisionQuote.payload
-      : {};
-  const dimensions =
-    revisionPayload?.dimensions && typeof revisionPayload.dimensions === "object"
-      ? revisionPayload.dimensions
-      : sourcePayload?.dimensions && typeof sourcePayload.dimensions === "object"
-        ? sourcePayload.dimensions
-        : originalPayload?.dimensions && typeof originalPayload.dimensions === "object"
-          ? originalPayload.dimensions
-          : {};
-
-  const referenceNv = toText(order?.name || revisionQuote?.final_sale_order_name);
-  const normalized = {
-    ...rawMeasurementForm,
-    fecha: toText(rawMeasurementForm?.fecha) || new Date().toISOString().slice(0, 10),
-    distribuidor:
-      toText(rawMeasurementForm?.distribuidor) ||
-      toText(sourceQuote?.created_by_full_name) ||
-      toText(sourceQuote?.created_by_username) ||
-      toText(originalQuote?.created_by_full_name) ||
-      toText(originalQuote?.created_by_username),
-    nro_porton: toText(rawMeasurementForm?.nro_porton) || referenceNv,
-    en_acopio:
-      rawMeasurementForm?.en_acopio !== undefined && rawMeasurementForm?.en_acopio !== null
-        ? rawMeasurementForm.en_acopio
-        : String(revisionQuote?.fulfillment_mode || sourceQuote?.fulfillment_mode || originalQuote?.fulfillment_mode || "").trim() === "acopio"
-          ? "si"
-          : "no",
-    alto_final_mm:
-      toText(rawMeasurementForm?.alto_final_mm) ||
-      toText(dimensions?.height_mm) ||
-      toText(dimensions?.alto_final_mm),
-    ancho_final_mm:
-      toText(rawMeasurementForm?.ancho_final_mm) ||
-      toText(dimensions?.width_mm) ||
-      toText(dimensions?.ancho_final_mm),
-  };
-
-  normalized.parantes = {
-    ...(rawMeasurementForm?.parantes && typeof rawMeasurementForm.parantes === "object" ? rawMeasurementForm.parantes : {}),
-    cant:
-      rawMeasurementForm?.parantes?.cant ??
-      rawMeasurementForm?.cantidad_parantes ??
-      dimensions?.cantidad_parantes ??
-      "",
-    orientacion:
-      rawMeasurementForm?.parantes?.orientacion ??
-      rawMeasurementForm?.orientacion_parantes ??
-      dimensions?.orientacion_parantes ??
-      "",
-    distribucion:
-      rawMeasurementForm?.parantes?.distribucion ??
-      rawMeasurementForm?.distribucion_parantes ??
-      dimensions?.distribucion_parantes ??
-      "",
-    observaciones:
-      rawMeasurementForm?.parantes?.observaciones ??
-      rawMeasurementForm?.observaciones_parantes ??
-      dimensions?.observaciones_parantes ??
-      "",
-  };
-
-  return normalized;
-}
-function buildPreproduccionPayload({ originalQuote, sourceQuote, revisionQuote, order, metrics, generatedLines, mappedValues }) {
-  const originalPayload =
-    originalQuote?.payload && typeof originalQuote.payload === "object"
-      ? originalQuote.payload
-      : {};
-  const sourcePayload =
-    sourceQuote?.payload && typeof sourceQuote.payload === "object"
-      ? sourceQuote.payload
-      : {};
-  const revisionPayload =
-    revisionQuote?.payload && typeof revisionQuote.payload === "object"
-      ? revisionQuote.payload
-      : {};
-  const dimensions =
-    revisionPayload?.dimensions && typeof revisionPayload.dimensions === "object"
-      ? revisionPayload.dimensions
-      : sourcePayload?.dimensions && typeof sourcePayload.dimensions === "object"
-        ? sourcePayload.dimensions
-        : originalPayload?.dimensions && typeof originalPayload.dimensions === "object"
-          ? originalPayload.dimensions
-          : {};
   const endCustomer =
     revisionQuote?.end_customer && typeof revisionQuote.end_customer === "object"
       ? revisionQuote.end_customer
@@ -278,12 +128,24 @@ function buildPreproduccionPayload({ originalQuote, sourceQuote, revisionQuote, 
         : originalQuote?.end_customer && typeof originalQuote.end_customer === "object"
           ? originalQuote.end_customer
           : {};
-  const measurementForm = buildNormalizedMeasurementForm({ originalQuote, sourceQuote, revisionQuote, order });
-  const lines = Array.isArray(generatedLines)
-    ? generatedLines
-    : Array.isArray(revisionQuote?.lines)
-      ? revisionQuote.lines
-      : [];
+
+  const rawPortonType =
+    toText(revisionPayload?.porton_type) ||
+    toText(sourcePayload?.porton_type) ||
+    toText(originalPayload?.porton_type);
+
+  const visiblePortonType = formatPortonTypeLabel(rawPortonType);
+
+  const lines = (Array.isArray(generatedLines) ? generatedLines : []).map((line) => ({
+    product_id: toIntId(line?.product_id),
+    odoo_id: toIntId(line?.odoo_id),
+    odoo_template_id: toIntId(line?.odoo_template_id),
+    odoo_variant_id: toIntId(line?.odoo_variant_id),
+    qty: Number(line?.qty || 0) || 0,
+    name: toText(line?.name),
+    raw_name: toText(line?.raw_name),
+    price_unit: typeof line?.price_unit === "number" ? line.price_unit : calcDetailedUnitWithIva(line, revisionPayload || sourcePayload || originalPayload || {}),
+  }));
 
   return {
     nv: extractNvInteger(order?.name || metrics?.reference_nv),
@@ -291,9 +153,6 @@ function buildPreproduccionPayload({ originalQuote, sourceQuote, revisionQuote, 
     referencia_np:
       toText(sourceQuote?.odoo_sale_order_name) ||
       toText(originalQuote?.odoo_sale_order_name),
-    quote_id_original: originalQuote?.id ?? null,
-    quote_id_source: sourceQuote?.id ?? null,
-    quote_id_revision: revisionQuote?.id ?? null,
     quote_number:
       toText(originalQuote?.quote_number) ||
       toText(sourceQuote?.quote_number) ||
@@ -307,53 +166,57 @@ function buildPreproduccionPayload({ originalQuote, sourceQuote, revisionQuote, 
       toText(revisionQuote?.fulfillment_mode) ||
       toText(sourceQuote?.fulfillment_mode) ||
       toText(originalQuote?.fulfillment_mode),
+    payment_method:
+      toText(revisionPayload?.payment_method) ||
+      toText(sourcePayload?.payment_method) ||
+      toText(originalPayload?.payment_method),
+
     cliente_nombre: toText(endCustomer?.name),
     cliente_telefono: toText(endCustomer?.phone),
     cliente_email: toText(endCustomer?.email),
     cliente_direccion: toText(endCustomer?.address || endCustomer?.street),
     cliente_localidad: toText(endCustomer?.city),
     cliente_maps_url: toText(endCustomer?.maps_url),
-    porton_type: formatPortonTypeLabel(
-      toText(revisionPayload?.porton_type) ||
-      toText(sourcePayload?.porton_type) ||
-      toText(originalPayload?.porton_type)
-    ),
-    porton_type_key:
-      toText(revisionPayload?.porton_type) ||
-      toText(sourcePayload?.porton_type) ||
-      toText(originalPayload?.porton_type),
-    alto_final_mm: toText(measurementForm?.alto_final_mm),
-    ancho_final_mm: toText(measurementForm?.ancho_final_mm),
-    cantidad_parantes: toText(measurementForm?.parantes?.cant || measurementForm?.cantidad_parantes),
-    orientacion_parantes: toText(measurementForm?.parantes?.orientacion || measurementForm?.orientacion_parantes),
-    distribucion_parantes: toText(measurementForm?.parantes?.distribucion || measurementForm?.distribucion_parantes),
-    observaciones_parantes: toText(measurementForm?.parantes?.observaciones || measurementForm?.observaciones_parantes),
+
+    porton_type: visiblePortonType || rawPortonType,
+    porton_type_key: rawPortonType,
+
+    alto_final_mm:
+      toText(measurementForm?.alto_final_mm) ||
+      toText(dimensions?.height_mm) ||
+      toText(dimensions?.alto_final_mm),
+    ancho_final_mm:
+      toText(measurementForm?.ancho_final_mm) ||
+      toText(dimensions?.width_mm) ||
+      toText(dimensions?.ancho_final_mm),
+
+    cantidad_parantes:
+      toText(measurementForm?.cantidad_parantes) ||
+      toText(measurementForm?.parantes?.cant) ||
+      toText(dimensions?.cantidad_parantes),
+    orientacion_parantes:
+      toText(measurementForm?.orientacion_parantes) ||
+      toText(measurementForm?.parantes?.orientacion) ||
+      toText(dimensions?.orientacion_parantes),
+    distribucion_parantes:
+      toText(measurementForm?.distribucion_parantes) ||
+      toText(measurementForm?.parantes?.distribucion) ||
+      toText(dimensions?.distribucion_parantes),
+    observaciones_parantes:
+      toText(measurementForm?.observaciones_parantes) ||
+      toText(measurementForm?.parantes?.observaciones) ||
+      toText(dimensions?.observaciones_parantes),
+
+    tolerance_percent: Number(metrics?.tolerance_percent ?? 0) || 0,
+    tolerance_amount: Number(metrics?.tolerance_amount ?? 0) || 0,
+    difference_amount: Number(metrics?.difference_amount ?? 0) || 0,
+    absorbed_by_company: metrics?.absorbed_by_company === true,
+    final_amount_to_charge: Number(metrics?.final_amount_to_charge ?? 0) || 0,
+
     measurement_form: measurementForm,
     dimensions,
-    lines: lines.map((line) => ({
-      product_id: Number(line?.product_id || 0) || null,
-      odoo_id: Number(line?.odoo_id || line?.odoo_template_id || 0) || null,
-      odoo_template_id: Number(line?.odoo_template_id || line?.odoo_id || 0) || null,
-      odoo_variant_id: Number(line?.odoo_variant_id || 0) || null,
-      qty: Number(line?.qty || 0) || 0,
-      name: toText(line?.name),
-      raw_name: toText(line?.raw_name),
-      code: toText(line?.code),
-      price_unit:
-        typeof line?.price_unit === "number"
-          ? line.price_unit
-          : typeof line?.unit_price === "number"
-            ? line.unit_price
-            : null,
-    })),
-    metrics: {
-      tolerance_percent: Number(metrics?.tolerance_percent ?? 0) || 0,
-      tolerance_amount: Number(metrics?.tolerance_amount ?? 0) || 0,
-      difference_amount: Number(metrics?.difference_amount ?? 0) || 0,
-      absorbed_by_company: metrics?.absorbed_by_company === true,
-      final_amount_to_charge: Number(metrics?.final_amount_to_charge ?? 0) || 0,
-    },
-    mapped_from_measurement: mappedValues || {},
+    lines,
+
     original_quote_snapshot: {
       id: originalQuote?.id ?? null,
       odoo_sale_order_name: toText(originalQuote?.odoo_sale_order_name),
@@ -368,29 +231,29 @@ function buildPreproduccionPayload({ originalQuote, sourceQuote, revisionQuote, 
       status: toText(revisionQuote?.status),
       final_status: toText(revisionQuote?.final_status),
     },
-    ...Object.fromEntries(
-      Object.entries(mappedValues || {}).map(([key, value]) => [String(key), value])
-    ),
   };
 }
 async function upsertPreproduccionValoresForNv({ originalQuote, sourceQuote, revisionQuote, order, metrics, generatedLines }) {
-  const nv = extractNvInteger(order?.name || metrics?.reference_nv);
-  if (!nv) {
-    return { ok: false, skipped: true, reason: "missing_nv" };
-  }
-
-  const mappings = await listActivePreproduccionPropertyMappings();
-  const measurementForm = buildNormalizedMeasurementForm({ originalQuote, sourceQuote, revisionQuote, order });
-  const mappedValues = computeMeasurementMappedValues(measurementForm, mappings);
-  const payload = buildPreproduccionPayload({
+  const basePayload = buildPreproduccionPayload({
     originalQuote,
     sourceQuote,
     revisionQuote,
     order,
     metrics,
     generatedLines,
-    mappedValues,
   });
+
+  const nv = extractNvInteger(basePayload?.referencia_nv || basePayload?.nv);
+  if (!nv) return { ok: false, skipped: true, reason: "missing_nv" };
+
+  const assignmentsMap = await getProductionPropertyAssignmentsMap();
+  const mappedFromPresupuestador = applyProductionPropertyAssignments(basePayload, assignmentsMap);
+
+  const finalPayload = {
+    ...basePayload,
+    mapped_from_presupuestador: mappedFromPresupuestador,
+    ...mappedFromPresupuestador,
+  };
 
   const q = await dbQuery(
     `insert into public.preproduccion_valores (id, nv, data)
@@ -400,14 +263,13 @@ async function upsertPreproduccionValoresForNv({ originalQuote, sourceQuote, rev
        data = excluded.data,
        updated_at = now()
      returning id, nv, updated_at`,
-    [nv, nv, JSON.stringify(payload)],
+    [nv, nv, JSON.stringify(finalPayload)],
   );
 
   return {
     ok: true,
-    nv,
     id: q.rows?.[0]?.id ?? nv,
-    mapped_properties_count: Object.keys(mappedValues || {}).length,
+    nv: q.rows?.[0]?.nv ?? nv,
     updated_at: q.rows?.[0]?.updated_at || null,
   };
 }
@@ -965,12 +827,14 @@ async function syncFinalQuoteToOdoo({ odoo, revisionQuote, originalQuote, source
       }]);
     } catch {}
   }
+
   try {
     const rows = await odoo.executeKw("sale.order", "read", [[orderId]], {
       fields: ["id", "name", "amount_total", "partner_id", "state", "pricelist_id", "origin", "client_order_ref"],
     });
     if (rows?.[0]?.id) order = rows[0];
   } catch {}
+
   return {
     order,
     metrics: {

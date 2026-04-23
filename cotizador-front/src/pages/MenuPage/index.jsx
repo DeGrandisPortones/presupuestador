@@ -43,6 +43,7 @@ export default function MenuPage() {
   const showQuoteViewer = !!isSuperuser;
   const showSellerActivity = !!isSuperuser;
   const showPdfNamesAdmin = !!isSuperuser;
+  const showProductionAssignments = !!isSuperuser;
 
   return (
     <div className="container">
@@ -146,6 +147,16 @@ export default function MenuPage() {
             buttonText="Abrir nombres PDF"
             onClick={() => navigate("/superuser/nombres-pdf")}
             icon="📝"
+          />
+        )}
+
+        {showProductionAssignments && (
+          <MenuTile
+            title="Asignación de propiedades a producción"
+            description="Elegí a qué propiedad del integrador debe ir cada dato del portón."
+            buttonText="Abrir asignación"
+            onClick={() => navigate("/superuser/asignacion-produccion")}
+            icon="🧩"
           />
         )}
 

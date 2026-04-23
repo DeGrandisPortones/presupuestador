@@ -16,6 +16,12 @@ import {
   setProductionPlanningYear,
 } from "../settingsDb.js";
 import { getProductionPlanningWithUsage } from "../productionPlanning.js";
+import {
+  listProductionSourceCatalog,
+  listIntegratorTargetProperties,
+  listProductionPropertyAssignments,
+  setProductionPropertyAssignment,
+} from "../productionPropertyAssignments.js";
 
 function requireEncComercial(req, res, next) { if (!req.user?.is_enc_comercial) return res.status(403).json({ ok: false, error: "No autorizado" }); next(); }
 function requireSuperuser(req, res, next) { if (!req.user?.is_superuser) return res.status(403).json({ ok: false, error: "No autorizado" }); next(); }
@@ -76,6 +82,24 @@ export function buildAdminRouter(odoo) {
       const pdfName = req.body?.pdf_name ?? "";
       const saved = await setProductPdfName(kind, req.params.productId, pdfName);
       res.json({ ok: true, pdf_name: saved.pdf_name || null });
+    } catch (e) { next(e); }
+  });
+
+  router.get("/production-property-assignments", requireAuth, requireSuperuser, async (_req, res, next) => {
+    try {
+      const [source_properties, target_properties, assignments] = await Promise.all([
+        Promise.resolve(listProductionSourceCatalog()),
+        listIntegratorTargetProperties(),
+        listProductionPropertyAssignments(),
+      ]);
+      res.json({ ok: true, source_properties, target_properties, assignments });
+    } catch (e) { next(e); }
+  });
+
+  router.put("/production-property-assignments/:sourceKey", requireAuth, requireSuperuser, async (req, res, next) => {
+    try {
+      const saved = await setProductionPropertyAssignment(req.params.sourceKey, req.body || {});
+      res.json({ ok: true, assignment: saved });
     } catch (e) { next(e); }
   });
 
