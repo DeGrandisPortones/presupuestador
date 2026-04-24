@@ -175,10 +175,17 @@ async function buildSectionValues({ odoo, catalogKind, lines }) {
 
     for (const line of selectedLines) {
       const productId = toIntId(line?.product_id);
-      const lineName = toText(line?.name) || toText(line?.raw_name);
-      if (!productId || !lineName) continue;
+      if (!productId) continue;
 
       const product = productById.get(productId);
+      const aliasValue =
+        toText(product?.alias) ||
+        toText(product?.internal_alias) ||
+        toText(product?.display_name) ||
+        toText(line?.name) ||
+        toText(line?.raw_name);
+      if (!aliasValue) continue;
+
       const sectionIds = Array.isArray(product?.section_ids) ? product.section_ids : [];
       for (const rawSectionId of sectionIds) {
         const sectionName = sectionNameById.get(Number(rawSectionId || 0));
@@ -186,7 +193,7 @@ async function buildSectionValues({ odoo, catalogKind, lines }) {
         if (!sectionName || !sourceKey) continue;
 
         if (!Array.isArray(out[sourceKey])) out[sourceKey] = [];
-        if (!out[sourceKey].includes(lineName)) out[sourceKey].push(lineName);
+        if (!out[sourceKey].includes(aliasValue)) out[sourceKey].push(aliasValue);
       }
     }
 

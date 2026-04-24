@@ -177,7 +177,7 @@ export function buildAdminRouter(odoo) {
       res.json({ ok: true, mapping });
     } catch (e) { next(e); }
   });
-  router.put("/products/:productId/alias", requireAuth, requireEncComercialOrSuperuser, async (req, res, next) => {
+  router.put("/products/:productId/alias", requireAuth, requireSuperuser, async (req, res, next) => {
     try {
       const kind = normKind(req.query.kind || req.body?.kind || "porton");
       const alias = req.body?.alias ?? "";
