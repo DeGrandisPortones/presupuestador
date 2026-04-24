@@ -100,7 +100,8 @@ export default function DashboardPage() {
   const [systemRules, setSystemRules] = useState([]);
   const [initialSectionId, setInitialSectionId] = useState("");
 
-  const enabled = !!user?.is_enc_comercial || !!user?.is_superuser;
+  const isSuperuser = !!user?.is_superuser;
+  const enabled = !!user?.is_enc_comercial || isSuperuser;
 
   const catalogQ = useQuery({
     queryKey: ["adminCatalog", catalogKind],
@@ -141,6 +142,12 @@ export default function DashboardPage() {
       );
     }
   }, [doorQuoteSettingsQ.data]);
+
+  useEffect(() => {
+    if (!isSuperuser && tab === "aliases") {
+      setTab("tags");
+    }
+  }, [isSuperuser, tab]);
 
   const catalog = catalogQ.data;
   const sections = Array.isArray(catalog?.sections) ? catalog.sections : [];
@@ -583,13 +590,15 @@ export default function DashboardPage() {
         >
           Etiquetas → Secciones
         </button>
-        <button
-          className={tab === "aliases" ? "navlink active" : "navlink"}
-          type="button"
-          onClick={() => setTab("aliases")}
-        >
-          Alias y visibilidad
-        </button>
+        {isSuperuser && (
+          <button
+            className={tab === "aliases" ? "navlink active" : "navlink"}
+            type="button"
+            onClick={() => setTab("aliases")}
+          >
+            Alias y visibilidad
+          </button>
+        )}
         <button
           className={tab === "dependencies" ? "navlink active" : "navlink"}
           type="button"
@@ -628,7 +637,7 @@ export default function DashboardPage() {
             />
           )}
 
-          {tab === "aliases" && (
+          {isSuperuser && tab === "aliases" && (
             <AliasesTab
               catalogKind={catalogKind}
               filteredProductsByQuery={filteredProductsByQuery}
