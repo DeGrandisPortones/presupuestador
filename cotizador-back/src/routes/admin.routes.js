@@ -88,7 +88,7 @@ export function buildAdminRouter(odoo) {
   router.get("/production-property-assignments", requireAuth, requireSuperuser, async (_req, res, next) => {
     try {
       const [source_properties, target_properties, assignments] = await Promise.all([
-        Promise.resolve(listProductionSourceCatalog()),
+        listProductionSourceCatalog(),
         listIntegratorTargetProperties(),
         listProductionPropertyAssignments(),
       ]);

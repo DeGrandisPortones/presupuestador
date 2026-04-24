@@ -8,7 +8,7 @@ const DEFAULT_TARGET_PROPERTIES = [
   "calc_espada",
 ];
 
-const SOURCE_PROPERTIES = [
+const BASE_SOURCE_PROPERTIES = [
   { source_key: "nv", label: "NV", group: "Referencias", description: "Número de nota de venta final." },
   { source_key: "referencia_nv", label: "Referencia NV", group: "Referencias", description: "Texto completo de la NV (ej: NV5056)." },
   { source_key: "referencia_np", label: "Referencia NP", group: "Referencias", description: "Texto completo de la NP origen, si existe." },
@@ -19,11 +19,19 @@ const SOURCE_PROPERTIES = [
   { source_key: "payment_method", label: "Forma de pago", group: "General", description: "Forma de pago del presupuesto." },
 
   { source_key: "cliente_nombre", label: "Cliente nombre", group: "Cliente", description: "Nombre del cliente final." },
+  { source_key: "cliente_apellido", label: "Cliente apellido", group: "Cliente", description: "Apellido del cliente final." },
+  { source_key: "cliente_nombre_completo", label: "Cliente nombre completo", group: "Cliente", description: "Nombre y apellido del cliente final." },
   { source_key: "cliente_telefono", label: "Cliente teléfono", group: "Cliente", description: "Teléfono del cliente final." },
   { source_key: "cliente_email", label: "Cliente email", group: "Cliente", description: "Email del cliente final." },
   { source_key: "cliente_direccion", label: "Cliente dirección", group: "Cliente", description: "Dirección del cliente final." },
   { source_key: "cliente_localidad", label: "Cliente localidad", group: "Cliente", description: "Ciudad / localidad del cliente final." },
   { source_key: "cliente_maps_url", label: "Cliente Maps", group: "Cliente", description: "URL de Google Maps del cliente." },
+
+  { source_key: "vendido_por_rol", label: "Vendido por rol", group: "Venta", description: "Rol del usuario que vendió el portón." },
+  { source_key: "vendido_por_nombre", label: "Vendido por nombre", group: "Venta", description: "Nombre del usuario que vendió el portón." },
+  { source_key: "vendido_por_username", label: "Vendido por usuario", group: "Venta", description: "Username del usuario que vendió el portón." },
+  { source_key: "vendedor_nombre", label: "Vendedor nombre", group: "Venta", description: "Nombre del vendedor, si la venta la hizo un vendedor." },
+  { source_key: "distribuidor_nombre", label: "Distribuidor nombre", group: "Venta", description: "Nombre del distribuidor, si la venta la hizo un distribuidor." },
 
   { source_key: "porton_type", label: "Sistema (label visible)", group: "Portón", description: "Tipo/sistema visible, en mayúsculas como el desplegable del cotizador." },
   { source_key: "porton_type_key", label: "Sistema (key interna)", group: "Portón", description: "Key interna, ej: acero_simil_aluminio_clasico." },
@@ -67,6 +75,20 @@ function normalizeTargetProperty(value) {
   return String(value || "").trim();
 }
 
+function slugifySimple(value) {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^A-Za-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .toLowerCase();
+}
+
+export function buildSectionSourceKey(sectionName) {
+  const slug = slugifySimple(sectionName);
+  return slug ? `section__${slug}` : "";
+}
+
 async function safeListValues(sql) {
   try {
     const q = await dbQuery(sql);
@@ -76,8 +98,33 @@ async function safeListValues(sql) {
   }
 }
 
-export function listProductionSourceCatalog() {
-  return SOURCE_PROPERTIES.map((item) => ({ ...item }));
+async function listDynamicSectionSourceCatalog() {
+  try {
+    const q = await dbQuery(`
+      select distinct name
+        from public.presupuestador_sections
+       where coalesce(name, '') <> ''
+       order by name asc
+    `);
+    return (q.rows || [])
+      .map((row) => String(row?.name || "").trim())
+      .filter(Boolean)
+      .map((sectionName) => ({
+        source_key: buildSectionSourceKey(sectionName),
+        label: `Sección: ${sectionName}`,
+        group: "Secciones",
+        description: `Productos elegidos dentro de la sección ${sectionName}.`,
+      }))
+      .filter((item) => item.source_key);
+  } catch {
+    return [];
+  }
+}
+
+export async function listProductionSourceCatalog() {
+  await ensureProductionPropertyAssignmentsTable();
+  const dynamicSections = await listDynamicSectionSourceCatalog();
+  return [...BASE_SOURCE_PROPERTIES, ...dynamicSections];
 }
 
 export async function listIntegratorTargetProperties() {
@@ -188,10 +235,9 @@ export function applyProductionPropertyAssignments(payload, assignmentsMap) {
   const out = {};
   const map = assignmentsMap instanceof Map ? assignmentsMap : new Map();
 
-  for (const source of SOURCE_PROPERTIES) {
-    const sourceKey = normalizeSourceKey(source?.source_key);
-    const targetProperty = normalizeTargetProperty(map.get(sourceKey));
-    if (!sourceKey || !targetProperty) continue;
+  for (const [sourceKey, targetPropertyRaw] of map.entries()) {
+    const targetProperty = normalizeTargetProperty(targetPropertyRaw);
+    if (!targetProperty) continue;
 
     const value = payload?.[sourceKey];
     if (!hasMeaningfulValue(value)) continue;

@@ -19,12 +19,6 @@ function buildSearchText(item = {}, assignment = {}) {
   ].join(" ").toLowerCase();
 }
 
-const pageShellStyle = {
-  width: "calc(100vw - 48px)",
-  maxWidth: "calc(100vw - 48px)",
-  margin: "0 auto",
-};
-
 export default function SuperuserProductionPropertyAssignmentsPage() {
   const user = useAuthStore((s) => s.user);
   const qc = useQueryClient();
@@ -74,7 +68,7 @@ export default function SuperuserProductionPropertyAssignmentsPage() {
 
   if (!user?.is_superuser) {
     return (
-      <div className="container" style={pageShellStyle}>
+      <div className="container">
         <div className="spacer" />
         <div className="card">
           <h2 style={{ marginTop: 0 }}>Asignación de propiedades a producción</h2>
@@ -85,7 +79,7 @@ export default function SuperuserProductionPropertyAssignmentsPage() {
   }
 
   return (
-    <div className="container" style={pageShellStyle}>
+    <div className="container">
       <div className="spacer" />
 
       <div className="card" style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
@@ -123,7 +117,7 @@ export default function SuperuserProductionPropertyAssignmentsPage() {
         {!query.isLoading && !query.isError && !filtered.length ? <div className="muted">Sin propiedades para mostrar.</div> : null}
 
         {!!filtered.length && (
-          <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 1400 }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 1200 }}>
             <thead>
               <tr>
                 <th style={{ textAlign: "left", padding: "10px 8px", borderBottom: "1px solid #eee" }}>Grupo</th>

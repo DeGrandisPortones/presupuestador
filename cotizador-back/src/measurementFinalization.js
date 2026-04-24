@@ -8,7 +8,9 @@ import {
 import {
   getProductionPropertyAssignmentsMap,
   applyProductionPropertyAssignments,
+  buildSectionSourceKey,
 } from "./productionPropertyAssignments.js";
+import { loadCatalogBootstrap } from "./catalogBootstrap.js";
 
 const PLACEHOLDER_PRODUCT_ID = Number(
   process.env.ODOO_PLACEHOLDER_PRODUCT_ID || 2880,
@@ -95,7 +97,109 @@ function formatPortonTypeLabel(value) {
     .trim()
     .toUpperCase();
 }
-function buildPreproduccionPayload({ originalQuote, sourceQuote, revisionQuote, order, metrics, generatedLines }) {
+async function resolveSellerActorInfo(sourceQuote, originalQuote) {
+  const fallbackRole =
+    toText(sourceQuote?.created_by_role) ||
+    toText(originalQuote?.created_by_role);
+
+  const fallbackName =
+    toText(sourceQuote?.created_by_full_name) ||
+    toText(sourceQuote?.created_by_username) ||
+    toText(originalQuote?.created_by_full_name) ||
+    toText(originalQuote?.created_by_username);
+
+  const fallbackUsername =
+    toText(sourceQuote?.created_by_username) ||
+    toText(originalQuote?.created_by_username);
+
+  const userId =
+    toIntId(sourceQuote?.created_by_user_id) ||
+    toIntId(originalQuote?.created_by_user_id);
+
+  if (!userId) {
+    return {
+      role: fallbackRole,
+      full_name: fallbackName,
+      username: fallbackUsername,
+      vendedor_nombre: fallbackRole === "vendedor" ? fallbackName : "",
+      distribuidor_nombre: fallbackRole === "distribuidor" ? fallbackName : "",
+    };
+  }
+
+  try {
+    const q = await dbQuery(
+      `select id, username, full_name, is_vendedor, is_distribuidor
+         from public.presupuestador_users
+        where id = $1
+        limit 1`,
+      [userId],
+    );
+    const row = q.rows?.[0] || null;
+    const role = fallbackRole || (row?.is_distribuidor ? "distribuidor" : row?.is_vendedor ? "vendedor" : "");
+    const fullName = toText(row?.full_name) || fallbackName;
+    const username = toText(row?.username) || fallbackUsername;
+
+    return {
+      role,
+      full_name: fullName,
+      username,
+      vendedor_nombre: role === "vendedor" ? fullName : "",
+      distribuidor_nombre: role === "distribuidor" ? fullName : "",
+    };
+  } catch {
+    return {
+      role: fallbackRole,
+      full_name: fallbackName,
+      username: fallbackUsername,
+      vendedor_nombre: fallbackRole === "vendedor" ? fallbackName : "",
+      distribuidor_nombre: fallbackRole === "distribuidor" ? fallbackName : "",
+    };
+  }
+}
+async function buildSectionValues({ odoo, catalogKind, lines }) {
+  const out = {};
+  const selectedLines = Array.isArray(lines) ? lines : [];
+  if (!odoo || !selectedLines.length) return out;
+
+  try {
+    const bootstrap = await loadCatalogBootstrap(odoo, catalogKind || "porton");
+    const sections = Array.isArray(bootstrap?.sections) ? bootstrap.sections : [];
+    const products = Array.isArray(bootstrap?.products) ? bootstrap.products : [];
+
+    const sectionNameById = new Map(
+      sections.map((section) => [Number(section?.id || 0), toText(section?.name)]).filter(([id, name]) => id && name)
+    );
+    const productById = new Map(
+      products.map((product) => [Number(product?.id || 0), product]).filter(([id]) => id)
+    );
+
+    for (const line of selectedLines) {
+      const productId = toIntId(line?.product_id);
+      const lineName = toText(line?.name) || toText(line?.raw_name);
+      if (!productId || !lineName) continue;
+
+      const product = productById.get(productId);
+      const sectionIds = Array.isArray(product?.section_ids) ? product.section_ids : [];
+      for (const rawSectionId of sectionIds) {
+        const sectionName = sectionNameById.get(Number(rawSectionId || 0));
+        const sourceKey = buildSectionSourceKey(sectionName);
+        if (!sectionName || !sourceKey) continue;
+
+        if (!Array.isArray(out[sourceKey])) out[sourceKey] = [];
+        if (!out[sourceKey].includes(lineName)) out[sourceKey].push(lineName);
+      }
+    }
+
+    for (const key of Object.keys(out)) {
+      out[key] = out[key].join(", ");
+    }
+
+    return out;
+  } catch {
+    return {};
+  }
+}
+async function buildPreproduccionPayload({ originalQuote, sourceQuote, revisionQuote, order, metrics, generatedLines, odoo }) {
   const originalPayload =
     originalQuote?.payload && typeof originalQuote.payload === "object"
       ? originalQuote.payload
@@ -129,6 +233,8 @@ function buildPreproduccionPayload({ originalQuote, sourceQuote, revisionQuote, 
           ? originalQuote.end_customer
           : {};
 
+  const sellerInfo = await resolveSellerActorInfo(sourceQuote, originalQuote);
+
   const rawPortonType =
     toText(revisionPayload?.porton_type) ||
     toText(sourcePayload?.porton_type) ||
@@ -146,6 +252,22 @@ function buildPreproduccionPayload({ originalQuote, sourceQuote, revisionQuote, 
     raw_name: toText(line?.raw_name),
     price_unit: typeof line?.price_unit === "number" ? line.price_unit : calcDetailedUnitWithIva(line, revisionPayload || sourcePayload || originalPayload || {}),
   }));
+
+  const sectionValues = await buildSectionValues({
+    odoo,
+    catalogKind:
+      toText(revisionQuote?.catalog_kind) ||
+      toText(sourceQuote?.catalog_kind) ||
+      toText(originalQuote?.catalog_kind) ||
+      "porton",
+    lines,
+  });
+
+  const clienteNombre = toText(endCustomer?.name);
+  const clienteApellido =
+    toText(endCustomer?.last_name) ||
+    toText(endCustomer?.lastname) ||
+    toText(endCustomer?.apellido);
 
   return {
     nv: extractNvInteger(order?.name || metrics?.reference_nv),
@@ -171,12 +293,20 @@ function buildPreproduccionPayload({ originalQuote, sourceQuote, revisionQuote, 
       toText(sourcePayload?.payment_method) ||
       toText(originalPayload?.payment_method),
 
-    cliente_nombre: toText(endCustomer?.name),
+    cliente_nombre: clienteNombre,
+    cliente_apellido: clienteApellido,
+    cliente_nombre_completo: [clienteNombre, clienteApellido].filter(Boolean).join(" ").trim() || clienteNombre,
     cliente_telefono: toText(endCustomer?.phone),
     cliente_email: toText(endCustomer?.email),
     cliente_direccion: toText(endCustomer?.address || endCustomer?.street),
     cliente_localidad: toText(endCustomer?.city),
     cliente_maps_url: toText(endCustomer?.maps_url),
+
+    vendido_por_rol: toText(sellerInfo?.role),
+    vendido_por_nombre: toText(sellerInfo?.full_name),
+    vendido_por_username: toText(sellerInfo?.username),
+    vendedor_nombre: toText(sellerInfo?.vendedor_nombre),
+    distribuidor_nombre: toText(sellerInfo?.distribuidor_nombre),
 
     porton_type: visiblePortonType || rawPortonType,
     porton_type_key: rawPortonType,
@@ -216,6 +346,7 @@ function buildPreproduccionPayload({ originalQuote, sourceQuote, revisionQuote, 
     measurement_form: measurementForm,
     dimensions,
     lines,
+    sections: sectionValues,
 
     original_quote_snapshot: {
       id: originalQuote?.id ?? null,
@@ -231,16 +362,18 @@ function buildPreproduccionPayload({ originalQuote, sourceQuote, revisionQuote, 
       status: toText(revisionQuote?.status),
       final_status: toText(revisionQuote?.final_status),
     },
+    ...sectionValues,
   };
 }
-async function upsertPreproduccionValoresForNv({ originalQuote, sourceQuote, revisionQuote, order, metrics, generatedLines }) {
-  const basePayload = buildPreproduccionPayload({
+async function upsertPreproduccionValoresForNv({ originalQuote, sourceQuote, revisionQuote, order, metrics, generatedLines, odoo }) {
+  const basePayload = await buildPreproduccionPayload({
     originalQuote,
     sourceQuote,
     revisionQuote,
     order,
     metrics,
     generatedLines,
+    odoo,
   });
 
   const nv = extractNvInteger(basePayload?.referencia_nv || basePayload?.nv);
@@ -1228,6 +1361,7 @@ export async function finalizeMeasurementToRevisionQuote({ odoo, originalQuote, 
       order,
       metrics,
       generatedLines: finalLines,
+      odoo,
     });
   } catch (error) {
     preproductionSync = {

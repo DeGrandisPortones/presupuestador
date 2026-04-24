@@ -1,10 +1,21 @@
-Fix de ancho completo para Asignación de propiedades a producción
+Ampliación de propiedades para Asignación de propiedades a producción
 
-Qué cambia:
-- la página deja de quedar restringida al ancho normal del container
-- fuerza un ancho casi completo de la ventana:
-  width/maxWidth = calc(100vw - 48px)
-- así aprovecha toda la pantalla disponible y reduce el scroll horizontal innecesario
+Agrega:
+- cliente_apellido
+- cliente_nombre_completo
+- vendido_por_rol
+- vendido_por_nombre
+- vendido_por_username
+- vendedor_nombre
+- distribuidor_nombre
+- secciones dinámicas como rows del asignador:
+  section__<slug>
+  Ej: Sección: Color del revestimiento
 
-Archivo:
-- cotizador-front/src/pages/SuperuserProductionPropertyAssignmentsPage/index.jsx
+También:
+- el JSON de preproduccion_valores ahora guarda:
+  - los nuevos datos del cliente
+  - los datos del actor que vendió
+  - sections = { section__...: "valor elegido" }
+  - además copia cada section__... en la raíz del JSON
+- las asignaciones pueden apuntar a propiedades del integrador usando esos nuevos source_key
