@@ -97,6 +97,16 @@ function formatPortonTypeLabel(value) {
     .trim()
     .toUpperCase();
 }
+function formatDateOnly(value) {
+  const raw = toText(value);
+  if (!raw) return "";
+  const parsed = new Date(raw);
+  if (!Number.isNaN(parsed.getTime())) {
+    return parsed.toISOString().slice(0, 10);
+  }
+  const match = raw.match(/^(\d{4}-\d{2}-\d{2})/);
+  return match ? match[1] : raw;
+}
 async function resolveSellerActorInfo(sourceQuote, originalQuote) {
   const fallbackRole =
     toText(sourceQuote?.created_by_role) ||
@@ -286,6 +296,38 @@ async function buildPreproduccionPayload({ originalQuote, sourceQuote, revisionQ
       toText(originalQuote?.quote_number) ||
       toText(sourceQuote?.quote_number) ||
       toText(revisionQuote?.quote_number),
+
+    fecha_presupuesto:
+      formatDateOnly(originalQuote?.created_at) ||
+      formatDateOnly(sourceQuote?.created_at) ||
+      formatDateOnly(revisionQuote?.created_at),
+    fecha_confirmacion:
+      formatDateOnly(sourceQuote?.confirmed_at) ||
+      formatDateOnly(originalQuote?.confirmed_at),
+    fecha_aprobacion_comercial:
+      formatDateOnly(sourceQuote?.commercial_at) ||
+      formatDateOnly(originalQuote?.commercial_at),
+    fecha_aprobacion_tecnica:
+      formatDateOnly(sourceQuote?.technical_at) ||
+      formatDateOnly(originalQuote?.technical_at),
+    fecha_np:
+      formatDateOnly(sourceQuote?.synced_at) ||
+      formatDateOnly(sourceQuote?.odoo_synced_at) ||
+      formatDateOnly(originalQuote?.synced_at) ||
+      formatDateOnly(originalQuote?.odoo_synced_at),
+    fecha_medicion:
+      formatDateOnly(originalQuote?.measurement_at) ||
+      formatDateOnly(sourceQuote?.measurement_at),
+    fecha_revision_tecnica_final:
+      formatDateOnly(originalQuote?.measurement_review_at) ||
+      formatDateOnly(sourceQuote?.measurement_review_at),
+    fecha_solicitud_salida_acopio:
+      formatDateOnly(originalQuote?.acopio_to_produccion_requested_at) ||
+      formatDateOnly(sourceQuote?.acopio_to_produccion_requested_at),
+    fecha_nv:
+      formatDateOnly(revisionQuote?.final_synced_at) ||
+      formatDateOnly(order?.write_date) ||
+      formatDateOnly(new Date().toISOString()),
     catalog_kind:
       toText(revisionQuote?.catalog_kind) ||
       toText(sourceQuote?.catalog_kind) ||

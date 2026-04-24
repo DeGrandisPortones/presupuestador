@@ -1,6 +1,14 @@
-Cambios incluidos:
-1) DashboardPage completo basado en el archivo que subiste:
-   - la pestaña Alias y visibilidad queda visible solo para superusuario
-   - si un usuario no superusuario cae en esa pestaña, vuelve a tags
-2) Se vuelve a aplicar el ancho completo en SuperuserProductionPropertyAssignmentsPage:
-   - width/maxWidth = calc(100vw - 48px)
+Agrega fechas al JSON de preproduccion_valores y al catálogo de propiedades origen.
+
+Campos nuevos:
+- fecha_presupuesto
+- fecha_confirmacion
+- fecha_aprobacion_comercial
+- fecha_aprobacion_tecnica
+- fecha_np
+- fecha_medicion
+- fecha_revision_tecnica_final
+- fecha_solicitud_salida_acopio
+- fecha_nv
+
+Todos viajan como fecha YYYY-MM-DD.
