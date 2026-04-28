@@ -33,6 +33,8 @@ const WIDTH_MIN_M = 2;
 const WIDTH_MAX_M = 7;
 const HEIGHT_MIN_M = 2;
 const HEIGHT_MAX_M = 3;
+const IPANEL_WIDTH_MAX_M = 1.13;
+const IPANEL_HEIGHT_MAX_M = 2.45;
 const REBAJE_AUTO_PRODUCT_ID = 2903;
 const REBAJE_AUTO_PRODUCT_NAME = "PLANCHUELA LATERAL E INFERIOR DE 40MM (Apto aluminio - Otros)";
 const REBAJE_AUTO_PRODUCT_BASE_PRICE = 400;
@@ -111,6 +113,11 @@ function validateDimensionsRequired(payload, kind = "porton") {
   if (normalizedKind === "porton") {
     if (width < WIDTH_MIN_M || width > WIDTH_MAX_M) throw new Error("El ancho debe estar entre 2 m y 7 m.");
     if (height < HEIGHT_MIN_M || height > HEIGHT_MAX_M) throw new Error("El alto debe estar entre 2 m y 3 m.");
+  }
+
+  if (normalizedKind === "ipanel") {
+    if (width > IPANEL_WIDTH_MAX_M) throw new Error("El ancho del Ipanel no puede superar 1.13 m (113 cm).");
+    if (height > IPANEL_HEIGHT_MAX_M) throw new Error("El alto del Ipanel no puede superar 2.45 m (245 cm).");
   }
 }
 function formatVisibleStatus(rawStatus, hasPersistedQuote) {

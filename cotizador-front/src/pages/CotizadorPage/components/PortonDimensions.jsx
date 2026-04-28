@@ -8,6 +8,8 @@ const WIDTH_MIN_M = 2.4;
 const WIDTH_MAX_M = 7;
 const HEIGHT_MIN_M = 2;
 const HEIGHT_MAX_M = 3;
+const IPANEL_WIDTH_MAX_M = 1.13;
+const IPANEL_HEIGHT_MAX_M = 2.45;
 const PARANTES_SPECIAL_PRODUCT_ID = 3006;
 
 function parseOptionalNumber(v) {
@@ -276,9 +278,25 @@ export default function PortonDimensions({ kind = "porton" }) {
   const height = useMemo(() => toNumber(heightRaw), [heightRaw]);
   const widthValue = useMemo(() => parseOptionalNumber(normalizeDecimalWithDot(widthRaw)), [widthRaw]);
   const heightValue = useMemo(() => parseOptionalNumber(normalizeDecimalWithDot(heightRaw)), [heightRaw]);
-  const widthOutOfBounds = isPorton && widthValue !== null && (widthValue < WIDTH_MIN_M || widthValue > WIDTH_MAX_M);
-  const heightOutOfBounds = isPorton && heightValue !== null && (heightValue < HEIGHT_MIN_M || heightValue > HEIGHT_MAX_M);
-  const hasSizeError = isPorton && (widthOutOfBounds || heightOutOfBounds);
+  const widthOutOfBounds = widthValue !== null && (
+    isPorton
+      ? (widthValue < WIDTH_MIN_M || widthValue > WIDTH_MAX_M)
+      : (isIpanel ? widthValue > IPANEL_WIDTH_MAX_M : false)
+  );
+  const heightOutOfBounds = heightValue !== null && (
+    isPorton
+      ? (heightValue < HEIGHT_MIN_M || heightValue > HEIGHT_MAX_M)
+      : (isIpanel ? heightValue > IPANEL_HEIGHT_MAX_M : false)
+  );
+  const hasSizeError = (isPorton || isIpanel) && (widthOutOfBounds || heightOutOfBounds);
+  const widthHelper = isPorton
+    ? "Mínimo 2.4 m · Máximo 7 m"
+    : (isIpanel ? "Máximo 1.13 m (113 cm)" : "");
+  const heightHelper = isPorton
+    ? "Mínimo 2 m · Máximo 3 m"
+    : (isIpanel ? "Máximo 2.45 m (245 cm)" : "");
+  const widthPlaceholder = isIpanel ? "Ej: 1.13" : "Ej: 3.2";
+  const heightPlaceholder = isIpanel ? "Ej: 2.45" : "Ej: 2.1";
   const area = useMemo(() => {
     const a = width * height;
     return Number.isFinite(a) ? a : 0;
@@ -401,7 +419,7 @@ export default function PortonDimensions({ kind = "porton" }) {
       >
         <FieldBox
           label="Ancho (m)"
-          helper={isPorton ? "Mínimo 2.4 m · Máximo 7 m" : ""}
+          helper={widthHelper}
           helperColor={widthOutOfBounds ? "#b91c1c" : undefined}
         >
           <Input
@@ -410,14 +428,14 @@ export default function PortonDimensions({ kind = "porton" }) {
             value={widthRaw}
             onChange={(v) => setDimensions({ width: normalizeDecimal(v) })}
             onBlur={(e) => setDimensions({ width: normalizeDecimal(e?.target?.value) })}
-            placeholder="Ej: 3.2"
+            placeholder={widthPlaceholder}
             style={inputStateStyle(widthOutOfBounds)}
           />
         </FieldBox>
 
         <FieldBox
           label="Alto (m)"
-          helper={isPorton ? "Mínimo 2 m · Máximo 3 m" : ""}
+          helper={heightHelper}
           helperColor={heightOutOfBounds ? "#b91c1c" : undefined}
         >
           <Input
@@ -426,7 +444,7 @@ export default function PortonDimensions({ kind = "porton" }) {
             value={heightRaw}
             onChange={(v) => setDimensions({ height: normalizeDecimal(v) })}
             onBlur={(e) => setDimensions({ height: normalizeDecimal(e?.target?.value) })}
-            placeholder="Ej: 2.1"
+            placeholder={heightPlaceholder}
             style={inputStateStyle(heightOutOfBounds)}
           />
         </FieldBox>

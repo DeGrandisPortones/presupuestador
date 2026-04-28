@@ -5,22 +5,14 @@ Archivos modificados:
 - cotizador-front/src/pages/CotizadorPage/index.jsx
 - cotizador-front/src/pages/CotizadorPage/components/PortonDimensions.jsx
 
-Detalle:
-1. Portones
-   - La seccion de medidas conserva Ancho y Alto en ese orden.
-   - Mantiene Tipo / Sistema, Kg por m2, Superficie, Parantes y calculos tecnicos.
-   - Mantiene las validaciones de medidas de porton.
+Resumen:
+- Portones conserva la seccion de medidas y queda ordenada como Ancho y luego Alto.
+- Ipanel muestra solamente Ancho y Alto en la seccion de medidas.
+- Ipanel valida maximos de presupuestacion:
+  - Ancho maximo: 1.13 m (113 cm).
+  - Alto maximo: 2.45 m (245 cm).
+- Otros oculta completamente la seccion de medidas y no exige Ancho ni Alto para guardar, confirmar o descargar PDF.
+- CotizadorPage pasa correctamente catalogKind a PortonDimensions para que cada tipo use su propia UI y validacion.
 
-2. Ipanels
-   - La seccion de medidas muestra solamente Ancho y Alto.
-   - Oculta Tipo / Sistema, Kg por m2, Superficie, Parantes y calculos tecnicos.
-   - Requiere Ancho y Alto para guardar, confirmar y descargar PDF.
-   - No aplica los limites especificos de portones.
-
-3. Otros
-   - Se oculta completamente la seccion de medidas.
-   - No exige Ancho ni Alto para guardar, confirmar o descargar PDF.
-   - No agrega medidas al texto del PDF para presupuestos de tipo Otros.
-
-Instalacion:
-Copiar la carpeta cotizador-front incluida en este zip sobre la raiz del repo presupuestador, reemplazando los archivos existentes.
+Modo de uso:
+Copiar el contenido de este zip sobre la raiz del repo presupuestador y reemplazar archivos.
