@@ -35,6 +35,7 @@ export async function loadCatalogBootstrap(odoo, kind="porton") {
   const sections = await listSections(k);
   const tagSection = await getTagSectionMap(k);
   const aliasMap = await getProductAliasMap(k);
+  const inheritedAliasMap = k === "porton" ? aliasMap : await getProductAliasMap("porton");
   const visibilityMap = await getProductVisibilityMap(k);
   const typeVisibility = await getTypeVisibilityMap(k);
 
@@ -64,7 +65,9 @@ export async function loadCatalogBootstrap(odoo, kind="porton") {
 
   const products = productsFiltered.map((p) => {
     const pid = Number(p.id);
-    const alias = cleanText(aliasMap.get(pid) || "");
+    const ownAlias = cleanText(aliasMap.get(pid) || "");
+    const inheritedAlias = cleanText(inheritedAliasMap.get(pid) || "");
+    const alias = ownAlias || inheritedAlias;
     const odooName = cleanText(p?.name);
     const visibility = visibilityMap.get(pid) || { disable_for_vendedor: false, disable_for_distribuidor: false };
     const tids = Array.isArray(p.tag_ids) ? p.tag_ids.map(Number) : [];

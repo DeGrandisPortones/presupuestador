@@ -1,7 +1,7 @@
 Cambios incluidos en este paquete acumulado
 ===========================================
 
-Este ZIP incluye todos los cambios anteriores y agrega el fix para productos en la Data de Ipanel/Otros.
+Este ZIP incluye todos los cambios anteriores y agrega la herencia de alias de Portones hacia Ipanel/Otros.
 
 1) Medidas por tipo de cotizador
 --------------------------------
@@ -32,6 +32,13 @@ Este ZIP incluye todos los cambios anteriores y agrega el fix para productos en 
 - Ipanel conserva compatibilidad con productos que tengan etiqueta llamada exactamente "ipanel", pero ademas suma productos de cualquier etiqueta configurada en sus secciones.
 - Otros toma productos de las etiquetas configuradas en sus secciones.
 
+6) Alias heredados desde Portones
+---------------------------------
+- Portones mantiene sus alias propios sin cambios.
+- Ipanel y Otros usan primero un alias propio, si existe.
+- Si Ipanel/Otros no tienen alias propio para un producto, muestran automaticamente el alias configurado en Portones para ese mismo producto.
+- Esto permite reutilizar los nombres ya cargados en Portones sin duplicar configuracion.
+
 Archivos incluidos
 ------------------
 - cotizador-front/src/pages/CotizadorPage/index.jsx
@@ -50,4 +57,4 @@ Instalacion
 2. Reemplazar los archivos existentes.
 3. Reiniciar backend.
 4. Recompilar/reiniciar frontend.
-5. Entrar al Dashboard, refrescar catalogo y revisar Data en Ipanel/Otros.
+5. Entrar al Dashboard, refrescar catalogo y revisar Data/Cotizador en Ipanel/Otros.
