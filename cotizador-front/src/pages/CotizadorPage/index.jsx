@@ -39,8 +39,9 @@ const REBAJE_AUTO_PRODUCT_BASE_PRICE = 400;
 const REBAJE_AUTO_MIN_WIDTH_M = 3.5;
 const PREVIOUSLY_BILLED_PRODUCT_ID = -900001;
 
+function normalizeCatalogKind(kind) { return String(kind || "porton").toLowerCase().trim(); }
 function normalizeUrl(value) { return String(value || "").trim().replace(/\/+$/, "").toLowerCase(); }
-function editorRouteForKind(kind, id, search = "") { const safeId = String(id || "").trim(); const suffix = search || ""; if (String(kind || "porton").toLowerCase().trim() === "ipanel") return `/cotizador/ipanel/${safeId}${suffix}`; if (String(kind || "porton").toLowerCase().trim() === "otros") return `/cotizador/otros/${safeId}${suffix}`; return `/cotizador/${safeId}${suffix}`; }
+function editorRouteForKind(kind, id, search = "") { const safeId = String(id || "").trim(); const suffix = search || ""; const normalizedKind = normalizeCatalogKind(kind); if (normalizedKind === "ipanel") return `/cotizador/ipanel/${safeId}${suffix}`; if (normalizedKind === "otros") return `/cotizador/otros/${safeId}${suffix}`; return `/cotizador/${safeId}${suffix}`; }
 function parseNum(v) { const n = Number(String(v ?? "").replace(",", ".")); return Number.isFinite(n) ? n : 0; }
 function formatMetric(v) { const n = Number(v || 0); return Number.isFinite(n) && n > 0 ? String(n).replace(/\.00$/, "") : ""; }
 function buildPortonMetricsText(payload) {
@@ -49,8 +50,8 @@ function buildPortonMetricsText(payload) {
   const height = parseNum(dims?.height);
   const kgM2 = parseNum(dims?.kg_m2);
   const rows = [];
-  if (height > 0) rows.push(`Alto: ${formatMetric(height)} m`);
   if (width > 0) rows.push(`Ancho: ${formatMetric(width)} m`);
+  if (height > 0) rows.push(`Alto: ${formatMetric(height)} m`);
   if (kgM2 > 0) rows.push(`Kg/m²: ${formatMetric(kgM2)}`);
   return rows.join(" · ");
 }
@@ -73,7 +74,11 @@ function buildPdfPayloadForDownload(payload, financingPercent, extras = {}) {
       })
     : [];
   const nextPayload = { ...(payload || {}), ...extras, lines: nextLines, payload: { ...(payload?.payload || {}), ...(extras.payload || {}) } };
-  nextPayload.note = appendMetricsToNote(nextPayload.note, nextPayload);
+  if (normalizeCatalogKind(nextPayload.catalog_kind || nextPayload.payload?.catalog_kind) !== "otros") {
+    nextPayload.note = appendMetricsToNote(nextPayload.note, nextPayload);
+  } else {
+    nextPayload.note = String(nextPayload.note || "").trim();
+  }
   return nextPayload;
 }
 function formatProductionDeliveryDisplay(planning) {
@@ -91,14 +96,22 @@ function formatProductionDeliveryDisplay(planning) {
 function getTodayIsoDate() {
   return new Date().toISOString().slice(0, 10);
 }
-function validateDimensionsRequired(payload) {
+function validateDimensionsRequired(payload, kind = "porton") {
+  const normalizedKind = normalizeCatalogKind(kind);
+  if (normalizedKind === "otros") return;
+
   const dims = payload?.payload?.dimensions || {};
   const width = parseNum(dims?.width);
   const height = parseNum(dims?.height);
-  if (!(width > 0)) throw new Error("Completá el ancho del portón.");
-  if (!(height > 0)) throw new Error("Completá el alto del portón.");
-  if (width < WIDTH_MIN_M || width > WIDTH_MAX_M) throw new Error("El ancho debe estar entre 2 m y 7 m.");
-  if (height < HEIGHT_MIN_M || height > HEIGHT_MAX_M) throw new Error("El alto debe estar entre 2 m y 3 m.");
+  const itemLabel = normalizedKind === "ipanel" ? "Ipanel" : "portón";
+
+  if (!(width > 0)) throw new Error(`Completá el ancho del ${itemLabel}.`);
+  if (!(height > 0)) throw new Error(`Completá el alto del ${itemLabel}.`);
+
+  if (normalizedKind === "porton") {
+    if (width < WIDTH_MIN_M || width > WIDTH_MAX_M) throw new Error("El ancho debe estar entre 2 m y 7 m.");
+    if (height < HEIGHT_MIN_M || height > HEIGHT_MAX_M) throw new Error("El alto debe estar entre 2 m y 3 m.");
+  }
 }
 function formatVisibleStatus(rawStatus, hasPersistedQuote) {
   const normalized = String(rawStatus || "").trim().toLowerCase();
@@ -135,6 +148,7 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
   const params = useParams();
   const qc = useQueryClient();
 
+  const normalizedCatalogKind = normalizeCatalogKind(catalogKind);
   const idParam = params.id ? String(params.id) : null;
   const searchParams = useMemo(() => new URLSearchParams(location.search || ""), [location.search]);
   const isDoorWorkflow = searchParams.get("door_workflow") === "1";
@@ -196,13 +210,13 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
       "production-planning-estimate",
       productionPlanningQuoteId || "draft",
       productionPlanningFromDate || "quote-date",
-      String(catalogKind || "porton").toLowerCase(),
+      normalizedCatalogKind,
     ],
     queryFn: () => getProductionPlanningEstimate({
       quoteId: productionPlanningQuoteId || null,
       fromDate: productionPlanningFromDate || null,
     }),
-    enabled: !!user && String(catalogKind || "porton").toLowerCase() === "porton",
+    enabled: !!user && normalizedCatalogKind === "porton",
     staleTime: 60 * 1000,
     refetchInterval: 2 * 60 * 1000,
   });
@@ -210,14 +224,14 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
 
   useEffect(() => {
     if (!quoteQ.data) return;
-    const qKind = (quoteQ.data.catalog_kind || "porton").toString().toLowerCase();
-    if (qKind !== (catalogKind || "porton")) {
+    const qKind = normalizeCatalogKind(quoteQ.data.catalog_kind);
+    if (qKind !== normalizedCatalogKind) {
       const id = String(quoteQ.data.id);
-      navigate(qKind === "ipanel" ? `/cotizador/ipanel/${id}` : `/cotizador/${id}`, { replace: true });
+      navigate(editorRouteForKind(qKind, id), { replace: true });
       return;
     }
     loadFromQuote(quoteQ.data);
-  }, [quoteQ.data, loadFromQuote, catalogKind, navigate]);
+  }, [quoteQ.data, loadFromQuote, normalizedCatalogKind, navigate]);
 
   const financingQ = useQuery({ queryKey: ["financing-preview", paymentMethod], queryFn: () => getFinancingPreview(paymentMethod), enabled: !!String(paymentMethod || "").trim(), staleTime: 60 * 1000 });
   const financingPercent = Number(financingQ.data?.percent || 0) || 0;
@@ -225,7 +239,7 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
   const linesKey = useMemo(() => lines.map((l) => `${l.product_id}:${l.qty}`).join("|"), [lines]);
 
   const currentWidthMeters = parseNum(dimensions?.width);
-  const autoRebajeEnabled = String(catalogKind || "porton").toLowerCase() === "porton"
+  const autoRebajeEnabled = normalizedCatalogKind === "porton"
     && !user?.is_distribuidor
     && !!(user?.is_vendedor || user?.is_enc_comercial)
     && currentWidthMeters >= REBAJE_AUTO_MIN_WIDTH_M;
@@ -301,7 +315,7 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
     if (!String(c.phone || "").trim()) errs.push("Completá el teléfono del cliente.");
     if (!Array.isArray(payload?.lines) || payload.lines.filter((line) => !line.previously_billed_line).length === 0) errs.push("Agregá al menos un producto.");
     if (errs.length) throw new Error(errs[0]);
-    validateDimensionsRequired(payload);
+    validateDimensionsRequired(payload, catalogKind);
     validateCustomerContact(c, { requirePhone: true, requireMaps: false, requireCity: false });
   }
   function validateConfirm(payload) {
@@ -313,11 +327,11 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
     if (!String(c.address || "").trim()) errs.push("Completá la dirección del cliente.");
     if (!String(c.city || "").trim()) errs.push("Completá la localidad del cliente.");
     if (!String(p.payment_method || "").trim()) errs.push("Seleccioná la forma de pago.");
-    if ((catalogKind || "porton") === "porton" && !String(p.porton_type || "").trim()) errs.push("Seleccioná el tipo/sistema del portón.");
+    if (normalizedCatalogKind === "porton" && !String(p.porton_type || "").trim()) errs.push("Seleccioná el tipo/sistema del portón.");
     if (String(p.condition_mode || "") === "special" && !String(p.condition_text || "").trim()) errs.push("Completá la condición especial.");
     if (!Array.isArray(payload?.lines) || payload.lines.filter((line) => !line.previously_billed_line).length === 0) errs.push("Agregá al menos un producto.");
     if (errs.length) throw new Error(errs[0]);
-    validateDimensionsRequired(payload);
+    validateDimensionsRequired(payload, catalogKind);
     validateCustomerContact(c, { requirePhone: true, requireMaps: true, requireCity: true });
   }
   function validatePdfDownload(payload) { validateDraft(payload); }
@@ -337,14 +351,14 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
     return { quote: q, payload: { ...payload, id: q.id, quote_id: q.id, quote_number: q.quote_number || "", seller_name: user?.full_name || user?.username || "" } };
   }
   function maybeContinueDoorWorkflow(savedQuote) {
-    if (!isDoorWorkflow || (catalogKind || "") !== "ipanel" || !workflowDoorId) return false;
+    if (!isDoorWorkflow || normalizedCatalogKind !== "ipanel" || !workflowDoorId) return false;
     const nextUrl = `/puertas/${workflowDoorId}?door_workflow=1&workflow_stage=${encodeURIComponent(workflowStage === "ipanel_first" ? "door_final" : workflowStage)}&ipanel_quote_id=${encodeURIComponent(savedQuote?.id || quoteId || idParam || "")}&porton_id=${encodeURIComponent(workflowPortonId || "")}`;
     navigate(nextUrl);
     return true;
   }
   function handleConfirmIntent() {
     if (isReturnedMeasurementQuote) return;
-    if (!isRevisionQuote && user?.is_distribuidor && (catalogKind || "porton") === "porton") {
+    if (!isRevisionQuote && user?.is_distribuidor && normalizedCatalogKind === "porton") {
       const currentMapsUrl = normalizeUrl(buildPayloadForBack()?.end_customer?.maps_url);
       const defaultMapsUrl = normalizeUrl(user?.default_maps_url);
       const isUsingDefaultLocation = !!defaultMapsUrl && currentMapsUrl === defaultMapsUrl;
@@ -451,7 +465,7 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
 
       {isAcopioRevision ? (<><div className="spacer" /><div className="card" style={{ background: "#fff8f3", border: "1px solid #f2d3bf" }}><div style={{ fontWeight: 900, marginBottom: 6 }}>Ajuste de presupuesto en Acopio</div><div className="muted">Este ajuste no se envía desde acá. Guardá los cambios y luego usá <b>Solicitar paso a Producción</b> desde <b>Mis presupuestos</b>. Cuando Comercial y Técnica aprueben ese paso, el sistema enviará la venta final a Odoo.</div></div></>) : null}
 
-      {String(catalogKind || "porton").toLowerCase() === "porton" ? (
+      {normalizedCatalogKind === "porton" ? (
         <>
           <div className="spacer" />
           <div className="card" style={{ background: "#f7fbff", border: "1px solid #d9e5f7" }}>
@@ -487,10 +501,14 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
       <div className="spacer" />
       <HeaderBar showMargin />
 
-      <div className="spacer" />
-      <div className="card">
-        <PortonDimensions />
-      </div>
+      {normalizedCatalogKind !== "otros" ? (
+        <>
+          <div className="spacer" />
+          <div className="card">
+            <PortonDimensions kind={catalogKind} />
+          </div>
+        </>
+      ) : null}
 
       <div className="spacer" />
       <div className="row quote-row">

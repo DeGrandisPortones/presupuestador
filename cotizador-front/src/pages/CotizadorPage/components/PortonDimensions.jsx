@@ -32,6 +32,9 @@ function normalizeIntegerInput(v) {
 function norm(v) {
   return String(v || "").trim().toLowerCase().replace(/\s+/g, "_");
 }
+function normalizeKind(value) {
+  return String(value || "porton").trim().toLowerCase();
+}
 function getRulesParams(rulesData) {
   const root = rulesData || {};
   return root.surface_parameters || root.surface_calc_params || root.surface_params || root.measurement_surface_params || {};
@@ -250,6 +253,10 @@ function computeVerticalParantesCount(widthM, lines) {
 }
 
 export default function PortonDimensions({ kind = "porton" }) {
+  const normalizedKind = normalizeKind(kind);
+  const isPorton = normalizedKind === "porton";
+  const isIpanel = normalizedKind === "ipanel";
+
   const dimensions = useQuoteStore((s) => s.dimensions);
   const setDimensions = useQuoteStore((s) => s.setDimensions);
   const portonType = useQuoteStore((s) => s.portonType);
@@ -260,7 +267,7 @@ export default function PortonDimensions({ kind = "porton" }) {
     queryKey: ["technical-rules-dimensions-preview"],
     queryFn: adminGetTechnicalMeasurementRules,
     staleTime: 60 * 1000,
-    enabled: (kind || "porton") === "porton",
+    enabled: isPorton,
   });
 
   const widthRaw = String(dimensions?.width ?? "");
@@ -269,9 +276,9 @@ export default function PortonDimensions({ kind = "porton" }) {
   const height = useMemo(() => toNumber(heightRaw), [heightRaw]);
   const widthValue = useMemo(() => parseOptionalNumber(normalizeDecimalWithDot(widthRaw)), [widthRaw]);
   const heightValue = useMemo(() => parseOptionalNumber(normalizeDecimalWithDot(heightRaw)), [heightRaw]);
-  const widthOutOfBounds = widthValue !== null && (widthValue < WIDTH_MIN_M || widthValue > WIDTH_MAX_M);
-  const heightOutOfBounds = heightValue !== null && (heightValue < HEIGHT_MIN_M || heightValue > HEIGHT_MAX_M);
-  const hasSizeError = widthOutOfBounds || heightOutOfBounds;
+  const widthOutOfBounds = isPorton && widthValue !== null && (widthValue < WIDTH_MIN_M || widthValue > WIDTH_MAX_M);
+  const heightOutOfBounds = isPorton && heightValue !== null && (heightValue < HEIGHT_MIN_M || heightValue > HEIGHT_MAX_M);
+  const hasSizeError = isPorton && (widthOutOfBounds || heightOutOfBounds);
   const area = useMemo(() => {
     const a = width * height;
     return Number.isFinite(a) ? a : 0;
@@ -297,7 +304,7 @@ export default function PortonDimensions({ kind = "porton" }) {
   );
 
   useEffect(() => {
-    if ((kind || "porton") !== "porton") return;
+    if (!isPorton) return;
     if (!isAptoDerivedType(portonType)) {
       if (String(dimensions?.kg_m2 || "").trim()) setDimensions({ kg_m2: "" });
       return;
@@ -309,10 +316,10 @@ export default function PortonDimensions({ kind = "porton" }) {
         setDimensions({ kg_m2: nextValue });
       }
     }
-  }, [kind, portonType, dimensions?.kg_m2, lines, params, setDimensions]);
+  }, [isPorton, portonType, dimensions?.kg_m2, lines, params, setDimensions]);
 
   useEffect(() => {
-    if ((kind || "porton") !== "porton") return;
+    if (!isPorton) return;
     const patch = {};
     if (!String(dimensions?.orientacion_parantes || "").trim()) {
       patch.orientacion_parantes = "verticales";
@@ -336,7 +343,7 @@ export default function PortonDimensions({ kind = "porton" }) {
       setDimensions(patch);
     }
   }, [
-    kind,
+    isPorton,
     orientation,
     autoParantesCount,
     dimensions?.orientacion_parantes,
@@ -345,12 +352,9 @@ export default function PortonDimensions({ kind = "porton" }) {
     setDimensions,
   ]);
 
-  const title =
-    (kind || "porton") === "porton"
-      ? "Medidas del portón"
-      : (kind || "") === "ipanel"
-        ? "Medidas del Ipanel"
-        : "Medidas del presupuesto";
+  if (!isPorton && !isIpanel) return null;
+
+  const title = isPorton ? "Medidas del portón" : "Medidas del Ipanel";
 
   const parantesHelper =
     orientation === "verticales"
@@ -397,7 +401,7 @@ export default function PortonDimensions({ kind = "porton" }) {
       >
         <FieldBox
           label="Ancho (m)"
-          helper="Mínimo 2.4 m · Máximo 7 m"
+          helper={isPorton ? "Mínimo 2.4 m · Máximo 7 m" : ""}
           helperColor={widthOutOfBounds ? "#b91c1c" : undefined}
         >
           <Input
@@ -413,7 +417,7 @@ export default function PortonDimensions({ kind = "porton" }) {
 
         <FieldBox
           label="Alto (m)"
-          helper="Mínimo 2 m · Máximo 3 m"
+          helper={isPorton ? "Mínimo 2 m · Máximo 3 m" : ""}
           helperColor={heightOutOfBounds ? "#b91c1c" : undefined}
         >
           <Input
@@ -427,86 +431,90 @@ export default function PortonDimensions({ kind = "porton" }) {
           />
         </FieldBox>
 
-        <FieldBox label="Tipo / Sistema derivado">
-          <Input
-            value={portonType || ""}
-            disabled
-            placeholder="Se completa según la combinación de productos"
-            style={disabledComputedInputStyle()}
-          />
-        </FieldBox>
+        {isPorton ? (
+          <>
+            <FieldBox label="Tipo / Sistema derivado">
+              <Input
+                value={portonType || ""}
+                disabled
+                placeholder="Se completa según la combinación de productos"
+                style={disabledComputedInputStyle()}
+              />
+            </FieldBox>
 
-        <FieldBox label="Kg por m²">
-          <Input
-            value={formatNumberForInput(preview.effectiveKgM2)}
-            placeholder="Se calcula automáticamente según el sistema"
-            style={disabledComputedInputStyle()}
-            disabled
-          />
-        </FieldBox>
+            <FieldBox label="Kg por m²">
+              <Input
+                value={formatNumberForInput(preview.effectiveKgM2)}
+                placeholder="Se calcula automáticamente según el sistema"
+                style={disabledComputedInputStyle()}
+                disabled
+              />
+            </FieldBox>
 
-        <FieldBox label="Superficie">
-          <div
-            style={{
-              fontWeight: 800,
-              fontSize: 16,
-              minHeight: 40,
-              display: "flex",
-              alignItems: "center",
-              padding: "9px 12px",
-              borderRadius: 10,
-              border: "1px solid #d1d5db",
-              background: "#f3f4f6",
-              color: "#334155",
-            }}
-          >
-            {area ? `${area.toFixed(2)} m²` : "—"}
-          </div>
-        </FieldBox>
+            <FieldBox label="Superficie">
+              <div
+                style={{
+                  fontWeight: 800,
+                  fontSize: 16,
+                  minHeight: 40,
+                  display: "flex",
+                  alignItems: "center",
+                  padding: "9px 12px",
+                  borderRadius: 10,
+                  border: "1px solid #d1d5db",
+                  background: "#f3f4f6",
+                  color: "#334155",
+                }}
+              >
+                {area ? `${area.toFixed(2)} m²` : "—"}
+              </div>
+            </FieldBox>
 
-        <FieldBox label="Orientación de los parantes">
-          <select
-            value={orientation}
-            onChange={(e) => setDimensions({ orientacion_parantes: e.target.value })}
-            style={{ width: "100%", padding: "10px 12px", borderRadius: 8, border: "1px solid #ddd", background: "#fff" }}
-          >
-            <option value="verticales">Verticales</option>
-            <option value="horizontal">Horizontal</option>
-          </select>
-        </FieldBox>
+            <FieldBox label="Orientación de los parantes">
+              <select
+                value={orientation}
+                onChange={(e) => setDimensions({ orientacion_parantes: e.target.value })}
+                style={{ width: "100%", padding: "10px 12px", borderRadius: 8, border: "1px solid #ddd", background: "#fff" }}
+              >
+                <option value="verticales">Verticales</option>
+                <option value="horizontal">Horizontal</option>
+              </select>
+            </FieldBox>
 
-        <FieldBox
-          label="Cantidad de parantes"
-          helper={parantesHelper}
-        >
-          <Input
-            type="text"
-            inputMode="numeric"
-            value={String(dimensions?.cantidad_parantes ?? "")}
-            onChange={(v) => {
-              setDimensions({ cantidad_parantes: normalizeIntegerInput(v) });
-            }}
-            onBlur={(e) => {
-              setDimensions({ cantidad_parantes: normalizeIntegerInput(e?.target?.value) });
-            }}
-            style={{ width: "100%" }}
-            placeholder="Ej: 3"
-          />
-        </FieldBox>
+            <FieldBox
+              label="Cantidad de parantes"
+              helper={parantesHelper}
+            >
+              <Input
+                type="text"
+                inputMode="numeric"
+                value={String(dimensions?.cantidad_parantes ?? "")}
+                onChange={(v) => {
+                  setDimensions({ cantidad_parantes: normalizeIntegerInput(v) });
+                }}
+                onBlur={(e) => {
+                  setDimensions({ cantidad_parantes: normalizeIntegerInput(e?.target?.value) });
+                }}
+                style={{ width: "100%" }}
+                placeholder="Ej: 3"
+              />
+            </FieldBox>
 
-        <FieldBox label="Distribución de los parantes">
-          <select
-            value={distribution}
-            onChange={(e) => setDimensions({ distribucion_parantes: e.target.value })}
-            style={{ width: "100%", padding: "10px 12px", borderRadius: 8, border: "1px solid #ddd", background: "#fff" }}
-          >
-            <option value="repartido">Repartido</option>
-            <option value="especial">Especial</option>
-          </select>
-        </FieldBox>
+            <FieldBox label="Distribución de los parantes">
+              <select
+                value={distribution}
+                onChange={(e) => setDimensions({ distribucion_parantes: e.target.value })}
+                style={{ width: "100%", padding: "10px 12px", borderRadius: 8, border: "1px solid #ddd", background: "#fff" }}
+              >
+                <option value="repartido">Repartido</option>
+                <option value="especial">Especial</option>
+              </select>
+            </FieldBox>
+          </>
+        ) : null}
       </div>
 
-      {distribution === "especial" ? (
+      {isPorton && distribution === "especial" ? (
         <>
           <div className="spacer" />
           <FieldBox label="Observaciones de distribución especial">
@@ -528,30 +536,34 @@ export default function PortonDimensions({ kind = "porton" }) {
         </>
       ) : null}
 
-      <div className="spacer" />
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 10 }}>
-        <ComputedCard
-          label="Medidas de paso"
-          value={
-            preview.altoPasoMm > 0 && preview.anchoPasoMm > 0
-              ? `${formatMetersFromMm(preview.altoPasoMm)} × ${formatMetersFromMm(preview.anchoPasoMm)}`
-              : "—"
-          }
-        />
-        <ComputedCard
-          label="Kg/m² efectivo"
-          value={preview.effectiveKgM2 > 0 ? `${preview.effectiveKgM2.toFixed(2)} kg/m²` : "—"}
-        />
-        <ComputedCard
-          label="Peso estimado"
-          value={preview.estimatedWeightKg > 0 ? `${preview.estimatedWeightKg.toFixed(2)} kg` : "—"}
-        />
-        <ComputedCard label="Piernas estimadas" value={preview.legsLabel} />
-      </div>
+      {isPorton ? (
+        <>
+          <div className="spacer" />
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 10 }}>
+            <ComputedCard
+              label="Medidas de paso"
+              value={
+                preview.altoPasoMm > 0 && preview.anchoPasoMm > 0
+                  ? `${formatMetersFromMm(preview.altoPasoMm)} × ${formatMetersFromMm(preview.anchoPasoMm)}`
+                  : "—"
+              }
+            />
+            <ComputedCard
+              label="Kg/m² efectivo"
+              value={preview.effectiveKgM2 > 0 ? `${preview.effectiveKgM2.toFixed(2)} kg/m²` : "—"}
+            />
+            <ComputedCard
+              label="Peso estimado"
+              value={preview.estimatedWeightKg > 0 ? `${preview.estimatedWeightKg.toFixed(2)} kg` : "—"}
+            />
+            <ComputedCard label="Piernas estimadas" value={preview.legsLabel} />
+          </div>
 
-      <div className="muted" style={{ marginTop: 8 }}>
-        Estas medidas se guardan dentro del presupuesto para usarlas después en medición, cálculo de peso y comparación de superficie.
-      </div>
+          <div className="muted" style={{ marginTop: 8 }}>
+            Estas medidas se guardan dentro del presupuesto para usarlas después en medición, cálculo de peso y comparación de superficie.
+          </div>
+        </>
+      ) : null}
     </div>
   );
 }
