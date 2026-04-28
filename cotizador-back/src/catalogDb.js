@@ -55,6 +55,76 @@ async function ensureCatalogControls() {
     );
   `);
 
+  await dbQuery(`
+    do $$
+    declare
+      item record;
+    begin
+      for item in
+        select c.conname, c.conrelid::regclass as table_name
+          from pg_constraint c
+          join pg_class rel on rel.oid = c.conrelid
+          join pg_namespace nsp on nsp.oid = rel.relnamespace
+         where nsp.nspname = 'public'
+           and rel.relname = any(array[
+             'presupuestador_sections',
+             'presupuestador_tag_sections',
+             'presupuestador_product_aliases',
+             'presupuestador_type_sections',
+             'presupuestador_product_visibility',
+             'presupuestador_type_visibility',
+             'presupuestador_product_pdf_names'
+           ])
+           and c.contype = 'c'
+           and pg_get_constraintdef(c.oid) ilike '%catalog_kind%'
+      loop
+        execute format('alter table %s drop constraint if exists %I', item.table_name, item.conname);
+      end loop;
+
+      if to_regclass('public.presupuestador_sections') is not null then
+        alter table public.presupuestador_sections
+          add constraint presupuestador_sections_catalog_kind_check
+          check (catalog_kind in ('porton', 'ipanel', 'otros'));
+      end if;
+
+      if to_regclass('public.presupuestador_tag_sections') is not null then
+        alter table public.presupuestador_tag_sections
+          add constraint presupuestador_tag_sections_catalog_kind_check
+          check (catalog_kind in ('porton', 'ipanel', 'otros'));
+      end if;
+
+      if to_regclass('public.presupuestador_product_aliases') is not null then
+        alter table public.presupuestador_product_aliases
+          add constraint presupuestador_product_aliases_catalog_kind_check
+          check (catalog_kind in ('porton', 'ipanel', 'otros'));
+      end if;
+
+      if to_regclass('public.presupuestador_type_sections') is not null then
+        alter table public.presupuestador_type_sections
+          add constraint presupuestador_type_sections_catalog_kind_check
+          check (catalog_kind in ('porton', 'ipanel', 'otros'));
+      end if;
+
+      if to_regclass('public.presupuestador_product_visibility') is not null then
+        alter table public.presupuestador_product_visibility
+          add constraint presupuestador_product_visibility_catalog_kind_check
+          check (catalog_kind in ('porton', 'ipanel', 'otros'));
+      end if;
+
+      if to_regclass('public.presupuestador_type_visibility') is not null then
+        alter table public.presupuestador_type_visibility
+          add constraint presupuestador_type_visibility_catalog_kind_check
+          check (catalog_kind in ('porton', 'ipanel', 'otros'));
+      end if;
+
+      if to_regclass('public.presupuestador_product_pdf_names') is not null then
+        alter table public.presupuestador_product_pdf_names
+          add constraint presupuestador_product_pdf_names_catalog_kind_check
+          check (catalog_kind in ('porton', 'ipanel', 'otros'));
+      end if;
+    end $$;
+  `);
+
   catalogControlsEnsured = true;
 }
 
@@ -162,6 +232,7 @@ export async function setTagSection(kind, tagId, sectionId) {
     return { catalog_kind: k, tag_id: tid, section_id: null };
   }
 
+  await ensureCatalogControls();
   await dbQuery(
     `insert into public.presupuestador_tag_sections (catalog_kind, tag_id, section_id)
      values ($1, $2, $3)
@@ -186,6 +257,7 @@ export async function getProductAliasMap(kind) {
 }
 
 export async function setProductAlias(kind, productId, alias) {
+  await ensureCatalogControls();
   const k = normKind(kind);
   const pid = Number(productId);
   if (!pid) throw new Error("productId inválido");

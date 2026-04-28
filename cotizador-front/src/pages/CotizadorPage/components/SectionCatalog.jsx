@@ -10,6 +10,13 @@ import {
 } from "../../../api/admin.js";
 import Button from "../../../ui/Button";
 
+const CATALOG_KINDS = new Set(["porton", "ipanel", "otros"]);
+
+function normalizeCatalogKind(kind) {
+  const normalized = String(kind || "porton").toLowerCase().trim();
+  return CATALOG_KINDS.has(normalized) ? normalized : "porton";
+}
+
 function getClientFacingProductName(product) {
   return (
     product?.client_display_name ||
@@ -163,7 +170,7 @@ function computeOrderedSectionIds({
 }
 
 export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto = null }) {
-  const bootstrapKind = (kind || "porton") === "otros" ? "porton" : kind;
+  const catalogKind = normalizeCatalogKind(kind);
 
   const addLine = useQuoteStore((s) => s.addLine);
   const forceRemoveLine = useQuoteStore((s) => s.forceRemoveLine);
@@ -173,9 +180,7 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
 
   const user = useAuthStore((s) => s.user);
 
-  const [boot, setBoot] = useState(
-    () => getOdooBootstrap(kind) || getOdooBootstrap(bootstrapKind),
-  );
+  const [boot, setBoot] = useState(() => getOdooBootstrap(catalogKind));
   const [openSectionId, setOpenSectionId] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
   const [autoloadAttempted, setAutoloadAttempted] = useState(false);
@@ -184,12 +189,12 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
   const products = Array.isArray(boot?.products) ? boot.products : [];
 
   const rulesQ = useQuery({
-    queryKey: ["technical-rules-for-section-catalog", String(kind || "porton").toLowerCase()],
+    queryKey: ["technical-rules-for-section-catalog", catalogKind],
     queryFn: adminGetTechnicalMeasurementRules,
     staleTime: 0,
     refetchOnMount: "always",
     refetchOnWindowFocus: true,
-    enabled: (kind || "porton") === "porton",
+    enabled: catalogKind === "porton",
   });
 
   const initialSectionId = Number(rulesQ.data?.initial_section_id || 0) || null;
@@ -226,21 +231,21 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
     setRefreshing(true);
     try {
       await adminRefreshCatalog();
-      const data = await getCatalogBootstrap(bootstrapKind);
-      setOdooBootstrap(data, kind);
+      const data = await getCatalogBootstrap(catalogKind);
+      setOdooBootstrap(data, catalogKind);
       setBoot(data);
       syncQuoteLinesFromCatalogProducts(data?.products || []);
     } finally {
       setRefreshing(false);
       setAutoloadAttempted(true);
     }
-  }, [bootstrapKind, kind]);
+  }, [catalogKind]);
 
   useEffect(() => {
-    setBoot(getOdooBootstrap(kind) || getOdooBootstrap(bootstrapKind));
+    setBoot(getOdooBootstrap(catalogKind));
     setAutoloadAttempted(false);
     setOpenSectionId(null);
-  }, [kind, bootstrapKind]);
+  }, [catalogKind]);
 
   useEffect(() => {
     if (autoloadAttempted) return;
@@ -248,9 +253,9 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
     (async () => {
       try {
         setRefreshing(true);
-        const data = await getCatalogBootstrap(bootstrapKind);
+        const data = await getCatalogBootstrap(catalogKind);
         if (cancelled) return;
-        setOdooBootstrap(data, kind);
+        setOdooBootstrap(data, catalogKind);
         setBoot(data);
         syncQuoteLinesFromCatalogProducts(data?.products || []);
       } finally {
@@ -263,7 +268,7 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
     return () => {
       cancelled = true;
     };
-  }, [autoloadAttempted, kind, bootstrapKind]);
+  }, [autoloadAttempted, catalogKind]);
 
   useEffect(() => {
     syncQuoteLinesFromCatalogProducts(products);
@@ -319,14 +324,14 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
 
   const orderedVisibleSectionIds = useMemo(() => {
     return computeOrderedSectionIds({
-      kind,
+      kind: catalogKind,
       sectionList,
       sectionMap,
       initialSectionId,
       dependencyRules,
       selectedProductIdsBySection,
     });
-  }, [kind, sectionList, sectionMap, initialSectionId, dependencyRules, selectedProductIdsBySection]);
+  }, [catalogKind, sectionList, sectionMap, initialSectionId, dependencyRules, selectedProductIdsBySection]);
 
   const visibleSections = useMemo(
     () => orderedVisibleSectionIds.map((id) => sectionMap.get(Number(id))).filter(Boolean),
@@ -342,7 +347,7 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
   }, [visibleSections, selectedProductIdsBySection]);
 
   useEffect(() => {
-    if ((kind || "porton").toLowerCase().trim() !== "porton") return;
+    if (catalogKind !== "porton") return;
 
     let derivedType = "";
     for (const rule of systemRules) {
@@ -361,7 +366,7 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
     if (derivedType !== String(portonType || "")) {
       setPortonType(derivedType);
     }
-  }, [kind, systemRules, selectedProductIdsGlobal, portonType, setPortonType]);
+  }, [catalogKind, systemRules, selectedProductIdsGlobal, portonType, setPortonType]);
 
   useEffect(() => {
     if (!visibleSections.length) return;
@@ -433,7 +438,7 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
     nextSelectionMap.set(Number(sectionId), new Set([targetProductId]));
 
     const nextOrderedIds = computeOrderedSectionIds({
-      kind,
+      kind: catalogKind,
       sectionList,
       sectionMap,
       initialSectionId,
@@ -448,9 +453,9 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
   }
 
   const title =
-    (kind || "porton") === "porton"
+    catalogKind === "porton"
       ? "Características del portón"
-      : (kind || "") === "ipanel"
+      : catalogKind === "ipanel"
         ? "Características del Ipanel"
         : "Características / productos";
 
@@ -486,7 +491,7 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
         <>
           <div className="spacer" />
           <div className="muted">
-            No hay secciones habilitadas todavía. Elegí una sección inicial en el dashboard o configurá dependencias.
+            No hay secciones habilitadas todavía. Configurá secciones y etiquetas para este catálogo desde el dashboard.
           </div>
         </>
       ) : (
