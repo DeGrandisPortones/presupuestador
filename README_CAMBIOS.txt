@@ -1,8 +1,36 @@
-Cambios acumulados - Presupuestador
-===================================
+Cambios incluidos en este paquete acumulado
+===========================================
 
-Este paquete es acumulativo e incluye los cambios anteriores de Ipanel/Otros y el nuevo cambio de dependencias por catalogo.
-Copiar y reemplazar estos archivos sobre la raiz del repo.
+Este ZIP incluye todos los cambios anteriores y agrega el fix para productos en la Data de Ipanel/Otros.
+
+1) Medidas por tipo de cotizador
+--------------------------------
+- Portones mantiene la seccion de medidas completa, con Ancho y Alto en ese orden.
+- Ipanel muestra solamente Ancho y Alto.
+- Otros no muestra la seccion de medidas y no exige Ancho/Alto.
+
+2) Limites de Ipanel
+--------------------
+- Ancho maximo: 1.13 m / 113 cm.
+- Alto maximo: 2.45 m / 245 cm.
+- La validacion aplica en pantalla, guardar, confirmar y descargar PDF.
+
+3) Secciones de Otros
+---------------------
+- Otros carga sus propias secciones, no las de Portones.
+- Backend permite catalog_kind = porton, ipanel u otros en las tablas de configuracion.
+
+4) Dependencias por catalogo
+----------------------------
+- Portones, Ipanel y Otros tienen dependencias independientes.
+- Portones conserva compatibilidad con la configuracion historica/global.
+- La derivacion de Tipo/Sistema se mantiene solo para Portones.
+
+5) Fix productos en Data para Ipanel/Otros
+------------------------------------------
+- El catalogo de Ipanel y Otros ahora toma productos segun las etiquetas asignadas a sus secciones.
+- Ipanel conserva compatibilidad con productos que tengan etiqueta llamada exactamente "ipanel", pero ademas suma productos de cualquier etiqueta configurada en sus secciones.
+- Otros toma productos de las etiquetas configuradas en sus secciones.
 
 Archivos incluidos
 ------------------
@@ -12,37 +40,14 @@ Archivos incluidos
 - cotizador-front/src/pages/DashboardPage/index.jsx
 - cotizador-front/src/api/admin.js
 - cotizador-back/src/catalogDb.js
+- cotizador-back/src/catalogBootstrap.js
 - cotizador-back/src/routes/admin.routes.js
 - cotizador-back/src/settingsDb.js
 
-Resumen de cambios previos incluidos
-------------------------------------
-- Portones mantiene medidas y calculos tecnicos, con orden Ancho y Alto.
-- Ipanel muestra solo Ancho y Alto.
-- Ipanel valida maximos: Ancho 1.13 m / 113 cm, Alto 2.45 m / 245 cm.
-- Otros no muestra ni exige medidas.
-- Otros carga secciones/catalogo propios y no hereda Portones.
-- Backend actualiza el constraint de presupuestador_sections para aceptar catalog_kind = otros.
-
-Nuevo cambio: dependencias por catalogo
----------------------------------------
-- La configuracion de dependencias queda separada por catalogo: porton, ipanel y otros.
-- Portones conserva la configuracion existente: si la base todavia tiene el formato anterior global, se sigue leyendo como configuracion de porton.
-- Al guardar dependencias de Portones, tambien se mantiene la forma antigua en el JSON para compatibilidad con otras pantallas existentes.
-- Ipanel y Otros pueden tener su propia seccion inicial y sus propias dependencias sin pisar las de Portones.
-- En el cotizador, SectionCatalog ahora carga las reglas del catalogo correspondiente y aplica dependencias para porton, ipanel u otros.
-- La derivacion de Tipo / Sistema sigue habilitada solo para Portones, para no afectar Ipanel/Otros.
-
-Pasos despues de copiar
------------------------
-1. Reemplazar los archivos incluidos.
-2. Reiniciar el backend.
-3. Recompilar/reiniciar el frontend.
-4. En Dashboard, seleccionar el catalogo arriba: Portones, Ipanel u Otros.
-5. En cada catalogo, configurar Secciones, Etiquetas -> Secciones y luego Dependencias.
-6. Probar que Portones siga mostrando su flujo original antes de cargar reglas nuevas para Ipanel/Otros.
-
-Validacion realizada
---------------------
-- Parseo de sintaxis con TypeScript createSourceFile para archivos JSX/JS incluidos.
-- node --check para archivos JS de frontend/backend.
+Instalacion
+-----------
+1. Descomprimir el ZIP sobre la raiz del repo.
+2. Reemplazar los archivos existentes.
+3. Reiniciar backend.
+4. Recompilar/reiniciar frontend.
+5. Entrar al Dashboard, refrescar catalogo y revisar Data en Ipanel/Otros.

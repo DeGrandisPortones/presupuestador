@@ -19,6 +19,12 @@ function cleanText(value) {
   return String(value || "").trim();
 }
 
+function productHasAnyTag(product, tagIds) {
+  if (!(tagIds instanceof Set) || !tagIds.size) return false;
+  const tids = Array.isArray(product?.tag_ids) ? product.tag_ids.map(Number) : [];
+  return tids.some((tid) => tagIds.has(Number(tid)));
+}
+
 export async function loadCatalogBootstrap(odoo, kind="porton") {
   const k = normKind(kind);
   const now = nowMs();
@@ -46,9 +52,10 @@ export async function loadCatalogBootstrap(odoo, kind="porton") {
   const productsFiltered = productsRaw.filter((p) => {
     const tids = Array.isArray(p.tag_ids) ? p.tag_ids.map(Number) : [];
     const isIpanel = tids.some((tid) => ipanelTagIds.has(tid));
+    const belongsToConfiguredSection = productHasAnyTag(p, configuredTagIds);
 
-    if (k === "ipanel") return isIpanel;
-    if (k === "otros") return tids.some((tid) => configuredTagIds.has(tid));
+    if (k === "ipanel") return isIpanel || belongsToConfiguredSection;
+    if (k === "otros") return belongsToConfiguredSection;
     return !isIpanel;
   });
 
