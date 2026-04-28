@@ -9,6 +9,7 @@ const TECHNICAL_MEASUREMENT_RULES_KEY = "technical_measurement_rules";
 const TECHNICAL_MEASUREMENT_FIELDS_KEY = "technical_measurement_fields";
 const PRODUCTION_PLANNING_SETTINGS_KEY = "production_planning";
 const DEFAULT_SURFACE_FINAL_FORMULA = "surface_automatica_m2";
+const CATALOG_KINDS = new Set(["porton", "ipanel", "otros"]);
 
 let ensured = false;
 
@@ -34,6 +35,7 @@ export async function ensureSettingsTable() {
       section_dependency_rules: [],
       system_derivation_rules: [],
       initial_section_id: null,
+      catalog_rules: {},
     }],
     [TECHNICAL_MEASUREMENT_FIELDS_KEY, { fields: [] }],
     [PRODUCTION_PLANNING_SETTINGS_KEY, { years: {} }],
@@ -47,6 +49,10 @@ export async function ensureSettingsTable() {
 }
 
 function normalizeText(v) { return String(v ?? "").trim(); }
+function normalizeCatalogKind(value) {
+  const normalized = String(value || "porton").trim().toLowerCase();
+  return CATALOG_KINDS.has(normalized) ? normalized : "porton";
+}
 function normalizeToleranceAreaM2(value) {
   const n = Number(String(value ?? 0).replace(",", "."));
   if (!Number.isFinite(n)) return 0;
@@ -204,6 +210,28 @@ function normalizeTechnicalMeasurementRules(raw = {}) {
     initial_section_id,
   };
 }
+function defaultTechnicalMeasurementRules() {
+  return normalizeTechnicalMeasurementRules({
+    rules: [],
+    surface_final_formula: DEFAULT_SURFACE_FINAL_FORMULA,
+    surface_helper_rules: [],
+    surface_calc_params: {},
+    surface_parameters: {},
+    section_dependency_rules: [],
+    system_derivation_rules: [],
+    initial_section_id: null,
+  });
+}
+function normalizeCatalogRulesMap(raw = {}) {
+  const source = raw?.catalog_rules && typeof raw.catalog_rules === "object" ? raw.catalog_rules : {};
+  const out = {};
+  for (const kind of CATALOG_KINDS) {
+    if (source[kind] && typeof source[kind] === "object") {
+      out[kind] = normalizeTechnicalMeasurementRules(source[kind]);
+    }
+  }
+  return out;
+}
 function normalizeFieldType(value) {
   const v = String(value || "text").trim().toLowerCase();
   return ["text", "number", "boolean", "enum", "odoo_product"].includes(v) ? v : "text";
@@ -285,12 +313,18 @@ export async function getDoorQuoteSettings() {
 export async function setDoorQuoteSettings(payload = {}) {
   return setSetting(DOOR_QUOTE_SETTINGS_KEY, { formula: normalizeDoorFormula(payload?.formula) });
 }
-export async function getTechnicalMeasurementRules() {
+export async function getTechnicalMeasurementRules(kind = "porton") {
+  const k = normalizeCatalogKind(kind);
   const raw = await getSetting(TECHNICAL_MEASUREMENT_RULES_KEY, {});
-  return normalizeTechnicalMeasurementRules(raw);
+  const catalogRules = normalizeCatalogRulesMap(raw);
+  if (catalogRules[k]) return catalogRules[k];
+  if (k === "porton") return normalizeTechnicalMeasurementRules(raw);
+  return defaultTechnicalMeasurementRules();
 }
-export async function setTechnicalMeasurementRules(payload = {}) {
-  const current = await getTechnicalMeasurementRules();
+export async function setTechnicalMeasurementRules(payload = {}, kind = "porton") {
+  const k = normalizeCatalogKind(kind);
+  const raw = await getSetting(TECHNICAL_MEASUREMENT_RULES_KEY, {});
+  const current = await getTechnicalMeasurementRules(k);
   const nextSurfaceParameters = payload?.surface_parameters !== undefined
     ? payload.surface_parameters
     : payload?.surface_calc_params !== undefined
@@ -307,10 +341,23 @@ export async function setTechnicalMeasurementRules(payload = {}) {
     system_derivation_rules: payload?.system_derivation_rules !== undefined ? payload.system_derivation_rules : current?.system_derivation_rules,
     initial_section_id: payload?.initial_section_id !== undefined ? payload.initial_section_id : current?.initial_section_id,
   };
-  return setSetting(TECHNICAL_MEASUREMENT_RULES_KEY, normalizeTechnicalMeasurementRules(merged));
+  const normalized = normalizeTechnicalMeasurementRules(merged);
+  const nextCatalogRules = {
+    ...normalizeCatalogRulesMap(raw),
+    [k]: normalized,
+  };
+  const nextRaw = {
+    ...(raw && typeof raw === "object" ? raw : {}),
+    catalog_rules: nextCatalogRules,
+  };
+  if (k === "porton") {
+    Object.assign(nextRaw, normalized);
+  }
+  await setSetting(TECHNICAL_MEASUREMENT_RULES_KEY, nextRaw);
+  return normalized;
 }
 export async function getMeasurementSurfaceFinalFormula() {
-  const settings = await getTechnicalMeasurementRules();
+  const settings = await getTechnicalMeasurementRules("porton");
   return normalizeSurfaceFinalFormula(settings?.surface_final_formula);
 }
 export async function getTechnicalMeasurementFieldDefinitions() {

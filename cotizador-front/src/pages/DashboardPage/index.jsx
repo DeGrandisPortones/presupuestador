@@ -124,8 +124,8 @@ export default function DashboardPage() {
     enabled,
   });
   const technicalRulesQ = useQuery({
-    queryKey: ["adminTechnicalMeasurementRulesForDashboard"],
-    queryFn: adminGetTechnicalMeasurementRules,
+    queryKey: ["adminTechnicalMeasurementRulesForDashboard", catalogKind],
+    queryFn: () => adminGetTechnicalMeasurementRules(catalogKind),
     enabled,
   });
 
@@ -351,18 +351,18 @@ export default function DashboardPage() {
     }
   };
 
+  const invalidateTechnicalRules = () => {
+    qc.invalidateQueries({ queryKey: ["adminTechnicalMeasurementRulesForDashboard", catalogKind] });
+    qc.invalidateQueries({ queryKey: ["technical-rules-for-section-catalog", catalogKind] });
+  };
+
   const onSaveInitialSection = async () => {
     setSavingInitialSection(true);
     try {
-      await adminSaveTechnicalMeasurementRules({
+      await adminSaveTechnicalMeasurementRules(catalogKind, {
         initial_section_id: Number(initialSectionId || 0) || null,
       });
-      qc.invalidateQueries({
-        queryKey: ["adminTechnicalMeasurementRulesForDashboard"],
-      });
-      qc.invalidateQueries({
-        queryKey: ["technical-rules-for-section-catalog"],
-      });
+      invalidateTechnicalRules();
       alert("Sección inicial guardada.");
     } finally {
       setSavingInitialSection(false);
@@ -401,30 +401,31 @@ export default function DashboardPage() {
             rule.child_section_ids.length,
         );
 
-      const normalizedSystemRules = systemRules
-        .map((rule, index) => ({
-          id: rule.id || `sys_${index + 1}`,
-          name: String(rule.name || "").trim(),
-          active: rule.active !== false,
-          required_product_ids: parseIdList(rule.required_product_ids_text),
-          match_mode: String(rule.match_mode || "all"),
-          derived_porton_type: String(rule.derived_porton_type || "").trim(),
-          sort_order: index + 1,
-        }))
-        .filter(
-          (rule) =>
-            rule.required_product_ids.length && rule.derived_porton_type,
-        );
-
-      await adminSaveTechnicalMeasurementRules({
+      const payload = {
         initial_section_id: Number(initialSectionId || 0) || null,
         section_dependency_rules: normalizedDependencyRules,
-        system_derivation_rules: normalizedSystemRules,
-      });
+      };
 
-      qc.invalidateQueries({
-        queryKey: ["adminTechnicalMeasurementRulesForDashboard"],
-      });
+      if (catalogKind === "porton") {
+        const normalizedSystemRules = systemRules
+          .map((rule, index) => ({
+            id: rule.id || `sys_${index + 1}`,
+            name: String(rule.name || "").trim(),
+            active: rule.active !== false,
+            required_product_ids: parseIdList(rule.required_product_ids_text),
+            match_mode: String(rule.match_mode || "all"),
+            derived_porton_type: String(rule.derived_porton_type || "").trim(),
+            sort_order: index + 1,
+          }))
+          .filter(
+            (rule) =>
+              rule.required_product_ids.length && rule.derived_porton_type,
+          );
+        payload.system_derivation_rules = normalizedSystemRules;
+      }
+
+      await adminSaveTechnicalMeasurementRules(catalogKind, payload);
+      invalidateTechnicalRules();
       alert("Dependencias guardadas.");
     } finally {
       setSavingDependencies(false);
@@ -649,6 +650,7 @@ export default function DashboardPage() {
 
           {tab === "dependencies" && (
             <DependenciesTab
+              catalogKind={catalogKind}
               sections={sections}
               productsBySectionId={productsBySectionId}
               initialSectionId={initialSectionId}
@@ -942,6 +944,7 @@ function AliasesTab({
 }
 
 function DependenciesTab({
+  catalogKind,
   sections,
   productsBySectionId,
   initialSectionId,
@@ -959,13 +962,15 @@ function DependenciesTab({
     () => new Map(sections.map((section) => [Number(section.id), section])),
     [sections],
   );
+  const isPorton = catalogKind === "porton";
+  const catalogLabel = CATALOG_KIND_OPTIONS.find((item) => item.key === catalogKind)?.label || catalogKind;
 
   return (
     <div className="row">
       <div className="card" style={{ flex: 1.2, minWidth: 460 }}>
-        <h3 style={{ marginTop: 0 }}>Dependencias entre secciones</h3>
+        <h3 style={{ marginTop: 0 }}>Dependencias entre secciones · {catalogLabel}</h3>
         <div className="muted" style={{ marginBottom: 10 }}>
-          Elegís una sección inicial. Desde ahí, cada regla define qué sección sigue según el producto elegido.
+          Elegís una sección inicial. Desde ahí, cada regla define qué sección sigue según el producto elegido. Esta configuración se guarda solo para <b>{catalogLabel}</b>.
         </div>
 
         <div
@@ -1256,123 +1261,125 @@ function DependenciesTab({
         </div>
       </div>
 
-      <div className="card" style={{ flex: 1, minWidth: 420 }}>
-        <h3 style={{ marginTop: 0 }}>Derivación del sistema</h3>
-        <div className="muted" style={{ marginBottom: 10 }}>
-          Define qué combinación de productos repone la propiedad interna “Tipo / Sistema”.
-        </div>
+      {isPorton ? (
+        <div className="card" style={{ flex: 1, minWidth: 420 }}>
+          <h3 style={{ marginTop: 0 }}>Derivación del sistema</h3>
+          <div className="muted" style={{ marginBottom: 10 }}>
+            Define qué combinación de productos repone la propiedad interna “Tipo / Sistema”. Solo aplica a Portones.
+          </div>
 
-        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-          {systemRules.map((rule, index) => (
-            <div
-              key={rule.id || index}
-              style={{ border: "1px solid #eee", borderRadius: 10, padding: 10 }}
-            >
-              <Input
-                value={rule.name || ""}
-                onChange={(v) =>
-                  setSystemRules((prev) =>
-                    prev.map((item, i) => (i === index ? { ...item, name: v } : item)),
-                  )
-                }
-                placeholder="Nombre de la regla"
-                style={{ width: "100%", marginBottom: 8 }}
-              />
-
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {systemRules.map((rule, index) => (
               <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "1fr 1fr",
-                  gap: 8,
-                  marginBottom: 8,
-                }}
+                key={rule.id || index}
+                style={{ border: "1px solid #eee", borderRadius: 10, padding: 10 }}
               >
-                <select
-                  value={rule.match_mode || "all"}
-                  onChange={(e) =>
+                <Input
+                  value={rule.name || ""}
+                  onChange={(v) =>
                     setSystemRules((prev) =>
-                      prev.map((item, i) =>
-                        i === index ? { ...item, match_mode: e.target.value } : item,
-                      ),
+                      prev.map((item, i) => (i === index ? { ...item, name: v } : item)),
                     )
                   }
-                  style={{ padding: 8, borderRadius: 10, border: "1px solid #ddd" }}
-                >
-                  <option value="all">Requiere todos los productos</option>
-                  <option value="any">Requiere cualquier producto</option>
-                </select>
+                  placeholder="Nombre de la regla"
+                  style={{ width: "100%", marginBottom: 8 }}
+                />
 
-                <select
-                  value={rule.derived_porton_type || ""}
-                  onChange={(e) =>
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "1fr 1fr",
+                    gap: 8,
+                    marginBottom: 8,
+                  }}
+                >
+                  <select
+                    value={rule.match_mode || "all"}
+                    onChange={(e) =>
+                      setSystemRules((prev) =>
+                        prev.map((item, i) =>
+                          i === index ? { ...item, match_mode: e.target.value } : item,
+                        ),
+                      )
+                    }
+                    style={{ padding: 8, borderRadius: 10, border: "1px solid #ddd" }}
+                  >
+                    <option value="all">Requiere todos los productos</option>
+                    <option value="any">Requiere cualquier producto</option>
+                  </select>
+
+                  <select
+                    value={rule.derived_porton_type || ""}
+                    onChange={(e) =>
+                      setSystemRules((prev) =>
+                        prev.map((item, i) =>
+                          i === index
+                            ? { ...item, derived_porton_type: e.target.value }
+                            : item,
+                        ),
+                      )
+                    }
+                    style={{ padding: 8, borderRadius: 10, border: "1px solid #ddd" }}
+                  >
+                    <option value="">Sistema derivado…</option>
+                    {PORTON_TYPES.map((item) => (
+                      <option key={item.key} value={item.key}>
+                        {item.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <Input
+                  value={rule.required_product_ids_text || ""}
+                  onChange={(v) =>
                     setSystemRules((prev) =>
                       prev.map((item, i) =>
                         i === index
-                          ? { ...item, derived_porton_type: e.target.value }
+                          ? { ...item, required_product_ids_text: v }
                           : item,
                       ),
                     )
                   }
-                  style={{ padding: 8, borderRadius: 10, border: "1px solid #ddd" }}
-                >
-                  <option value="">Sistema derivado…</option>
-                  {PORTON_TYPES.map((item) => (
-                    <option key={item.key} value={item.key}>
-                      {item.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <Input
-                value={rule.required_product_ids_text || ""}
-                onChange={(v) =>
-                  setSystemRules((prev) =>
-                    prev.map((item, i) =>
-                      i === index
-                        ? { ...item, required_product_ids_text: v }
-                        : item,
-                    ),
-                  )
-                }
-                placeholder="IDs de productos que definen el sistema (coma, espacio o punto y coma)"
-                style={{ width: "100%" }}
-              />
-
-              <div className="spacer" />
-              <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <input
-                  type="checkbox"
-                  checked={rule.active !== false}
-                  onChange={(e) =>
-                    setSystemRules((prev) =>
-                      prev.map((item, i) =>
-                        i === index ? { ...item, active: e.target.checked } : item,
-                      ),
-                    )
-                  }
+                  placeholder="IDs de productos que definen el sistema (coma, espacio o punto y coma)"
+                  style={{ width: "100%" }}
                 />
-                <span className="muted">Activa</span>
-              </label>
-            </div>
-          ))}
-        </div>
 
-        <div className="spacer" />
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <Button
-            variant="ghost"
-            onClick={() =>
-              setSystemRules((prev) => [...prev, newSystemRule(prev.length + 1)])
-            }
-          >
-            + Agregar derivación
-          </Button>
-          <Button variant="primary" onClick={onSave} disabled={saving}>
-            {saving ? "Guardando..." : "Guardar dependencias"}
-          </Button>
+                <div className="spacer" />
+                <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <input
+                    type="checkbox"
+                    checked={rule.active !== false}
+                    onChange={(e) =>
+                      setSystemRules((prev) =>
+                        prev.map((item, i) =>
+                          i === index ? { ...item, active: e.target.checked } : item,
+                        ),
+                      )
+                    }
+                  />
+                  <span className="muted">Activa</span>
+                </label>
+              </div>
+            ))}
+          </div>
+
+          <div className="spacer" />
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <Button
+              variant="ghost"
+              onClick={() =>
+                setSystemRules((prev) => [...prev, newSystemRule(prev.length + 1)])
+              }
+            >
+              + Agregar derivación
+            </Button>
+            <Button variant="primary" onClick={onSave} disabled={saving}>
+              {saving ? "Guardando..." : "Guardar dependencias"}
+            </Button>
+          </div>
         </div>
-      </div>
+      ) : null}
     </div>
   );
 }

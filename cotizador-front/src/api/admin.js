@@ -70,14 +70,17 @@ export async function adminSaveDoorQuoteSettings(payload) {
   return data.settings || { formula: "precio_ipanel + precio_venta_marco" };
 }
 
-export async function adminGetTechnicalMeasurementRules() {
-  const { data } = await http.get(`/api/admin/technical-measurement-rules`);
+export async function adminGetTechnicalMeasurementRules(kind = "porton") {
+  const { data } = await http.get(`/api/admin/technical-measurement-rules?kind=${encodeURIComponent(kind || "porton")}`);
   if (!data?.ok) throw new Error(data?.error || "No se pudieron cargar las reglas técnicas");
   return data.rules || { rules: [] };
 }
 
-export async function adminSaveTechnicalMeasurementRules(payload) {
-  const { data } = await http.put(`/api/admin/technical-measurement-rules`, payload || {});
+export async function adminSaveTechnicalMeasurementRules(kindOrPayload = "porton", maybePayload) {
+  const hasExplicitKind = maybePayload !== undefined;
+  const kind = hasExplicitKind ? kindOrPayload : "porton";
+  const payload = hasExplicitKind ? maybePayload : kindOrPayload;
+  const { data } = await http.put(`/api/admin/technical-measurement-rules?kind=${encodeURIComponent(kind || "porton")}`, payload || {});
   if (!data?.ok) throw new Error(data?.error || "No se pudieron guardar las reglas técnicas");
   return data.rules || { rules: [] };
 }

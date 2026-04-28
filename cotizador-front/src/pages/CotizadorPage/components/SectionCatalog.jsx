@@ -116,11 +116,15 @@ function computeOrderedSectionIds({
   dependencyRules,
   selectedProductIdsBySection,
 }) {
-  if ((kind || "porton").toLowerCase().trim() !== "porton") {
+  void kind;
+  if (!sectionList.length) return [];
+
+  const activeDependencyRules = (Array.isArray(dependencyRules) ? dependencyRules : [])
+    .filter((rule) => rule?.active !== false);
+
+  if (!initialSectionId && !activeDependencyRules.length) {
     return sectionList.map((section) => Number(section.id));
   }
-
-  if (!sectionList.length) return [];
 
   const startId =
     initialSectionId && sectionMap.has(Number(initialSectionId))
@@ -142,7 +146,7 @@ function computeOrderedSectionIds({
       const selectedInParent =
         selectedProductIdsBySection.get(Number(currentSectionId)) || new Set();
 
-      for (const rule of dependencyRules) {
+      for (const rule of activeDependencyRules) {
         const parentSectionId = Number(rule?.parent_section_id || 0);
         if (parentSectionId !== Number(currentSectionId)) continue;
 
@@ -190,11 +194,11 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
 
   const rulesQ = useQuery({
     queryKey: ["technical-rules-for-section-catalog", catalogKind],
-    queryFn: adminGetTechnicalMeasurementRules,
+    queryFn: () => adminGetTechnicalMeasurementRules(catalogKind),
     staleTime: 0,
     refetchOnMount: "always",
     refetchOnWindowFocus: true,
-    enabled: catalogKind === "porton",
+    enabled: !!catalogKind,
   });
 
   const initialSectionId = Number(rulesQ.data?.initial_section_id || 0) || null;
@@ -214,6 +218,7 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
   }, [rulesQ.data]);
 
   const systemRules = useMemo(() => {
+    if (catalogKind !== "porton") return [];
     const raw = Array.isArray(rulesQ.data?.system_derivation_rules)
       ? rulesQ.data.system_derivation_rules
       : [];
@@ -225,7 +230,7 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
           Number(a?.sort_order || 0) - Number(b?.sort_order || 0) ||
           String(a?.name || "").localeCompare(String(b?.name || ""), "es"),
       );
-  }, [rulesQ.data]);
+  }, [catalogKind, rulesQ.data]);
 
   const refreshCatalog = useCallback(async () => {
     setRefreshing(true);

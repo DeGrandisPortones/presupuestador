@@ -116,11 +116,17 @@ export function buildAdminRouter(odoo) {
     try { res.json({ ok: true, settings: await setDoorQuoteSettings(req.body || {}) }); } catch (e) { next(e); }
   });
 
-  router.get("/technical-measurement-rules", requireAuth, async (_req, res, next) => {
-    try { res.json({ ok: true, rules: await getTechnicalMeasurementRules() }); } catch (e) { next(e); }
+  router.get("/technical-measurement-rules", requireAuth, async (req, res, next) => {
+    try {
+      const kind = normKind(req.query.kind || "porton");
+      res.json({ ok: true, rules: await getTechnicalMeasurementRules(kind) });
+    } catch (e) { next(e); }
   });
   router.put("/technical-measurement-rules", requireAuth, requireEncComercialOrSuperuser, async (req, res, next) => {
-    try { res.json({ ok: true, rules: await setTechnicalMeasurementRules(req.body || {}) }); } catch (e) { next(e); }
+    try {
+      const kind = normKind(req.query.kind || req.body?.kind || "porton");
+      res.json({ ok: true, rules: await setTechnicalMeasurementRules(req.body || {}, kind) });
+    } catch (e) { next(e); }
   });
   router.get("/technical-measurement-fields", requireAuth, async (_req, res, next) => {
     try { res.json({ ok: true, fields: await getTechnicalMeasurementFieldDefinitions() }); } catch (e) { next(e); }
