@@ -1137,22 +1137,7 @@ export default function MedicionDetailPage() {
           </div>
         </div>
 
-        <div className="spacer" />
-        {isReadOnlyMeasurement ? (
-          <div
-            style={{
-              marginBottom: 12,
-              border: "1px solid #dbeafe",
-              background: "#eff6ff",
-              color: "#1d4ed8",
-              borderRadius: 12,
-              padding: 14,
-              fontWeight: 700,
-            }}
-          >
-            Vista solo lectura. La medición ya fue cerrada y solo Técnica puede modificarla.
-          </div>
-        ) : null}
+
         <Section title="Datos del cliente">
           <Row>
             <Field label="Cliente"><StaticValue value={quote?.end_customer?.name} /></Field>
