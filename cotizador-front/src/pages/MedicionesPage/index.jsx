@@ -174,7 +174,26 @@ export default function MedicionesPage() {
                       ) : "—"}
                     </td>
                     <td>{labelMeasurementStatus(r.measurement_status)}</td>
-                    <td className="right"><Button onClick={() => navigate(`/mediciones/${r.id}`)}>Formulario</Button></td>
+                    <td className="right">
+                      <Button
+                        onClick={() =>
+                          navigate(
+                            String(r?.measurement_status || "").toLowerCase() === "approved"
+                              ? `/mediciones/${r.id}?readonly=1`
+                              : `/mediciones/${r.id}`,
+                            {
+                              state: {
+                                from: "/mediciones",
+                                readOnlyMeasurement:
+                                  String(r?.measurement_status || "").toLowerCase() === "approved",
+                              },
+                            },
+                          )
+                        }
+                      >
+                        {String(r?.measurement_status || "").toLowerCase() === "approved" ? "Ver medición" : "Formulario"}
+                      </Button>
+                    </td>
                   </tr>
                 ))}
               </tbody>

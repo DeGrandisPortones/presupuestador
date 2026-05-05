@@ -669,6 +669,11 @@ export default function MedicionDetailPage() {
   const user = useAuthStore((s) => s.user);
   const isTechnical = !!user?.is_rev_tecnica;
   const isMedidor = !!user?.is_medidor;
+  const readOnlyFromState = location.state?.readOnlyMeasurement === true;
+  const readOnlyFromQuery = useMemo(() => {
+    const params = new URLSearchParams(location.search || "");
+    return params.get("readonly") === "1";
+  }, [location.search]);
 
   const q = useQuery({
     queryKey: ["measurement", quoteId],
@@ -1069,6 +1074,8 @@ export default function MedicionDetailPage() {
       : "Enviar al técnico";
   const pageTitle = isTechnical ? "Revisión técnica final" : "Medición";
   const planningLabel = formatProductionDeliveryDisplay(planningQ.data);
+  const isMeasurementApproved = String(quote?.measurement_status || "").toLowerCase() === "approved";
+  const isReadOnlyMeasurement = !isTechnical && (readOnlyFromState || readOnlyFromQuery || isMeasurementApproved);
 
   return (
     <div className="container">
@@ -1093,7 +1100,7 @@ export default function MedicionDetailPage() {
             <Button variant="ghost" onClick={() => navigate(returnPath)}>
               Volver
             </Button>
-            {!isTechnical ? (
+            {!isTechnical && !isReadOnlyMeasurement ? (
               <Button
                 variant="secondary"
                 disabled={saveMedicionM.isPending}
@@ -1122,15 +1129,30 @@ export default function MedicionDetailPage() {
                   {rejectTechnicalM.isPending ? "Enviando..." : "Rechazar y enviar al vendedor"}
                 </Button>
               </>
-            ) : (
+            ) : !isReadOnlyMeasurement ? (
               <Button disabled={saveMedicionM.isPending} onClick={() => saveMedicionM.mutate({ submit: true })}>
                 {saveMedicionM.isPending ? "Procesando..." : submitButtonLabel}
               </Button>
-            )}
+            ) : null}
           </div>
         </div>
 
         <div className="spacer" />
+        {isReadOnlyMeasurement ? (
+          <div
+            style={{
+              marginBottom: 12,
+              border: "1px solid #dbeafe",
+              background: "#eff6ff",
+              color: "#1d4ed8",
+              borderRadius: 12,
+              padding: 14,
+              fontWeight: 700,
+            }}
+          >
+            Vista solo lectura. La medición ya fue cerrada y solo Técnica puede modificarla.
+          </div>
+        ) : null}
         <Section title="Datos del cliente">
           <Row>
             <Field label="Cliente"><StaticValue value={quote?.end_customer?.name} /></Field>
@@ -1199,11 +1221,15 @@ export default function MedicionDetailPage() {
           <Row>
             {[0, 1, 2].map((idx) => (
               <Field key={`alto-${idx}`} label={`Alto ${idx + 1} (mm)`}>
-                <Input
-                  value={form.esquema?.alto?.[idx] || ""}
-                  onChange={(v) => setForm((prev) => updateSchemeValue(prev, "alto", idx, v))}
-                  style={{ width: "100%" }}
-                />
+                {isReadOnlyMeasurement ? (
+                  <StaticValue value={form.esquema?.alto?.[idx] || ""} />
+                ) : (
+                  <Input
+                    value={form.esquema?.alto?.[idx] || ""}
+                    onChange={(v) => setForm((prev) => updateSchemeValue(prev, "alto", idx, v))}
+                    style={{ width: "100%" }}
+                  />
+                )}
               </Field>
             ))}
           </Row>
@@ -1211,11 +1237,15 @@ export default function MedicionDetailPage() {
           <Row>
             {[0, 1, 2].map((idx) => (
               <Field key={`ancho-${idx}`} label={`Ancho ${idx + 1} (mm)`}>
-                <Input
-                  value={form.esquema?.ancho?.[idx] || ""}
-                  onChange={(v) => setForm((prev) => updateSchemeValue(prev, "ancho", idx, v))}
-                  style={{ width: "100%" }}
-                />
+                {isReadOnlyMeasurement ? (
+                  <StaticValue value={form.esquema?.ancho?.[idx] || ""} />
+                ) : (
+                  <Input
+                    value={form.esquema?.ancho?.[idx] || ""}
+                    onChange={(v) => setForm((prev) => updateSchemeValue(prev, "ancho", idx, v))}
+                    style={{ width: "100%" }}
+                  />
+                )}
               </Field>
             ))}
           </Row>
@@ -1327,45 +1357,56 @@ export default function MedicionDetailPage() {
             return (
               <div key={field.key} style={{ marginBottom: 12 }}>
                 <Field label={sectionName}>
-                  <select
-                    value={selectedProductId}
-                    onChange={(e) => {
-                      const product = sectionCatalogProducts.find(
-                        (item) => String(item.id) === String(e.target.value),
-                      );
-                      setForm((prev) => {
-                        let next = prev;
-                        if (!product) return next;
-                        next = setByPath(
-                          next,
-                          field.key,
-                          text(product.alias || product.display_name || product.name),
+                  {isReadOnlyMeasurement ? (
+                    <StaticValue
+                      value={
+                        text(getByPath(form, `__budget_section_override.${sectionId}.value`)) ||
+                        text(getByPath(form, `__selected_binding_product.${field.key}.display_name`)) ||
+                        text(getByPath(form, `__selected_binding_product.${field.key}.alias`)) ||
+                        text(getByPath(form, `__selected_binding_product.${field.key}.raw_name`))
+                      }
+                    />
+                  ) : (
+                    <select
+                      value={selectedProductId}
+                      onChange={(e) => {
+                        const product = sectionCatalogProducts.find(
+                          (item) => String(item.id) === String(e.target.value),
                         );
-                        next = setByPath(next, `__selected_binding_product.${field.key}`, {
-                          product_id: Number(product.id),
-                          display_name: text(product.display_name || product.alias || product.name),
-                          alias: text(product.alias),
-                          raw_name: text(product.name),
-                          code: text(product.code),
-                          qty: 1,
+                        setForm((prev) => {
+                          let next = prev;
+                          if (!product) return next;
+                          next = setByPath(
+                            next,
+                            field.key,
+                            text(product.alias || product.display_name || product.name),
+                          );
+                          next = setByPath(next, `__selected_binding_product.${field.key}`, {
+                            product_id: Number(product.id),
+                            display_name: text(product.display_name || product.alias || product.name),
+                            alias: text(product.alias),
+                            raw_name: text(product.name),
+                            code: text(product.code),
+                            qty: 1,
+                          });
+                          next = setByPath(
+                            next,
+                            `__budget_section_override.${sectionId}.value`,
+                            text(product.display_name || product.alias || product.name),
+                          );
+                          return next;
                         });
-                        next = setByPath(
-                          next,
-                          `__budget_section_override.${sectionId}.value`,
-                          text(product.display_name || product.alias || product.name),
-                        );
-                        return next;
-                      });
-                    }}
-                    style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid #ddd" }}
-                  >
-                    <option value="">Seleccione producto…</option>
-                    {sectionCatalogProducts.map((product) => (
-                      <option key={product.id} value={product.id}>
-                        {productDisplayLabel(product)}
-                      </option>
-                    ))}
-                  </select>
+                      }}
+                      style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid #ddd" }}
+                    >
+                      <option value="">Seleccione producto…</option>
+                      {sectionCatalogProducts.map((product) => (
+                        <option key={product.id} value={product.id}>
+                          {productDisplayLabel(product)}
+                        </option>
+                      ))}
+                    </select>
+                  )}
                 </Field>
               </div>
             );
@@ -1378,45 +1419,56 @@ export default function MedicionDetailPage() {
             return (
               <div key={`fallback-${section.id}`} style={{ marginBottom: 12 }}>
                 <Field label={section.name}>
-                  <select
-                    value={selectedProductId}
-                    onChange={(e) => {
-                      const product = section.catalogProducts.find(
-                        (item) => String(item.id) === String(e.target.value),
-                      );
-                      setForm((prev) => {
-                        let next = prev;
-                        if (!product) return next;
-                        next = setByPath(next, `__fallback_selected_section_products.${section.id}`, {
-                          product_id: Number(product.id),
-                          display_name: text(product.display_name || product.alias || product.name),
-                          alias: text(product.alias),
-                          raw_name: text(product.name),
-                          code: text(product.code),
-                          qty: 1,
+                  {isReadOnlyMeasurement ? (
+                    <StaticValue
+                      value={
+                        text(getByPath(form, `__budget_section_override.${section.id}.value`)) ||
+                        text(getByPath(form, `__fallback_selected_section_products.${section.id}.display_name`)) ||
+                        text(getByPath(form, `__fallback_selected_section_products.${section.id}.alias`)) ||
+                        text(getByPath(form, `__fallback_selected_section_products.${section.id}.raw_name`))
+                      }
+                    />
+                  ) : (
+                    <select
+                      value={selectedProductId}
+                      onChange={(e) => {
+                        const product = section.catalogProducts.find(
+                          (item) => String(item.id) === String(e.target.value),
+                        );
+                        setForm((prev) => {
+                          let next = prev;
+                          if (!product) return next;
+                          next = setByPath(next, `__fallback_selected_section_products.${section.id}`, {
+                            product_id: Number(product.id),
+                            display_name: text(product.display_name || product.alias || product.name),
+                            alias: text(product.alias),
+                            raw_name: text(product.name),
+                            code: text(product.code),
+                            qty: 1,
+                          });
+                          next = setByPath(
+                            next,
+                            `fallback_section_${section.id}`,
+                            text(product.alias || product.display_name || product.name),
+                          );
+                          next = setByPath(
+                            next,
+                            `__budget_section_override.${section.id}.value`,
+                            text(product.display_name || product.alias || product.name),
+                          );
+                          return next;
                         });
-                        next = setByPath(
-                          next,
-                          `fallback_section_${section.id}`,
-                          text(product.alias || product.display_name || product.name),
-                        );
-                        next = setByPath(
-                          next,
-                          `__budget_section_override.${section.id}.value`,
-                          text(product.display_name || product.alias || product.name),
-                        );
-                        return next;
-                      });
-                    }}
-                    style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid #ddd" }}
-                  >
-                    <option value="">Seleccione producto…</option>
-                    {section.catalogProducts.map((product) => (
-                      <option key={product.id} value={product.id}>
-                        {productDisplayLabel(product)}
-                      </option>
-                    ))}
-                  </select>
+                      }}
+                      style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid #ddd" }}
+                    >
+                      <option value="">Seleccione producto…</option>
+                      {section.catalogProducts.map((product) => (
+                        <option key={product.id} value={product.id}>
+                          {productDisplayLabel(product)}
+                        </option>
+                      ))}
+                    </select>
+                  )}
                 </Field>
               </div>
             );
@@ -1441,20 +1493,24 @@ export default function MedicionDetailPage() {
         </Section>
 
         <Section title="Observaciones del medidor">
-          <textarea
-            value={form.observaciones_medicion || ""}
-            onChange={(e) => setForm((prev) => ({ ...prev, observaciones_medicion: e.target.value }))}
-            rows={4}
-            style={{
-              width: "100%",
-              borderRadius: 12,
-              border: "1px solid #d7d7d7",
-              padding: 12,
-              resize: "vertical",
-              fontFamily: "inherit",
-            }}
-            placeholder="Escribí una observación para el vendedor si necesitás devolver el portón por un motivo adicional."
-          />
+          {isReadOnlyMeasurement ? (
+            <StaticValue value={form.observaciones_medicion || ""} />
+          ) : (
+            <textarea
+              value={form.observaciones_medicion || ""}
+              onChange={(e) => setForm((prev) => ({ ...prev, observaciones_medicion: e.target.value }))}
+              rows={4}
+              style={{
+                width: "100%",
+                borderRadius: 12,
+                border: "1px solid #d7d7d7",
+                padding: 12,
+                resize: "vertical",
+                fontFamily: "inherit",
+              }}
+              placeholder="Escribí una observación para el vendedor si necesitás devolver el portón por un motivo adicional."
+            />
+          )}
           {hasObservationsForSeller ? (
             <div
               style={{
