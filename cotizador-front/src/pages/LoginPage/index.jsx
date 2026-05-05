@@ -9,6 +9,26 @@ import { useAuthStore } from "../../domain/auth/store.js";
 import { setOdooBootstrap } from "../../domain/odoo/bootstrap.js";
 import { prefetchOdooBootstrapInBackground } from "../../domain/odoo/prefetch.js";
 
+function EyeIcon({ open }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width="20"
+      height="20"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6-10-6-10-6z" />
+      <circle cx="12" cy="12" r="3" />
+      {!open ? <path d="M4 4l16 16" /> : null}
+    </svg>
+  );
+}
+
 export default function LoginPage() {
   const navigate = useNavigate();
   const setSession = useAuthStore((s) => s.setSession);
@@ -19,6 +39,7 @@ export default function LoginPage() {
 
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [shake, setShake] = useState(false);
 
   useEffect(() => {
@@ -77,7 +98,41 @@ export default function LoginPage() {
 
           <div className="spacer" />
           <div className="muted">Contraseña</div>
-          <Input type="password" value={password} onChange={setPassword} placeholder="••••••••" style={{ width: "100%" }} />
+          <div style={{ position: "relative" }}>
+            <Input
+              type={showPassword ? "text" : "password"}
+              value={password}
+              onChange={setPassword}
+              placeholder="••••••••"
+              autoComplete="current-password"
+              style={{ width: "100%", paddingRight: 48 }}
+            />
+            <button
+              type="button"
+              onClick={() => setShowPassword((current) => !current)}
+              aria-label={showPassword ? "Ocultar contraseña" : "Mostrar contraseña"}
+              aria-pressed={showPassword}
+              title={showPassword ? "Ocultar contraseña" : "Mostrar contraseña"}
+              style={{
+                position: "absolute",
+                top: "50%",
+                right: 8,
+                transform: "translateY(-50%)",
+                width: 34,
+                height: 34,
+                border: "0",
+                borderRadius: 8,
+                background: "transparent",
+                color: "#6b7280",
+                display: "grid",
+                placeItems: "center",
+                cursor: "pointer",
+                padding: 0,
+              }}
+            >
+              <EyeIcon open={showPassword} />
+            </button>
+          </div>
 
           <div className="spacer" />
           {m.isError && <div style={{ color: "#d93025", fontSize: 13 }}>{m.error.message}</div>}
