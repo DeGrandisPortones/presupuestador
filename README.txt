@@ -1,14 +1,7 @@
-Agrega fechas al JSON de preproduccion_valores y al catálogo de propiedades origen.
+Reemplazar directo:
+- cotizador-front/src/pages/PresupuestosPage/index.jsx
 
-Campos nuevos:
-- fecha_presupuesto
-- fecha_confirmacion
-- fecha_aprobacion_comercial
-- fecha_aprobacion_tecnica
-- fecha_np
-- fecha_medicion
-- fecha_revision_tecnica_final
-- fecha_solicitud_salida_acopio
-- fecha_nv
-
-Todos viajan como fecha YYYY-MM-DD.
+Cambio:
+- donde dice Rechazado (corregir), ahora se puede hacer click
+- abre un popup con el motivo del rechazo comercial o técnico
+- si no existe motivo cargado, muestra 'No hay motivo cargado para este rechazo.'

@@ -114,6 +114,67 @@ function isDoorRejected(d) { return d?.status === "draft" && (d?.commercial_deci
 function fmtDate(value) { if (!value) return "—"; const raw = String(value); const d = /^\d{4}-\d{2}-\d{2}$/.test(raw) ? new Date(`${raw}T00:00:00`) : new Date(raw); if (Number.isNaN(d.getTime())) return "—"; return d.toLocaleDateString("es-AR"); }
 function fmtDateTime(value) { if (!value) return "—"; const raw = String(value); const d = /^\d{4}-\d{2}-\d{2}$/.test(raw) ? new Date(`${raw}T00:00:00`) : new Date(raw); if (Number.isNaN(d.getTime())) return "—"; const date = d.toLocaleDateString("es-AR"); const time = d.toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" }); return `${date} ${time}`; }
 
+function getRejectionInfoFromQuote(q) {
+  const commercialRejected = String(q?.commercial_decision || "").toLowerCase() === "rejected";
+  const technicalRejected = String(q?.technical_decision || "").toLowerCase() === "rejected";
+  if (!commercialRejected && !technicalRejected) return null;
+  const title = commercialRejected ? "Motivo del rechazo comercial" : "Motivo del rechazo técnico";
+  const reason = String(
+    q?.rejection_notes ||
+    q?.rejection_reason ||
+    q?.commercial_rejection_notes ||
+    q?.technical_rejection_notes ||
+    q?.review_notes ||
+    q?.payload?.rejection_notes ||
+    q?.payload?.rejection_reason ||
+    q?.payload?.commercial_rejection_notes ||
+    q?.payload?.technical_rejection_notes ||
+    ""
+  ).trim();
+  return { title, reason: reason || "No hay motivo cargado para este rechazo." };
+}
+function getRejectionInfoFromDoor(d) {
+  const commercialRejected = String(d?.commercial_decision || "").toLowerCase() === "rejected";
+  const technicalRejected = String(d?.technical_decision || "").toLowerCase() === "rejected";
+  if (!commercialRejected && !technicalRejected) return null;
+  const title = commercialRejected ? "Motivo del rechazo comercial" : "Motivo del rechazo técnico";
+  const reason = String(
+    d?.rejection_notes ||
+    d?.rejection_reason ||
+    d?.commercial_rejection_notes ||
+    d?.technical_rejection_notes ||
+    d?.record?.rejection_notes ||
+    d?.record?.rejection_reason ||
+    d?.record?.commercial_rejection_notes ||
+    d?.record?.technical_rejection_notes ||
+    d?.record?.payload?.rejection_notes ||
+    d?.record?.payload?.rejection_reason ||
+    ""
+  ).trim();
+  return { title, reason: reason || "No hay motivo cargado para este rechazo." };
+}
+function RejectedStatusButton({ label, onClick }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      style={{
+        border: "none",
+        background: "transparent",
+        padding: 0,
+        margin: 0,
+        cursor: "pointer",
+        color: "#b42318",
+        fontWeight: 700,
+        textDecoration: "underline",
+      }}
+    >
+      {label}
+    </button>
+  );
+}
+
+
 function TypeBadge({ label }) {
   const isDoor = label === "Puerta";
   const isIpanel = label === "Ipanel";
@@ -141,6 +202,7 @@ export default function PresupuestosPage() {
   const [searchText, setSearchText] = useState("");
   const [page, setPage] = useState(1);
   const [downloadingPdfKey, setDownloadingPdfKey] = useState("");
+  const [rejectionModal, setRejectionModal] = useState(null);
 
   const quotesQ = useQuery({ queryKey: ["quotes", "mine"], queryFn: () => listQuotes({ scope: "mine" }) });
   const doorsQ = useQuery({ queryKey: ["doors", "mine", "presupuestos"], queryFn: () => listDoors({ scope: "mine" }), enabled: !!user?.is_vendedor || !!user?.is_distribuidor });
@@ -267,7 +329,14 @@ export default function PresupuestosPage() {
                         <td><TypeBadge label={item.typeLabel} /></td>
                         <td>{item.clientName || <span className="muted">(sin nombre)</span>}</td>
                         <td>{item.locality}</td>
-                        <td>{item.statusLabel}</td>
+                        <td>
+                          {getRejectionInfoFromDoor(door) ? (
+                            <RejectedStatusButton
+                              label={item.statusLabel}
+                              onClick={() => setRejectionModal(getRejectionInfoFromDoor(door))}
+                            />
+                          ) : item.statusLabel}
+                        </td>
                         <td>{item.destinationLabel}</td>
                         {filter === "mediciones" ? <td>—</td> : null}
                         {filter === "mediciones" ? <td>—</td> : null}
@@ -296,7 +365,14 @@ export default function PresupuestosPage() {
                       <td><TypeBadge label={item.typeLabel} /></td>
                       <td>{r.end_customer?.name || <span className="muted">(sin nombre)</span>}</td>
                       <td>{item.locality}</td>
-                      <td>{item.statusLabel}</td>
+                      <td>
+                        {getRejectionInfoFromQuote(r) ? (
+                          <RejectedStatusButton
+                            label={item.statusLabel}
+                            onClick={() => setRejectionModal(getRejectionInfoFromQuote(r))}
+                          />
+                        ) : item.statusLabel}
+                      </td>
                       <td>{item.destinationLabel}</td>
                       {filter === "mediciones" ? <td>{item.measurementDate}</td> : null}
                       {filter === "mediciones" ? <td>{item.measurementStatus}</td> : null}
@@ -318,6 +394,46 @@ export default function PresupuestosPage() {
           </>
         )}
       </div>
+      {rejectionModal ? (
+        <div
+          onClick={() => setRejectionModal(null)}
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.45)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 20,
+            zIndex: 1000,
+          }}
+        >
+          <div
+            className="card"
+            onClick={(e) => e.stopPropagation()}
+            style={{ width: "100%", maxWidth: 640, background: "#fff" }}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center" }}>
+              <div style={{ fontWeight: 900, fontSize: 20 }}>{rejectionModal.title}</div>
+              <Button variant="ghost" onClick={() => setRejectionModal(null)}>Cerrar</Button>
+            </div>
+            <div className="spacer" />
+            <div
+              style={{
+                whiteSpace: "pre-wrap",
+                lineHeight: 1.5,
+                background: "#fff8f3",
+                border: "1px solid #f2d3bf",
+                borderRadius: 12,
+                padding: 16,
+              }}
+            >
+              {rejectionModal.reason}
+            </div>
+          </div>
+        </div>
+      ) : null}
+
     </div>
   );
 }
