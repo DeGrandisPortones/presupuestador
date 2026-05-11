@@ -1,15 +1,13 @@
-ZIP directo para copiar y pegar en la raiz del repo presupuestador.
+Cambio directo para copiar y pegar.
 
-Cambio aplicado:
-- En instalacion dentro del vano, las medidas de paso descuentan el ancho de una sola pierna segun el tipo estimado.
-- Ejemplo: superanchas descuenta legs_superanchas_add_width_mm, por defecto 380 mm.
-- No se modifica el ancho calculado/final del porton.
-- No se modifican peso, limites de peso, tipo de piernas, aprobaciones ni Odoo.
+Reemplaza:
+- cotizador-front/src/pages/MedicionDetailPage/index.jsx
 
-Archivos incluidos:
-- cotizador-front/src/pages/CotizadorPage/components/PortonDimensions.jsx
-- cotizador-front/src/pages/QuoteDetailPage/index.jsx
-- cotizador-back/src/pdfBudgetExtras.js
+Qué corrige:
+- El alto final y ancho final se recalculan con el menor valor de las 3 medidas tomadas por el medidor.
+- La medida presupuestada inicial sigue precargándose como antes.
+- Al guardar/enviar, se fuerza que el formulario se persista con esos valores mínimos.
+- Técnica conserva la posibilidad de editar manualmente alto/ancho final con confirmación.
 
-Uso:
-Copiar estas carpetas sobre la raiz del repo y reemplazar los archivos existentes.
+Extra incluido para mantener consistencia con el cambio anterior:
+- En dentro de vano, las medidas de paso descuentan una sola pierna según tipo, sin tocar el ancho final calculado.

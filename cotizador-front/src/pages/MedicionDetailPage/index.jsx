@@ -85,6 +85,17 @@ function minMm(values = []) {
     .filter((n) => Number.isFinite(n) && n > 0);
   return nums.length ? Math.min(...nums) : 0;
 }
+function minTripleFinalMm(values = [], fallback = "") {
+  const min = minMm(values);
+  if (min > 0) return String(Math.round(min));
+  return text(fallback);
+}
+function getFinalDimensionsFromScheme(form = {}, fallback = {}) {
+  return {
+    alto_final_mm: minTripleFinalMm(form?.esquema?.alto || [], fallback?.alto_final_mm),
+    ancho_final_mm: minTripleFinalMm(form?.esquema?.ancho || [], fallback?.ancho_final_mm),
+  };
+}
 function extractBudgetDimensionMm(quote, key) {
   const dims = quote?.payload?.dimensions || {};
   const raw = key === "ancho" ? dims?.width : dims?.height;
@@ -237,8 +248,8 @@ function buildInitialForm(quote, current = {}) {
       alto: esquemaAlto,
       ancho: esquemaAncho,
     },
-    alto_final_mm: text(current.alto_final_mm) || averageTriple(esquemaAlto) || suggestedAlto,
-    ancho_final_mm: text(current.ancho_final_mm) || averageTriple(esquemaAncho) || suggestedAncho,
+    alto_final_mm: text(current.alto_final_mm) || minTripleFinalMm(esquemaAlto, suggestedAlto),
+    ancho_final_mm: text(current.ancho_final_mm) || minTripleFinalMm(esquemaAncho, suggestedAncho),
     observaciones_medicion: text(current.observaciones_medicion),
     cantidad_parantes: text(current.cantidad_parantes) || text(dims?.cantidad_parantes),
     orientacion_parantes: normalizeOrientation(current.orientacion_parantes || dims?.orientacion_parantes || "verticales"),
@@ -253,7 +264,10 @@ function updateSchemeValue(form, axis, index, value) {
     ancho: normalizeTriple(form.esquema?.ancho || []),
   };
   next[axis][index] = value;
-  return { ...form, esquema: next };
+  const updated = { ...form, esquema: next };
+  const nextFinalValue = minTripleFinalMm(next[axis]);
+  if (nextFinalValue) updated[axis === "alto" ? "alto_final_mm" : "ancho_final_mm"] = nextFinalValue;
+  return updated;
 }
 function Section({ title, children }) {
   return (
@@ -458,6 +472,17 @@ function getLegWidthMmByType(piernasTipo) {
   const map = { angostas: 230, comunes: 270, anchas: 370, superanchas: 370, especiales: 370 };
   return Number(map[key] || 0);
 }
+function getPasoWidthDeductionMm(piernasTipo, surfaceParameters) {
+  const key = String(piernasTipo || "").trim().toLowerCase();
+  const map = {
+    angostas: Number(surfaceParameters?.legs_angostas_add_width_mm || 140),
+    comunes: Number(surfaceParameters?.legs_comunes_add_width_mm || 200),
+    anchas: Number(surfaceParameters?.legs_anchas_add_width_mm || 280),
+    superanchas: Number(surfaceParameters?.legs_superanchas_add_width_mm || 380),
+    especiales: Number(surfaceParameters?.legs_especiales_add_width_mm || surfaceParameters?.legs_superanchas_add_width_mm || 380),
+  };
+  return Number(map[key] || 0);
+}
 function computeAutomaticSummary({ quote, form, surfaceParameters = {} }) {
   const budgetHeightMm = Math.round(toNumberLike(quote?.payload?.dimensions?.height) * 1000) || 0;
   const budgetWidthMm = Math.round(toNumberLike(quote?.payload?.dimensions?.width) * 1000) || 0;
@@ -520,8 +545,11 @@ function computeAutomaticSummary({ quote, form, surfaceParameters = {} }) {
   }
 
   const legWidthMm = getLegWidthMmByType(piernasTipo);
+  const pasoWidthDeductionMm = installationMode === "dentro_vano"
+    ? getPasoWidthDeductionMm(piernasTipo, surfaceParameters)
+    : legWidthMm * 2;
   const altoPasoMm = Math.max(0, Math.round(altoCalculadoMm - 200));
-  const anchoPasoMm = Math.max(0, Math.round(anchoCalculadoMm - legWidthMm * 2));
+  const anchoPasoMm = Math.max(0, Math.round(anchoCalculadoMm - pasoWidthDeductionMm));
 
   return {
     alto_calculado_mm: Math.round(altoCalculadoMm || 0),
@@ -845,25 +873,29 @@ export default function MedicionDetailPage() {
     () => computeAutomaticSummary({ quote, form, surfaceParameters: technicalRules?.surface_parameters || {} }),
     [quote, form, technicalRules],
   );
+  const measuredFinalDimensions = useMemo(
+    () => getFinalDimensionsFromScheme(form),
+    [form?.esquema?.alto, form?.esquema?.ancho],
+  );
 
   useEffect(() => {
-    const calcHigh = Number(technicalSummary?.alto_calculado_mm || 0);
-    const calcWidth = Number(technicalSummary?.ancho_calculado_mm || 0);
-    if (!calcHigh || !calcWidth) return;
+    if (!form) return;
 
     setForm((prev) => {
       if (!prev) return prev;
-      const nextHigh = String(calcHigh);
-      const nextWidth = String(calcWidth);
+      const finalDimensions = getFinalDimensionsFromScheme(prev);
+      const nextHigh = finalDimensions.alto_final_mm;
+      const nextWidth = finalDimensions.ancho_final_mm;
+      if (!nextHigh && !nextWidth) return prev;
 
       if (isTechnical) {
         let changed = false;
         const next = { ...prev };
-        if (!text(prev?.alto_final_mm)) {
+        if (!text(prev?.alto_final_mm) && nextHigh) {
           next.alto_final_mm = nextHigh;
           changed = true;
         }
-        if (!text(prev?.ancho_final_mm)) {
+        if (!text(prev?.ancho_final_mm) && nextWidth) {
           next.ancho_final_mm = nextWidth;
           changed = true;
         }
@@ -875,11 +907,11 @@ export default function MedicionDetailPage() {
       }
       return {
         ...prev,
-        alto_final_mm: nextHigh,
-        ancho_final_mm: nextWidth,
+        ...(nextHigh ? { alto_final_mm: nextHigh } : {}),
+        ...(nextWidth ? { ancho_final_mm: nextWidth } : {}),
       };
     });
-  }, [isTechnical, technicalSummary]);
+  }, [isTechnical, form?.esquema?.alto, form?.esquema?.ancho]);
 
   function handleTechnicalFinalDimensionChange(key, value) {
     if (!isTechnical) return;
@@ -944,11 +976,12 @@ export default function MedicionDetailPage() {
       let nextEndCustomer = { ...(quote?.end_customer || {}) };
       let returnToSeller = false;
       let returnReason = "";
-      const normalizedForm = !isTechnical && technicalSummary?.alto_calculado_mm && technicalSummary?.ancho_calculado_mm
+      const finalDimensions = getFinalDimensionsFromScheme(form);
+      const normalizedForm = !isTechnical
         ? {
             ...form,
-            alto_final_mm: String(technicalSummary.alto_calculado_mm),
-            ancho_final_mm: String(technicalSummary.ancho_calculado_mm),
+            ...(finalDimensions.alto_final_mm ? { alto_final_mm: finalDimensions.alto_final_mm } : {}),
+            ...(finalDimensions.ancho_final_mm ? { ancho_final_mm: finalDimensions.ancho_final_mm } : {}),
           }
         : form;
       if (submit && isMedidor) {
@@ -1187,7 +1220,7 @@ export default function MedicionDetailPage() {
                   style={{ width: "100%" }}
                 />
               ) : (
-                <StaticValue value={formatMm(technicalSummary.alto_calculado_mm)} />
+                <StaticValue value={formatMm(form.alto_final_mm || measuredFinalDimensions.alto_final_mm || technicalSummary.alto_calculado_mm)} />
               )}
             </Field>
             <Field label="Ancho final editable (mm)">
@@ -1198,7 +1231,7 @@ export default function MedicionDetailPage() {
                   style={{ width: "100%" }}
                 />
               ) : (
-                <StaticValue value={formatMm(technicalSummary.ancho_calculado_mm)} />
+                <StaticValue value={formatMm(form.ancho_final_mm || measuredFinalDimensions.ancho_final_mm || technicalSummary.ancho_calculado_mm)} />
               )}
             </Field>
           </Row>
@@ -1240,9 +1273,11 @@ export default function MedicionDetailPage() {
           <Row>
             <Field label="Medidas finales del portón">
               <StaticValue value={
-                technicalSummary.alto_calculado_mm && technicalSummary.ancho_calculado_mm
-                  ? `${formatMm(technicalSummary.alto_calculado_mm)} x ${formatMm(technicalSummary.ancho_calculado_mm)}`
-                  : ""
+                form.alto_final_mm && form.ancho_final_mm
+                  ? `${formatMm(form.alto_final_mm)} x ${formatMm(form.ancho_final_mm)}`
+                  : technicalSummary.alto_calculado_mm && technicalSummary.ancho_calculado_mm
+                    ? `${formatMm(technicalSummary.alto_calculado_mm)} x ${formatMm(technicalSummary.ancho_calculado_mm)}`
+                    : ""
               } />
             </Field>
             <Field label="Medidas de paso">
