@@ -26,10 +26,7 @@ function detectNoCladding(quote, surfaceParameters) {
 }
 function normalizeAptoKgM2Rules(surfaceParameters) {
   return (Array.isArray(surfaceParameters?.apto_revestir_kg_m2_rules) ? surfaceParameters.apto_revestir_kg_m2_rules : [])
-    .map((rule) => ({
-      product_id: Number(rule?.product_id || 0),
-      kg_m2: toNumberLike(rule?.kg_m2),
-    }))
+    .map((rule) => ({ product_id: Number(rule?.product_id || 0), kg_m2: toNumberLike(rule?.kg_m2) }))
     .filter((rule) => rule.product_id > 0 && Number.isFinite(rule.kg_m2) && rule.kg_m2 > 0);
 }
 function resolveAptoKgM2ByProducts(quote, surfaceParameters) {
@@ -62,12 +59,17 @@ function detectDoorType(quote) {
 }
 function getLegWidthMmByType(piernasTipo) {
   const key = String(piernasTipo || "").trim().toLowerCase();
+  const map = { angostas: 230, comunes: 270, anchas: 370, superanchas: 370, especiales: 370 };
+  return Number(map[key] || 0);
+}
+function getPasoWidthDeductionMm(piernasTipo, surfaceParameters) {
+  const key = String(piernasTipo || "").trim().toLowerCase();
   const map = {
-    angostas: 230,
-    comunes: 270,
-    anchas: 370,
-    superanchas: 370,
-    especiales: 370,
+    angostas: Number(surfaceParameters?.legs_angostas_add_width_mm || 140),
+    comunes: Number(surfaceParameters?.legs_comunes_add_width_mm || 200),
+    anchas: Number(surfaceParameters?.legs_anchas_add_width_mm || 280),
+    superanchas: Number(surfaceParameters?.legs_superanchas_add_width_mm || 380),
+    especiales: Number(surfaceParameters?.legs_especiales_add_width_mm || surfaceParameters?.legs_superanchas_add_width_mm || 380),
   };
   return Number(map[key] || 0);
 }
@@ -84,15 +86,10 @@ function computeSurfaceAutomaticContext({ quote, form, surfaceParameters }) {
   const tipoPorton = detectDoorType(quote);
   const sellerKgM2Entry = resolveSellerKgM2Entry(quote, surfaceParameters);
   const aptoKgM2RuleValue = noCladding ? resolveAptoKgM2ByProducts(quote, surfaceParameters) : 0;
-  const defaultKgM2Porton = tipoPorton === "inyectado"
-    ? Number(surfaceParameters?.injected_kg_m2 || 25)
-    : Number(surfaceParameters?.classic_kg_m2 || 15);
-
+  const defaultKgM2Porton = tipoPorton === "inyectado" ? Number(surfaceParameters?.injected_kg_m2 || 25) : Number(surfaceParameters?.classic_kg_m2 || 15);
   const kgM2Porton = noCladding
     ? (aptoKgM2RuleValue > 0 ? aptoKgM2RuleValue : (sellerKgM2Entry > 0 ? sellerKgM2Entry : defaultKgM2Porton))
-    : (installationMode === "sin_instalacion"
-      ? (sellerKgM2Entry > 0 ? sellerKgM2Entry : defaultKgM2Porton)
-      : defaultKgM2Porton);
+    : (installationMode === "sin_instalacion" ? (sellerKgM2Entry > 0 ? sellerKgM2Entry : defaultKgM2Porton) : defaultKgM2Porton);
 
   const heightDiscountMm = Number(surfaceParameters?.weight_height_discount_mm || 10);
   const widthDiscountMm = Number(surfaceParameters?.weight_width_discount_mm || 14);
@@ -100,9 +97,7 @@ function computeSurfaceAutomaticContext({ quote, form, surfaceParameters }) {
   const baseWidthForWeightMm = installationMode === "sin_instalacion" ? budgetWidthMm : anchoMinMm;
   const discountedHeightMm = Math.max(0, baseHeightForWeightMm - heightDiscountMm);
   const discountedWidthMm = Math.max(0, baseWidthForWeightMm - widthDiscountMm);
-  const discountedHeightM = discountedHeightMm / 1000;
-  const discountedWidthM = discountedWidthMm / 1000;
-  const pesoEstimadoKg = round2(discountedHeightM * discountedWidthM * kgM2Porton);
+  const pesoEstimadoKg = round2((discountedHeightMm / 1000) * (discountedWidthMm / 1000) * kgM2Porton);
 
   const limitAngostas = noCladding ? Number(surfaceParameters?.no_cladding_angostas_max_kg || 80) : Number(surfaceParameters?.legs_angostas_max_kg || 140);
   const limitComunes = Number(surfaceParameters?.legs_comunes_max_kg || 175);
@@ -133,8 +128,9 @@ function computeSurfaceAutomaticContext({ quote, form, surfaceParameters }) {
   }
 
   const legWidthMm = getLegWidthMmByType(piernasTipo);
+  const pasoWidthDeductionMm = installationMode === "dentro_vano" ? getPasoWidthDeductionMm(piernasTipo, surfaceParameters) : legWidthMm * 2;
   const altoPasoMm = Math.max(0, Math.round(altoCalculadoMm - 200));
-  const anchoPasoMm = Math.max(0, Math.round(anchoCalculadoMm - (legWidthMm * 2)));
+  const anchoPasoMm = Math.max(0, Math.round(anchoCalculadoMm - pasoWidthDeductionMm));
 
   return {
     peso_estimado_kg: pesoEstimadoKg,
@@ -175,11 +171,7 @@ export async function buildBudgetExtraSummaryLines(payload) {
 
   const technicalSettings = await getTechnicalMeasurementRules();
   const surfaceParameters = technicalSettings?.surface_parameters || {};
-  const calculated = computeSurfaceAutomaticContext({
-    quote,
-    form: quote?.measurement_form || {},
-    surfaceParameters,
-  });
+  const calculated = computeSurfaceAutomaticContext({ quote, form: quote?.measurement_form || {}, surfaceParameters });
 
   const lines = [];
   const alto = formatMm(calculated?.alto_paso_mm || calculated?.alto_calculado_mm);

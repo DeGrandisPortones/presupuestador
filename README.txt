@@ -1,12 +1,15 @@
-Cambio listo para copiar y pegar
+ZIP directo para copiar y pegar en la raiz del repo presupuestador.
 
-Ruta incluida:
+Cambio aplicado:
+- En instalacion dentro del vano, las medidas de paso descuentan el ancho de una sola pierna segun el tipo estimado.
+- Ejemplo: superanchas descuenta legs_superanchas_add_width_mm, por defecto 380 mm.
+- No se modifica el ancho calculado/final del porton.
+- No se modifican peso, limites de peso, tipo de piernas, aprobaciones ni Odoo.
+
+Archivos incluidos:
+- cotizador-front/src/pages/CotizadorPage/components/PortonDimensions.jsx
 - cotizador-front/src/pages/QuoteDetailPage/index.jsx
+- cotizador-back/src/pdfBudgetExtras.js
 
-Qué agrega:
-- En el detalle de presupuesto usado por Aprobación Comercial y Técnica, se muestra una tarjeta de solo lectura con datos técnicos/comerciales para aprobar.
-- Incluye ancho, alto, tipología/sistema, kg/m² efectivo, superficie, medidas de paso, peso estimado, piernas estimadas, orientación/cantidad/distribución de parantes, observaciones de parantes, forma de pago, condición, destino, estado de medición y productos clave.
-- No cambia endpoints, mutaciones, permisos, decisiones ni flujo de aprobación.
-
-Validación realizada:
-- npx tsc --jsx react-jsx --allowJs --checkJs false --noEmit --skipLibCheck --moduleResolution node --target ES2020 cotizador-front/src/pages/QuoteDetailPage/index.jsx
+Uso:
+Copiar estas carpetas sobre la raiz del repo y reemplazar los archivos existentes.

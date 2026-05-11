@@ -138,6 +138,17 @@ function mapLegsKeyForWidth(legsLabel) {
   if (t.includes("comun")) return "comunes";
   return "angostas";
 }
+function getPasoWidthDeductionMm(legsKey, params) {
+  const key = String(legsKey || "").trim().toLowerCase();
+  const map = {
+    angostas: Number(params?.legs_angostas_add_width_mm || 140),
+    comunes: Number(params?.legs_comunes_add_width_mm || 200),
+    anchas: Number(params?.legs_anchas_add_width_mm || 280),
+    superanchas: Number(params?.legs_superanchas_add_width_mm || 380),
+    especiales: Number(params?.legs_especiales_add_width_mm || params?.legs_superanchas_add_width_mm || 380),
+  };
+  return Number(map[key] || 0);
+}
 function buildCalculatedPreview({ widthM, heightM, lines, params, portonType }) {
   const widthMm = Math.round((Number(widthM || 0) || 0) * 1000);
   const heightMm = Math.round((Number(heightM || 0) || 0) * 1000);
@@ -175,7 +186,8 @@ function buildCalculatedPreview({ widthM, heightM, lines, params, portonType }) 
     anchoPasoMm = Math.max(0, widthMm + Number(addMap[legsKey] || 0));
   } else if (installationMode === "dentro_vano") {
     altoPasoMm = Math.max(0, heightMm - Number(params?.inside_vano_subtract_height_mm || 10));
-    anchoPasoMm = Math.max(0, widthMm - Number(params?.inside_vano_subtract_width_mm || 20));
+    const anchoCalculadoMm = Math.max(0, widthMm - Number(params?.inside_vano_subtract_width_mm || 20));
+    anchoPasoMm = Math.max(0, anchoCalculadoMm - getPasoWidthDeductionMm(legsKey, params));
   }
 
   return {
@@ -417,171 +429,34 @@ export default function PortonDimensions({ kind = "porton" }) {
           alignItems: "start",
         }}
       >
-        <FieldBox
-          label="Ancho (m)"
-          helper={widthHelper}
-          helperColor={widthOutOfBounds ? "#b91c1c" : undefined}
-        >
-          <Input
-            type="text"
-            inputMode="decimal"
-            value={widthRaw}
-            onChange={(v) => setDimensions({ width: normalizeDecimal(v) })}
-            onBlur={(e) => setDimensions({ width: normalizeDecimal(e?.target?.value) })}
-            placeholder={widthPlaceholder}
-            style={inputStateStyle(widthOutOfBounds)}
-          />
+        <FieldBox label="Ancho (m)" helper={widthHelper} helperColor={widthOutOfBounds ? "#b91c1c" : undefined}>
+          <Input type="text" inputMode="decimal" value={widthRaw} onChange={(v) => setDimensions({ width: normalizeDecimal(v) })} onBlur={(e) => setDimensions({ width: normalizeDecimal(e?.target?.value) })} placeholder={widthPlaceholder} style={inputStateStyle(widthOutOfBounds)} />
         </FieldBox>
-
-        <FieldBox
-          label="Alto (m)"
-          helper={heightHelper}
-          helperColor={heightOutOfBounds ? "#b91c1c" : undefined}
-        >
-          <Input
-            type="text"
-            inputMode="decimal"
-            value={heightRaw}
-            onChange={(v) => setDimensions({ height: normalizeDecimal(v) })}
-            onBlur={(e) => setDimensions({ height: normalizeDecimal(e?.target?.value) })}
-            placeholder={heightPlaceholder}
-            style={inputStateStyle(heightOutOfBounds)}
-          />
+        <FieldBox label="Alto (m)" helper={heightHelper} helperColor={heightOutOfBounds ? "#b91c1c" : undefined}>
+          <Input type="text" inputMode="decimal" value={heightRaw} onChange={(v) => setDimensions({ height: normalizeDecimal(v) })} onBlur={(e) => setDimensions({ height: normalizeDecimal(e?.target?.value) })} placeholder={heightPlaceholder} style={inputStateStyle(heightOutOfBounds)} />
         </FieldBox>
-
-        {isPorton ? (
-          <>
-            <FieldBox label="Tipo / Sistema derivado">
-              <Input
-                value={portonType || ""}
-                disabled
-                placeholder="Se completa según la combinación de productos"
-                style={disabledComputedInputStyle()}
-              />
-            </FieldBox>
-
-            <FieldBox label="Kg por m²">
-              <Input
-                value={formatNumberForInput(preview.effectiveKgM2)}
-                placeholder="Se calcula automáticamente según el sistema"
-                style={disabledComputedInputStyle()}
-                disabled
-              />
-            </FieldBox>
-
-            <FieldBox label="Superficie">
-              <div
-                style={{
-                  fontWeight: 800,
-                  fontSize: 16,
-                  minHeight: 40,
-                  display: "flex",
-                  alignItems: "center",
-                  padding: "9px 12px",
-                  borderRadius: 10,
-                  border: "1px solid #d1d5db",
-                  background: "#f3f4f6",
-                  color: "#334155",
-                }}
-              >
-                {area ? `${area.toFixed(2)} m²` : "—"}
-              </div>
-            </FieldBox>
-
-            <FieldBox label="Orientación de los parantes">
-              <select
-                value={orientation}
-                onChange={(e) => setDimensions({ orientacion_parantes: e.target.value })}
-                style={{ width: "100%", padding: "10px 12px", borderRadius: 8, border: "1px solid #ddd", background: "#fff" }}
-              >
-                <option value="verticales">Verticales</option>
-                <option value="horizontal">Horizontal</option>
-              </select>
-            </FieldBox>
-
-            <FieldBox
-              label="Cantidad de parantes"
-              helper={parantesHelper}
-            >
-              <Input
-                type="text"
-                inputMode="numeric"
-                value={String(dimensions?.cantidad_parantes ?? "")}
-                onChange={(v) => {
-                  setDimensions({ cantidad_parantes: normalizeIntegerInput(v) });
-                }}
-                onBlur={(e) => {
-                  setDimensions({ cantidad_parantes: normalizeIntegerInput(e?.target?.value) });
-                }}
-                style={{ width: "100%" }}
-                placeholder="Ej: 3"
-              />
-            </FieldBox>
-
-            <FieldBox label="Distribución de los parantes">
-              <select
-                value={distribution}
-                onChange={(e) => setDimensions({ distribucion_parantes: e.target.value })}
-                style={{ width: "100%", padding: "10px 12px", borderRadius: 8, border: "1px solid #ddd", background: "#fff" }}
-              >
-                <option value="repartido">Repartido</option>
-                <option value="especial">Especial</option>
-              </select>
-            </FieldBox>
-          </>
-        ) : null}
+        {isPorton ? (<>
+          <FieldBox label="Tipo / Sistema derivado"><Input value={portonType || ""} disabled placeholder="Se completa según la combinación de productos" style={disabledComputedInputStyle()} /></FieldBox>
+          <FieldBox label="Kg por m²"><Input value={formatNumberForInput(preview.effectiveKgM2)} placeholder="Se calcula automáticamente según el sistema" style={disabledComputedInputStyle()} disabled /></FieldBox>
+          <FieldBox label="Superficie"><div style={{ fontWeight: 800, fontSize: 16, minHeight: 40, display: "flex", alignItems: "center", padding: "9px 12px", borderRadius: 10, border: "1px solid #d1d5db", background: "#f3f4f6", color: "#334155" }}>{area ? `${area.toFixed(2)} m²` : "—"}</div></FieldBox>
+          <FieldBox label="Orientación de los parantes"><select value={orientation} onChange={(e) => setDimensions({ orientacion_parantes: e.target.value })} style={{ width: "100%", padding: "10px 12px", borderRadius: 8, border: "1px solid #ddd", background: "#fff" }}><option value="verticales">Verticales</option><option value="horizontal">Horizontal</option></select></FieldBox>
+          <FieldBox label="Cantidad de parantes" helper={parantesHelper}><Input type="text" inputMode="numeric" value={String(dimensions?.cantidad_parantes ?? "")} onChange={(v) => setDimensions({ cantidad_parantes: normalizeIntegerInput(v) })} onBlur={(e) => setDimensions({ cantidad_parantes: normalizeIntegerInput(e?.target?.value) })} style={{ width: "100%" }} placeholder="Ej: 3" /></FieldBox>
+          <FieldBox label="Distribución de los parantes"><select value={distribution} onChange={(e) => setDimensions({ distribucion_parantes: e.target.value })} style={{ width: "100%", padding: "10px 12px", borderRadius: 8, border: "1px solid #ddd", background: "#fff" }}><option value="repartido">Repartido</option><option value="especial">Especial</option></select></FieldBox>
+        </>) : null}
       </div>
 
-      {isPorton && distribution === "especial" ? (
-        <>
-          <div className="spacer" />
-          <FieldBox label="Observaciones de distribución especial">
-            <textarea
-              value={String(dimensions?.observaciones_parantes ?? "")}
-              onChange={(e) => setDimensions({ observaciones_parantes: e.target.value })}
-              rows={3}
-              style={{
-                width: "100%",
-                borderRadius: 10,
-                border: "1px solid #ddd",
-                padding: "10px 12px",
-                resize: "vertical",
-                fontFamily: "inherit",
-              }}
-              placeholder="Indicá cómo debe ser la distribución especial de los parantes."
-            />
-          </FieldBox>
-        </>
-      ) : null}
+      {isPorton && distribution === "especial" ? (<><div className="spacer" /><FieldBox label="Observaciones de distribución especial"><textarea value={String(dimensions?.observaciones_parantes ?? "")} onChange={(e) => setDimensions({ observaciones_parantes: e.target.value })} rows={3} style={{ width: "100%", borderRadius: 10, border: "1px solid #ddd", padding: "10px 12px", resize: "vertical", fontFamily: "inherit" }} placeholder="Indicá cómo debe ser la distribución especial de los parantes." /></FieldBox></>) : null}
 
-      {isPorton ? (
-        <>
-          <div className="spacer" />
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 10 }}>
-            <ComputedCard
-              label="Medidas de paso"
-              value={
-                preview.altoPasoMm > 0 && preview.anchoPasoMm > 0
-                  ? `${formatMetersFromMm(preview.altoPasoMm)} × ${formatMetersFromMm(preview.anchoPasoMm)}`
-                  : "—"
-              }
-            />
-            <ComputedCard
-              label="Kg/m² efectivo"
-              value={preview.effectiveKgM2 > 0 ? `${preview.effectiveKgM2.toFixed(2)} kg/m²` : "—"}
-            />
-            <ComputedCard
-              label="Peso estimado"
-              value={preview.estimatedWeightKg > 0 ? `${preview.estimatedWeightKg.toFixed(2)} kg` : "—"}
-            />
-            <ComputedCard label="Piernas estimadas" value={preview.legsLabel} />
-          </div>
-
-          <div className="muted" style={{ marginTop: 8 }}>
-            Estas medidas se guardan dentro del presupuesto para usarlas después en medición, cálculo de peso y comparación de superficie.
-          </div>
-        </>
-      ) : null}
+      {isPorton ? (<>
+        <div className="spacer" />
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 10 }}>
+          <ComputedCard label="Medidas de paso" value={preview.altoPasoMm > 0 && preview.anchoPasoMm > 0 ? `${formatMetersFromMm(preview.altoPasoMm)} × ${formatMetersFromMm(preview.anchoPasoMm)}` : "—"} />
+          <ComputedCard label="Kg/m² efectivo" value={preview.effectiveKgM2 > 0 ? `${preview.effectiveKgM2.toFixed(2)} kg/m²` : "—"} />
+          <ComputedCard label="Peso estimado" value={preview.estimatedWeightKg > 0 ? `${preview.estimatedWeightKg.toFixed(2)} kg` : "—"} />
+          <ComputedCard label="Piernas estimadas" value={preview.legsLabel} />
+        </div>
+        <div className="muted" style={{ marginTop: 8 }}>Estas medidas se guardan dentro del presupuesto para usarlas después en medición, cálculo de peso y comparación de superficie.</div>
+      </>) : null}
     </div>
   );
 }

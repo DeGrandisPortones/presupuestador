@@ -459,7 +459,8 @@ function computeApprovalTechnicalPreview(quote) {
     anchoPasoMm = Math.max(0, widthMm + Number(addMap[legsKey] || 0));
   } else if (installationMode === "dentro_vano") {
     altoPasoMm = Math.max(0, heightMm - Number(params?.inside_vano_subtract_height_mm || 10));
-    anchoPasoMm = Math.max(0, widthMm - Number(params?.inside_vano_subtract_width_mm || 20));
+    const anchoCalculadoMm = Math.max(0, widthMm - Number(params?.inside_vano_subtract_width_mm || 20));
+    anchoPasoMm = Math.max(0, anchoCalculadoMm - getPasoWidthDeductionMmForApproval(legsKey, params));
   }
 
   return {
