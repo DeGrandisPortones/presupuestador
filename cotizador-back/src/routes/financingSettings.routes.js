@@ -246,6 +246,39 @@ async function resolveEffectivePreview(odoo, paymentMethod) {
   return { ok: true, ...odooPreview, odoo_percent: odooPreview.percent || 0 };
 }
 
+async function buildMethodsResponse(odoo) {
+  const saved = await listSavedSettings();
+  const byKey = new Map(saved.map((row) => [row.payment_method_key, row]));
+  const methodNames = [...new Set([...FINANCING_METHODS, ...saved.map((row) => row.payment_method)].filter(Boolean))];
+  const methods = [];
+
+  for (const paymentMethod of methodNames) {
+    const key = normalizePaymentMethodKey(paymentMethod);
+    const row = byKey.get(key) || null;
+    const odooPreview = await resolveOdooPreview(odoo, paymentMethod);
+    const percent = row ? (row.active === false ? 0 : cleanPercent(row.percent)) : odooPreview.percent;
+    methods.push({
+      payment_method: paymentMethod,
+      payment_method_key: key,
+      percent: cleanPercent(percent),
+      saved_percent: row ? cleanPercent(row.percent) : null,
+      active: row ? row.active !== false : true,
+      has_override: !!row,
+      source: row ? "config" : "odoo",
+      odoo_percent: cleanPercent(odooPreview.percent),
+      applies_financing: cleanPercent(percent) > 0,
+      card_type: odooPreview.card_type,
+      installments: odooPreview.installments,
+      plan_id: odooPreview.plan_id,
+      rate_id: odooPreview.rate_id,
+      is_custom: !FINANCING_METHODS.map(normalizePaymentMethodKey).includes(key),
+    });
+  }
+
+  methods.sort((a, b) => String(a.payment_method).localeCompare(String(b.payment_method), "es"));
+  return methods;
+}
+
 export function buildFinancingSettingsRouter(odoo) {
   const router = express.Router();
 
@@ -255,36 +288,18 @@ export function buildFinancingSettingsRouter(odoo) {
     } catch (e) { next(e); }
   });
 
-  router.get("/", requireAuth, requireEncComercialOrSuperuser, async (_req, res, next) => {
+  router.get("/payment-methods", requireAuth, async (_req, res, next) => {
     try {
       const saved = await listSavedSettings();
-      const byKey = new Map(saved.map((row) => [row.payment_method_key, row]));
-      const methods = [];
       const methodNames = [...new Set([...FINANCING_METHODS, ...saved.map((row) => row.payment_method)].filter(Boolean))];
+      methodNames.sort((a, b) => String(a).localeCompare(String(b), "es"));
+      res.json({ ok: true, payment_methods: methodNames });
+    } catch (e) { next(e); }
+  });
 
-      for (const paymentMethod of methodNames) {
-        const key = normalizePaymentMethodKey(paymentMethod);
-        const row = byKey.get(key) || null;
-        const odooPreview = await resolveOdooPreview(odoo, paymentMethod);
-        const percent = row ? (row.active === false ? 0 : cleanPercent(row.percent)) : odooPreview.percent;
-        methods.push({
-          payment_method: paymentMethod,
-          payment_method_key: key,
-          percent: cleanPercent(percent),
-          saved_percent: row ? cleanPercent(row.percent) : null,
-          active: row ? row.active !== false : true,
-          has_override: !!row,
-          source: row ? "config" : "odoo",
-          odoo_percent: cleanPercent(odooPreview.percent),
-          applies_financing: cleanPercent(percent) > 0,
-          card_type: odooPreview.card_type,
-          installments: odooPreview.installments,
-          plan_id: odooPreview.plan_id,
-          rate_id: odooPreview.rate_id,
-        });
-      }
-
-      methods.sort((a, b) => String(a.payment_method).localeCompare(String(b.payment_method), "es"));
+  router.get("/", requireAuth, requireEncComercialOrSuperuser, async (_req, res, next) => {
+    try {
+      const methods = await buildMethodsResponse(odoo);
       res.json({ ok: true, methods });
     } catch (e) { next(e); }
   });
@@ -293,10 +308,12 @@ export function buildFinancingSettingsRouter(odoo) {
     try {
       await ensureFinancingSettingsTable();
       const methods = Array.isArray(req.body?.methods) ? req.body.methods : [];
+      const seenKeys = new Set();
       for (const item of methods) {
-        const paymentMethod = String(item?.payment_method || "").trim();
+        const paymentMethod = String(item?.payment_method || "").trim().replace(/\s+/g, " ");
         const key = normalizePaymentMethodKey(paymentMethod);
-        if (!key || !paymentMethod) continue;
+        if (!key || !paymentMethod || seenKeys.has(key)) continue;
+        seenKeys.add(key);
         await dbQuery(`
           insert into public.presupuestador_financing_settings (payment_method_key, payment_method, percent, active, updated_at, updated_by)
           values ($1, $2, $3, $4, now(), $5)
@@ -309,32 +326,7 @@ export function buildFinancingSettingsRouter(odoo) {
         `, [key, paymentMethod, cleanPercent(item?.percent), item?.active !== false, req.user?.user_id || null]);
       }
 
-      const saved = await listSavedSettings();
-      const byKey = new Map(saved.map((row) => [row.payment_method_key, row]));
-      const methodNames = [...new Set([...FINANCING_METHODS, ...saved.map((row) => row.payment_method)].filter(Boolean))];
-      const out = [];
-      for (const paymentMethod of methodNames) {
-        const key = normalizePaymentMethodKey(paymentMethod);
-        const row = byKey.get(key) || null;
-        const odooPreview = await resolveOdooPreview(odoo, paymentMethod);
-        const percent = row ? (row.active === false ? 0 : cleanPercent(row.percent)) : odooPreview.percent;
-        out.push({
-          payment_method: paymentMethod,
-          payment_method_key: key,
-          percent: cleanPercent(percent),
-          saved_percent: row ? cleanPercent(row.percent) : null,
-          active: row ? row.active !== false : true,
-          has_override: !!row,
-          source: row ? "config" : "odoo",
-          odoo_percent: cleanPercent(odooPreview.percent),
-          applies_financing: cleanPercent(percent) > 0,
-          card_type: odooPreview.card_type,
-          installments: odooPreview.installments,
-          plan_id: odooPreview.plan_id,
-          rate_id: odooPreview.rate_id,
-        });
-      }
-      out.sort((a, b) => String(a.payment_method).localeCompare(String(b.payment_method), "es"));
+      const out = await buildMethodsResponse(odoo);
       res.json({ ok: true, methods: out });
     } catch (e) { next(e); }
   });

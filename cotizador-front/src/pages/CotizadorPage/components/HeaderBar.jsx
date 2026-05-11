@@ -1,6 +1,25 @@
+import { useMemo } from "react";
+import { useQuery } from "@tanstack/react-query";
 import Input from "../../../ui/Input.jsx";
 import { useQuoteStore } from "../../../domain/quote/store.js";
 import { PAYMENT_METHODS } from "../../../domain/quote/portonConstants.js";
+import { getFinancingPaymentMethods } from "../../../api/financingSettings.js";
+
+function mergePaymentMethods(baseMethods, customMethods, currentMethod) {
+  const out = [];
+  const seen = new Set();
+  const add = (value) => {
+    const label = String(value || "").trim();
+    const key = label.toUpperCase();
+    if (!label || seen.has(key)) return;
+    seen.add(key);
+    out.push(label);
+  };
+  (Array.isArray(baseMethods) ? baseMethods : []).forEach(add);
+  (Array.isArray(customMethods) ? customMethods : []).forEach(add);
+  add(currentMethod);
+  return out;
+}
 
 export default function HeaderBar({ showMargin }) {
   const {
@@ -17,6 +36,17 @@ export default function HeaderBar({ showMargin }) {
     endCustomer,
     setEndCustomer,
   } = useQuoteStore();
+
+  const paymentMethodsQ = useQuery({
+    queryKey: ["financing-payment-methods"],
+    queryFn: getFinancingPaymentMethods,
+    staleTime: 60 * 1000,
+  });
+
+  const paymentMethods = useMemo(
+    () => mergePaymentMethods(PAYMENT_METHODS, paymentMethodsQ.data, paymentMethod),
+    [paymentMethodsQ.data, paymentMethod],
+  );
 
   const coefClass =
     marginPercent < 0 ? "coef-input coef-negative" :
@@ -85,10 +115,11 @@ export default function HeaderBar({ showMargin }) {
             style={{ padding: "8px 10px", borderRadius: 8, border: "1px solid #ddd", minWidth: 220 }}
           >
             <option value="">Seleccione forma de pago</option>
-            {PAYMENT_METHODS.map((x) => (
+            {paymentMethods.map((x) => (
               <option key={x} value={x}>{x}</option>
             ))}
           </select>
+          {paymentMethodsQ.isError ? <div className="muted" style={{ marginTop: 4, fontSize: 12 }}>No se pudieron cargar formas agregadas.</div> : null}
         </div>
 
         <div>

@@ -7,6 +7,9 @@ import { useAuthStore } from "../../domain/auth/store.js";
 import { PAYMENT_METHODS } from "../../domain/quote/portonConstants.js";
 import { getFinancingSettings, saveFinancingSettings } from "../../api/financingSettings.js";
 
+const FINANCING_METHOD_PATTERN = /(CORDOBESA|NARANJA|OTRAS TC BANC)/i;
+const DEFAULT_FINANCING_METHODS = PAYMENT_METHODS.filter((method) => FINANCING_METHOD_PATTERN.test(method));
+
 function normalizePercent(value) {
   const raw = String(value ?? "").replace(",", ".").trim();
   if (!raw) return "";
@@ -25,24 +28,77 @@ function methodKey(value) {
     .replace(/\s+/g, " ");
 }
 
+function cleanMethodName(value) {
+  return String(value || "").trim().replace(/\s+/g, " ").toUpperCase();
+}
+
+const DEFAULT_METHOD_KEYS = new Set(DEFAULT_FINANCING_METHODS.map(methodKey));
+const DEFAULT_METHOD_INDEX = new Map(DEFAULT_FINANCING_METHODS.map((method, index) => [methodKey(method), index]));
+
+function rowFromApiItem(item, fallbackName = "") {
+  const paymentMethod = String(item?.payment_method || fallbackName || "").trim();
+  const key = methodKey(paymentMethod);
+  const inputPercent = item?.saved_percent ?? item?.percent ?? item?.odoo_percent ?? 0;
+  return {
+    payment_method: paymentMethod,
+    payment_method_key: key,
+    percent: normalizePercent(inputPercent),
+    active: item?.active !== false,
+    odoo_percent: Number(item?.odoo_percent || 0) || 0,
+    saved_percent: item?.saved_percent,
+    source: item?.source || (item?.has_override ? "config" : "odoo"),
+    has_override: !!item?.has_override,
+    is_custom: !DEFAULT_METHOD_KEYS.has(key),
+    is_new: false,
+  };
+}
+
 function asRows(data) {
   const fromApi = Array.isArray(data) ? data : [];
-  const byKey = new Map(fromApi.map((item) => [methodKey(item.payment_method), item]));
-  const rows = PAYMENT_METHODS
-    .filter((method) => /(CORDOBESA|NARANJA|OTRAS TC BANC)/i.test(method))
-    .map((method) => {
-      const item = byKey.get(methodKey(method)) || {};
-      const effective = item.percent ?? item.odoo_percent ?? 0;
-      return {
-        payment_method: method,
-        percent: normalizePercent(effective),
-        active: item.active !== false,
-        odoo_percent: Number(item.odoo_percent || 0) || 0,
-        saved_percent: item.saved_percent,
-        source: item.source || (item.has_override ? "config" : "odoo"),
-      };
+  const byKey = new Map();
+
+  for (const method of DEFAULT_FINANCING_METHODS) {
+    const key = methodKey(method);
+    byKey.set(key, {
+      payment_method: method,
+      payment_method_key: key,
+      percent: "0",
+      active: true,
+      odoo_percent: 0,
+      saved_percent: null,
+      source: "odoo",
+      has_override: false,
+      is_custom: false,
+      is_new: false,
     });
-  return rows;
+  }
+
+  for (const item of fromApi) {
+    const key = methodKey(item?.payment_method);
+    if (!key) continue;
+    byKey.set(key, rowFromApiItem(item));
+  }
+
+  return Array.from(byKey.values()).sort((a, b) => {
+    const aDefault = DEFAULT_METHOD_INDEX.has(a.payment_method_key);
+    const bDefault = DEFAULT_METHOD_INDEX.has(b.payment_method_key);
+    if (aDefault && bDefault) return DEFAULT_METHOD_INDEX.get(a.payment_method_key) - DEFAULT_METHOD_INDEX.get(b.payment_method_key);
+    if (aDefault) return -1;
+    if (bDefault) return 1;
+    return String(a.payment_method).localeCompare(String(b.payment_method), "es");
+  });
+}
+
+function findDuplicateKeys(rows) {
+  const seen = new Set();
+  const duplicates = new Set();
+  for (const row of rows) {
+    const key = methodKey(row.payment_method);
+    if (!key) continue;
+    if (seen.has(key)) duplicates.add(key);
+    seen.add(key);
+  }
+  return duplicates;
 }
 
 export default function FinanciamientoPage() {
@@ -62,15 +118,25 @@ export default function FinanciamientoPage() {
     setRows(asRows(q.data));
   }, [q.data]);
 
+  const duplicateKeys = useMemo(() => findDuplicateKeys(rows), [rows]);
+  const invalidRows = useMemo(() => rows.filter((row) => {
+    const key = methodKey(row.payment_method);
+    const n = Number(String(row.percent || "").replace(",", "."));
+    return !key || duplicateKeys.has(key) || row.percent !== "" && (!Number.isFinite(n) || n < 0);
+  }), [rows, duplicateKeys]);
+
   const saveM = useMutation({
-    mutationFn: () => saveFinancingSettings(rows.map((row) => ({
-      payment_method: row.payment_method,
-      percent: Number(String(row.percent || "0").replace(",", ".")) || 0,
-      active: row.active !== false,
-    }))),
+    mutationFn: () => saveFinancingSettings(rows
+      .filter((row) => methodKey(row.payment_method))
+      .map((row) => ({
+        payment_method: cleanMethodName(row.payment_method),
+        percent: Number(String(row.percent || "0").replace(",", ".")) || 0,
+        active: row.active !== false,
+      }))),
     onSuccess: (saved) => {
       setRows(asRows(saved));
       qc.invalidateQueries({ queryKey: ["financing-settings"] });
+      qc.invalidateQueries({ queryKey: ["financing-payment-methods"] });
       qc.invalidateQueries({ queryKey: ["financing-preview"] });
       qc.invalidateQueries({ queryKey: ["financing-preview-lines"] });
       toast.success("Financiamiento guardado.");
@@ -78,13 +144,30 @@ export default function FinanciamientoPage() {
     onError: (e) => toast.error(e?.message || "No se pudo guardar el financiamiento"),
   });
 
-  const invalidRows = useMemo(() => rows.filter((row) => {
-    const n = Number(String(row.percent || "").replace(",", "."));
-    return row.percent !== "" && (!Number.isFinite(n) || n < 0);
-  }), [rows]);
-
   function updateRow(index, patch) {
     setRows((prev) => prev.map((row, idx) => idx === index ? { ...row, ...patch } : row));
+  }
+
+  function addCustomRow() {
+    setRows((prev) => ([
+      ...prev,
+      {
+        payment_method: "",
+        payment_method_key: "",
+        percent: "0",
+        active: true,
+        odoo_percent: 0,
+        saved_percent: null,
+        source: "config",
+        has_override: true,
+        is_custom: true,
+        is_new: true,
+      },
+    ]));
+  }
+
+  function removeNewRow(index) {
+    setRows((prev) => prev.filter((_, idx) => idx !== index));
   }
 
   if (!canEdit) {
@@ -103,7 +186,7 @@ export default function FinanciamientoPage() {
       <div className="card">
         <h2 style={{ margin: 0 }}>Financiamiento</h2>
         <div className="muted" style={{ marginTop: 6 }}>
-          Configurá el porcentaje de recargo por forma de pago. Estos porcentajes se aplican al total, subtotal y precios finales de cada ítem en el cotizador.
+          Configurá el porcentaje de recargo por forma de pago y agregá nuevos tipos de financiamiento para que aparezcan en el cotizador.
         </div>
       </div>
 
@@ -114,6 +197,11 @@ export default function FinanciamientoPage() {
 
         {!!rows.length ? (
           <>
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap", alignItems: "center", marginBottom: 12 }}>
+              <div className="muted">Las formas agregadas manualmente quedan disponibles en el selector de Forma de pago.</div>
+              <Button variant="secondary" onClick={addCustomRow} disabled={saveM.isPending}>Agregar tipo de financiamiento</Button>
+            </div>
+
             <table>
               <thead>
                 <tr>
@@ -121,38 +209,63 @@ export default function FinanciamientoPage() {
                   <th className="right">Recargo (%)</th>
                   <th>Activo</th>
                   <th className="right">Referencia Odoo</th>
+                  <th></th>
                 </tr>
               </thead>
               <tbody>
-                {rows.map((row, index) => (
-                  <tr key={row.payment_method}>
-                    <td>
-                      <div style={{ fontWeight: 800 }}>{row.payment_method}</div>
-                      <div className="muted">{row.source === "config" ? "Configurado en Presupuestador" : "Tomado desde Odoo hasta que se guarde acá"}</div>
-                    </td>
-                    <td className="right">
-                      <Input
-                        type="text"
-                        inputMode="decimal"
-                        value={String(row.percent ?? "")}
-                        onChange={(v) => updateRow(index, { percent: v.replace(/[^0-9.,]/g, "") })}
-                        onBlur={(e) => updateRow(index, { percent: normalizePercent(e?.target?.value) })}
-                        style={{ width: 120, textAlign: "right" }}
-                      />
-                    </td>
-                    <td>
-                      <label style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-                        <input
-                          type="checkbox"
-                          checked={row.active !== false}
-                          onChange={(e) => updateRow(index, { active: e.target.checked })}
+                {rows.map((row, index) => {
+                  const key = methodKey(row.payment_method);
+                  const hasDuplicate = !!key && duplicateKeys.has(key);
+                  const missingName = !key;
+                  const percentNumber = Number(String(row.percent || "").replace(",", "."));
+                  const invalidPercent = row.percent !== "" && (!Number.isFinite(percentNumber) || percentNumber < 0);
+                  return (
+                    <tr key={`${row.payment_method_key || "new"}-${index}`}>
+                      <td>
+                        {row.is_new ? (
+                          <Input
+                            value={row.payment_method}
+                            onChange={(v) => updateRow(index, { payment_method: v, payment_method_key: methodKey(v) })}
+                            onBlur={(e) => updateRow(index, { payment_method: cleanMethodName(e?.target?.value), payment_method_key: methodKey(e?.target?.value) })}
+                            placeholder="Ej: VISA 9 CUOTAS"
+                            style={{ width: "100%", borderColor: missingName || hasDuplicate ? "#d93025" : undefined }}
+                          />
+                        ) : (
+                          <div style={{ fontWeight: 800 }}>{row.payment_method}</div>
+                        )}
+                        <div className="muted">
+                          {row.is_new ? "Nuevo tipo manual" : row.is_custom ? "Agregado manualmente" : row.source === "config" ? "Configurado en Presupuestador" : "Tomado desde Odoo hasta que se guarde acá"}
+                          {hasDuplicate ? " · Nombre duplicado" : ""}
+                          {missingName ? " · Completá el nombre" : ""}
+                        </div>
+                      </td>
+                      <td className="right">
+                        <Input
+                          type="text"
+                          inputMode="decimal"
+                          value={String(row.percent ?? "")}
+                          onChange={(v) => updateRow(index, { percent: v.replace(/[^0-9.,]/g, "") })}
+                          onBlur={(e) => updateRow(index, { percent: normalizePercent(e?.target?.value) })}
+                          style={{ width: 120, textAlign: "right", borderColor: invalidPercent ? "#d93025" : undefined }}
                         />
-                        <span>{row.active !== false ? "Sí" : "No"}</span>
-                      </label>
-                    </td>
-                    <td className="right">{Number(row.odoo_percent || 0).toFixed(2)}%</td>
-                  </tr>
-                ))}
+                      </td>
+                      <td>
+                        <label style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                          <input
+                            type="checkbox"
+                            checked={row.active !== false}
+                            onChange={(e) => updateRow(index, { active: e.target.checked })}
+                          />
+                          <span>{row.active !== false ? "Sí" : "No"}</span>
+                        </label>
+                      </td>
+                      <td className="right">{Number(row.odoo_percent || 0).toFixed(2)}%</td>
+                      <td className="right">
+                        {row.is_new ? <Button variant="ghost" onClick={() => removeNewRow(index)} disabled={saveM.isPending}>Quitar</Button> : null}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
             <div className="spacer" />
@@ -162,9 +275,15 @@ export default function FinanciamientoPage() {
                 {saveM.isPending ? "Guardando..." : "Guardar financiamiento"}
               </Button>
             </div>
-            {!!invalidRows.length ? <div style={{ color: "#d93025", fontSize: 13, marginTop: 10 }}>Revisá los porcentajes inválidos antes de guardar.</div> : null}
+            {!!invalidRows.length ? <div style={{ color: "#d93025", fontSize: 13, marginTop: 10 }}>Revisá nombres duplicados, nombres vacíos o porcentajes inválidos antes de guardar.</div> : null}
           </>
-        ) : (!q.isLoading ? <div className="muted">Sin formas de pago financiadas configurables.</div> : null)}
+        ) : (!q.isLoading ? (
+          <>
+            <div className="muted">Sin formas de pago financiadas configurables.</div>
+            <div className="spacer" />
+            <Button variant="secondary" onClick={addCustomRow}>Agregar tipo de financiamiento</Button>
+          </>
+        ) : null)}
       </div>
     </div>
   );

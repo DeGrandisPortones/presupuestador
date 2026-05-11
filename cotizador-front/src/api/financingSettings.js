@@ -12,6 +12,12 @@ export async function saveFinancingSettings(methods) {
   return data.methods || [];
 }
 
+export async function getFinancingPaymentMethods() {
+  const { data } = await http.get("/api/financing-settings/payment-methods");
+  if (!data?.ok) throw new Error(data?.error || "No se pudieron cargar las formas de pago");
+  return data.payment_methods || [];
+}
+
 export async function getFinancingPreviewFromSettings(paymentMethod) {
   const method = String(paymentMethod || "").trim();
   if (!method) {
