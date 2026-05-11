@@ -1,18 +1,12 @@
-# Cambio listo para copiar y pegar
+Cambio listo para copiar y pegar
 
-Este ZIP contiene el archivo completo:
+Ruta incluida:
+- cotizador-front/src/pages/QuoteDetailPage/index.jsx
 
-cotizador-front/src/pages/QuoteDetailPage/index.jsx
+Qué agrega:
+- En el detalle de presupuesto usado por Aprobación Comercial y Técnica, se muestra una tarjeta de solo lectura con datos técnicos/comerciales para aprobar.
+- Incluye ancho, alto, tipología/sistema, kg/m² efectivo, superficie, medidas de paso, peso estimado, piernas estimadas, orientación/cantidad/distribución de parantes, observaciones de parantes, forma de pago, condición, destino, estado de medición y productos clave.
+- No cambia endpoints, mutaciones, permisos, decisiones ni flujo de aprobación.
 
-Uso:
-1. Descomprimir este ZIP en la raíz del repo `presupuestador`.
-2. Permitir reemplazar el archivo existente.
-3. Probar el flujo entrando a:
-   - /aprobacion/comercial
-   - /aprobacion/tecnica
-   - Abrir un presupuesto pendiente
-
-Cambio incluido:
-- Agrega una tarjeta de solo lectura "Datos técnicos y comerciales para aprobar" en el detalle del presupuesto.
-- Muestra datos técnicos/comerciales disponibles: ancho, alto, peso, tipología/sistema, tipo de piernas, paso, forma de pago, condición, destino, estado de medición y productos clave.
-- No modifica acciones, permisos, mutaciones, estados ni endpoints.
+Validación realizada:
+- npx tsc --jsx react-jsx --allowJs --checkJs false --noEmit --skipLibCheck --moduleResolution node --target ES2020 cotizador-front/src/pages/QuoteDetailPage/index.jsx

@@ -260,6 +260,220 @@ function formatKgEntry(entry) {
   return formatTechnicalValue(raw);
 }
 
+
+function parseTechnicalNumber(value) {
+  const raw = String(value ?? "").trim();
+  if (!raw) return null;
+  const n = Number(raw.replace(",", "."));
+  return Number.isFinite(n) ? n : null;
+}
+
+function round2Technical(value) {
+  return Math.round(Number(value || 0) * 100) / 100;
+}
+
+function normTechnicalText(value) {
+  return String(value || "").trim().toLowerCase().replace(/\s+/g, "_");
+}
+
+function getByCleanPath(source, path) {
+  const parts = String(path || "").replace(/^payload\./, "").split(".").filter(Boolean);
+  let current = source;
+  for (const part of parts) {
+    if (!current || typeof current !== "object") return undefined;
+    current = current[part];
+  }
+  return current;
+}
+
+function getRulesParamsForApproval(quote) {
+  const rules = quote?.technical_rules || {};
+  return rules.surface_parameters || rules.surface_calc_params || rules.surface_params || rules.measurement_surface_params || {};
+}
+
+function getNumberParamForApproval(params, keys, fallback) {
+  for (const key of keys) {
+    const n = parseTechnicalNumber(params?.[key]);
+    if (Number.isFinite(n) && n > 0) return n;
+  }
+  return fallback;
+}
+
+function getQuoteProductIdSet(quote) {
+  const lines = Array.isArray(quote?.lines) ? quote.lines : [];
+  return new Set(lines.map((line) => Number(line?.product_id || 0)).filter(Boolean));
+}
+
+function detectInstallationModeForApproval(quote, params) {
+  const ids = getQuoteProductIdSet(quote);
+  const insideId = Number(params?.installation_inside_product_id || 0);
+  const behindId = Number(params?.installation_behind_product_id || 0);
+  if (insideId && ids.has(insideId)) return "dentro_vano";
+  if (behindId && ids.has(behindId)) return "detras_vano";
+  return "sin_instalacion";
+}
+
+function detectNoCladdingForApproval(quote, params) {
+  const ids = getQuoteProductIdSet(quote);
+  const noCladdingId = Number(params?.no_cladding_product_id || 0);
+  return !!(noCladdingId && ids.has(noCladdingId));
+}
+
+function inferKgM2FromTypeForApproval(portonType) {
+  const t = normTechnicalText(portonType);
+  if (!t) return 0;
+  if (t.includes("para_revestir")) return 0;
+  if (t.includes("inyect") || t.includes("doble_iny") || t.endsWith("_iny") || t.includes("_iny_")) return 25;
+  if (t.includes("clas") || t.includes("estandar")) return 15;
+  return 0;
+}
+
+function isAptoDerivedTypeForApproval(portonType) {
+  return normTechnicalText(portonType) === "para_revestir_con_al_pvc_otros";
+}
+
+function normalizeAptoKgRulesForApproval(raw = []) {
+  return (Array.isArray(raw) ? raw : [])
+    .map((item) => ({
+      product_id: Number(item?.product_id || 0),
+      kg_m2: parseTechnicalNumber(item?.kg_m2),
+    }))
+    .filter((item) => item.product_id > 0 && Number.isFinite(item.kg_m2) && item.kg_m2 > 0);
+}
+
+function resolveAptoKgM2ByProductsForApproval(quote, params) {
+  const rules = normalizeAptoKgRulesForApproval(params?.apto_revestir_kg_m2_rules);
+  const ids = getQuoteProductIdSet(quote);
+  for (const rule of rules) {
+    if (ids.has(rule.product_id)) return Number(rule.kg_m2 || 0);
+  }
+  return 0;
+}
+
+function resolveSellerKgM2EntryForApproval(quote, params) {
+  const payload = quote?.payload || {};
+  const candidates = [];
+  if (params?.seller_kg_m2_field_path) candidates.push(params.seller_kg_m2_field_path);
+  candidates.push("dimensions.kg_m2", "kg_m2_entry", "kg_m2", "entry_kg_m2", "custom_kg_m2", "peso_m2", "payload.kg_m2_entry");
+  for (const path of candidates) {
+    const value = String(path || "").includes(".") ? getByCleanPath(payload, path) : payload?.[path];
+    const n = parseTechnicalNumber(value);
+    if (Number.isFinite(n) && n > 0) return n;
+  }
+  return 0;
+}
+
+function legsTypeForWeightForApproval(weightKg, isApto, params) {
+  const limitAngostas = getNumberParamForApproval(
+    params,
+    [
+      isApto ? "no_cladding_angostas_max_kg" : "legs_angostas_max_kg",
+      isApto ? "limit_angostas_apto_kg" : "limit_angostas_kg",
+      "piernas_angostas_hasta_kg",
+    ],
+    isApto ? 80 : 140,
+  );
+  const limitComunes = getNumberParamForApproval(params, ["legs_comunes_max_kg", "limit_comunes_kg", "piernas_comunes_hasta_kg"], 175);
+  const limitAnchas = getNumberParamForApproval(params, ["legs_anchas_max_kg", "limit_anchas_kg", "piernas_anchas_hasta_kg"], 240);
+  const limitSuper = getNumberParamForApproval(params, ["legs_superanchas_max_kg", "limit_superanchas_kg", "piernas_superanchas_hasta_kg"], 300);
+  if (!Number.isFinite(weightKg) || weightKg <= 0) return "";
+  if (weightKg <= limitAngostas) return "Angostas";
+  if (weightKg <= limitComunes) return "Comunes";
+  if (weightKg <= limitAnchas) return "Anchas";
+  if (weightKg <= limitSuper) return "Superanchas";
+  return "Especiales";
+}
+
+function mapLegsKeyForWidthForApproval(legsLabel) {
+  const t = normTechnicalText(legsLabel);
+  if (t.includes("super")) return "superanchas";
+  if (t.includes("especial")) return "especiales";
+  if (t.includes("ancha")) return "anchas";
+  if (t.includes("comun")) return "comunes";
+  return "angostas";
+}
+
+function formatMetersForApproval(valueM) {
+  const n = parseTechnicalNumber(valueM);
+  if (!Number.isFinite(n) || n <= 0) return "";
+  return `${n.toLocaleString("es-AR", { maximumFractionDigits: 3 })} m`;
+}
+
+function formatMetersFromMmForApproval(valueMm) {
+  const n = Number(valueMm || 0);
+  if (!Number.isFinite(n) || n <= 0) return "";
+  return `${(n / 1000).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} m`;
+}
+
+function normalizeOrientationLabelForApproval(value) {
+  const raw = String(value || "").trim().toLowerCase();
+  if (raw === "horizontal" || raw === "horizontales") return "Horizontal";
+  if (raw === "vertical" || raw === "verticales") return "Verticales";
+  return formatTechnicalValue(value);
+}
+
+function normalizeDistributionLabelForApproval(value) {
+  const raw = String(value || "").trim().toLowerCase();
+  if (raw === "especial") return "Especial";
+  if (raw === "repartido") return "Repartido";
+  return formatTechnicalValue(value);
+}
+
+function computeApprovalTechnicalPreview(quote) {
+  const payload = quote?.payload || {};
+  const dimensions = payload?.dimensions || {};
+  const widthM = parseTechnicalNumber(dimensions?.width ?? dimensions?.ancho ?? payload?.width ?? payload?.ancho);
+  const heightM = parseTechnicalNumber(dimensions?.height ?? dimensions?.alto ?? payload?.height ?? payload?.alto);
+  const widthMm = Math.round((Number(widthM || 0) || 0) * 1000);
+  const heightMm = Math.round((Number(heightM || 0) || 0) * 1000);
+  const areaM2 = (Number(widthM || 0) || 0) * (Number(heightM || 0) || 0);
+  const params = getRulesParamsForApproval(quote);
+  const portonType = payload?.porton_type || payload?.tipo_porton || payload?.tipo_sistema || payload?.system_type || "";
+  const installationMode = detectInstallationModeForApproval(quote, params);
+  const aptoParaRevestir = isAptoDerivedTypeForApproval(portonType) || detectNoCladdingForApproval(quote, params);
+  const aptoKg = aptoParaRevestir ? resolveAptoKgM2ByProductsForApproval(quote, params) : 0;
+  const inferredKg = inferKgM2FromTypeForApproval(portonType);
+  const sellerKgM2 = resolveSellerKgM2EntryForApproval(quote, params);
+  const effectiveKgM2 = aptoParaRevestir ? (aptoKg || sellerKgM2 || inferredKg) : (sellerKgM2 || inferredKg);
+  const weightHeightDiscountMm = Number(params?.weight_height_discount_mm || 10);
+  const weightWidthDiscountMm = Number(params?.weight_width_discount_mm || 14);
+  const discountedHeightMm = Math.max(0, heightMm - weightHeightDiscountMm);
+  const discountedWidthMm = Math.max(0, widthMm - weightWidthDiscountMm);
+  const estimatedWeightKg = areaM2 > 0 && effectiveKgM2 > 0
+    ? round2Technical((discountedHeightMm / 1000) * (discountedWidthMm / 1000) * effectiveKgM2)
+    : 0;
+  const legsLabel = legsTypeForWeightForApproval(estimatedWeightKg, aptoParaRevestir, params);
+  const legsKey = mapLegsKeyForWidthForApproval(legsLabel);
+
+  let altoPasoMm = discountedHeightMm;
+  let anchoPasoMm = discountedWidthMm;
+  if (installationMode === "detras_vano") {
+    const addMap = {
+      angostas: Number(params?.legs_angostas_add_width_mm || 140),
+      comunes: Number(params?.legs_comunes_add_width_mm || 200),
+      anchas: Number(params?.legs_anchas_add_width_mm || 280),
+      superanchas: Number(params?.legs_superanchas_add_width_mm || 380),
+      especiales: Number(params?.legs_especiales_add_width_mm || params?.legs_superanchas_add_width_mm || 380),
+    };
+    altoPasoMm = Math.max(0, heightMm + Number(params?.behind_vano_add_height_mm || 100));
+    anchoPasoMm = Math.max(0, widthMm + Number(addMap[legsKey] || 0));
+  } else if (installationMode === "dentro_vano") {
+    altoPasoMm = Math.max(0, heightMm - Number(params?.inside_vano_subtract_height_mm || 10));
+    anchoPasoMm = Math.max(0, widthMm - Number(params?.inside_vano_subtract_width_mm || 20));
+  }
+
+  return {
+    widthM,
+    heightM,
+    areaM2,
+    effectiveKgM2,
+    estimatedWeightKg,
+    legsLabel,
+    altoPasoMm,
+    anchoPasoMm,
+  };
+}
+
 function conditionModeLabel(mode) {
   const key = String(mode || "").trim();
   if (key === "cond1") return "Condición 1";
@@ -299,10 +513,13 @@ function pushApprovalContextEntry(rows, label, entry, formatter = formatTechnica
 function buildApprovalContextRows(quote, conditionMode) {
   if (!quote) return [];
   const payload = quote?.payload && typeof quote.payload === "object" ? quote.payload : {};
+  const dimensions = payload?.dimensions && typeof payload.dimensions === "object" ? payload.dimensions : {};
   const measurementForm = quote?.measurement_form && typeof quote.measurement_form === "object" ? quote.measurement_form : {};
+  const preview = computeApprovalTechnicalPreview(quote);
   const sources = [
     quote,
     payload,
+    dimensions,
     payload?.technical_summary,
     payload?.technical,
     payload?.datos_tecnicos,
@@ -319,26 +536,27 @@ function buildApprovalContextRows(quote, conditionMode) {
     measurementForm?.automaticContext,
   ].filter(Boolean);
 
-  const width = firstTechnicalEntry(sources, ["ancho_paso_mm", "ancho_calculado_mm", "ancho_final_mm", "ancho_mm", "ancho", "width_mm", "width", "opening_width_mm", "opening_width", "puerta_ancho"]);
-  const height = firstTechnicalEntry(sources, ["alto_paso_mm", "alto_calculado_mm", "alto_final_mm", "alto_mm", "alto", "height_mm", "height", "opening_height_mm", "opening_height", "puerta_alto"]);
-  const pasoWidth = firstTechnicalEntry(sources, ["ancho_paso_mm", "paso_ancho_mm", "ancho_paso", "paso_ancho"]);
-  const pasoHeight = firstTechnicalEntry(sources, ["alto_paso_mm", "paso_alto_mm", "alto_paso", "paso_alto"]);
   const rows = [];
+  const sistemaEntry = firstTechnicalEntry(sources, ["tipologia_sistema", "tipologia", "tipología", "sistema", "system", "system_type", "tipo_sistema", "porton_type", "tipo_porton", "levadizo"]);
+  const paymentEntry = firstTechnicalEntry(sources, ["payment_method", "paymentMethod", "forma_pago", "forma_de_pago", "metodo_pago", "método_pago", "selected_payment_method", "financing_label", "financing"]);
+  const cantidadParantesEntry = firstTechnicalEntry(sources, ["cantidad_parantes", "parantes_cantidad", "cant_parantes", "parantes_cant"]);
+  const orientacionParantesEntry = firstTechnicalEntry(sources, ["orientacion_parantes", "orientación_parantes", "parantes_orientacion", "parantes_orientación"]);
+  const distribucionParantesEntry = firstTechnicalEntry(sources, ["distribucion_parantes", "distribución_parantes", "parantes_distribucion", "parantes_distribución"]);
+  const observacionesParantesEntry = firstTechnicalEntry(sources, ["observaciones_parantes", "observacion_parantes", "obs_parantes"]);
 
-  pushApprovalContextEntry(rows, "Ancho", width, formatDimensionEntry);
-  pushApprovalContextEntry(rows, "Alto", height, formatDimensionEntry);
-  pushApprovalContextEntry(rows, "Peso", firstTechnicalEntry(sources, ["peso_estimado_kg", "peso_total_kg", "peso_total", "peso_kg", "peso", "weight_kg", "weight", "kg_m2_porton", "peso_m2"]), formatKgEntry);
-  pushApprovalContextEntry(rows, "Tipología / sistema", firstTechnicalEntry(sources, ["tipologia_sistema", "tipologia", "tipología", "sistema", "system", "system_type", "tipo_sistema", "porton_type", "tipo_porton", "levadizo"]));
-  pushApprovalContextEntry(rows, "Tipo de piernas", firstTechnicalEntry(sources, ["piernas_tipo", "tipo_piernas", "piernas", "leg_type", "legs_type"]));
-
-  if (pasoWidth || pasoHeight) {
-    const pasoParts = [];
-    if (pasoWidth) pasoParts.push(`Ancho ${formatDimensionEntry(pasoWidth)}`);
-    if (pasoHeight) pasoParts.push(`Alto ${formatDimensionEntry(pasoHeight)}`);
-    pushApprovalContextRow(rows, "Paso", pasoParts.join(" · "));
-  }
-
-  pushApprovalContextEntry(rows, "Forma de pago", firstTechnicalEntry(sources, ["payment_method", "paymentMethod", "forma_pago", "forma_de_pago", "metodo_pago", "método_pago", "selected_payment_method", "financing_label", "financing"]));
+  pushApprovalContextRow(rows, "Ancho", formatMetersForApproval(preview.widthM) || formatDimensionEntry(firstTechnicalEntry(sources, ["ancho", "width", "ancho_m", "width_m", "ancho_mm", "width_mm"])));
+  pushApprovalContextRow(rows, "Alto", formatMetersForApproval(preview.heightM) || formatDimensionEntry(firstTechnicalEntry(sources, ["alto", "height", "alto_m", "height_m", "alto_mm", "height_mm"])));
+  pushApprovalContextEntry(rows, "Tipología / sistema", sistemaEntry);
+  pushApprovalContextRow(rows, "Kg/m² efectivo", preview.effectiveKgM2 > 0 ? `${preview.effectiveKgM2.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} kg/m²` : "");
+  pushApprovalContextRow(rows, "Superficie", preview.areaM2 > 0 ? `${preview.areaM2.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} m²` : "");
+  pushApprovalContextRow(rows, "Medidas de paso", preview.altoPasoMm > 0 && preview.anchoPasoMm > 0 ? `${formatMetersFromMmForApproval(preview.altoPasoMm)} x ${formatMetersFromMmForApproval(preview.anchoPasoMm)}` : "");
+  pushApprovalContextRow(rows, "Peso estimado", preview.estimatedWeightKg > 0 ? `${preview.estimatedWeightKg.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} kg` : "");
+  pushApprovalContextRow(rows, "Piernas estimadas", preview.legsLabel || formatTechnicalValue(firstTechnicalEntry(sources, ["piernas_tipo", "tipo_piernas", "piernas", "leg_type", "legs_type"])?.value));
+  pushApprovalContextRow(rows, "Orientación de parantes", normalizeOrientationLabelForApproval(orientacionParantesEntry?.value || "verticales"));
+  pushApprovalContextEntry(rows, "Cantidad de parantes", cantidadParantesEntry);
+  pushApprovalContextRow(rows, "Distribución de parantes", normalizeDistributionLabelForApproval(distribucionParantesEntry?.value || "repartido"));
+  pushApprovalContextEntry(rows, "Obs. parantes", observacionesParantesEntry);
+  pushApprovalContextEntry(rows, "Forma de pago", paymentEntry);
   pushApprovalContextRow(rows, "Condición", conditionModeLabel(conditionMode));
   pushApprovalContextRow(rows, "Destino", fulfillmentModeLabel(quote?.fulfillment_mode));
   pushApprovalContextRow(rows, "Estado medición", measurementStatusLabel(quote?.measurement_status));
