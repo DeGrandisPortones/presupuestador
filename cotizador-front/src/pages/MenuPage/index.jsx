@@ -34,6 +34,7 @@ export default function MenuPage() {
   const canQuote = !!(isSuperuser || user?.is_vendedor || user?.is_distribuidor);
   const showDashboard = !!(isSuperuser || user?.is_enc_comercial);
   const showPlanning = !!(isSuperuser || user?.is_enc_comercial);
+  const showFinancing = !!(isSuperuser || user?.is_enc_comercial);
   const showCommercialInbox = !!(isSuperuser || user?.is_enc_comercial);
   const showUsers = !!(isSuperuser || user?.is_enc_comercial);
   const showTechInbox = !!(isSuperuser || user?.is_rev_tecnica);
@@ -127,6 +128,16 @@ export default function MenuPage() {
             buttonText="Abrir planificación"
             onClick={() => navigate("/planificacion")}
             iconSrc="/menu-icons/planificacion.png"
+          />
+        )}
+
+        {showFinancing && (
+          <MenuTile
+            title="Financiamiento"
+            description="Recargos por cuotas usados en el cotizador."
+            buttonText="Abrir financiamiento"
+            onClick={() => navigate("/financiamiento")}
+            icon="💳"
           />
         )}
 

@@ -30,6 +30,7 @@ import PuertaPanelPage from "./pages/PuertaPanelPage/index.jsx";
 import TechnicalConsultsPage from "./pages/TechnicalConsultsPage/index.jsx";
 import QuoteHistoryViewerPage from "./pages/QuoteHistoryViewerPage/index.jsx";
 import SalesActorActivityPage from "./pages/SalesActorActivityPage/index.jsx";
+import FinanciamientoPage from "./pages/FinanciamientoPage/index.jsx";
 
 import RequireAuth from "./routes/RequireAuth.jsx";
 import AppLayout from "./layouts/AppLayout.jsx";
@@ -83,6 +84,7 @@ export default function App() {
           <Route path="usuarios" element={<UsersAdminPage />} />
           <Route path="dashboard" element={<DashboardPage />} />
           <Route path="planificacion" element={<PlanificacionPage />} />
+          <Route path="financiamiento" element={<FinanciamientoPage />} />
           <Route path="dashboard/reglas-tecnicas" element={<SuperuserMeasurementRulesPage />} />
           <Route path="superuser/nombres-pdf" element={<SuperuserProductPdfNamesPage />} />
           <Route path="superuser/asignacion-produccion" element={<SuperuserProductionPropertyAssignmentsPage />} />

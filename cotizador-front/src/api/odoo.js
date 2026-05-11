@@ -1,5 +1,6 @@
 import { http } from "./http.js";
 import { getOdooBootstrap } from "../domain/odoo/bootstrap.js";
+import { getFinancingPreviewFromSettings } from "./financingSettings.js";
 
 export async function getPricelists() {
   const boot = getOdooBootstrap();
@@ -57,23 +58,5 @@ export async function getBillingOptions() {
 }
 
 export async function getFinancingPreview(paymentMethod) {
-  const method = String(paymentMethod || "").trim();
-  if (!method) {
-    return {
-      ok: true,
-      applies_financing: false,
-      percent: 0,
-      card_type: null,
-      installments: null,
-      plan_id: null,
-      rate_id: null,
-      payment_method: "",
-    };
-  }
-
-  const params = new URLSearchParams();
-  params.set("payment_method", method);
-  const { data } = await http.get(`/api/odoo/financing-preview?${params.toString()}`);
-  if (!data?.ok) throw new Error(data?.error || "No se pudo obtener la financiación");
-  return data;
+  return getFinancingPreviewFromSettings(paymentMethod);
 }

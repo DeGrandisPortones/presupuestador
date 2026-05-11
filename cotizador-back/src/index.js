@@ -23,6 +23,7 @@ import { buildDoorsRouter } from "./routes/doors.routes.js";
 import { buildTechnicalConsultsRouter } from "./routes/technicalConsults.routes.js";
 import { buildProductionPlanningRouter } from "./routes/productionPlanning.routes.js";
 import { buildQuoteViewerRouter } from "./routes/quoteViewer.routes.js";
+import { buildFinancingSettingsRouter } from "./routes/financingSettings.routes.js";
 
 const app = express();
 
@@ -47,6 +48,7 @@ const odoo = createOdooClient({
 
 app.use("/api/auth", buildAuthRouter());
 app.use("/api/odoo", buildOdooRouter(odoo));
+app.use("/api/financing-settings", buildFinancingSettingsRouter(odoo));
 app.use("/api/production-planning", buildProductionPlanningRouter());
 app.use("/api/quotes", buildQuotesRouter(odoo));
 app.use("/api/doors", buildDoorsRouter(odoo));

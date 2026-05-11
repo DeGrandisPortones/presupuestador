@@ -1,15 +1,32 @@
+import { useQuery } from "@tanstack/react-query";
 import { useQuoteStore } from "../../../domain/quote/store";
 import { calcFinalUnitPrice, calcLineTotal, formatARS } from "../../../domain/quote/pricing";
+import { getFinancingPreview } from "../../../api/odoo";
 import LineRow from "./LineRow";
 
-export default function LinesTable({ financingPercent = 0 }) {
-  const { lines, marginPercent } = useQuoteStore();
+export default function LinesTable({ financingPercent = null }) {
+  const { lines, marginPercent, paymentMethod } = useQuoteStore();
+  const shouldResolveFinancing = financingPercent === null || financingPercent === undefined;
+  const financingQ = useQuery({
+    queryKey: ["financing-preview-lines", paymentMethod],
+    queryFn: () => getFinancingPreview(paymentMethod),
+    enabled: shouldResolveFinancing && !!String(paymentMethod || "").trim(),
+    staleTime: 60 * 1000,
+  });
+  const effectiveFinancingPercent = Number(
+    shouldResolveFinancing ? financingQ.data?.percent || 0 : financingPercent || 0,
+  ) || 0;
 
   if (!lines.length) return <div className="muted">Agregá productos para armar el presupuesto.</div>;
 
   return (
     <div>
       <h3 style={{ marginTop: 0 }}>Ítems</h3>
+      {effectiveFinancingPercent > 0 ? (
+        <div className="muted" style={{ marginBottom: 8 }}>
+          Los precios finales por ítem incluyen el recargo de financiamiento ({effectiveFinancingPercent.toFixed(2)}%).
+        </div>
+      ) : null}
       <table>
         <thead>
           <tr>
@@ -23,7 +40,7 @@ export default function LinesTable({ financingPercent = 0 }) {
         </thead>
         <tbody>
           {lines.map((l) => {
-            const finalUnit = calcFinalUnitPrice(l.basePrice, marginPercent, financingPercent);
+            const finalUnit = calcFinalUnitPrice(l.basePrice, marginPercent, effectiveFinancingPercent);
             const total = calcLineTotal(l.qty, finalUnit);
             return <LineRow key={l.product_id} line={l} finalUnit={finalUnit} total={total} formatARS={formatARS} />;
           })}
