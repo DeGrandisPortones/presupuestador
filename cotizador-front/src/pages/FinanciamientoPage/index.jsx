@@ -7,8 +7,7 @@ import { useAuthStore } from "../../domain/auth/store.js";
 import { PAYMENT_METHODS } from "../../domain/quote/portonConstants.js";
 import { getFinancingSettings, saveFinancingSettings } from "../../api/financingSettings.js";
 
-const FINANCING_METHOD_PATTERN = /(CORDOBESA|NARANJA|OTRAS TC BANC)/i;
-const DEFAULT_FINANCING_METHODS = PAYMENT_METHODS.filter((method) => FINANCING_METHOD_PATTERN.test(method));
+const DEFAULT_FINANCING_METHODS = PAYMENT_METHODS;
 
 function normalizePercent(value) {
   const raw = String(value ?? "").replace(",", ".").trim();
@@ -279,7 +278,7 @@ export default function FinanciamientoPage() {
           </>
         ) : (!q.isLoading ? (
           <>
-            <div className="muted">Sin formas de pago financiadas configurables.</div>
+            <div className="muted">Sin formas de pago configurables.</div>
             <div className="spacer" />
             <Button variant="secondary" onClick={addCustomRow}>Agregar tipo de financiamiento</Button>
           </>

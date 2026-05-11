@@ -4,15 +4,19 @@ import { dbQuery } from "../db.js";
 
 const TACA_TACA_PLAN_NAME = String(process.env.ODOO_TACA_TACA_PLAN_NAME || "Taca Taca").trim();
 
-const FINANCING_METHODS = [
-  "CORDOBESA 4 CUOTAS",
-  "CORDOBESA 6 CUOTAS",
+const DEFAULT_PAYMENT_METHODS = [
+  "CHEQUE 0 - 30 - 60",
+  "CHEQUE 0 - 30 - 60 - 90 -120",
   "CORDOBESA 10 CUOTAS",
   "CORDOBESA 14 CUOTAS",
   "CORDOBESA 18 CUOTAS",
+  "CORDOBESA 4 CUOTAS",
+  "CORDOBESA 6 CUOTAS",
+  "CUENTA CORRIENTE",
+  "EFECTIVO - TRANSFERENCIA",
+  "NARANJA 12 CUOTAS",
   "NARANJA 3 CUOTAS",
   "NARANJA 6 CUOTAS",
-  "NARANJA 12 CUOTAS",
   "OTRAS TC BANC 3 CUOTAS",
   "OTRAS TC BANC 6 CUOTAS",
 ];
@@ -249,7 +253,7 @@ async function resolveEffectivePreview(odoo, paymentMethod) {
 async function buildMethodsResponse(odoo) {
   const saved = await listSavedSettings();
   const byKey = new Map(saved.map((row) => [row.payment_method_key, row]));
-  const methodNames = [...new Set([...FINANCING_METHODS, ...saved.map((row) => row.payment_method)].filter(Boolean))];
+  const methodNames = [...new Set([...DEFAULT_PAYMENT_METHODS, ...saved.map((row) => row.payment_method)].filter(Boolean))];
   const methods = [];
 
   for (const paymentMethod of methodNames) {
@@ -271,7 +275,7 @@ async function buildMethodsResponse(odoo) {
       installments: odooPreview.installments,
       plan_id: odooPreview.plan_id,
       rate_id: odooPreview.rate_id,
-      is_custom: !FINANCING_METHODS.map(normalizePaymentMethodKey).includes(key),
+      is_custom: !DEFAULT_PAYMENT_METHODS.map(normalizePaymentMethodKey).includes(key),
     });
   }
 
@@ -291,7 +295,7 @@ export function buildFinancingSettingsRouter(odoo) {
   router.get("/payment-methods", requireAuth, async (_req, res, next) => {
     try {
       const saved = await listSavedSettings();
-      const methodNames = [...new Set([...FINANCING_METHODS, ...saved.map((row) => row.payment_method)].filter(Boolean))];
+      const methodNames = [...new Set([...DEFAULT_PAYMENT_METHODS, ...saved.map((row) => row.payment_method)].filter(Boolean))];
       methodNames.sort((a, b) => String(a).localeCompare(String(b), "es"));
       res.json({ ok: true, payment_methods: methodNames });
     } catch (e) { next(e); }
