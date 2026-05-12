@@ -1,26 +1,13 @@
-Presupuestador - Financiamiento con todas las formas de pago
+ZIP directo para copiar y pegar en la raiz del repo.
 
-Copiar estas carpetas sobre la raiz del repo.
+Cambio incluido:
+- Se modifica cotizador-back/src/routes/pdf.routes.js.
+- En el PDF de presupuesto/proforma, la seccion posterior a los datos del cliente se separa en dos bloques:
+  1) Forma de pago y fecha estimada de entrega.
+  2) Datos tecnicos/restantes: medidas de paso, peso, piernas y observaciones.
+- No cambia calculos, precios, items, aprobaciones ni guardado.
 
-Incluye la version de Financiamiento donde se pueden editar todos los tipos del selector actual:
-- CHEQUE 0 - 30 - 60
-- CHEQUE 0 - 30 - 60 - 90 -120
-- CORDOBESA 10/14/18/4/6 CUOTAS
-- CUENTA CORRIENTE
-- EFECTIVO - TRANSFERENCIA
-- NARANJA 12/3/6 CUOTAS
-- OTRAS TC BANC 3/6 CUOTAS
-
-Tambien permite agregar nuevos tipos manuales.
-
-Impacto:
-- El menu Financiamiento lo ven superusuario y Enc. Comercial.
-- Los porcentajes guardados aplican al subtotal, total y precios finales por item.
-- Las formas con 0% quedan disponibles igual, sin recargo.
-
-
-Actualizacion descuentos:
-- En Financiamiento ahora se aceptan valores negativos.
-- Ejemplo: para EFECTIVO - TRANSFERENCIA cargar -5 aplica 5% de descuento.
-- El descuento se refleja en subtotal, total, PDF y precios finales por item.
-- Se valida que el porcentaje no sea menor a -100%.
+Uso:
+1) Descomprimir en la raiz del repositorio.
+2) Reemplazar archivos cuando el sistema lo pida.
+3) Reiniciar el backend para tomar el cambio.
