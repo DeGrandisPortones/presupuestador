@@ -304,6 +304,18 @@ function getQuoteProductIdSet(quote) {
   return new Set(lines.map((line) => Number(line?.product_id || 0)).filter(Boolean));
 }
 
+function computeParantesCountForApproval({ quote, widthM, orientation }) {
+  const normalizedOrientation = String(orientation || "").trim().toLowerCase();
+  if (normalizedOrientation && !["vertical", "verticales"].includes(normalizedOrientation)) return "";
+  const width = Number(widthM || 0);
+  if (!Number.isFinite(width) || width <= 0) return "";
+  const ids = getQuoteProductIdSet(quote);
+  const hasSpecialParantesProduct = ids.has(3006);
+  const baseWidth = hasSpecialParantesProduct ? width : Math.max(0, width - 0.8);
+  const count = Math.max(0, Math.floor(baseWidth));
+  return count > 0 ? String(count) : "";
+}
+
 function detectInstallationModeForApproval(quote, params) {
   const ids = getQuoteProductIdSet(quote);
   const insideId = Number(params?.installation_inside_product_id || 0);
@@ -553,15 +565,22 @@ function buildApprovalContextRows(quote, conditionMode) {
   pushApprovalContextRow(rows, "Medidas de paso", preview.altoPasoMm > 0 && preview.anchoPasoMm > 0 ? `${formatMetersFromMmForApproval(preview.altoPasoMm)} x ${formatMetersFromMmForApproval(preview.anchoPasoMm)}` : "");
   pushApprovalContextRow(rows, "Peso estimado", preview.estimatedWeightKg > 0 ? `${preview.estimatedWeightKg.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} kg` : "");
   pushApprovalContextRow(rows, "Piernas estimadas", preview.legsLabel || formatTechnicalValue(firstTechnicalEntry(sources, ["piernas_tipo", "tipo_piernas", "piernas", "leg_type", "legs_type"])?.value));
-  pushApprovalContextRow(rows, "Orientación de parantes", normalizeOrientationLabelForApproval(orientacionParantesEntry?.value || "verticales"));
-  pushApprovalContextEntry(rows, "Cantidad de parantes", cantidadParantesEntry);
+  const orientacionParantesValue = normalizeOrientationLabelForApproval(orientacionParantesEntry?.value || "verticales");
+  const cantidadParantesValue = formatTechnicalValue(cantidadParantesEntry?.value)
+    || computeParantesCountForApproval({
+      quote,
+      widthM: preview.widthM,
+      orientation: orientacionParantesEntry?.value || "verticales",
+    });
+
+  pushApprovalContextRow(rows, "Orientación de parantes", orientacionParantesValue);
+  pushApprovalContextRow(rows, "Cantidad de parantes", cantidadParantesValue);
   pushApprovalContextRow(rows, "Distribución de parantes", normalizeDistributionLabelForApproval(distribucionParantesEntry?.value || "repartido"));
   pushApprovalContextEntry(rows, "Obs. parantes", observacionesParantesEntry);
   pushApprovalContextEntry(rows, "Forma de pago", paymentEntry);
   pushApprovalContextRow(rows, "Condición", conditionModeLabel(conditionMode));
   pushApprovalContextRow(rows, "Destino", fulfillmentModeLabel(quote?.fulfillment_mode));
   pushApprovalContextRow(rows, "Estado medición", measurementStatusLabel(quote?.measurement_status));
-  pushApprovalContextRow(rows, "Productos clave", technicalLineSummary(quote?.lines));
 
   return rows;
 }

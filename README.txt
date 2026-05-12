@@ -1,13 +1,13 @@
-ZIP directo para copiar y pegar en la raiz del repo.
+Cambio: tarjeta de aprobación comercial/técnica
 
-Cambio incluido:
-- Se modifica cotizador-back/src/routes/pdf.routes.js.
-- En el PDF de presupuesto/proforma, la seccion posterior a los datos del cliente se separa en dos bloques:
-  1) Forma de pago y fecha estimada de entrega.
-  2) Datos tecnicos/restantes: medidas de paso, peso, piernas y observaciones.
-- No cambia calculos, precios, items, aprobaciones ni guardado.
+Copiar la carpeta cotizador-front sobre la raíz del repo.
 
-Uso:
-1) Descomprimir en la raiz del repositorio.
-2) Reemplazar archivos cuando el sistema lo pida.
-3) Reiniciar el backend para tomar el cambio.
+Incluye:
+- cotizador-front/src/pages/QuoteDetailPage/index.jsx
+
+Qué cambia:
+- Se elimina el campo "Productos clave" de la tarjeta "Datos técnicos y comerciales para aprobar".
+- Se agrega/asegura el campo "Cantidad de parantes".
+- Si el presupuesto no trae una cantidad guardada, se calcula la sugerida igual que en el cotizador: ancho completo si está el producto de parantes especiales, o ancho - 0.80 m si no lo está.
+
+No modifica aprobaciones, cálculo de precios, PDF, Odoo ni mediciones.
