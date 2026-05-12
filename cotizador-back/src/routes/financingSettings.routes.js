@@ -63,8 +63,8 @@ function parseTacaTacaPaymentMethod(paymentMethod) {
 }
 function cleanPercent(value) {
   const n = Number(String(value ?? "").replace(",", "."));
-  if (!Number.isFinite(n) || n < 0) return 0;
-  return round2(n);
+  if (!Number.isFinite(n)) return 0;
+  return round2(Math.max(-100, n));
 }
 
 let financingRateFieldCache = undefined;
@@ -239,7 +239,7 @@ async function resolveEffectivePreview(odoo, paymentMethod) {
     return {
       ok: true,
       ...odooPreview,
-      applies_financing: percent > 0,
+      applies_financing: percent !== 0,
       percent,
       payment_method: method,
       source: "config",
@@ -270,7 +270,7 @@ async function buildMethodsResponse(odoo) {
       has_override: !!row,
       source: row ? "config" : "odoo",
       odoo_percent: cleanPercent(odooPreview.percent),
-      applies_financing: cleanPercent(percent) > 0,
+      applies_financing: cleanPercent(percent) !== 0,
       card_type: odooPreview.card_type,
       installments: odooPreview.installments,
       plan_id: odooPreview.plan_id,

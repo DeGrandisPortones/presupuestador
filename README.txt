@@ -17,3 +17,10 @@ Impacto:
 - El menu Financiamiento lo ven superusuario y Enc. Comercial.
 - Los porcentajes guardados aplican al subtotal, total y precios finales por item.
 - Las formas con 0% quedan disponibles igual, sin recargo.
+
+
+Actualizacion descuentos:
+- En Financiamiento ahora se aceptan valores negativos.
+- Ejemplo: para EFECTIVO - TRANSFERENCIA cargar -5 aplica 5% de descuento.
+- El descuento se refleja en subtotal, total, PDF y precios finales por item.
+- Se valida que el porcentaje no sea menor a -100%.

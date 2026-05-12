@@ -22,9 +22,9 @@ export default function LinesTable({ financingPercent = null }) {
   return (
     <div>
       <h3 style={{ marginTop: 0 }}>Ítems</h3>
-      {effectiveFinancingPercent > 0 ? (
+      {effectiveFinancingPercent !== 0 ? (
         <div className="muted" style={{ marginBottom: 8 }}>
-          Los precios finales por ítem incluyen el recargo de financiamiento ({effectiveFinancingPercent.toFixed(2)}%).
+          Los precios finales por ítem incluyen {effectiveFinancingPercent > 0 ? "el recargo" : "el descuento"} de financiamiento ({Math.abs(effectiveFinancingPercent).toFixed(2)}%).
         </div>
       ) : null}
       <table>

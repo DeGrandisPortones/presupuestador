@@ -11,10 +11,18 @@ const DEFAULT_FINANCING_METHODS = PAYMENT_METHODS;
 
 function normalizePercent(value) {
   const raw = String(value ?? "").replace(",", ".").trim();
-  if (!raw) return "";
+  if (!raw || raw === "-" || raw === "." || raw === "-.") return "";
   const n = Number(raw);
   if (!Number.isFinite(n)) return raw;
-  return String(Math.max(0, Math.round(n * 10000) / 10000));
+  return String(Math.round(n * 10000) / 10000);
+}
+function sanitizePercentInput(value) {
+  const rawInput = String(value ?? "").replace(",", ".");
+  const hasNegativeSign = rawInput.trim().startsWith("-");
+  const unsigned = rawInput.replace(/-/g, "").replace(/[^0-9.]/g, "");
+  const parts = unsigned.split(".");
+  const normalizedUnsigned = parts.length > 1 ? `${parts[0]}.${parts.slice(1).join("")}` : parts[0];
+  return `${hasNegativeSign ? "-" : ""}${normalizedUnsigned}`;
 }
 
 function methodKey(value) {
@@ -121,7 +129,7 @@ export default function FinanciamientoPage() {
   const invalidRows = useMemo(() => rows.filter((row) => {
     const key = methodKey(row.payment_method);
     const n = Number(String(row.percent || "").replace(",", "."));
-    return !key || duplicateKeys.has(key) || row.percent !== "" && (!Number.isFinite(n) || n < 0);
+    return !key || duplicateKeys.has(key) || row.percent !== "" && (!Number.isFinite(n) || n < -100);
   }), [rows, duplicateKeys]);
 
   const saveM = useMutation({
@@ -185,7 +193,7 @@ export default function FinanciamientoPage() {
       <div className="card">
         <h2 style={{ margin: 0 }}>Financiamiento</h2>
         <div className="muted" style={{ marginTop: 6 }}>
-          Configurá el porcentaje de recargo por forma de pago y agregá nuevos tipos de financiamiento para que aparezcan en el cotizador.
+          Configurá el porcentaje de recargo o descuento por forma de pago. Usá valores negativos para descuentos, por ejemplo -5 para efectivo / transferencia.
         </div>
       </div>
 
@@ -197,7 +205,7 @@ export default function FinanciamientoPage() {
         {!!rows.length ? (
           <>
             <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap", alignItems: "center", marginBottom: 12 }}>
-              <div className="muted">Las formas agregadas manualmente quedan disponibles en el selector de Forma de pago.</div>
+              <div className="muted">Las formas agregadas manualmente quedan disponibles en el selector de Forma de pago. Para descuentos, cargá porcentaje negativo.</div>
               <Button variant="secondary" onClick={addCustomRow} disabled={saveM.isPending}>Agregar tipo de financiamiento</Button>
             </div>
 
@@ -205,7 +213,7 @@ export default function FinanciamientoPage() {
               <thead>
                 <tr>
                   <th>Forma de pago</th>
-                  <th className="right">Recargo (%)</th>
+                  <th className="right">Recargo / descuento (%)</th>
                   <th>Activo</th>
                   <th className="right">Referencia Odoo</th>
                   <th></th>
@@ -217,7 +225,7 @@ export default function FinanciamientoPage() {
                   const hasDuplicate = !!key && duplicateKeys.has(key);
                   const missingName = !key;
                   const percentNumber = Number(String(row.percent || "").replace(",", "."));
-                  const invalidPercent = row.percent !== "" && (!Number.isFinite(percentNumber) || percentNumber < 0);
+                  const invalidPercent = row.percent !== "" && (!Number.isFinite(percentNumber) || percentNumber < -100);
                   return (
                     <tr key={`${row.payment_method_key || "new"}-${index}`}>
                       <td>
@@ -243,7 +251,7 @@ export default function FinanciamientoPage() {
                           type="text"
                           inputMode="decimal"
                           value={String(row.percent ?? "")}
-                          onChange={(v) => updateRow(index, { percent: v.replace(/[^0-9.,]/g, "") })}
+                          onChange={(v) => updateRow(index, { percent: sanitizePercentInput(v) })}
                           onBlur={(e) => updateRow(index, { percent: normalizePercent(e?.target?.value) })}
                           style={{ width: 120, textAlign: "right", borderColor: invalidPercent ? "#d93025" : undefined }}
                         />
@@ -274,7 +282,7 @@ export default function FinanciamientoPage() {
                 {saveM.isPending ? "Guardando..." : "Guardar financiamiento"}
               </Button>
             </div>
-            {!!invalidRows.length ? <div style={{ color: "#d93025", fontSize: 13, marginTop: 10 }}>Revisá nombres duplicados, nombres vacíos o porcentajes inválidos antes de guardar.</div> : null}
+            {!!invalidRows.length ? <div style={{ color: "#d93025", fontSize: 13, marginTop: 10 }}>Revisá nombres duplicados, nombres vacíos o porcentajes inválidos antes de guardar. El descuento máximo permitido es -100%.</div> : null}
           </>
         ) : (!q.isLoading ? (
           <>
