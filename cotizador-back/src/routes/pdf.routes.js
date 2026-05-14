@@ -36,9 +36,17 @@ function pick(obj, pathValue, fallback = "") {
     return fallback;
   }
 }
-function getLogoPath() {
+function getCatalogKindFromPayload(payload) {
+  return safeStr(payload?.catalog_kind || payload?.payload?.catalog_kind || "porton").toLowerCase();
+}
+function getLogoPath(payload = null) {
   const __filename = fileURLToPath(import.meta.url);
   const __dirname = path.dirname(__filename);
+  const catalogKind = getCatalogKindFromPayload(payload);
+  if (catalogKind === "ipanel") {
+    const ipanelLogo = path.join(__dirname, "../assets/logo-ipanel.png");
+    if (fs.existsSync(ipanelLogo)) return ipanelLogo;
+  }
   return path.join(__dirname, "../assets/logo-degrandis.png");
 }
 function formatMoney(value) {
@@ -288,7 +296,7 @@ function drawPageFrame(doc, margin, pageNo, pageCount, footerLeft = "De Grandis 
     .restore();
 }
 function drawHeader(doc, { title, payload, margin, innerW, dateStr, validStr }) {
-  const logoPath = getLogoPath();
+  const logoPath = getLogoPath(payload);
   const headerH = 64;
   const quoteNo = getQuoteNumber(payload);
   doc.save().strokeColor("#111827").lineWidth(1).moveTo(margin, margin + headerH).lineTo(margin + innerW, margin + headerH).stroke().restore();

@@ -1,13 +1,14 @@
-Cambio: tarjeta de aprobación comercial/técnica
+Cambio: logo Ipanel en PDFs de Ipanel
 
-Copiar la carpeta cotizador-front sobre la raíz del repo.
+Copiar el contenido de este ZIP sobre la raiz del repo.
 
-Incluye:
-- cotizador-front/src/pages/QuoteDetailPage/index.jsx
+Archivos incluidos:
+- cotizador-back/src/routes/pdf.routes.js
+- cotizador-back/src/assets/logo-ipanel.png
 
-Qué cambia:
-- Se elimina el campo "Productos clave" de la tarjeta "Datos técnicos y comerciales para aprobar".
-- Se agrega/asegura el campo "Cantidad de parantes".
-- Si el presupuesto no trae una cantidad guardada, se calcula la sugerida igual que en el cotizador: ancho completo si está el producto de parantes especiales, o ancho - 0.80 m si no lo está.
+Que hace:
+- En PDFs de presupuesto/proforma, si el presupuesto viene con catalog_kind = "ipanel", el encabezado usa logo-ipanel.png.
+- Para portones y otros sigue usando logo-degrandis.png.
+- La planilla de medicion sigue usando De Grandis, sin cambios.
 
-No modifica aprobaciones, cálculo de precios, PDF, Odoo ni mediciones.
+No toca precios, items, financiamiento, aprobaciones, medicion ni Odoo.
