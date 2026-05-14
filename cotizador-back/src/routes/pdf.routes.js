@@ -49,6 +49,18 @@ function getLogoPath(payload = null) {
   }
   return path.join(__dirname, "../assets/logo-degrandis.png");
 }
+function getLogoDrawOptions(payload = null) {
+  const catalogKind = getCatalogKindFromPayload(payload);
+  if (catalogKind === "ipanel") {
+    return { fit: [142, 48], align: "left", valign: "center" };
+  }
+  return { width: 180, height: 48, fit: [180, 48] };
+}
+function getPdfFooterLeft(payload = null, fallback = "De Grandis Portones") {
+  const catalogKind = getCatalogKindFromPayload(payload);
+  if (catalogKind === "ipanel") return "Ipanel";
+  return fallback;
+}
 function formatMoney(value) {
   const n = n2(value);
   try {
@@ -301,7 +313,7 @@ function drawHeader(doc, { title, payload, margin, innerW, dateStr, validStr }) 
   const quoteNo = getQuoteNumber(payload);
   doc.save().strokeColor("#111827").lineWidth(1).moveTo(margin, margin + headerH).lineTo(margin + innerW, margin + headerH).stroke().restore();
   if (fs.existsSync(logoPath)) {
-    doc.image(logoPath, margin + 8, margin + 8, { width: 180, height: 48, fit: [180, 48] });
+    doc.image(logoPath, margin + 8, margin + 8, getLogoDrawOptions(payload));
   }
   doc.font("Helvetica-Bold").fillColor("#111827").fontSize(16).text(title, margin, margin + 18, { width: innerW, align: "center" });
   doc.font("Helvetica-Bold").fontSize(11).text(`N\u00daMERO ${quoteNo || "-"}`, margin, margin + 16, { width: innerW - 10, align: "right" });
@@ -467,7 +479,7 @@ async function renderPdf({ title, payload, useBasePrice, odoo }) {
   const range = doc.bufferedPageRange();
   for (let i = range.start; i < range.start + range.count; i += 1) {
     doc.switchToPage(i);
-    drawPageFrame(doc, margin, i + 1, range.count);
+    drawPageFrame(doc, margin, i + 1, range.count, getPdfFooterLeft(payload));
   }
 
   doc.end();

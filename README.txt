@@ -1,14 +1,14 @@
-Cambio: logo Ipanel en PDFs de Ipanel
+ZIP directo para copiar y pegar en la raiz del repo.
 
-Copiar el contenido de este ZIP sobre la raiz del repo.
-
-Archivos incluidos:
+Incluye:
 - cotizador-back/src/routes/pdf.routes.js
 - cotizador-back/src/assets/logo-ipanel.png
 
-Que hace:
-- En PDFs de presupuesto/proforma, si el presupuesto viene con catalog_kind = "ipanel", el encabezado usa logo-ipanel.png.
-- Para portones y otros sigue usando logo-degrandis.png.
-- La planilla de medicion sigue usando De Grandis, sin cambios.
+Cambio:
+- En PDFs de Ipanel, usa el logo Ipanel enviado por el usuario.
+- El logo fue recortado al contenido de la marca para que no quede deformado ni demasiado chico por el fondo negro del PNG original.
+- En PDFs de portones y otros sigue usando el logo De Grandis actual.
+- No toca precios, items, financiamiento, medicion, aprobaciones ni Odoo.
 
-No toca precios, items, financiamiento, aprobaciones, medicion ni Odoo.
+Validacion:
+- node --check sobre pdf.routes.js
