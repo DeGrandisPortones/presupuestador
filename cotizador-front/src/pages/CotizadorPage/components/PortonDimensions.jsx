@@ -760,19 +760,36 @@ function ParantesSketchModal({ open, onClose, orientation, parantesCount, baseDi
             const markerCenter = cappedPos + paranteSize / 2;
             const markerNumber = marker.index + 1;
             const distanceText = Number.isFinite(marker.distance) && marker.distance > 0 ? `${formatNumberForInput(marker.distance)} mm` : "repartido";
+            const markerStartMm = Math.max(0, Number(marker.position || 0));
+            const markerEndMm = Math.max(markerStartMm, markerStartMm + Number(marker.widthMm || tube));
+            const markerStartText = `${formatNumberForInput(markerStartMm)} mm`;
+            const markerEndText = `${formatNumberForInput(markerEndMm)} mm`;
             if (isHorizontal) {
+              const tickYStart = cappedPos;
+              const tickYEnd = cappedPos + paranteSize;
+              const tickXBase = crossStart + crossSize;
               return (
                 <g key={`parante-${marker.index}`}>
                   <rect x={crossStart} y={cappedPos} width={crossSize} height={paranteSize} rx="2" fill="#2563eb" />
+                  <line x1={tickXBase + 2} y1={tickYStart} x2={tickXBase + 9} y2={tickYStart} stroke="#dc2626" strokeWidth="3" strokeLinecap="round" />
+                  <line x1={tickXBase + 2} y1={tickYEnd} x2={tickXBase + 9} y2={tickYEnd} stroke="#dc2626" strokeWidth="3" strokeLinecap="round" />
+                  <text x={tickXBase + 14} y={tickYStart + 4} fontSize="11" fontWeight="700" fill="#dc2626">{markerStartText}</text>
+                  <text x={tickXBase + 14} y={tickYEnd + 4} fontSize="11" fontWeight="700" fill="#dc2626">{markerEndText}</text>
                   <circle cx={crossStart + crossSize + 18} cy={markerCenter} r="11" fill="#2563eb" />
                   <text x={crossStart + crossSize + 18} y={markerCenter + 4} textAnchor="middle" fontSize="12" fontWeight="700" fill="#fff">{markerNumber}</text>
                   <text x={crossStart + crossSize + 34} y={Math.max(rectY + 14, Math.min(rectY + rectH - 8, markerCenter + 4))} fontSize="13" fill="#0f172a">{distanceText}</text>
                 </g>
               );
             }
+            const tickXStart = cappedPos;
+            const tickXEnd = cappedPos + paranteSize;
             return (
               <g key={`parante-${marker.index}`}>
                 <rect x={cappedPos} y={crossStart} width={paranteSize} height={crossSize} rx="2" fill="#2563eb" />
+                <line x1={tickXStart} y1={crossStart - 8} x2={tickXStart} y2={crossStart - 1} stroke="#dc2626" strokeWidth="3" strokeLinecap="round" />
+                <line x1={tickXEnd} y1={crossStart + crossSize + 1} x2={tickXEnd} y2={crossStart + crossSize + 8} stroke="#dc2626" strokeWidth="3" strokeLinecap="round" />
+                <text x={tickXStart} y={crossStart - 12} fontSize="11" fontWeight="700" fill="#dc2626" textAnchor="middle">{markerStartText}</text>
+                <text x={tickXEnd} y={crossStart + crossSize + 34} fontSize="11" fontWeight="700" fill="#dc2626" textAnchor="middle">{markerEndText}</text>
                 <circle cx={markerCenter} cy={crossStart + crossSize + 18} r="11" fill="#2563eb" />
                 <text x={markerCenter} y={crossStart + crossSize + 22} textAnchor="middle" fontSize="12" fontWeight="700" fill="#fff">{markerNumber}</text>
                 <text x={markerCenter} y={rectY + rectH + 48} fontSize="13" fill="#0f172a" textAnchor="middle">{distanceText}</text>
@@ -1092,7 +1109,7 @@ export default function PortonDimensions({ kind = "porton" }) {
             )
           : "En horizontal podes ajustar manualmente la cantidad de parantes.";
   const orientationReadOnlyHelper = parantesFieldsReadOnly
-    ? `Solo lectura. Regla: ${nonAptoConfiguredOrientation === "horizontal" ? "Horizontal" : "Verticales"}. IDs detectados: ${nonAptoOrientationDebug.selectedIds.length ? nonAptoOrientationDebug.selectedIds.join(", ") : "sin IDs"}. Horizontal configurado: ${nonAptoOrientationDebug.configuredHorizontal || "-"}. Vertical configurado: ${nonAptoOrientationDebug.configuredVertical || "-"}.`
+    ? "Solo lectura. Definida automaticamente por reglas tecnicas segun los IDs del presupuesto."
     : "";
 
   function setParantesDistanceAt(index, value) {
