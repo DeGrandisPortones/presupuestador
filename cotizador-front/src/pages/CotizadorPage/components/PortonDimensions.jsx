@@ -387,8 +387,17 @@ function hasDoorForParantes(lines, params) {
     ...parseProductCombinationRules(params?.puerta_product_ids),
     ...parseProductCombinationRules(params?.con_puerta_product_ids),
     ...parseProductCombinationRules(params?.porton_door_product_ids),
+    ...parseProductCombinationRules(params?.parantes_right_door_product_ids),
+    ...parseProductCombinationRules(params?.right_door_product_ids),
+    ...parseProductCombinationRules(params?.puerta_derecha_product_ids),
+    ...parseProductCombinationRules(params?.door_right_product_ids),
   ];
-  return doorRules.some((rule) => productRuleMatches(rule, lines));
+  if (doorRules.some((rule) => productRuleMatches(rule, lines))) return true;
+  const text = (Array.isArray(lines) ? lines : [])
+    .map((line) => [line?.name, line?.raw_name, line?.display_name, line?.alias, line?.code].filter(Boolean).join(" "))
+    .map(normalizeSearchText)
+    .join(" | ");
+  return text.includes("puerta ");
 }
 function hasRightDoorForParantes(lines, params) {
   const rightDoorRules = [
@@ -729,11 +738,12 @@ function ParantesSketchModal({ open, onClose, orientation, parantesCount, baseDi
   const isHorizontal = orientation === "horizontal";
   const tube = Math.max(0, Number(tubeDiscountMm || 0) || DEFAULT_PARANTES_TUBE_DISCOUNT_MM);
   const effectiveSpan = Math.max(1, getParantesEffectiveSpanMm(baseDimensionMm, tube));
+  const drawingSpan = Math.max(1, Number(baseDimensionMm || 0) || effectiveSpan);
   const markers = buildSketchParanteMarkers({ distances, parantesCount, baseDimensionMm, tubeDiscountMm: tube });
   const reverseAxis = !isHorizontal && hasDoor && isRightDoor;
-  const { displayed: displayMarkers, segments: dimensionSegments } = buildDimensionSegments(markers, effectiveSpan, reverseAxis);
+  const { displayed: displayMarkers, segments: dimensionSegments } = buildDimensionSegments(markers, drawingSpan, reverseAxis);
   const finalLateralGapMm = getFinalLateralGapMm(markers, baseDimensionMm, tube);
-  const effectivePortonWidthMm = Math.max(1, getParantesEffectiveSpanMm(portonWidthMm, tube));
+  const effectivePortonWidthMm = Math.max(1, Number(portonWidthMm || 0) || getParantesEffectiveSpanMm(portonWidthMm, tube));
   const horizontalDoorBoundaryMm = hasDoor
     ? Math.max(0, Math.min(effectivePortonWidthMm, isRightDoor ? (effectivePortonWidthMm - Math.max(0, Number(doorFirstDistanceMm || 0))) : Math.max(0, Number(doorFirstDistanceMm || 0))))
     : 0;
@@ -744,7 +754,7 @@ function ParantesSketchModal({ open, onClose, orientation, parantesCount, baseDi
   const rectW = 560;
   const rectH = 220;
   const axisLength = isHorizontal ? rectH : rectW;
-  const scale = axisLength / effectiveSpan;
+  const scale = axisLength / drawingSpan;
   const axisStart = isHorizontal ? rectY : rectX;
   const crossStart = isHorizontal ? rectX : rectY;
   const crossSize = isHorizontal ? rectW : rectH;
@@ -781,7 +791,7 @@ function ParantesSketchModal({ open, onClose, orientation, parantesCount, baseDi
           <div>
             <div style={{ fontWeight: 900, fontSize: 18 }}>Esquema de parantes</div>
             <div className="muted">
-              Orientacion {isHorizontal ? "horizontal" : "vertical"}{reverseAxis ? " (lectura de derecha a izquierda)" : ""} - {parantesCount || 0} parantes internos + 2 laterales - base {formatMm(baseDimensionMm)} - ancho cano {formatMm(tube)} - luz para repartir {formatMm(effectiveSpan)}
+              Orientacion {isHorizontal ? "horizontal" : "vertical"}{reverseAxis ? " (lectura de derecha a izquierda)" : ""} - {parantesCount || 0} parantes internos + 2 laterales - base exterior {formatMm(baseDimensionMm)} - ancho cano {formatMm(tube)} - luz para repartir {formatMm(effectiveSpan)}
             </div>
           </div>
           <button type="button" onClick={onClose} style={{ border: "1px solid #ddd", borderRadius: 10, padding: "8px 12px", background: "#fff", cursor: "pointer" }}>
@@ -795,15 +805,15 @@ function ParantesSketchModal({ open, onClose, orientation, parantesCount, baseDi
           <line x1={rectX + rectW / 2} y1={rectY} x2={rectX + rectW / 2} y2={rectY + rectH} stroke="#e2e8f0" strokeWidth="1" />
           {isHorizontal ? (
             <>
-              <line x1={rectX} y1={rectY} x2={rectX + rectW} y2={rectY} stroke="#0f172a" strokeWidth="7" />
-              <line x1={rectX} y1={rectY + rectH} x2={rectX + rectW} y2={rectY + rectH} stroke="#0f172a" strokeWidth="7" />
+              <rect x={rectX} y={rectY} width={rectW} height="12" rx="2" fill="#0f172a" />
+              <rect x={rectX} y={rectY + rectH - 12} width={rectW} height="12" rx="2" fill="#0f172a" />
               <text x={rectX - 8} y={rectY + 5} textAnchor="end" fontSize="12" fontWeight="700" fill="#0f172a">Lateral</text>
               <text x={rectX - 8} y={rectY + rectH + 5} textAnchor="end" fontSize="12" fontWeight="700" fill="#0f172a">Lateral</text>
             </>
           ) : (
             <>
-              <line x1={rectX} y1={rectY} x2={rectX} y2={rectY + rectH} stroke="#0f172a" strokeWidth="7" />
-              <line x1={rectX + rectW} y1={rectY} x2={rectX + rectW} y2={rectY + rectH} stroke="#0f172a" strokeWidth="7" />
+              <rect x={rectX} y={rectY} width="12" height={rectH} rx="2" fill="#0f172a" />
+              <rect x={rectX + rectW - 12} y={rectY} width="12" height={rectH} rx="2" fill="#0f172a" />
               <text x={rectX} y={rectY - 12} textAnchor="middle" fontSize="12" fontWeight="700" fill="#0f172a">Lateral</text>
               <text x={rectX + rectW} y={rectY - 12} textAnchor="middle" fontSize="12" fontWeight="700" fill="#0f172a">Lateral</text>
             </>
@@ -863,7 +873,7 @@ function ParantesSketchModal({ open, onClose, orientation, parantesCount, baseDi
           ) : (
             <g>
               {dimensionSegments.map((segment) => {
-                const toX = (mm) => rectX + (reverseAxis ? (effectiveSpan - mm) : mm) * scale;
+                const toX = (mm) => rectX + (reverseAxis ? (drawingSpan - mm) : mm) * scale;
                 const x1 = toX(segment.startMm);
                 const x2 = toX(segment.endMm);
                 const midX = (x1 + x2) / 2;
@@ -900,7 +910,7 @@ function ParantesSketchModal({ open, onClose, orientation, parantesCount, baseDi
           ))}
           <div style={{ border: "1px solid #e5e7eb", borderRadius: 10, padding: 10 }}>
             <div className="muted">Parante lateral final</div>
-            <div style={{ fontWeight: 800 }}>{formatMm(effectiveSpan) || "-"}</div>
+            <div style={{ fontWeight: 800 }}>{formatMm(drawingSpan) || "-"}</div>
             <div className="muted" style={{ marginTop: 4 }}>Base total: {formatMm(baseDimensionMm) || "-"}</div>
             {finalLateralGapMm !== null ? (
               <div className="muted" style={{ marginTop: 4 }}>

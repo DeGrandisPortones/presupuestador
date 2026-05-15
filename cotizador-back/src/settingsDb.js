@@ -136,6 +136,22 @@ const SURFACE_PARAM_ALIASES = {
   parantes_tube_discount_mm: ["parantes_tube_discount_mm", "parantes_cano_discount_mm", "descuento_cano_parantes_mm", "descuento_tubo_parantes_mm", "parantes_tube_width_mm"],
 };
 
+const IGNORED_SURFACE_PARAM_KEYS = new Set([
+  "kind",
+  "rules",
+  "surface_params",
+  "surface_parameters",
+  "surface_calc_params",
+  "measurement_surface_params",
+  "parantes_config",
+  "surface_final_formula",
+  "surface_helper_rules",
+  "section_dependency_rules",
+  "system_derivation_rules",
+  "initial_section_id",
+  "catalog_rules",
+]);
+
 function pickFirstNonEmpty(source = {}, keys = []) {
   for (const key of keys) {
     const value = source?.[key];
@@ -147,6 +163,8 @@ function normalizeSurfaceCalcParams(raw = {}) {
   const out = {};
   const source = raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {};
   for (const [key, value] of Object.entries(source)) {
+    if (IGNORED_SURFACE_PARAM_KEYS.has(key)) continue;
+    if (value && typeof value === "object" && !Array.isArray(value) && key !== "apto_revestir_kg_m2_rules") continue;
     if (["inside_vano_product_ids", "behind_vano_product_ids", "apto_para_revestir_product_ids", "sin_revestimiento_product_ids"].includes(key)) {
       out[key] = normalizeIdList(value);
       continue;
