@@ -54,3 +54,9 @@ Formato para IDs/combinaciones:
 - Varias combinaciones: 123,456;789,111
 
 El sistema evalua cada grupo separado por punto y coma o salto de linea. Dentro de cada grupo, todos los IDs deben estar presentes.
+
+Correccion adicional:
+
+- Se agrego boton Guardar parametros arriba del bloque de parametros.
+- Se agrego boton Guardar configuracion de parantes dentro del bloque de orientacion para NO apto.
+- Ambos botones guardan las mismas reglas tecnicas, incluyendo orientacion, puerta y distancia primer parante.

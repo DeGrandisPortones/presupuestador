@@ -610,8 +610,15 @@ export default function SuperuserMeasurementRulesPage() {
 
       <div className="spacer" />
       <div className="card" style={{ background: "#fafafa" }}>
-        <h2 style={{ marginTop: 0 }}>Parámetros de cálculo de piernas, superficie y parantes</h2>
-        <div className="muted" style={{ marginBottom: 10 }}>Estos parámetros se guardan dentro de reglas técnicas y son consumidos por el presupuestador.</div>
+        <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "flex-start" }}>
+          <div>
+            <h2 style={{ marginTop: 0, marginBottom: 6 }}>Parámetros de cálculo de piernas, superficie y parantes</h2>
+            <div className="muted" style={{ marginBottom: 10 }}>Estos parámetros se guardan dentro de reglas técnicas y son consumidos por el presupuestador.</div>
+          </div>
+          <Button variant="primary" onClick={saveSurfaceConfig} disabled={savingSurfaceConfig || savingRules}>
+            {savingSurfaceConfig ? "Guardando..." : "Guardar parámetros"}
+          </Button>
+        </div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 10 }}>
           <ParamInput label="ID producto Dentro del vano" value={surfaceParameters.installation_inside_product_id} onChange={(v) => setSurfaceParameters((prev) => ({ ...prev, installation_inside_product_id: v }))} />
           <ParamInput label="ID producto Detrás del vano" value={surfaceParameters.installation_behind_product_id} onChange={(v) => setSurfaceParameters((prev) => ({ ...prev, installation_behind_product_id: v }))} />
@@ -646,6 +653,10 @@ export default function SuperuserMeasurementRulesPage() {
             <ParamInput label="IDs/combinaciones que indican portón con puerta" textarea value={surfaceParameters.parantes_door_product_ids} onChange={(v) => setSurfaceParameters((prev) => ({ ...prev, parantes_door_product_ids: v }))} helper="Cuando matchea y el portón no es apto para revestir, deja el primer parante a 800 mm por defecto y reparte el resto." />
             <ParamInput label="Distancia primer parante con puerta (mm)" value={surfaceParameters.parantes_door_first_distance_mm} onChange={(v) => setSurfaceParameters((prev) => ({ ...prev, parantes_door_first_distance_mm: v }))} />
           </div>
+          <div className="spacer" />
+          <Button variant="primary" onClick={saveSurfaceConfig} disabled={savingSurfaceConfig || savingRules}>
+            {savingSurfaceConfig ? "Guardando..." : "Guardar configuración de parantes"}
+          </Button>
         </div>
 
         <div className="spacer" />
