@@ -116,15 +116,43 @@ function parseMmNumber(value) {
 function normalizeDecimalMmInput(v) {
   return String(v ?? "").replace(/[^0-9.,]/g, "");
 }
-function getBudgetProductIdSetFromLines(lines) {
+const LINE_ID_KEYS_FOR_PARANTES = [
+  "product_id",
+  "id",
+  "presupuestador_id",
+  "presupuestador_product_id",
+  "productId",
+  "productID",
+  "catalog_product_id",
+  "catalogProductId",
+  "odoo_external_id",
+  "odoo_id",
+  "odoo_template_id",
+  "odoo_variant_id",
+];
+
+function collectLineProductIdsForParantes(line) {
+  const ids = [];
+  for (const key of LINE_ID_KEYS_FOR_PARANTES) {
+    const n = Number(line?.[key] || 0);
+    if (Number.isFinite(n) && n > 0) ids.push(n);
+  }
+  const lineKey = String(line?.line_key || line?.key || "").trim();
+  if (lineKey) {
+    const firstToken = Number((lineKey.match(/^\d+/) || [])[0] || 0);
+    if (Number.isFinite(firstToken) && firstToken > 0) ids.push(firstToken);
+  }
+  return ids;
+}
+function getBudgetProductIdsFromLines(lines) {
   const ids = [];
   for (const line of Array.isArray(lines) ? lines : []) {
-    for (const key of ["product_id", "id", "odoo_external_id", "odoo_id", "odoo_template_id", "odoo_variant_id"]) {
-      const n = Number(line?.[key] || 0);
-      if (Number.isFinite(n) && n > 0) ids.push(n);
-    }
+    ids.push(...collectLineProductIdsForParantes(line));
   }
-  return new Set(ids);
+  return [...new Set(ids.map((id) => Number(id)).filter((id) => Number.isFinite(id) && id > 0))];
+}
+function getBudgetProductIdSetFromLines(lines) {
+  return new Set(getBudgetProductIdsFromLines(lines));
 }
 function detectInstallationModeByProducts(lines, params) {
   const ids = getBudgetProductIdSetFromLines(lines);
@@ -361,6 +389,34 @@ function hasDoorForParantes(lines, params) {
     ...parseProductCombinationRules(params?.porton_door_product_ids),
   ];
   return doorRules.some((rule) => productRuleMatches(rule, lines));
+}
+function normalizeSearchText(value) {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+}
+function resolveOrientationFromLineNames(lines) {
+  const text = (Array.isArray(lines) ? lines : [])
+    .map((line) => [line?.name, line?.raw_name, line?.display_name, line?.alias, line?.code].filter(Boolean).join(" "))
+    .map(normalizeSearchText)
+    .join(" | ");
+  if (!text) return "";
+  if (text.includes("orientacion horizontal") || text.includes("orientacion de los parantes horizontal")) return "horizontal";
+  if (text.includes("orientacion vertical") || text.includes("orientacion de los parantes vertical")) return "verticales";
+  return "";
+}
+function resolveNonAptoParantesOrientationDebug(lines, params) {
+  const selectedIds = getBudgetProductIdsFromLines(lines);
+  const configuredHorizontal = String(params?.non_apto_parantes_horizontal_product_ids || params?.parantes_horizontal_product_ids || params?.horizontal_parantes_product_ids || "").trim();
+  const configuredVertical = String(params?.non_apto_parantes_vertical_product_ids || params?.parantes_vertical_product_ids || params?.vertical_parantes_product_ids || "").trim();
+  const orientation = resolveNonAptoParantesOrientation(lines, params) || resolveOrientationFromLineNames(lines);
+  return {
+    selectedIds,
+    orientation,
+    configuredHorizontal,
+    configuredVertical,
+  };
 }
 function getDoorFirstParanteDistanceMm(params) {
   return getNumberParam(
@@ -772,8 +828,10 @@ export default function PortonDimensions({ kind = "porton" }) {
 
   const rulesQ = useQuery({
     queryKey: ["technical-rules-dimensions-preview"],
-    queryFn: adminGetTechnicalMeasurementRules,
-    staleTime: 60 * 1000,
+    queryFn: () => adminGetTechnicalMeasurementRules("porton"),
+    staleTime: 0,
+    refetchOnMount: "always",
+    refetchOnWindowFocus: true,
     enabled: isPorton,
   });
 
@@ -822,10 +880,11 @@ export default function PortonDimensions({ kind = "porton" }) {
   );
   const aptoParaRevestir = isAptoDerivedType(portonType);
   const isNonAptoPorton = isPorton && !aptoParaRevestir;
-  const nonAptoConfiguredOrientation = useMemo(
-    () => isNonAptoPorton ? resolveNonAptoParantesOrientation(lines, params) : "",
+  const nonAptoOrientationDebug = useMemo(
+    () => isNonAptoPorton ? resolveNonAptoParantesOrientationDebug(lines, params) : { selectedIds: [], orientation: "", configuredHorizontal: "", configuredVertical: "" },
     [isNonAptoPorton, lines, params],
   );
+  const nonAptoConfiguredOrientation = nonAptoOrientationDebug.orientation || "";
   const effectiveParantesOrientation = isNonAptoPorton && nonAptoConfiguredOrientation
     ? nonAptoConfiguredOrientation
     : orientation;
@@ -1032,6 +1091,9 @@ export default function PortonDimensions({ kind = "porton" }) {
                 : "Se sugiere automaticamente restando 0.80 m al ancho. Si queres, podes cambiar el valor manualmente."
             )
           : "En horizontal podes ajustar manualmente la cantidad de parantes.";
+  const orientationReadOnlyHelper = parantesFieldsReadOnly
+    ? `Solo lectura. Regla: ${nonAptoConfiguredOrientation === "horizontal" ? "Horizontal" : "Verticales"}. IDs detectados: ${nonAptoOrientationDebug.selectedIds.length ? nonAptoOrientationDebug.selectedIds.join(", ") : "sin IDs"}. Horizontal configurado: ${nonAptoOrientationDebug.configuredHorizontal || "-"}. Vertical configurado: ${nonAptoOrientationDebug.configuredVertical || "-"}.`
+    : "";
 
   function setParantesDistanceAt(index, value) {
     if (parantesFieldsReadOnly) return;
@@ -1103,7 +1165,7 @@ export default function PortonDimensions({ kind = "porton" }) {
           <FieldBox label="Tipo / Sistema derivado"><Input value={portonType || ""} disabled placeholder="Se completa segun la combinacion de productos" style={disabledComputedInputStyle()} /></FieldBox>
           <FieldBox label="Kg por m2"><Input value={formatNumberForInput(preview.effectiveKgM2)} placeholder="Se calcula automaticamente segun el sistema" style={disabledComputedInputStyle()} disabled /></FieldBox>
           <FieldBox label="Superficie"><div style={{ fontWeight: 800, fontSize: 16, minHeight: 40, display: "flex", alignItems: "center", padding: "9px 12px", borderRadius: 10, border: "1px solid #d1d5db", background: "#f3f4f6", color: "#334155" }}>{area ? `${area.toFixed(2)} m2` : "-"}</div></FieldBox>
-          <FieldBox label="Orientacion de los parantes" helper={parantesFieldsReadOnly ? "Solo lectura. Definida automaticamente por reglas tecnicas segun los IDs del presupuesto." : ""}><select value={parantesFieldsReadOnly ? effectiveParantesOrientation : orientation} onChange={(e) => { if (!parantesFieldsReadOnly) setDimensions({ orientacion_parantes: e.target.value }); }} style={{ width: "100%", padding: "10px 12px", borderRadius: 8, border: "1px solid #ddd", background: parantesFieldsReadOnly ? "#f3f4f6" : "#fff", color: parantesFieldsReadOnly ? "#475569" : undefined }} disabled={parantesFieldsReadOnly}><option value="verticales">Verticales</option><option value="horizontal">Horizontal</option></select></FieldBox>
+          <FieldBox label="Orientacion de los parantes" helper={orientationReadOnlyHelper}><select value={parantesFieldsReadOnly ? effectiveParantesOrientation : orientation} onChange={(e) => { if (!parantesFieldsReadOnly) setDimensions({ orientacion_parantes: e.target.value }); }} style={{ width: "100%", padding: "10px 12px", borderRadius: 8, border: "1px solid #ddd", background: parantesFieldsReadOnly ? "#f3f4f6" : "#fff", color: parantesFieldsReadOnly ? "#475569" : undefined }} disabled={parantesFieldsReadOnly}><option value="verticales">Verticales</option><option value="horizontal">Horizontal</option></select></FieldBox>
           <FieldBox label="Cantidad de parantes" helper={parantesHelper}><Input type="text" inputMode="numeric" value={String(dimensions?.cantidad_parantes ?? "")} disabled={parantesFieldsReadOnly} onChange={(v) => { if (!parantesFieldsReadOnly) setDimensions({ cantidad_parantes: normalizeIntegerInput(v) }); }} onBlur={(e) => { if (!parantesFieldsReadOnly) setDimensions({ cantidad_parantes: normalizeIntegerInput(e?.target?.value) }); }} style={parantesFieldsReadOnly ? disabledComputedInputStyle() : { width: "100%" }} placeholder="Ej: 3" /></FieldBox>
           <FieldBox label="Distribucion de los parantes" helper={parantesFieldsReadOnly ? "Solo lectura. Para no aptos se usa repartido automaticamente." : ""}><select value={distribution} onChange={(e) => { if (!parantesFieldsReadOnly) setDimensions({ distribucion_parantes: e.target.value }); }} style={{ width: "100%", padding: "10px 12px", borderRadius: 8, border: "1px solid #ddd", background: parantesFieldsReadOnly ? "#f3f4f6" : "#fff", color: parantesFieldsReadOnly ? "#475569" : undefined }} disabled={parantesFieldsReadOnly}><option value="repartido">Repartido</option><option value="especial">Especial</option></select></FieldBox>
         </>) : null}
@@ -1141,7 +1203,7 @@ export default function PortonDimensions({ kind = "porton" }) {
               <div>
                 <div style={{ fontWeight: 900, marginBottom: 4 }}>Distancias dentro a dentro de parantes</div>
                 <div className="muted">
-                  Base usada: {orientation === "horizontal" ? "Alto" : "Ancho"} {formatMm(baseParantesDimensionMm) || "-"}. Descuento de cano desde reglas tecnicas: {formatMm(tubeDiscountMm)}.
+                  Base usada: {effectiveParantesOrientation === "horizontal" ? "Alto" : "Ancho"} {formatMm(baseParantesDimensionMm) || "-"}. Descuento de cano desde reglas tecnicas: {formatMm(tubeDiscountMm)}.
                 </div>
               </div>
             </div>
