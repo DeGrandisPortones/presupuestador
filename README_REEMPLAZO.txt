@@ -29,3 +29,9 @@ Correccion agregada en esta version:
   * Formula: ancho del porton - 10 mm - (parametro de pierna / 2).
 - El parametro de pierna usado es el mismo que define la tarjeta "Piernas estimadas".
 - Los calculos que en esta pantalla toman las Medidas de paso pasan a usar estos nuevos valores.
+
+Correccion agregada en esta version:
+- El esquema de hoja y parantes ahora usa como base las Medidas de paso, no el ancho/alto nominal del porton.
+- Si la orientacion es vertical, el esquema toma el ancho de paso.
+- Si la orientacion es horizontal, el esquema toma el alto de paso.
+- La tarjeta "Medidas de paso" ahora muestra el orden correcto: Ancho x Alto.

@@ -1037,8 +1037,11 @@ export default function PortonDimensions({ kind = "porton" }) {
   const parantesCount = getParantesCount(dimensions?.cantidad_parantes);
   const tubeDiscountMm = useMemo(() => getParantesTubeDiscountMm(params), [params]);
   const baseParantesDimensionMm = useMemo(
-    () => getBaseParantesDimensionMm({ orientation: effectiveParantesOrientation, widthM: width, heightM: height }),
-    [effectiveParantesOrientation, width, height],
+    () => {
+      if (effectiveParantesOrientation === "horizontal") return Math.max(0, Number(preview?.altoPasoMm || 0));
+      return Math.max(0, Number(preview?.anchoPasoMm || 0));
+    },
+    [effectiveParantesOrientation, preview?.altoPasoMm, preview?.anchoPasoMm],
   );
   const rawParantesDistances = dimensions?.distancias_parantes_mm ?? dimensions?.distancias_parantes ?? [];
   const firstParanteDistance = String(dimensions?.distancia_primer_parante_mm || normalizeDistanceList(rawParantesDistances)[0] || "");
@@ -1445,7 +1448,7 @@ export default function PortonDimensions({ kind = "porton" }) {
       {isPorton ? (<>
         <div className="spacer" />
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 10 }}>
-          <ComputedCard label="Medidas de paso" value={preview.altoPasoMm > 0 && preview.anchoPasoMm > 0 ? `${formatMetersFromMm(preview.altoPasoMm)} x ${formatMetersFromMm(preview.anchoPasoMm)}` : "-"} />
+          <ComputedCard label="Medidas de paso" value={preview.altoPasoMm > 0 && preview.anchoPasoMm > 0 ? `${formatMetersFromMm(preview.anchoPasoMm)} x ${formatMetersFromMm(preview.altoPasoMm)}` : "-"} />
           <ComputedCard label="Kg/m2 efectivo" value={preview.effectiveKgM2 > 0 ? `${preview.effectiveKgM2.toFixed(2)} kg/m2` : "-"} />
           <ComputedCard label="Peso estimado" value={preview.estimatedWeightKg > 0 ? `${preview.estimatedWeightKg.toFixed(2)} kg` : "-"} />
           <ComputedCard label="Piernas estimadas" value={preview.legsLabel} />
@@ -1466,8 +1469,8 @@ export default function PortonDimensions({ kind = "porton" }) {
         isRightDoor={hasDoorParantesConfig ? isRightDoorParantes : aptoReferenciaLado === "derecho"}
         doorFirstDistanceMm={aptoSimulaHorizontalReferencia ? (parseMmNumber(firstParanteDistance) || 800) : doorFirstParanteDistanceMm}
         doorReferenceLabel={aptoSimulaHorizontalReferencia ? "Primer parante fijo" : "Parante puerta"}
-        portonWidthMm={Math.round((Number(width || 0) || 0) * 1000)}
-        portonHeightMm={Math.round((Number(height || 0) || 0) * 1000)}
+        portonWidthMm={Math.max(0, Number(preview?.anchoPasoMm || 0))}
+        portonHeightMm={Math.max(0, Number(preview?.altoPasoMm || 0))}
       />
     </div>
   );
