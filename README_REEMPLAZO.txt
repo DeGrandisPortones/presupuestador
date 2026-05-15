@@ -23,8 +23,9 @@ Cambios incluidos:
 3) Ajusta el esquema de hoja y parantes:
    - El boton Ver esquema de parantes queda disponible para todos los portones, no solo aptos para revestir.
    - Los parantes laterales se dibujan siempre aparte y no se cuentan dentro de Cantidad de parantes.
-   - Si el usuario carga 5 parantes, el esquema muestra: lateral inicial + 5 parantes internos + lateral final.
-   - El final del porton ya no se toma como ultimo parante interno.
+   - El lateral final se usa como limite para repartir la distancia, pero no se cuenta como parante interno.
+   - Ejemplo: base 3000 mm, primer parante 800 mm y 4 parantes internos => (3000 - 800) / 4 = 550 mm.
+   - El resumen del esquema muestra tambien la distancia desde el ultimo parante interno hasta el lateral final.
 
 Notas:
 - No es patch. Son archivos completos para reemplazar.

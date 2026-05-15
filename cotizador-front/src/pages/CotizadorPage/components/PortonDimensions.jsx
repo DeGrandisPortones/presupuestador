@@ -365,7 +365,7 @@ function getBaseParantesDimensionMm({ orientation, widthM, heightM }) {
   const baseM = orientation === "horizontal" ? Number(heightM || 0) : Number(widthM || 0);
   return Math.max(0, Math.round((Number.isFinite(baseM) ? baseM : 0) * 1000));
 }
-function buildUniformParantesDistances({ firstDistanceMm, parantesCount, baseDimensionMm, tubeDiscountMm }) {
+function buildUniformParantesDistances({ firstDistanceMm, parantesCount, baseDimensionMm }) {
   const count = Math.max(0, Math.trunc(Number(parantesCount || 0)));
   if (!count) return [];
   const first = Number(firstDistanceMm || 0);
@@ -373,8 +373,12 @@ function buildUniformParantesDistances({ firstDistanceMm, parantesCount, baseDim
   if (!Number.isFinite(first) || first <= 0) return next;
   next[0] = formatNumberForInput(first);
   if (count === 1) return next;
-  const remaining = Math.max(0, Number(baseDimensionMm || 0) - first - Number(tubeDiscountMm || 0));
-  const step = remaining / (count - 1);
+
+  // La cantidad ingresada representa solo parantes internos.
+  // El lateral final no se cuenta como parante, pero si como limite para repartir el resto.
+  // Ejemplo: base 3000, primer parante 800, 4 internos => (3000 - 800) / 4 = 550.
+  const remainingUntilFinalLateral = Math.max(0, Number(baseDimensionMm || 0) - first);
+  const step = remainingUntilFinalLateral / count;
   for (let i = 1; i < count; i += 1) next[i] = formatNumberForInput(step);
   return next;
 }
@@ -382,7 +386,7 @@ function buildResolvedParantesDistances({ distanceList, distributeUniformly, par
   const current = padDistanceList(distanceList, parantesCount);
   if (!distributeUniformly) return current;
   const first = parseMmNumber(current[0]);
-  return buildUniformParantesDistances({ firstDistanceMm: first, parantesCount, baseDimensionMm, tubeDiscountMm });
+  return buildUniformParantesDistances({ firstDistanceMm: first, parantesCount, baseDimensionMm });
 }
 function buildParantesPayload({ distances, tubeDiscountMm }) {
   return {
@@ -424,11 +428,19 @@ function buildSketchParanteMarkers({ distances, parantesCount, baseDimensionMm, 
     distance: distanceInputs[index],
   }));
 }
+function getFinalLateralGapMm(markers, baseDimensionMm) {
+  const base = Number(baseDimensionMm || 0);
+  if (!Number.isFinite(base) || base <= 0 || !Array.isArray(markers) || !markers.length) return null;
+  const last = markers[markers.length - 1];
+  const gap = base - Number(last?.position || 0);
+  return Number.isFinite(gap) && gap >= 0 ? gap : null;
+}
 function ParantesSketchModal({ open, onClose, orientation, parantesCount, baseDimensionMm, distances, distributeUniformly, tubeDiscountMm }) {
   if (!open) return null;
   const isHorizontal = orientation === "horizontal";
   const base = Math.max(1, Number(baseDimensionMm || 1));
   const markers = buildSketchParanteMarkers({ distances, parantesCount, baseDimensionMm, tubeDiscountMm });
+  const finalLateralGapMm = getFinalLateralGapMm(markers, baseDimensionMm);
   const width = 720;
   const height = 360;
   const rectX = 70;
@@ -546,6 +558,11 @@ function ParantesSketchModal({ open, onClose, orientation, parantesCount, baseDi
           <div style={{ border: "1px solid #e5e7eb", borderRadius: 10, padding: 10 }}>
             <div className="muted">Parante lateral final</div>
             <div style={{ fontWeight: 800 }}>{formatMm(baseDimensionMm) || "-"}</div>
+            {finalLateralGapMm !== null ? (
+              <div className="muted" style={{ marginTop: 4 }}>
+                {formatNumberForInput(finalLateralGapMm)} mm desde parante interno {markers.length}
+              </div>
+            ) : null}
           </div>
         </div>
       </div>
