@@ -717,9 +717,8 @@ function buildDisplayMarkers(markers = [], effectiveSpanMm, reverseAxis) {
 }
 function buildDimensionSegments(markers = [], effectiveSpanMm, reverseAxis = false) {
   const displayed = buildDisplayMarkers(markers, effectiveSpanMm, reverseAxis);
-  const points = reverseAxis
-    ? [effectiveSpanMm, ...displayed.map((marker) => marker.centerMm), 0]
-    : [0, ...displayed.map((marker) => marker.centerMm), effectiveSpanMm];
+  const orderedDisplayed = [...displayed].sort((a, b) => (a?.centerMm || 0) - (b?.centerMm || 0));
+  const points = [0, ...orderedDisplayed.map((marker) => marker.centerMm), effectiveSpanMm];
   const segments = [];
   for (let index = 0; index < points.length - 1; index += 1) {
     const startMm = points[index];
@@ -728,7 +727,7 @@ function buildDimensionSegments(markers = [], effectiveSpanMm, reverseAxis = fal
       index,
       startMm,
       endMm,
-      lengthMm: Math.abs(endMm - startMm),
+      lengthMm: Math.max(0, endMm - startMm),
     });
   }
   return { displayed, segments };
@@ -873,7 +872,7 @@ function ParantesSketchModal({ open, onClose, orientation, parantesCount, baseDi
           ) : (
             <g>
               {dimensionSegments.map((segment) => {
-                const toX = (mm) => rectX + (reverseAxis ? (drawingSpan - mm) : mm) * scale;
+                const toX = (mm) => rectX + (mm * scale);
                 const x1 = toX(segment.startMm);
                 const x2 = toX(segment.endMm);
                 const midX = (x1 + x2) / 2;

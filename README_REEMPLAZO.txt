@@ -8,16 +8,11 @@ Archivos incluidos:
 - SQL_FIX_PARANTES_EJEMPLO.sql
 
 Correccion de esta version:
-- La pantalla de medidas fuerza refetch de reglas tecnicas al montar, para evitar leer una configuracion cacheada.
-- La deteccion de orientacion para portones no apto ahora muestra diagnostico en el helper:
-  * IDs detectados en el presupuesto
-  * IDs configurados como horizontal
-  * IDs configurados como vertical
-  * regla que esta aplicando
-- El match de productos revisa mas claves posibles de la linea: product_id, id, presupuestador_id, presupuestador_product_id, productId, catalog_product_id, odoo_external_id, odoo_id, odoo_template_id, odoo_variant_id y el prefijo numerico de line_key.
-- Si no hay regla de ID, usa como fallback el nombre del producto que contenga orientacion horizontal o vertical.
+- Se corrige el dibujo de los segmentos rojos del esquema para que queden congruentes con los parantes azules.
+- En lectura de derecha a izquierda (puerta derecha), las cotas ahora se dibujan siguiendo la posicion visual real de los parantes en pantalla.
+- Los segmentos se calculan sobre el eje ya mostrado en el dibujo, evitando que queden invertidos o corridos.
+- Se mantiene la referencia desde el borde exterior y el grosor reforzado de los parantes laterales.
 
-Para el caso reportado:
-- La configuracion guardada tiene horizontal: 3025,3591.
-- Si la linea realmente llega al componente con ID 3025, el helper debe mostrar ese ID en "IDs detectados" y la regla debe quedar Horizontal.
-- Si no aparece 3025 en "IDs detectados", la linea no esta llegando al componente con ese ID y el helper va a mostrar que IDs esta recibiendo realmente.
+Resultado esperado en el caso mostrado:
+- Si los parantes azules estan bien ubicados y los textos inferiores tambien, ahora los segmentos rojos deben alinearse con esos mismos parantes.
+- En puerta derecha, el tramo mas corto debe quedar del lado derecho del dibujo (no del izquierdo) si ese es el lado de la puerta.
