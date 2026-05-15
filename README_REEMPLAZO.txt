@@ -35,3 +35,11 @@ Correccion agregada en esta version:
 - Si la orientacion es vertical, el esquema toma el ancho de paso.
 - Si la orientacion es horizontal, el esquema toma el alto de paso.
 - La tarjeta "Medidas de paso" ahora muestra el orden correcto: Ancho x Alto.
+
+Correccion agregada en esta version:
+- Solo para portones apto para revestir.
+- Si la orientacion es Horizontal y la distribucion es Especial, aparece la opcion "¿Ponerle primer parante a distancia fija?".
+- Esa opcion ya no fuerza la orientacion; la orientacion se toma del selector principal.
+- Al tildarla, consulta si el primer parante fijo esta del lado Izquierdo o Derecho.
+- Luego de cargar la distancia del primer parante fijo, se puede tildar o destildar "Distribuir uniformemente".
+- Si "Distribuir uniformemente" esta destildado, las distancias siguientes quedan editables.
