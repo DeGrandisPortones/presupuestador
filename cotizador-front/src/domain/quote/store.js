@@ -128,6 +128,15 @@ function resolveOdooExternalId(source = {}) {
     0
   );
 }
+function normalizeLoadedDimensions(dims = {}) {
+  const source = dims && typeof dims === "object" ? dims : {};
+  return {
+    ...source,
+    width: source?.width ?? "",
+    height: source?.height ?? "",
+    kg_m2: source?.kg_m2 ?? "",
+  };
+}
 
 export const useQuoteStore = create((set, get) => ({
   quoteId: null,
@@ -175,6 +184,7 @@ export const useQuoteStore = create((set, get) => ({
     const lines = Array.isArray(q.lines) ? q.lines : [];
     const payload = q.payload || {};
     const dims = payload?.dimensions || {};
+    const loadedDimensions = normalizeLoadedDimensions(dims);
     const m = Number(payload?.margin_percent_ui ?? 0) || 0;
     const cond = String(payload?.condition_mode || "cond1");
     const condText = String(payload?.condition_text || "");
@@ -230,16 +240,8 @@ export const useQuoteStore = create((set, get) => ({
         last_name: splitName.last_name,
         name: buildCustomerName({ ...(end || {}), ...splitName }),
       },
-      dimensions: {
-        width: dims?.width ?? "",
-        height: dims?.height ?? "",
-        kg_m2: dims?.kg_m2 ?? "",
-      },
-      lines: applyDerivedLines(mappedLines, portonType, {
-        width: dims?.width ?? "",
-        height: dims?.height ?? "",
-        kg_m2: dims?.kg_m2 ?? "",
-      }),
+      dimensions: loadedDimensions,
+      lines: applyDerivedLines(mappedLines, portonType, loadedDimensions),
     });
   },
   setDimensions(patch) {
@@ -440,6 +442,7 @@ export const useQuoteStore = create((set, get) => ({
     const s = get();
     const area_m2 = getSurfaceQuantity(s.dimensions);
     const customerName = buildCustomerName(s.endCustomer);
+    const safeDimensions = s.dimensions && typeof s.dimensions === "object" ? s.dimensions : {};
     const lines = s.lines
       .filter((l) => !l.ui_only_line && !l.auto_system_item)
       .map((l) => ({
@@ -480,9 +483,10 @@ export const useQuoteStore = create((set, get) => ({
         payment_method: s.paymentMethod || "",
         porton_type: s.portonType || "",
         dimensions: {
-          width: s.dimensions?.width ?? "",
-          height: s.dimensions?.height ?? "",
-          kg_m2: s.dimensions?.kg_m2 ?? "",
+          ...safeDimensions,
+          width: safeDimensions?.width ?? "",
+          height: safeDimensions?.height ?? "",
+          kg_m2: safeDimensions?.kg_m2 ?? "",
           area_m2,
         },
       },

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useQuoteStore } from "../../../domain/quote/store";
 import { adminGetTechnicalMeasurementRules } from "../../../api/admin.js";
@@ -11,6 +11,9 @@ const HEIGHT_MAX_M = 3;
 const IPANEL_WIDTH_MAX_M = 1.13;
 const IPANEL_HEIGHT_MAX_M = 2.45;
 const PARANTES_SPECIAL_PRODUCT_ID = 3006;
+const APTOS_PARA_REVESTIR_TYPE = "para_revestir_con_al_pvc_otros";
+const DEFAULT_PARANTES_TUBE_DISCOUNT_MM = 40;
+const ORDINAL_LABELS = ["primer", "segundo", "tercer", "cuarto", "quinto", "sexto", "septimo", "octavo", "noveno", "decimo"];
 
 function parseOptionalNumber(v) {
   const raw = String(v ?? "").trim();
@@ -57,8 +60,22 @@ function formatNumberForInput(value) {
 }
 function formatMetersFromMm(mm) {
   const n = Number(mm || 0);
-  if (!Number.isFinite(n) || n <= 0) return "—";
+  if (!Number.isFinite(n) || n <= 0) return "-";
   return `${(n / 1000).toFixed(2)} m`;
+}
+function formatMm(value) {
+  const n = Number(value || 0);
+  if (!Number.isFinite(n) || n <= 0) return "";
+  return `${formatNumberForInput(n)} mm`;
+}
+function parseMmNumber(value) {
+  const raw = String(value ?? "").trim();
+  if (!raw) return null;
+  const n = Number(raw.replace(",", "."));
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+function normalizeDecimalMmInput(v) {
+  return String(v ?? "").replace(/[^0-9.,]/g, "");
 }
 function getBudgetProductIdSetFromLines(lines) {
   return new Set((Array.isArray(lines) ? lines : []).map((line) => Number(line?.product_id || 0)).filter(Boolean));
@@ -90,7 +107,7 @@ function inferKgM2FromType(portonType) {
   return 0;
 }
 function isAptoDerivedType(portonType) {
-  return norm(portonType) === "para_revestir_con_al_pvc_otros";
+  return norm(portonType) === APTOS_PARA_REVESTIR_TYPE;
 }
 function normalizeAptoKgRules(raw = []) {
   return (Array.isArray(raw) ? raw : [])
@@ -123,7 +140,7 @@ function legsTypeForWeight(weightKg, isApto, params) {
   const limitComunes = getNumberParam(params, ["legs_comunes_max_kg", "limit_comunes_kg", "piernas_comunes_hasta_kg"], 175);
   const limitAnchas = getNumberParam(params, ["legs_anchas_max_kg", "limit_anchas_kg", "piernas_anchas_hasta_kg"], 240);
   const limitSuper = getNumberParam(params, ["legs_superanchas_max_kg", "limit_superanchas_kg", "piernas_superanchas_hasta_kg"], 300);
-  if (!Number.isFinite(weightKg) || weightKg <= 0) return "—";
+  if (!Number.isFinite(weightKg) || weightKg <= 0) return "-";
   if (weightKg <= limitAngostas) return "Angostas";
   if (weightKg <= limitComunes) return "Comunes";
   if (weightKg <= limitAnchas) return "Anchas";
@@ -148,6 +165,19 @@ function getPasoWidthDeductionMm(legsKey, params) {
     especiales: Number(params?.legs_especiales_add_width_mm || params?.legs_superanchas_add_width_mm || 380),
   };
   return Number(map[key] || 0);
+}
+function getParantesTubeDiscountMm(params) {
+  return getNumberParam(
+    params,
+    [
+      "parantes_tube_discount_mm",
+      "parantes_cano_discount_mm",
+      "descuento_cano_parantes_mm",
+      "descuento_tubo_parantes_mm",
+      "parantes_tube_width_mm",
+    ],
+    DEFAULT_PARANTES_TUBE_DISCOUNT_MM,
+  );
 }
 function buildCalculatedPreview({ widthM, heightM, lines, params, portonType }) {
   const widthMm = Math.round((Number(widthM || 0) || 0) * 1000);
@@ -243,7 +273,7 @@ function ComputedCard({ label, value }) {
       }}
     >
       <div className="muted">{label}</div>
-      <div style={{ fontWeight: 800, color: "#334155" }}>{value || "—"}</div>
+      <div style={{ fontWeight: 800, color: "#334155" }}>{value || "-"}</div>
     </div>
   );
 }
@@ -265,6 +295,174 @@ function computeVerticalParantesCount(widthM, lines) {
   const baseWidth = hasSpecialParantesProduct(lines) ? width : Math.max(0, width - 0.8);
   return Math.max(0, Math.floor(baseWidth));
 }
+function getParantesCount(value) {
+  const n = Number(String(value ?? "").replace(",", "."));
+  return Number.isFinite(n) ? Math.max(0, Math.trunc(n)) : 0;
+}
+function normalizeDistanceList(value) {
+  if (Array.isArray(value)) return value.map((item) => String(item ?? "").trim());
+  if (value && typeof value === "object") return Object.values(value).map((item) => String(item ?? "").trim());
+  const raw = String(value ?? "").trim();
+  if (!raw) return [];
+  return raw.split(";").map((item) => item.trim()).filter(Boolean);
+}
+function padDistanceList(values, count) {
+  const next = normalizeDistanceList(values).slice(0, count);
+  while (next.length < count) next.push("");
+  return next;
+}
+function paranteDistanceLabel(index) {
+  const ordinal = ORDINAL_LABELS[index] || `${index + 1}`;
+  return `Distancia dentro a dentro ${ordinal} parante`;
+}
+function getBaseParantesDimensionMm({ orientation, widthM, heightM }) {
+  const baseM = orientation === "horizontal" ? Number(heightM || 0) : Number(widthM || 0);
+  return Math.max(0, Math.round((Number.isFinite(baseM) ? baseM : 0) * 1000));
+}
+function buildUniformParantesDistances({ firstDistanceMm, parantesCount, baseDimensionMm, tubeDiscountMm }) {
+  const count = Math.max(0, Math.trunc(Number(parantesCount || 0)));
+  if (!count) return [];
+  const first = Number(firstDistanceMm || 0);
+  const next = Array(count).fill("");
+  if (!Number.isFinite(first) || first <= 0) return next;
+  next[0] = formatNumberForInput(first);
+  if (count === 1) return next;
+  const remaining = Math.max(0, Number(baseDimensionMm || 0) - first - Number(tubeDiscountMm || 0));
+  const step = remaining / (count - 1);
+  for (let i = 1; i < count; i += 1) next[i] = formatNumberForInput(step);
+  return next;
+}
+function buildResolvedParantesDistances({ distanceList, distributeUniformly, parantesCount, baseDimensionMm, tubeDiscountMm }) {
+  const current = padDistanceList(distanceList, parantesCount);
+  if (!distributeUniformly) return current;
+  const first = parseMmNumber(current[0]);
+  return buildUniformParantesDistances({ firstDistanceMm: first, parantesCount, baseDimensionMm, tubeDiscountMm });
+}
+function buildParantesPayload({ distances, tubeDiscountMm }) {
+  return {
+    distancias_parantes_mm: distances,
+    distancia_primer_parante_mm: distances?.[0] || "",
+    descuento_cano_parantes_mm: tubeDiscountMm,
+  };
+}
+function buildSketchSegments(distances, baseDimensionMm) {
+  const nums = normalizeDistanceList(distances)
+    .map((item) => parseMmNumber(item))
+    .filter((n) => Number.isFinite(n) && n > 0);
+  const segments = [];
+  let cursor = 0;
+  nums.forEach((distance, index) => {
+    const start = cursor;
+    const end = Math.min(Number(baseDimensionMm || 0), cursor + distance);
+    if (end > start) segments.push({ index, start, end, distance });
+    cursor = end;
+  });
+  if (baseDimensionMm > cursor) {
+    segments.push({ index: segments.length, start: cursor, end: baseDimensionMm, distance: baseDimensionMm - cursor, finalSegment: true });
+  }
+  return segments;
+}
+function ParantesSketchModal({ open, onClose, orientation, parantesCount, baseDimensionMm, distances, distributeUniformly, tubeDiscountMm }) {
+  if (!open) return null;
+  const isHorizontal = orientation === "horizontal";
+  const base = Math.max(1, Number(baseDimensionMm || 1));
+  const segments = buildSketchSegments(distances, baseDimensionMm);
+  const width = 720;
+  const height = 360;
+  const rectX = 70;
+  const rectY = 55;
+  const rectW = 560;
+  const rectH = 220;
+  const axisLength = isHorizontal ? rectH : rectW;
+  const scale = axisLength / base;
+  const axisStart = isHorizontal ? rectY : rectX;
+  const crossStart = isHorizontal ? rectX : rectY;
+  const crossSize = isHorizontal ? rectW : rectH;
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "rgba(15, 23, 42, 0.45)",
+        zIndex: 9999,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: 16,
+      }}
+      onClick={onClose}
+    >
+      <div
+        style={{
+          width: "min(920px, 96vw)",
+          maxHeight: "92vh",
+          overflow: "auto",
+          background: "#fff",
+          borderRadius: 16,
+          padding: 16,
+          boxShadow: "0 20px 60px rgba(15,23,42,0.3)",
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center" }}>
+          <div>
+            <div style={{ fontWeight: 900, fontSize: 18 }}>Esquema de parantes</div>
+            <div className="muted">
+              Orientacion {isHorizontal ? "horizontal" : "vertical"} - {parantesCount || 0} parantes - base {formatMm(baseDimensionMm)} - descuento cano {formatMm(tubeDiscountMm)}
+            </div>
+          </div>
+          <button type="button" onClick={onClose} style={{ border: "1px solid #ddd", borderRadius: 10, padding: "8px 12px", background: "#fff", cursor: "pointer" }}>
+            Cerrar
+          </button>
+        </div>
+        <div className="spacer" />
+        <svg viewBox={`0 0 ${width} ${height}`} style={{ width: "100%", height: "auto", border: "1px solid #e5e7eb", borderRadius: 14, background: "#f8fafc" }}>
+          <rect x={rectX} y={rectY} width={rectW} height={rectH} rx="10" fill="#ffffff" stroke="#334155" strokeWidth="3" />
+          <line x1={rectX} y1={rectY + rectH / 2} x2={rectX + rectW} y2={rectY + rectH / 2} stroke="#e2e8f0" strokeWidth="1" />
+          <line x1={rectX + rectW / 2} y1={rectY} x2={rectX + rectW / 2} y2={rectY + rectH} stroke="#e2e8f0" strokeWidth="1" />
+          {segments.map((segment, index) => {
+            const rawPos = axisStart + segment.end * scale;
+            const cappedPos = Math.max(axisStart, Math.min(axisStart + axisLength, rawPos));
+            const labelPos = axisStart + (segment.start + segment.distance / 2) * scale;
+            const label = `${formatNumberForInput(segment.distance)} mm`;
+            if (isHorizontal) {
+              return (
+                <g key={`seg-${index}`}>
+                  {!segment.finalSegment ? <line x1={crossStart} y1={cappedPos} x2={crossStart + crossSize} y2={cappedPos} stroke="#0f172a" strokeWidth="5" /> : null}
+                  <text x={crossStart + crossSize + 12} y={Math.max(rectY + 14, Math.min(rectY + rectH - 8, labelPos))} fontSize="14" fill="#0f172a">{label}</text>
+                </g>
+              );
+            }
+            return (
+              <g key={`seg-${index}`}>
+                {!segment.finalSegment ? <line x1={cappedPos} y1={crossStart} x2={cappedPos} y2={crossStart + crossSize} stroke="#0f172a" strokeWidth="5" /> : null}
+                <text x={Math.max(rectX + 20, Math.min(rectX + rectW - 70, labelPos))} y={rectY + rectH + 28} fontSize="14" fill="#0f172a" textAnchor="middle">{label}</text>
+              </g>
+            );
+          })}
+          <text x={rectX + rectW / 2} y="28" textAnchor="middle" fontSize="16" fontWeight="700" fill="#0f172a">
+            {isHorizontal ? "Distribucion sobre el alto del porton" : "Distribucion sobre el ancho del porton"}
+          </text>
+          <text x={rectX + rectW / 2} y={rectY + rectH + 58} textAnchor="middle" fontSize="13" fill="#475569">
+            {distributeUniformly ? "Resto distribuido uniformemente" : "Distancias cargadas manualmente"}
+          </text>
+        </svg>
+        <div className="spacer" />
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 8 }}>
+          {normalizeDistanceList(distances).map((distance, index) => (
+            <div key={`distance-summary-${index}`} style={{ border: "1px solid #e5e7eb", borderRadius: 10, padding: 10 }}>
+              <div className="muted">{index === 0 ? "Primer parante" : `Parante ${index + 1}`}</div>
+              <div style={{ fontWeight: 800 }}>{distance ? `${distance} mm` : "-"}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export default function PortonDimensions({ kind = "porton" }) {
   const normalizedKind = normalizeKind(kind);
@@ -276,6 +474,7 @@ export default function PortonDimensions({ kind = "porton" }) {
   const portonType = useQuoteStore((s) => s.portonType);
   const lines = useQuoteStore((s) => s.lines);
   const lastAutoParantesRef = useRef("");
+  const [parantesSketchOpen, setParantesSketchOpen] = useState(false);
 
   const rulesQ = useQuery({
     queryKey: ["technical-rules-dimensions-preview"],
@@ -302,11 +501,11 @@ export default function PortonDimensions({ kind = "porton" }) {
   );
   const hasSizeError = (isPorton || isIpanel) && (widthOutOfBounds || heightOutOfBounds);
   const widthHelper = isPorton
-    ? "Mínimo 2.4 m · Máximo 7 m"
-    : (isIpanel ? "Máximo 1.13 m (113 cm)" : "");
+    ? "Minimo 2.4 m - Maximo 7 m"
+    : (isIpanel ? "Maximo 1.13 m (113 cm)" : "");
   const heightHelper = isPorton
-    ? "Mínimo 2 m · Máximo 3 m"
-    : (isIpanel ? "Máximo 2.45 m (245 cm)" : "");
+    ? "Minimo 2 m - Maximo 3 m"
+    : (isIpanel ? "Maximo 2.45 m (245 cm)" : "");
   const widthPlaceholder = isIpanel ? "Ej: 1.13" : "Ej: 3.2";
   const heightPlaceholder = isIpanel ? "Ej: 2.45" : "Ej: 2.1";
   const area = useMemo(() => {
@@ -332,6 +531,24 @@ export default function PortonDimensions({ kind = "porton" }) {
     () => buildCalculatedPreview({ widthM: width, heightM: height, lines, params, portonType }),
     [width, height, lines, params, portonType],
   );
+  const aptoParaRevestir = isAptoDerivedType(portonType);
+  const parantesCount = getParantesCount(dimensions?.cantidad_parantes);
+  const tubeDiscountMm = useMemo(() => getParantesTubeDiscountMm(params), [params]);
+  const baseParantesDimensionMm = useMemo(
+    () => getBaseParantesDimensionMm({ orientation, widthM: width, heightM: height }),
+    [orientation, width, height],
+  );
+  const rawParantesDistances = dimensions?.distancias_parantes_mm ?? dimensions?.distancias_parantes ?? [];
+  const firstParanteDistance = String(dimensions?.distancia_primer_parante_mm || normalizeDistanceList(rawParantesDistances)[0] || "");
+  const distributeUniformly = dimensions?.distribuir_parantes_uniformemente === true || String(dimensions?.distribuir_parantes_uniformemente || "").trim().toLowerCase() === "true";
+  const showSpecialParantesDistances = isPorton && aptoParaRevestir && distribution === "especial";
+  const resolvedParantesDistances = useMemo(() => buildResolvedParantesDistances({
+    distanceList: firstParanteDistance ? [firstParanteDistance, ...normalizeDistanceList(rawParantesDistances).slice(1)] : rawParantesDistances,
+    distributeUniformly,
+    parantesCount,
+    baseDimensionMm: baseParantesDimensionMm,
+    tubeDiscountMm,
+  }), [rawParantesDistances, distributeUniformly, parantesCount, baseParantesDimensionMm, tubeDiscountMm, firstParanteDistance]);
 
   useEffect(() => {
     if (!isPorton) return;
@@ -382,18 +599,69 @@ export default function PortonDimensions({ kind = "porton" }) {
     setDimensions,
   ]);
 
+  useEffect(() => {
+    if (!showSpecialParantesDistances || parantesCount <= 0) return;
+    const current = normalizeDistanceList(rawParantesDistances);
+    const next = distributeUniformly
+      ? resolvedParantesDistances
+      : padDistanceList(current.length ? current : [firstParanteDistance], parantesCount);
+    const currentSignature = current.join("|");
+    const nextSignature = next.join("|");
+    if (currentSignature !== nextSignature || String(dimensions?.distancia_primer_parante_mm || "") !== String(next[0] || "") || Number(dimensions?.descuento_cano_parantes_mm || 0) !== Number(tubeDiscountMm || 0)) {
+      setDimensions({
+        ...buildParantesPayload({ distances: next, tubeDiscountMm }),
+        distribuir_parantes_uniformemente: distributeUniformly,
+      });
+    }
+  }, [
+    showSpecialParantesDistances,
+    parantesCount,
+    rawParantesDistances,
+    firstParanteDistance,
+    distributeUniformly,
+    resolvedParantesDistances,
+    tubeDiscountMm,
+    dimensions?.distancia_primer_parante_mm,
+    dimensions?.descuento_cano_parantes_mm,
+    setDimensions,
+  ]);
+
   if (!isPorton && !isIpanel) return null;
 
-  const title = isPorton ? "Medidas del portón" : "Medidas del Ipanel";
+  const title = isPorton ? "Medidas del porton" : "Medidas del Ipanel";
 
   const parantesHelper =
     orientation === "verticales"
       ? (
           hasSpecialParantesProduct(lines)
-            ? "Se sugiere automáticamente usando el ancho completo. Si querés, podés cambiar el valor manualmente."
-            : "Se sugiere automáticamente restando 0.80 m al ancho. Si querés, podés cambiar el valor manualmente."
+            ? "Se sugiere automaticamente usando el ancho completo. Si queres, podes cambiar el valor manualmente."
+            : "Se sugiere automaticamente restando 0.80 m al ancho. Si queres, podes cambiar el valor manualmente."
         )
-      : "En horizontal podés ajustar manualmente la cantidad de parantes.";
+      : "En horizontal podes ajustar manualmente la cantidad de parantes.";
+
+  function setParantesDistanceAt(index, value) {
+    const next = padDistanceList(rawParantesDistances, Math.max(parantesCount, index + 1));
+    next[index] = normalizeDecimalMmInput(value);
+    setDimensions(buildParantesPayload({ distances: next, tubeDiscountMm }));
+  }
+
+  function addParanteDistance() {
+    const nextCount = Math.max(0, parantesCount) + 1;
+    const nextDistances = padDistanceList(rawParantesDistances, nextCount);
+    const finalDistances = distributeUniformly
+      ? buildResolvedParantesDistances({
+          distanceList: nextDistances,
+          distributeUniformly: true,
+          parantesCount: nextCount,
+          baseDimensionMm: baseParantesDimensionMm,
+          tubeDiscountMm,
+        })
+      : nextDistances;
+    setDimensions({
+      cantidad_parantes: String(nextCount),
+      ...buildParantesPayload({ distances: finalDistances, tubeDiscountMm }),
+    });
+  }
 
   return (
     <div
@@ -417,7 +685,7 @@ export default function PortonDimensions({ kind = "porton" }) {
             fontWeight: 700,
           }}
         >
-          Se encuentra fuera de los límites de tamaño.
+          Se encuentra fuera de los limites de tamano.
         </div>
       ) : null}
 
@@ -436,27 +704,98 @@ export default function PortonDimensions({ kind = "porton" }) {
           <Input type="text" inputMode="decimal" value={heightRaw} onChange={(v) => setDimensions({ height: normalizeDecimal(v) })} onBlur={(e) => setDimensions({ height: normalizeDecimal(e?.target?.value) })} placeholder={heightPlaceholder} style={inputStateStyle(heightOutOfBounds)} />
         </FieldBox>
         {isPorton ? (<>
-          <FieldBox label="Tipo / Sistema derivado"><Input value={portonType || ""} disabled placeholder="Se completa según la combinación de productos" style={disabledComputedInputStyle()} /></FieldBox>
-          <FieldBox label="Kg por m²"><Input value={formatNumberForInput(preview.effectiveKgM2)} placeholder="Se calcula automáticamente según el sistema" style={disabledComputedInputStyle()} disabled /></FieldBox>
-          <FieldBox label="Superficie"><div style={{ fontWeight: 800, fontSize: 16, minHeight: 40, display: "flex", alignItems: "center", padding: "9px 12px", borderRadius: 10, border: "1px solid #d1d5db", background: "#f3f4f6", color: "#334155" }}>{area ? `${area.toFixed(2)} m²` : "—"}</div></FieldBox>
-          <FieldBox label="Orientación de los parantes"><select value={orientation} onChange={(e) => setDimensions({ orientacion_parantes: e.target.value })} style={{ width: "100%", padding: "10px 12px", borderRadius: 8, border: "1px solid #ddd", background: "#fff" }}><option value="verticales">Verticales</option><option value="horizontal">Horizontal</option></select></FieldBox>
+          <FieldBox label="Tipo / Sistema derivado"><Input value={portonType || ""} disabled placeholder="Se completa segun la combinacion de productos" style={disabledComputedInputStyle()} /></FieldBox>
+          <FieldBox label="Kg por m2"><Input value={formatNumberForInput(preview.effectiveKgM2)} placeholder="Se calcula automaticamente segun el sistema" style={disabledComputedInputStyle()} disabled /></FieldBox>
+          <FieldBox label="Superficie"><div style={{ fontWeight: 800, fontSize: 16, minHeight: 40, display: "flex", alignItems: "center", padding: "9px 12px", borderRadius: 10, border: "1px solid #d1d5db", background: "#f3f4f6", color: "#334155" }}>{area ? `${area.toFixed(2)} m2` : "-"}</div></FieldBox>
+          <FieldBox label="Orientacion de los parantes"><select value={orientation} onChange={(e) => setDimensions({ orientacion_parantes: e.target.value })} style={{ width: "100%", padding: "10px 12px", borderRadius: 8, border: "1px solid #ddd", background: "#fff" }}><option value="verticales">Verticales</option><option value="horizontal">Horizontal</option></select></FieldBox>
           <FieldBox label="Cantidad de parantes" helper={parantesHelper}><Input type="text" inputMode="numeric" value={String(dimensions?.cantidad_parantes ?? "")} onChange={(v) => setDimensions({ cantidad_parantes: normalizeIntegerInput(v) })} onBlur={(e) => setDimensions({ cantidad_parantes: normalizeIntegerInput(e?.target?.value) })} style={{ width: "100%" }} placeholder="Ej: 3" /></FieldBox>
-          <FieldBox label="Distribución de los parantes"><select value={distribution} onChange={(e) => setDimensions({ distribucion_parantes: e.target.value })} style={{ width: "100%", padding: "10px 12px", borderRadius: 8, border: "1px solid #ddd", background: "#fff" }}><option value="repartido">Repartido</option><option value="especial">Especial</option></select></FieldBox>
+          <FieldBox label="Distribucion de los parantes"><select value={distribution} onChange={(e) => setDimensions({ distribucion_parantes: e.target.value })} style={{ width: "100%", padding: "10px 12px", borderRadius: 8, border: "1px solid #ddd", background: "#fff" }}><option value="repartido">Repartido</option><option value="especial">Especial</option></select></FieldBox>
         </>) : null}
       </div>
 
-      {isPorton && distribution === "especial" ? (<><div className="spacer" /><FieldBox label="Observaciones de distribución especial"><textarea value={String(dimensions?.observaciones_parantes ?? "")} onChange={(e) => setDimensions({ observaciones_parantes: e.target.value })} rows={3} style={{ width: "100%", borderRadius: 10, border: "1px solid #ddd", padding: "10px 12px", resize: "vertical", fontFamily: "inherit" }} placeholder="Indicá cómo debe ser la distribución especial de los parantes." /></FieldBox></>) : null}
+      {isPorton && distribution === "especial" ? (
+        <>
+          <div className="spacer" />
+          <FieldBox label="Observaciones de distribucion especial">
+            <textarea value={String(dimensions?.observaciones_parantes ?? "")} onChange={(e) => setDimensions({ observaciones_parantes: e.target.value })} rows={3} style={{ width: "100%", borderRadius: 10, border: "1px solid #ddd", padding: "10px 12px", resize: "vertical", fontFamily: "inherit" }} placeholder="Indica como debe ser la distribucion especial de los parantes." />
+          </FieldBox>
+        </>
+      ) : null}
+
+      {showSpecialParantesDistances ? (
+        <>
+          <div className="spacer" />
+          <div style={{ border: "1px solid #e0e7ff", background: "#f8fbff", borderRadius: 14, padding: 12 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
+              <div>
+                <div style={{ fontWeight: 900, marginBottom: 4 }}>Distancias dentro a dentro de parantes</div>
+                <div className="muted">
+                  Base usada: {orientation === "horizontal" ? "Alto" : "Ancho"} {formatMm(baseParantesDimensionMm) || "-"}. Descuento de cano desde reglas tecnicas: {formatMm(tubeDiscountMm)}.
+                </div>
+              </div>
+              <button type="button" onClick={() => setParantesSketchOpen(true)} style={{ border: "1px solid #c7d2fe", borderRadius: 10, background: "#eef2ff", padding: "9px 12px", fontWeight: 800, cursor: "pointer" }}>
+                Ver esquema de parantes
+              </button>
+            </div>
+            <div className="spacer" />
+            <label style={{ display: "flex", gap: 8, alignItems: "center", fontWeight: 700 }}>
+              <input
+                type="checkbox"
+                checked={distributeUniformly}
+                onChange={(e) => setDimensions({ distribuir_parantes_uniformemente: e.target.checked })}
+              />
+              Distribuir uniformemente
+            </label>
+            <div className="muted" style={{ marginTop: 6 }}>
+              Si esta tildado, el sistema resta la distancia del primer parante y el descuento del cano, y divide el resto por la cantidad de parantes restantes.
+            </div>
+            <div className="spacer" />
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(230px, 1fr))", gap: 10 }}>
+              {padDistanceList(resolvedParantesDistances, parantesCount).map((distance, index) => (
+                <FieldBox key={`distance-${index}`} label={paranteDistanceLabel(index)} helper={index > 0 && distributeUniformly ? "Calculado automaticamente por reparto uniforme." : "Numero en mm. Puede tener decimales."}>
+                  <Input
+                    type="text"
+                    inputMode="decimal"
+                    value={String(distance ?? "")}
+                    disabled={index > 0 && distributeUniformly}
+                    onChange={(v) => setParantesDistanceAt(index, v)}
+                    onBlur={(e) => setParantesDistanceAt(index, e?.target?.value)}
+                    placeholder={index === 0 ? "Ej: 800" : "Ej: 720"}
+                    style={index > 0 && distributeUniformly ? disabledComputedInputStyle() : { width: "100%" }}
+                  />
+                </FieldBox>
+              ))}
+            </div>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 4 }}>
+              <button type="button" onClick={addParanteDistance} style={{ border: "1px solid #ddd", borderRadius: 10, background: "#fff", padding: "9px 12px", fontWeight: 800, cursor: "pointer" }}>
+                + Agregar parante
+              </button>
+            </div>
+          </div>
+        </>
+      ) : null}
 
       {isPorton ? (<>
         <div className="spacer" />
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 10 }}>
-          <ComputedCard label="Medidas de paso" value={preview.altoPasoMm > 0 && preview.anchoPasoMm > 0 ? `${formatMetersFromMm(preview.altoPasoMm)} × ${formatMetersFromMm(preview.anchoPasoMm)}` : "—"} />
-          <ComputedCard label="Kg/m² efectivo" value={preview.effectiveKgM2 > 0 ? `${preview.effectiveKgM2.toFixed(2)} kg/m²` : "—"} />
-          <ComputedCard label="Peso estimado" value={preview.estimatedWeightKg > 0 ? `${preview.estimatedWeightKg.toFixed(2)} kg` : "—"} />
+          <ComputedCard label="Medidas de paso" value={preview.altoPasoMm > 0 && preview.anchoPasoMm > 0 ? `${formatMetersFromMm(preview.altoPasoMm)} x ${formatMetersFromMm(preview.anchoPasoMm)}` : "-"} />
+          <ComputedCard label="Kg/m2 efectivo" value={preview.effectiveKgM2 > 0 ? `${preview.effectiveKgM2.toFixed(2)} kg/m2` : "-"} />
+          <ComputedCard label="Peso estimado" value={preview.estimatedWeightKg > 0 ? `${preview.estimatedWeightKg.toFixed(2)} kg` : "-"} />
           <ComputedCard label="Piernas estimadas" value={preview.legsLabel} />
         </div>
-        <div className="muted" style={{ marginTop: 8 }}>Estas medidas se guardan dentro del presupuesto para usarlas después en medición, cálculo de peso y comparación de superficie.</div>
+        <div className="muted" style={{ marginTop: 8 }}>Estas medidas se guardan dentro del presupuesto para usarlas despues en medicion, calculo de peso y comparacion de superficie.</div>
       </>) : null}
+
+      <ParantesSketchModal
+        open={parantesSketchOpen}
+        onClose={() => setParantesSketchOpen(false)}
+        orientation={orientation}
+        parantesCount={parantesCount}
+        baseDimensionMm={baseParantesDimensionMm}
+        distances={resolvedParantesDistances}
+        distributeUniformly={distributeUniformly}
+        tubeDiscountMm={tubeDiscountMm}
+      />
     </div>
   );
 }
