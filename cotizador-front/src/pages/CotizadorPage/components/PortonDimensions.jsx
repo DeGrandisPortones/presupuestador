@@ -227,30 +227,43 @@ function parseProductIdList(value) {
     return value.map((item) => Number(item)).filter((item) => Number.isFinite(item) && item > 0);
   }
   return String(value || "")
-    .split(/[,;\s]+/)
+    .split(/[^0-9]+/)
     .map((item) => Number(item))
     .filter((item) => Number.isFinite(item) && item > 0);
 }
+function uniqueProductIds(ids = []) {
+  return [...new Set((Array.isArray(ids) ? ids : []).map((item) => Number(item)).filter((item) => Number.isFinite(item) && item > 0))];
+}
+function normalizeProductRuleObject(rule) {
+  if (Array.isArray(rule)) return { product_ids: uniqueProductIds(parseProductIdList(rule)), match_mode: "all", active: true };
+  if (rule && typeof rule === "object") {
+    return {
+      product_ids: uniqueProductIds(parseProductIdList(rule.product_ids || rule.required_product_ids || rule.ids || rule.product_id)),
+      match_mode: String(rule.match_mode || "all").toLowerCase() === "any" ? "any" : "all",
+      active: rule.active !== false,
+    };
+  }
+  return { product_ids: uniqueProductIds(parseProductIdList(rule)), match_mode: "any", active: true };
+}
 function parseProductCombinationRules(value) {
   if (Array.isArray(value)) {
-    return value
-      .map((rule) => {
-        if (Array.isArray(rule)) return { product_ids: parseProductIdList(rule), match_mode: "all", active: true };
-        if (rule && typeof rule === "object") {
-          return {
-            product_ids: parseProductIdList(rule.product_ids || rule.required_product_ids || rule.ids || rule.product_id),
-            match_mode: String(rule.match_mode || "all").toLowerCase() === "any" ? "any" : "all",
-            active: rule.active !== false,
-          };
-        }
-        return { product_ids: parseProductIdList(rule), match_mode: "all", active: true };
-      })
-      .filter((rule) => rule.active && rule.product_ids.length);
+    return value.map((rule) => normalizeProductRuleObject(rule)).filter((rule) => rule.active && rule.product_ids.length);
   }
-  return String(value || "")
-    .split(/[;\n]+/)
-    .map((chunk) => ({ product_ids: parseProductIdList(chunk), match_mode: "all", active: true }))
-    .filter((rule) => rule.product_ids.length);
+
+  const rules = [];
+  const chunks = String(value || "").split(/[;\n]+/).map((chunk) => chunk.trim()).filter(Boolean);
+  for (const chunk of chunks) {
+    if (/[+&]/.test(chunk)) {
+      const productIds = uniqueProductIds(parseProductIdList(chunk));
+      if (productIds.length) rules.push({ product_ids: productIds, match_mode: "all", active: true });
+      continue;
+    }
+    const productIds = uniqueProductIds(parseProductIdList(chunk));
+    for (const productId of productIds) {
+      rules.push({ product_ids: [productId], match_mode: "any", active: true });
+    }
+  }
+  return rules;
 }
 function productRuleMatches(rule, lines) {
   const ids = getBudgetProductIdSetFromLines(lines);
@@ -473,28 +486,40 @@ function getBaseParantesDimensionMm({ orientation, widthM, heightM }) {
   const baseM = orientation === "horizontal" ? Number(heightM || 0) : Number(widthM || 0);
   return Math.max(0, Math.round((Number.isFinite(baseM) ? baseM : 0) * 1000));
 }
-function buildUniformParantesDistances({ firstDistanceMm, parantesCount, baseDimensionMm }) {
+function getParantesEffectiveSpanMm(baseDimensionMm, tubeDiscountMm) {
+  const base = Math.max(0, Number(baseDimensionMm || 0));
+  const tube = Math.max(0, Number(tubeDiscountMm || 0) || DEFAULT_PARANTES_TUBE_DISCOUNT_MM);
+  return Math.max(0, base - tube);
+}
+function buildUniformParantesDistances({ firstDistanceMm, parantesCount, baseDimensionMm, tubeDiscountMm }) {
   const count = Math.max(0, Math.trunc(Number(parantesCount || 0)));
   if (!count) return [];
-  const first = Number(firstDistanceMm || 0);
+  const tube = Math.max(0, Number(tubeDiscountMm || 0) || DEFAULT_PARANTES_TUBE_DISCOUNT_MM);
+  const span = getParantesEffectiveSpanMm(baseDimensionMm, tube);
   const next = Array(count).fill("");
-  if (!Number.isFinite(first) || first <= 0) return next;
-  next[0] = formatNumberForInput(first);
-  if (count === 1) return next;
+  const rawFirst = Number(firstDistanceMm || 0);
+  const hasFixedFirst = Number.isFinite(rawFirst) && rawFirst > 0;
 
-  // La cantidad ingresada representa solo parantes internos.
-  // El lateral final no se cuenta como parante, pero si como limite para repartir el resto.
-  // Ejemplo: base 3000, primer parante 800, 4 internos => (3000 - 800) / 4 = 550.
-  const remainingUntilFinalLateral = Math.max(0, Number(baseDimensionMm || 0) - first);
-  const step = remainingUntilFinalLateral / count;
-  for (let i = 1; i < count; i += 1) next[i] = formatNumberForInput(step);
+  if (hasFixedFirst) {
+    const maxFirst = Math.max(0, span - (count * tube));
+    const first = Math.min(rawFirst, maxFirst || rawFirst);
+    next[0] = formatNumberForInput(first);
+    if (count === 1) return next;
+    const remainingClear = Math.max(0, span - first - (count * tube));
+    const step = remainingClear / count;
+    for (let i = 1; i < count; i += 1) next[i] = formatNumberForInput(step);
+    return next;
+  }
+
+  const uniformGap = Math.max(0, (span - (count * tube)) / (count + 1));
+  for (let i = 0; i < count; i += 1) next[i] = formatNumberForInput(uniformGap);
   return next;
 }
 function buildResolvedParantesDistances({ distanceList, distributeUniformly, parantesCount, baseDimensionMm, tubeDiscountMm }) {
   const current = padDistanceList(distanceList, parantesCount);
   if (!distributeUniformly) return current;
   const first = parseMmNumber(current[0]);
-  return buildUniformParantesDistances({ firstDistanceMm: first, parantesCount, baseDimensionMm });
+  return buildUniformParantesDistances({ firstDistanceMm: first, parantesCount, baseDimensionMm, tubeDiscountMm });
 }
 function buildParantesPayload({ distances, tubeDiscountMm }) {
   return {
@@ -505,50 +530,56 @@ function buildParantesPayload({ distances, tubeDiscountMm }) {
 }
 function buildSketchParanteMarkers({ distances, parantesCount, baseDimensionMm, tubeDiscountMm }) {
   const count = Math.max(0, Math.trunc(Number(parantesCount || 0)));
-  const base = Math.max(0, Number(baseDimensionMm || 0));
-  if (!count || !base) return [];
+  const tube = Math.max(0, Number(tubeDiscountMm || 0) || DEFAULT_PARANTES_TUBE_DISCOUNT_MM);
+  const span = getParantesEffectiveSpanMm(baseDimensionMm, tube);
+  if (!count || !span) return [];
 
-  const distanceInputs = padDistanceList(distances, count).map((item) => parseMmNumber(item));
-  const edgeOffset = Math.max(1, Math.min(base / Math.max(count + 2, 3), Number(tubeDiscountMm || 0) || DEFAULT_PARANTES_TUBE_DISCOUNT_MM));
+  const normalizedDistances = padDistanceList(distances, count);
+  const hasAnyDistance = normalizedDistances.some((item) => {
+    const n = parseMmNumber(item);
+    return Number.isFinite(n) && n > 0;
+  });
+  const distanceInputs = (hasAnyDistance
+    ? normalizedDistances
+    : buildUniformParantesDistances({ parantesCount: count, baseDimensionMm, tubeDiscountMm: tube })
+  ).map((item) => parseMmNumber(item));
+
   const positions = [];
   let cursor = 0;
 
   for (let index = 0; index < count; index += 1) {
     const distance = distanceInputs[index];
-    let desiredPosition = null;
-    if (Number.isFinite(distance) && distance > 0) {
-      cursor += distance;
-      desiredPosition = cursor;
-    } else {
-      desiredPosition = ((index + 1) / (count + 1)) * base;
-    }
-
-    const minPosition = index === 0 ? edgeOffset : positions[index - 1] + 1;
-    const maxPosition = Math.max(minPosition, base - edgeOffset - (count - index - 1));
-    const position = Math.max(minPosition, Math.min(maxPosition, desiredPosition));
+    const gap = Number.isFinite(distance) && distance > 0 ? distance : 0;
+    cursor += gap;
+    const maxPosition = Math.max(0, span - tube);
+    const position = Math.max(0, Math.min(maxPosition, cursor));
     positions.push(position);
+    cursor = position + tube;
   }
 
   return positions.map((position, index) => ({
     index,
     position,
+    widthMm: tube,
     label: ORDINAL_LABELS[index] ? `${ORDINAL_LABELS[index]} parante` : `parante ${index + 1}`,
     distance: distanceInputs[index],
   }));
 }
-function getFinalLateralGapMm(markers, baseDimensionMm) {
-  const base = Number(baseDimensionMm || 0);
-  if (!Number.isFinite(base) || base <= 0 || !Array.isArray(markers) || !markers.length) return null;
+function getFinalLateralGapMm(markers, baseDimensionMm, tubeDiscountMm) {
+  const tube = Math.max(0, Number(tubeDiscountMm || 0) || DEFAULT_PARANTES_TUBE_DISCOUNT_MM);
+  const span = getParantesEffectiveSpanMm(baseDimensionMm, tube);
+  if (!Number.isFinite(span) || span <= 0 || !Array.isArray(markers) || !markers.length) return null;
   const last = markers[markers.length - 1];
-  const gap = base - Number(last?.position || 0);
+  const gap = span - Number(last?.position || 0) - Number(last?.widthMm || tube);
   return Number.isFinite(gap) && gap >= 0 ? gap : null;
 }
 function ParantesSketchModal({ open, onClose, orientation, parantesCount, baseDimensionMm, distances, distributeUniformly, tubeDiscountMm }) {
   if (!open) return null;
   const isHorizontal = orientation === "horizontal";
-  const base = Math.max(1, Number(baseDimensionMm || 1));
-  const markers = buildSketchParanteMarkers({ distances, parantesCount, baseDimensionMm, tubeDiscountMm });
-  const finalLateralGapMm = getFinalLateralGapMm(markers, baseDimensionMm);
+  const tube = Math.max(0, Number(tubeDiscountMm || 0) || DEFAULT_PARANTES_TUBE_DISCOUNT_MM);
+  const effectiveSpan = Math.max(1, getParantesEffectiveSpanMm(baseDimensionMm, tube));
+  const markers = buildSketchParanteMarkers({ distances, parantesCount, baseDimensionMm, tubeDiscountMm: tube });
+  const finalLateralGapMm = getFinalLateralGapMm(markers, baseDimensionMm, tube);
   const width = 720;
   const height = 360;
   const rectX = 70;
@@ -556,7 +587,7 @@ function ParantesSketchModal({ open, onClose, orientation, parantesCount, baseDi
   const rectW = 560;
   const rectH = 220;
   const axisLength = isHorizontal ? rectH : rectW;
-  const scale = axisLength / base;
+  const scale = axisLength / effectiveSpan;
   const axisStart = isHorizontal ? rectY : rectX;
   const crossStart = isHorizontal ? rectX : rectY;
   const crossSize = isHorizontal ? rectW : rectH;
@@ -593,7 +624,7 @@ function ParantesSketchModal({ open, onClose, orientation, parantesCount, baseDi
           <div>
             <div style={{ fontWeight: 900, fontSize: 18 }}>Esquema de parantes</div>
             <div className="muted">
-              Orientacion {isHorizontal ? "horizontal" : "vertical"} - {parantesCount || 0} parantes internos + 2 laterales - base {formatMm(baseDimensionMm)} - descuento cano {formatMm(tubeDiscountMm)}
+              Orientacion {isHorizontal ? "horizontal" : "vertical"} - {parantesCount || 0} parantes internos + 2 laterales - base {formatMm(baseDimensionMm)} - ancho cano {formatMm(tube)} - luz para repartir {formatMm(effectiveSpan)}
             </div>
           </div>
           <button type="button" onClick={onClose} style={{ border: "1px solid #ddd", borderRadius: 10, padding: "8px 12px", background: "#fff", cursor: "pointer" }}>
@@ -622,25 +653,27 @@ function ParantesSketchModal({ open, onClose, orientation, parantesCount, baseDi
           )}
           {markers.map((marker) => {
             const rawPos = axisStart + marker.position * scale;
-            const cappedPos = Math.max(axisStart, Math.min(axisStart + axisLength, rawPos));
+            const paranteSize = Math.max(4, Math.min(26, (marker.widthMm || tube) * scale));
+            const cappedPos = Math.max(axisStart, Math.min(axisStart + axisLength - paranteSize, rawPos));
+            const markerCenter = cappedPos + paranteSize / 2;
             const markerNumber = marker.index + 1;
             const distanceText = Number.isFinite(marker.distance) && marker.distance > 0 ? `${formatNumberForInput(marker.distance)} mm` : "repartido";
             if (isHorizontal) {
               return (
                 <g key={`parante-${marker.index}`}>
-                  <line x1={crossStart} y1={cappedPos} x2={crossStart + crossSize} y2={cappedPos} stroke="#2563eb" strokeWidth="5" />
-                  <circle cx={crossStart + crossSize + 18} cy={cappedPos} r="11" fill="#2563eb" />
-                  <text x={crossStart + crossSize + 18} y={cappedPos + 4} textAnchor="middle" fontSize="12" fontWeight="700" fill="#fff">{markerNumber}</text>
-                  <text x={crossStart + crossSize + 34} y={Math.max(rectY + 14, Math.min(rectY + rectH - 8, cappedPos + 4))} fontSize="13" fill="#0f172a">{distanceText}</text>
+                  <rect x={crossStart} y={cappedPos} width={crossSize} height={paranteSize} rx="2" fill="#2563eb" />
+                  <circle cx={crossStart + crossSize + 18} cy={markerCenter} r="11" fill="#2563eb" />
+                  <text x={crossStart + crossSize + 18} y={markerCenter + 4} textAnchor="middle" fontSize="12" fontWeight="700" fill="#fff">{markerNumber}</text>
+                  <text x={crossStart + crossSize + 34} y={Math.max(rectY + 14, Math.min(rectY + rectH - 8, markerCenter + 4))} fontSize="13" fill="#0f172a">{distanceText}</text>
                 </g>
               );
             }
             return (
               <g key={`parante-${marker.index}`}>
-                <line x1={cappedPos} y1={crossStart} x2={cappedPos} y2={crossStart + crossSize} stroke="#2563eb" strokeWidth="5" />
-                <circle cx={cappedPos} cy={crossStart + crossSize + 18} r="11" fill="#2563eb" />
-                <text x={cappedPos} y={crossStart + crossSize + 22} textAnchor="middle" fontSize="12" fontWeight="700" fill="#fff">{markerNumber}</text>
-                <text x={cappedPos} y={rectY + rectH + 48} fontSize="13" fill="#0f172a" textAnchor="middle">{distanceText}</text>
+                <rect x={cappedPos} y={crossStart} width={paranteSize} height={crossSize} rx="2" fill="#2563eb" />
+                <circle cx={markerCenter} cy={crossStart + crossSize + 18} r="11" fill="#2563eb" />
+                <text x={markerCenter} y={crossStart + crossSize + 22} textAnchor="middle" fontSize="12" fontWeight="700" fill="#fff">{markerNumber}</text>
+                <text x={markerCenter} y={rectY + rectH + 48} fontSize="13" fill="#0f172a" textAnchor="middle">{distanceText}</text>
               </g>
             );
           })}
@@ -665,10 +698,11 @@ function ParantesSketchModal({ open, onClose, orientation, parantesCount, baseDi
           ))}
           <div style={{ border: "1px solid #e5e7eb", borderRadius: 10, padding: 10 }}>
             <div className="muted">Parante lateral final</div>
-            <div style={{ fontWeight: 800 }}>{formatMm(baseDimensionMm) || "-"}</div>
+            <div style={{ fontWeight: 800 }}>{formatMm(effectiveSpan) || "-"}</div>
+            <div className="muted" style={{ marginTop: 4 }}>Base total: {formatMm(baseDimensionMm) || "-"}</div>
             {finalLateralGapMm !== null ? (
               <div className="muted" style={{ marginTop: 4 }}>
-                {formatNumberForInput(finalLateralGapMm)} mm desde parante interno {markers.length}
+                {formatNumberForInput(finalLateralGapMm)} mm libres desde parante interno {markers.length}
               </div>
             ) : null}
           </div>
@@ -782,10 +816,11 @@ export default function PortonDimensions({ kind = "porton" }) {
       firstDistanceMm: doorFirstParanteDistanceMm,
       parantesCount,
       baseDimensionMm: baseParantesDimensionMm,
+      tubeDiscountMm,
     });
-  }, [isNonAptoPorton, hasDoorParantesConfig, parantesCount, baseParantesDimensionMm, doorFirstParanteDistanceMm]);
+  }, [isNonAptoPorton, hasDoorParantesConfig, parantesCount, baseParantesDimensionMm, doorFirstParanteDistanceMm, tubeDiscountMm]);
   const sketchParantesDistances = nonAptoDoorParantesDistances || resolvedParantesDistances;
-  const sketchDistributeUniformly = isNonAptoPorton && hasDoorParantesConfig ? true : distributeUniformly;
+  const sketchDistributeUniformly = isNonAptoPorton ? true : distributeUniformly;
 
   useEffect(() => {
     if (!isPorton) return;
@@ -860,6 +895,7 @@ export default function PortonDimensions({ kind = "porton" }) {
       firstDistanceMm: doorFirstParanteDistanceMm,
       parantesCount,
       baseDimensionMm: baseParantesDimensionMm,
+      tubeDiscountMm,
     });
     const current = normalizeDistanceList(rawParantesDistances);
     const patch = {};
@@ -883,6 +919,7 @@ export default function PortonDimensions({ kind = "porton" }) {
     parantesCount,
     baseParantesDimensionMm,
     doorFirstParanteDistanceMm,
+    tubeDiscountMm,
     rawParantesDistances,
     distribution,
     dimensions?.distancia_primer_parante_mm,
@@ -1020,7 +1057,7 @@ export default function PortonDimensions({ kind = "porton" }) {
           <FieldBox label="Tipo / Sistema derivado"><Input value={portonType || ""} disabled placeholder="Se completa segun la combinacion de productos" style={disabledComputedInputStyle()} /></FieldBox>
           <FieldBox label="Kg por m2"><Input value={formatNumberForInput(preview.effectiveKgM2)} placeholder="Se calcula automaticamente segun el sistema" style={disabledComputedInputStyle()} disabled /></FieldBox>
           <FieldBox label="Superficie"><div style={{ fontWeight: 800, fontSize: 16, minHeight: 40, display: "flex", alignItems: "center", padding: "9px 12px", borderRadius: 10, border: "1px solid #d1d5db", background: "#f3f4f6", color: "#334155" }}>{area ? `${area.toFixed(2)} m2` : "-"}</div></FieldBox>
-          <FieldBox label="Orientacion de los parantes" helper={parantesFieldsReadOnly ? "Solo lectura. Definida automaticamente por reglas tecnicas segun los IDs del presupuesto." : ""}><select value={orientation} onChange={(e) => { if (!parantesFieldsReadOnly) setDimensions({ orientacion_parantes: e.target.value }); }} style={{ width: "100%", padding: "10px 12px", borderRadius: 8, border: "1px solid #ddd", background: parantesFieldsReadOnly ? "#f3f4f6" : "#fff", color: parantesFieldsReadOnly ? "#475569" : undefined }} disabled={parantesFieldsReadOnly}><option value="verticales">Verticales</option><option value="horizontal">Horizontal</option></select></FieldBox>
+          <FieldBox label="Orientacion de los parantes" helper={parantesFieldsReadOnly ? "Solo lectura. Definida automaticamente por reglas tecnicas segun los IDs del presupuesto." : ""}><select value={parantesFieldsReadOnly ? effectiveParantesOrientation : orientation} onChange={(e) => { if (!parantesFieldsReadOnly) setDimensions({ orientacion_parantes: e.target.value }); }} style={{ width: "100%", padding: "10px 12px", borderRadius: 8, border: "1px solid #ddd", background: parantesFieldsReadOnly ? "#f3f4f6" : "#fff", color: parantesFieldsReadOnly ? "#475569" : undefined }} disabled={parantesFieldsReadOnly}><option value="verticales">Verticales</option><option value="horizontal">Horizontal</option></select></FieldBox>
           <FieldBox label="Cantidad de parantes" helper={parantesHelper}><Input type="text" inputMode="numeric" value={String(dimensions?.cantidad_parantes ?? "")} disabled={parantesFieldsReadOnly} onChange={(v) => { if (!parantesFieldsReadOnly) setDimensions({ cantidad_parantes: normalizeIntegerInput(v) }); }} onBlur={(e) => { if (!parantesFieldsReadOnly) setDimensions({ cantidad_parantes: normalizeIntegerInput(e?.target?.value) }); }} style={parantesFieldsReadOnly ? disabledComputedInputStyle() : { width: "100%" }} placeholder="Ej: 3" /></FieldBox>
           <FieldBox label="Distribucion de los parantes" helper={parantesFieldsReadOnly ? "Solo lectura. Para no aptos se usa repartido automaticamente." : ""}><select value={distribution} onChange={(e) => { if (!parantesFieldsReadOnly) setDimensions({ distribucion_parantes: e.target.value }); }} style={{ width: "100%", padding: "10px 12px", borderRadius: 8, border: "1px solid #ddd", background: parantesFieldsReadOnly ? "#f3f4f6" : "#fff", color: parantesFieldsReadOnly ? "#475569" : undefined }} disabled={parantesFieldsReadOnly}><option value="repartido">Repartido</option><option value="especial">Especial</option></select></FieldBox>
         </>) : null}

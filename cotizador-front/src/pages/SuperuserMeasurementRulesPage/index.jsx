@@ -58,6 +58,7 @@ const DEFAULT_SURFACE_PARAMETERS = {
   non_apto_parantes_horizontal_product_ids: "",
   parantes_door_product_ids: "",
   parantes_door_first_distance_mm: 800,
+  parantes_tube_discount_mm: 40,
 };
 
 function textValue(value) {
@@ -105,6 +106,7 @@ function normalizeSurfaceParametersDraft(raw = {}) {
     non_apto_parantes_horizontal_product_ids: raw?.non_apto_parantes_horizontal_product_ids ?? "",
     parantes_door_product_ids: raw?.parantes_door_product_ids ?? raw?.door_product_ids ?? raw?.puerta_product_ids ?? "",
     parantes_door_first_distance_mm: raw?.parantes_door_first_distance_mm ?? 800,
+    parantes_tube_discount_mm: raw?.parantes_tube_discount_mm ?? raw?.parantes_cano_discount_mm ?? raw?.descuento_cano_parantes_mm ?? 40,
   };
 }
 function buildSurfaceParametersPayload(surfaceParameters = {}) {
@@ -134,6 +136,7 @@ function buildSurfaceParametersPayload(surfaceParameters = {}) {
     non_apto_parantes_horizontal_product_ids: textPayload(surfaceParameters.non_apto_parantes_horizontal_product_ids),
     parantes_door_product_ids: textPayload(surfaceParameters.parantes_door_product_ids),
     parantes_door_first_distance_mm: numericPayload(surfaceParameters.parantes_door_first_distance_mm) || 800,
+    parantes_tube_discount_mm: numericPayload(surfaceParameters.parantes_tube_discount_mm) || 40,
     apto_revestir_kg_m2_rules: (Array.isArray(surfaceParameters?.apto_revestir_kg_m2_rules)
       ? surfaceParameters.apto_revestir_kg_m2_rules
       : [])
@@ -641,16 +644,17 @@ export default function SuperuserMeasurementRulesPage() {
           <ParamInput label="Piernas anchas + ancho (mm)" value={surfaceParameters.legs_anchas_add_width_mm} onChange={(v) => setSurfaceParameters((prev) => ({ ...prev, legs_anchas_add_width_mm: v }))} />
           <ParamInput label="Piernas superanchas + ancho (mm)" value={surfaceParameters.legs_superanchas_add_width_mm} onChange={(v) => setSurfaceParameters((prev) => ({ ...prev, legs_superanchas_add_width_mm: v }))} />
           <ParamInput label="Piernas especiales + ancho (mm)" value={surfaceParameters.legs_especiales_add_width_mm} onChange={(v) => setSurfaceParameters((prev) => ({ ...prev, legs_especiales_add_width_mm: v }))} />
+          <ParamInput label="Ancho caño/parante para esquema (mm)" value={surfaceParameters.parantes_tube_discount_mm} onChange={(v) => setSurfaceParameters((prev) => ({ ...prev, parantes_tube_discount_mm: v }))} helper="Default 40 mm. Se usa para descontar lo que ocupa cada parante en el esquema." />
         </div>
 
         <div className="spacer" />
         <div style={{ border: "1px solid #dbeafe", borderRadius: 12, padding: 12, background: "#fff" }}>
           <div style={{ fontWeight: 900, marginBottom: 6 }}>Orientación de parantes para portones NO apto para revestir</div>
-          <div className="muted" style={{ marginBottom: 10 }}>Cargá IDs o combinaciones. Separá combinaciones con punto y coma o salto de línea. Dentro de una combinación, separá IDs con coma. Ejemplo: <b>123,456;789</b>.</div>
+          <div className="muted" style={{ marginBottom: 10 }}>Cargá IDs individuales separados con coma, punto, punto y coma o salto de línea. Para exigir una combinación, usá +. Ejemplos: <b>3025,3026</b> matchea cualquiera; <b>3591+3025</b> exige ambos.</div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 10 }}>
-            <ParamInput label="Vertical si contiene estos IDs/combinaciones" textarea value={surfaceParameters.non_apto_parantes_vertical_product_ids} onChange={(v) => setSurfaceParameters((prev) => ({ ...prev, non_apto_parantes_vertical_product_ids: v }))} helper="Cada grupo se evalúa como combinación completa. Si matchea, fuerza orientación Vertical." />
-            <ParamInput label="Horizontal si contiene estos IDs/combinaciones" textarea value={surfaceParameters.non_apto_parantes_horizontal_product_ids} onChange={(v) => setSurfaceParameters((prev) => ({ ...prev, non_apto_parantes_horizontal_product_ids: v }))} helper="Tiene prioridad sobre Vertical si ambas reglas matchean." />
-            <ParamInput label="IDs/combinaciones que indican portón con puerta" textarea value={surfaceParameters.parantes_door_product_ids} onChange={(v) => setSurfaceParameters((prev) => ({ ...prev, parantes_door_product_ids: v }))} helper="Cuando matchea y el portón no es apto para revestir, deja el primer parante a 800 mm por defecto y reparte el resto." />
+            <ParamInput label="Vertical si contiene estos IDs/combinaciones" textarea value={surfaceParameters.non_apto_parantes_vertical_product_ids} onChange={(v) => setSurfaceParameters((prev) => ({ ...prev, non_apto_parantes_vertical_product_ids: v }))} helper="Matchea cualquiera de los IDs cargados. Para combinación obligatoria usá +." />
+            <ParamInput label="Horizontal si contiene estos IDs/combinaciones" textarea value={surfaceParameters.non_apto_parantes_horizontal_product_ids} onChange={(v) => setSurfaceParameters((prev) => ({ ...prev, non_apto_parantes_horizontal_product_ids: v }))} helper="Tiene prioridad sobre Vertical si ambas reglas matchean. Acepta 3025,3026 o 3591+3025." />
+            <ParamInput label="IDs/combinaciones que indican portón con puerta" textarea value={surfaceParameters.parantes_door_product_ids} onChange={(v) => setSurfaceParameters((prev) => ({ ...prev, parantes_door_product_ids: v }))} helper="Matchea cualquiera de los IDs de puerta. Cuando matchea, deja el primer parante a 800 mm y reparte el resto." />
             <ParamInput label="Distancia primer parante con puerta (mm)" value={surfaceParameters.parantes_door_first_distance_mm} onChange={(v) => setSurfaceParameters((prev) => ({ ...prev, parantes_door_first_distance_mm: v }))} />
           </div>
           <div className="spacer" />

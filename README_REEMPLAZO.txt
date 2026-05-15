@@ -10,6 +10,8 @@ Cambios incluidos:
 
 - El esquema de hoja/parantes queda disponible para todos los portones.
 - Los parantes laterales se dibujan aparte y NO cuentan dentro de Cantidad de parantes.
+- El esquema ahora descuenta el ancho del caño/parante configurado en reglas tecnicas.
+  Ejemplo: base 2000 mm, caño 40 mm, 1 parante interno => 960 mm libres, 40 mm del parante y 960 mm libres.
 - Para apto para revestir se conserva:
   - orientacion, cantidad y distribucion de parantes editables;
   - distribucion especial con observaciones;
@@ -46,16 +48,21 @@ Nuevos campos:
   Key guardada: parantes_door_first_distance_mm
   Default: 800
 
+- Ancho caño/parante para esquema (mm)
+  Key guardada: parantes_tube_discount_mm
+  Default: 40
+
 Formato para IDs/combinaciones:
 
-- Un ID solo: 123
-- Varios IDs alternativos como reglas separadas: 123;456;789
-- Una combinacion obligatoria: 123,456
-- Varias combinaciones: 123,456;789,111
+- Un ID solo: 3025
+- Varios IDs alternativos: 3025,3026 o 3025.3026 o 3025;3026 o uno por linea
+- Una combinacion obligatoria: 3591+3025
+- Varias combinaciones/alternativas: 3591+3025;2845
 
-El sistema evalua cada grupo separado por punto y coma o salto de linea. Dentro de cada grupo, todos los IDs deben estar presentes.
+El punto, la coma, el punto y coma y el salto de linea separan IDs alternativos.
+Para exigir que varios IDs esten todos presentes, usar +.
 
-Correccion adicional:
+Correcciones adicionales:
 
 - Se agrego boton Guardar parametros arriba del bloque de parametros.
 - Se agrego boton Guardar configuracion de parantes dentro del bloque de orientacion para NO apto.
