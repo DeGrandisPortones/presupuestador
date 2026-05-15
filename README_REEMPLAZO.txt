@@ -8,11 +8,12 @@ Archivos incluidos:
 - SQL_FIX_PARANTES_EJEMPLO.sql
 
 Correccion de esta version:
-- Se corrige el dibujo de los segmentos rojos del esquema para que queden congruentes con los parantes azules.
-- En lectura de derecha a izquierda (puerta derecha), las cotas ahora se dibujan siguiendo la posicion visual real de los parantes en pantalla.
-- Los segmentos se calculan sobre el eje ya mostrado en el dibujo, evitando que queden invertidos o corridos.
-- Se mantiene la referencia desde el borde exterior y el grosor reforzado de los parantes laterales.
-
-Resultado esperado en el caso mostrado:
-- Si los parantes azules estan bien ubicados y los textos inferiores tambien, ahora los segmentos rojos deben alinearse con esos mismos parantes.
-- En puerta derecha, el tramo mas corto debe quedar del lado derecho del dibujo (no del izquierdo) si ese es el lado de la puerta.
+- Se agrega soporte para detectar puerta izquierda en portones NO apto para revestir.
+- Ahora se puede configurar por reglas técnicas un nuevo campo: IDs/combinaciones que indican puerta izquierda.
+- Si matchea puerta izquierda, el esquema y el cálculo quedan de izquierda a derecha.
+- Si matchea puerta derecha, el esquema y el cálculo quedan de derecha a izquierda.
+- La puerta izquierda tiene prioridad para evitar falsos positivos de puerta derecha por textos como "Derecha" en otros ítems.
+- El fallback por texto también se ajusta:
+  * puerta izquierda => detecta "puerta izquierda"
+  * puerta derecha => detecta "puerta derecha"
+  * ya no toma cualquier "derecha" suelto.

@@ -391,6 +391,10 @@ function hasDoorForParantes(lines, params) {
     ...parseProductCombinationRules(params?.right_door_product_ids),
     ...parseProductCombinationRules(params?.puerta_derecha_product_ids),
     ...parseProductCombinationRules(params?.door_right_product_ids),
+    ...parseProductCombinationRules(params?.parantes_left_door_product_ids),
+    ...parseProductCombinationRules(params?.left_door_product_ids),
+    ...parseProductCombinationRules(params?.puerta_izquierda_product_ids),
+    ...parseProductCombinationRules(params?.door_left_product_ids),
   ];
   if (doorRules.some((rule) => productRuleMatches(rule, lines))) return true;
   const text = (Array.isArray(lines) ? lines : [])
@@ -399,7 +403,22 @@ function hasDoorForParantes(lines, params) {
     .join(" | ");
   return text.includes("puerta ");
 }
+function hasLeftDoorForParantes(lines, params) {
+  const leftDoorRules = [
+    ...parseProductCombinationRules(params?.parantes_left_door_product_ids),
+    ...parseProductCombinationRules(params?.left_door_product_ids),
+    ...parseProductCombinationRules(params?.puerta_izquierda_product_ids),
+    ...parseProductCombinationRules(params?.door_left_product_ids),
+  ];
+  if (leftDoorRules.some((rule) => productRuleMatches(rule, lines))) return true;
+  const text = (Array.isArray(lines) ? lines : [])
+    .map((line) => [line?.name, line?.raw_name, line?.display_name, line?.alias, line?.code].filter(Boolean).join(" "))
+    .map(normalizeSearchText)
+    .join(" | ");
+  return text.includes("puerta izquierda");
+}
 function hasRightDoorForParantes(lines, params) {
+  if (hasLeftDoorForParantes(lines, params)) return false;
   const rightDoorRules = [
     ...parseProductCombinationRules(params?.parantes_right_door_product_ids),
     ...parseProductCombinationRules(params?.right_door_product_ids),
@@ -411,7 +430,7 @@ function hasRightDoorForParantes(lines, params) {
     .map((line) => [line?.name, line?.raw_name, line?.display_name, line?.alias, line?.code].filter(Boolean).join(" "))
     .map(normalizeSearchText)
     .join(" | ");
-  return text.includes("puerta derecha") || text.includes("derecha");
+  return text.includes("puerta derecha");
 }
 function normalizeSearchText(value) {
   return String(value || "")
@@ -1006,9 +1025,13 @@ export default function PortonDimensions({ kind = "porton" }) {
     () => isNonAptoPorton ? hasDoorForParantes(lines, params) : false,
     [isNonAptoPorton, lines, params],
   );
-  const isRightDoorParantes = useMemo(
-    () => (isNonAptoPorton && hasDoorParantesConfig) ? hasRightDoorForParantes(lines, params) : false,
+  const isLeftDoorParantes = useMemo(
+    () => (isNonAptoPorton && hasDoorParantesConfig) ? hasLeftDoorForParantes(lines, params) : false,
     [isNonAptoPorton, hasDoorParantesConfig, lines, params],
+  );
+  const isRightDoorParantes = useMemo(
+    () => (isNonAptoPorton && hasDoorParantesConfig && !isLeftDoorParantes) ? hasRightDoorForParantes(lines, params) : false,
+    [isNonAptoPorton, hasDoorParantesConfig, isLeftDoorParantes, lines, params],
   );
   const doorFirstParanteDistanceMm = useMemo(() => getDoorFirstParanteDistanceMm(params), [params]);
   const parantesCount = getParantesCount(dimensions?.cantidad_parantes);
