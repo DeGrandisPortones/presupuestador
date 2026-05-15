@@ -127,6 +127,48 @@ function resolveAptoKgM2ByProducts(lines, params) {
   }
   return 0;
 }
+function getByCleanPath(source, path) {
+  const parts = String(path || "")
+    .replace(/^payload\./, "")
+    .replace(/^dimensions\./, "")
+    .split(".")
+    .filter(Boolean);
+  let current = source;
+  for (const part of parts) {
+    if (!current || typeof current !== "object") return undefined;
+    current = current[part];
+  }
+  return current;
+}
+function resolveSellerKgM2Entry(dimensions, params) {
+  const source = dimensions && typeof dimensions === "object" ? dimensions : {};
+  const candidates = [];
+  if (params?.seller_kg_m2_field_path) candidates.push(params.seller_kg_m2_field_path);
+  candidates.push(
+    "dimensions.kg_m2",
+    "kg_m2",
+    "kg_m2_entry",
+    "entry_kg_m2",
+    "custom_kg_m2",
+    "peso_m2",
+    "payload.kg_m2_entry",
+  );
+  for (const path of candidates) {
+    const cleanPath = String(path || "").trim();
+    if (!cleanPath) continue;
+    const value = cleanPath.includes(".") ? getByCleanPath(source, cleanPath) : source?.[cleanPath];
+    const n = parseOptionalNumber(value);
+    if (Number.isFinite(n) && n > 0) return n;
+  }
+  return 0;
+}
+function resolveDefaultKgM2FromType(portonType, params) {
+  const t = norm(portonType);
+  if (t.includes("inyect") || t.includes("doble_iny") || t.endsWith("_iny") || t.includes("_iny_")) {
+    return getNumberParam(params, ["injected_kg_m2", "kg_m2_inyectado"], 25);
+  }
+  return getNumberParam(params, ["classic_kg_m2", "kg_m2_clasico", "kg_m2_clasico_estandar"], 15);
+}
 function legsTypeForWeight(weightKg, isApto, params) {
   const limitAngostas = getNumberParam(
     params,
@@ -179,7 +221,7 @@ function getParantesTubeDiscountMm(params) {
     DEFAULT_PARANTES_TUBE_DISCOUNT_MM,
   );
 }
-function buildCalculatedPreview({ widthM, heightM, lines, params, portonType }) {
+function buildCalculatedPreview({ widthM, heightM, lines, params, portonType, dimensions }) {
   const widthMm = Math.round((Number(widthM || 0) || 0) * 1000);
   const heightMm = Math.round((Number(heightM || 0) || 0) * 1000);
   const areaM2 = (Number(widthM || 0) || 0) * (Number(heightM || 0) || 0);
@@ -187,8 +229,12 @@ function buildCalculatedPreview({ widthM, heightM, lines, params, portonType }) 
   const installationMode = detectInstallationModeByProducts(lines, params);
   const aptoParaRevestir = isAptoDerivedType(portonType) || detectNoCladdingByProducts(lines, params);
   const aptoKg = aptoParaRevestir ? resolveAptoKgM2ByProducts(lines, params) : 0;
+  const sellerKgM2 = resolveSellerKgM2Entry(dimensions, params);
   const inferredKg = inferKgM2FromType(portonType);
-  const effectiveKgM2 = aptoParaRevestir ? aptoKg : inferredKg;
+  const defaultKgM2 = resolveDefaultKgM2FromType(portonType, params);
+  const effectiveKgM2 = aptoParaRevestir
+    ? (aptoKg || sellerKgM2 || defaultKgM2 || inferredKg)
+    : (sellerKgM2 || inferredKg || defaultKgM2);
 
   const weightHeightDiscountMm = Number(params?.weight_height_discount_mm || 10);
   const weightWidthDiscountMm = Number(params?.weight_width_discount_mm || 14);
@@ -528,8 +574,8 @@ export default function PortonDimensions({ kind = "porton" }) {
 
   const params = useMemo(() => getRulesParams(rulesQ.data), [rulesQ.data]);
   const preview = useMemo(
-    () => buildCalculatedPreview({ widthM: width, heightM: height, lines, params, portonType }),
-    [width, height, lines, params, portonType],
+    () => buildCalculatedPreview({ widthM: width, heightM: height, lines, params, portonType, dimensions }),
+    [width, height, lines, params, portonType, dimensions],
   );
   const aptoParaRevestir = isAptoDerivedType(portonType);
   const parantesCount = getParantesCount(dimensions?.cantidad_parantes);
@@ -556,14 +602,14 @@ export default function PortonDimensions({ kind = "porton" }) {
       if (String(dimensions?.kg_m2 || "").trim()) setDimensions({ kg_m2: "" });
       return;
     }
-    const configuredKgM2 = resolveAptoKgM2ByProducts(lines, params);
-    if (configuredKgM2 > 0) {
-      const nextValue = formatNumberForInput(configuredKgM2);
+    const nextKgM2 = resolveAptoKgM2ByProducts(lines, params) || preview.effectiveKgM2;
+    if (nextKgM2 > 0) {
+      const nextValue = formatNumberForInput(nextKgM2);
       if (String(dimensions?.kg_m2 || "").trim() !== nextValue) {
         setDimensions({ kg_m2: nextValue });
       }
     }
-  }, [isPorton, portonType, dimensions?.kg_m2, lines, params, setDimensions]);
+  }, [isPorton, portonType, dimensions?.kg_m2, lines, params, preview.effectiveKgM2, setDimensions]);
 
   useEffect(() => {
     if (!isPorton) return;

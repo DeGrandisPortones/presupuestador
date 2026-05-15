@@ -1,28 +1,27 @@
-Archivos incluidos para copiar y reemplazar en el repo presupuestador:
+Reemplazo listo para Presupuestador
+===================================
 
-1) cotizador-front/src/pages/CotizadorPage/components/PortonDimensions.jsx
-   - Activa la nueva seccion solo cuando el sistema derivado es para_revestir_con_al_pvc_otros y la distribucion de parantes es Especial.
-   - Mantiene observaciones de distribucion especial.
-   - Agrega distancia dentro a dentro por parante.
-   - Agrega + Agregar parante, que tambien incrementa Cantidad de parantes.
-   - Agrega Distribuir uniformemente.
-   - Agrega boton Ver esquema de parantes con popup visual.
-   - Lee el descuento del cano desde reglas tecnicas con estas keys, en orden:
-     parantes_tube_discount_mm
-     parantes_cano_discount_mm
-     descuento_cano_parantes_mm
-     descuento_tubo_parantes_mm
-     parantes_tube_width_mm
-   - Si no hay valor configurado, usa 40 mm.
+Copiar el contenido de esta carpeta sobre el proyecto, respetando rutas.
 
-2) cotizador-front/src/domain/quote/store.js
-   - Preserva todos los campos nuevos dentro de payload.dimensions al guardar y al recargar presupuestos.
-   - Antes solo recargaba width, height y kg_m2 desde dimensions; con este reemplazo no se pierden distancias de parantes.
+Archivos incluidos:
+- cotizador-front/src/pages/CotizadorPage/components/PortonDimensions.jsx
+- cotizador-front/src/domain/quote/store.js
+
+Cambios incluidos:
+1) Mantiene los cambios de parantes especiales para sistemas aptos para revestir:
+   - Campo Distancia dentro a dentro primer parante.
+   - Distancias adicionales por parante.
+   - Tildecito Distribuir uniformemente.
+   - Popup con esquema visual del porton segun orientacion, cantidad y distancias.
+   - Descuento configurable desde reglas tecnicas con fallback de 40 mm.
+
+2) Corrige el peso visible en el presupuestador para tipo/sistema apto para revestir:
+   - Ahora el preview de la pantalla de carga busca kg/m2 igual que el PDF/vista tecnica.
+   - Primero usa la tabla apto_revestir_kg_m2_rules si hay producto coincidente.
+   - Si no hay coincidencia, usa kg_m2 guardado en dimensions u otros campos legacy.
+   - Si tampoco hay valor, cae al kg/m2 base configurado en reglas tecnicas.
+   - Con eso vuelve a mostrar Kg/m2 efectivo, Peso estimado y Piernas estimadas en apto para revestir.
 
 Notas:
-- No es un patch. Son archivos completos para reemplazar.
-- Los datos nuevos quedan guardados en payload.dimensions:
-  distancias_parantes_mm
-  distancia_primer_parante_mm
-  distribuir_parantes_uniformemente
-  descuento_cano_parantes_mm
+- No es patch. Son archivos completos para reemplazar.
+- Si ya copiaste el zip anterior, este zip lo reemplaza y conserva esos cambios.
