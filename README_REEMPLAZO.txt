@@ -24,6 +24,7 @@ Cambios incluidos:
   - la cantidad de parantes se recalcula automaticamente segun orientacion y medidas;
   - la distribucion queda siempre repartido;
   - si detecta porton con puerta, deja el primer parante a 800 mm por defecto y reparte el resto hasta el lateral final;
+  - el esquema usa esa misma distribucion aunque los campos sean solo lectura;
   - la distancia de 800 mm tambien queda configurable en Reglas tecnicas.
 
 Configuracion en Reglas tecnicas:

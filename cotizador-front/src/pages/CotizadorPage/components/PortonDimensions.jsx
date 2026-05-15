@@ -776,6 +776,16 @@ export default function PortonDimensions({ kind = "porton" }) {
     baseDimensionMm: baseParantesDimensionMm,
     tubeDiscountMm,
   }), [rawParantesDistances, distributeUniformly, parantesCount, baseParantesDimensionMm, tubeDiscountMm, firstParanteDistance]);
+  const nonAptoDoorParantesDistances = useMemo(() => {
+    if (!isNonAptoPorton || !hasDoorParantesConfig || parantesCount <= 0 || baseParantesDimensionMm <= 0) return null;
+    return buildUniformParantesDistances({
+      firstDistanceMm: doorFirstParanteDistanceMm,
+      parantesCount,
+      baseDimensionMm: baseParantesDimensionMm,
+    });
+  }, [isNonAptoPorton, hasDoorParantesConfig, parantesCount, baseParantesDimensionMm, doorFirstParanteDistanceMm]);
+  const sketchParantesDistances = nonAptoDoorParantesDistances || resolvedParantesDistances;
+  const sketchDistributeUniformly = isNonAptoPorton && hasDoorParantesConfig ? true : distributeUniformly;
 
   useEffect(() => {
     if (!isPorton) return;
@@ -1107,8 +1117,8 @@ export default function PortonDimensions({ kind = "porton" }) {
         orientation={effectiveParantesOrientation}
         parantesCount={parantesCount}
         baseDimensionMm={baseParantesDimensionMm}
-        distances={resolvedParantesDistances}
-        distributeUniformly={distributeUniformly}
+        distances={sketchParantesDistances}
+        distributeUniformly={sketchDistributeUniformly}
         tubeDiscountMm={tubeDiscountMm}
       />
     </div>
