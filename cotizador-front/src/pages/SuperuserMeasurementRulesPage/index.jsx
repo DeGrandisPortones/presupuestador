@@ -109,6 +109,25 @@ function normalizeSurfaceParametersDraft(raw = {}) {
     parantes_tube_discount_mm: raw?.parantes_tube_discount_mm ?? raw?.parantes_cano_discount_mm ?? raw?.descuento_cano_parantes_mm ?? 40,
   };
 }
+function hasSurfaceParamContent(value) {
+  return !!(value && typeof value === "object" && Object.keys(value).length);
+}
+function getSurfaceParametersFromRulesData(rulesData = {}) {
+  if (hasSurfaceParamContent(rulesData?.surface_parameters)) return rulesData.surface_parameters;
+  if (hasSurfaceParamContent(rulesData?.surface_calc_params)) return rulesData.surface_calc_params;
+  if (hasSurfaceParamContent(rulesData?.surface_params)) return rulesData.surface_params;
+  if (hasSurfaceParamContent(rulesData?.measurement_surface_params)) return rulesData.measurement_surface_params;
+  return {};
+}
+function buildTechnicalRulesSavePayload({ rules, surfaceFinalFormula, surfaceParameters }) {
+  const surfacePayload = buildSurfaceParametersPayload(surfaceParameters);
+  return {
+    rules: buildRulesPayload(rules),
+    surface_final_formula: surfaceFinalFormula,
+    surface_parameters: surfacePayload,
+    surface_calc_params: surfacePayload,
+  };
+}
 function buildSurfaceParametersPayload(surfaceParameters = {}) {
   return {
     classic_kg_m2: numericPayload(surfaceParameters.classic_kg_m2),
@@ -407,7 +426,7 @@ export default function SuperuserMeasurementRulesPage() {
     if (!rulesQ.data) return;
     setRuleDraft({ rules: (rulesQ.data.rules || []).map((rule, index) => normalizeRuleDraft(rule, index)) });
     setSurfaceFinalFormula(String(rulesQ.data.surface_final_formula || "surface_automatica_m2"));
-    setSurfaceParameters(normalizeSurfaceParametersDraft(rulesQ.data.surface_parameters || {}));
+    setSurfaceParameters(normalizeSurfaceParametersDraft(getSurfaceParametersFromRulesData(rulesQ.data)));
   }, [rulesQ.data]);
 
   const products = useMemo(() => Array.isArray(catalogQ.data?.products) ? catalogQ.data.products : [], [catalogQ.data]);
@@ -472,13 +491,13 @@ export default function SuperuserMeasurementRulesPage() {
   async function saveSurfaceConfig() {
     setSavingSurfaceConfig(true);
     try {
-      const saved = await adminSaveTechnicalMeasurementRules({
-        rules: buildRulesPayload(rules),
-        surface_final_formula: surfaceFinalFormula,
-        surface_parameters: buildSurfaceParametersPayload(surfaceParameters),
-      });
+      const saved = await adminSaveTechnicalMeasurementRules(buildTechnicalRulesSavePayload({
+        rules,
+        surfaceFinalFormula,
+        surfaceParameters,
+      }));
       setSurfaceFinalFormula(String(saved.surface_final_formula || "surface_automatica_m2"));
-      setSurfaceParameters(normalizeSurfaceParametersDraft(saved.surface_parameters || {}));
+      setSurfaceParameters(normalizeSurfaceParametersDraft(getSurfaceParametersFromRulesData(saved)));
       window.alert("Configuración de superficie guardada.");
     } finally {
       setSavingSurfaceConfig(false);
@@ -487,14 +506,14 @@ export default function SuperuserMeasurementRulesPage() {
   async function saveRules() {
     setSavingRules(true);
     try {
-      const saved = await adminSaveTechnicalMeasurementRules({
-        rules: buildRulesPayload(rules),
-        surface_final_formula: surfaceFinalFormula,
-        surface_parameters: buildSurfaceParametersPayload(surfaceParameters),
-      });
+      const saved = await adminSaveTechnicalMeasurementRules(buildTechnicalRulesSavePayload({
+        rules,
+        surfaceFinalFormula,
+        surfaceParameters,
+      }));
       setRuleDraft({ rules: (saved.rules || []).map((rule, index) => normalizeRuleDraft(rule, index)) });
       setSurfaceFinalFormula(String(saved.surface_final_formula || "surface_automatica_m2"));
-      setSurfaceParameters(normalizeSurfaceParametersDraft(saved.surface_parameters || {}));
+      setSurfaceParameters(normalizeSurfaceParametersDraft(getSurfaceParametersFromRulesData(saved)));
       window.alert("Reglas guardadas.");
     } finally {
       setSavingRules(false);

@@ -40,9 +40,16 @@ function norm(v) {
 function normalizeKind(value) {
   return String(value || "porton").trim().toLowerCase();
 }
+function hasSurfaceParamContent(value) {
+  return !!(value && typeof value === "object" && Object.keys(value).length);
+}
 function getRulesParams(rulesData) {
   const root = rulesData || {};
-  return root.surface_parameters || root.surface_calc_params || root.surface_params || root.measurement_surface_params || {};
+  if (hasSurfaceParamContent(root.surface_parameters)) return root.surface_parameters;
+  if (hasSurfaceParamContent(root.surface_calc_params)) return root.surface_calc_params;
+  if (hasSurfaceParamContent(root.surface_params)) return root.surface_params;
+  if (hasSurfaceParamContent(root.measurement_surface_params)) return root.measurement_surface_params;
+  return {};
 }
 function getNumberParam(params, keys, fallback) {
   for (const key of keys) {
