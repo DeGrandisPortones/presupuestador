@@ -1053,13 +1053,14 @@ export default function PortonDimensions({ kind = "porton" }) {
   }), [rawParantesDistances, distributeUniformly, parantesCount, baseParantesDimensionMm, tubeDiscountMm, firstParanteDistance]);
   const nonAptoDoorParantesDistances = useMemo(() => {
     if (!isNonAptoPorton || !hasDoorParantesConfig || parantesCount <= 0 || baseParantesDimensionMm <= 0) return null;
+    const useDoorFirstDistance = normalizeOrientation(effectiveParantesOrientation) !== "horizontal";
     return buildUniformParantesDistances({
-      firstDistanceMm: doorFirstParanteDistanceMm,
+      firstDistanceMm: useDoorFirstDistance ? doorFirstParanteDistanceMm : 0,
       parantesCount,
       baseDimensionMm: baseParantesDimensionMm,
       tubeDiscountMm,
     });
-  }, [isNonAptoPorton, hasDoorParantesConfig, parantesCount, baseParantesDimensionMm, doorFirstParanteDistanceMm, tubeDiscountMm]);
+  }, [isNonAptoPorton, hasDoorParantesConfig, parantesCount, baseParantesDimensionMm, doorFirstParanteDistanceMm, tubeDiscountMm, effectiveParantesOrientation]);
   const sketchParantesDistances = nonAptoDoorParantesDistances || resolvedParantesDistances;
   const sketchDistributeUniformly = isNonAptoPorton ? true : distributeUniformly;
 
@@ -1132,8 +1133,9 @@ export default function PortonDimensions({ kind = "porton" }) {
 
   useEffect(() => {
     if (!isNonAptoPorton || !hasDoorParantesConfig || parantesCount <= 0 || baseParantesDimensionMm <= 0) return;
+    const useDoorFirstDistance = normalizeOrientation(effectiveParantesOrientation) !== "horizontal";
     const nextDistances = buildUniformParantesDistances({
-      firstDistanceMm: doorFirstParanteDistanceMm,
+      firstDistanceMm: useDoorFirstDistance ? doorFirstParanteDistanceMm : 0,
       parantesCount,
       baseDimensionMm: baseParantesDimensionMm,
       tubeDiscountMm,
@@ -1166,6 +1168,7 @@ export default function PortonDimensions({ kind = "porton" }) {
     dimensions?.distancia_primer_parante_mm,
     dimensions?.distribuir_parantes_uniformemente,
     dimensions?.parantes_door_auto_applied,
+    effectiveParantesOrientation,
     setDimensions,
   ]);
 
