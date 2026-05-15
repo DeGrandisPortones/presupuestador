@@ -11,13 +11,18 @@ Cambios incluidos:
 - El esquema de hoja/parantes queda disponible para todos los portones.
 - Los parantes laterales se dibujan aparte y NO cuentan dentro de Cantidad de parantes.
 - Para apto para revestir se conserva:
+  - orientacion, cantidad y distribucion de parantes editables;
   - distribucion especial con observaciones;
   - distancia dentro a dentro del primer parante;
   - distancias adicionales;
   - distribuir uniformemente;
   - descuento configurable del cano desde reglas tecnicas.
 - Para NO apto para revestir:
+  - orientacion, cantidad de parantes y distribucion quedan SOLO LECTURA;
   - la orientacion de parantes se fuerza desde Reglas tecnicas segun IDs o combinaciones de IDs;
+  - si no hay regla de orientacion que matchee, queda vertical por defecto;
+  - la cantidad de parantes se recalcula automaticamente segun orientacion y medidas;
+  - la distribucion queda siempre repartido;
   - si detecta porton con puerta, deja el primer parante a 800 mm por defecto y reparte el resto hasta el lateral final;
   - la distancia de 800 mm tambien queda configurable en Reglas tecnicas.
 
