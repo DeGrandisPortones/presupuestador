@@ -391,28 +391,44 @@ function buildParantesPayload({ distances, tubeDiscountMm }) {
     descuento_cano_parantes_mm: tubeDiscountMm,
   };
 }
-function buildSketchSegments(distances, baseDimensionMm) {
-  const nums = normalizeDistanceList(distances)
-    .map((item) => parseMmNumber(item))
-    .filter((n) => Number.isFinite(n) && n > 0);
-  const segments = [];
+function buildSketchParanteMarkers({ distances, parantesCount, baseDimensionMm, tubeDiscountMm }) {
+  const count = Math.max(0, Math.trunc(Number(parantesCount || 0)));
+  const base = Math.max(0, Number(baseDimensionMm || 0));
+  if (!count || !base) return [];
+
+  const distanceInputs = padDistanceList(distances, count).map((item) => parseMmNumber(item));
+  const edgeOffset = Math.max(1, Math.min(base / Math.max(count + 2, 3), Number(tubeDiscountMm || 0) || DEFAULT_PARANTES_TUBE_DISCOUNT_MM));
+  const positions = [];
   let cursor = 0;
-  nums.forEach((distance, index) => {
-    const start = cursor;
-    const end = Math.min(Number(baseDimensionMm || 0), cursor + distance);
-    if (end > start) segments.push({ index, start, end, distance });
-    cursor = end;
-  });
-  if (baseDimensionMm > cursor) {
-    segments.push({ index: segments.length, start: cursor, end: baseDimensionMm, distance: baseDimensionMm - cursor, finalSegment: true });
+
+  for (let index = 0; index < count; index += 1) {
+    const distance = distanceInputs[index];
+    let desiredPosition = null;
+    if (Number.isFinite(distance) && distance > 0) {
+      cursor += distance;
+      desiredPosition = cursor;
+    } else {
+      desiredPosition = ((index + 1) / (count + 1)) * base;
+    }
+
+    const minPosition = index === 0 ? edgeOffset : positions[index - 1] + 1;
+    const maxPosition = Math.max(minPosition, base - edgeOffset - (count - index - 1));
+    const position = Math.max(minPosition, Math.min(maxPosition, desiredPosition));
+    positions.push(position);
   }
-  return segments;
+
+  return positions.map((position, index) => ({
+    index,
+    position,
+    label: ORDINAL_LABELS[index] ? `${ORDINAL_LABELS[index]} parante` : `parante ${index + 1}`,
+    distance: distanceInputs[index],
+  }));
 }
 function ParantesSketchModal({ open, onClose, orientation, parantesCount, baseDimensionMm, distances, distributeUniformly, tubeDiscountMm }) {
   if (!open) return null;
   const isHorizontal = orientation === "horizontal";
   const base = Math.max(1, Number(baseDimensionMm || 1));
-  const segments = buildSketchSegments(distances, baseDimensionMm);
+  const markers = buildSketchParanteMarkers({ distances, parantesCount, baseDimensionMm, tubeDiscountMm });
   const width = 720;
   const height = 360;
   const rectX = 70;
@@ -457,7 +473,7 @@ function ParantesSketchModal({ open, onClose, orientation, parantesCount, baseDi
           <div>
             <div style={{ fontWeight: 900, fontSize: 18 }}>Esquema de parantes</div>
             <div className="muted">
-              Orientacion {isHorizontal ? "horizontal" : "vertical"} - {parantesCount || 0} parantes - base {formatMm(baseDimensionMm)} - descuento cano {formatMm(tubeDiscountMm)}
+              Orientacion {isHorizontal ? "horizontal" : "vertical"} - {parantesCount || 0} parantes internos + 2 laterales - base {formatMm(baseDimensionMm)} - descuento cano {formatMm(tubeDiscountMm)}
             </div>
           </div>
           <button type="button" onClick={onClose} style={{ border: "1px solid #ddd", borderRadius: 10, padding: "8px 12px", background: "#fff", cursor: "pointer" }}>
@@ -469,23 +485,42 @@ function ParantesSketchModal({ open, onClose, orientation, parantesCount, baseDi
           <rect x={rectX} y={rectY} width={rectW} height={rectH} rx="10" fill="#ffffff" stroke="#334155" strokeWidth="3" />
           <line x1={rectX} y1={rectY + rectH / 2} x2={rectX + rectW} y2={rectY + rectH / 2} stroke="#e2e8f0" strokeWidth="1" />
           <line x1={rectX + rectW / 2} y1={rectY} x2={rectX + rectW / 2} y2={rectY + rectH} stroke="#e2e8f0" strokeWidth="1" />
-          {segments.map((segment, index) => {
-            const rawPos = axisStart + segment.end * scale;
+          {isHorizontal ? (
+            <>
+              <line x1={rectX} y1={rectY} x2={rectX + rectW} y2={rectY} stroke="#0f172a" strokeWidth="7" />
+              <line x1={rectX} y1={rectY + rectH} x2={rectX + rectW} y2={rectY + rectH} stroke="#0f172a" strokeWidth="7" />
+              <text x={rectX - 8} y={rectY + 5} textAnchor="end" fontSize="12" fontWeight="700" fill="#0f172a">Lateral</text>
+              <text x={rectX - 8} y={rectY + rectH + 5} textAnchor="end" fontSize="12" fontWeight="700" fill="#0f172a">Lateral</text>
+            </>
+          ) : (
+            <>
+              <line x1={rectX} y1={rectY} x2={rectX} y2={rectY + rectH} stroke="#0f172a" strokeWidth="7" />
+              <line x1={rectX + rectW} y1={rectY} x2={rectX + rectW} y2={rectY + rectH} stroke="#0f172a" strokeWidth="7" />
+              <text x={rectX} y={rectY - 12} textAnchor="middle" fontSize="12" fontWeight="700" fill="#0f172a">Lateral</text>
+              <text x={rectX + rectW} y={rectY - 12} textAnchor="middle" fontSize="12" fontWeight="700" fill="#0f172a">Lateral</text>
+            </>
+          )}
+          {markers.map((marker) => {
+            const rawPos = axisStart + marker.position * scale;
             const cappedPos = Math.max(axisStart, Math.min(axisStart + axisLength, rawPos));
-            const labelPos = axisStart + (segment.start + segment.distance / 2) * scale;
-            const label = `${formatNumberForInput(segment.distance)} mm`;
+            const markerNumber = marker.index + 1;
+            const distanceText = Number.isFinite(marker.distance) && marker.distance > 0 ? `${formatNumberForInput(marker.distance)} mm` : "repartido";
             if (isHorizontal) {
               return (
-                <g key={`seg-${index}`}>
-                  {!segment.finalSegment ? <line x1={crossStart} y1={cappedPos} x2={crossStart + crossSize} y2={cappedPos} stroke="#0f172a" strokeWidth="5" /> : null}
-                  <text x={crossStart + crossSize + 12} y={Math.max(rectY + 14, Math.min(rectY + rectH - 8, labelPos))} fontSize="14" fill="#0f172a">{label}</text>
+                <g key={`parante-${marker.index}`}>
+                  <line x1={crossStart} y1={cappedPos} x2={crossStart + crossSize} y2={cappedPos} stroke="#2563eb" strokeWidth="5" />
+                  <circle cx={crossStart + crossSize + 18} cy={cappedPos} r="11" fill="#2563eb" />
+                  <text x={crossStart + crossSize + 18} y={cappedPos + 4} textAnchor="middle" fontSize="12" fontWeight="700" fill="#fff">{markerNumber}</text>
+                  <text x={crossStart + crossSize + 34} y={Math.max(rectY + 14, Math.min(rectY + rectH - 8, cappedPos + 4))} fontSize="13" fill="#0f172a">{distanceText}</text>
                 </g>
               );
             }
             return (
-              <g key={`seg-${index}`}>
-                {!segment.finalSegment ? <line x1={cappedPos} y1={crossStart} x2={cappedPos} y2={crossStart + crossSize} stroke="#0f172a" strokeWidth="5" /> : null}
-                <text x={Math.max(rectX + 20, Math.min(rectX + rectW - 70, labelPos))} y={rectY + rectH + 28} fontSize="14" fill="#0f172a" textAnchor="middle">{label}</text>
+              <g key={`parante-${marker.index}`}>
+                <line x1={cappedPos} y1={crossStart} x2={cappedPos} y2={crossStart + crossSize} stroke="#2563eb" strokeWidth="5" />
+                <circle cx={cappedPos} cy={crossStart + crossSize + 18} r="11" fill="#2563eb" />
+                <text x={cappedPos} y={crossStart + crossSize + 22} textAnchor="middle" fontSize="12" fontWeight="700" fill="#fff">{markerNumber}</text>
+                <text x={cappedPos} y={rectY + rectH + 48} fontSize="13" fill="#0f172a" textAnchor="middle">{distanceText}</text>
               </g>
             );
           })}
@@ -498,12 +533,20 @@ function ParantesSketchModal({ open, onClose, orientation, parantesCount, baseDi
         </svg>
         <div className="spacer" />
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 8 }}>
-          {normalizeDistanceList(distances).map((distance, index) => (
-            <div key={`distance-summary-${index}`} style={{ border: "1px solid #e5e7eb", borderRadius: 10, padding: 10 }}>
-              <div className="muted">{index === 0 ? "Primer parante" : `Parante ${index + 1}`}</div>
-              <div style={{ fontWeight: 800 }}>{distance ? `${distance} mm` : "-"}</div>
+          <div style={{ border: "1px solid #e5e7eb", borderRadius: 10, padding: 10 }}>
+            <div className="muted">Parante lateral inicial</div>
+            <div style={{ fontWeight: 800 }}>0 mm</div>
+          </div>
+          {markers.map((marker) => (
+            <div key={`distance-summary-${marker.index}`} style={{ border: "1px solid #e5e7eb", borderRadius: 10, padding: 10 }}>
+              <div className="muted">{marker.index === 0 ? "Primer parante interno" : `Parante interno ${marker.index + 1}`}</div>
+              <div style={{ fontWeight: 800 }}>{formatNumberForInput(marker.position)} mm desde lateral</div>
             </div>
           ))}
+          <div style={{ border: "1px solid #e5e7eb", borderRadius: 10, padding: 10 }}>
+            <div className="muted">Parante lateral final</div>
+            <div style={{ fontWeight: 800 }}>{formatMm(baseDimensionMm) || "-"}</div>
+          </div>
         </div>
       </div>
     </div>
@@ -768,6 +811,21 @@ export default function PortonDimensions({ kind = "porton" }) {
         </>
       ) : null}
 
+      {isPorton ? (
+        <>
+          <div className="spacer" />
+          <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "center", border: "1px solid #e5e7eb", borderRadius: 14, padding: 12, background: "#fff" }}>
+            <div>
+              <div style={{ fontWeight: 900, marginBottom: 4 }}>Esquema de hoja y parantes</div>
+              <div className="muted">Disponible para todos los portones. Los parantes laterales se muestran aparte y no se cuentan dentro de la cantidad ingresada.</div>
+            </div>
+            <button type="button" onClick={() => setParantesSketchOpen(true)} style={{ border: "1px solid #c7d2fe", borderRadius: 10, background: "#eef2ff", padding: "9px 12px", fontWeight: 800, cursor: "pointer" }}>
+              Ver esquema de parantes
+            </button>
+          </div>
+        </>
+      ) : null}
+
       {showSpecialParantesDistances ? (
         <>
           <div className="spacer" />
@@ -779,9 +837,6 @@ export default function PortonDimensions({ kind = "porton" }) {
                   Base usada: {orientation === "horizontal" ? "Alto" : "Ancho"} {formatMm(baseParantesDimensionMm) || "-"}. Descuento de cano desde reglas tecnicas: {formatMm(tubeDiscountMm)}.
                 </div>
               </div>
-              <button type="button" onClick={() => setParantesSketchOpen(true)} style={{ border: "1px solid #c7d2fe", borderRadius: 10, background: "#eef2ff", padding: "9px 12px", fontWeight: 800, cursor: "pointer" }}>
-                Ver esquema de parantes
-              </button>
             </div>
             <div className="spacer" />
             <label style={{ display: "flex", gap: 8, alignItems: "center", fontWeight: 700 }}>
