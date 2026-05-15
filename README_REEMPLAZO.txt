@@ -1,18 +1,26 @@
-Reemplazar estos archivos completos en el repo presupuestador.
+Reemplazo completo - fix persistencia reglas de parantes
 
-Archivos incluidos:
-- cotizador-front/src/pages/CotizadorPage/components/PortonDimensions.jsx
-- cotizador-front/src/domain/quote/store.js
-- cotizador-front/src/pages/SuperuserMeasurementRulesPage/index.jsx
+Copiar y reemplazar estos archivos en el repo:
 
-Correccion de esta version:
-- Los campos de orientacion/parantes para portones NO apto se guardan en surface_parameters y tambien en surface_calc_params para compatibilidad.
-- Al recargar Reglas tecnicas, la pantalla lee surface_parameters, surface_calc_params, surface_params o measurement_surface_params, usando el primero que tenga contenido.
-- El esquema tambien lee los parametros con ese mismo fallback, para que tome los IDs configurados al refrescar.
+1) cotizador-front/src/pages/CotizadorPage/components/PortonDimensions.jsx
+2) cotizador-front/src/domain/quote/store.js
+3) cotizador-front/src/pages/SuperuserMeasurementRulesPage/index.jsx
+4) cotizador-back/src/settingsDb.js
 
-Mantiene:
-- Esquema siempre disponible.
-- Laterales fuera del conteo de parantes internos.
-- Descuento de cano/parante configurable.
-- Orientacion por IDs o combinaciones.
-- No aptos en solo lectura y calculados por reglas tecnicas.
+IMPORTANTE:
+- Esta version incluye tambien el archivo del backend settingsDb.js.
+- El problema de que los IDs se veian guardados pero al refrescar quedaban vacios estaba en la normalizacion/lectura de parametros de reglas tecnicas.
+- Ahora los parametros de parantes se preservan como texto, incluso si tienen comas, puntos, punto y coma, saltos de linea o combinaciones con +.
+- Tambien se fusionan surface_parameters y surface_calc_params, para no perder datos si una rama viene incompleta.
+
+Campos que ahora persisten:
+- non_apto_parantes_vertical_product_ids
+- non_apto_parantes_horizontal_product_ids
+- parantes_door_product_ids
+- parantes_door_first_distance_mm
+- parantes_tube_discount_mm
+
+Formato de IDs:
+- 3025,3026 => matchea cualquiera
+- 3591+3025 => exige ambos
+- tambien acepta punto, punto y coma o salto de linea como separadores simples.

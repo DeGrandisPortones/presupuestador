@@ -99,6 +99,90 @@ function normalizeIdList(value) {
   if (Array.isArray(value)) return value.map((x) => Number(x)).filter((x) => Number.isFinite(x) && x > 0);
   return String(value || "").split(/[;,\s]+/).map((x) => Number(x)).filter((x) => Number.isFinite(x) && x > 0);
 }
+function hasObjectContent(value) {
+  return !!(value && typeof value === "object" && !Array.isArray(value) && Object.keys(value).length);
+}
+function normalizeNumberOrText(value) {
+  const text = String(value ?? "").trim();
+  if (!text) return "";
+  const num = Number(text.replace(",", "."));
+  return Number.isFinite(num) && String(value).trim().match(/^-?\d+(?:[,.]\d+)?$/) ? num : text;
+}
+
+const TEXT_SURFACE_PARAM_KEYS = new Set([
+  "seller_kg_m2_field_path",
+  "non_apto_parantes_vertical_product_ids",
+  "non_apto_parantes_horizontal_product_ids",
+  "parantes_door_product_ids",
+  "door_product_ids",
+  "puerta_product_ids",
+  "con_puerta_product_ids",
+  "porton_door_product_ids",
+  "parantes_vertical_product_ids",
+  "vertical_parantes_product_ids",
+  "parantes_horizontal_product_ids",
+  "horizontal_parantes_product_ids",
+]);
+
+const SURFACE_PARAM_ALIASES = {
+  parantes_door_product_ids: ["parantes_door_product_ids", "door_product_ids", "puerta_product_ids", "con_puerta_product_ids", "porton_door_product_ids"],
+  non_apto_parantes_vertical_product_ids: ["non_apto_parantes_vertical_product_ids", "parantes_vertical_product_ids", "vertical_parantes_product_ids"],
+  non_apto_parantes_horizontal_product_ids: ["non_apto_parantes_horizontal_product_ids", "parantes_horizontal_product_ids", "horizontal_parantes_product_ids"],
+  parantes_tube_discount_mm: ["parantes_tube_discount_mm", "parantes_cano_discount_mm", "descuento_cano_parantes_mm", "descuento_tubo_parantes_mm", "parantes_tube_width_mm"],
+};
+
+function pickFirstNonEmpty(source = {}, keys = []) {
+  for (const key of keys) {
+    const value = source?.[key];
+    if (value !== undefined && value !== null && String(value).trim() !== "") return value;
+  }
+  return undefined;
+}
+function normalizeSurfaceCalcParams(raw = {}) {
+  const out = {};
+  const source = raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {};
+  for (const [key, value] of Object.entries(source)) {
+    if (["inside_vano_product_ids", "behind_vano_product_ids", "apto_para_revestir_product_ids", "sin_revestimiento_product_ids"].includes(key)) {
+      out[key] = normalizeIdList(value);
+      continue;
+    }
+    if (key === "apto_revestir_kg_m2_rules") {
+      out[key] = (Array.isArray(value) ? value : [])
+        .map((item, index) => ({
+          id: normalizeText(item?.id || `apto_rule_${index + 1}`),
+          product_id: Number(item?.product_id || 0) || null,
+          product_label: normalizeText(item?.product_label || ""),
+          kg_m2: (() => {
+            const num = Number(String(item?.kg_m2 ?? "").replace(",", "."));
+            return Number.isFinite(num) && num > 0 ? num : null;
+          })(),
+        }))
+        .filter((item) => item.product_id && item.kg_m2);
+      continue;
+    }
+    if (TEXT_SURFACE_PARAM_KEYS.has(key)) {
+      out[key] = normalizeText(value);
+      continue;
+    }
+    out[key] = normalizeNumberOrText(value);
+  }
+
+  for (const [target, keys] of Object.entries(SURFACE_PARAM_ALIASES)) {
+    const selected = pickFirstNonEmpty(source, keys);
+    if (selected !== undefined) {
+      out[target] = TEXT_SURFACE_PARAM_KEYS.has(target) ? normalizeText(selected) : normalizeNumberOrText(selected);
+    }
+  }
+
+  return out;
+}
+function mergeSurfaceParameterSources(...sources) {
+  const merged = {};
+  for (const source of sources) {
+    if (hasObjectContent(source)) Object.assign(merged, normalizeSurfaceCalcParams(source));
+  }
+  return normalizeSurfaceCalcParams(merged);
+}
 
 function normalizeTechnicalMeasurementRule(rule = {}, index = 0) {
   const source_key = normalizeText(rule.source_key || rule.field_key);
@@ -163,45 +247,22 @@ function normalizeSystemDerivationRule(rule = {}, index = 0) {
     sort_order: Number(rule?.sort_order || index + 1) || index + 1,
   };
 }
-function normalizeSurfaceCalcParams(raw = {}) {
-  const out = {};
-  for (const [key, value] of Object.entries(raw && typeof raw === "object" ? raw : {})) {
-    if (["inside_vano_product_ids", "behind_vano_product_ids", "apto_para_revestir_product_ids", "sin_revestimiento_product_ids"].includes(key)) {
-      out[key] = normalizeIdList(value);
-      continue;
-    }
-    if (key === "apto_revestir_kg_m2_rules") {
-      out[key] = (Array.isArray(value) ? value : [])
-        .map((item, index) => ({
-          id: normalizeText(item?.id || `apto_rule_${index + 1}`),
-          product_id: Number(item?.product_id || 0) || null,
-          product_label: normalizeText(item?.product_label || ""),
-          kg_m2: (() => {
-            const num = Number(String(item?.kg_m2 ?? "").replace(",", "."));
-            return Number.isFinite(num) && num > 0 ? num : null;
-          })(),
-        }))
-        .filter((item) => item.product_id && item.kg_m2);
-      continue;
-    }
-    const text = String(value ?? "").trim();
-    const num = Number(text.replace(",", "."));
-    out[key] = Number.isFinite(num) ? num : text;
-  }
-  return out;
-}
 function normalizeTechnicalMeasurementRules(raw = {}) {
-  const rules = Array.isArray(raw?.rules) ? raw.rules : [];
-  const surface_helper_rules = Array.isArray(raw?.surface_helper_rules) ? raw.surface_helper_rules : [];
-  const section_dependency_rules = Array.isArray(raw?.section_dependency_rules) ? raw.section_dependency_rules : [];
-  const system_derivation_rules = Array.isArray(raw?.system_derivation_rules) ? raw.system_derivation_rules : [];
-  const initial_section_id = Number(raw?.initial_section_id || 0) || null;
-  const normalizedSurfaceParameters = normalizeSurfaceCalcParams(
-    raw?.surface_parameters ?? raw?.surface_calc_params ?? raw?.surface_params ?? raw?.measurement_surface_params ?? {},
+  const source = raw && typeof raw === "object" ? raw : {};
+  const rules = Array.isArray(source.rules) ? source.rules : [];
+  const surface_helper_rules = Array.isArray(source.surface_helper_rules) ? source.surface_helper_rules : [];
+  const section_dependency_rules = Array.isArray(source.section_dependency_rules) ? source.section_dependency_rules : [];
+  const system_derivation_rules = Array.isArray(source.system_derivation_rules) ? source.system_derivation_rules : [];
+  const initial_section_id = Number(source.initial_section_id || 0) || null;
+  const normalizedSurfaceParameters = mergeSurfaceParameterSources(
+    source.measurement_surface_params,
+    source.surface_params,
+    source.surface_calc_params,
+    source.surface_parameters,
   );
   return {
     rules: rules.map((r, i) => normalizeTechnicalMeasurementRule(r, i)).filter(Boolean).sort((a, b) => a.sort_order - b.sort_order),
-    surface_final_formula: normalizeSurfaceFinalFormula(raw?.surface_final_formula),
+    surface_final_formula: normalizeSurfaceFinalFormula(source.surface_final_formula),
     surface_helper_rules: surface_helper_rules.map((r, i) => normalizeSurfaceHelperRule(r, i)).filter(Boolean).sort((a, b) => a.sort_order - b.sort_order),
     surface_parameters: normalizedSurfaceParameters,
     surface_calc_params: normalizedSurfaceParameters,
@@ -289,7 +350,10 @@ async function getSetting(key, fallback) {
 }
 async function setSetting(key, value) {
   await ensureSettingsTable();
-  await dbQuery(`insert into public.presupuestador_settings (key, value_json, updated_at) values ($1, $2::jsonb, now()) on conflict (key) do update set value_json=excluded.value_json, updated_at=now()`, [key, JSON.stringify(value)]);
+  await dbQuery(
+    `insert into public.presupuestador_settings (key, value_json, updated_at) values ($1, $2::jsonb, now()) on conflict (key) do update set value_json=excluded.value_json, updated_at=now()`,
+    [key, JSON.stringify(value)],
+  );
   return value;
 }
 
@@ -325,11 +389,14 @@ export async function setTechnicalMeasurementRules(payload = {}, kind = "porton"
   const k = normalizeCatalogKind(kind);
   const raw = await getSetting(TECHNICAL_MEASUREMENT_RULES_KEY, {});
   const current = await getTechnicalMeasurementRules(k);
-  const nextSurfaceParameters = payload?.surface_parameters !== undefined
-    ? payload.surface_parameters
-    : payload?.surface_calc_params !== undefined
-      ? payload.surface_calc_params
-      : current?.surface_parameters ?? current?.surface_calc_params;
+  const nextSurfaceParameters = mergeSurfaceParameterSources(
+    current?.surface_parameters,
+    current?.surface_calc_params,
+    payload?.measurement_surface_params,
+    payload?.surface_params,
+    payload?.surface_calc_params,
+    payload?.surface_parameters,
+  );
   const merged = {
     ...(current || {}),
     ...(payload && typeof payload === "object" ? payload : {}),
@@ -350,9 +417,7 @@ export async function setTechnicalMeasurementRules(payload = {}, kind = "porton"
     ...(raw && typeof raw === "object" ? raw : {}),
     catalog_rules: nextCatalogRules,
   };
-  if (k === "porton") {
-    Object.assign(nextRaw, normalized);
-  }
+  if (k === "porton") Object.assign(nextRaw, normalized);
   await setSetting(TECHNICAL_MEASUREMENT_RULES_KEY, nextRaw);
   return normalized;
 }
@@ -367,7 +432,6 @@ export async function getTechnicalMeasurementFieldDefinitions() {
 export async function setTechnicalMeasurementFieldDefinitions(payload = {}) {
   return setSetting(TECHNICAL_MEASUREMENT_FIELDS_KEY, normalizeTechnicalMeasurementFields(payload));
 }
-
 export async function getProductionPlanningSettings() {
   const raw = await getSetting(PRODUCTION_PLANNING_SETTINGS_KEY, { years: {} });
   return normalizeProductionPlanningSettings(raw);
@@ -394,7 +458,4 @@ export async function setProductionPlanningYear({ year, weeks = [] } = {}) {
   const saved = await setSetting(PRODUCTION_PLANNING_SETTINGS_KEY, normalizeProductionPlanningSettings(next));
   return getPlanningYear(saved, numericYear);
 }
-
-export async function getCommercialFinalTolerancePercent() {
-  return 0;
-}
+export async function getCommercialFinalTolerancePercent() { return 0; }

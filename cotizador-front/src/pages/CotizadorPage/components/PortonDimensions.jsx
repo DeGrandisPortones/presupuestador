@@ -45,11 +45,12 @@ function hasSurfaceParamContent(value) {
 }
 function getRulesParams(rulesData) {
   const root = rulesData || {};
-  if (hasSurfaceParamContent(root.surface_parameters)) return root.surface_parameters;
-  if (hasSurfaceParamContent(root.surface_calc_params)) return root.surface_calc_params;
-  if (hasSurfaceParamContent(root.surface_params)) return root.surface_params;
-  if (hasSurfaceParamContent(root.measurement_surface_params)) return root.measurement_surface_params;
-  return {};
+  return {
+    ...(hasSurfaceParamContent(root.measurement_surface_params) ? root.measurement_surface_params : {}),
+    ...(hasSurfaceParamContent(root.surface_params) ? root.surface_params : {}),
+    ...(hasSurfaceParamContent(root.surface_calc_params) ? root.surface_calc_params : {}),
+    ...(hasSurfaceParamContent(root.surface_parameters) ? root.surface_parameters : {}),
+  };
 }
 function getNumberParam(params, keys, fallback) {
   for (const key of keys) {

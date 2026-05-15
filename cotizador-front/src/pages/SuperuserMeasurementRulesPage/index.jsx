@@ -113,11 +113,12 @@ function hasSurfaceParamContent(value) {
   return !!(value && typeof value === "object" && Object.keys(value).length);
 }
 function getSurfaceParametersFromRulesData(rulesData = {}) {
-  if (hasSurfaceParamContent(rulesData?.surface_parameters)) return rulesData.surface_parameters;
-  if (hasSurfaceParamContent(rulesData?.surface_calc_params)) return rulesData.surface_calc_params;
-  if (hasSurfaceParamContent(rulesData?.surface_params)) return rulesData.surface_params;
-  if (hasSurfaceParamContent(rulesData?.measurement_surface_params)) return rulesData.measurement_surface_params;
-  return {};
+  return {
+    ...(hasSurfaceParamContent(rulesData?.measurement_surface_params) ? rulesData.measurement_surface_params : {}),
+    ...(hasSurfaceParamContent(rulesData?.surface_params) ? rulesData.surface_params : {}),
+    ...(hasSurfaceParamContent(rulesData?.surface_calc_params) ? rulesData.surface_calc_params : {}),
+    ...(hasSurfaceParamContent(rulesData?.surface_parameters) ? rulesData.surface_parameters : {}),
+  };
 }
 function buildTechnicalRulesSavePayload({ rules, surfaceFinalFormula, surfaceParameters }) {
   const surfacePayload = buildSurfaceParametersPayload(surfaceParameters);
@@ -491,7 +492,7 @@ export default function SuperuserMeasurementRulesPage() {
   async function saveSurfaceConfig() {
     setSavingSurfaceConfig(true);
     try {
-      const saved = await adminSaveTechnicalMeasurementRules(buildTechnicalRulesSavePayload({
+      const saved = await adminSaveTechnicalMeasurementRules("porton", buildTechnicalRulesSavePayload({
         rules,
         surfaceFinalFormula,
         surfaceParameters,
@@ -506,7 +507,7 @@ export default function SuperuserMeasurementRulesPage() {
   async function saveRules() {
     setSavingRules(true);
     try {
-      const saved = await adminSaveTechnicalMeasurementRules(buildTechnicalRulesSavePayload({
+      const saved = await adminSaveTechnicalMeasurementRules("porton", buildTechnicalRulesSavePayload({
         rules,
         surfaceFinalFormula,
         surfaceParameters,
