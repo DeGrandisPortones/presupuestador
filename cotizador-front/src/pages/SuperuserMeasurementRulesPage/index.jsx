@@ -57,6 +57,7 @@ const DEFAULT_SURFACE_PARAMETERS = {
   non_apto_parantes_vertical_product_ids: "",
   non_apto_parantes_horizontal_product_ids: "",
   parantes_door_product_ids: "",
+  parantes_right_door_product_ids: "",
   parantes_door_first_distance_mm: 800,
   parantes_tube_discount_mm: 40,
 };
@@ -101,6 +102,7 @@ function pickParantesConfig(surfaceParameters = {}) {
     non_apto_parantes_vertical_product_ids: textPayload(surfaceParameters.non_apto_parantes_vertical_product_ids),
     non_apto_parantes_horizontal_product_ids: textPayload(surfaceParameters.non_apto_parantes_horizontal_product_ids),
     parantes_door_product_ids: textPayload(surfaceParameters.parantes_door_product_ids),
+    parantes_right_door_product_ids: textPayload(surfaceParameters.parantes_right_door_product_ids),
     parantes_door_first_distance_mm: numericPayload(surfaceParameters.parantes_door_first_distance_mm) || 800,
     parantes_tube_discount_mm: numericPayload(surfaceParameters.parantes_tube_discount_mm) || 40,
   };
@@ -150,6 +152,7 @@ function normalizeSurfaceParametersDraft(raw = {}) {
     non_apto_parantes_vertical_product_ids: raw?.non_apto_parantes_vertical_product_ids ?? "",
     non_apto_parantes_horizontal_product_ids: raw?.non_apto_parantes_horizontal_product_ids ?? "",
     parantes_door_product_ids: raw?.parantes_door_product_ids ?? raw?.door_product_ids ?? raw?.puerta_product_ids ?? "",
+    parantes_right_door_product_ids: raw?.parantes_right_door_product_ids ?? raw?.right_door_product_ids ?? raw?.puerta_derecha_product_ids ?? raw?.door_right_product_ids ?? "",
     parantes_door_first_distance_mm: raw?.parantes_door_first_distance_mm ?? 800,
     parantes_tube_discount_mm: raw?.parantes_tube_discount_mm ?? raw?.parantes_cano_discount_mm ?? raw?.descuento_cano_parantes_mm ?? 40,
   };
@@ -208,6 +211,7 @@ function buildSurfaceParametersPayload(surfaceParameters = {}) {
     non_apto_parantes_vertical_product_ids: textPayload(surfaceParameters.non_apto_parantes_vertical_product_ids),
     non_apto_parantes_horizontal_product_ids: textPayload(surfaceParameters.non_apto_parantes_horizontal_product_ids),
     parantes_door_product_ids: textPayload(surfaceParameters.parantes_door_product_ids),
+    parantes_right_door_product_ids: textPayload(surfaceParameters.parantes_right_door_product_ids),
     parantes_door_first_distance_mm: numericPayload(surfaceParameters.parantes_door_first_distance_mm) || 800,
     parantes_tube_discount_mm: numericPayload(surfaceParameters.parantes_tube_discount_mm) || 40,
     apto_revestir_kg_m2_rules: (Array.isArray(surfaceParameters?.apto_revestir_kg_m2_rules)
@@ -736,7 +740,8 @@ export default function SuperuserMeasurementRulesPage() {
             <ParamInput label="Vertical si contiene estos IDs/combinaciones" textarea value={surfaceParameters.non_apto_parantes_vertical_product_ids} onChange={(v) => setSurfaceParameters((prev) => ({ ...prev, non_apto_parantes_vertical_product_ids: v }))} helper="Matchea cualquiera de los IDs cargados. Para combinación obligatoria usá +." />
             <ParamInput label="Horizontal si contiene estos IDs/combinaciones" textarea value={surfaceParameters.non_apto_parantes_horizontal_product_ids} onChange={(v) => setSurfaceParameters((prev) => ({ ...prev, non_apto_parantes_horizontal_product_ids: v }))} helper="Tiene prioridad sobre Vertical si ambas reglas matchean. Acepta 3025,3026 o 3591+3025." />
             <ParamInput label="IDs/combinaciones que indican portón con puerta" textarea value={surfaceParameters.parantes_door_product_ids} onChange={(v) => setSurfaceParameters((prev) => ({ ...prev, parantes_door_product_ids: v }))} helper="Matchea cualquiera de los IDs de puerta. Cuando matchea, deja el primer parante a 800 mm y reparte el resto." />
-            <ParamInput label="Distancia primer parante con puerta (mm)" value={surfaceParameters.parantes_door_first_distance_mm} onChange={(v) => setSurfaceParameters((prev) => ({ ...prev, parantes_door_first_distance_mm: v }))} />
+            <ParamInput label="IDs/combinaciones que indican puerta derecha" textarea value={surfaceParameters.parantes_right_door_product_ids} onChange={(v) => setSurfaceParameters((prev) => ({ ...prev, parantes_right_door_product_ids: v }))} helper="Si matchea y el portón tiene puerta, el esquema se muestra de derecha a izquierda." />
+            <ParamInput label="Distancia primer parante con puerta (mm)" value={surfaceParameters.parantes_door_first_distance_mm} onChange={(v) => setSurfaceParameters((prev) => ({ ...prev, parantes_door_first_distance_mm: v }))} helper="Default 800 mm. Se usa para fijar el parante de la puerta y el arranque del reparto." />
           </div>
           <div className="spacer" />
           <Button variant="primary" onClick={saveSurfaceConfig} disabled={savingSurfaceConfig || savingRules}>

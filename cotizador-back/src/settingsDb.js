@@ -114,6 +114,7 @@ const TEXT_SURFACE_PARAM_KEYS = new Set([
   "non_apto_parantes_vertical_product_ids",
   "non_apto_parantes_horizontal_product_ids",
   "parantes_door_product_ids",
+  "parantes_right_door_product_ids",
   "door_product_ids",
   "puerta_product_ids",
   "con_puerta_product_ids",
@@ -122,10 +123,14 @@ const TEXT_SURFACE_PARAM_KEYS = new Set([
   "vertical_parantes_product_ids",
   "parantes_horizontal_product_ids",
   "horizontal_parantes_product_ids",
+  "right_door_product_ids",
+  "puerta_derecha_product_ids",
+  "door_right_product_ids",
 ]);
 
 const SURFACE_PARAM_ALIASES = {
   parantes_door_product_ids: ["parantes_door_product_ids", "door_product_ids", "puerta_product_ids", "con_puerta_product_ids", "porton_door_product_ids"],
+  parantes_right_door_product_ids: ["parantes_right_door_product_ids", "right_door_product_ids", "puerta_derecha_product_ids", "door_right_product_ids"],
   non_apto_parantes_vertical_product_ids: ["non_apto_parantes_vertical_product_ids", "parantes_vertical_product_ids", "vertical_parantes_product_ids"],
   non_apto_parantes_horizontal_product_ids: ["non_apto_parantes_horizontal_product_ids", "parantes_horizontal_product_ids", "horizontal_parantes_product_ids"],
   parantes_tube_discount_mm: ["parantes_tube_discount_mm", "parantes_cano_discount_mm", "descuento_cano_parantes_mm", "descuento_tubo_parantes_mm", "parantes_tube_width_mm"],
@@ -189,6 +194,7 @@ function pickParantesConfig(params = {}) {
     non_apto_parantes_vertical_product_ids: normalizeText(normalized.non_apto_parantes_vertical_product_ids),
     non_apto_parantes_horizontal_product_ids: normalizeText(normalized.non_apto_parantes_horizontal_product_ids),
     parantes_door_product_ids: normalizeText(normalized.parantes_door_product_ids),
+    parantes_right_door_product_ids: normalizeText(normalized.parantes_right_door_product_ids),
     parantes_door_first_distance_mm: Number(normalized.parantes_door_first_distance_mm || 800) || 800,
     parantes_tube_discount_mm: Number(normalized.parantes_tube_discount_mm || 40) || 40,
   };
