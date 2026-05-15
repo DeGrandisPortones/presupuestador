@@ -221,6 +221,105 @@ function getParantesTubeDiscountMm(params) {
     DEFAULT_PARANTES_TUBE_DISCOUNT_MM,
   );
 }
+
+function parseProductIdList(value) {
+  if (Array.isArray(value)) {
+    return value.map((item) => Number(item)).filter((item) => Number.isFinite(item) && item > 0);
+  }
+  return String(value || "")
+    .split(/[,;\s]+/)
+    .map((item) => Number(item))
+    .filter((item) => Number.isFinite(item) && item > 0);
+}
+function parseProductCombinationRules(value) {
+  if (Array.isArray(value)) {
+    return value
+      .map((rule) => {
+        if (Array.isArray(rule)) return { product_ids: parseProductIdList(rule), match_mode: "all", active: true };
+        if (rule && typeof rule === "object") {
+          return {
+            product_ids: parseProductIdList(rule.product_ids || rule.required_product_ids || rule.ids || rule.product_id),
+            match_mode: String(rule.match_mode || "all").toLowerCase() === "any" ? "any" : "all",
+            active: rule.active !== false,
+          };
+        }
+        return { product_ids: parseProductIdList(rule), match_mode: "all", active: true };
+      })
+      .filter((rule) => rule.active && rule.product_ids.length);
+  }
+  return String(value || "")
+    .split(/[;\n]+/)
+    .map((chunk) => ({ product_ids: parseProductIdList(chunk), match_mode: "all", active: true }))
+    .filter((rule) => rule.product_ids.length);
+}
+function productRuleMatches(rule, lines) {
+  const ids = getBudgetProductIdSetFromLines(lines);
+  const required = Array.isArray(rule?.product_ids) ? rule.product_ids : [];
+  if (!required.length) return false;
+  if (String(rule?.match_mode || "all").toLowerCase() === "any") {
+    return required.some((productId) => ids.has(Number(productId)));
+  }
+  return required.every((productId) => ids.has(Number(productId)));
+}
+function resolveNonAptoParantesOrientation(lines, params) {
+  const directRules = Array.isArray(params?.non_apto_parantes_orientation_rules)
+    ? params.non_apto_parantes_orientation_rules
+    : Array.isArray(params?.parantes_orientation_rules)
+      ? params.parantes_orientation_rules
+      : [];
+  for (const rawRule of directRules) {
+    const orientation = normalizeOrientation(rawRule?.orientation || rawRule?.orientacion || rawRule?.value);
+    const rule = {
+      product_ids: parseProductIdList(rawRule?.product_ids || rawRule?.required_product_ids || rawRule?.ids || rawRule?.product_id),
+      match_mode: String(rawRule?.match_mode || "all").toLowerCase() === "any" ? "any" : "all",
+      active: rawRule?.active !== false,
+    };
+    if (rule.active && productRuleMatches(rule, lines)) return orientation;
+  }
+
+  const horizontalRules = [
+    ...parseProductCombinationRules(params?.non_apto_parantes_horizontal_product_ids),
+    ...parseProductCombinationRules(params?.parantes_horizontal_product_ids),
+    ...parseProductCombinationRules(params?.horizontal_parantes_product_ids),
+  ];
+  if (horizontalRules.some((rule) => productRuleMatches(rule, lines))) return "horizontal";
+
+  const verticalRules = [
+    ...parseProductCombinationRules(params?.non_apto_parantes_vertical_product_ids),
+    ...parseProductCombinationRules(params?.parantes_vertical_product_ids),
+    ...parseProductCombinationRules(params?.vertical_parantes_product_ids),
+  ];
+  if (verticalRules.some((rule) => productRuleMatches(rule, lines))) return "verticales";
+
+  return "";
+}
+function hasDoorForParantes(lines, params) {
+  const doorRules = [
+    ...parseProductCombinationRules(params?.parantes_door_product_ids),
+    ...parseProductCombinationRules(params?.door_product_ids),
+    ...parseProductCombinationRules(params?.puerta_product_ids),
+    ...parseProductCombinationRules(params?.con_puerta_product_ids),
+    ...parseProductCombinationRules(params?.porton_door_product_ids),
+  ];
+  return doorRules.some((rule) => productRuleMatches(rule, lines));
+}
+function getDoorFirstParanteDistanceMm(params) {
+  return getNumberParam(
+    params,
+    [
+      "parantes_door_first_distance_mm",
+      "door_first_parante_distance_mm",
+      "puerta_distancia_primer_parante_mm",
+      "distancia_primer_parante_puerta_mm",
+    ],
+    800,
+  );
+}
+function sameArrayValues(a = [], b = []) {
+  if (!Array.isArray(a) || !Array.isArray(b)) return false;
+  if (a.length !== b.length) return false;
+  return a.every((item, index) => String(item ?? "") === String(b[index] ?? ""));
+}
 function buildCalculatedPreview({ widthM, heightM, lines, params, portonType, dimensions }) {
   const widthMm = Math.round((Number(widthM || 0) || 0) * 1000);
   const heightMm = Math.round((Number(heightM || 0) || 0) * 1000);
@@ -638,6 +737,16 @@ export default function PortonDimensions({ kind = "porton" }) {
     [width, height, lines, params, portonType, dimensions],
   );
   const aptoParaRevestir = isAptoDerivedType(portonType);
+  const isNonAptoPorton = isPorton && !aptoParaRevestir;
+  const nonAptoConfiguredOrientation = useMemo(
+    () => isNonAptoPorton ? resolveNonAptoParantesOrientation(lines, params) : "",
+    [isNonAptoPorton, lines, params],
+  );
+  const hasDoorParantesConfig = useMemo(
+    () => isNonAptoPorton ? hasDoorForParantes(lines, params) : false,
+    [isNonAptoPorton, lines, params],
+  );
+  const doorFirstParanteDistanceMm = useMemo(() => getDoorFirstParanteDistanceMm(params), [params]);
   const parantesCount = getParantesCount(dimensions?.cantidad_parantes);
   const tubeDiscountMm = useMemo(() => getParantesTubeDiscountMm(params), [params]);
   const baseParantesDimensionMm = useMemo(
@@ -674,13 +783,18 @@ export default function PortonDimensions({ kind = "porton" }) {
   useEffect(() => {
     if (!isPorton) return;
     const patch = {};
-    if (!String(dimensions?.orientacion_parantes || "").trim()) {
+    const currentOrientationRaw = String(dimensions?.orientacion_parantes || "").trim();
+    const forcedNonAptoOrientation = isNonAptoPorton ? nonAptoConfiguredOrientation : "";
+    if (forcedNonAptoOrientation) {
+      if (orientation !== forcedNonAptoOrientation) patch.orientacion_parantes = forcedNonAptoOrientation;
+    } else if (!currentOrientationRaw) {
       patch.orientacion_parantes = "verticales";
     }
     if (!String(dimensions?.distribucion_parantes || "").trim()) {
       patch.distribucion_parantes = "repartido";
     }
-    if (orientation === "verticales") {
+    const nextOrientation = normalizeOrientation(patch.orientacion_parantes || orientation);
+    if (nextOrientation === "verticales") {
       const nextCount = String(autoParantesCount);
       const currentCount = String(dimensions?.cantidad_parantes ?? "").trim();
       if (!currentCount || currentCount === String(lastAutoParantesRef.current || "").trim()) {
@@ -697,11 +811,65 @@ export default function PortonDimensions({ kind = "porton" }) {
     }
   }, [
     isPorton,
+    isNonAptoPorton,
+    nonAptoConfiguredOrientation,
     orientation,
     autoParantesCount,
     dimensions?.orientacion_parantes,
     dimensions?.distribucion_parantes,
     dimensions?.cantidad_parantes,
+    setDimensions,
+  ]);
+
+  useEffect(() => {
+    if (!isNonAptoPorton || !hasDoorParantesConfig || parantesCount <= 0 || baseParantesDimensionMm <= 0) return;
+    const nextDistances = buildUniformParantesDistances({
+      firstDistanceMm: doorFirstParanteDistanceMm,
+      parantesCount,
+      baseDimensionMm: baseParantesDimensionMm,
+    });
+    const current = normalizeDistanceList(rawParantesDistances);
+    const patch = {};
+    if (distribution !== "repartido") patch.distribucion_parantes = "repartido";
+    if (String(dimensions?.distancia_primer_parante_mm || "") !== String(nextDistances[0] || "")) {
+      patch.distancia_primer_parante_mm = nextDistances[0] || "";
+    }
+    if (!sameArrayValues(current, nextDistances)) {
+      patch.distancias_parantes_mm = nextDistances;
+    }
+    if (dimensions?.distribuir_parantes_uniformemente !== true) {
+      patch.distribuir_parantes_uniformemente = true;
+    }
+    if (dimensions?.parantes_door_auto_applied !== true) {
+      patch.parantes_door_auto_applied = true;
+    }
+    if (Object.keys(patch).length) setDimensions(patch);
+  }, [
+    isNonAptoPorton,
+    hasDoorParantesConfig,
+    parantesCount,
+    baseParantesDimensionMm,
+    doorFirstParanteDistanceMm,
+    rawParantesDistances,
+    distribution,
+    dimensions?.distancia_primer_parante_mm,
+    dimensions?.distribuir_parantes_uniformemente,
+    dimensions?.parantes_door_auto_applied,
+    setDimensions,
+  ]);
+
+  useEffect(() => {
+    if (!isNonAptoPorton || hasDoorParantesConfig || dimensions?.parantes_door_auto_applied !== true) return;
+    setDimensions({
+      distancia_primer_parante_mm: "",
+      distancias_parantes_mm: [],
+      distribuir_parantes_uniformemente: false,
+      parantes_door_auto_applied: false,
+    });
+  }, [
+    isNonAptoPorton,
+    hasDoorParantesConfig,
+    dimensions?.parantes_door_auto_applied,
     setDimensions,
   ]);
 
@@ -737,13 +905,15 @@ export default function PortonDimensions({ kind = "porton" }) {
   const title = isPorton ? "Medidas del porton" : "Medidas del Ipanel";
 
   const parantesHelper =
-    orientation === "verticales"
-      ? (
-          hasSpecialParantesProduct(lines)
-            ? "Se sugiere automaticamente usando el ancho completo. Si queres, podes cambiar el valor manualmente."
-            : "Se sugiere automaticamente restando 0.80 m al ancho. Si queres, podes cambiar el valor manualmente."
-        )
-      : "En horizontal podes ajustar manualmente la cantidad de parantes.";
+    isNonAptoPorton && hasDoorParantesConfig
+      ? `Con puerta: primer parante a ${formatNumberForInput(doorFirstParanteDistanceMm)} mm y el resto repartido.`
+      : orientation === "verticales"
+        ? (
+            hasSpecialParantesProduct(lines)
+              ? "Se sugiere automaticamente usando el ancho completo. Si queres, podes cambiar el valor manualmente."
+              : "Se sugiere automaticamente restando 0.80 m al ancho. Si queres, podes cambiar el valor manualmente."
+          )
+        : "En horizontal podes ajustar manualmente la cantidad de parantes.";
 
   function setParantesDistanceAt(index, value) {
     const next = padDistanceList(rawParantesDistances, Math.max(parantesCount, index + 1));
@@ -813,7 +983,7 @@ export default function PortonDimensions({ kind = "porton" }) {
           <FieldBox label="Tipo / Sistema derivado"><Input value={portonType || ""} disabled placeholder="Se completa segun la combinacion de productos" style={disabledComputedInputStyle()} /></FieldBox>
           <FieldBox label="Kg por m2"><Input value={formatNumberForInput(preview.effectiveKgM2)} placeholder="Se calcula automaticamente segun el sistema" style={disabledComputedInputStyle()} disabled /></FieldBox>
           <FieldBox label="Superficie"><div style={{ fontWeight: 800, fontSize: 16, minHeight: 40, display: "flex", alignItems: "center", padding: "9px 12px", borderRadius: 10, border: "1px solid #d1d5db", background: "#f3f4f6", color: "#334155" }}>{area ? `${area.toFixed(2)} m2` : "-"}</div></FieldBox>
-          <FieldBox label="Orientacion de los parantes"><select value={orientation} onChange={(e) => setDimensions({ orientacion_parantes: e.target.value })} style={{ width: "100%", padding: "10px 12px", borderRadius: 8, border: "1px solid #ddd", background: "#fff" }}><option value="verticales">Verticales</option><option value="horizontal">Horizontal</option></select></FieldBox>
+          <FieldBox label="Orientacion de los parantes" helper={isNonAptoPorton && nonAptoConfiguredOrientation ? "Definida automaticamente por reglas tecnicas segun los IDs del presupuesto." : ""}><select value={orientation} onChange={(e) => setDimensions({ orientacion_parantes: e.target.value })} style={{ width: "100%", padding: "10px 12px", borderRadius: 8, border: "1px solid #ddd", background: isNonAptoPorton && nonAptoConfiguredOrientation ? "#f3f4f6" : "#fff" }} disabled={isNonAptoPorton && !!nonAptoConfiguredOrientation}><option value="verticales">Verticales</option><option value="horizontal">Horizontal</option></select></FieldBox>
           <FieldBox label="Cantidad de parantes" helper={parantesHelper}><Input type="text" inputMode="numeric" value={String(dimensions?.cantidad_parantes ?? "")} onChange={(v) => setDimensions({ cantidad_parantes: normalizeIntegerInput(v) })} onBlur={(e) => setDimensions({ cantidad_parantes: normalizeIntegerInput(e?.target?.value) })} style={{ width: "100%" }} placeholder="Ej: 3" /></FieldBox>
           <FieldBox label="Distribucion de los parantes"><select value={distribution} onChange={(e) => setDimensions({ distribucion_parantes: e.target.value })} style={{ width: "100%", padding: "10px 12px", borderRadius: 8, border: "1px solid #ddd", background: "#fff" }}><option value="repartido">Repartido</option><option value="especial">Especial</option></select></FieldBox>
         </>) : null}
@@ -865,7 +1035,7 @@ export default function PortonDimensions({ kind = "porton" }) {
               Distribuir uniformemente
             </label>
             <div className="muted" style={{ marginTop: 6 }}>
-              Si esta tildado, el sistema resta la distancia del primer parante y el descuento del cano, y divide el resto por la cantidad de parantes restantes.
+              Si esta tildado, el sistema usa el lateral final como limite: resta la distancia del primer parante y reparte el tramo restante hasta el lateral final.
             </div>
             <div className="spacer" />
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(230px, 1fr))", gap: 10 }}>

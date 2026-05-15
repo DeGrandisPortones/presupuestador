@@ -1,32 +1,50 @@
-Reemplazo listo para Presupuestador
-===================================
+ZIP de reemplazo - Parantes apto/no apto para revestir
 
-Copiar el contenido de esta carpeta sobre el proyecto, respetando rutas.
+Copiar y reemplazar estos archivos dentro del repo presupuestador:
 
-Archivos incluidos:
-- cotizador-front/src/pages/CotizadorPage/components/PortonDimensions.jsx
-- cotizador-front/src/domain/quote/store.js
+1) cotizador-front/src/pages/CotizadorPage/components/PortonDimensions.jsx
+2) cotizador-front/src/domain/quote/store.js
+3) cotizador-front/src/pages/SuperuserMeasurementRulesPage/index.jsx
 
 Cambios incluidos:
-1) Mantiene los cambios de parantes especiales para sistemas aptos para revestir:
-   - Campo Distancia dentro a dentro primer parante.
-   - Distancias adicionales por parante.
-   - Tildecito Distribuir uniformemente.
-   - Descuento configurable desde reglas tecnicas con fallback de 40 mm.
 
-2) Corrige el peso visible en el presupuestador para tipo/sistema apto para revestir:
-   - El preview de la pantalla de carga busca kg/m2 igual que el PDF/vista tecnica.
-   - Primero usa la tabla apto_revestir_kg_m2_rules si hay producto coincidente.
-   - Si no hay coincidencia, usa kg_m2 guardado en dimensions u otros campos legacy.
-   - Si tampoco hay valor, cae al kg/m2 base configurado en reglas tecnicas.
+- El esquema de hoja/parantes queda disponible para todos los portones.
+- Los parantes laterales se dibujan aparte y NO cuentan dentro de Cantidad de parantes.
+- Para apto para revestir se conserva:
+  - distribucion especial con observaciones;
+  - distancia dentro a dentro del primer parante;
+  - distancias adicionales;
+  - distribuir uniformemente;
+  - descuento configurable del cano desde reglas tecnicas.
+- Para NO apto para revestir:
+  - la orientacion de parantes se fuerza desde Reglas tecnicas segun IDs o combinaciones de IDs;
+  - si detecta porton con puerta, deja el primer parante a 800 mm por defecto y reparte el resto hasta el lateral final;
+  - la distancia de 800 mm tambien queda configurable en Reglas tecnicas.
 
-3) Ajusta el esquema de hoja y parantes:
-   - El boton Ver esquema de parantes queda disponible para todos los portones, no solo aptos para revestir.
-   - Los parantes laterales se dibujan siempre aparte y no se cuentan dentro de Cantidad de parantes.
-   - El lateral final se usa como limite para repartir la distancia, pero no se cuenta como parante interno.
-   - Ejemplo: base 3000 mm, primer parante 800 mm y 4 parantes internos => (3000 - 800) / 4 = 550 mm.
-   - El resumen del esquema muestra tambien la distancia desde el ultimo parante interno hasta el lateral final.
+Configuracion en Reglas tecnicas:
 
-Notas:
-- No es patch. Son archivos completos para reemplazar.
-- Si ya copiaste un zip anterior, este zip lo reemplaza y conserva esos cambios.
+Entrar como superusuario a Reglas tecnicas > Parametros de calculo de piernas, superficie y parantes.
+
+Nuevos campos:
+
+- Vertical si contiene estos IDs/combinaciones
+  Key guardada: non_apto_parantes_vertical_product_ids
+
+- Horizontal si contiene estos IDs/combinaciones
+  Key guardada: non_apto_parantes_horizontal_product_ids
+
+- IDs/combinaciones que indican porton con puerta
+  Key guardada: parantes_door_product_ids
+
+- Distancia primer parante con puerta (mm)
+  Key guardada: parantes_door_first_distance_mm
+  Default: 800
+
+Formato para IDs/combinaciones:
+
+- Un ID solo: 123
+- Varios IDs alternativos como reglas separadas: 123;456;789
+- Una combinacion obligatoria: 123,456
+- Varias combinaciones: 123,456;789,111
+
+El sistema evalua cada grupo separado por punto y coma o salto de linea. Dentro de cada grupo, todos los IDs deben estar presentes.
