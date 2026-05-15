@@ -61,6 +61,51 @@ const DEFAULT_SURFACE_PARAMETERS = {
   parantes_tube_discount_mm: 40,
 };
 
+const SURFACE_PARAMETERS_STORAGE_KEY = "presupuestador:technical_surface_parameters:porton";
+
+function readStoredSurfaceParameters() {
+  try {
+    if (typeof window === "undefined" || !window.localStorage) return {};
+    const raw = window.localStorage.getItem(SURFACE_PARAMETERS_STORAGE_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+  } catch (_err) {
+    return {};
+  }
+}
+function writeStoredSurfaceParameters(surfaceParameters = {}) {
+  try {
+    if (typeof window === "undefined" || !window.localStorage) return;
+    window.localStorage.setItem(SURFACE_PARAMETERS_STORAGE_KEY, JSON.stringify(surfaceParameters && typeof surfaceParameters === "object" ? surfaceParameters : {}));
+  } catch (_err) {
+    // El backend sigue siendo la fuente principal; localStorage es solo respaldo de UI.
+  }
+}
+function isEmptySurfaceParamValue(value) {
+  if (value === undefined || value === null) return true;
+  if (Array.isArray(value)) return value.length === 0;
+  if (typeof value === "object") return !Object.keys(value).length;
+  return String(value).trim() === "";
+}
+function mergeStoredSurfaceParameters(base = {}) {
+  const stored = readStoredSurfaceParameters();
+  const next = { ...(base && typeof base === "object" ? base : {}) };
+  for (const [key, value] of Object.entries(stored)) {
+    if (!isEmptySurfaceParamValue(value) && isEmptySurfaceParamValue(next[key])) next[key] = value;
+  }
+  return next;
+}
+function pickParantesConfig(surfaceParameters = {}) {
+  return {
+    non_apto_parantes_vertical_product_ids: textPayload(surfaceParameters.non_apto_parantes_vertical_product_ids),
+    non_apto_parantes_horizontal_product_ids: textPayload(surfaceParameters.non_apto_parantes_horizontal_product_ids),
+    parantes_door_product_ids: textPayload(surfaceParameters.parantes_door_product_ids),
+    parantes_door_first_distance_mm: numericPayload(surfaceParameters.parantes_door_first_distance_mm) || 800,
+    parantes_tube_discount_mm: numericPayload(surfaceParameters.parantes_tube_discount_mm) || 40,
+  };
+}
+
 function textValue(value) {
   return String(value ?? "").trim();
 }
@@ -118,15 +163,23 @@ function getSurfaceParametersFromRulesData(rulesData = {}) {
     ...(hasSurfaceParamContent(rulesData?.surface_params) ? rulesData.surface_params : {}),
     ...(hasSurfaceParamContent(rulesData?.surface_calc_params) ? rulesData.surface_calc_params : {}),
     ...(hasSurfaceParamContent(rulesData?.surface_parameters) ? rulesData.surface_parameters : {}),
+    ...(hasSurfaceParamContent(rulesData?.parantes_config) ? rulesData.parantes_config : {}),
+    ...(hasSurfaceParamContent(rulesData?.catalog_rules?.porton?.parantes_config) ? rulesData.catalog_rules.porton.parantes_config : {}),
   };
 }
 function buildTechnicalRulesSavePayload({ rules, surfaceFinalFormula, surfaceParameters }) {
   const surfacePayload = buildSurfaceParametersPayload(surfaceParameters);
+  const parantesConfig = pickParantesConfig(surfacePayload);
   return {
+    kind: "porton",
     rules: buildRulesPayload(rules),
     surface_final_formula: surfaceFinalFormula,
     surface_parameters: surfacePayload,
     surface_calc_params: surfacePayload,
+    surface_params: surfacePayload,
+    measurement_surface_params: surfacePayload,
+    parantes_config: parantesConfig,
+    ...surfacePayload,
   };
 }
 function buildSurfaceParametersPayload(surfaceParameters = {}) {
@@ -427,7 +480,7 @@ export default function SuperuserMeasurementRulesPage() {
     if (!rulesQ.data) return;
     setRuleDraft({ rules: (rulesQ.data.rules || []).map((rule, index) => normalizeRuleDraft(rule, index)) });
     setSurfaceFinalFormula(String(rulesQ.data.surface_final_formula || "surface_automatica_m2"));
-    setSurfaceParameters(normalizeSurfaceParametersDraft(getSurfaceParametersFromRulesData(rulesQ.data)));
+    setSurfaceParameters(normalizeSurfaceParametersDraft(mergeStoredSurfaceParameters(getSurfaceParametersFromRulesData(rulesQ.data))));
   }, [rulesQ.data]);
 
   const products = useMemo(() => Array.isArray(catalogQ.data?.products) ? catalogQ.data.products : [], [catalogQ.data]);
@@ -492,13 +545,17 @@ export default function SuperuserMeasurementRulesPage() {
   async function saveSurfaceConfig() {
     setSavingSurfaceConfig(true);
     try {
-      const saved = await adminSaveTechnicalMeasurementRules("porton", buildTechnicalRulesSavePayload({
-        rules,
-        surfaceFinalFormula,
-        surfaceParameters,
-      }));
-      setSurfaceFinalFormula(String(saved.surface_final_formula || "surface_automatica_m2"));
-      setSurfaceParameters(normalizeSurfaceParametersDraft(getSurfaceParametersFromRulesData(saved)));
+      const payload = buildTechnicalRulesSavePayload({ rules, surfaceFinalFormula, surfaceParameters });
+      writeStoredSurfaceParameters(payload.surface_parameters);
+      const saved = await adminSaveTechnicalMeasurementRules("porton", payload);
+      const savedSurfaceParameters = normalizeSurfaceParametersDraft({
+        ...mergeStoredSurfaceParameters(getSurfaceParametersFromRulesData(saved)),
+        ...payload.surface_parameters,
+        ...payload.parantes_config,
+      });
+      writeStoredSurfaceParameters(savedSurfaceParameters);
+      setSurfaceFinalFormula(String(saved.surface_final_formula || surfaceFinalFormula || "surface_automatica_m2"));
+      setSurfaceParameters(savedSurfaceParameters);
       window.alert("Configuración de superficie guardada.");
     } finally {
       setSavingSurfaceConfig(false);
@@ -507,14 +564,18 @@ export default function SuperuserMeasurementRulesPage() {
   async function saveRules() {
     setSavingRules(true);
     try {
-      const saved = await adminSaveTechnicalMeasurementRules("porton", buildTechnicalRulesSavePayload({
-        rules,
-        surfaceFinalFormula,
-        surfaceParameters,
-      }));
+      const payload = buildTechnicalRulesSavePayload({ rules, surfaceFinalFormula, surfaceParameters });
+      writeStoredSurfaceParameters(payload.surface_parameters);
+      const saved = await adminSaveTechnicalMeasurementRules("porton", payload);
+      const savedSurfaceParameters = normalizeSurfaceParametersDraft({
+        ...mergeStoredSurfaceParameters(getSurfaceParametersFromRulesData(saved)),
+        ...payload.surface_parameters,
+        ...payload.parantes_config,
+      });
+      writeStoredSurfaceParameters(savedSurfaceParameters);
       setRuleDraft({ rules: (saved.rules || []).map((rule, index) => normalizeRuleDraft(rule, index)) });
-      setSurfaceFinalFormula(String(saved.surface_final_formula || "surface_automatica_m2"));
-      setSurfaceParameters(normalizeSurfaceParametersDraft(getSurfaceParametersFromRulesData(saved)));
+      setSurfaceFinalFormula(String(saved.surface_final_formula || surfaceFinalFormula || "surface_automatica_m2"));
+      setSurfaceParameters(savedSurfaceParameters);
       window.alert("Reglas guardadas.");
     } finally {
       setSavingRules(false);

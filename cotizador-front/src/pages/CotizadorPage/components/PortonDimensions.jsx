@@ -14,6 +14,19 @@ const PARANTES_SPECIAL_PRODUCT_ID = 3006;
 const APTOS_PARA_REVESTIR_TYPE = "para_revestir_con_al_pvc_otros";
 const DEFAULT_PARANTES_TUBE_DISCOUNT_MM = 40;
 const ORDINAL_LABELS = ["primer", "segundo", "tercer", "cuarto", "quinto", "sexto", "septimo", "octavo", "noveno", "decimo"];
+const SURFACE_PARAMETERS_STORAGE_KEY = "presupuestador:technical_surface_parameters:porton";
+
+function readStoredSurfaceParameters() {
+  try {
+    if (typeof window === "undefined" || !window.localStorage) return {};
+    const raw = window.localStorage.getItem(SURFACE_PARAMETERS_STORAGE_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+  } catch (_err) {
+    return {};
+  }
+}
 
 function parseOptionalNumber(v) {
   const raw = String(v ?? "").trim();
@@ -43,14 +56,32 @@ function normalizeKind(value) {
 function hasSurfaceParamContent(value) {
   return !!(value && typeof value === "object" && Object.keys(value).length);
 }
+function isEmptyParamValue(value) {
+  if (value === undefined || value === null) return true;
+  if (Array.isArray(value)) return value.length === 0;
+  if (typeof value === "object") return !Object.keys(value).length;
+  return String(value).trim() === "";
+}
 function getRulesParams(rulesData) {
   const root = rulesData || {};
-  return {
+  const portonRules = root.catalog_rules?.porton || {};
+  const params = {
     ...(hasSurfaceParamContent(root.measurement_surface_params) ? root.measurement_surface_params : {}),
     ...(hasSurfaceParamContent(root.surface_params) ? root.surface_params : {}),
     ...(hasSurfaceParamContent(root.surface_calc_params) ? root.surface_calc_params : {}),
     ...(hasSurfaceParamContent(root.surface_parameters) ? root.surface_parameters : {}),
+    ...(hasSurfaceParamContent(root.parantes_config) ? root.parantes_config : {}),
+    ...(hasSurfaceParamContent(portonRules.measurement_surface_params) ? portonRules.measurement_surface_params : {}),
+    ...(hasSurfaceParamContent(portonRules.surface_params) ? portonRules.surface_params : {}),
+    ...(hasSurfaceParamContent(portonRules.surface_calc_params) ? portonRules.surface_calc_params : {}),
+    ...(hasSurfaceParamContent(portonRules.surface_parameters) ? portonRules.surface_parameters : {}),
+    ...(hasSurfaceParamContent(portonRules.parantes_config) ? portonRules.parantes_config : {}),
   };
+  const stored = readStoredSurfaceParameters();
+  for (const [key, value] of Object.entries(stored)) {
+    if (!isEmptyParamValue(value) && isEmptyParamValue(params[key])) params[key] = value;
+  }
+  return params;
 }
 function getNumberParam(params, keys, fallback) {
   for (const key of keys) {
@@ -86,7 +117,14 @@ function normalizeDecimalMmInput(v) {
   return String(v ?? "").replace(/[^0-9.,]/g, "");
 }
 function getBudgetProductIdSetFromLines(lines) {
-  return new Set((Array.isArray(lines) ? lines : []).map((line) => Number(line?.product_id || 0)).filter(Boolean));
+  const ids = [];
+  for (const line of Array.isArray(lines) ? lines : []) {
+    for (const key of ["product_id", "id", "odoo_external_id", "odoo_id", "odoo_template_id", "odoo_variant_id"]) {
+      const n = Number(line?.[key] || 0);
+      if (Number.isFinite(n) && n > 0) ids.push(n);
+    }
+  }
+  return new Set(ids);
 }
 function detectInstallationModeByProducts(lines, params) {
   const ids = getBudgetProductIdSetFromLines(lines);

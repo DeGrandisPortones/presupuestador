@@ -183,6 +183,16 @@ function mergeSurfaceParameterSources(...sources) {
   }
   return normalizeSurfaceCalcParams(merged);
 }
+function pickParantesConfig(params = {}) {
+  const normalized = normalizeSurfaceCalcParams(params);
+  return {
+    non_apto_parantes_vertical_product_ids: normalizeText(normalized.non_apto_parantes_vertical_product_ids),
+    non_apto_parantes_horizontal_product_ids: normalizeText(normalized.non_apto_parantes_horizontal_product_ids),
+    parantes_door_product_ids: normalizeText(normalized.parantes_door_product_ids),
+    parantes_door_first_distance_mm: Number(normalized.parantes_door_first_distance_mm || 800) || 800,
+    parantes_tube_discount_mm: Number(normalized.parantes_tube_discount_mm || 40) || 40,
+  };
+}
 
 function normalizeTechnicalMeasurementRule(rule = {}, index = 0) {
   const source_key = normalizeText(rule.source_key || rule.field_key);
@@ -259,13 +269,16 @@ function normalizeTechnicalMeasurementRules(raw = {}) {
     source.surface_params,
     source.surface_calc_params,
     source.surface_parameters,
+    source.parantes_config,
   );
+  const parantesConfig = pickParantesConfig(normalizedSurfaceParameters);
   return {
     rules: rules.map((r, i) => normalizeTechnicalMeasurementRule(r, i)).filter(Boolean).sort((a, b) => a.sort_order - b.sort_order),
     surface_final_formula: normalizeSurfaceFinalFormula(source.surface_final_formula),
     surface_helper_rules: surface_helper_rules.map((r, i) => normalizeSurfaceHelperRule(r, i)).filter(Boolean).sort((a, b) => a.sort_order - b.sort_order),
     surface_parameters: normalizedSurfaceParameters,
     surface_calc_params: normalizedSurfaceParameters,
+    parantes_config: parantesConfig,
     section_dependency_rules: section_dependency_rules.map((r, i) => normalizeSectionDependencyRule(r, i)).filter(Boolean).sort((a, b) => a.sort_order - b.sort_order),
     system_derivation_rules: system_derivation_rules.map((r, i) => normalizeSystemDerivationRule(r, i)).filter(Boolean).sort((a, b) => a.sort_order - b.sort_order),
     initial_section_id,
@@ -392,10 +405,13 @@ export async function setTechnicalMeasurementRules(payload = {}, kind = "porton"
   const nextSurfaceParameters = mergeSurfaceParameterSources(
     current?.surface_parameters,
     current?.surface_calc_params,
+    current?.parantes_config,
+    payload,
     payload?.measurement_surface_params,
     payload?.surface_params,
     payload?.surface_calc_params,
     payload?.surface_parameters,
+    payload?.parantes_config,
   );
   const merged = {
     ...(current || {}),
@@ -404,6 +420,7 @@ export async function setTechnicalMeasurementRules(payload = {}, kind = "porton"
     surface_helper_rules: payload?.surface_helper_rules !== undefined ? payload.surface_helper_rules : current?.surface_helper_rules,
     surface_parameters: nextSurfaceParameters,
     surface_calc_params: nextSurfaceParameters,
+    parantes_config: pickParantesConfig(nextSurfaceParameters),
     section_dependency_rules: payload?.section_dependency_rules !== undefined ? payload.section_dependency_rules : current?.section_dependency_rules,
     system_derivation_rules: payload?.system_derivation_rules !== undefined ? payload.system_derivation_rules : current?.system_derivation_rules,
     initial_section_id: payload?.initial_section_id !== undefined ? payload.initial_section_id : current?.initial_section_id,
@@ -418,6 +435,7 @@ export async function setTechnicalMeasurementRules(payload = {}, kind = "porton"
     catalog_rules: nextCatalogRules,
   };
   if (k === "porton") Object.assign(nextRaw, normalized);
+  nextRaw.parantes_config = normalized.parantes_config;
   await setSetting(TECHNICAL_MEASUREMENT_RULES_KEY, nextRaw);
   return normalized;
 }
