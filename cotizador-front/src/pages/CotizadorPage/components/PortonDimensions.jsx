@@ -482,7 +482,6 @@ function buildCalculatedPreview({ widthM, heightM, lines, params, portonType, di
   const heightMm = Math.round((Number(heightM || 0) || 0) * 1000);
   const areaM2 = (Number(widthM || 0) || 0) * (Number(heightM || 0) || 0);
 
-  const installationMode = detectInstallationModeByProducts(lines, params);
   const aptoParaRevestir = isAptoDerivedType(portonType) || detectNoCladdingByProducts(lines, params);
   const aptoKg = aptoParaRevestir ? resolveAptoKgM2ByProducts(lines, params) : 0;
   const sellerKgM2 = resolveSellerKgM2Entry(dimensions, params);
@@ -503,24 +502,25 @@ function buildCalculatedPreview({ widthM, heightM, lines, params, portonType, di
   const legsLabel = legsTypeForWeight(estimatedWeightKg, aptoParaRevestir, params);
   const legsKey = mapLegsKeyForWidth(legsLabel);
 
-  let altoPasoMm = discountedHeightMm;
-  let anchoPasoMm = discountedWidthMm;
+  const pasoBaseHeightDiscountMm = getNumberParam(
+    params,
+    ["step_base_height_discount_mm", "paso_alto_base_discount_mm", "paso_height_base_discount_mm"],
+    10,
+  );
+  const pasoExtraHeightDiscountMm = getNumberParam(
+    params,
+    ["step_extra_height_discount_mm", "paso_alto_extra_discount_mm", "paso_height_extra_discount_mm"],
+    100,
+  );
+  const pasoBaseWidthDiscountMm = getNumberParam(
+    params,
+    ["step_base_width_discount_mm", "paso_ancho_base_discount_mm", "paso_width_base_discount_mm"],
+    10,
+  );
+  const pasoLegWidthMm = getPasoWidthDeductionMm(legsKey, params);
 
-  if (installationMode === "detras_vano") {
-    const addMap = {
-      angostas: Number(params?.legs_angostas_add_width_mm || 140),
-      comunes: Number(params?.legs_comunes_add_width_mm || 200),
-      anchas: Number(params?.legs_anchas_add_width_mm || 280),
-      superanchas: Number(params?.legs_superanchas_add_width_mm || 380),
-      especiales: Number(params?.legs_especiales_add_width_mm || params?.legs_superanchas_add_width_mm || 380),
-    };
-    altoPasoMm = Math.max(0, heightMm + Number(params?.behind_vano_add_height_mm || 100));
-    anchoPasoMm = Math.max(0, widthMm + Number(addMap[legsKey] || 0));
-  } else if (installationMode === "dentro_vano") {
-    altoPasoMm = Math.max(0, heightMm - Number(params?.inside_vano_subtract_height_mm || 10));
-    const anchoCalculadoMm = Math.max(0, widthMm - Number(params?.inside_vano_subtract_width_mm || 20));
-    anchoPasoMm = Math.max(0, anchoCalculadoMm - getPasoWidthDeductionMm(legsKey, params));
-  }
+  const altoPasoMm = Math.max(0, heightMm - pasoBaseHeightDiscountMm - pasoExtraHeightDiscountMm);
+  const anchoPasoMm = Math.max(0, widthMm - pasoBaseWidthDiscountMm - (pasoLegWidthMm / 2));
 
   return {
     effectiveKgM2,
