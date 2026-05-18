@@ -43,3 +43,10 @@ Correccion agregada en esta version:
 - Al tildarla, consulta si el primer parante fijo esta del lado Izquierdo o Derecho.
 - Luego de cargar la distancia del primer parante fijo, se puede tildar o destildar "Distribuir uniformemente".
 - Si "Distribuir uniformemente" esta destildado, las distancias siguientes quedan editables.
+
+Correccion agregada en esta version:
+- Este ZIP reemplaza el patch anterior: incluye archivos completos para copiar y reemplazar.
+- Corrige la pantalla en blanco al tildar "¿Ponerle primer parante a distancia fija?" en aptos para revestir.
+- Se separa la distancia fija de referencia en parantes_referencia_distancia_mm para que no se mezcle con la distribucion interna de parantes.
+- La distancia fija se carga en un campo propio junto al lado Izquierdo/Derecho.
+- Distribuir uniformemente sigue pudiendo tildarse o destildarse, y las distancias internas permanecen independientes.

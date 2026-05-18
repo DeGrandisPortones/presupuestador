@@ -1055,6 +1055,11 @@ export default function PortonDimensions({ kind = "porton" }) {
     String(dimensions?.parantes_simular_referencia_horizontal || "").trim().toLowerCase() === "true"
   );
   const aptoReferenciaLado = String(dimensions?.parantes_referencia_lado || "izquierdo").trim().toLowerCase() === "derecho" ? "derecho" : "izquierdo";
+  const aptoReferenciaDistancia = String(
+    dimensions?.parantes_referencia_distancia_mm ??
+    dimensions?.parantes_primer_parante_distancia_mm ??
+    ""
+  );
   const resolvedParantesDistances = useMemo(() => buildResolvedParantesDistances({
     distanceList: firstParanteDistance ? [firstParanteDistance, ...normalizeDistanceList(rawParantesDistances).slice(1)] : rawParantesDistances,
     distributeUniformly,
@@ -1210,12 +1215,15 @@ export default function PortonDimensions({ kind = "porton" }) {
   useEffect(() => {
     if (!aptoSimulaHorizontalReferencia) return;
     const patch = {};
-    if (!String(dimensions?.distancia_primer_parante_mm || "").trim()) patch.distancia_primer_parante_mm = "800";
+    if (!String(dimensions?.parantes_referencia_distancia_mm || "").trim()) {
+      patch.parantes_referencia_distancia_mm = aptoReferenciaDistancia || "800";
+    }
     if (!String(dimensions?.parantes_referencia_lado || "").trim()) patch.parantes_referencia_lado = "izquierdo";
     if (Object.keys(patch).length) setDimensions(patch);
   }, [
     aptoSimulaHorizontalReferencia,
-    dimensions?.distancia_primer_parante_mm,
+    aptoReferenciaDistancia,
+    dimensions?.parantes_referencia_distancia_mm,
     dimensions?.parantes_referencia_lado,
     setDimensions,
   ]);
@@ -1290,6 +1298,18 @@ export default function PortonDimensions({ kind = "porton" }) {
     setDimensions({
       cantidad_parantes: String(nextCount),
       ...buildParantesPayload({ distances: finalDistances, tubeDiscountMm }),
+    });
+  }
+
+  function setAptoFixedFirstParante(checked) {
+    const nextChecked = !!checked;
+    setDimensions({
+      parantes_primer_parante_distancia_fija: nextChecked,
+      parantes_simular_referencia_horizontal: nextChecked,
+      parantes_referencia_lado: nextChecked ? (dimensions?.parantes_referencia_lado || "izquierdo") : "",
+      parantes_referencia_distancia_mm: nextChecked
+        ? normalizeDecimalMmInput(aptoReferenciaDistancia || "800")
+        : "",
     });
   }
 
@@ -1386,24 +1406,28 @@ export default function PortonDimensions({ kind = "porton" }) {
                   <input
                     type="checkbox"
                     checked={aptoSimulaHorizontalReferencia}
-                    onChange={(e) => setDimensions({
-                      parantes_primer_parante_distancia_fija: e.target.checked,
-                      parantes_simular_referencia_horizontal: e.target.checked,
-                      ...(e.target.checked ? {
-                        distancia_primer_parante_mm: firstParanteDistance || "800",
-                        parantes_referencia_lado: dimensions?.parantes_referencia_lado || "izquierdo",
-                      } : {}),
-                    })}
+                    onChange={(e) => setAptoFixedFirstParante(e.target.checked)}
                   />
                   ¿Ponerle primer parante a distancia fija?
                 </label>
                 {aptoSimulaHorizontalReferencia ? (
-                  <div style={{ marginTop: 10, maxWidth: 340 }}>
+                  <div style={{ marginTop: 10, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 10 }}>
                     <FieldBox label="Lado del primer parante fijo" helper="Se usa como referencia del esquema horizontal.">
                       <select value={aptoReferenciaLado} onChange={(e) => setDimensions({ parantes_referencia_lado: e.target.value })} style={{ width: "100%", padding: "10px 12px", borderRadius: 8, border: "1px solid #ddd", background: "#fff" }}>
                         <option value="izquierdo">Izquierdo</option>
                         <option value="derecho">Derecho</option>
                       </select>
+                    </FieldBox>
+                    <FieldBox label="Distancia del primer parante fijo" helper="Numero en mm desde el lado elegido. Puede tener decimales.">
+                      <Input
+                        type="text"
+                        inputMode="decimal"
+                        value={aptoReferenciaDistancia || "800"}
+                        onChange={(v) => setDimensions({ parantes_referencia_distancia_mm: normalizeDecimalMmInput(v) })}
+                        onBlur={(e) => setDimensions({ parantes_referencia_distancia_mm: normalizeDecimalMmInput(e?.target?.value) || "800" })}
+                        placeholder="Ej: 800"
+                        style={{ width: "100%" }}
+                      />
                     </FieldBox>
                   </div>
                 ) : null}
@@ -1428,12 +1452,10 @@ export default function PortonDimensions({ kind = "porton" }) {
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(230px, 1fr))", gap: 10 }}>
               {padDistanceList(resolvedParantesDistances, parantesCount).map((distance, index) => {
                 const distanceAutoCalculated = index > 0 && distributeUniformly;
-                const distanceLabel = aptoSimulaHorizontalReferencia && index === 0
-                  ? "Distancia del primer parante fijo"
-                  : paranteDistanceLabel(index);
+                const distanceLabel = paranteDistanceLabel(index);
                 const distanceHelper = distanceAutoCalculated
                   ? "Calculado automaticamente."
-                  : (aptoSimulaHorizontalReferencia && index === 0 ? "Numero en mm desde el lado elegido. Puede tener decimales." : "Numero en mm. Puede tener decimales.");
+                  : "Numero en mm. Puede tener decimales.";
                 return (
                   <FieldBox key={`distance-${index}`} label={distanceLabel} helper={distanceHelper}>
                     <Input
@@ -1481,7 +1503,7 @@ export default function PortonDimensions({ kind = "porton" }) {
         tubeDiscountMm={tubeDiscountMm}
         hasDoor={hasDoorParantesConfig || aptoSimulaHorizontalReferencia}
         isRightDoor={hasDoorParantesConfig ? isRightDoorParantes : aptoReferenciaLado === "derecho"}
-        doorFirstDistanceMm={aptoSimulaHorizontalReferencia ? (parseMmNumber(firstParanteDistance) || 800) : doorFirstParanteDistanceMm}
+        doorFirstDistanceMm={aptoSimulaHorizontalReferencia ? (parseMmNumber(aptoReferenciaDistancia) || 800) : doorFirstParanteDistanceMm}
         doorReferenceLabel={aptoSimulaHorizontalReferencia ? "Primer parante fijo" : "Parante puerta"}
         portonWidthMm={Math.max(0, Number(preview?.anchoPasoMm || 0))}
         portonHeightMm={Math.max(0, Number(preview?.altoPasoMm || 0))}
