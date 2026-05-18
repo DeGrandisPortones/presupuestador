@@ -1060,13 +1060,29 @@ export default function PortonDimensions({ kind = "porton" }) {
     dimensions?.parantes_primer_parante_distancia_mm ??
     ""
   );
-  const resolvedParantesDistances = useMemo(() => buildResolvedParantesDistances({
-    distanceList: firstParanteDistance ? [firstParanteDistance, ...normalizeDistanceList(rawParantesDistances).slice(1)] : rawParantesDistances,
-    distributeUniformly,
+  const repartidoParantesAuto = isPorton && distribution === "repartido";
+  const parantesUseUniformDistribution = isNonAptoPorton || repartidoParantesAuto || distributeUniformly;
+  const resolvedParantesDistances = useMemo(() => {
+    const normalizedRawDistances = normalizeDistanceList(rawParantesDistances);
+    const distanceListForResolution = showSpecialParantesDistances
+      ? (firstParanteDistance ? [firstParanteDistance, ...normalizedRawDistances.slice(1)] : normalizedRawDistances)
+      : [];
+    return buildResolvedParantesDistances({
+      distanceList: distanceListForResolution,
+      distributeUniformly: parantesUseUniformDistribution,
+      parantesCount,
+      baseDimensionMm: baseParantesDimensionMm,
+      tubeDiscountMm,
+    });
+  }, [
+    rawParantesDistances,
+    parantesUseUniformDistribution,
     parantesCount,
-    baseDimensionMm: baseParantesDimensionMm,
+    baseParantesDimensionMm,
     tubeDiscountMm,
-  }), [rawParantesDistances, distributeUniformly, parantesCount, baseParantesDimensionMm, tubeDiscountMm, firstParanteDistance]);
+    firstParanteDistance,
+    showSpecialParantesDistances,
+  ]);
   const nonAptoDoorParantesDistances = useMemo(() => {
     if (!isNonAptoPorton || !hasDoorParantesConfig || parantesCount <= 0 || baseParantesDimensionMm <= 0) return null;
     const useDoorFirstDistance = normalizeOrientation(effectiveParantesOrientation) !== "horizontal";
@@ -1087,7 +1103,7 @@ export default function PortonDimensions({ kind = "porton" }) {
     });
   }, [aptoSimulaHorizontalReferencia, distributeUniformly, parantesCount, baseParantesDimensionMm, tubeDiscountMm]);
   const sketchParantesDistances = nonAptoDoorParantesDistances || aptoReferenciaHorizontalDistances || resolvedParantesDistances;
-  const sketchDistributeUniformly = isNonAptoPorton ? true : distributeUniformly;
+  const sketchDistributeUniformly = parantesUseUniformDistribution;
 
   useEffect(() => {
     if (!isPorton) return;

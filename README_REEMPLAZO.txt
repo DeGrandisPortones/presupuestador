@@ -56,3 +56,13 @@ Correccion agregada en esta version:
 - Esto aplica al campo "Cantidad de parantes" en general, no solo al caso de primer parante fijo.
 - Al tildar "¿Ponerle primer parante a distancia fija?", si por algun motivo la cantidad seguia en 0, tambien se corrige inmediatamente a 1.
 - Se elimina la necesidad de usar una cantidad efectiva artificial: el dato real queda seteado en el estado.
+
+Correccion agregada en esta version:
+- Para aptos para revestir con distribucion Repartido, el esquema ignora por completo las distancias guardadas de distribuciones Especiales anteriores.
+- En Repartido, calcula los parantes de forma uniforme automaticamente segun cantidad de parantes, orientacion y medidas de paso.
+- En Especial, se conserva la logica actual:
+  * el usuario puede usar o no primer parante a distancia fija,
+  * puede elegir lado izquierdo/derecho si lo fija,
+  * puede tildar o destildar Distribuir uniformemente,
+  * puede cargar manualmente las distancias restantes.
+- El texto del esquema ahora identifica Repartido como distribucion uniforme, no como distancias cargadas manualmente.
