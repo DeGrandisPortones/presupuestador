@@ -50,3 +50,9 @@ Correccion agregada en esta version:
 - Se separa la distancia fija de referencia en parantes_referencia_distancia_mm para que no se mezcle con la distribucion interna de parantes.
 - La distancia fija se carga en un campo propio junto al lado Izquierdo/Derecho.
 - Distribuir uniformemente sigue pudiendo tildarse o destildarse, y las distancias internas permanecen independientes.
+
+Correccion agregada en esta version:
+- Para portones apto para revestir, cuando se habilitan los campos de parantes, la cantidad de parantes queda por defecto en 1.
+- Esto aplica al campo "Cantidad de parantes" en general, no solo al caso de primer parante fijo.
+- Al tildar "¿Ponerle primer parante a distancia fija?", si por algun motivo la cantidad seguia en 0, tambien se corrige inmediatamente a 1.
+- Se elimina la necesidad de usar una cantidad efectiva artificial: el dato real queda seteado en el estado.

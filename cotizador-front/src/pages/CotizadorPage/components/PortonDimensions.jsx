@@ -1229,6 +1229,19 @@ export default function PortonDimensions({ kind = "porton" }) {
   ]);
 
   useEffect(() => {
+    if (!isPorton || !aptoParaRevestir || parantesFieldsReadOnly) return;
+    if (parantesCount > 0 && String(dimensions?.cantidad_parantes ?? "").trim()) return;
+    setDimensions({ cantidad_parantes: "1" });
+  }, [
+    isPorton,
+    aptoParaRevestir,
+    parantesFieldsReadOnly,
+    parantesCount,
+    dimensions?.cantidad_parantes,
+    setDimensions,
+  ]);
+
+  useEffect(() => {
     if (!showSpecialParantesDistances || parantesCount <= 0) return;
     const current = normalizeDistanceList(rawParantesDistances);
     const next = distributeUniformly
@@ -1303,14 +1316,18 @@ export default function PortonDimensions({ kind = "porton" }) {
 
   function setAptoFixedFirstParante(checked) {
     const nextChecked = !!checked;
-    setDimensions({
+    const patch = {
       parantes_primer_parante_distancia_fija: nextChecked,
       parantes_simular_referencia_horizontal: nextChecked,
       parantes_referencia_lado: nextChecked ? (dimensions?.parantes_referencia_lado || "izquierdo") : "",
       parantes_referencia_distancia_mm: nextChecked
         ? normalizeDecimalMmInput(aptoReferenciaDistancia || "800")
         : "",
-    });
+    };
+    if (nextChecked && parantesCount <= 0) {
+      patch.cantidad_parantes = "1";
+    }
+    setDimensions(patch);
   }
 
   return (
