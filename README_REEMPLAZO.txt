@@ -66,3 +66,10 @@ Correccion agregada en esta version:
   * puede tildar o destildar Distribuir uniformemente,
   * puede cargar manualmente las distancias restantes.
 - El texto del esquema ahora identifica Repartido como distribucion uniforme, no como distancias cargadas manualmente.
+
+Correccion agregada en esta version:
+- Al elegir un producto en una seccion del catalogo, si se habilita una seccion siguiente por dependencias, el acordeon la abre y hace scroll suave hasta esa seccion.
+- Tambien aplica si se vuelve a clickear una opcion ya elegida y existe una seccion siguiente.
+- El scroll solo se dispara por avance automatico entre secciones; no molesta al abrir/cerrar manualmente.
+- Se agrego el archivo completo:
+  cotizador-front/src/pages/CotizadorPage/components/SectionCatalog.jsx

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { getOdooBootstrap, setOdooBootstrap } from "../../../domain/odoo/bootstrap.js";
 import { useQuoteStore } from "../../../domain/quote/store";
@@ -188,9 +188,70 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
   const [openSectionId, setOpenSectionId] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
   const [autoloadAttempted, setAutoloadAttempted] = useState(false);
+  const sectionRefs = useRef(new Map());
+  const pendingAutoScrollSectionIdRef = useRef(null);
+  const autoScrollTimeoutRef = useRef(null);
 
   const sections = Array.isArray(boot?.sections) ? boot.sections : [];
   const products = Array.isArray(boot?.products) ? boot.products : [];
+
+  const scrollToSection = useCallback((sectionId) => {
+    const id = Number(sectionId || 0);
+    if (!id) return;
+
+    const run = () => {
+      const target = sectionRefs.current.get(id);
+      if (!target) return;
+
+      const rect = target.getBoundingClientRect();
+      const top = Math.max(0, window.scrollY + rect.top - 96);
+      window.scrollTo({ top, behavior: "smooth" });
+    };
+
+    if (typeof window !== "undefined" && typeof window.requestAnimationFrame === "function") {
+      window.requestAnimationFrame(run);
+      return;
+    }
+    run();
+  }, []);
+
+  const openSectionAndScroll = useCallback((sectionId) => {
+    const id = Number(sectionId || 0);
+    if (!id) return;
+    pendingAutoScrollSectionIdRef.current = id;
+    setOpenSectionId(id);
+  }, []);
+
+  useEffect(() => {
+    const pendingId = Number(pendingAutoScrollSectionIdRef.current || 0);
+    if (!pendingId || Number(openSectionId || 0) !== pendingId) return undefined;
+
+    if (autoScrollTimeoutRef.current) {
+      window.clearTimeout(autoScrollTimeoutRef.current);
+    }
+
+    autoScrollTimeoutRef.current = window.setTimeout(() => {
+      scrollToSection(pendingId);
+      pendingAutoScrollSectionIdRef.current = null;
+      autoScrollTimeoutRef.current = null;
+    }, 90);
+
+    return () => {
+      if (autoScrollTimeoutRef.current) {
+        window.clearTimeout(autoScrollTimeoutRef.current);
+        autoScrollTimeoutRef.current = null;
+      }
+    };
+  }, [openSectionId, scrollToSection]);
+
+  useEffect(() => {
+    return () => {
+      if (autoScrollTimeoutRef.current) {
+        window.clearTimeout(autoScrollTimeoutRef.current);
+        autoScrollTimeoutRef.current = null;
+      }
+    };
+  }, []);
 
   const rulesQ = useQuery({
     queryKey: ["technical-rules-for-section-catalog", catalogKind],
@@ -250,6 +311,8 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
     setBoot(getOdooBootstrap(catalogKind));
     setAutoloadAttempted(false);
     setOpenSectionId(null);
+    sectionRefs.current.clear();
+    pendingAutoScrollSectionIdRef.current = null;
   }, [catalogKind]);
 
   useEffect(() => {
@@ -405,7 +468,7 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
 
     if (currentSelected.has(targetProductId) && currentSelected.size === 1) {
       const nextSectionId = downstreamSectionIds[0] || null;
-      if (nextSectionId) setOpenSectionId(Number(nextSectionId));
+      if (nextSectionId) openSectionAndScroll(nextSectionId);
       return;
     }
 
@@ -454,7 +517,7 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
     const nextIndex = nextOrderedIds.findIndex((id) => Number(id) === Number(sectionId));
     const nextSectionId = nextIndex >= 0 ? nextOrderedIds[nextIndex + 1] : null;
 
-    if (nextSectionId) setOpenSectionId(Number(nextSectionId));
+    if (nextSectionId) openSectionAndScroll(nextSectionId);
   }
 
   const title =
@@ -508,7 +571,14 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
             const selectedInSection = selectedProductIdsBySection.get(sectionId) || new Set();
 
             return (
-              <div key={sectionId} className={isOpen ? "dg-acc-item is-open" : "dg-acc-item"}>
+              <div
+                key={sectionId}
+                ref={(el) => {
+                  if (el) sectionRefs.current.set(sectionId, el);
+                  else sectionRefs.current.delete(sectionId);
+                }}
+                className={isOpen ? "dg-acc-item is-open" : "dg-acc-item"}
+              >
                 <button
                   type="button"
                   className="dg-acc-header"
