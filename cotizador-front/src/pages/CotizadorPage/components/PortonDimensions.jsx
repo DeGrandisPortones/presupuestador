@@ -751,6 +751,14 @@ function buildDimensionSegments(markers = [], effectiveSpanMm, reverseAxis = fal
   }
   return { displayed, segments };
 }
+function buildFixedReferenceSketchDistances({ distances = [], orientation, fixedDistanceMm, tubeDiscountMm }) {
+  const list = normalizeDistanceList(distances);
+  if (orientation !== "verticales" || !list.length) return list;
+  const tube = Math.max(0, Number(tubeDiscountMm || 0) || DEFAULT_PARANTES_TUBE_DISCOUNT_MM);
+  const fixed = Math.max(0, parseMmNumber(fixedDistanceMm) || 0);
+  const firstGap = parseMmNumber(list[0]) || 0;
+  return [formatNumberForInput(fixed + tube + firstGap), ...list.slice(1)];
+}
 function ParantesSketchModal({ open, onClose, orientation, parantesCount, baseDimensionMm, distances, distributeUniformly, tubeDiscountMm, hasDoor = false, isRightDoor = false, doorFirstDistanceMm = 800, portonWidthMm = 0, portonHeightMm = 0, doorReferenceLabel = "Parante puerta" }) {
   if (!open) return null;
   const isHorizontal = orientation === "horizontal";
@@ -842,6 +850,16 @@ function ParantesSketchModal({ open, onClose, orientation, parantesCount, baseDi
               <g>
                 <line x1={doorX} y1={rectY} x2={doorX} y2={rectY + rectH} stroke="#0f172a" strokeWidth="5" strokeDasharray="6 4" />
                 <text x={doorX} y={rectY - 24} textAnchor="middle" fontSize="11" fontWeight="700" fill="#0f172a">{doorReferenceLabel}</text>
+              </g>
+            );
+          })() : null}
+          {!isHorizontal && hasDoor ? (() => {
+            const fixedMm = Math.max(0, Number(doorFirstDistanceMm || 0));
+            const fixedX = rectX + (isRightDoor ? Math.max(0, drawingSpan - fixedMm) : fixedMm) * scale;
+            return (
+              <g>
+                <line x1={fixedX} y1={rectY} x2={fixedX} y2={rectY + rectH} stroke="#0f172a" strokeWidth="5" strokeDasharray="6 4" />
+                <text x={fixedX} y={rectY - 24} textAnchor="middle" fontSize="11" fontWeight="700" fill="#0f172a">{doorReferenceLabel}</text>
               </g>
             );
           })() : null}
@@ -1047,7 +1065,7 @@ export default function PortonDimensions({ kind = "porton" }) {
   const firstParanteDistance = String(dimensions?.distancia_primer_parante_mm || normalizeDistanceList(rawParantesDistances)[0] || "");
   const distributeUniformly = dimensions?.distribuir_parantes_uniformemente === true || String(dimensions?.distribuir_parantes_uniformemente || "").trim().toLowerCase() === "true";
   const showSpecialParantesDistances = isPorton && aptoParaRevestir && distribution === "especial";
-  const showAptoFixedFirstParanteOption = showSpecialParantesDistances && effectiveParantesOrientation === "horizontal";
+  const showAptoFixedFirstParanteOption = showSpecialParantesDistances;
   const aptoSimulaHorizontalReferencia = showAptoFixedFirstParanteOption && (
     dimensions?.parantes_primer_parante_distancia_fija === true ||
     String(dimensions?.parantes_primer_parante_distancia_fija || "").trim().toLowerCase() === "true" ||
@@ -1060,28 +1078,36 @@ export default function PortonDimensions({ kind = "porton" }) {
     dimensions?.parantes_primer_parante_distancia_mm ??
     ""
   );
+  const aptoReferenciaDistanciaMm = Math.max(0, parseMmNumber(aptoReferenciaDistancia) || 800);
+  const aptoParantesRestantesCount = aptoSimulaHorizontalReferencia ? Math.max(0, parantesCount - 1) : parantesCount;
+  const aptoDistributionBaseDimensionMm = aptoSimulaHorizontalReferencia && effectiveParantesOrientation === "verticales"
+    ? Math.max(0, baseParantesDimensionMm - aptoReferenciaDistanciaMm - tubeDiscountMm)
+    : baseParantesDimensionMm;
   const repartidoParantesAuto = isPorton && distribution === "repartido";
   const parantesUseUniformDistribution = isNonAptoPorton || repartidoParantesAuto || distributeUniformly;
   const resolvedParantesDistances = useMemo(() => {
     const normalizedRawDistances = normalizeDistanceList(rawParantesDistances);
     const distanceListForResolution = showSpecialParantesDistances
-      ? (firstParanteDistance ? [firstParanteDistance, ...normalizedRawDistances.slice(1)] : normalizedRawDistances)
+      ? (aptoSimulaHorizontalReferencia
+          ? normalizedRawDistances
+          : (firstParanteDistance ? [firstParanteDistance, ...normalizedRawDistances.slice(1)] : normalizedRawDistances))
       : [];
     return buildResolvedParantesDistances({
       distanceList: distanceListForResolution,
       distributeUniformly: parantesUseUniformDistribution,
-      parantesCount,
-      baseDimensionMm: baseParantesDimensionMm,
+      parantesCount: aptoParantesRestantesCount,
+      baseDimensionMm: aptoDistributionBaseDimensionMm,
       tubeDiscountMm,
     });
   }, [
     rawParantesDistances,
     parantesUseUniformDistribution,
-    parantesCount,
-    baseParantesDimensionMm,
+    aptoParantesRestantesCount,
+    aptoDistributionBaseDimensionMm,
     tubeDiscountMm,
     firstParanteDistance,
     showSpecialParantesDistances,
+    aptoSimulaHorizontalReferencia,
   ]);
   const nonAptoDoorParantesDistances = useMemo(() => {
     if (!isNonAptoPorton || !hasDoorParantesConfig || parantesCount <= 0 || baseParantesDimensionMm <= 0) return null;
@@ -1093,16 +1119,26 @@ export default function PortonDimensions({ kind = "porton" }) {
       tubeDiscountMm,
     });
   }, [isNonAptoPorton, hasDoorParantesConfig, parantesCount, baseParantesDimensionMm, doorFirstParanteDistanceMm, tubeDiscountMm, effectiveParantesOrientation]);
-  const aptoReferenciaHorizontalDistances = useMemo(() => {
-    if (!aptoSimulaHorizontalReferencia || !distributeUniformly || parantesCount <= 0 || baseParantesDimensionMm <= 0) return null;
+  const aptoReferenciaFixedDistances = useMemo(() => {
+    if (!aptoSimulaHorizontalReferencia || !distributeUniformly || aptoParantesRestantesCount <= 0 || aptoDistributionBaseDimensionMm <= 0) return null;
     return buildUniformParantesDistances({
       firstDistanceMm: 0,
-      parantesCount,
-      baseDimensionMm: baseParantesDimensionMm,
+      parantesCount: aptoParantesRestantesCount,
+      baseDimensionMm: aptoDistributionBaseDimensionMm,
       tubeDiscountMm,
     });
-  }, [aptoSimulaHorizontalReferencia, distributeUniformly, parantesCount, baseParantesDimensionMm, tubeDiscountMm]);
-  const sketchParantesDistances = nonAptoDoorParantesDistances || aptoReferenciaHorizontalDistances || resolvedParantesDistances;
+  }, [aptoSimulaHorizontalReferencia, distributeUniformly, aptoParantesRestantesCount, aptoDistributionBaseDimensionMm, tubeDiscountMm]);
+  const aptoBaseSketchDistances = aptoReferenciaFixedDistances || resolvedParantesDistances;
+  const aptoFixedSketchDistances = aptoSimulaHorizontalReferencia
+    ? buildFixedReferenceSketchDistances({
+        distances: aptoBaseSketchDistances,
+        orientation: effectiveParantesOrientation,
+        fixedDistanceMm: aptoReferenciaDistanciaMm,
+        tubeDiscountMm,
+      })
+    : aptoBaseSketchDistances;
+  const sketchParantesDistances = nonAptoDoorParantesDistances || aptoFixedSketchDistances;
+  const sketchParantesCount = aptoSimulaHorizontalReferencia ? aptoParantesRestantesCount : parantesCount;
   const sketchDistributeUniformly = parantesUseUniformDistribution;
 
   useEffect(() => {
@@ -1258,11 +1294,11 @@ export default function PortonDimensions({ kind = "porton" }) {
   ]);
 
   useEffect(() => {
-    if (!showSpecialParantesDistances || parantesCount <= 0) return;
+    if (!showSpecialParantesDistances || aptoParantesRestantesCount <= 0) return;
     const current = normalizeDistanceList(rawParantesDistances);
     const next = distributeUniformly
       ? resolvedParantesDistances
-      : padDistanceList(current.length ? current : [firstParanteDistance], parantesCount);
+      : padDistanceList(current.length ? current : (aptoSimulaHorizontalReferencia ? [] : [firstParanteDistance]), aptoParantesRestantesCount);
     const currentSignature = current.join("|");
     const nextSignature = next.join("|");
     if (currentSignature !== nextSignature || String(dimensions?.distancia_primer_parante_mm || "") !== String(next[0] || "") || Number(dimensions?.descuento_cano_parantes_mm || 0) !== Number(tubeDiscountMm || 0)) {
@@ -1273,7 +1309,7 @@ export default function PortonDimensions({ kind = "porton" }) {
     }
   }, [
     showSpecialParantesDistances,
-    parantesCount,
+    aptoParantesRestantesCount,
     rawParantesDistances,
     firstParanteDistance,
     distributeUniformly,
@@ -1281,6 +1317,7 @@ export default function PortonDimensions({ kind = "porton" }) {
     tubeDiscountMm,
     dimensions?.distancia_primer_parante_mm,
     dimensions?.descuento_cano_parantes_mm,
+    aptoSimulaHorizontalReferencia,
     setDimensions,
   ]);
 
@@ -1306,7 +1343,8 @@ export default function PortonDimensions({ kind = "porton" }) {
 
   function setParantesDistanceAt(index, value) {
     if (parantesFieldsReadOnly) return;
-    const next = padDistanceList(rawParantesDistances, Math.max(parantesCount, index + 1));
+    const targetCount = aptoSimulaHorizontalReferencia ? Math.max(aptoParantesRestantesCount, index + 1) : Math.max(parantesCount, index + 1);
+    const next = padDistanceList(rawParantesDistances, targetCount);
     next[index] = normalizeDecimalMmInput(value);
     setDimensions(buildParantesPayload({ distances: next, tubeDiscountMm }));
   }
@@ -1314,13 +1352,14 @@ export default function PortonDimensions({ kind = "porton" }) {
   function addParanteDistance() {
     if (parantesFieldsReadOnly) return;
     const nextCount = Math.max(0, parantesCount) + 1;
-    const nextDistances = padDistanceList(rawParantesDistances, nextCount);
+    const nextRestantesCount = aptoSimulaHorizontalReferencia ? Math.max(0, nextCount - 1) : nextCount;
+    const nextDistances = padDistanceList(rawParantesDistances, nextRestantesCount);
     const finalDistances = distributeUniformly
       ? buildResolvedParantesDistances({
           distanceList: nextDistances,
           distributeUniformly: true,
-          parantesCount: nextCount,
-          baseDimensionMm: baseParantesDimensionMm,
+          parantesCount: nextRestantesCount,
+          baseDimensionMm: aptoSimulaHorizontalReferencia ? aptoDistributionBaseDimensionMm : baseParantesDimensionMm,
           tubeDiscountMm,
         })
       : nextDistances;
@@ -1441,11 +1480,11 @@ export default function PortonDimensions({ kind = "porton" }) {
                     checked={aptoSimulaHorizontalReferencia}
                     onChange={(e) => setAptoFixedFirstParante(e.target.checked)}
                   />
-                  ¿Ponerle primer parante a distancia fija?
+                  ¿Desea fijar un parante?
                 </label>
                 {aptoSimulaHorizontalReferencia ? (
                   <div style={{ marginTop: 10, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 10 }}>
-                    <FieldBox label="Lado del primer parante fijo" helper="Se usa como referencia del esquema horizontal.">
+                    <FieldBox label="Lado del primer parante fijo" helper="Se usa como referencia para distribuir el resto.">
                       <select value={aptoReferenciaLado} onChange={(e) => setDimensions({ parantes_referencia_lado: e.target.value })} style={{ width: "100%", padding: "10px 12px", borderRadius: 8, border: "1px solid #ddd", background: "#fff" }}>
                         <option value="izquierdo">Izquierdo</option>
                         <option value="derecho">Derecho</option>
@@ -1465,7 +1504,7 @@ export default function PortonDimensions({ kind = "porton" }) {
                   </div>
                 ) : null}
                 <div className="muted" style={{ marginTop: 6 }}>
-                  Si esta tildado, el primer parante se usa como referencia fija y los parantes horizontales se dibujan en el espacio restante. La orientacion se toma del campo Orientacion de los parantes.
+                  Si esta tildado, ese parante queda fijo y las distancias de abajo corresponden solo a los parantes restantes. La orientacion se toma del campo Orientacion de los parantes.
                 </div>
               </>
             ) : null}
@@ -1483,12 +1522,14 @@ export default function PortonDimensions({ kind = "porton" }) {
             </div>
             <div className="spacer" />
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(230px, 1fr))", gap: 10 }}>
-              {padDistanceList(resolvedParantesDistances, parantesCount).map((distance, index) => {
+              {padDistanceList(resolvedParantesDistances, aptoParantesRestantesCount).map((distance, index) => {
                 const distanceAutoCalculated = index > 0 && distributeUniformly;
-                const distanceLabel = paranteDistanceLabel(index);
+                const distanceLabel = aptoSimulaHorizontalReferencia
+                  ? `Parante restante ${index + 1}`
+                  : paranteDistanceLabel(index);
                 const distanceHelper = distanceAutoCalculated
                   ? "Calculado automaticamente."
-                  : "Numero en mm. Puede tener decimales.";
+                  : (aptoSimulaHorizontalReferencia ? "Distancia desde el parante fijo o desde el parante restante anterior." : "Numero en mm. Puede tener decimales.");
                 return (
                   <FieldBox key={`distance-${index}`} label={distanceLabel} helper={distanceHelper}>
                     <Input
@@ -1504,6 +1545,9 @@ export default function PortonDimensions({ kind = "porton" }) {
                   </FieldBox>
                 );
               })}
+              {aptoSimulaHorizontalReferencia && aptoParantesRestantesCount <= 0 ? (
+                <div className="muted">No hay parantes restantes. Aumenta la cantidad de parantes para agregar mas.</div>
+              ) : null}
             </div>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 4 }}>
               <button type="button" onClick={addParanteDistance} style={{ border: "1px solid #ddd", borderRadius: 10, background: "#fff", padding: "9px 12px", fontWeight: 800, cursor: "pointer" }}>
@@ -1529,14 +1573,14 @@ export default function PortonDimensions({ kind = "porton" }) {
         open={parantesSketchOpen}
         onClose={() => setParantesSketchOpen(false)}
         orientation={effectiveParantesOrientation}
-        parantesCount={parantesCount}
+        parantesCount={sketchParantesCount}
         baseDimensionMm={baseParantesDimensionMm}
         distances={sketchParantesDistances}
         distributeUniformly={sketchDistributeUniformly}
         tubeDiscountMm={tubeDiscountMm}
         hasDoor={hasDoorParantesConfig || aptoSimulaHorizontalReferencia}
         isRightDoor={hasDoorParantesConfig ? isRightDoorParantes : aptoReferenciaLado === "derecho"}
-        doorFirstDistanceMm={aptoSimulaHorizontalReferencia ? (parseMmNumber(aptoReferenciaDistancia) || 800) : doorFirstParanteDistanceMm}
+        doorFirstDistanceMm={aptoSimulaHorizontalReferencia ? aptoReferenciaDistanciaMm : doorFirstParanteDistanceMm}
         doorReferenceLabel={aptoSimulaHorizontalReferencia ? "Primer parante fijo" : "Parante puerta"}
         portonWidthMm={Math.max(0, Number(preview?.anchoPasoMm || 0))}
         portonHeightMm={Math.max(0, Number(preview?.altoPasoMm || 0))}

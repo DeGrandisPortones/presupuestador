@@ -73,3 +73,13 @@ Correccion agregada en esta version:
 - El scroll solo se dispara por avance automatico entre secciones; no molesta al abrir/cerrar manualmente.
 - Se agrego el archivo completo:
   cotizador-front/src/pages/CotizadorPage/components/SectionCatalog.jsx
+
+Correccion agregada en esta version:
+- Solo para portones apto para revestir.
+- En distribucion Especial, la opcion "¿Desea fijar un parante?" aparece tanto con orientacion Vertical como Horizontal.
+- El parante fijado se maneja separado de la lista de distancias: ya no se usa un parante restante seteado a 800 mm.
+- Si se fija un parante, la cantidad total de parantes se mantiene, pero las distancias que aparecen debajo son solo las de los parantes restantes.
+- Si "Distribuir uniformemente" esta tildado:
+  * con orientacion Horizontal reparte sobre el alto de paso;
+  * con orientacion Vertical reparte sobre el ancho de paso y toma como inicio el parante fijado.
+- Si "Distribuir uniformemente" esta destildado, las distancias restantes quedan editables manualmente.
