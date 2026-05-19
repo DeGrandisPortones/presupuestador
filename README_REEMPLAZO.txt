@@ -83,3 +83,10 @@ Correccion agregada en esta version:
   * con orientacion Horizontal reparte sobre el alto de paso;
   * con orientacion Vertical reparte sobre el ancho de paso y toma como inicio el parante fijado.
 - Si "Distribuir uniformemente" esta destildado, las distancias restantes quedan editables manualmente.
+
+Correccion agregada en esta version:
+- Solo para aptos para revestir con distribucion Especial y parante fijo.
+- El primer campo de "Parante restante" ya no copia la distancia fija de 800 mm.
+- Si "Distribuir uniformemente" esta tildado, todos los parantes restantes se calculan automaticamente, incluido el primero.
+- Si "Distribuir uniformemente" esta destildado, el usuario puede cargar manualmente todos los parantes restantes.
+- La distancia fija queda solamente en el campo "Distancia del primer parante fijo".

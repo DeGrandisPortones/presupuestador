@@ -1089,7 +1089,7 @@ export default function PortonDimensions({ kind = "porton" }) {
     const normalizedRawDistances = normalizeDistanceList(rawParantesDistances);
     const distanceListForResolution = showSpecialParantesDistances
       ? (aptoSimulaHorizontalReferencia
-          ? normalizedRawDistances
+          ? (parantesUseUniformDistribution ? [] : normalizedRawDistances)
           : (firstParanteDistance ? [firstParanteDistance, ...normalizedRawDistances.slice(1)] : normalizedRawDistances))
       : [];
     return buildResolvedParantesDistances({
@@ -1108,6 +1108,7 @@ export default function PortonDimensions({ kind = "porton" }) {
     firstParanteDistance,
     showSpecialParantesDistances,
     aptoSimulaHorizontalReferencia,
+    parantesUseUniformDistribution,
   ]);
   const nonAptoDoorParantesDistances = useMemo(() => {
     if (!isNonAptoPorton || !hasDoorParantesConfig || parantesCount <= 0 || baseParantesDimensionMm <= 0) return null;
@@ -1518,18 +1519,20 @@ export default function PortonDimensions({ kind = "porton" }) {
               Distribuir uniformemente
             </label>
             <div className="muted" style={{ marginTop: 6 }}>
-              Si esta tildado, el sistema usa el lateral final como limite: resta la distancia del primer parante y reparte el tramo restante hasta el lateral final.
+              Si esta tildado, el sistema calcula automaticamente todos los parantes restantes. Si hay un parante fijo, toma ese parante como inicio y reparte el espacio restante.
             </div>
             <div className="spacer" />
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(230px, 1fr))", gap: 10 }}>
               {padDistanceList(resolvedParantesDistances, aptoParantesRestantesCount).map((distance, index) => {
-                const distanceAutoCalculated = index > 0 && distributeUniformly;
+                const distanceAutoCalculated = aptoSimulaHorizontalReferencia
+                  ? distributeUniformly
+                  : index > 0 && distributeUniformly;
                 const distanceLabel = aptoSimulaHorizontalReferencia
                   ? `Parante restante ${index + 1}`
                   : paranteDistanceLabel(index);
                 const distanceHelper = distanceAutoCalculated
                   ? "Calculado automaticamente."
-                  : (aptoSimulaHorizontalReferencia ? "Distancia desde el parante fijo o desde el parante restante anterior." : "Numero en mm. Puede tener decimales.");
+                  : (aptoSimulaHorizontalReferencia ? "Distancia manual desde el parante fijo o desde el parante restante anterior." : "Numero en mm. Puede tener decimales.");
                 return (
                   <FieldBox key={`distance-${index}`} label={distanceLabel} helper={distanceHelper}>
                     <Input
