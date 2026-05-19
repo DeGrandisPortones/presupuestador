@@ -50,6 +50,15 @@ const DEFAULT_SURFACE_PARAMETERS = {
   legs_anchas_add_width_mm: 280,
   legs_superanchas_add_width_mm: 380,
   legs_especiales_add_width_mm: 380,
+  paso_height_discount_mm: 110,
+  paso_width_discount_angostas_mm: 80,
+  paso_width_discount_comunes_mm: 110,
+  paso_width_discount_anchas_mm: 150,
+  paso_width_discount_superanchas_mm: 200,
+  paso_width_discount_especiales_mm: 200,
+  hoja_height_discount_mm: 10,
+  hoja_lateral_rebaje_width_discount_mm: 5,
+  hoja_rebaje_lateral_product_ids: "",
   installation_inside_product_id: "",
   installation_behind_product_id: "",
   no_cladding_product_id: "",
@@ -158,6 +167,15 @@ function normalizeSurfaceParametersDraft(raw = {}) {
     parantes_left_door_product_ids: raw?.parantes_left_door_product_ids ?? raw?.left_door_product_ids ?? raw?.puerta_izquierda_product_ids ?? raw?.door_left_product_ids ?? "",
     parantes_door_first_distance_mm: raw?.parantes_door_first_distance_mm ?? 800,
     parantes_tube_discount_mm: raw?.parantes_tube_discount_mm ?? raw?.parantes_cano_discount_mm ?? raw?.descuento_cano_parantes_mm ?? 40,
+    paso_height_discount_mm: raw?.paso_height_discount_mm ?? raw?.paso_alto_descuento_mm ?? raw?.step_height_discount_mm ?? 110,
+    paso_width_discount_angostas_mm: raw?.paso_width_discount_angostas_mm ?? raw?.paso_ancho_descuento_angostas_mm ?? 80,
+    paso_width_discount_comunes_mm: raw?.paso_width_discount_comunes_mm ?? raw?.paso_ancho_descuento_comunes_mm ?? 110,
+    paso_width_discount_anchas_mm: raw?.paso_width_discount_anchas_mm ?? raw?.paso_ancho_descuento_anchas_mm ?? 150,
+    paso_width_discount_superanchas_mm: raw?.paso_width_discount_superanchas_mm ?? raw?.paso_ancho_descuento_superanchas_mm ?? 200,
+    paso_width_discount_especiales_mm: raw?.paso_width_discount_especiales_mm ?? raw?.paso_ancho_descuento_especiales_mm ?? 200,
+    hoja_height_discount_mm: raw?.hoja_height_discount_mm ?? raw?.hoja_alto_descuento_mm ?? raw?.leaf_height_discount_mm ?? 10,
+    hoja_lateral_rebaje_width_discount_mm: raw?.hoja_lateral_rebaje_width_discount_mm ?? raw?.rebaje_lateral_hoja_discount_mm ?? raw?.leaf_lateral_rebaje_width_discount_mm ?? 5,
+    hoja_rebaje_lateral_product_ids: raw?.hoja_rebaje_lateral_product_ids ?? raw?.rebaje_lateral_product_ids ?? raw?.leaf_lateral_rebaje_product_ids ?? "",
   };
 }
 function hasSurfaceParamContent(value) {
@@ -208,6 +226,15 @@ function buildSurfaceParametersPayload(surfaceParameters = {}) {
     legs_anchas_add_width_mm: numericPayload(surfaceParameters.legs_anchas_add_width_mm),
     legs_superanchas_add_width_mm: numericPayload(surfaceParameters.legs_superanchas_add_width_mm),
     legs_especiales_add_width_mm: numericPayload(surfaceParameters.legs_especiales_add_width_mm),
+    paso_height_discount_mm: numericPayload(surfaceParameters.paso_height_discount_mm),
+    paso_width_discount_angostas_mm: numericPayload(surfaceParameters.paso_width_discount_angostas_mm),
+    paso_width_discount_comunes_mm: numericPayload(surfaceParameters.paso_width_discount_comunes_mm),
+    paso_width_discount_anchas_mm: numericPayload(surfaceParameters.paso_width_discount_anchas_mm),
+    paso_width_discount_superanchas_mm: numericPayload(surfaceParameters.paso_width_discount_superanchas_mm),
+    paso_width_discount_especiales_mm: numericPayload(surfaceParameters.paso_width_discount_especiales_mm),
+    hoja_height_discount_mm: numericPayload(surfaceParameters.hoja_height_discount_mm),
+    hoja_lateral_rebaje_width_discount_mm: numericPayload(surfaceParameters.hoja_lateral_rebaje_width_discount_mm),
+    hoja_rebaje_lateral_product_ids: textPayload(surfaceParameters.hoja_rebaje_lateral_product_ids),
     installation_inside_product_id: numericPayload(surfaceParameters.installation_inside_product_id),
     installation_behind_product_id: numericPayload(surfaceParameters.installation_behind_product_id),
     no_cladding_product_id: numericPayload(surfaceParameters.no_cladding_product_id),
@@ -733,7 +760,24 @@ export default function SuperuserMeasurementRulesPage() {
           <ParamInput label="Piernas anchas + ancho (mm)" value={surfaceParameters.legs_anchas_add_width_mm} onChange={(v) => setSurfaceParameters((prev) => ({ ...prev, legs_anchas_add_width_mm: v }))} />
           <ParamInput label="Piernas superanchas + ancho (mm)" value={surfaceParameters.legs_superanchas_add_width_mm} onChange={(v) => setSurfaceParameters((prev) => ({ ...prev, legs_superanchas_add_width_mm: v }))} />
           <ParamInput label="Piernas especiales + ancho (mm)" value={surfaceParameters.legs_especiales_add_width_mm} onChange={(v) => setSurfaceParameters((prev) => ({ ...prev, legs_especiales_add_width_mm: v }))} />
-          <ParamInput label="Ancho caño/parante para esquema (mm)" value={surfaceParameters.parantes_tube_discount_mm} onChange={(v) => setSurfaceParameters((prev) => ({ ...prev, parantes_tube_discount_mm: v }))} helper="Default 40 mm. Se usa para descontar lo que ocupa cada parante en el esquema." />
+          <ParamInput label="Ancho caño/parante para esquema (mm)" value={surfaceParameters.parantes_tube_discount_mm} onChange={(v) => setSurfaceParameters((prev) => ({ ...prev, parantes_tube_discount_mm: v }))} helper="Default 40 mm. Se usa para dibujar el ancho del parante en el esquema." />
+        </div>
+
+        <div className="spacer" />
+        <div style={{ border: "1px solid #bbf7d0", borderRadius: 12, padding: 12, background: "#f7fff9" }}>
+          <div style={{ fontWeight: 900, marginBottom: 6 }}>Medidas de paso y hoja</div>
+          <div className="muted" style={{ marginBottom: 10 }}>Estas reglas definen primero la medida de paso y despues la medida real de la hoja para el esquema y la distribucion de parantes.</div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 10 }}>
+            <ParamInput label="Paso: descuento alto total (mm)" value={surfaceParameters.paso_height_discount_mm} onChange={(v) => setSurfaceParameters((prev) => ({ ...prev, paso_height_discount_mm: v }))} helper="Default 110 mm. Alto de paso = alto del porton - este valor." />
+            <ParamInput label="Paso ancho - Piernas angostas (mm)" value={surfaceParameters.paso_width_discount_angostas_mm} onChange={(v) => setSurfaceParameters((prev) => ({ ...prev, paso_width_discount_angostas_mm: v }))} />
+            <ParamInput label="Paso ancho - Piernas comunes (mm)" value={surfaceParameters.paso_width_discount_comunes_mm} onChange={(v) => setSurfaceParameters((prev) => ({ ...prev, paso_width_discount_comunes_mm: v }))} />
+            <ParamInput label="Paso ancho - Piernas anchas (mm)" value={surfaceParameters.paso_width_discount_anchas_mm} onChange={(v) => setSurfaceParameters((prev) => ({ ...prev, paso_width_discount_anchas_mm: v }))} />
+            <ParamInput label="Paso ancho - Piernas superanchas (mm)" value={surfaceParameters.paso_width_discount_superanchas_mm} onChange={(v) => setSurfaceParameters((prev) => ({ ...prev, paso_width_discount_superanchas_mm: v }))} />
+            <ParamInput label="Paso ancho - Piernas especiales (mm)" value={surfaceParameters.paso_width_discount_especiales_mm} onChange={(v) => setSurfaceParameters((prev) => ({ ...prev, paso_width_discount_especiales_mm: v }))} />
+            <ParamInput label="Hoja: descuento alto desde paso (mm)" value={surfaceParameters.hoja_height_discount_mm} onChange={(v) => setSurfaceParameters((prev) => ({ ...prev, hoja_height_discount_mm: v }))} helper="Default 10 mm. Alto de hoja = alto de paso - este valor." />
+            <ParamInput label="IDs/combinaciones que indican rebaje lateral" textarea value={surfaceParameters.hoja_rebaje_lateral_product_ids} onChange={(v) => setSurfaceParameters((prev) => ({ ...prev, hoja_rebaje_lateral_product_ids: v }))} helper="Si matchea, el ancho de hoja resta el descuento de rebaje lateral. Acepta 3001,3002 o 3001+3002." />
+            <ParamInput label="Hoja: descuento ancho por rebaje lateral (mm)" value={surfaceParameters.hoja_lateral_rebaje_width_discount_mm} onChange={(v) => setSurfaceParameters((prev) => ({ ...prev, hoja_lateral_rebaje_width_discount_mm: v }))} helper="Default 5 mm total." />
+          </div>
         </div>
 
         <div className="spacer" />

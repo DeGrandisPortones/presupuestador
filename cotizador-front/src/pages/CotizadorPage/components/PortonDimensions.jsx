@@ -282,6 +282,45 @@ function getPasoWidthDeductionMm(legsKey, params) {
   };
   return Number(map[key] || 0);
 }
+function getOptionalNumberParam(params, keys) {
+  for (const key of keys) {
+    const raw = params?.[key];
+    if (raw === undefined || raw === null || String(raw).trim() === "") continue;
+    const value = Number(String(raw).replace(",", "."));
+    if (Number.isFinite(value) && value >= 0) return value;
+  }
+  return null;
+}
+function getPasoWidthDiscountByLegMm(legsKey, params) {
+  const key = String(legsKey || "").trim().toLowerCase();
+  const defaults = {
+    angostas: 80,
+    comunes: 110,
+    anchas: 150,
+    superanchas: 200,
+    especiales: 200,
+  };
+  const keyMap = {
+    angostas: ["paso_width_discount_angostas_mm", "paso_ancho_descuento_angostas_mm", "step_width_discount_angostas_mm"],
+    comunes: ["paso_width_discount_comunes_mm", "paso_ancho_descuento_comunes_mm", "step_width_discount_comunes_mm"],
+    anchas: ["paso_width_discount_anchas_mm", "paso_ancho_descuento_anchas_mm", "step_width_discount_anchas_mm"],
+    superanchas: ["paso_width_discount_superanchas_mm", "paso_ancho_descuento_superanchas_mm", "step_width_discount_superanchas_mm"],
+    especiales: ["paso_width_discount_especiales_mm", "paso_ancho_descuento_especiales_mm", "step_width_discount_especiales_mm"],
+  };
+  const selectedKey = Object.prototype.hasOwnProperty.call(keyMap, key) ? key : "angostas";
+  const configured = getOptionalNumberParam(params, keyMap[selectedKey]);
+  if (configured !== null) return configured;
+  return defaults[selectedKey];
+}
+function hasHojaRebajeLateral(lines, params) {
+  const rules = [
+    ...parseProductCombinationRules(params?.hoja_rebaje_lateral_product_ids),
+    ...parseProductCombinationRules(params?.rebaje_lateral_product_ids),
+    ...parseProductCombinationRules(params?.leaf_lateral_rebaje_product_ids),
+    ...parseProductCombinationRules(params?.lateral_rebate_product_ids),
+  ];
+  return rules.some((rule) => productRuleMatches(rule, lines));
+}
 function getParantesTubeDiscountMm(params) {
   return getNumberParam(
     params,
@@ -502,25 +541,28 @@ function buildCalculatedPreview({ widthM, heightM, lines, params, portonType, di
   const legsLabel = legsTypeForWeight(estimatedWeightKg, aptoParaRevestir, params);
   const legsKey = mapLegsKeyForWidth(legsLabel);
 
-  const pasoBaseHeightDiscountMm = getNumberParam(
+  const pasoHeightDiscountMm = getNumberParam(
     params,
-    ["step_base_height_discount_mm", "paso_alto_base_discount_mm", "paso_height_base_discount_mm"],
-    10,
+    ["paso_height_discount_mm", "paso_alto_descuento_mm", "step_height_discount_mm"],
+    110,
   );
-  const pasoExtraHeightDiscountMm = getNumberParam(
-    params,
-    ["step_extra_height_discount_mm", "paso_alto_extra_discount_mm", "paso_height_extra_discount_mm"],
-    100,
-  );
-  const pasoBaseWidthDiscountMm = getNumberParam(
-    params,
-    ["step_base_width_discount_mm", "paso_ancho_base_discount_mm", "paso_width_base_discount_mm"],
-    10,
-  );
-  const pasoLegWidthMm = getPasoWidthDeductionMm(legsKey, params);
+  const pasoWidthDiscountMm = getPasoWidthDiscountByLegMm(legsKey, params);
+  const altoPasoMm = Math.max(0, heightMm - pasoHeightDiscountMm);
+  const anchoPasoMm = Math.max(0, widthMm - pasoWidthDiscountMm);
 
-  const altoPasoMm = Math.max(0, heightMm - pasoBaseHeightDiscountMm - pasoExtraHeightDiscountMm);
-  const anchoPasoMm = Math.max(0, widthMm - pasoBaseWidthDiscountMm - (pasoLegWidthMm / 2));
+  const hojaHeightDiscountMm = getNumberParam(
+    params,
+    ["hoja_height_discount_mm", "hoja_alto_descuento_mm", "leaf_height_discount_mm"],
+    10,
+  );
+  const hojaRebajeLateralDiscountMm = getNumberParam(
+    params,
+    ["hoja_lateral_rebaje_width_discount_mm", "rebaje_lateral_hoja_discount_mm", "leaf_lateral_rebaje_width_discount_mm"],
+    5,
+  );
+  const hasRebajeLateral = hasHojaRebajeLateral(lines, params);
+  const altoHojaMm = Math.max(0, altoPasoMm - hojaHeightDiscountMm);
+  const anchoHojaMm = Math.max(0, anchoPasoMm - (hasRebajeLateral ? hojaRebajeLateralDiscountMm : 0));
 
   return {
     effectiveKgM2,
@@ -528,6 +570,9 @@ function buildCalculatedPreview({ widthM, heightM, lines, params, portonType, di
     legsLabel,
     altoPasoMm,
     anchoPasoMm,
+    altoHojaMm,
+    anchoHojaMm,
+    hasRebajeLateral,
   };
 }
 function inputStateStyle(hasError) {
@@ -631,32 +676,30 @@ function getBaseParantesDimensionMm({ orientation, widthM, heightM }) {
   return Math.max(0, Math.round((Number.isFinite(baseM) ? baseM : 0) * 1000));
 }
 function getParantesEffectiveSpanMm(baseDimensionMm, tubeDiscountMm) {
+  void tubeDiscountMm;
   const base = Math.max(0, Number(baseDimensionMm || 0));
-  const tube = Math.max(0, Number(tubeDiscountMm || 0) || DEFAULT_PARANTES_TUBE_DISCOUNT_MM);
-  return Math.max(0, base - tube);
+  return Math.max(0, base);
 }
 function buildUniformParantesDistances({ firstDistanceMm, parantesCount, baseDimensionMm, tubeDiscountMm }) {
+  void tubeDiscountMm;
   const count = Math.max(0, Math.trunc(Number(parantesCount || 0)));
   if (!count) return [];
-  const tube = Math.max(0, Number(tubeDiscountMm || 0) || DEFAULT_PARANTES_TUBE_DISCOUNT_MM);
-  const span = getParantesEffectiveSpanMm(baseDimensionMm, tube);
+  const base = Math.max(0, Number(baseDimensionMm || 0));
   const next = Array(count).fill("");
   const rawFirst = Number(firstDistanceMm || 0);
   const hasFixedFirst = Number.isFinite(rawFirst) && rawFirst > 0;
 
   if (hasFixedFirst) {
-    const maxFirst = Math.max(0, span - (count * tube));
-    const first = Math.min(rawFirst, maxFirst || rawFirst);
+    const first = Math.max(0, Math.min(rawFirst, base));
     next[0] = formatNumberForInput(first);
     if (count === 1) return next;
-    const remainingClear = Math.max(0, span - first - (count * tube));
-    const step = remainingClear / count;
-    for (let i = 1; i < count; i += 1) next[i] = formatNumberForInput(step);
+    const remainingStep = Math.max(0, (base - first) / count);
+    for (let i = 1; i < count; i += 1) next[i] = formatNumberForInput(remainingStep);
     return next;
   }
 
-  const uniformGap = Math.max(0, (span - (count * tube)) / (count + 1));
-  for (let i = 0; i < count; i += 1) next[i] = formatNumberForInput(uniformGap);
+  const uniformStep = Math.max(0, base / (count + 1));
+  for (let i = 0; i < count; i += 1) next[i] = formatNumberForInput(uniformStep);
   return next;
 }
 function buildResolvedParantesDistances({ distanceList, distributeUniformly, parantesCount, baseDimensionMm, tubeDiscountMm }) {
@@ -689,16 +732,15 @@ function buildSketchParanteMarkers({ distances, parantesCount, baseDimensionMm, 
   ).map((item) => parseMmNumber(item));
 
   const positions = [];
-  let cursor = 0;
+  let centerCursor = 0;
 
   for (let index = 0; index < count; index += 1) {
     const distance = distanceInputs[index];
     const gap = Number.isFinite(distance) && distance > 0 ? distance : 0;
-    cursor += gap;
-    const maxPosition = Math.max(0, span - tube);
-    const position = Math.max(0, Math.min(maxPosition, cursor));
-    positions.push(position);
-    cursor = position + tube;
+    centerCursor += gap;
+    const center = Math.max(tube / 2, Math.min(Math.max(tube / 2, span - tube / 2), centerCursor));
+    positions.push(Math.max(0, center - tube / 2));
+    centerCursor = center;
   }
 
   return positions.map((position, index) => ({
@@ -714,7 +756,8 @@ function getFinalLateralGapMm(markers, baseDimensionMm, tubeDiscountMm) {
   const span = getParantesEffectiveSpanMm(baseDimensionMm, tube);
   if (!Number.isFinite(span) || span <= 0 || !Array.isArray(markers) || !markers.length) return null;
   const last = markers[markers.length - 1];
-  const gap = span - Number(last?.position || 0) - Number(last?.widthMm || tube);
+  const lastCenter = Number(last?.position || 0) + Number(last?.widthMm || tube) / 2;
+  const gap = span - lastCenter;
   return Number.isFinite(gap) && gap >= 0 ? gap : null;
 }
 function buildDisplayMarkers(markers = [], effectiveSpanMm, reverseAxis) {
@@ -752,12 +795,12 @@ function buildDimensionSegments(markers = [], effectiveSpanMm, reverseAxis = fal
   return { displayed, segments };
 }
 function buildFixedReferenceSketchDistances({ distances = [], orientation, fixedDistanceMm, tubeDiscountMm }) {
+  void tubeDiscountMm;
   const list = normalizeDistanceList(distances);
   if (orientation !== "verticales" || !list.length) return list;
-  const tube = Math.max(0, Number(tubeDiscountMm || 0) || DEFAULT_PARANTES_TUBE_DISCOUNT_MM);
   const fixed = Math.max(0, parseMmNumber(fixedDistanceMm) || 0);
   const firstGap = parseMmNumber(list[0]) || 0;
-  return [formatNumberForInput(fixed + tube + firstGap), ...list.slice(1)];
+  return [formatNumberForInput(fixed + firstGap), ...list.slice(1)];
 }
 function ParantesSketchModal({ open, onClose, orientation, parantesCount, baseDimensionMm, distances, distributeUniformly, tubeDiscountMm, hasDoor = false, isRightDoor = false, doorFirstDistanceMm = 800, portonWidthMm = 0, portonHeightMm = 0, doorReferenceLabel = "Parante puerta" }) {
   if (!open) return null;
@@ -1056,10 +1099,10 @@ export default function PortonDimensions({ kind = "porton" }) {
   const tubeDiscountMm = useMemo(() => getParantesTubeDiscountMm(params), [params]);
   const baseParantesDimensionMm = useMemo(
     () => {
-      if (effectiveParantesOrientation === "horizontal") return Math.max(0, Number(preview?.altoPasoMm || 0));
-      return Math.max(0, Number(preview?.anchoPasoMm || 0));
+      if (effectiveParantesOrientation === "horizontal") return Math.max(0, Number(preview?.altoHojaMm || preview?.altoPasoMm || 0));
+      return Math.max(0, Number(preview?.anchoHojaMm || preview?.anchoPasoMm || 0));
     },
-    [effectiveParantesOrientation, preview?.altoPasoMm, preview?.anchoPasoMm],
+    [effectiveParantesOrientation, preview?.altoHojaMm, preview?.anchoHojaMm, preview?.altoPasoMm, preview?.anchoPasoMm],
   );
   const rawParantesDistances = dimensions?.distancias_parantes_mm ?? dimensions?.distancias_parantes ?? [];
   const firstParanteDistance = String(dimensions?.distancia_primer_parante_mm || normalizeDistanceList(rawParantesDistances)[0] || "");
@@ -1081,16 +1124,14 @@ export default function PortonDimensions({ kind = "porton" }) {
   const aptoReferenciaDistanciaMm = Math.max(0, parseMmNumber(aptoReferenciaDistancia) || 800);
   const aptoParantesRestantesCount = aptoSimulaHorizontalReferencia ? Math.max(0, parantesCount - 1) : parantesCount;
   const aptoDistributionBaseDimensionMm = aptoSimulaHorizontalReferencia && effectiveParantesOrientation === "verticales"
-    ? Math.max(0, baseParantesDimensionMm - aptoReferenciaDistanciaMm - tubeDiscountMm)
+    ? Math.max(0, baseParantesDimensionMm - aptoReferenciaDistanciaMm)
     : baseParantesDimensionMm;
   const repartidoParantesAuto = isPorton && distribution === "repartido";
   const parantesUseUniformDistribution = isNonAptoPorton || repartidoParantesAuto || distributeUniformly;
   const resolvedParantesDistances = useMemo(() => {
     const normalizedRawDistances = normalizeDistanceList(rawParantesDistances);
     const distanceListForResolution = showSpecialParantesDistances
-      ? (aptoSimulaHorizontalReferencia
-          ? (parantesUseUniformDistribution ? [] : normalizedRawDistances)
-          : (firstParanteDistance ? [firstParanteDistance, ...normalizedRawDistances.slice(1)] : normalizedRawDistances))
+      ? (parantesUseUniformDistribution ? [] : normalizedRawDistances)
       : [];
     return buildResolvedParantesDistances({
       distanceList: distanceListForResolution,
@@ -1524,9 +1565,7 @@ export default function PortonDimensions({ kind = "porton" }) {
             <div className="spacer" />
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(230px, 1fr))", gap: 10 }}>
               {padDistanceList(resolvedParantesDistances, aptoParantesRestantesCount).map((distance, index) => {
-                const distanceAutoCalculated = aptoSimulaHorizontalReferencia
-                  ? distributeUniformly
-                  : index > 0 && distributeUniformly;
+                const distanceAutoCalculated = distributeUniformly;
                 const distanceLabel = aptoSimulaHorizontalReferencia
                   ? `Parante restante ${index + 1}`
                   : paranteDistanceLabel(index);
@@ -1565,6 +1604,8 @@ export default function PortonDimensions({ kind = "porton" }) {
         <div className="spacer" />
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 10 }}>
           <ComputedCard label="Medidas de paso" value={preview.altoPasoMm > 0 && preview.anchoPasoMm > 0 ? `${formatMetersFromMm(preview.anchoPasoMm)} x ${formatMetersFromMm(preview.altoPasoMm)}` : "-"} />
+          <ComputedCard label="Medidas de hoja" value={preview.altoHojaMm > 0 && preview.anchoHojaMm > 0 ? `${formatMetersFromMm(preview.anchoHojaMm)} x ${formatMetersFromMm(preview.altoHojaMm)}` : "-"} />
+          <ComputedCard label="Rebaje lateral" value={preview.hasRebajeLateral ? "Si" : "No"} />
           <ComputedCard label="Kg/m2 efectivo" value={preview.effectiveKgM2 > 0 ? `${preview.effectiveKgM2.toFixed(2)} kg/m2` : "-"} />
           <ComputedCard label="Peso estimado" value={preview.estimatedWeightKg > 0 ? `${preview.estimatedWeightKg.toFixed(2)} kg` : "-"} />
           <ComputedCard label="Piernas estimadas" value={preview.legsLabel} />
@@ -1585,8 +1626,8 @@ export default function PortonDimensions({ kind = "porton" }) {
         isRightDoor={hasDoorParantesConfig ? isRightDoorParantes : aptoReferenciaLado === "derecho"}
         doorFirstDistanceMm={aptoSimulaHorizontalReferencia ? aptoReferenciaDistanciaMm : doorFirstParanteDistanceMm}
         doorReferenceLabel={aptoSimulaHorizontalReferencia ? "Primer parante fijo" : "Parante puerta"}
-        portonWidthMm={Math.max(0, Number(preview?.anchoPasoMm || 0))}
-        portonHeightMm={Math.max(0, Number(preview?.altoPasoMm || 0))}
+        portonWidthMm={Math.max(0, Number(preview?.anchoHojaMm || preview?.anchoPasoMm || 0))}
+        portonHeightMm={Math.max(0, Number(preview?.altoHojaMm || preview?.altoPasoMm || 0))}
       />
     </div>
   );
