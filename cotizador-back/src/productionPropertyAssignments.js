@@ -122,7 +122,7 @@ async function listDynamicSectionSourceCatalog() {
         source_key: buildSectionSourceKey(sectionName),
         label: `Sección: ${sectionName}`,
         group: "Secciones",
-        description: `Productos elegidos dentro de la sección ${sectionName}.`,
+        description: `Item elegido dentro de la sección ${sectionName}. Si la sección no participa en la NV, la propiedad asignada queda null.`,
       }))
       .filter((item) => item.source_key);
   } catch {
@@ -133,7 +133,7 @@ async function listDynamicSectionSourceCatalog() {
 export async function listProductionSourceCatalog() {
   await ensureProductionPropertyAssignmentsTable();
   const dynamicSections = await listDynamicSectionSourceCatalog();
-  return [...BASE_SOURCE_PROPERTIES, ...dynamicSections];
+  return [...dynamicSections, ...BASE_SOURCE_PROPERTIES];
 }
 
 export async function listIntegratorTargetProperties() {
@@ -249,9 +249,7 @@ export function applyProductionPropertyAssignments(payload, assignmentsMap) {
     if (!targetProperty) continue;
 
     const value = payload?.[sourceKey];
-    if (!hasMeaningfulValue(value)) continue;
-
-    out[targetProperty] = value;
+    out[targetProperty] = hasMeaningfulValue(value) ? value : null;
   }
 
   return out;
