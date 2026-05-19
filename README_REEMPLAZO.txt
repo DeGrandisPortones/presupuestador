@@ -36,3 +36,10 @@ Cambios de esta version:
 
 4) Compatibilidad
 - Mantiene los campos previos de parantes, puertas izquierda/derecha y autoscroll de secciones dependientes.
+
+Correccion agregada en esta version:
+- En Reglas técnicas > Medidas de paso y hoja se agrega un botón propio: Guardar medidas de paso y hoja.
+- En esa misma sección se muestran los parámetros que quedaron guardados en Supabase.
+- Se agrega botón Recargar guardados para volver a leer desde backend/Supabase y verificar lo persistido.
+- Al guardar, la pantalla actualiza el bloque "Parámetros guardados en Supabase" con los valores devueltos por el backend.
+- La persistencia real está en Supabase, tabla public.presupuestador_settings, fila key = 'technical_measurement_rules', columna value_json.

@@ -476,6 +476,16 @@ function ParamInput({ label, value, onChange, textarea = false, helper = "" }) {
   );
 }
 
+function SavedParamItem({ label, value }) {
+  const display = value === undefined || value === null || String(value).trim() === "" ? "-" : String(value);
+  return (
+    <div style={{ border: "1px solid #d1fae5", borderRadius: 10, padding: 10, background: "#ffffff" }}>
+      <div className="muted" style={{ fontSize: 12 }}>{label}</div>
+      <div style={{ fontWeight: 800, color: "#065f46" }}>{display}</div>
+    </div>
+  );
+}
+
 export default function SuperuserMeasurementRulesPage() {
   const user = useAuthStore((s) => s.user);
   const [savingFields, setSavingFields] = useState(false);
@@ -488,6 +498,8 @@ export default function SuperuserMeasurementRulesPage() {
   const [fieldFilter, setFieldFilter] = useState("all");
   const [fieldSearch, setFieldSearch] = useState("");
   const [ruleSearch, setRuleSearch] = useState("");
+  const [savedSurfaceParameters, setSavedSurfaceParameters] = useState(normalizeSurfaceParametersDraft());
+  const [savedSurfaceStatus, setSavedSurfaceStatus] = useState("");
 
   const fieldsQ = useQuery({
     queryKey: ["technicalMeasurementFields"],
@@ -515,7 +527,10 @@ export default function SuperuserMeasurementRulesPage() {
     if (!rulesQ.data) return;
     setRuleDraft({ rules: (rulesQ.data.rules || []).map((rule, index) => normalizeRuleDraft(rule, index)) });
     setSurfaceFinalFormula(String(rulesQ.data.surface_final_formula || "surface_automatica_m2"));
-    setSurfaceParameters(normalizeSurfaceParametersDraft(mergeStoredSurfaceParameters(getSurfaceParametersFromRulesData(rulesQ.data))));
+    const loadedSurfaceParameters = normalizeSurfaceParametersDraft(mergeStoredSurfaceParameters(getSurfaceParametersFromRulesData(rulesQ.data)));
+    setSurfaceParameters(loadedSurfaceParameters);
+    setSavedSurfaceParameters(loadedSurfaceParameters);
+    setSavedSurfaceStatus("Cargado desde Supabase");
   }, [rulesQ.data]);
 
   const products = useMemo(() => Array.isArray(catalogQ.data?.products) ? catalogQ.data.products : [], [catalogQ.data]);
@@ -577,6 +592,20 @@ export default function SuperuserMeasurementRulesPage() {
   }, [rules, ruleSearch, visibleFields]);
   const conflictWarnings = useMemo(() => detectRuleConflicts(rules, visibleFields), [rules, visibleFields]);
 
+  async function reloadSavedSurfaceConfig() {
+    setSavingSurfaceConfig(true);
+    try {
+      const result = await rulesQ.refetch();
+      const loadedSurfaceParameters = normalizeSurfaceParametersDraft(mergeStoredSurfaceParameters(getSurfaceParametersFromRulesData(result.data || {})));
+      setSurfaceParameters(loadedSurfaceParameters);
+      setSavedSurfaceParameters(loadedSurfaceParameters);
+      writeStoredSurfaceParameters(loadedSurfaceParameters);
+      setSavedSurfaceStatus(`Recargado desde Supabase ${new Date().toLocaleString("es-AR")}`);
+    } finally {
+      setSavingSurfaceConfig(false);
+    }
+  }
+
   async function saveSurfaceConfig() {
     setSavingSurfaceConfig(true);
     try {
@@ -591,6 +620,8 @@ export default function SuperuserMeasurementRulesPage() {
       writeStoredSurfaceParameters(savedSurfaceParameters);
       setSurfaceFinalFormula(String(saved.surface_final_formula || surfaceFinalFormula || "surface_automatica_m2"));
       setSurfaceParameters(savedSurfaceParameters);
+      setSavedSurfaceParameters(savedSurfaceParameters);
+      setSavedSurfaceStatus(`Guardado en Supabase ${new Date().toLocaleString("es-AR")}`);
       window.alert("Configuración de superficie guardada.");
     } finally {
       setSavingSurfaceConfig(false);
@@ -734,9 +765,12 @@ export default function SuperuserMeasurementRulesPage() {
             <h2 style={{ marginTop: 0, marginBottom: 6 }}>Parámetros de cálculo de piernas, superficie y parantes</h2>
             <div className="muted" style={{ marginBottom: 10 }}>Estos parámetros se guardan dentro de reglas técnicas y son consumidos por el presupuestador.</div>
           </div>
-          <Button variant="primary" onClick={saveSurfaceConfig} disabled={savingSurfaceConfig || savingRules}>
-            {savingSurfaceConfig ? "Guardando..." : "Guardar parámetros"}
-          </Button>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6, alignItems: "flex-end" }}>
+            <Button variant="primary" onClick={saveSurfaceConfig} disabled={savingSurfaceConfig || savingRules}>
+              {savingSurfaceConfig ? "Guardando..." : "Guardar parámetros"}
+            </Button>
+            <div className="muted" style={{ fontSize: 12 }}>{savedSurfaceStatus || "Parámetros guardados todavía no cargados"}</div>
+          </div>
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 10 }}>
           <ParamInput label="ID producto Dentro del vano" value={surfaceParameters.installation_inside_product_id} onChange={(v) => setSurfaceParameters((prev) => ({ ...prev, installation_inside_product_id: v }))} />
@@ -777,6 +811,31 @@ export default function SuperuserMeasurementRulesPage() {
             <ParamInput label="Hoja: descuento alto desde paso (mm)" value={surfaceParameters.hoja_height_discount_mm} onChange={(v) => setSurfaceParameters((prev) => ({ ...prev, hoja_height_discount_mm: v }))} helper="Default 10 mm. Alto de hoja = alto de paso - este valor." />
             <ParamInput label="IDs/combinaciones que indican rebaje lateral" textarea value={surfaceParameters.hoja_rebaje_lateral_product_ids} onChange={(v) => setSurfaceParameters((prev) => ({ ...prev, hoja_rebaje_lateral_product_ids: v }))} helper="Si matchea, el ancho de hoja resta el descuento de rebaje lateral. Acepta 3001,3002 o 3001+3002." />
             <ParamInput label="Hoja: descuento ancho por rebaje lateral (mm)" value={surfaceParameters.hoja_lateral_rebaje_width_discount_mm} onChange={(v) => setSurfaceParameters((prev) => ({ ...prev, hoja_lateral_rebaje_width_discount_mm: v }))} helper="Default 5 mm total." />
+          </div>
+          <div className="spacer" />
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+            <Button variant="primary" onClick={saveSurfaceConfig} disabled={savingSurfaceConfig || savingRules}>
+              {savingSurfaceConfig ? "Guardando..." : "Guardar medidas de paso y hoja"}
+            </Button>
+            <Button variant="ghost" onClick={reloadSavedSurfaceConfig} disabled={savingSurfaceConfig || savingRules}>
+              Recargar guardados
+            </Button>
+            <span className="muted">{savedSurfaceStatus || "Sin datos guardados cargados"}</span>
+          </div>
+          <div className="spacer" />
+          <div style={{ border: "1px solid #86efac", borderRadius: 12, padding: 12, background: "#ecfdf5" }}>
+            <div style={{ fontWeight: 900, marginBottom: 8 }}>Parámetros guardados en Supabase</div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))", gap: 8 }}>
+              <SavedParamItem label="Paso alto: descuento total (mm)" value={savedSurfaceParameters.paso_height_discount_mm} />
+              <SavedParamItem label="Paso ancho: angostas (mm)" value={savedSurfaceParameters.paso_width_discount_angostas_mm} />
+              <SavedParamItem label="Paso ancho: comunes (mm)" value={savedSurfaceParameters.paso_width_discount_comunes_mm} />
+              <SavedParamItem label="Paso ancho: anchas (mm)" value={savedSurfaceParameters.paso_width_discount_anchas_mm} />
+              <SavedParamItem label="Paso ancho: superanchas (mm)" value={savedSurfaceParameters.paso_width_discount_superanchas_mm} />
+              <SavedParamItem label="Paso ancho: especiales (mm)" value={savedSurfaceParameters.paso_width_discount_especiales_mm} />
+              <SavedParamItem label="Hoja alto: descuento desde paso (mm)" value={savedSurfaceParameters.hoja_height_discount_mm} />
+              <SavedParamItem label="Hoja ancho: descuento rebaje lateral (mm)" value={savedSurfaceParameters.hoja_lateral_rebaje_width_discount_mm} />
+              <SavedParamItem label="IDs rebaje lateral" value={savedSurfaceParameters.hoja_rebaje_lateral_product_ids} />
+            </div>
           </div>
         </div>
 
