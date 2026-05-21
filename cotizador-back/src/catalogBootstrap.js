@@ -20,48 +20,14 @@ function normTagName(x) {
     .toLowerCase();
 }
 function cleanText(value) { return String(value || "").trim(); }
-function uniqueNumbers(values = []) {
-  return [...new Set((Array.isArray(values) ? values : []).map(Number).filter((n) => Number.isFinite(n) && n > 0))];
-}
-function uniqueTexts(values = []) {
-  return [...new Set((Array.isArray(values) ? values : []).map(cleanText).filter(Boolean))];
-}
-function getProductTagIds(product) {
-  return uniqueNumbers(product?.tag_ids || []);
-}
-function getProductTagNames(product, tagById) {
-  const names = [];
-  for (const tid of getProductTagIds(product)) {
-    const name = tagById.get(Number(tid))?.name;
-    if (name) names.push(name);
-  }
-  if (Array.isArray(product?.tag_names)) names.push(...product.tag_names);
-  if (Array.isArray(product?.tags)) {
-    for (const tag of product.tags) {
-      if (typeof tag === "string") names.push(tag);
-      else if (tag?.name) names.push(tag.name);
-    }
-  }
-  return uniqueTexts(names);
-}
-function productHasAnyTag(product, tagIds, tagSectionByName, tagById) {
-  const tids = getProductTagIds(product);
-  if (tagIds instanceof Set && tids.some((tid) => tagIds.has(Number(tid)))) return true;
-
-  if (tagSectionByName instanceof Map && tagSectionByName.size) {
-    const names = getProductTagNames(product, tagById);
-    return names.some((name) => tagSectionByName.has(normTagName(name)));
-  }
-
-  return false;
+function productHasAnyTag(product, tagIds) {
+  if (!(tagIds instanceof Set) || !tagIds.size) return false;
+  const tids = Array.isArray(product?.tag_ids) ? product.tag_ids.map(Number) : [];
+  return tids.some((tid) => tagIds.has(Number(tid)));
 }
 function tagIdsByNames(tags = [], names = []) {
   const wanted = new Set(names.map(normTagName));
   return new Set((Array.isArray(tags) ? tags : []).filter((t) => wanted.has(normTagName(t?.name))).map((t) => Number(t.id)).filter(Boolean));
-}
-function productHasTagName(product, tagById, names = []) {
-  const wanted = new Set(names.map(normTagName));
-  return getProductTagNames(product, tagById).some((name) => wanted.has(normTagName(name)));
 }
 
 export async function loadCatalogBootstrap(odoo, kind = "porton") {
@@ -79,24 +45,44 @@ export async function loadCatalogBootstrap(odoo, kind = "porton") {
   const typeVisibility = await getTypeVisibilityMap(k);
 
   const tags = Array.isArray(odooBoot?.tags) ? odooBoot.tags : [];
-  const productsRaw = Array.isArray(odooBoot?.products) ? odooBoot.products : [];
+  // Regla solicitada: todos los catalogos trabajan solo con productos que tengan tags reales de Odoo.
+  const productsRaw = (Array.isArray(odooBoot?.products) ? odooBoot.products : [])
+    .filter((product) => Array.isArray(product?.tag_ids) && product.tag_ids.length > 0);
 
-  const tagById = new Map(tags.map((t) => [Number(t.id), t]));
   const ipanelTagIds = tagIdsByNames(tags, ["ipanel", "ipanels"]);
   const puertaTagIds = tagIdsByNames(tags, ["puerta", "puertas"]);
   const configuredTagIds = new Set([...tagSection.keys()].map((id) => Number(id)).filter(Boolean));
 
-  const tagSectionByName = new Map();
-  for (const [rawTagId, sectionId] of tagSection.entries()) {
-    const tag = tagById.get(Number(rawTagId));
+  const tagById = new Map(tags.map((t) => [Number(t.id), t]));
+  const configuredSectionByTagName = new Map();
+  for (const [tagId, sectionId] of tagSection.entries()) {
+    const tag = tagById.get(Number(tagId));
     const name = normTagName(tag?.name);
-    if (name && sectionId) tagSectionByName.set(name, Number(sectionId));
+    if (name && sectionId) configuredSectionByTagName.set(name, Number(sectionId));
+  }
+
+  function resolveSectionIdForTag(tagId) {
+    const direct = Number(tagSection.get(Number(tagId)) || 0) || null;
+    if (direct) return direct;
+    const tagName = normTagName(tagById.get(Number(tagId))?.name);
+    if (tagName && configuredSectionByTagName.has(tagName)) {
+      return Number(configuredSectionByTagName.get(tagName) || 0) || null;
+    }
+    return null;
+  }
+
+  function productBelongsToConfiguredSection(product) {
+    const tids = Array.isArray(product?.tag_ids) ? product.tag_ids.map(Number) : [];
+    return tids.some((tid) => !!resolveSectionIdForTag(tid));
   }
 
   const productsFiltered = productsRaw.filter((p) => {
-    const isIpanel = productHasAnyTag(p, ipanelTagIds, null, tagById) || productHasTagName(p, tagById, ["ipanel", "ipanels"]);
-    const isPuerta = productHasAnyTag(p, puertaTagIds, null, tagById) || productHasTagName(p, tagById, ["puerta", "puertas"]);
-    const belongsToConfiguredSection = productHasAnyTag(p, configuredTagIds, tagSectionByName, tagById);
+    const tids = Array.isArray(p.tag_ids) ? p.tag_ids.map(Number) : [];
+    if (!tids.length) return false;
+
+    const isIpanel = tids.some((tid) => ipanelTagIds.has(tid));
+    const isPuerta = tids.some((tid) => puertaTagIds.has(tid));
+    const belongsToConfiguredSection = productBelongsToConfiguredSection(p) || productHasAnyTag(p, configuredTagIds);
 
     if (k === "ipanel") return isIpanel || belongsToConfiguredSection;
     if (k === "puerta") return isPuerta || belongsToConfiguredSection;
@@ -113,24 +99,14 @@ export async function loadCatalogBootstrap(odoo, kind = "porton") {
     const alias = ownAlias || inheritedAlias;
     const odooName = cleanText(p?.name);
     const visibility = visibilityMap.get(pid) || { disable_for_vendedor: false, disable_for_distribuidor: false };
-    const tids = getProductTagIds(p);
-    const tagNames = getProductTagNames(p, tagById);
-
-    const sectionIdsFromIds = tids
-      .map((tid) => tagSection.get(Number(tid)))
-      .filter(Boolean)
-      .map(Number);
-    const sectionIdsFromNames = tagNames
-      .map((name) => tagSectionByName.get(normTagName(name)))
-      .filter(Boolean)
-      .map(Number);
-    const sectionIds = uniqueNumbers([...sectionIdsFromIds, ...sectionIdsFromNames]);
+    const tids = Array.isArray(p.tag_ids) ? p.tag_ids.map(Number) : [];
+    const sectionIds = [...new Set(tids.map((tid) => resolveSectionIdForTag(tid)).filter(Boolean).map(Number))];
     const sectionNames = sectionIds.map((sid) => sectionById.get(Number(sid))?.name).filter(Boolean);
+    const tagNames = tids.map((tid) => tagById.get(tid)?.name).filter(Boolean);
     const usesSurfaceQuantity = sectionIds.some((sid) => !!sectionById.get(Number(sid))?.use_surface_qty);
 
     return {
       ...p,
-      tag_names: tagNames,
       alias: alias || null,
       internal_alias: alias || null,
       display_name: alias || odooName,
