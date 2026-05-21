@@ -16,7 +16,6 @@ import {
   setProductionPlanningYear,
 } from "../settingsDb.js";
 import { getProductionPlanningWithUsage } from "../productionPlanning.js";
-import { getDoorTechnicalRules, setDoorTechnicalRules } from "../doorTechnicalRulesDb.js";
 import {
   listProductionSourceCatalog,
   listIntegratorTargetProperties,
@@ -115,13 +114,6 @@ export function buildAdminRouter(odoo) {
   });
   router.put("/door-quote-settings", requireAuth, requireEncComercialOrSuperuser, async (req, res, next) => {
     try { res.json({ ok: true, settings: await setDoorQuoteSettings(req.body || {}) }); } catch (e) { next(e); }
-  });
-
-  router.get("/door-technical-rules", requireAuth, requireSuperuser, async (_req, res, next) => {
-    try { res.json({ ok: true, rules: await getDoorTechnicalRules() }); } catch (e) { next(e); }
-  });
-  router.put("/door-technical-rules", requireAuth, requireSuperuser, async (req, res, next) => {
-    try { res.json({ ok: true, rules: await setDoorTechnicalRules(req.body || {}) }); } catch (e) { next(e); }
   });
 
   router.get("/technical-measurement-rules", requireAuth, async (req, res, next) => {

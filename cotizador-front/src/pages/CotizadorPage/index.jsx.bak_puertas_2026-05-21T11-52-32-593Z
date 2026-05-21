@@ -43,7 +43,7 @@ const PREVIOUSLY_BILLED_PRODUCT_ID = -900001;
 
 function normalizeCatalogKind(kind) { return String(kind || "porton").toLowerCase().trim(); }
 function normalizeUrl(value) { return String(value || "").trim().replace(/\/+$/, "").toLowerCase(); }
-function editorRouteForKind(kind, id, search = "") { const safeId = String(id || "").trim(); const suffix = search || ""; const normalizedKind = normalizeCatalogKind(kind); if (normalizedKind === "ipanel") return `/cotizador/ipanel/${safeId}${suffix}`; if (normalizedKind === "otros") return `/cotizador/otros/${safeId}${suffix}`; if (normalizedKind === "puerta") return `/cotizador/puerta/${safeId}${suffix}`; return `/cotizador/${safeId}${suffix}`; }
+function editorRouteForKind(kind, id, search = "") { const safeId = String(id || "").trim(); const suffix = search || ""; const normalizedKind = normalizeCatalogKind(kind); if (normalizedKind === "ipanel") return `/cotizador/ipanel/${safeId}${suffix}`; if (normalizedKind === "otros") return `/cotizador/otros/${safeId}${suffix}`; return `/cotizador/${safeId}${suffix}`; }
 function parseNum(v) { const n = Number(String(v ?? "").replace(",", ".")); return Number.isFinite(n) ? n : 0; }
 function formatMetric(v) { const n = Number(v || 0); return Number.isFinite(n) && n > 0 ? String(n).replace(/\.00$/, "") : ""; }
 function buildPortonMetricsText(payload) {
@@ -105,7 +105,7 @@ function validateDimensionsRequired(payload, kind = "porton") {
   const dims = payload?.payload?.dimensions || {};
   const width = parseNum(dims?.width);
   const height = parseNum(dims?.height);
-  const itemLabel = normalizedKind === "ipanel" ? "Ipanel" : (normalizedKind === "puerta" ? "puerta" : "portón");
+  const itemLabel = normalizedKind === "ipanel" ? "Ipanel" : "portón";
 
   if (!(width > 0)) throw new Error(`Completá el ancho del ${itemLabel}.`);
   if (!(height > 0)) throw new Error(`Completá el alto del ${itemLabel}.`);
@@ -358,7 +358,7 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
     return { quote: q, payload: { ...payload, id: q.id, quote_id: q.id, quote_number: q.quote_number || "", seller_name: user?.full_name || user?.username || "" } };
   }
   function maybeContinueDoorWorkflow(savedQuote) {
-    if (!isDoorWorkflow || !["ipanel", "puerta"].includes(normalizedCatalogKind) || !workflowDoorId) return false;
+    if (!isDoorWorkflow || normalizedCatalogKind !== "ipanel" || !workflowDoorId) return false;
     const nextUrl = `/puertas/${workflowDoorId}?door_workflow=1&workflow_stage=${encodeURIComponent(workflowStage === "ipanel_first" ? "door_final" : workflowStage)}&ipanel_quote_id=${encodeURIComponent(savedQuote?.id || quoteId || idParam || "")}&porton_id=${encodeURIComponent(workflowPortonId || "")}`;
     navigate(nextUrl);
     return true;
@@ -376,7 +376,7 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
     setConfirmChoiceOpen(true);
   }
 
-  const saveM = useMutation({ mutationFn: async () => { const payload = getDraftPayload(); validateDraft(payload); if (quoteId) return await updateQuote(quoteId, payload); return await createQuote(payload); }, onSuccess: (q) => { setQuoteMeta({ quoteId: q.id, status: q.status, rejectionNotes: q.rejection_notes }); qc.invalidateQueries({ queryKey: ["quotes", "mine"] }); if (maybeContinueDoorWorkflow(q)) { toast.success("Presupuesto de puerta guardado. Volviendo al panel."); return; } navigate(editorRouteForKind(catalogKind, q.id)); toast.success("Guardado."); }, onError: (e) => toast.error(e?.message || "No se pudo guardar") });
+  const saveM = useMutation({ mutationFn: async () => { const payload = getDraftPayload(); validateDraft(payload); if (quoteId) return await updateQuote(quoteId, payload); return await createQuote(payload); }, onSuccess: (q) => { setQuoteMeta({ quoteId: q.id, status: q.status, rejectionNotes: q.rejection_notes }); qc.invalidateQueries({ queryKey: ["quotes", "mine"] }); if (maybeContinueDoorWorkflow(q)) { toast.success("Ipanel guardado. Seguimos con el marco de puerta."); return; } navigate(editorRouteForKind(catalogKind, q.id)); toast.success("Guardado."); }, onError: (e) => toast.error(e?.message || "No se pudo guardar") });
 
   const confirmM = useMutation({
     mutationFn: async (variables) => {
@@ -388,7 +388,7 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
       if (isRevisionQuote) return await submitFinalQuote(id);
       return await confirmQuote(id, { fulfillment_mode: chosenMode });
     },
-    onSuccess: async (q) => { setConfirmChoiceOpen(false); setQuoteMeta({ quoteId: q.id, status: q.status, rejectionNotes: q.rejection_notes }); qc.invalidateQueries({ queryKey: ["quotes", "mine"] }); if (maybeContinueDoorWorkflow(q)) { toast.success("Presupuesto de puerta confirmado. Volviendo al panel."); return; } navigate(`/presupuestos/${q.id}`); toast.success(isRevisionQuote ? "Cotización final enviada a Odoo." : "Presupuesto confirmado."); },
+    onSuccess: async (q) => { setConfirmChoiceOpen(false); setQuoteMeta({ quoteId: q.id, status: q.status, rejectionNotes: q.rejection_notes }); qc.invalidateQueries({ queryKey: ["quotes", "mine"] }); if (maybeContinueDoorWorkflow(q)) { toast.success("Ipanel confirmado. Seguimos con el marco de puerta."); return; } navigate(`/presupuestos/${q.id}`); toast.success(isRevisionQuote ? "Cotización final enviada a Odoo." : "Presupuesto confirmado."); },
     onError: (e) => toast.error(e?.message || (isRevisionQuote ? "No se pudo enviar la cotización final" : "No se pudo confirmar")),
   });
 
@@ -508,7 +508,7 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
       <div className="spacer" />
       <HeaderBar showMargin />
 
-      {!["otros", "puerta"].includes(normalizedCatalogKind) ? (
+      {normalizedCatalogKind !== "otros" ? (
         <>
           <div className="spacer" />
           <div className="card">

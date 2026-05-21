@@ -57,7 +57,6 @@ export async function loadCatalogBootstrap(odoo, kind="porton") {
 
     if (k === "ipanel") return isIpanel || belongsToConfiguredSection;
     if (k === "otros") return belongsToConfiguredSection;
-    if (k === "puerta") return belongsToConfiguredSection;
     return !isIpanel;
   });
 

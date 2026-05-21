@@ -1,9 +1,13 @@
 import { http } from "./http.js";
 
-export async function createOrGetDoorFromQuote(quoteId) {
+export async function createDoorFromQuote(quoteId) {
   const { data } = await http.post(`/api/doors/from-quote/${quoteId}`);
-  if (!data?.ok) throw new Error(data?.error || "No se pudo abrir la puerta");
+  if (!data?.ok) throw new Error(data?.error || "No se pudo crear la puerta");
   return data.door;
+}
+
+export async function createOrGetDoorFromQuote(quoteId) {
+  return createDoorFromQuote(quoteId);
 }
 
 export async function createStandaloneDoor() {
@@ -24,10 +28,8 @@ export async function listDoorsByQuote(quoteId) {
   return data.doors || [];
 }
 
-export async function listDoorSuppliers(query = "") {
-  const { data } = await http.get(`/api/doors/suppliers?query=${encodeURIComponent(query)}`);
-  if (!data?.ok) throw new Error(data?.error || "No se pudieron cargar los proveedores");
-  return data.suppliers || [];
+export async function listDoorSuppliers() {
+  return [];
 }
 
 export async function getDoor(id) {
@@ -51,7 +53,7 @@ export async function getDoorQuotePdfPayload(id, mode = "presupuesto") {
 export async function syncDoorSaleByQuote(quoteId) {
   const { data } = await http.post(`/api/doors/by-quote/${quoteId}/sync-sale`, {});
   if (!data?.ok) throw new Error(data?.error || "No se pudo sincronizar la venta de la puerta");
-  return data.door || null;
+  return data.doors || (data.door ? [data.door] : []);
 }
 
 export async function updateDoor(id, payload) {
@@ -62,18 +64,18 @@ export async function updateDoor(id, payload) {
 
 export async function submitDoor(id) {
   const { data } = await http.post(`/api/doors/${id}/submit`);
-  if (!data?.ok) throw new Error(data?.error || "No se pudo enviar la puerta a aprobación");
+  if (!data?.ok) throw new Error(data?.error || "No se pudo enviar la puerta a aprobacion");
   return data.door;
 }
 
 export async function reviewDoorCommercial(id, { action, notes } = {}) {
   const { data } = await http.post(`/api/doors/${id}/review/commercial`, { action, notes });
-  if (!data?.ok) throw new Error(data?.error || "No se pudo registrar la revisión comercial");
+  if (!data?.ok) throw new Error(data?.error || "No se pudo registrar la revision comercial");
   return data.door;
 }
 
 export async function reviewDoorTechnical(id, { action, notes } = {}) {
   const { data } = await http.post(`/api/doors/${id}/review/technical`, { action, notes });
-  if (!data?.ok) throw new Error(data?.error || "No se pudo registrar la revisión técnica");
+  if (!data?.ok) throw new Error(data?.error || "No se pudo registrar la revision tecnica");
   return data.door;
 }

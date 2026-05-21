@@ -84,43 +84,43 @@ async function ensureCatalogControls() {
       if to_regclass('public.presupuestador_sections') is not null then
         alter table public.presupuestador_sections
           add constraint presupuestador_sections_catalog_kind_check
-          check (catalog_kind in ('porton', 'ipanel', 'otros', 'puerta'));
+          check (catalog_kind in ('porton', 'ipanel', 'otros'));
       end if;
 
       if to_regclass('public.presupuestador_tag_sections') is not null then
         alter table public.presupuestador_tag_sections
           add constraint presupuestador_tag_sections_catalog_kind_check
-          check (catalog_kind in ('porton', 'ipanel', 'otros', 'puerta'));
+          check (catalog_kind in ('porton', 'ipanel', 'otros'));
       end if;
 
       if to_regclass('public.presupuestador_product_aliases') is not null then
         alter table public.presupuestador_product_aliases
           add constraint presupuestador_product_aliases_catalog_kind_check
-          check (catalog_kind in ('porton', 'ipanel', 'otros', 'puerta'));
+          check (catalog_kind in ('porton', 'ipanel', 'otros'));
       end if;
 
       if to_regclass('public.presupuestador_type_sections') is not null then
         alter table public.presupuestador_type_sections
           add constraint presupuestador_type_sections_catalog_kind_check
-          check (catalog_kind in ('porton', 'ipanel', 'otros', 'puerta'));
+          check (catalog_kind in ('porton', 'ipanel', 'otros'));
       end if;
 
       if to_regclass('public.presupuestador_product_visibility') is not null then
         alter table public.presupuestador_product_visibility
           add constraint presupuestador_product_visibility_catalog_kind_check
-          check (catalog_kind in ('porton', 'ipanel', 'otros', 'puerta'));
+          check (catalog_kind in ('porton', 'ipanel', 'otros'));
       end if;
 
       if to_regclass('public.presupuestador_type_visibility') is not null then
         alter table public.presupuestador_type_visibility
           add constraint presupuestador_type_visibility_catalog_kind_check
-          check (catalog_kind in ('porton', 'ipanel', 'otros', 'puerta'));
+          check (catalog_kind in ('porton', 'ipanel', 'otros'));
       end if;
 
       if to_regclass('public.presupuestador_product_pdf_names') is not null then
         alter table public.presupuestador_product_pdf_names
           add constraint presupuestador_product_pdf_names_catalog_kind_check
-          check (catalog_kind in ('porton', 'ipanel', 'otros', 'puerta'));
+          check (catalog_kind in ('porton', 'ipanel', 'otros'));
       end if;
     end $$;
   `);
@@ -128,10 +128,10 @@ async function ensureCatalogControls() {
   catalogControlsEnsured = true;
 }
 
-const KINDS = new Set(["porton", "ipanel", "otros", "puerta"]);
+const KINDS = new Set(["porton", "ipanel", "otros"]);
 export function normKind(kind) {
   const k = String(kind || "porton").toLowerCase().trim();
-  if (!KINDS.has(k)) throw new Error('kind inválido (usar "porton", "ipanel", "otros" o "puerta")');
+  if (!KINDS.has(k)) throw new Error('kind inválido (usar "porton", "ipanel" u "otros")');
   return k;
 }
 

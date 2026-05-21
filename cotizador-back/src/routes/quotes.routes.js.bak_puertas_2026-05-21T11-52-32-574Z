@@ -43,7 +43,7 @@ function requireSellerOrDistributor(req, res, next) {
 
 function normCatalogKind(kind) {
   const k = String(kind || "porton").toLowerCase().trim();
-  if (!["porton", "ipanel", "otros", "puerta"].includes(k)) throw new Error('catalog_kind invalido (usar "porton", "ipanel", "otros" o "puerta")');
+  if (!["porton", "ipanel", "otros"].includes(k)) throw new Error('catalog_kind invalido (usar "porton", "ipanel" u "otros")');
   return k;
 }
 function toScalar(v) { return Array.isArray(v) ? v[0] : v; }
@@ -1242,7 +1242,7 @@ export function buildQuotesRouter(odoo) {
       if (!quote) throw new Error("Quote no encontrado");
       if (String(quote.created_by_user_id) !== String(u.user_id)) throw new Error("No sos dueño");
       const catalog_kind_locked = quote.catalog_kind || "porton";
-      if (body.catalog_kind && normCatalogKind(body.catalog_kind) !== normCatalogKind(catalog_kind_locked)) return res.status(400).json({ ok: false, error: "No podes cambiar el tipo de cotizador (porton/ipanel/otros/puerta)" });
+      if (body.catalog_kind && normCatalogKind(body.catalog_kind) !== normCatalogKind(catalog_kind_locked)) return res.status(400).json({ ok: false, error: "No podes cambiar el tipo de cotizador (porton/ipanel)" });
       const catalog_kind = normCatalogKind(body.catalog_kind || catalog_kind_locked);
       if (!["draft", "rejected_commercial", "rejected_technical", "synced_odoo"].includes(quote.status)) throw new Error("Solo se edita en borrador o en acopio ya enviado");
       if (quote.status === "synced_odoo" && quote.fulfillment_mode !== "acopio") throw new Error("Solo se puede editar un presupuesto sincronizado si está en acopio");

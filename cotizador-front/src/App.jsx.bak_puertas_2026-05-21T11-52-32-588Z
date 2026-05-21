@@ -8,7 +8,6 @@ import PuertasPage from "./pages/PuertasPage/index.jsx";
 const CotizadorPortonRoute = () => <CotizadorPage catalogKind="porton" />;
 const CotizadorIpanelRoute = () => <CotizadorPage catalogKind="ipanel" />;
 const CotizadorOtrosRoute = () => <CotizadorPage catalogKind="otros" />;
-const CotizadorPuertaRoute = () => <CotizadorPage catalogKind="puerta" />;
 
 import LoginPage from "./pages/LoginPage/index.jsx";
 
@@ -19,7 +18,6 @@ import AprobacionTecnicaPage from "./pages/AprobacionTecnicaPage/index.jsx";
 import DashboardPage from "./pages/DashboardPage/index.jsx";
 import PlanificacionPage from "./pages/PlanificacionPage/index.jsx";
 import SuperuserMeasurementRulesPage from "./pages/SuperuserMeasurementRulesPage/index.jsx";
-import SuperuserDoorTechnicalRulesPage from "./pages/SuperuserDoorTechnicalRulesPage/index.jsx";
 import SuperuserProductPdfNamesPage from "./pages/SuperuserProductPdfNamesPage/index.jsx";
 import SuperuserProductionPropertyAssignmentsPage from "./pages/SuperuserProductionPropertyAssignmentsPage/index.jsx";
 import UsersAdminPage from "./pages/UsersAdminPage/index.jsx";
@@ -72,8 +70,6 @@ export default function App() {
           <Route path="cotizador/ipanel/:id" element={<CotizadorIpanelRoute />} />
           <Route path="cotizador/otros" element={<CotizadorOtrosRoute />} />
           <Route path="cotizador/otros/:id" element={<CotizadorOtrosRoute />} />
-          <Route path="cotizador/puerta" element={<CotizadorPuertaRoute />} />
-          <Route path="cotizador/puerta/:id" element={<CotizadorPuertaRoute />} />
           <Route path="puertas" element={<PuertasPage />} />
           <Route path="puertas/nuevo/:quoteId" element={<PuertaWorkflowPage />} />
           <Route path="puertas/:id" element={<PuertaPanelPage />} />
@@ -90,7 +86,6 @@ export default function App() {
           <Route path="planificacion" element={<PlanificacionPage />} />
           <Route path="financiamiento" element={<FinanciamientoPage />} />
           <Route path="dashboard/reglas-tecnicas" element={<SuperuserMeasurementRulesPage />} />
-          <Route path="dashboard/reglas-tecnicas-puertas" element={<SuperuserDoorTechnicalRulesPage />} />
           <Route path="superuser/nombres-pdf" element={<SuperuserProductPdfNamesPage />} />
           <Route path="superuser/asignacion-produccion" element={<SuperuserProductionPropertyAssignmentsPage />} />
           <Route path="superuser/visualizador-porton" element={<QuoteHistoryViewerPage />} />

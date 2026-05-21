@@ -151,16 +151,6 @@ export default function MenuPage() {
           />
         )}
 
-        {showTechnicalRules && (
-          <MenuTile
-            title="Reglas Tecnicas puertas"
-            description="Define descuentos y parametros para calcular automaticamente el Ipanel de cada puerta."
-            buttonText="Abrir reglas puertas"
-            onClick={() => navigate("/dashboard/reglas-tecnicas-puertas")}
-            icon="P"
-          />
-        )}
-
         {showPdfNamesAdmin && (
           <MenuTile
             title="Nombres PDF productos"

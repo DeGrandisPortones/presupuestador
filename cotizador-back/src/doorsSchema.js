@@ -10,6 +10,7 @@ export async function ensureDoorsSchema() {
       id bigserial primary key,
       created_by_user_id int not null,
       linked_quote_id uuid null,
+      structure_quote_id uuid null,
       door_code text not null,
       status text not null default 'draft',
       commercial_decision text not null default 'pending',
@@ -30,6 +31,8 @@ export async function ensureDoorsSchema() {
     );
   `);
 
+  await dbQuery(`alter table public.presupuestador_doors add column if not exists linked_quote_id uuid null;`);
+  await dbQuery(`alter table public.presupuestador_doors add column if not exists structure_quote_id uuid null;`);
   await dbQuery(`alter table public.presupuestador_doors add column if not exists commercial_decision text not null default 'pending';`);
   await dbQuery(`alter table public.presupuestador_doors add column if not exists technical_decision text not null default 'pending';`);
   await dbQuery(`alter table public.presupuestador_doors add column if not exists commercial_notes text null;`);
@@ -45,10 +48,18 @@ export async function ensureDoorsSchema() {
   await dbQuery(`alter table public.presupuestador_doors add column if not exists record jsonb not null default '{}'::jsonb;`);
   await dbQuery(`alter table public.presupuestador_doors add column if not exists updated_at timestamptz not null default now();`);
 
+  // Antes habia un indice unico por linked_quote_id. Ahora un porton puede tener varias puertas.
+  await dbQuery(`drop index if exists public.presupuestador_doors_linked_quote_uidx;`);
   await dbQuery(`
-    create unique index if not exists presupuestador_doors_linked_quote_uidx
+    create index if not exists presupuestador_doors_linked_quote_idx
     on public.presupuestador_doors(linked_quote_id)
     where linked_quote_id is not null;
+  `);
+
+  await dbQuery(`
+    create index if not exists presupuestador_doors_structure_quote_idx
+    on public.presupuestador_doors(structure_quote_id)
+    where structure_quote_id is not null;
   `);
 
   await dbQuery(`

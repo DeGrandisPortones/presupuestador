@@ -193,16 +193,3 @@ export async function adminSetTypeVisibility(kind = "porton", typeKey, payload =
   if (!data?.ok) throw new Error(data?.error || "No se pudo guardar la visibilidad del tipo");
   return data.visibility;
 }
-
-export async function adminGetDoorTechnicalRules() {
-  const { data } = await http.get(`/api/admin/door-technical-rules`);
-  if (!data?.ok) throw new Error(data?.error || "No se pudieron cargar las reglas tecnicas de puertas");
-  return data.rules || {};
-}
-
-export async function adminSaveDoorTechnicalRules(payload = {}) {
-  const { data } = await http.put(`/api/admin/door-technical-rules`, payload || {});
-  if (!data?.ok) throw new Error(data?.error || "No se pudieron guardar las reglas tecnicas de puertas");
-  return data.rules || {};
-}
-
