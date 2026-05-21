@@ -25,6 +25,30 @@ function parseNum(v) {
 }
 function normalizeUrl(value) { return String(value || "").trim().replace(/\/+$/, "").toLowerCase(); }
 function cleanText(value) { return String(value || "").trim(); }
+function normalizeSearchText(value) {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim();
+}
+function buildPortonSearchText(quote = {}) {
+  const c = quote?.end_customer || {};
+  return normalizeSearchText([
+    quoteDisplayReference(quote),
+    quote?.quote_number,
+    quote?.odoo_sale_order_name,
+    quote?.final_sale_order_name,
+    quote?.status,
+    c?.name,
+    c?.first_name,
+    c?.last_name,
+    c?.phone,
+    c?.email,
+    c?.address,
+    c?.city,
+  ].filter(Boolean).join(" "));
+}
 function extractReferenceCore(value) {
   const raw = cleanText(value);
   if (!raw) return "";
@@ -102,12 +126,14 @@ export default function PresupuestadorPuertasPage() {
 
   const [confirmChoiceOpen, setConfirmChoiceOpen] = useState(false);
   const [linkedPortonId, setLinkedPortonId] = useState("");
+  const [portonSearch, setPortonSearch] = useState("");
   const [ivaRate] = useState(IVA_RATE_DEFAULT);
 
   useEffect(() => {
     if (!idParam) {
       reset();
       setLinkedPortonId("");
+      setPortonSearch("");
       if (user?.default_maps_url) setEndCustomer({ maps_url: user.default_maps_url });
     }
   }, [idParam, reset, user?.default_maps_url, setEndCustomer]);
@@ -128,6 +154,11 @@ export default function PresupuestadorPuertasPage() {
 
   const portonQuotesQ = useQuery({ queryKey: ["quotes", "mine", "portones-for-door"], queryFn: () => listQuotes({ scope: "mine" }), enabled: !!user });
   const portonQuotes = useMemo(() => (portonQuotesQ.data || []).filter((q) => String(q?.catalog_kind || "porton").toLowerCase() === "porton"), [portonQuotesQ.data]);
+  const filteredPortonQuotes = useMemo(() => {
+    const needle = normalizeSearchText(portonSearch);
+    if (!needle) return portonQuotes;
+    return portonQuotes.filter((q) => buildPortonSearchText(q).includes(needle));
+  }, [portonQuotes, portonSearch]);
   const linkedPorton = useMemo(() => portonQuotes.find((q) => String(q.id) === String(linkedPortonId)) || null, [portonQuotes, linkedPortonId]);
 
   const financingQ = useQuery({ queryKey: ["financing-preview", paymentMethod], queryFn: () => getFinancingPreview(paymentMethod), enabled: !!cleanText(paymentMethod), staleTime: 60 * 1000 });
@@ -329,12 +360,31 @@ export default function PresupuestadorPuertasPage() {
       <div className="card">
         <div style={{ fontWeight: 800, marginBottom: 8 }}>Vincular a portón existente</div>
         <div className="muted" style={{ marginBottom: 8 }}>Opcional. Si elegís un portón, la puerta copia los datos del cliente y al aprobarse usa PNP con el mismo número de NP del portón.</div>
-        <select value={linkedPortonId} onChange={(e) => applyPortonData(e.target.value)} style={{ padding: "10px 12px", borderRadius: 10, border: "1px solid #ddd", width: "100%", maxWidth: 720 }}>
-          <option value="">Sin portón vinculado</option>
-          {portonQuotes.map((q) => (
-            <option key={q.id} value={q.id}>{quoteDisplayReference(q)} · {q?.end_customer?.name || "Sin cliente"} · {q?.status || "draft"}</option>
-          ))}
-        </select>
+        <div style={{ display: "grid", gridTemplateColumns: "minmax(240px, 1fr) minmax(260px, 1.4fr)", gap: 10, alignItems: "end" }}>
+          <div>
+            <div className="muted" style={{ marginBottom: 6 }}>Buscar portón</div>
+            <input
+              value={portonSearch}
+              onChange={(e) => setPortonSearch(e.target.value)}
+              placeholder="Buscar por NP/NV, nombre, apellido, teléfono, email o localidad..."
+              style={{ padding: "10px 12px", borderRadius: 10, border: "1px solid #ddd", width: "100%" }}
+            />
+          </div>
+          <div>
+            <div className="muted" style={{ marginBottom: 6 }}>
+              Presupuesto de portón {portonSearch ? `(${filteredPortonQuotes.length} resultado${filteredPortonQuotes.length === 1 ? "" : "s"})` : ""}
+            </div>
+            <select value={linkedPortonId} onChange={(e) => applyPortonData(e.target.value)} style={{ padding: "10px 12px", borderRadius: 10, border: "1px solid #ddd", width: "100%" }}>
+              <option value="">Sin portón vinculado</option>
+              {filteredPortonQuotes.map((q) => (
+                <option key={q.id} value={q.id}>{quoteDisplayReference(q)} · {q?.end_customer?.name || [q?.end_customer?.first_name, q?.end_customer?.last_name].filter(Boolean).join(" ") || "Sin cliente"} · {q?.status || "draft"}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+        {portonSearch && !filteredPortonQuotes.length ? (
+          <div className="muted" style={{ marginTop: 8 }}>No se encontraron portones con esa búsqueda.</div>
+        ) : null}
       </div>
 
       <div className="spacer" />
