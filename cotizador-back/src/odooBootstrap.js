@@ -27,6 +27,10 @@ const TAG_FIELD_CANDIDATES = [
   "product_template_tag_ids",
   "tag_ids",
   "website_tag_ids",
+  "public_categ_ids",
+  "product_public_category_ids",
+  "ecommerce_tag_ids",
+  "website_product_tag_ids",
 ];
 
 const FIELD_CACHE = new Map();
@@ -61,7 +65,21 @@ async function getExistingFields(odoo, model, wantedFields = []) {
 
 async function getTagFields(odoo, model) {
   const meta = await getFieldMeta(odoo, model);
-  return TAG_FIELD_CANDIDATES.filter((field) => relationLooksLikeTag(field, meta[field]));
+  const out = new Set();
+
+  for (const field of TAG_FIELD_CANDIDATES) {
+    if (Object.prototype.hasOwnProperty.call(meta, field) && relationLooksLikeTag(field, meta[field])) {
+      out.add(field);
+    }
+  }
+
+  // No inferimos más a ciegas: preguntamos a Odoo sus campos many2many y tomamos
+  // los que realmente parezcan etiquetas por nombre, etiqueta traducida o relación.
+  for (const [field, fieldMeta] of Object.entries(meta || {})) {
+    if (relationLooksLikeTag(field, fieldMeta)) out.add(field);
+  }
+
+  return [...out];
 }
 
 function tagStableId(model, id) {

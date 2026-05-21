@@ -20,14 +20,48 @@ function normTagName(x) {
     .toLowerCase();
 }
 function cleanText(value) { return String(value || "").trim(); }
-function productHasAnyTag(product, tagIds) {
-  if (!(tagIds instanceof Set) || !tagIds.size) return false;
-  const tids = Array.isArray(product?.tag_ids) ? product.tag_ids.map(Number) : [];
-  return tids.some((tid) => tagIds.has(Number(tid)));
+function productTagIds(product) {
+  return Array.isArray(product?.tag_ids)
+    ? product.tag_ids.map(Number).filter((id) => Number.isFinite(id) && id > 0)
+    : [];
 }
 function tagIdsByNames(tags = [], names = []) {
   const wanted = new Set(names.map(normTagName));
-  return new Set((Array.isArray(tags) ? tags : []).filter((t) => wanted.has(normTagName(t?.name))).map((t) => Number(t.id)).filter(Boolean));
+  return new Set(
+    (Array.isArray(tags) ? tags : [])
+      .filter((t) => wanted.has(normTagName(t?.name)))
+      .map((t) => Number(t.id))
+      .filter(Boolean)
+  );
+}
+function productTagNames(product = {}, tagById = new Map()) {
+  const names = [];
+  for (const tid of productTagIds(product)) {
+    const tag = tagById.get(Number(tid));
+    if (tag?.name) names.push(tag.name);
+  }
+  for (const dbg of Array.isArray(product?.tag_debug) ? product.tag_debug : []) {
+    if (dbg?.name) names.push(dbg.name);
+  }
+  return [...new Set(names.map(cleanText).filter(Boolean))];
+}
+function productHasTagName(product, tagById, names = []) {
+  const wanted = new Set(names.map(normTagName));
+  if (!wanted.size) return false;
+  return productTagNames(product, tagById).some((name) => wanted.has(normTagName(name)));
+}
+function productHasAnyTag(product, tagIds) {
+  if (!(tagIds instanceof Set) || !tagIds.size) return false;
+  return productTagIds(product).some((tid) => tagIds.has(Number(tid)));
+}
+function countProductsByTag(products = []) {
+  const counts = new Map();
+  for (const product of Array.isArray(products) ? products : []) {
+    for (const tid of productTagIds(product)) {
+      counts.set(Number(tid), (counts.get(Number(tid)) || 0) + 1);
+    }
+  }
+  return counts;
 }
 
 export async function loadCatalogBootstrap(odoo, kind = "porton") {
@@ -44,16 +78,18 @@ export async function loadCatalogBootstrap(odoo, kind = "porton") {
   const visibilityMap = await getProductVisibilityMap(k);
   const typeVisibility = await getTypeVisibilityMap(k);
 
-  const tags = Array.isArray(odooBoot?.tags) ? odooBoot.tags : [];
-  // Regla solicitada: todos los catalogos trabajan solo con productos que tengan tags reales de Odoo.
-  const productsRaw = (Array.isArray(odooBoot?.products) ? odooBoot.products : [])
-    .filter((product) => Array.isArray(product?.tag_ids) && product.tag_ids.length > 0);
+  const rawTags = Array.isArray(odooBoot?.tags) ? odooBoot.tags : [];
+  const tagById = new Map(rawTags.map((t) => [Number(t.id), t]));
 
-  const ipanelTagIds = tagIdsByNames(tags, ["ipanel", "ipanels"]);
-  const puertaTagIds = tagIdsByNames(tags, ["puerta", "puertas"]);
+  // Regla solicitada: ningun modulo del presupuestador trae productos sin tags reales de Odoo.
+  const productsRaw = (Array.isArray(odooBoot?.products) ? odooBoot.products : [])
+    .filter((product) => productTagIds(product).length > 0);
+
+  const rawProductCountsByTag = countProductsByTag(productsRaw);
+  const ipanelTagIds = tagIdsByNames(rawTags, ["ipanel", "ipanels"]);
+  const puertaTagIds = tagIdsByNames(rawTags, ["puerta", "puertas"]);
   const configuredTagIds = new Set([...tagSection.keys()].map((id) => Number(id)).filter(Boolean));
 
-  const tagById = new Map(tags.map((t) => [Number(t.id), t]));
   const configuredSectionByTagName = new Map();
   for (const [tagId, sectionId] of tagSection.entries()) {
     const tag = tagById.get(Number(tagId));
@@ -72,21 +108,23 @@ export async function loadCatalogBootstrap(odoo, kind = "porton") {
   }
 
   function productBelongsToConfiguredSection(product) {
-    const tids = Array.isArray(product?.tag_ids) ? product.tag_ids.map(Number) : [];
-    return tids.some((tid) => !!resolveSectionIdForTag(tid));
+    return productTagIds(product).some((tid) => !!resolveSectionIdForTag(tid));
   }
 
   const productsFiltered = productsRaw.filter((p) => {
-    const tids = Array.isArray(p.tag_ids) ? p.tag_ids.map(Number) : [];
+    const tids = productTagIds(p);
     if (!tids.length) return false;
 
-    const isIpanel = tids.some((tid) => ipanelTagIds.has(tid));
-    const isPuerta = tids.some((tid) => puertaTagIds.has(tid));
+    const isIpanel = tids.some((tid) => ipanelTagIds.has(tid)) || productHasTagName(p, tagById, ["ipanel", "ipanels"]);
+    const isPuerta = tids.some((tid) => puertaTagIds.has(tid)) || productHasTagName(p, tagById, ["puerta", "puertas"]);
     const belongsToConfiguredSection = productBelongsToConfiguredSection(p) || productHasAnyTag(p, configuredTagIds);
 
     if (k === "ipanel") return isIpanel || belongsToConfiguredSection;
     if (k === "puerta") return isPuerta || belongsToConfiguredSection;
     if (k === "otros") return belongsToConfiguredSection;
+
+    // Portones: solo productos con tags, excluyendo tags reservados a Ipanel/Puerta.
+    // Los productos sin seccion pueden verse en Data para asignar el tag a una seccion.
     return !isIpanel && !isPuerta;
   });
 
@@ -99,10 +137,10 @@ export async function loadCatalogBootstrap(odoo, kind = "porton") {
     const alias = ownAlias || inheritedAlias;
     const odooName = cleanText(p?.name);
     const visibility = visibilityMap.get(pid) || { disable_for_vendedor: false, disable_for_distribuidor: false };
-    const tids = Array.isArray(p.tag_ids) ? p.tag_ids.map(Number) : [];
+    const tids = productTagIds(p);
     const sectionIds = [...new Set(tids.map((tid) => resolveSectionIdForTag(tid)).filter(Boolean).map(Number))];
     const sectionNames = sectionIds.map((sid) => sectionById.get(Number(sid))?.name).filter(Boolean);
-    const tagNames = tids.map((tid) => tagById.get(tid)?.name).filter(Boolean);
+    const tagNames = productTagNames(p, tagById);
     const usesSurfaceQuantity = sectionIds.some((sid) => !!sectionById.get(Number(sid))?.use_surface_qty);
 
     return {
@@ -121,6 +159,13 @@ export async function loadCatalogBootstrap(odoo, kind = "porton") {
       disable_for_distribuidor: !!visibility.disable_for_distribuidor,
     };
   });
+
+  const catalogProductCountsByTag = countProductsByTag(products);
+  const tags = rawTags.map((tag) => ({
+    ...tag,
+    raw_product_count: rawProductCountsByTag.get(Number(tag.id)) || 0,
+    catalog_product_count: catalogProductCountsByTag.get(Number(tag.id)) || 0,
+  }));
 
   const data = {
     ok: true,
