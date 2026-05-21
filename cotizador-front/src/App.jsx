@@ -4,11 +4,12 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import CotizadorPage from "./pages/CotizadorPage/index.jsx";
 import MenuPage from "./pages/MenuPage/index.jsx";
 import PuertasPage from "./pages/PuertasPage/index.jsx";
+import PresupuestadorPuertasPage from "./pages/PresupuestadorPuertasPage/index.jsx";
 
 const CotizadorPortonRoute = () => <CotizadorPage catalogKind="porton" />;
 const CotizadorIpanelRoute = () => <CotizadorPage catalogKind="ipanel" />;
 const CotizadorOtrosRoute = () => <CotizadorPage catalogKind="otros" />;
-const CotizadorPuertaRoute = () => <CotizadorPage catalogKind="puerta" />;
+const CotizadorPuertaRoute = () => <PresupuestadorPuertasPage />;
 
 import LoginPage from "./pages/LoginPage/index.jsx";
 
@@ -19,7 +20,6 @@ import AprobacionTecnicaPage from "./pages/AprobacionTecnicaPage/index.jsx";
 import DashboardPage from "./pages/DashboardPage/index.jsx";
 import PlanificacionPage from "./pages/PlanificacionPage/index.jsx";
 import SuperuserMeasurementRulesPage from "./pages/SuperuserMeasurementRulesPage/index.jsx";
-import SuperuserDoorTechnicalRulesPage from "./pages/SuperuserDoorTechnicalRulesPage/index.jsx";
 import SuperuserProductPdfNamesPage from "./pages/SuperuserProductPdfNamesPage/index.jsx";
 import SuperuserProductionPropertyAssignmentsPage from "./pages/SuperuserProductionPropertyAssignmentsPage/index.jsx";
 import UsersAdminPage from "./pages/UsersAdminPage/index.jsx";
@@ -74,7 +74,8 @@ export default function App() {
           <Route path="cotizador/otros/:id" element={<CotizadorOtrosRoute />} />
           <Route path="cotizador/puerta" element={<CotizadorPuertaRoute />} />
           <Route path="cotizador/puerta/:id" element={<CotizadorPuertaRoute />} />
-          <Route path="puertas" element={<PuertasPage />} />
+          <Route path="puertas" element={<Navigate to="/cotizador/puerta" replace />} />
+          <Route path="puertas/listado" element={<PuertasPage />} />
           <Route path="puertas/nuevo/:quoteId" element={<PuertaWorkflowPage />} />
           <Route path="puertas/:id" element={<PuertaPanelPage />} />
           <Route path="puertas/:id/marco" element={<PuertaChecklistPage />} />
@@ -90,7 +91,6 @@ export default function App() {
           <Route path="planificacion" element={<PlanificacionPage />} />
           <Route path="financiamiento" element={<FinanciamientoPage />} />
           <Route path="dashboard/reglas-tecnicas" element={<SuperuserMeasurementRulesPage />} />
-          <Route path="dashboard/reglas-tecnicas-puertas" element={<SuperuserDoorTechnicalRulesPage />} />
           <Route path="superuser/nombres-pdf" element={<SuperuserProductPdfNamesPage />} />
           <Route path="superuser/asignacion-produccion" element={<SuperuserProductionPropertyAssignmentsPage />} />
           <Route path="superuser/visualizador-porton" element={<QuoteHistoryViewerPage />} />

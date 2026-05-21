@@ -16,8 +16,37 @@ const MEASUREMENT_PRODUCT_IDS = parseMeasurementProductIds(
     "2865,2961",
 );
 
+async function ensureQuoteCatalogKindConstraint() {
+  await dbQuery(`
+    do $$
+    declare item record;
+    begin
+      for item in
+        select c.conname, c.conrelid::regclass as table_name
+          from pg_constraint c
+          join pg_class rel on rel.oid = c.conrelid
+          join pg_namespace nsp on nsp.oid = rel.relnamespace
+         where nsp.nspname = 'public'
+           and rel.relname = 'presupuestador_quotes'
+           and c.contype = 'c'
+           and pg_get_constraintdef(c.oid) ilike '%catalog_kind%'
+      loop
+        execute format('alter table %s drop constraint if exists %I', item.table_name, item.conname);
+      end loop;
+
+      if to_regclass('public.presupuestador_quotes') is not null then
+        alter table public.presupuestador_quotes
+          add constraint presupuestador_quotes_catalog_kind_check
+          check (catalog_kind in ('porton', 'ipanel', 'otros', 'puerta'));
+      end if;
+    end $$;
+  `);
+}
+
 export async function ensureQuotesMeasurementColumns() {
   if (ensured) return;
+
+  await ensureQuoteCatalogKindConstraint();
 
   await dbQuery(`alter table public.presupuestador_quotes add column if not exists quote_kind text not null default 'original';`);
   await dbQuery(`alter table public.presupuestador_quotes add column if not exists parent_quote_id uuid null;`);

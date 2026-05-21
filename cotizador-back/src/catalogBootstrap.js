@@ -11,21 +11,26 @@ import {
 let cacheByKind = new Map();
 const TTL_MS = Number(process.env.CATALOG_BOOTSTRAP_TTL_MS || 60 * 1000);
 
-function nowMs(){ return Date.now(); }
-
-function normTagName(x){ return (x||"").toString().trim().toLowerCase(); }
-
-function cleanText(value) {
-  return String(value || "").trim();
+function nowMs() { return Date.now(); }
+function normTagName(x) {
+  return String(x || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toLowerCase();
 }
-
+function cleanText(value) { return String(value || "").trim(); }
 function productHasAnyTag(product, tagIds) {
   if (!(tagIds instanceof Set) || !tagIds.size) return false;
   const tids = Array.isArray(product?.tag_ids) ? product.tag_ids.map(Number) : [];
   return tids.some((tid) => tagIds.has(Number(tid)));
 }
+function tagIdsByNames(tags = [], names = []) {
+  const wanted = new Set(names.map(normTagName));
+  return new Set((Array.isArray(tags) ? tags : []).filter((t) => wanted.has(normTagName(t?.name))).map((t) => Number(t.id)).filter(Boolean));
+}
 
-export async function loadCatalogBootstrap(odoo, kind="porton") {
+export async function loadCatalogBootstrap(odoo, kind = "porton") {
   const k = normKind(kind);
   const now = nowMs();
   const cached = cacheByKind.get(k);
@@ -42,23 +47,20 @@ export async function loadCatalogBootstrap(odoo, kind="porton") {
   const tags = Array.isArray(odooBoot?.tags) ? odooBoot.tags : [];
   const productsRaw = Array.isArray(odooBoot?.products) ? odooBoot.products : [];
 
-  const ipanelTagIds = new Set(
-    tags
-      .filter((t) => normTagName(t.name) === "ipanel")
-      .map((t) => Number(t.id))
-  );
-
+  const ipanelTagIds = tagIdsByNames(tags, ["ipanel", "ipanels"]);
+  const puertaTagIds = tagIdsByNames(tags, ["puerta", "puertas"]);
   const configuredTagIds = new Set([...tagSection.keys()].map((id) => Number(id)).filter(Boolean));
 
   const productsFiltered = productsRaw.filter((p) => {
     const tids = Array.isArray(p.tag_ids) ? p.tag_ids.map(Number) : [];
     const isIpanel = tids.some((tid) => ipanelTagIds.has(tid));
+    const isPuerta = tids.some((tid) => puertaTagIds.has(tid));
     const belongsToConfiguredSection = productHasAnyTag(p, configuredTagIds);
 
     if (k === "ipanel") return isIpanel || belongsToConfiguredSection;
+    if (k === "puerta") return isPuerta || belongsToConfiguredSection;
     if (k === "otros") return belongsToConfiguredSection;
-    if (k === "puerta") return belongsToConfiguredSection;
-    return !isIpanel;
+    return !isIpanel && !isPuerta;
   });
 
   const sectionById = new Map(sections.map((s) => [Number(s.id), s]));

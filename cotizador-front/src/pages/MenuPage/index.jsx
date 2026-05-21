@@ -38,7 +38,7 @@ export default function MenuPage() {
   const showCommercialInbox = !!(isSuperuser || user?.is_enc_comercial);
   const showUsers = !!(isSuperuser || user?.is_enc_comercial);
   const showTechInbox = !!(isSuperuser || user?.is_rev_tecnica);
-  const showDoors = !!(isSuperuser || user?.is_vendedor);
+  const showDoors = !!(isSuperuser || user?.is_vendedor || user?.is_distribuidor);
   const showMediciones = !!(isSuperuser || user?.is_medidor);
   const showTechnicalRules = !!isSuperuser;
   const showQuoteViewer = !!isSuperuser;
@@ -74,23 +74,23 @@ export default function MenuPage() {
           />
         )}
 
-        {canQuote && (
+        {showDoors && (
           <MenuTile
-            title="Presupuesto Otros"
-            description="Circuito de presupuestos para productos fuera de Portones e Ipanel."
-            buttonText="Ir al cotizador"
-            onClick={() => navigate("/cotizador/otros")}
-            iconSrc="/menu-icons/otros-presupuestos.png"
+            title="Presupuestador Puertas"
+            description="Cotizador de puertas con medidas, catálogo propio y flujo de aprobación."
+            buttonText="Presupuestar puertas"
+            onClick={() => navigate("/cotizador/puerta")}
+            iconSrc="/menu-icons/puertas.png"
           />
         )}
 
-        {showDoors && (
+        {canQuote && (
           <MenuTile
-            title="Puertas"
-            description="Puertas aisladas o vinculadas a portón."
-            buttonText="Abrir puertas"
-            onClick={() => navigate("/puertas")}
-            iconSrc="/menu-icons/puertas.png"
+            title="Presupuesto Otros"
+            description="Circuito de presupuestos para productos fuera de Portones, Ipanel y Puertas."
+            buttonText="Ir al cotizador"
+            onClick={() => navigate("/cotizador/otros")}
+            iconSrc="/menu-icons/otros-presupuestos.png"
           />
         )}
 
@@ -104,146 +104,25 @@ export default function MenuPage() {
         )}
 
         {showMediciones && (
-          <MenuTile
-            title="Mediciones"
-            buttonText="Abrir mediciones"
-            onClick={() => navigate("/mediciones")}
-            iconSrc="/menu-icons/mediciones.png"
-          />
+          <MenuTile title="Mediciones" buttonText="Abrir mediciones" onClick={() => navigate("/mediciones")} iconSrc="/menu-icons/mediciones.png" />
         )}
 
-        {showDashboard && (
-          <MenuTile
-            title="Dashboard"
-            buttonText="Abrir dashboard"
-            onClick={() => navigate("/dashboard")}
-            iconSrc="/menu-icons/dashboard.png"
-          />
-        )}
-
-        {showPlanning && (
-          <MenuTile
-            title="Planificación"
-            description="Capacidad de producción por semana."
-            buttonText="Abrir planificación"
-            onClick={() => navigate("/planificacion")}
-            iconSrc="/menu-icons/planificacion.png"
-          />
-        )}
-
-        {showFinancing && (
-          <MenuTile
-            title="Financiamiento"
-            description="Recargos por cuotas usados en el cotizador."
-            buttonText="Abrir financiamiento"
-            onClick={() => navigate("/financiamiento")}
-            icon="💳"
-          />
-        )}
-
-        {showTechnicalRules && (
-          <MenuTile
-            title="Reglas Técnicas"
-            description="Dashboard exclusivo de superusuario para definir reglas sobre la planilla técnica y el pegado a Odoo."
-            buttonText="Abrir reglas"
-            onClick={() => navigate("/dashboard/reglas-tecnicas")}
-            iconSrc="/menu-icons/reglas-tecnicas.png"
-          />
-        )}
-
-        {showTechnicalRules && (
-          <MenuTile
-            title="Reglas Tecnicas puertas"
-            description="Define descuentos y parametros para calcular automaticamente el Ipanel de cada puerta."
-            buttonText="Abrir reglas puertas"
-            onClick={() => navigate("/dashboard/reglas-tecnicas-puertas")}
-            icon="P"
-          />
-        )}
-
-        {showPdfNamesAdmin && (
-          <MenuTile
-            title="Nombres PDF productos"
-            description="Definí el nombre exacto que querés que salga en los PDF por producto."
-            buttonText="Abrir nombres PDF"
-            onClick={() => navigate("/superuser/nombres-pdf")}
-            icon="📝"
-          />
-        )}
-
-        {showProductionAssignments && (
-          <MenuTile
-            title="Asignación de propiedades a producción"
-            description="Elegí a qué propiedad del integrador debe ir cada dato del portón."
-            buttonText="Abrir asignación"
-            onClick={() => navigate("/superuser/asignacion-produccion")}
-            icon="🧩"
-          />
-        )}
-
-        {showQuoteViewer && (
-          <MenuTile
-            title="Visualizador de portones"
-            description="Buscá por NP o NV y mirá el historial completo del portón."
-            buttonText="Abrir visualizador"
-            onClick={() => navigate("/superuser/visualizador-porton")}
-            icon="🔎"
-          />
-        )}
-
-        {showSellerActivity && (
-          <MenuTile
-            title="Actividad vendedores / distribuidores"
-            description="Elegí un usuario y mirá las acciones realizadas con sus portones."
-            buttonText="Abrir actividad"
-            onClick={() => navigate("/superuser/actividad-vendedores")}
-            icon="📊"
-          />
-        )}
-
-        {showUsers && (
-          <MenuTile
-            title="Gestor de usuarios"
-            buttonText="Abrir gestor"
-            onClick={() => navigate("/usuarios")}
-            iconSrc="/menu-icons/gestor-usuarios.png"
-          />
-        )}
-
-        {showCommercialInbox && (
-          <MenuTile
-            title="Aprobación Comercial"
-            buttonText="Ir a aprobación"
-            onClick={() => navigate("/aprobacion/comercial")}
-            iconSrc="/menu-icons/aprobacion-comercial.png"
-          />
-        )}
+        {showDashboard && <MenuTile title="Dashboard" buttonText="Abrir dashboard" onClick={() => navigate("/dashboard")} iconSrc="/menu-icons/dashboard.png" />}
+        {showPlanning && <MenuTile title="Planificación" description="Capacidad de producción por semana." buttonText="Abrir planificación" onClick={() => navigate("/planificacion")} iconSrc="/menu-icons/planificacion.png" />}
+        {showFinancing && <MenuTile title="Financiamiento" description="Recargos por cuotas usados en el cotizador." buttonText="Abrir financiamiento" onClick={() => navigate("/financiamiento")} icon="💳" />}
+        {showTechnicalRules && <MenuTile title="Reglas Técnicas" description="Dashboard exclusivo de superusuario para definir reglas sobre la planilla técnica y el pegado a Odoo." buttonText="Abrir reglas" onClick={() => navigate("/dashboard/reglas-tecnicas")} iconSrc="/menu-icons/reglas-tecnicas.png" />}
+        {showPdfNamesAdmin && <MenuTile title="Nombres PDF productos" description="Definí el nombre exacto que querés que salga en los PDF por producto." buttonText="Abrir nombres PDF" onClick={() => navigate("/superuser/nombres-pdf")} icon="📝" />}
+        {showProductionAssignments && <MenuTile title="Asignación de propiedades a producción" description="Elegí a qué propiedad del integrador debe ir cada dato del portón." buttonText="Abrir asignación" onClick={() => navigate("/superuser/asignacion-produccion")} icon="🧩" />}
+        {showQuoteViewer && <MenuTile title="Visualizador de portones" description="Buscá por NP o NV y mirá el historial completo del portón." buttonText="Abrir visualizador" onClick={() => navigate("/superuser/visualizador-porton")} icon="🔎" />}
+        {showSellerActivity && <MenuTile title="Actividad vendedores / distribuidores" description="Elegí un usuario y mirá las acciones realizadas con sus portones." buttonText="Abrir actividad" onClick={() => navigate("/superuser/actividad-vendedores")} icon="📊" />}
+        {showUsers && <MenuTile title="Gestor de usuarios" buttonText="Abrir gestor" onClick={() => navigate("/usuarios")} iconSrc="/menu-icons/gestor-usuarios.png" />}
+        {showCommercialInbox && <MenuTile title="Aprobación Comercial" buttonText="Ir a aprobación" onClick={() => navigate("/aprobacion/comercial")} iconSrc="/menu-icons/aprobacion-comercial.png" />}
 
         {showTechInbox && (
           <>
-            <MenuTile
-              title="Aprobaciones Portones"
-              description="Revisión técnica de presupuestos de portones."
-              buttonText="Abrir portones"
-              onClick={() => navigate("/aprobacion/tecnica?tab=aprobaciones_portones")}
-              iconSrc="/menu-icons/aprobacion-portones.png"
-            />
-
-            <MenuTile
-              title="Aprobaciones Puertas"
-              description="Revisión técnica de puertas."
-              buttonText="Abrir puertas"
-              onClick={() => navigate("/aprobacion/tecnica?tab=aprobaciones_puertas")}
-              iconSrc="/menu-icons/aprobacion-puertas.png"
-            />
-
-            <MenuTile
-              title="Aprobaciones Mediciones"
-              description="Revisión técnica de mediciones terminadas."
-              buttonText="Abrir aprobaciones"
-              onClick={() => navigate("/aprobacion/tecnica?tab=aprobaciones_mediciones")}
-              iconSrc="/menu-icons/aprobacion-mediciones.png"
-            />
+            <MenuTile title="Aprobaciones Portones" description="Revisión técnica de presupuestos de portones." buttonText="Abrir portones" onClick={() => navigate("/aprobacion/tecnica?tab=aprobaciones_portones")} iconSrc="/menu-icons/aprobacion-portones.png" />
+            <MenuTile title="Aprobaciones Puertas" description="Revisión técnica de puertas." buttonText="Abrir puertas" onClick={() => navigate("/aprobacion/tecnica?tab=aprobaciones_puertas")} iconSrc="/menu-icons/aprobacion-puertas.png" />
+            <MenuTile title="Aprobaciones Mediciones" description="Revisión técnica de mediciones terminadas." buttonText="Abrir aprobaciones" onClick={() => navigate("/aprobacion/tecnica?tab=aprobaciones_mediciones")} iconSrc="/menu-icons/aprobacion-mediciones.png" />
           </>
         )}
       </div>
