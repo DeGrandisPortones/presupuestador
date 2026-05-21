@@ -13,14 +13,9 @@ export function setOdooBootstrap(data, kind = "porton") {
   try {
     localStorage.setItem(
       keyFor(kind),
-      JSON.stringify({
-        saved_at: new Date().toISOString(),
-        ...normalized,
-      })
+      JSON.stringify({ saved_at: new Date().toISOString(), ...normalized })
     );
-  } catch (_) {
-    // ignore quota
-  }
+  } catch (_) {}
 }
 
 export function getOdooBootstrap(kind = "porton") {
@@ -35,16 +30,13 @@ export function getOdooBootstrap(kind = "porton") {
 
 export function mergeOdooBootstrap(patch, kind = "porton") {
   const current = getOdooBootstrap(kind) || {};
-  const next = {
-    ...current,
-    ...(normalizeData(patch) || {}),
-  };
+  const next = { ...current, ...(normalizeData(patch) || {}) };
   setOdooBootstrap(next, kind);
   return next;
 }
 
 export function hasAnyOdooBootstrap() {
-  const kinds = ["porton", "ipanel", "otros"];
+  const kinds = ["porton", "ipanel", "otros", "puerta"];
   return kinds.some((kind) => {
     const boot = getOdooBootstrap(kind);
     return !!(boot?.pricelists?.length || boot?.products?.length || boot?.sections?.length);
@@ -52,15 +44,11 @@ export function hasAnyOdooBootstrap() {
 }
 
 export function clearOdooBootstrap(kind = "porton") {
-  try {
-    localStorage.removeItem(keyFor(kind));
-  } catch (_) {}
+  try { localStorage.removeItem(keyFor(kind)); } catch (_) {}
 }
 
 export function clearAllBootstraps() {
   try {
-    localStorage.removeItem(keyFor("porton"));
-    localStorage.removeItem(keyFor("ipanel"));
-    localStorage.removeItem(keyFor("otros"));
+    for (const kind of ["porton", "ipanel", "otros", "puerta"]) localStorage.removeItem(keyFor(kind));
   } catch (_) {}
 }

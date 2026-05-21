@@ -40,22 +40,23 @@ function relationLooksLikeTag(fieldName, meta = {}) {
   const relation = String(meta?.relation || "").toLowerCase();
   const label = String(meta?.string || "").toLowerCase();
   if (String(meta?.type || "") !== "many2many") return false;
-  return (
-    name.includes("tag") ||
-    relation.includes("tag") ||
-    label.includes("tag") ||
-    label.includes("etiqueta")
-  );
+  return name.includes("tag") || relation.includes("tag") || label.includes("tag") || label.includes("etiqueta");
 }
 
 async function getFieldMeta(odoo, model) {
   if (FIELD_CACHE.has(model)) return FIELD_CACHE.get(model);
-  const fields = await odoo.executeKw(model, "fields_get", [], {
-    attributes: ["string", "type", "relation"],
-  });
-  const safe = fields && typeof fields === "object" ? fields : {};
-  FIELD_CACHE.set(model, safe);
-  return safe;
+  try {
+    const fields = await odoo.executeKw(model, "fields_get", [], {
+      attributes: ["string", "type", "relation"],
+    });
+    const safe = fields && typeof fields === "object" ? fields : {};
+    FIELD_CACHE.set(model, safe);
+    return safe;
+  } catch (err) {
+    console.error(`[ODOO TAGS] No se pudo leer fields_get de ${model}:`, err?.message || err);
+    FIELD_CACHE.set(model, {});
+    return {};
+  }
 }
 
 async function getExistingFields(odoo, model, wantedFields = []) {
@@ -66,35 +67,20 @@ async function getExistingFields(odoo, model, wantedFields = []) {
 async function getTagFields(odoo, model) {
   const meta = await getFieldMeta(odoo, model);
   const out = new Set();
-
   for (const field of TAG_FIELD_CANDIDATES) {
-    if (Object.prototype.hasOwnProperty.call(meta, field) && relationLooksLikeTag(field, meta[field])) {
-      out.add(field);
-    }
+    if (Object.prototype.hasOwnProperty.call(meta, field) && relationLooksLikeTag(field, meta[field])) out.add(field);
   }
-
-  // No inferimos más a ciegas: preguntamos a Odoo sus campos many2many y tomamos
-  // los que realmente parezcan etiquetas por nombre, etiqueta traducida o relación.
   for (const [field, fieldMeta] of Object.entries(meta || {})) {
     if (relationLooksLikeTag(field, fieldMeta)) out.add(field);
   }
-
   return [...out];
 }
 
 function tagStableId(model, id) {
   const numericId = Number(id || 0);
   if (!Number.isFinite(numericId) || numericId <= 0) return 0;
-
   const relationModel = String(model || "").trim();
-
-  // Mantener compatibilidad con asignaciones existentes del dashboard.
-  // Antes los product_tag_ids se guardaban con el ID numerico directo.
-  if (relationModel === "product.tag" || relationModel === "product.template.tag") {
-    return numericId;
-  }
-
-  // Otros modelos de etiquetas se separan para evitar colisionar IDs con product.tag.
+  if (relationModel === "product.tag" || relationModel === "product.template.tag") return numericId;
   let hash = 0;
   for (const char of relationModel) hash = ((hash * 31) + char.charCodeAt(0)) % 900;
   return 1000000 + (hash * 100000) + numericId;
@@ -122,9 +108,7 @@ function collectRawTagRefs(row = {}, tagFields = [], fieldMeta = {}) {
   for (const field of tagFields) {
     const relation = String(fieldMeta?.[field]?.relation || "").trim();
     if (!relation) continue;
-    for (const id of normalizeMany2Many(row[field])) {
-      refs.push({ field, relation, id, stable_id: tagStableId(relation, id) });
-    }
+    for (const id of normalizeMany2Many(row[field])) refs.push({ field, relation, id, stable_id: tagStableId(relation, id) });
   }
   return refs;
 }
@@ -136,38 +120,82 @@ async function readTagNames(odoo, refs = []) {
     if (!grouped.has(ref.relation)) grouped.set(ref.relation, new Set());
     grouped.get(ref.relation).add(Number(ref.id));
   }
-
   const byStableId = new Map();
   for (const [relation, idsSet] of grouped.entries()) {
     const ids = [...idsSet].filter(Boolean);
     if (!ids.length) continue;
     try {
-      const rows = await odoo.executeKw(relation, "read", [ids], {
-        fields: ["id", "name", "display_name"],
-      });
+      const rows = await odoo.executeKw(relation, "read", [ids], { fields: ["id", "name", "display_name"] });
       for (const row of Array.isArray(rows) ? rows : []) {
         const id = Number(row?.id || 0);
         const stableId = tagStableId(relation, id);
-        byStableId.set(stableId, {
-          id: stableId,
-          raw_id: id,
-          model: relation,
-          name: cleanText(row?.display_name || row?.name) || `${relation}:${id}`,
-        });
+        byStableId.set(stableId, { id: stableId, raw_id: id, model: relation, name: cleanText(row?.display_name || row?.name) || `${relation}:${id}` });
       }
-    } catch (_err) {
+    } catch (err) {
+      console.error(`[ODOO TAGS] No se pudieron leer nombres de tags en ${relation}:`, err?.message || err);
       for (const id of ids) {
         const stableId = tagStableId(relation, id);
-        byStableId.set(stableId, {
-          id: stableId,
-          raw_id: id,
-          model: relation,
-          name: `${relation}:${id}`,
-        });
+        byStableId.set(stableId, { id: stableId, raw_id: id, model: relation, name: `${relation}:${id}` });
       }
     }
   }
   return byStableId;
+}
+
+async function filterReadableFields(odoo, model, baseFields = [], tagFields = [], testArgsBuilder) {
+  const readable = [];
+  for (const field of tagFields) {
+    try {
+      const args = testArgsBuilder(field);
+      await odoo.executeKw(model, args.method, args.args, args.kwargs);
+      readable.push(field);
+    } catch (err) {
+      console.error(`[ODOO TAGS] Campo descartado por error de lectura ${model}.${field}:`, err?.message || err);
+    }
+  }
+  return [...new Set([...baseFields, ...readable])];
+}
+
+async function safeProductSearchRead(odoo, domain, baseFields, tagFields, limit = 5000) {
+  const fields = await filterReadableFields(
+    odoo,
+    "product.product",
+    baseFields,
+    tagFields,
+    (field) => ({
+      method: "search_read",
+      args: [[ ["sale_ok", "=", true] ]],
+      kwargs: { fields: [...baseFields, field], limit: 1 },
+    }),
+  );
+  try {
+    return await odoo.executeKw("product.product", "search_read", [domain], { fields, limit, order: "name asc" });
+  } catch (err) {
+    console.error("[ODOO TAGS] Fallback product.product sin campos opcionales:", err?.message || err);
+    return await odoo.executeKw("product.product", "search_read", [domain], { fields: baseFields, limit, order: "name asc" });
+  }
+}
+
+async function safeTemplateRead(odoo, ids, baseFields, tagFields) {
+  const cleanIds = [...new Set((Array.isArray(ids) ? ids : []).map(Number).filter(Boolean))];
+  if (!cleanIds.length) return [];
+  const fields = await filterReadableFields(
+    odoo,
+    "product.template",
+    baseFields,
+    tagFields,
+    (field) => ({ method: "read", args: [[cleanIds[0]]], kwargs: { fields: [...baseFields, field] } }),
+  );
+  try {
+    return await odoo.executeKw("product.template", "read", [cleanIds], { fields });
+  } catch (err) {
+    console.error("[ODOO TAGS] Fallback product.template sin campos opcionales:", err?.message || err);
+    return await odoo.executeKw("product.template", "read", [cleanIds], { fields: baseFields });
+  }
+}
+
+function tagFieldNamesFromRow(row = {}, meta = {}) {
+  return Object.keys(row || {}).filter((field) => Object.prototype.hasOwnProperty.call(meta, field) && relationLooksLikeTag(field, meta[field]));
 }
 
 export async function inspectOdooProductTags(odoo, { productId = null, templateId = null, query = "" } = {}) {
@@ -175,20 +203,8 @@ export async function inspectOdooProductTags(odoo, { productId = null, templateI
   const templateMeta = await getFieldMeta(odoo, "product.template");
   const variantTagFields = await getTagFields(odoo, "product.product");
   const templateTagFields = await getTagFields(odoo, "product.template");
-  const variantFields = [
-    ...new Set([
-      ...BASE_VARIANT_FIELDS,
-      ...variantTagFields,
-      ...await getExistingFields(odoo, "product.product", ["write_date", "active"]),
-    ]),
-  ];
-  const templateFields = [
-    ...new Set([
-      ...BASE_TEMPLATE_FIELDS,
-      ...templateTagFields,
-      ...await getExistingFields(odoo, "product.template", ["write_date", "active", "sale_ok"]),
-    ]),
-  ];
+  const variantBaseFields = [...new Set([...BASE_VARIANT_FIELDS, ...await getExistingFields(odoo, "product.product", ["write_date", "active"])])];
+  const templateBaseFields = [...new Set([...BASE_TEMPLATE_FIELDS, ...await getExistingFields(odoo, "product.template", ["write_date", "active", "sale_ok"])])];
 
   let variants = [];
   const requestedProductId = Number(productId || 0) || 0;
@@ -196,21 +212,11 @@ export async function inspectOdooProductTags(odoo, { productId = null, templateI
   const textQuery = cleanText(query);
 
   if (requestedProductId) {
-    variants = await odoo.executeKw("product.product", "read", [[requestedProductId]], { fields: variantFields });
+    const rows = await safeProductSearchRead(odoo, [["id", "=", requestedProductId]], variantBaseFields, variantTagFields, 1);
+    variants = rows || [];
   } else if (textQuery) {
-    const domain = [
-      ["sale_ok", "=", true],
-      "|",
-      "|",
-      ["name", "ilike", textQuery],
-      ["display_name", "ilike", textQuery],
-      ["default_code", "ilike", textQuery],
-    ];
-    variants = await odoo.executeKw("product.product", "search_read", [domain], {
-      fields: variantFields,
-      limit: 20,
-      order: "name asc",
-    });
+    const domain = [["sale_ok", "=", true], "|", "|", ["name", "ilike", textQuery], ["display_name", "ilike", textQuery], ["default_code", "ilike", textQuery]];
+    variants = await safeProductSearchRead(odoo, domain, variantBaseFields, variantTagFields, 20);
   }
 
   const templateIds = new Set();
@@ -219,30 +225,20 @@ export async function inspectOdooProductTags(odoo, { productId = null, templateI
     const tid = templateIdFromVariant(variant);
     if (tid) templateIds.add(tid);
   }
+  const templates = await safeTemplateRead(odoo, [...templateIds], templateBaseFields, templateTagFields);
 
-  let templates = [];
-  if (templateIds.size) {
-    templates = await odoo.executeKw("product.template", "read", [[...templateIds]], { fields: templateFields });
-  } else if (textQuery && !variants.length) {
-    const domain = [
-      "|",
-      ["name", "ilike", textQuery],
-      ["display_name", "ilike", textQuery],
-    ];
-    templates = await odoo.executeKw("product.template", "search_read", [domain], {
-      fields: templateFields,
-      limit: 20,
-      order: "name asc",
-    });
-  }
+  const realVariantTagFields = [...new Set([...
+    variantTagFields,
+    ...(Array.isArray(variants) ? variants : []).flatMap((row) => tagFieldNamesFromRow(row, variantMeta)),
+  ])];
+  const realTemplateTagFields = [...new Set([...
+    templateTagFields,
+    ...(Array.isArray(templates) ? templates : []).flatMap((row) => tagFieldNamesFromRow(row, templateMeta)),
+  ])];
 
   const allRefs = [];
-  for (const variant of Array.isArray(variants) ? variants : []) {
-    allRefs.push(...collectRawTagRefs(variant, variantTagFields, variantMeta));
-  }
-  for (const template of Array.isArray(templates) ? templates : []) {
-    allRefs.push(...collectRawTagRefs(template, templateTagFields, templateMeta));
-  }
+  for (const row of Array.isArray(variants) ? variants : []) allRefs.push(...collectRawTagRefs(row, realVariantTagFields, variantMeta));
+  for (const row of Array.isArray(templates) ? templates : []) allRefs.push(...collectRawTagRefs(row, realTemplateTagFields, templateMeta));
   const tagNames = await readTagNames(odoo, allRefs);
 
   function summarize(row, model, tagFields, meta) {
@@ -253,29 +249,20 @@ export async function inspectOdooProductTags(odoo, { productId = null, templateI
       name: cleanText(row?.display_name || row?.name),
       tag_fields_detected: tagFields,
       raw_tag_refs: refs,
-      tags_resolved: refs.map((ref) => tagNames.get(ref.stable_id) || {
-        id: ref.stable_id,
-        raw_id: ref.id,
-        model: ref.relation,
-        name: `${ref.relation}:${ref.id}`,
-      }),
+      tags_resolved: refs.map((ref) => tagNames.get(ref.stable_id) || { id: ref.stable_id, raw_id: ref.id, model: ref.relation, name: `${ref.relation}:${ref.id}` }),
       raw: row,
     };
   }
 
   return {
     ok: true,
-    requested: {
-      product_id: requestedProductId || null,
-      template_id: requestedTemplateId || null,
-      query: textQuery || null,
-    },
+    requested: { product_id: requestedProductId || null, template_id: requestedTemplateId || null, query: textQuery || null },
     detected_fields: {
-      product_product_tag_fields: variantTagFields.map((field) => ({ field, meta: variantMeta[field] })),
-      product_template_tag_fields: templateTagFields.map((field) => ({ field, meta: templateMeta[field] })),
+      product_product_tag_fields: realVariantTagFields.map((field) => ({ field, meta: variantMeta[field] })),
+      product_template_tag_fields: realTemplateTagFields.map((field) => ({ field, meta: templateMeta[field] })),
     },
-    variants: (Array.isArray(variants) ? variants : []).map((row) => summarize(row, "product.product", variantTagFields, variantMeta)),
-    templates: (Array.isArray(templates) ? templates : []).map((row) => summarize(row, "product.template", templateTagFields, templateMeta)),
+    variants: (Array.isArray(variants) ? variants : []).map((row) => summarize(row, "product.product", realVariantTagFields, variantMeta)),
+    templates: (Array.isArray(templates) ? templates : []).map((row) => summarize(row, "product.template", realTemplateTagFields, templateMeta)),
   };
 }
 
@@ -288,64 +275,37 @@ export async function loadOdooBootstrap(odoo) {
   const variantTagFields = await getTagFields(odoo, "product.product");
   const templateTagFields = await getTagFields(odoo, "product.template");
 
-  const variantFields = [...new Set([...BASE_VARIANT_FIELDS, ...variantTagFields])];
-  const products = await odoo.executeKw(
-    "product.product",
-    "search_read",
-    [[["sale_ok", "=", true]]],
-    {
-      fields: variantFields,
-      limit: 5000,
-      order: "name asc",
-    }
-  );
-
-  const tmplIds = [
-    ...new Set(
-      products
-        .map((p) => templateIdFromVariant(p))
-        .filter(Boolean)
-    ),
-  ];
-
-  let tmplRows = [];
-  if (tmplIds.length) {
-    const templateFields = [...new Set([...BASE_TEMPLATE_FIELDS, ...templateTagFields])];
-    tmplRows = await odoo.executeKw(
-      "product.template",
-      "read",
-      [tmplIds],
-      { fields: templateFields }
-    );
-  }
+  const products = await safeProductSearchRead(odoo, [["sale_ok", "=", true]], BASE_VARIANT_FIELDS, variantTagFields, 5000);
+  const tmplIds = [...new Set((Array.isArray(products) ? products : []).map((p) => templateIdFromVariant(p)).filter(Boolean))];
+  const tmplRows = await safeTemplateRead(odoo, tmplIds, BASE_TEMPLATE_FIELDS, templateTagFields);
 
   const tmplById = new Map((Array.isArray(tmplRows) ? tmplRows : []).map((t) => [Number(t.id), t]));
-  const allRefs = [];
+  const realVariantTagFields = [...new Set([...
+    variantTagFields,
+    ...(Array.isArray(products) ? products : []).flatMap((row) => tagFieldNamesFromRow(row, variantMeta)),
+  ])];
+  const realTemplateTagFields = [...new Set([...
+    templateTagFields,
+    ...(Array.isArray(tmplRows) ? tmplRows : []).flatMap((row) => tagFieldNamesFromRow(row, templateMeta)),
+  ])];
 
-  for (const p of Array.isArray(products) ? products : []) {
-    allRefs.push(...collectRawTagRefs(p, variantTagFields, variantMeta));
-  }
-  for (const t of Array.isArray(tmplRows) ? tmplRows : []) {
-    allRefs.push(...collectRawTagRefs(t, templateTagFields, templateMeta));
-  }
+  const allRefs = [];
+  for (const p of Array.isArray(products) ? products : []) allRefs.push(...collectRawTagRefs(p, realVariantTagFields, variantMeta));
+  for (const t of Array.isArray(tmplRows) ? tmplRows : []) allRefs.push(...collectRawTagRefs(t, realTemplateTagFields, templateMeta));
 
   const tagNamesByStableId = await readTagNames(odoo, allRefs);
-  const tags = [...tagNamesByStableId.values()]
-    .sort((a, b) => String(a.name || "").localeCompare(String(b.name || ""), "es") || Number(a.id) - Number(b.id));
+  const tags = [...tagNamesByStableId.values()].sort((a, b) => String(a.name || "").localeCompare(String(b.name || ""), "es") || Number(a.id) - Number(b.id));
 
-  const productsOut = products
+  const productsOut = (Array.isArray(products) ? products : [])
     .map((p) => {
       const tmplId = templateIdFromVariant(p);
       const tmpl = tmplById.get(Number(tmplId)) || {};
       const refs = [
-        ...collectRawTagRefs(p, variantTagFields, variantMeta),
-        ...collectRawTagRefs(tmpl, templateTagFields, templateMeta),
+        ...collectRawTagRefs(p, realVariantTagFields, variantMeta),
+        ...collectRawTagRefs(tmpl, realTemplateTagFields, templateMeta),
       ];
       const tag_ids = [...new Set(refs.map((ref) => Number(ref.stable_id)).filter(Boolean))];
-      const resolvedOdooName =
-        cleanText(tmpl.display_name || tmpl.name) ||
-        cleanText(p.display_name || p.name);
-
+      const resolvedOdooName = cleanText(tmpl.display_name || tmpl.name) || cleanText(p.display_name || p.name);
       return {
         id: p.id,
         name: resolvedOdooName,
@@ -364,7 +324,6 @@ export async function loadOdooBootstrap(odoo) {
         odoo_variant_id: Number(p.id) || 0,
       };
     })
-    // Regla solicitada: ningun modulo del presupuestador debe traer productos sin tags.
     .filter((p) => Array.isArray(p.tag_ids) && p.tag_ids.length > 0);
 
   cache = { products: productsOut, tags };
@@ -372,24 +331,13 @@ export async function loadOdooBootstrap(odoo) {
   return cache;
 }
 
-
-
 function normTagDebugName(value) {
-  return String(value || "")
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .trim()
-    .toLowerCase();
+  return String(value || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLowerCase();
 }
-
 function productDebugHasTagName(product, tagName) {
   const wanted = normTagDebugName(tagName);
   if (!wanted) return false;
-  const names = [];
-  for (const dbg of Array.isArray(product?.tag_debug) ? product.tag_debug : []) {
-    if (dbg?.name) names.push(dbg.name);
-  }
-  return names.some((name) => normTagDebugName(name) === wanted);
+  return (Array.isArray(product?.tag_debug) ? product.tag_debug : []).some((dbg) => normTagDebugName(dbg?.name) === wanted);
 }
 
 export async function inspectOdooTagAndProducts(odoo, { tagName = "Puerta", productId = null, templateId = null, query = "SIN PUERTA" } = {}) {
@@ -398,50 +346,20 @@ export async function inspectOdooTagAndProducts(odoo, { tagName = "Puerta", prod
   const requestedProductId = Number(productId || 0) || null;
   const requestedTemplateId = Number(templateId || 0) || null;
   const requestedQuery = cleanText(query) || "SIN PUERTA";
-
   const boot = await loadOdooBootstrap(odoo);
   const tags = Array.isArray(boot?.tags) ? boot.tags : [];
   const products = Array.isArray(boot?.products) ? boot.products : [];
-
   const matchingTags = tags.filter((tag) => normTagDebugName(tag?.name) === normTagDebugName(requestedTagName));
   const matchingTagIds = new Set(matchingTags.map((tag) => Number(tag?.id || 0)).filter(Boolean));
-
-  const productsWithTagById = products.filter((product) => {
-    const tagIds = Array.isArray(product?.tag_ids) ? product.tag_ids.map(Number) : [];
-    return tagIds.some((id) => matchingTagIds.has(Number(id)));
-  });
-
+  const productsWithTagById = products.filter((product) => (Array.isArray(product?.tag_ids) ? product.tag_ids.map(Number) : []).some((id) => matchingTagIds.has(Number(id))));
   const productsWithTagByName = products.filter((product) => productDebugHasTagName(product, requestedTagName));
-
-  const productDebugByQuery = requestedQuery
-    ? await inspectOdooProductTags(odoo, { query: requestedQuery })
-    : null;
-
-  const productDebugByTemplate = requestedTemplateId
-    ? await inspectOdooProductTags(odoo, { templateId: requestedTemplateId })
-    : null;
-
-  const productDebugByVariant = requestedProductId
-    ? await inspectOdooProductTags(odoo, { productId: requestedProductId })
-    : null;
-
-  const variantMeta = await getFieldMeta(odoo, "product.product");
-  const templateMeta = await getFieldMeta(odoo, "product.template");
-  const variantTagFields = await getTagFields(odoo, "product.product");
-  const templateTagFields = await getTagFields(odoo, "product.template");
+  const productDebugByQuery = requestedQuery ? await inspectOdooProductTags(odoo, { query: requestedQuery }) : null;
+  const productDebugByTemplate = requestedTemplateId ? await inspectOdooProductTags(odoo, { templateId: requestedTemplateId }) : null;
+  const productDebugByVariant = requestedProductId ? await inspectOdooProductTags(odoo, { productId: requestedProductId }) : null;
 
   return {
     ok: true,
-    requested: {
-      tag_name: requestedTagName,
-      product_id: requestedProductId,
-      template_id: requestedTemplateId,
-      query: requestedQuery || null,
-    },
-    detected_tag_fields: {
-      product_product: variantTagFields.map((field) => ({ field, meta: variantMeta[field] })),
-      product_template: templateTagFields.map((field) => ({ field, meta: templateMeta[field] })),
-    },
+    requested: { tag_name: requestedTagName, product_id: requestedProductId, template_id: requestedTemplateId, query: requestedQuery || null },
     bootstrap_summary: {
       total_tags: tags.length,
       total_products_with_any_tag: products.length,
@@ -449,24 +367,8 @@ export async function inspectOdooTagAndProducts(odoo, { tagName = "Puerta", prod
       matching_tag_ids: [...matchingTagIds],
       products_with_tag_by_id_count: productsWithTagById.length,
       products_with_tag_by_name_count: productsWithTagByName.length,
-      products_with_tag_by_id: productsWithTagById.slice(0, 100).map((product) => ({
-        id: product.id,
-        name: product.name,
-        code: product.code,
-        odoo_template_id: product.odoo_template_id,
-        odoo_variant_id: product.odoo_variant_id,
-        tag_ids: product.tag_ids,
-        tag_debug: product.tag_debug,
-      })),
-      products_with_tag_by_name: productsWithTagByName.slice(0, 100).map((product) => ({
-        id: product.id,
-        name: product.name,
-        code: product.code,
-        odoo_template_id: product.odoo_template_id,
-        odoo_variant_id: product.odoo_variant_id,
-        tag_ids: product.tag_ids,
-        tag_debug: product.tag_debug,
-      })),
+      products_with_tag_by_id: productsWithTagById.slice(0, 100),
+      products_with_tag_by_name: productsWithTagByName.slice(0, 100),
     },
     product_debug_by_query: productDebugByQuery,
     product_debug_by_template: productDebugByTemplate,
