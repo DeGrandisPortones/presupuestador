@@ -372,6 +372,108 @@ export async function loadOdooBootstrap(odoo) {
   return cache;
 }
 
+
+
+function normTagDebugName(value) {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toLowerCase();
+}
+
+function productDebugHasTagName(product, tagName) {
+  const wanted = normTagDebugName(tagName);
+  if (!wanted) return false;
+  const names = [];
+  for (const dbg of Array.isArray(product?.tag_debug) ? product.tag_debug : []) {
+    if (dbg?.name) names.push(dbg.name);
+  }
+  return names.some((name) => normTagDebugName(name) === wanted);
+}
+
+export async function inspectOdooTagAndProducts(odoo, { tagName = "Puerta", productId = null, templateId = null, query = "SIN PUERTA" } = {}) {
+  clearOdooBootstrapCache();
+  const requestedTagName = cleanText(tagName) || "Puerta";
+  const requestedProductId = Number(productId || 0) || null;
+  const requestedTemplateId = Number(templateId || 0) || null;
+  const requestedQuery = cleanText(query) || "SIN PUERTA";
+
+  const boot = await loadOdooBootstrap(odoo);
+  const tags = Array.isArray(boot?.tags) ? boot.tags : [];
+  const products = Array.isArray(boot?.products) ? boot.products : [];
+
+  const matchingTags = tags.filter((tag) => normTagDebugName(tag?.name) === normTagDebugName(requestedTagName));
+  const matchingTagIds = new Set(matchingTags.map((tag) => Number(tag?.id || 0)).filter(Boolean));
+
+  const productsWithTagById = products.filter((product) => {
+    const tagIds = Array.isArray(product?.tag_ids) ? product.tag_ids.map(Number) : [];
+    return tagIds.some((id) => matchingTagIds.has(Number(id)));
+  });
+
+  const productsWithTagByName = products.filter((product) => productDebugHasTagName(product, requestedTagName));
+
+  const productDebugByQuery = requestedQuery
+    ? await inspectOdooProductTags(odoo, { query: requestedQuery })
+    : null;
+
+  const productDebugByTemplate = requestedTemplateId
+    ? await inspectOdooProductTags(odoo, { templateId: requestedTemplateId })
+    : null;
+
+  const productDebugByVariant = requestedProductId
+    ? await inspectOdooProductTags(odoo, { productId: requestedProductId })
+    : null;
+
+  const variantMeta = await getFieldMeta(odoo, "product.product");
+  const templateMeta = await getFieldMeta(odoo, "product.template");
+  const variantTagFields = await getTagFields(odoo, "product.product");
+  const templateTagFields = await getTagFields(odoo, "product.template");
+
+  return {
+    ok: true,
+    requested: {
+      tag_name: requestedTagName,
+      product_id: requestedProductId,
+      template_id: requestedTemplateId,
+      query: requestedQuery || null,
+    },
+    detected_tag_fields: {
+      product_product: variantTagFields.map((field) => ({ field, meta: variantMeta[field] })),
+      product_template: templateTagFields.map((field) => ({ field, meta: templateMeta[field] })),
+    },
+    bootstrap_summary: {
+      total_tags: tags.length,
+      total_products_with_any_tag: products.length,
+      matching_tags: matchingTags,
+      matching_tag_ids: [...matchingTagIds],
+      products_with_tag_by_id_count: productsWithTagById.length,
+      products_with_tag_by_name_count: productsWithTagByName.length,
+      products_with_tag_by_id: productsWithTagById.slice(0, 100).map((product) => ({
+        id: product.id,
+        name: product.name,
+        code: product.code,
+        odoo_template_id: product.odoo_template_id,
+        odoo_variant_id: product.odoo_variant_id,
+        tag_ids: product.tag_ids,
+        tag_debug: product.tag_debug,
+      })),
+      products_with_tag_by_name: productsWithTagByName.slice(0, 100).map((product) => ({
+        id: product.id,
+        name: product.name,
+        code: product.code,
+        odoo_template_id: product.odoo_template_id,
+        odoo_variant_id: product.odoo_variant_id,
+        tag_ids: product.tag_ids,
+        tag_debug: product.tag_debug,
+      })),
+    },
+    product_debug_by_query: productDebugByQuery,
+    product_debug_by_template: productDebugByTemplate,
+    product_debug_by_variant: productDebugByVariant,
+  };
+}
+
 export function clearOdooBootstrapCache() {
   cache = null;
   cacheAt = 0;

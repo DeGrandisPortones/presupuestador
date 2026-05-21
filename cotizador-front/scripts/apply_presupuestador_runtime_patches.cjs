@@ -7,6 +7,7 @@ const scripts = [
   'apply_parantes_pricing_patch.cjs',
   'apply_odoo_debug_dashboard_patch.cjs',
   'apply_data_tag_filter_patch.cjs',
+  'apply_data_odoo_tag_console_patch.cjs',
 ];
 
 for (const script of scripts) {
