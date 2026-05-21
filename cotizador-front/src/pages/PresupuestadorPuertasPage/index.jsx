@@ -248,6 +248,19 @@ export default function PresupuestadorPuertasPage() {
     onError: (e) => toast.error(e?.message || "No se pudo confirmar la puerta"),
   });
 
+  function confirmDoorWithOptionalPortonWarning(fulfillmentMode) {
+    if (!cleanText(linkedPortonId)) {
+      const ok = window.confirm(
+        "Esta puerta no está vinculada a ningún portón. ¿Deseás continuar igual?",
+      );
+      if (!ok) {
+        setConfirmChoiceOpen(false);
+        return;
+      }
+    }
+    confirmM.mutate({ fulfillmentMode });
+  }
+
   async function onDownloadPdf(mode = "presupuesto") {
     try {
       const saved = await saveDoorQuote({ forConfirm: false });
@@ -299,12 +312,12 @@ export default function PresupuestadorPuertasPage() {
               <div style={{ border: "1px solid #d9e5f7", background: "#f7fbff", borderRadius: 14, padding: 16 }}>
                 <div style={{ fontWeight: 900, fontSize: 18, marginBottom: 8 }}>Acopio</div>
                 <div className="muted" style={{ marginBottom: 14 }}>La puerta queda en espera y genera Nota de Pedido PNP al aprobarse.</div>
-                <Button onClick={() => confirmM.mutate({ fulfillmentMode: "acopio" })} disabled={confirmM.isPending}>Confirmar en Acopio</Button>
+                <Button onClick={() => confirmDoorWithOptionalPortonWarning("acopio")} disabled={confirmM.isPending}>Confirmar en Acopio</Button>
               </div>
               <div style={{ border: "1px solid #f2d3bf", background: "#fff8f3", borderRadius: 14, padding: 16 }}>
                 <div style={{ fontWeight: 900, fontSize: 18, marginBottom: 8 }}>Producción</div>
                 <div className="muted" style={{ marginBottom: 14 }}>La puerta entra al circuito productivo y genera Nota de Pedido PNP al aprobarse.</div>
-                <Button variant="primary" onClick={() => confirmM.mutate({ fulfillmentMode: "produccion" })} disabled={confirmM.isPending}>Confirmar en Producción</Button>
+                <Button variant="primary" onClick={() => confirmDoorWithOptionalPortonWarning("produccion")} disabled={confirmM.isPending}>Confirmar en Producción</Button>
               </div>
             </div>
             <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 16 }}><Button variant="ghost" onClick={() => setConfirmChoiceOpen(false)} disabled={confirmM.isPending}>Cancelar</Button></div>
