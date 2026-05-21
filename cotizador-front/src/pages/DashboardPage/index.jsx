@@ -51,7 +51,9 @@ function parseIdList(value) {
 }
 
 function stringifyIdList(values) {
-  return Array.isArray(values) ? values.map((item) => Number(item)).filter(Boolean).join(", ") : "";
+  return Array.isArray(values)
+    ? values.map((item) => Number(item)).filter(Boolean).join(", ")
+    : "";
 }
 
 function visibilityModeFromProduct(product) {
@@ -90,12 +92,12 @@ function getProductSearchText(product = {}) {
 function getProductLabel(product = {}) {
   return String(
     product.display_name ||
-    product.alias ||
-    product.internal_alias ||
-    product.name ||
-    product.raw_name ||
-    product.client_display_name ||
-    `Producto ${product.id || ""}`
+      product.alias ||
+      product.internal_alias ||
+      product.name ||
+      product.raw_name ||
+      product.client_display_name ||
+      `Producto ${product.id || ""}`,
   ).trim();
 }
 
@@ -163,6 +165,7 @@ export default function DashboardPage() {
   const [systemRules, setSystemRules] = useState([]);
   const [savingInitialSection, setSavingInitialSection] = useState(false);
   const [savingDependencies, setSavingDependencies] = useState(false);
+  const [savingSystems, setSavingSystems] = useState(false);
   const [pdfDrafts, setPdfDrafts] = useState({});
 
   const catalogQ = useQuery({
@@ -204,8 +207,11 @@ export default function DashboardPage() {
   useEffect(() => {
     const rules = technicalRulesQ.data || {};
     setInitialSectionId(Number(rules.initial_section_id || 0) || "");
-    const raw = Array.isArray(rules.section_dependency_rules) ? rules.section_dependency_rules : [];
-    setDependencyRules(raw.map((rule, index) => ({
+
+    const rawDependencies = Array.isArray(rules.section_dependency_rules)
+      ? rules.section_dependency_rules
+      : [];
+    setDependencyRules(rawDependencies.map((rule, index) => ({
       id: String(rule.id || `dep_${index + 1}`),
       name: String(rule.name || ""),
       active: rule.active !== false,
@@ -216,8 +222,8 @@ export default function DashboardPage() {
       sort_order: Number(rule.sort_order || index + 1) || index + 1,
     })));
 
-    const rawSystemRules = Array.isArray(rules.system_derivation_rules) ? rules.system_derivation_rules : [];
-    setSystemRules(rawSystemRules.map((rule, index) => ({
+    const rawSystems = Array.isArray(rules.system_derivation_rules) ? rules.system_derivation_rules : [];
+    setSystemRules(rawSystems.map((rule, index) => ({
       id: String(rule.id || `sys_${index + 1}`),
       name: String(rule.name || ""),
       active: rule.active !== false,
@@ -241,12 +247,11 @@ export default function DashboardPage() {
     setQuoteQuery("");
     setSectionFilter("all");
     setTagFilter("all");
-  }, [catalogKind]);
+    if (catalogKind !== "porton" && tab === "systems") setTab("tags");
+  }, [catalogKind, tab]);
 
   useEffect(() => {
-    if (!isSuperuser && (tab === "aliases" || tab === "pdf")) {
-      setTab("tags");
-    }
+    if (!isSuperuser && (tab === "aliases" || tab === "pdf")) setTab("tags");
   }, [isSuperuser, tab]);
 
   const catalog = catalogQ.data || {};
@@ -261,14 +266,11 @@ export default function DashboardPage() {
       const sectionIds = Array.isArray(product.section_ids) ? product.section_ids : [];
       for (const rawSectionId of sectionIds) {
         const sectionId = Number(rawSectionId);
-        if (!map.has(sectionId)) continue;
-        map.get(sectionId).push(product);
+        if (map.has(sectionId)) map.get(sectionId).push(product);
       }
     }
     return map;
   }, [sections, products]);
-
-  const tagById = useMemo(() => new Map(tags.map((tag) => [Number(tag.id), tag])), [tags]);
 
   const filteredProductsByQuery = useMemo(() => {
     const needle = norm(productQuery);
@@ -370,30 +372,39 @@ export default function DashboardPage() {
         })
         .filter((rule) => rule.parent_section_id && rule.required_product_ids.length && rule.child_section_ids.length);
 
-      const payload = {
+      await adminSaveTechnicalMeasurementRules(catalogKind, {
         initial_section_id: Number(initialSectionId || 0) || null,
         section_dependency_rules: normalizedDependencyRules,
-      };
-
-      if (catalogKind === "porton") {
-        payload.system_derivation_rules = systemRules
-          .map((rule, index) => ({
-            id: rule.id || `sys_${index + 1}`,
-            name: String(rule.name || "").trim(),
-            active: rule.active !== false,
-            required_product_ids: parseIdList(rule.required_product_ids_text),
-            match_mode: String(rule.match_mode || "all"),
-            derived_porton_type: String(rule.derived_porton_type || "").trim(),
-            sort_order: index + 1,
-          }))
-          .filter((rule) => rule.required_product_ids.length && rule.derived_porton_type);
-      }
-
-      await adminSaveTechnicalMeasurementRules(catalogKind, payload);
+      });
       invalidateTechnicalRules();
       alert("Dependencias guardadas.");
     } finally {
       setSavingDependencies(false);
+    }
+  }
+
+  async function onSaveSystems() {
+    setSavingSystems(true);
+    try {
+      const normalizedSystemRules = systemRules
+        .map((rule, index) => ({
+          id: rule.id || `sys_${index + 1}`,
+          name: String(rule.name || "").trim(),
+          active: rule.active !== false,
+          required_product_ids: parseIdList(rule.required_product_ids_text),
+          match_mode: String(rule.match_mode || "all"),
+          derived_porton_type: String(rule.derived_porton_type || "").trim(),
+          sort_order: index + 1,
+        }))
+        .filter((rule) => rule.required_product_ids.length && rule.derived_porton_type);
+
+      await adminSaveTechnicalMeasurementRules("porton", {
+        system_derivation_rules: normalizedSystemRules,
+      });
+      invalidateTechnicalRules();
+      alert("Tipos o sistemas guardados.");
+    } finally {
+      setSavingSystems(false);
     }
   }
 
@@ -450,6 +461,7 @@ export default function DashboardPage() {
         <button className={tab === "tags" ? "navlink active" : "navlink"} type="button" onClick={() => setTab("tags")}>Etiquetas → Secciones</button>
         {isSuperuser ? <button className={tab === "aliases" ? "navlink active" : "navlink"} type="button" onClick={() => setTab("aliases")}>Alias y visibilidad</button> : null}
         <button className={tab === "dependencies" ? "navlink active" : "navlink"} type="button" onClick={() => setTab("dependencies")}>Dependencias</button>
+        {catalogKind === "porton" ? <button className={tab === "systems" ? "navlink active" : "navlink"} type="button" onClick={() => setTab("systems")}>Tipos o sistemas</button> : null}
         {isSuperuser ? <button className={tab === "pdf" ? "navlink active" : "navlink"} type="button" onClick={() => setTab("pdf")}>Nombres PDF</button> : null}
         <button className={tab === "data" ? "navlink active" : "navlink"} type="button" onClick={() => setTab("data")}>Data</button>
       </div>
@@ -508,12 +520,20 @@ export default function DashboardPage() {
               setInitialSectionId={setInitialSectionId}
               dependencyRules={dependencyRules}
               setDependencyRules={setDependencyRules}
-              systemRules={systemRules}
-              setSystemRules={setSystemRules}
               savingInitialSection={savingInitialSection}
               onSaveInitialSection={onSaveInitialSection}
               savingDependencies={savingDependencies}
               onSaveDependencies={onSaveDependencies}
+            />
+          ) : null}
+
+          {catalogKind === "porton" && tab === "systems" ? (
+            <SystemsTab
+              products={products}
+              systemRules={systemRules}
+              setSystemRules={setSystemRules}
+              savingSystems={savingSystems}
+              onSaveSystems={onSaveSystems}
             />
           ) : null}
 
@@ -775,14 +795,9 @@ function AliasRow({ catalogKind, product, invalidateCatalog }) {
   );
 }
 
-function DependenciesTab({ catalogKind, sections, productsBySectionId, initialSectionId, setInitialSectionId, dependencyRules, setDependencyRules, systemRules = [], setSystemRules, savingInitialSection, onSaveInitialSection, savingDependencies, onSaveDependencies }) {
+function DependenciesTab({ catalogKind, sections, productsBySectionId, initialSectionId, setInitialSectionId, dependencyRules, setDependencyRules, savingInitialSection, onSaveInitialSection, savingDependencies, onSaveDependencies }) {
   function updateRule(index, patch) {
     setDependencyRules((prev) => prev.map((rule, idx) => (idx === index ? { ...rule, ...patch } : rule)));
-  }
-
-  function updateSystemRule(index, patch) {
-    if (typeof setSystemRules !== "function") return;
-    setSystemRules((prev) => prev.map((rule, idx) => (idx === index ? { ...rule, ...patch } : rule)));
   }
 
   return (
@@ -868,70 +883,110 @@ function DependenciesTab({ catalogKind, sections, productsBySectionId, initialSe
         })}
         {!dependencyRules.length ? <div className="muted">No hay reglas cargadas.</div> : null}
       </div>
-      {catalogKind === "porton" ? (
-        <>
-          <div className="spacer" />
-          <div style={{ borderTop: "1px solid #eee", paddingTop: 16 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+      <div className="spacer" />
+      <Button variant="primary" onClick={onSaveDependencies} disabled={savingDependencies}>{savingDependencies ? "Guardando..." : "Guardar dependencias"}</Button>
+    </div>
+  );
+}
+
+function SystemsTab({ products, systemRules, setSystemRules, savingSystems, onSaveSystems }) {
+  const [productSearch, setProductSearch] = useState("");
+
+  const filteredProducts = useMemo(() => {
+    const needle = norm(productSearch);
+    const source = Array.isArray(products) ? products : [];
+    if (!needle) return source.slice(0, 40);
+    return source.filter((product) => getProductSearchText(product).includes(needle)).slice(0, 80);
+  }, [products, productSearch]);
+
+  function updateSystemRule(index, patch) {
+    setSystemRules((prev) => prev.map((rule, idx) => (idx === index ? { ...rule, ...patch } : rule)));
+  }
+
+  return (
+    <div className="card">
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+        <div>
+          <h3 style={{ marginTop: 0, marginBottom: 4 }}>Tipos o sistemas del portón</h3>
+          <div className="muted">
+            Dashboard / Portones / Tipos o sistemas. Asigná qué sistema debe tomar el presupuesto cuando contiene una combinación de IDs de productos.
+          </div>
+        </div>
+        <Button variant="secondary" onClick={() => setSystemRules((prev) => [...prev, newSystemRule(prev.length + 1)])}>Agregar sistema</Button>
+      </div>
+
+      <div className="spacer" />
+      <div className="card" style={{ background: "#fafafa" }}>
+        <div style={{ fontWeight: 800, marginBottom: 8 }}>Buscador de productos para copiar IDs</div>
+        <input
+          value={productSearch}
+          onChange={(event) => setProductSearch(event.target.value)}
+          placeholder="Buscar por ID, nombre, código o alias..."
+          style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid #ddd" }}
+        />
+        <div className="spacer" />
+        <div style={{ maxHeight: 220, overflow: "auto", border: "1px solid #eee", borderRadius: 10 }}>
+          {filteredProducts.map((product) => (
+            <div key={product.id} style={{ display: "grid", gridTemplateColumns: "90px 1fr", gap: 8, padding: "8px 10px", borderBottom: "1px solid #f3f3f3" }}>
+              <div style={{ fontWeight: 900 }}>{product.id}</div>
               <div>
-                <h4 style={{ margin: 0 }}>Tipos / sistemas automáticos del portón</h4>
-                <div className="muted" style={{ marginTop: 4 }}>
-                  Asigná qué sistema debe tomar el presupuesto cuando contiene una combinación de IDs de productos.
-                </div>
+                <div>{getProductLabel(product)}</div>
+                <div className="muted" style={{ fontSize: 12 }}>Odoo: {product.odoo_id || product.odoo_template_id || product.odoo_variant_id || "-"}</div>
               </div>
-              <Button variant="secondary" onClick={() => setSystemRules((prev) => [...prev, newSystemRule(prev.length + 1)])}>Agregar sistema</Button>
+            </div>
+          ))}
+          {!filteredProducts.length ? <div className="muted" style={{ padding: 10 }}>Sin productos para mostrar.</div> : null}
+        </div>
+      </div>
+
+      <div className="spacer" />
+      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        {(Array.isArray(systemRules) ? systemRules : []).map((rule, index) => (
+          <div key={rule.id || index} style={{ border: "1px solid #eee", borderRadius: 12, padding: 12, background: "#fafafa" }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 10 }}>
+              <div>
+                <div className="muted">Nombre</div>
+                <Input value={rule.name || ""} onChange={(value) => updateSystemRule(index, { name: value })} placeholder="Ej: Para revestir con puerta" style={{ width: "100%" }} />
+              </div>
+              <div>
+                <div className="muted">IDs de productos requeridos</div>
+                <input
+                  value={rule.required_product_ids_text || ""}
+                  onChange={(event) => updateSystemRule(index, { required_product_ids_text: event.target.value })}
+                  placeholder="Ej: 3006, 2815"
+                  style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid #ddd" }}
+                />
+                <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>Separá IDs con coma, espacio o punto y coma.</div>
+              </div>
+              <div>
+                <div className="muted">Coincidencia</div>
+                <select value={rule.match_mode || "all"} onChange={(event) => updateSystemRule(index, { match_mode: event.target.value })} style={selectFullStyle}>
+                  <option value="all">Todos los IDs</option>
+                  <option value="any">Cualquiera de los IDs</option>
+                </select>
+              </div>
+              <div>
+                <div className="muted">Sistema asignado</div>
+                <select value={rule.derived_porton_type || ""} onChange={(event) => updateSystemRule(index, { derived_porton_type: event.target.value })} style={selectFullStyle}>
+                  <option value="">Seleccionar sistema</option>
+                  {PORTON_TYPES.map((type) => <option key={type.key} value={type.key}>{type.label}</option>)}
+                </select>
+              </div>
             </div>
             <div className="spacer" />
-            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-              {(Array.isArray(systemRules) ? systemRules : []).map((rule, index) => (
-                <div key={rule.id || index} style={{ border: "1px solid #eee", borderRadius: 12, padding: 12, background: "#fafafa" }}>
-                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 10 }}>
-                    <div>
-                      <div className="muted">Nombre</div>
-                      <Input value={rule.name || ""} onChange={(value) => updateSystemRule(index, { name: value })} placeholder="Ej: Para revestir con puerta" style={{ width: "100%" }} />
-                    </div>
-                    <div>
-                      <div className="muted">IDs de productos requeridos</div>
-                      <input
-                        value={rule.required_product_ids_text || ""}
-                        onChange={(event) => updateSystemRule(index, { required_product_ids_text: event.target.value })}
-                        placeholder="Ej: 3006, 2815"
-                        style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid #ddd" }}
-                      />
-                      <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>Separá IDs con coma, espacio o punto y coma.</div>
-                    </div>
-                    <div>
-                      <div className="muted">Coincidencia</div>
-                      <select value={rule.match_mode || "all"} onChange={(event) => updateSystemRule(index, { match_mode: event.target.value })} style={selectFullStyle}>
-                        <option value="all">Todos los IDs</option>
-                        <option value="any">Cualquiera de los IDs</option>
-                      </select>
-                    </div>
-                    <div>
-                      <div className="muted">Sistema asignado</div>
-                      <select value={rule.derived_porton_type || ""} onChange={(event) => updateSystemRule(index, { derived_porton_type: event.target.value })} style={selectFullStyle}>
-                        <option value="">Seleccionar sistema</option>
-                        {PORTON_TYPES.map((type) => <option key={type.key} value={type.key}>{type.label}</option>)}
-                      </select>
-                    </div>
-                  </div>
-                  <div className="spacer" />
-                  <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
-                    <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                      <input type="checkbox" checked={rule.active !== false} onChange={(event) => updateSystemRule(index, { active: event.target.checked })} />
-                      <span className="muted">Activa</span>
-                    </label>
-                    <Button variant="ghost" onClick={() => setSystemRules((prev) => prev.filter((_, idx) => idx !== index))}>Eliminar sistema</Button>
-                  </div>
-                </div>
-              ))}
-              {!systemRules.length ? <div className="muted">No hay tipos/sistemas automáticos cargados.</div> : null}
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
+              <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <input type="checkbox" checked={rule.active !== false} onChange={(event) => updateSystemRule(index, { active: event.target.checked })} />
+                <span className="muted">Activa</span>
+              </label>
+              <Button variant="ghost" onClick={() => setSystemRules((prev) => prev.filter((_, idx) => idx !== index))}>Eliminar sistema</Button>
             </div>
           </div>
-        </>
-      ) : null}
+        ))}
+        {!systemRules.length ? <div className="muted">No hay tipos/sistemas automáticos cargados.</div> : null}
+      </div>
       <div className="spacer" />
-      <Button variant="primary" onClick={onSaveDependencies} disabled={savingDependencies}>{savingDependencies ? "Guardando..." : "Guardar dependencias y sistemas"}</Button>
+      <Button variant="primary" onClick={onSaveSystems} disabled={savingSystems}>{savingSystems ? "Guardando..." : "Guardar tipos o sistemas"}</Button>
     </div>
   );
 }
