@@ -2,6 +2,7 @@ import express from "express";
 import { requireAuth } from "../auth.js";
 import { dbQuery } from "../db.js";
 import { ensureDoorsSchema } from "../doorsSchema.js";
+import { ensureQuotesMeasurementColumns } from "../quotesSchema.js";
 import { createOdooClient } from "../odoo.js";
 import {
   calcDoorTechnicalDimensions,
@@ -10,6 +11,8 @@ import {
 
 const ODOO_DOOR_PRODUCT_ID = Number(process.env.ODOO_DOOR_PRODUCT_ID || 3226);
 const IVA_RATE = 0.21;
+const DOOR_STRUCTURE_CATALOG_KIND = "puerta";
+const DOOR_STRUCTURE_FALLBACK_CATALOG_KIND = "otros";
 const CUSTOMER_KEYS = Object.freeze(["name", "phone", "email", "address", "maps_url", "city", "first_name", "last_name"]);
 
 function requireSeller(req, res, next) {
@@ -179,6 +182,15 @@ function calcQuoteSubtotal({ lines, payload }) {
 }
 function calcQuoteTotalWithIva({ lines, payload }) { const subtotal = calcQuoteSubtotal({ lines, payload }); return round2(subtotal + round2(subtotal * IVA_RATE)); }
 function quoteHasLines(quote) { return !!(quote && Array.isArray(quote.lines) && quote.lines.length); }
+function isDoorStructureQuote(quote) {
+  const kind = String(quote?.catalog_kind || "").toLowerCase();
+  const payload = quote?.payload && typeof quote.payload === "object" ? quote.payload : {};
+  return kind === DOOR_STRUCTURE_CATALOG_KIND || (kind === DOOR_STRUCTURE_FALLBACK_CATALOG_KIND && payload.door_structure_quote === true);
+}
+function isCatalogKindPuertaError(error) {
+  const msg = String(error?.message || error?.detail || error?.constraint || "").toLowerCase();
+  return msg.includes("catalog_kind") || msg.includes("puerta") || msg.includes("check constraint") || msg.includes("invalid input value");
+}
 function mergeDoorRecordWithCustomer(record, mergedCustomer) {
   const nextRecord = { ...(record || {}), end_customer: normalizeCustomer(mergedCustomer) };
   if (!safeText(nextRecord.obra_cliente)) nextRecord.obra_cliente = customerDisplayName(nextRecord.end_customer);
@@ -192,16 +204,36 @@ async function persistMergedCustomerOnLinkedQuotes({ linkedQuote = null, structu
   }
 }
 async function createDraftQuoteForDoor({ userId, createdByRole = "vendedor", catalogKind, fulfillmentMode = "acopio", pricelistId = 1, billToOdooPartnerId = null, endCustomer = {}, note = "" }) {
-  const q = await dbQuery(
-    `insert into public.presupuestador_quotes (
-        quote_kind, parent_quote_id, created_by_user_id, created_by_role, fulfillment_mode, pricelist_id,
-        bill_to_odoo_partner_id, end_customer, lines, payload, note, catalog_kind, status,
-        commercial_decision, technical_decision, requires_measurement, measurement_status, measurement_mode, measurement_subtype
-     ) values ('original', null, $1, $2, $3, $4, $5, $6::jsonb, '[]'::jsonb, $7::jsonb, $8, $9, 'draft', 'pending', 'pending', false, 'none', 'medidor', 'normal') returning *`,
-    [Number(userId), createdByRole, normalizeMode(fulfillmentMode), Number(pricelistId || 1), billToOdooPartnerId ? Number(billToOdooPartnerId) : null, JSON.stringify(normalizeCustomer(endCustomer)), JSON.stringify({ margin_percent_ui: 0, payment_method: "", condition_mode: "", condition_text: "" }), note || null, catalogKind],
-  );
-  return q.rows?.[0] || null;
+  const basePayload = { margin_percent_ui: 0, payment_method: "", condition_mode: "", condition_text: "" };
+  const normalizedCustomer = normalizeCustomer(endCustomer);
+
+  async function insertQuote(kind, payloadExtra = {}) {
+    const payload = { ...basePayload, ...payloadExtra };
+    const q = await dbQuery(
+      `insert into public.presupuestador_quotes (
+          quote_kind, parent_quote_id, created_by_user_id, created_by_role, fulfillment_mode, pricelist_id,
+          bill_to_odoo_partner_id, end_customer, lines, payload, note, catalog_kind, status,
+          commercial_decision, technical_decision, requires_measurement, measurement_status, measurement_mode, measurement_subtype
+       ) values ('original', null, $1, $2, $3, $4, $5, $6::jsonb, '[]'::jsonb, $7::jsonb, $8, $9, 'draft', 'pending', 'pending', false, 'none', 'medidor', 'normal') returning *`,
+      [Number(userId), createdByRole, normalizeMode(fulfillmentMode), Number(pricelistId || 1), billToOdooPartnerId ? Number(billToOdooPartnerId) : null, JSON.stringify(normalizedCustomer), JSON.stringify(payload), note || null, kind],
+    );
+    return q.rows?.[0] || null;
+  }
+
+  if (String(catalogKind || "").toLowerCase() !== DOOR_STRUCTURE_CATALOG_KIND) {
+    return await insertQuote(catalogKind);
+  }
+
+  try {
+    return await insertQuote(DOOR_STRUCTURE_CATALOG_KIND, { door_structure_quote: true, door_structure_catalog_kind: DOOR_STRUCTURE_CATALOG_KIND });
+  } catch (e) {
+    if (!isCatalogKindPuertaError(e)) throw e;
+    // Compatibilidad: si la BD/despliegue todavia no tiene habilitado catalog_kind='puerta',
+    // se crea la estructura como 'otros' marcada internamente como estructura de puerta.
+    return await insertQuote(DOOR_STRUCTURE_FALLBACK_CATALOG_KIND, { door_structure_quote: true, door_structure_catalog_kind: DOOR_STRUCTURE_CATALOG_KIND });
+  }
 }
+
 async function updateQuoteDimensionsIfNeeded({ quote, dimensions, notePrefix = "" }) {
   if (!quote?.id || !dimensions) return quote;
   const payload = quote.payload && typeof quote.payload === "object" ? { ...quote.payload } : {};
@@ -231,7 +263,7 @@ async function ensureDoorQuotes({ door, linkedQuote = null, user = null }) {
     structureQuote = await createDraftQuoteForDoor({
       userId: door.created_by_user_id || user?.user_id,
       createdByRole,
-      catalogKind: "puerta",
+      catalogKind: DOOR_STRUCTURE_CATALOG_KIND,
       fulfillmentMode: record.fulfillment_mode || linkedQuote?.fulfillment_mode || rules.structure_fulfillment_mode,
       pricelistId,
       billToOdooPartnerId: billTo,
@@ -273,6 +305,7 @@ async function ensureDoorQuotes({ door, linkedQuote = null, user = null }) {
     end_customer: normalizeCustomer(customer),
     structure_quote_id: structureQuote?.id || record.structure_quote_id || "",
     structure_quote_label: structureQuote?.quote_number ? `Presupuesto ${structureQuote.quote_number}` : (record.structure_quote_label || ""),
+    structure_catalog_kind: structureQuote?.catalog_kind || record.structure_catalog_kind || DOOR_STRUCTURE_CATALOG_KIND,
     ipanel_quote_id: ipanelQuote?.id || record.ipanel_quote_id || "",
     ipanel_quote_label: ipanelQuote?.quote_number ? `Presupuesto ${ipanelQuote.quote_number}` : (record.ipanel_quote_label || ""),
     door_technical_rules_snapshot: rules,
@@ -384,7 +417,7 @@ async function buildDoorQuoteSummary(door, mode = "presupuesto") {
   const linkedQuote = await getLinkedQuoteForDoor(door);
   const structureQuote = await getStructureQuoteForDoor(door);
   const ipanelQuote = await getIpanelQuoteForDoor(door);
-  if (!structureQuote || String(structureQuote.catalog_kind || "").toLowerCase() !== "puerta") throw new Error("La puerta debe tener una estructura vinculada.");
+  if (!isDoorStructureQuote(structureQuote)) throw new Error("La puerta debe tener una estructura vinculada.");
   if (!ipanelQuote || String(ipanelQuote.catalog_kind || "").toLowerCase() !== "ipanel") throw new Error("La puerta debe tener un Ipanel vinculado.");
   const precioEstructura = mode === "proforma" ? calcQuoteSubtotal({ lines: structureQuote.lines, payload: {} }) : calcQuoteTotalWithIva({ lines: structureQuote.lines, payload: structureQuote.payload || {} });
   const precioIpanel = mode === "proforma" ? calcQuoteSubtotal({ lines: ipanelQuote.lines, payload: {} }) : calcQuoteTotalWithIva({ lines: ipanelQuote.lines, payload: ipanelQuote.payload || {} });
@@ -490,7 +523,7 @@ async function trySyncDoorOrders({ odoo, id }) {
 export function buildDoorsRouter(odooArg) {
   const router = express.Router();
   const odoo = odooArg || createOdooClient({ url: process.env.ODOO_URL, db: process.env.ODOO_DB, username: process.env.ODOO_USERNAME, password: process.env.ODOO_PASSWORD, companyId: process.env.ODOO_COMPANY_ID || null });
-  router.use(async (_req, _res, next) => { try { await ensureDoorsSchema(); next(); } catch (e) { next(e); } });
+  router.use(async (_req, _res, next) => { try { await ensureDoorsSchema(); await ensureQuotesMeasurementColumns(); next(); } catch (e) { next(e); } });
   router.use(requireAuth);
 
   router.get("/suppliers", requireSeller, async (_req, res) => res.json({ ok: true, suppliers: [] }));
@@ -543,6 +576,7 @@ export function buildDoorsRouter(odooArg) {
   });
 
   router.post("/", requireSeller, async (req, res, next) => {
+    let insertedDoorId = null;
     try {
       const linkedQuoteId = safeText(req.body?.linked_quote_id);
       let linkedQuote = null;
@@ -555,14 +589,21 @@ export function buildDoorsRouter(odooArg) {
       const record = buildInitialDoorRecord({ quote: linkedQuote, user: req.user });
       const doorCode = linkedQuote ? (buildDoorCodeFromQuote(linkedQuote) || buildFallbackDoorCode(linkedQuoteId)) : "PENDIENTE";
       const ins = await dbQuery(`insert into public.presupuestador_doors (created_by_user_id, linked_quote_id, door_code, status, commercial_decision, technical_decision, record, updated_at) values ($1, $2, $3, 'draft', 'pending', 'pending', $4::jsonb, now()) returning id`, [Number(req.user.user_id), linkedQuoteId || null, doorCode, JSON.stringify(record)]);
-      let door = await getDoorHydratedById(ins.rows?.[0]?.id);
+      insertedDoorId = Number(ins.rows?.[0]?.id || 0) || null;
+      let door = await getDoorHydratedById(insertedDoorId);
       if (!linkedQuote) { const id = Number(door.id); const code = buildStandaloneDoorCode(id); await dbQuery(`update public.presupuestador_doors set door_code=$2 where id=$1`, [id, code]); door = await getDoorHydratedById(id); }
       door = await ensureDoorQuotes({ door, linkedQuote, user: req.user });
       return res.json({ ok: true, door });
-    } catch (e) { next(e); }
+    } catch (e) {
+      if (insertedDoorId) {
+        try { await dbQuery(`delete from public.presupuestador_doors where id=$1 and status='draft' and odoo_sale_order_id is null`, [insertedDoorId]); } catch {}
+      }
+      next(e);
+    }
   });
 
   router.post("/from-quote/:quoteId", requireSeller, async (req, res, next) => {
+    let insertedDoorId = null;
     try {
       const linkedQuoteId = safeText(req.params.quoteId);
       if (!isUuid(linkedQuoteId)) return res.status(400).json({ ok: false, error: "linked_quote_id invalido" });
@@ -572,9 +613,15 @@ export function buildDoorsRouter(odooArg) {
       const record = buildInitialDoorRecord({ quote, user: req.user });
       const doorCode = buildDoorCodeFromQuote(quote) || buildFallbackDoorCode(linkedQuoteId);
       const ins = await dbQuery(`insert into public.presupuestador_doors (created_by_user_id, linked_quote_id, door_code, status, commercial_decision, technical_decision, record, updated_at) values ($1, $2, $3, 'draft', 'pending', 'pending', $4::jsonb, now()) returning id`, [Number(req.user.user_id), linkedQuoteId, doorCode, JSON.stringify(record)]);
-      const door = await ensureDoorQuotes({ door: await getDoorHydratedById(ins.rows?.[0]?.id), linkedQuote: quote, user: req.user });
+      insertedDoorId = Number(ins.rows?.[0]?.id || 0) || null;
+      const door = await ensureDoorQuotes({ door: await getDoorHydratedById(insertedDoorId), linkedQuote: quote, user: req.user });
       return res.json({ ok: true, door });
-    } catch (e) { next(e); }
+    } catch (e) {
+      if (insertedDoorId) {
+        try { await dbQuery(`delete from public.presupuestador_doors where id=$1 and status='draft' and odoo_sale_order_id is null`, [insertedDoorId]); } catch {}
+      }
+      next(e);
+    }
   });
 
   router.get("/:id", async (req, res, next) => {

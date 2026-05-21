@@ -15,6 +15,10 @@ function quoteLabel(q) { return safe(q?.odoo_sale_order_name || q?.final_sale_or
 function isQuoteComplete(q) { return !!q && Array.isArray(q.lines) && q.lines.length > 0; }
 function isDoorLinked(door) { return !!safe(door?.linked_quote_id); }
 function isCustomerComplete(door) { return !!safe(door?.record?.end_customer?.name || door?.record?.obra_cliente) && !!safe(door?.record?.end_customer?.phone); }
+function structureEditorKind(quote, door) {
+  const kind = safe(quote?.catalog_kind || door?.record?.structure_catalog_kind || "puerta").toLowerCase();
+  return kind === "puerta" ? "puerta" : "otros";
+}
 function panelStatus({ door, structureQuote, ipanelQuote }) {
   const pending = [];
   if (!isDoorLinked(door)) pending.push("porton vinculado");
@@ -114,7 +118,7 @@ export default function PuertaPanelPage() {
           <div style={{ fontWeight: 900, fontSize: 18, marginBottom: 8 }}>Estructura</div>
           <div className="muted" style={{ marginBottom: 14 }}>Cotiza la estructura propia de la puerta en la seccion separada de puertas.</div>
           <div className="muted" style={{ marginBottom: 10 }}>Presupuesto: <b>{numberOrDash(structureQ.data?.quote_number || structureQuoteId)}</b></div>
-          <Button variant="primary" onClick={() => navigate(`/cotizador/puerta/${structureQuoteId}?door_workflow=1&workflow_stage=estructura&door_id=${encodeURIComponent(id)}`)} disabled={!structureQuoteId}>Completar estructura</Button>
+          <Button variant="primary" onClick={() => navigate(`/cotizador/${structureEditorKind(structureQ.data, door)}/${structureQuoteId}?door_workflow=1&workflow_stage=estructura&door_id=${encodeURIComponent(id)}`)} disabled={!structureQuoteId || structureQ.isLoading}>Completar estructura</Button>
         </div>
         <div className="card" style={{ border: "1px solid #d9e5f7", background: "#f7fbff" }}>
           <div style={{ fontWeight: 900, fontSize: 18, marginBottom: 8 }}>Ipanel</div>

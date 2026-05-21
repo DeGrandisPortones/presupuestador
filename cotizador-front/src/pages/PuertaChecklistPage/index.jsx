@@ -98,6 +98,10 @@ function buildStandardText(form) {
   return `Puerta principal (vista exterior): ${mano}, abre hacia ${sentido}, apertura ${angulo}, interferencias: ${textOrDash(form.interferencias)}, accesorios: ${textOrDash(form.accesorios)}.`;
 }
 function buildReady(form) { return (form.checklist || []).every((row) => row.status === "OK" || row.status === "N/A"); }
+function structureEditorKind(quote, door) {
+  const kind = safe(quote?.catalog_kind || door?.record?.structure_catalog_kind || "puerta").toLowerCase();
+  return kind === "puerta" ? "puerta" : "otros";
+}
 
 export default function PuertaChecklistPage() {
   const { id } = useParams();
@@ -172,7 +176,7 @@ export default function PuertaChecklistPage() {
           </div>
           <div style={{ display: "flex", gap: 8, alignItems: "flex-end", flexWrap: "wrap" }}>
             {door?.linked_quote_id ? <Button variant="ghost" onClick={() => navigate(`/presupuestos/${door.linked_quote_id}`)}>Ver porton</Button> : null}
-            {structureQuoteId ? <Button variant="ghost" onClick={() => navigate(`/cotizador/puerta/${structureQuoteId}`)}>Ver estructura</Button> : null}
+            {structureQuoteId ? <Button variant="ghost" onClick={() => navigate(`/cotizador/${structureEditorKind(structureQ.data, door)}/${structureQuoteId}`)}>Ver estructura</Button> : null}
             {ipanelQuoteId ? <Button variant="ghost" onClick={() => navigate(`/cotizador/ipanel/${ipanelQuoteId}`)}>Ver Ipanel</Button> : null}
             <Button variant="secondary" disabled={!pdfReady} onClick={() => handleDoorPdf("presupuesto")}>PDF puerta</Button>
             {user?.is_distribuidor ? <Button variant="secondary" disabled={!pdfReady} onClick={() => handleDoorPdf("proforma")}>PDF proforma puerta</Button> : null}

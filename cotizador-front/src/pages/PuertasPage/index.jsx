@@ -29,6 +29,15 @@ function matchesSearch(d, searchText) {
   return haystack.includes(s);
 }
 function isCompleteQuoteId(v) { return !!text(v); }
+function isBlankFailedDoor(d) {
+  const r = d?.record || {};
+  return text(d?.status).toLowerCase() === "draft"
+    && !text(d?.linked_quote_id)
+    && !text(d?.structure_quote_id || r?.structure_quote_id)
+    && !text(r?.ipanel_quote_id)
+    && !text(r?.end_customer?.name || r?.obra_cliente)
+    && !text(r?.end_customer?.phone);
+}
 function labelDoorStatus(d) {
   const record = d?.record || {};
   const linkedReady = !!text(d?.linked_quote_id);
@@ -61,7 +70,7 @@ export default function PuertasPage() {
     onError: (e) => toast.error(e?.message || "No se pudo crear la puerta"),
   });
 
-  const rows = useMemo(() => (q.data || []).filter((d) => matchesSearch(d, searchText)), [q.data, searchText]);
+  const rows = useMemo(() => (q.data || []).filter((d) => !isBlankFailedDoor(d)).filter((d) => matchesSearch(d, searchText)), [q.data, searchText]);
   useEffect(() => { setPage(1); }, [searchText]);
   useEffect(() => { const totalPages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE)); if (page > totalPages) setPage(totalPages); }, [rows.length, page]);
   const visibleRows = useMemo(() => rows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE), [rows, page]);
