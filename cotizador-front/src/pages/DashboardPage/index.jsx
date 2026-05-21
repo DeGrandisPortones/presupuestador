@@ -143,6 +143,50 @@ function buildQuoteSearchText(quote = {}) {
   ].filter(Boolean).join(" "));
 }
 
+function buildRulePayloadFromState({ initialSectionId, dependencyRules, productsBySectionId }) {
+  const normalizedDependencyRules = (Array.isArray(dependencyRules) ? dependencyRules : [])
+    .map((rule, index) => {
+      const parentSectionId = Number(rule.parent_section_id || 0) || null;
+      const sectionProducts = productsBySectionId.get(Number(parentSectionId)) || [];
+      const requiredProductIds = String(rule.trigger_mode || "product") === "any"
+        ? sectionProducts.map((product) => Number(product.id)).filter(Boolean)
+        : [Number(rule.trigger_product_id || 0)].filter(Boolean);
+
+      return {
+        id: rule.id || `dep_${index + 1}`,
+        name: String(rule.name || "").trim(),
+        active: rule.active !== false,
+        parent_section_id: parentSectionId,
+        required_product_ids: requiredProductIds,
+        match_mode: "any",
+        child_section_ids: Array.isArray(rule.child_section_ids)
+          ? rule.child_section_ids.map((item) => Number(item)).filter(Boolean)
+          : [],
+        sort_order: index + 1,
+      };
+    })
+    .filter((rule) => rule.parent_section_id && rule.required_product_ids.length && rule.child_section_ids.length);
+
+  return {
+    initial_section_id: Number(initialSectionId || 0) || null,
+    section_dependency_rules: normalizedDependencyRules,
+  };
+}
+
+function buildSystemsPayload(systemRules) {
+  return (Array.isArray(systemRules) ? systemRules : [])
+    .map((rule, index) => ({
+      id: rule.id || `sys_${index + 1}`,
+      name: String(rule.name || "").trim(),
+      active: rule.active !== false,
+      required_product_ids: parseIdList(rule.required_product_ids_text),
+      match_mode: String(rule.match_mode || "all"),
+      derived_porton_type: String(rule.derived_porton_type || "").trim(),
+      sort_order: index + 1,
+    }))
+    .filter((rule) => rule.required_product_ids.length && rule.derived_porton_type);
+}
+
 export default function DashboardPage() {
   const user = useAuthStore((state) => state.user);
   const qc = useQueryClient();
@@ -247,6 +291,9 @@ export default function DashboardPage() {
     setQuoteQuery("");
     setSectionFilter("all");
     setTagFilter("all");
+  }, [catalogKind]);
+
+  useEffect(() => {
     if (catalogKind !== "porton" && tab === "systems") setTab("tags");
   }, [catalogKind, tab]);
 
@@ -352,30 +399,10 @@ export default function DashboardPage() {
   async function onSaveDependencies() {
     setSavingDependencies(true);
     try {
-      const normalizedDependencyRules = dependencyRules
-        .map((rule, index) => {
-          const parentSectionId = Number(rule.parent_section_id || 0) || null;
-          const sectionProducts = productsBySectionId.get(Number(parentSectionId)) || [];
-          const requiredProductIds = String(rule.trigger_mode || "product") === "any"
-            ? sectionProducts.map((product) => Number(product.id)).filter(Boolean)
-            : [Number(rule.trigger_product_id || 0)].filter(Boolean);
-          return {
-            id: rule.id || `dep_${index + 1}`,
-            name: String(rule.name || "").trim(),
-            active: rule.active !== false,
-            parent_section_id: parentSectionId,
-            required_product_ids: requiredProductIds,
-            match_mode: "any",
-            child_section_ids: Array.isArray(rule.child_section_ids) ? rule.child_section_ids.map((item) => Number(item)).filter(Boolean) : [],
-            sort_order: index + 1,
-          };
-        })
-        .filter((rule) => rule.parent_section_id && rule.required_product_ids.length && rule.child_section_ids.length);
-
-      await adminSaveTechnicalMeasurementRules(catalogKind, {
-        initial_section_id: Number(initialSectionId || 0) || null,
-        section_dependency_rules: normalizedDependencyRules,
-      });
+      await adminSaveTechnicalMeasurementRules(
+        catalogKind,
+        buildRulePayloadFromState({ initialSectionId, dependencyRules, productsBySectionId }),
+      );
       invalidateTechnicalRules();
       alert("Dependencias guardadas.");
     } finally {
@@ -386,20 +413,8 @@ export default function DashboardPage() {
   async function onSaveSystems() {
     setSavingSystems(true);
     try {
-      const normalizedSystemRules = systemRules
-        .map((rule, index) => ({
-          id: rule.id || `sys_${index + 1}`,
-          name: String(rule.name || "").trim(),
-          active: rule.active !== false,
-          required_product_ids: parseIdList(rule.required_product_ids_text),
-          match_mode: String(rule.match_mode || "all"),
-          derived_porton_type: String(rule.derived_porton_type || "").trim(),
-          sort_order: index + 1,
-        }))
-        .filter((rule) => rule.required_product_ids.length && rule.derived_porton_type);
-
       await adminSaveTechnicalMeasurementRules("porton", {
-        system_derivation_rules: normalizedSystemRules,
+        system_derivation_rules: buildSystemsPayload(systemRules),
       });
       invalidateTechnicalRules();
       alert("Tipos o sistemas guardados.");
@@ -890,55 +905,28 @@ function DependenciesTab({ catalogKind, sections, productsBySectionId, initialSe
 }
 
 function SystemsTab({ products, systemRules, setSystemRules, savingSystems, onSaveSystems }) {
-  const [productSearch, setProductSearch] = useState("");
-
-  const filteredProducts = useMemo(() => {
-    const needle = norm(productSearch);
-    const source = Array.isArray(products) ? products : [];
-    if (!needle) return source.slice(0, 40);
-    return source.filter((product) => getProductSearchText(product).includes(needle)).slice(0, 80);
-  }, [products, productSearch]);
-
   function updateSystemRule(index, patch) {
     setSystemRules((prev) => prev.map((rule, idx) => (idx === index ? { ...rule, ...patch } : rule)));
   }
+
+  const productsHint = useMemo(() => {
+    return (Array.isArray(products) ? products : [])
+      .slice(0, 80)
+      .map((product) => `${product.id}=${getProductLabel(product)}`)
+      .join(" · ");
+  }, [products]);
 
   return (
     <div className="card">
       <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
         <div>
-          <h3 style={{ marginTop: 0, marginBottom: 4 }}>Tipos o sistemas del portón</h3>
+          <h3 style={{ marginTop: 0, marginBottom: 4 }}>Tipos o sistemas de Portones</h3>
           <div className="muted">
-            Dashboard / Portones / Tipos o sistemas. Asigná qué sistema debe tomar el presupuesto cuando contiene una combinación de IDs de productos.
+            Asigná qué sistema debe tomar el presupuesto cuando contiene una combinación de IDs de productos.
           </div>
         </div>
         <Button variant="secondary" onClick={() => setSystemRules((prev) => [...prev, newSystemRule(prev.length + 1)])}>Agregar sistema</Button>
       </div>
-
-      <div className="spacer" />
-      <div className="card" style={{ background: "#fafafa" }}>
-        <div style={{ fontWeight: 800, marginBottom: 8 }}>Buscador de productos para copiar IDs</div>
-        <input
-          value={productSearch}
-          onChange={(event) => setProductSearch(event.target.value)}
-          placeholder="Buscar por ID, nombre, código o alias..."
-          style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid #ddd" }}
-        />
-        <div className="spacer" />
-        <div style={{ maxHeight: 220, overflow: "auto", border: "1px solid #eee", borderRadius: 10 }}>
-          {filteredProducts.map((product) => (
-            <div key={product.id} style={{ display: "grid", gridTemplateColumns: "90px 1fr", gap: 8, padding: "8px 10px", borderBottom: "1px solid #f3f3f3" }}>
-              <div style={{ fontWeight: 900 }}>{product.id}</div>
-              <div>
-                <div>{getProductLabel(product)}</div>
-                <div className="muted" style={{ fontSize: 12 }}>Odoo: {product.odoo_id || product.odoo_template_id || product.odoo_variant_id || "-"}</div>
-              </div>
-            </div>
-          ))}
-          {!filteredProducts.length ? <div className="muted" style={{ padding: 10 }}>Sin productos para mostrar.</div> : null}
-        </div>
-      </div>
-
       <div className="spacer" />
       <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
         {(Array.isArray(systemRules) ? systemRules : []).map((rule, index) => (
@@ -985,6 +973,14 @@ function SystemsTab({ products, systemRules, setSystemRules, savingSystems, onSa
         ))}
         {!systemRules.length ? <div className="muted">No hay tipos/sistemas automáticos cargados.</div> : null}
       </div>
+      {productsHint ? (
+        <>
+          <div className="spacer" />
+          <div className="muted" style={{ fontSize: 12 }}>
+            IDs disponibles: {productsHint}
+          </div>
+        </>
+      ) : null}
       <div className="spacer" />
       <Button variant="primary" onClick={onSaveSystems} disabled={savingSystems}>{savingSystems ? "Guardando..." : "Guardar tipos o sistemas"}</Button>
     </div>
