@@ -2,6 +2,42 @@ import { dbQuery } from "./db.js";
 
 let ensured = false;
 
+async function ensureQuoteCatalogKindAllowsPuerta() {
+  await dbQuery(`
+    do $$
+    declare
+      item record;
+    begin
+      if not exists (
+        select 1
+        from information_schema.columns
+        where table_schema = 'public'
+          and table_name = 'presupuestador_quotes'
+          and column_name = 'catalog_kind'
+      ) then
+        return;
+      end if;
+
+      for item in
+        select c.conname, c.conrelid::regclass as table_name
+          from pg_constraint c
+          join pg_class rel on rel.oid = c.conrelid
+          join pg_namespace nsp on nsp.oid = rel.relnamespace
+         where nsp.nspname = 'public'
+           and rel.relname = 'presupuestador_quotes'
+           and c.contype = 'c'
+           and pg_get_constraintdef(c.oid) ilike '%catalog_kind%'
+      loop
+        execute format('alter table %s drop constraint if exists %I', item.table_name, item.conname);
+      end loop;
+
+      alter table public.presupuestador_quotes
+        add constraint presupuestador_quotes_catalog_kind_check
+        check (catalog_kind in ('porton', 'ipanel', 'otros', 'puerta'));
+    end $$;
+  `);
+}
+
 export async function ensureDoorsSchema() {
   if (ensured) return;
 
@@ -30,6 +66,8 @@ export async function ensureDoorsSchema() {
       updated_at timestamptz not null default now()
     );
   `);
+
+  await ensureQuoteCatalogKindAllowsPuerta();
 
   await dbQuery(`alter table public.presupuestador_doors add column if not exists linked_quote_id uuid null;`);
   await dbQuery(`alter table public.presupuestador_doors add column if not exists structure_quote_id uuid null;`);
