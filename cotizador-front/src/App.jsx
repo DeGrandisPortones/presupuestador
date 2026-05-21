@@ -21,6 +21,7 @@ import DashboardPage from "./pages/DashboardPage/index.jsx";
 import PlanificacionPage from "./pages/PlanificacionPage/index.jsx";
 import SuperuserMeasurementRulesPage from "./pages/SuperuserMeasurementRulesPage/index.jsx";
 import SuperuserProductPdfNamesPage from "./pages/SuperuserProductPdfNamesPage/index.jsx";
+import SuperuserPuertasCatalogPage from "./pages/SuperuserPuertasCatalogPage/index.jsx";
 import SuperuserProductionPropertyAssignmentsPage from "./pages/SuperuserProductionPropertyAssignmentsPage/index.jsx";
 import UsersAdminPage from "./pages/UsersAdminPage/index.jsx";
 import MedicionesPage from "./pages/MedicionesPage/index.jsx";
@@ -91,6 +92,7 @@ export default function App() {
           <Route path="planificacion" element={<PlanificacionPage />} />
           <Route path="financiamiento" element={<FinanciamientoPage />} />
           <Route path="dashboard/reglas-tecnicas" element={<SuperuserMeasurementRulesPage />} />
+          <Route path="dashboard/catalogo-puertas" element={<SuperuserPuertasCatalogPage />} />
           <Route path="superuser/nombres-pdf" element={<SuperuserProductPdfNamesPage />} />
           <Route path="superuser/asignacion-produccion" element={<SuperuserProductionPropertyAssignmentsPage />} />
           <Route path="superuser/visualizador-porton" element={<QuoteHistoryViewerPage />} />

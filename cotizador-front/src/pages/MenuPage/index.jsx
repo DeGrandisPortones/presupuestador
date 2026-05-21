@@ -108,6 +108,7 @@ export default function MenuPage() {
         )}
 
         {showDashboard && <MenuTile title="Dashboard" buttonText="Abrir dashboard" onClick={() => navigate("/dashboard")} iconSrc="/menu-icons/dashboard.png" />}
+        {isSuperuser && <MenuTile title="Catálogo Puertas" description="Configurá secciones, tags, alias, visibilidad y nombres PDF del Presupuestador Puertas." buttonText="Configurar puertas" onClick={() => navigate("/dashboard/catalogo-puertas")} iconSrc="/menu-icons/puertas.png" />}
         {showPlanning && <MenuTile title="Planificación" description="Capacidad de producción por semana." buttonText="Abrir planificación" onClick={() => navigate("/planificacion")} iconSrc="/menu-icons/planificacion.png" />}
         {showFinancing && <MenuTile title="Financiamiento" description="Recargos por cuotas usados en el cotizador." buttonText="Abrir financiamiento" onClick={() => navigate("/financiamiento")} icon="💳" />}
         {showTechnicalRules && <MenuTile title="Reglas Técnicas" description="Dashboard exclusivo de superusuario para definir reglas sobre la planilla técnica y el pegado a Odoo." buttonText="Abrir reglas" onClick={() => navigate("/dashboard/reglas-tecnicas")} iconSrc="/menu-icons/reglas-tecnicas.png" />}
