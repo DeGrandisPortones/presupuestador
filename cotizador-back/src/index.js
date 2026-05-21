@@ -13,7 +13,6 @@ import morgan from "morgan";
 import { createOdooClient } from "./odoo.js";
 import { buildOdooRouter } from "./routes/odoo.routes.js";
 import { buildAuthRouter } from "./routes/auth.routes.js";
-import { buildQuotesRouter } from "./routes/quotes.routes.js";
 import { buildCatalogRouter } from "./routes/catalog.routes.js";
 import { buildAdminRouter } from "./routes/admin.routes.js";
 import { buildPdfRouter } from "./routes/pdf.routes.js";
@@ -24,6 +23,10 @@ import { buildTechnicalConsultsRouter } from "./routes/technicalConsults.routes.
 import { buildProductionPlanningRouter } from "./routes/productionPlanning.routes.js";
 import { buildQuoteViewerRouter } from "./routes/quoteViewer.routes.js";
 import { buildFinancingSettingsRouter } from "./routes/financingSettings.routes.js";
+import { applyQuotesNpApprovalSyncPatch } from "./patches/quotesNpApprovalSyncPatch.js";
+
+applyQuotesNpApprovalSyncPatch();
+const { buildQuotesRouter } = await import("./routes/quotes.routes.js");
 
 const app = express();
 
