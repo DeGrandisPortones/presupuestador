@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "node ./scripts/apply_portones_parantes_y_distancia_patch.cjs && vite build",
     "lint": "eslint .",
     "preview": "vite preview"
   },
