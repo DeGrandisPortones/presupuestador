@@ -1,7 +1,9 @@
 import { useEffect, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { adminGetTechnicalMeasurementRules } from "../../../api/admin.js";
+import { getCatalogBootstrap } from "../../../api/catalog.js";
 import { getPrices } from "../../../api/odoo";
+import { getOdooBootstrap, setOdooBootstrap } from "../../../domain/odoo/bootstrap.js";
 import { useQuoteStore } from "../../../domain/quote/store";
 
 const APTOS_PARA_REVESTIR_TYPE = "para_revestir_con_al_pvc_otros";
@@ -70,7 +72,47 @@ function removeAutoParantesLines(lines = []) {
   return (Array.isArray(lines) ? lines : []).filter((line) => !line?.auto_parantes_pricing_line);
 }
 
-function buildPlaceholderLine({ productId, qty, multiplier, existing = null }) {
+function getClientFacingProductName(product = {}) {
+  return String(
+    product?.client_display_name ||
+      product?.raw_name ||
+      product?.rawName ||
+      product?.original_name ||
+      product?.name ||
+      product?.display_name ||
+      "",
+  ).trim();
+}
+
+function getProductLabel(product = {}) {
+  return String(
+    product?.display_name ||
+      product?.alias ||
+      product?.internal_alias ||
+      getClientFacingProductName(product) ||
+      "",
+  ).trim();
+}
+
+function matchesConfiguredProduct(product, productId) {
+  const id = Number(productId || 0);
+  if (!id) return false;
+  return [
+    product?.id,
+    product?.product_id,
+    product?.odoo_id,
+    product?.odoo_external_id,
+    product?.odoo_variant_id,
+    product?.odoo_template_id,
+  ].some((value) => Number(value || 0) === id);
+}
+
+function resolveCatalogProduct(catalogData, productId) {
+  const products = Array.isArray(catalogData?.products) ? catalogData.products : [];
+  return products.find((product) => matchesConfiguredProduct(product, productId)) || null;
+}
+
+function buildPlaceholderLine({ productId, qty, multiplier, existing = null, catalogProduct = null }) {
   const previousMultiplier = Number(existing?.auto_parantes_pricing_multiplier || 1) || 1;
   const storedRaw = Number(existing?.auto_parantes_pricing_raw_price || 0) || 0;
   const inferredRaw = !storedRaw && Number(existing?.basePrice || 0) > 0
@@ -78,17 +120,19 @@ function buildPlaceholderLine({ productId, qty, multiplier, existing = null }) {
     : 0;
   const rawPrice = storedRaw || inferredRaw || 0;
   const basePrice = rawPrice > 0 ? rawPrice * multiplier : Number(existing?.basePrice || 0) || 0;
+  const catalogName = getProductLabel(catalogProduct);
+  const catalogRawName = getClientFacingProductName(catalogProduct);
 
   return {
     ...(existing || {}),
     product_id: productId,
-    odoo_external_id: Number(existing?.odoo_external_id || existing?.odoo_variant_id || productId) || productId,
-    odoo_variant_id: Number(existing?.odoo_variant_id || existing?.odoo_external_id || productId) || productId,
-    odoo_id: Number(existing?.odoo_id || 0) || 0,
-    odoo_template_id: Number(existing?.odoo_template_id || 0) || 0,
-    name: String(existing?.name || "").trim(),
-    raw_name: String(existing?.raw_name || "").trim(),
-    code: existing?.code || null,
+    odoo_external_id: Number(catalogProduct?.odoo_variant_id || catalogProduct?.odoo_external_id || existing?.odoo_external_id || existing?.odoo_variant_id || productId) || productId,
+    odoo_variant_id: Number(catalogProduct?.odoo_variant_id || catalogProduct?.odoo_external_id || existing?.odoo_variant_id || existing?.odoo_external_id || productId) || productId,
+    odoo_id: Number(catalogProduct?.odoo_id || existing?.odoo_id || 0) || 0,
+    odoo_template_id: Number(catalogProduct?.odoo_template_id || existing?.odoo_template_id || 0) || 0,
+    name: catalogName || String(existing?.name || "").trim(),
+    raw_name: catalogRawName || String(existing?.raw_name || "").trim(),
+    code: catalogProduct?.code ?? existing?.code ?? null,
     qty,
     basePrice,
     integer_qty: true,
@@ -122,6 +166,43 @@ export default function PortonParantesPricingSync() {
   const multiplier = orientation === "horizontal" ? 2 : 1;
   const shouldApply = productId > 0 && qty > 0 && isAptoParaRevestir(portonType);
 
+  const catalogQ = useQuery({
+    queryKey: ["catalog-bootstrap-parantes-pricing-sync", "porton", productId],
+    queryFn: async () => {
+      const cached = getOdooBootstrap("porton");
+      if (Array.isArray(cached?.products) && cached.products.length) return cached;
+      const data = await getCatalogBootstrap("porton");
+      setOdooBootstrap(data, "porton");
+      return data;
+    },
+    enabled: productId > 0,
+    staleTime: 60 * 1000,
+  });
+
+  const catalogProduct = useMemo(() => {
+    const fromQuery = resolveCatalogProduct(catalogQ.data, productId);
+    if (fromQuery) return fromQuery;
+    return resolveCatalogProduct(getOdooBootstrap("porton"), productId);
+  }, [catalogQ.data, productId]);
+
+  const catalogProductKey = useMemo(() => {
+    if (!catalogProduct) return "";
+    return JSON.stringify({
+      id: catalogProduct.id,
+      alias: catalogProduct.alias,
+      display_name: catalogProduct.display_name,
+      internal_alias: catalogProduct.internal_alias,
+      client_display_name: catalogProduct.client_display_name,
+      raw_name: catalogProduct.raw_name,
+      name: catalogProduct.name,
+      code: catalogProduct.code,
+      odoo_id: catalogProduct.odoo_id,
+      odoo_template_id: catalogProduct.odoo_template_id,
+      odoo_variant_id: catalogProduct.odoo_variant_id,
+      odoo_external_id: catalogProduct.odoo_external_id,
+    });
+  }, [catalogProduct]);
+
   useEffect(() => {
     useQuoteStore.setState((state) => {
       const current = Array.isArray(state.lines) ? state.lines : [];
@@ -135,10 +216,10 @@ export default function PortonParantesPricingSync() {
 
       const withoutAuto = removeAutoParantesLines(current).filter((line) => Number(line.product_id) !== productId || line?.previously_billed_line);
       const existing = autoLine || manualSameProduct || null;
-      const nextLine = buildPlaceholderLine({ productId, qty, multiplier, existing });
+      const nextLine = buildPlaceholderLine({ productId, qty, multiplier, existing, catalogProduct });
       return { lines: [...withoutAuto, nextLine] };
     });
-  }, [shouldApply, productId, qty, multiplier]);
+  }, [shouldApply, productId, qty, multiplier, catalogProductKey]);
 
   useEffect(() => {
     if (!shouldApply || !productId || !pricelistId) return undefined;
@@ -156,6 +237,8 @@ export default function PortonParantesPricingSync() {
       const rawPrice = Number(priceRow?.price || 0) || 0;
       const odooName = String(priceRow?.name || "").trim();
       const code = priceRow?.code || null;
+      const catalogName = getProductLabel(catalogProduct);
+      const catalogRawName = getClientFacingProductName(catalogProduct);
 
       useQuoteStore.setState((state) => {
         const current = Array.isArray(state.lines) ? state.lines : [];
@@ -165,9 +248,13 @@ export default function PortonParantesPricingSync() {
           changed = true;
           return {
             ...line,
-            name: odooName || line.name || `Producto ${productId}`,
-            raw_name: odooName || line.raw_name || line.name || `Producto ${productId}`,
-            code: code ?? line.code ?? null,
+            name: catalogName || line.name || odooName || `Producto ${productId}`,
+            raw_name: catalogRawName || odooName || line.raw_name || line.name || `Producto ${productId}`,
+            code: catalogProduct?.code ?? code ?? line.code ?? null,
+            odoo_external_id: Number(catalogProduct?.odoo_variant_id || catalogProduct?.odoo_external_id || line.odoo_external_id || line.odoo_variant_id || productId) || productId,
+            odoo_variant_id: Number(catalogProduct?.odoo_variant_id || catalogProduct?.odoo_external_id || line.odoo_variant_id || line.odoo_external_id || productId) || productId,
+            odoo_id: Number(catalogProduct?.odoo_id || line.odoo_id || 0) || 0,
+            odoo_template_id: Number(catalogProduct?.odoo_template_id || line.odoo_template_id || 0) || 0,
             basePrice: rawPrice * multiplier,
             auto_parantes_pricing_raw_price: rawPrice,
             auto_parantes_pricing_multiplier: multiplier,
@@ -184,7 +271,7 @@ export default function PortonParantesPricingSync() {
     return () => {
       cancelled = true;
     };
-  }, [shouldApply, productId, pricelistId, partnerId, multiplier]);
+  }, [shouldApply, productId, pricelistId, partnerId, multiplier, catalogProductKey]);
 
   useEffect(() => {
     if (!shouldApply) return;
