@@ -6,7 +6,7 @@ function MenuIcon({ children }) {
   return <div className="menu-card-icon">{children}</div>;
 }
 
-function MenuTile({ title, description, buttonText, onClick, logoSrc, logoAlt, iconSrc, icon }) {
+function MenuTile({ title, buttonText, onClick, logoSrc, logoAlt, iconSrc, icon }) {
   return (
     <div className="card menu-card">
       <div className="menu-card-media">
@@ -19,7 +19,6 @@ function MenuTile({ title, description, buttonText, onClick, logoSrc, logoAlt, i
         )}
       </div>
       <div className="menu-title">{title}</div>
-      {description ? <div className="muted menu-description">{description}</div> : null}
       <div className="spacer" />
       <Button variant="secondary" onClick={onClick}>{buttonText}</Button>
     </div>
@@ -56,8 +55,8 @@ export default function MenuPage() {
       <div className="menu-grid">
         {canQuote && (
           <MenuTile
-            title="Cotizador De Grandis Portones"
-            buttonText="Ir al cotizador"
+            title="Presupuesto De Grandis Portones"
+            buttonText="Ir al presupuesto"
             onClick={() => navigate("/cotizador")}
             logoSrc="/brands/degrandis.png"
             logoAlt="De Grandis Portones"
@@ -66,8 +65,8 @@ export default function MenuPage() {
 
         {canQuote && (
           <MenuTile
-            title="Cotizador Ipanel"
-            buttonText="Ir al cotizador"
+            title="Presupuesto Ipanel"
+            buttonText="Ir al presupuesto"
             onClick={() => navigate("/cotizador/ipanel")}
             logoSrc="/brands/ipanel.png"
             logoAlt="Ipanel"
@@ -76,9 +75,8 @@ export default function MenuPage() {
 
         {showDoors && (
           <MenuTile
-            title="Presupuestador Puertas"
-            description="Cotizador de puertas con medidas, catálogo propio y flujo de aprobación."
-            buttonText="Presupuestar puertas"
+            title="Presupuesto Puertas"
+            buttonText="Ir al presupuesto"
             onClick={() => navigate("/cotizador/puerta")}
             iconSrc="/menu-icons/puertas.png"
           />
@@ -87,8 +85,7 @@ export default function MenuPage() {
         {canQuote && (
           <MenuTile
             title="Presupuesto Otros"
-            description="Circuito de presupuestos para productos fuera de Portones, Ipanel y Puertas."
-            buttonText="Ir al cotizador"
+            buttonText="Ir al presupuesto"
             onClick={() => navigate("/cotizador/otros")}
             iconSrc="/menu-icons/otros-presupuestos.png"
           />
@@ -108,22 +105,22 @@ export default function MenuPage() {
         )}
 
         {showDashboard && <MenuTile title="Dashboard" buttonText="Abrir dashboard" onClick={() => navigate("/dashboard")} iconSrc="/menu-icons/dashboard.png" />}
-        {isSuperuser && <MenuTile title="Catálogo Puertas" description="Configurá secciones, tags, alias, visibilidad y nombres PDF del Presupuestador Puertas." buttonText="Configurar puertas" onClick={() => navigate("/dashboard/catalogo-puertas")} iconSrc="/menu-icons/puertas.png" />}
-        {showPlanning && <MenuTile title="Planificación" description="Capacidad de producción por semana." buttonText="Abrir planificación" onClick={() => navigate("/planificacion")} iconSrc="/menu-icons/planificacion.png" />}
-        {showFinancing && <MenuTile title="Financiamiento" description="Recargos por cuotas usados en el cotizador." buttonText="Abrir financiamiento" onClick={() => navigate("/financiamiento")} icon="💳" />}
-        {showTechnicalRules && <MenuTile title="Reglas Técnicas" description="Dashboard exclusivo de superusuario para definir reglas sobre la planilla técnica y el pegado a Odoo." buttonText="Abrir reglas" onClick={() => navigate("/dashboard/reglas-tecnicas")} iconSrc="/menu-icons/reglas-tecnicas.png" />}
-        {showPdfNamesAdmin && <MenuTile title="Nombres PDF productos" description="Definí el nombre exacto que querés que salga en los PDF por producto." buttonText="Abrir nombres PDF" onClick={() => navigate("/superuser/nombres-pdf")} icon="📝" />}
-        {showProductionAssignments && <MenuTile title="Asignación de propiedades a producción" description="Elegí a qué propiedad del integrador debe ir cada dato del portón." buttonText="Abrir asignación" onClick={() => navigate("/superuser/asignacion-produccion")} icon="🧩" />}
-        {showQuoteViewer && <MenuTile title="Visualizador de portones" description="Buscá por NP o NV y mirá el historial completo del portón." buttonText="Abrir visualizador" onClick={() => navigate("/superuser/visualizador-porton")} icon="🔎" />}
-        {showSellerActivity && <MenuTile title="Actividad vendedores / distribuidores" description="Elegí un usuario y mirá las acciones realizadas con sus portones." buttonText="Abrir actividad" onClick={() => navigate("/superuser/actividad-vendedores")} icon="📊" />}
+        {isSuperuser && <MenuTile title="Catálogo Puertas" buttonText="Configurar puertas" onClick={() => navigate("/dashboard/catalogo-puertas")} iconSrc="/menu-icons/puertas.png" />}
+        {showPlanning && <MenuTile title="Planificación" buttonText="Abrir planificación" onClick={() => navigate("/planificacion")} iconSrc="/menu-icons/planificacion.png" />}
+        {showFinancing && <MenuTile title="Financiamiento" buttonText="Abrir financiamiento" onClick={() => navigate("/financiamiento")} icon="💳" />}
+        {showTechnicalRules && <MenuTile title="Reglas Técnicas" buttonText="Abrir reglas" onClick={() => navigate("/dashboard/reglas-tecnicas")} iconSrc="/menu-icons/reglas-tecnicas.png" />}
+        {showPdfNamesAdmin && <MenuTile title="Nombres PDF productos" buttonText="Abrir nombres PDF" onClick={() => navigate("/superuser/nombres-pdf")} icon="📝" />}
+        {showProductionAssignments && <MenuTile title="Asignación de propiedades a producción" buttonText="Abrir asignación" onClick={() => navigate("/superuser/asignacion-produccion")} icon="🧩" />}
+        {showQuoteViewer && <MenuTile title="Visualizador de portones" buttonText="Abrir visualizador" onClick={() => navigate("/superuser/visualizador-porton")} icon="🔎" />}
+        {showSellerActivity && <MenuTile title="Actividad vendedores / distribuidores" buttonText="Abrir actividad" onClick={() => navigate("/superuser/actividad-vendedores")} icon="📊" />}
         {showUsers && <MenuTile title="Gestor de usuarios" buttonText="Abrir gestor" onClick={() => navigate("/usuarios")} iconSrc="/menu-icons/gestor-usuarios.png" />}
         {showCommercialInbox && <MenuTile title="Aprobación Comercial" buttonText="Ir a aprobación" onClick={() => navigate("/aprobacion/comercial")} iconSrc="/menu-icons/aprobacion-comercial.png" />}
 
         {showTechInbox && (
           <>
-            <MenuTile title="Aprobaciones Portones" description="Revisión técnica de presupuestos de portones." buttonText="Abrir portones" onClick={() => navigate("/aprobacion/tecnica?tab=aprobaciones_portones")} iconSrc="/menu-icons/aprobacion-portones.png" />
-            <MenuTile title="Aprobaciones Puertas" description="Revisión técnica de puertas." buttonText="Abrir puertas" onClick={() => navigate("/aprobacion/tecnica?tab=aprobaciones_puertas")} iconSrc="/menu-icons/aprobacion-puertas.png" />
-            <MenuTile title="Aprobaciones Mediciones" description="Revisión técnica de mediciones terminadas." buttonText="Abrir aprobaciones" onClick={() => navigate("/aprobacion/tecnica?tab=aprobaciones_mediciones")} iconSrc="/menu-icons/aprobacion-mediciones.png" />
+            <MenuTile title="Aprobaciones Portones" buttonText="Abrir portones" onClick={() => navigate("/aprobacion/tecnica?tab=aprobaciones_portones")} iconSrc="/menu-icons/aprobacion-portones.png" />
+            <MenuTile title="Aprobaciones Puertas" buttonText="Abrir puertas" onClick={() => navigate("/aprobacion/tecnica?tab=aprobaciones_puertas")} iconSrc="/menu-icons/aprobacion-puertas.png" />
+            <MenuTile title="Aprobaciones Mediciones" buttonText="Abrir aprobaciones" onClick={() => navigate("/aprobacion/tecnica?tab=aprobaciones_mediciones")} iconSrc="/menu-icons/aprobacion-mediciones.png" />
           </>
         )}
       </div>
