@@ -147,10 +147,13 @@ export default function AppLayout() {
           {canQuote && (
             <>
               <NavLink className={({ isActive }) => (isActive ? "navlink active" : "navlink")} to="/cotizador" end>
-                Cotizador Portones
+                Presupuesto Portones
               </NavLink>
               <NavLink className={({ isActive }) => (isActive ? "navlink active" : "navlink")} to="/cotizador/ipanel">
-                Cotizador Ipanel
+                Presupuesto Ipanel
+              </NavLink>
+              <NavLink className={({ isActive }) => (isActive ? "navlink active" : "navlink")} to="/cotizador/puerta">
+                Presupuesto Puertas
               </NavLink>
               <NavLink className={({ isActive }) => (isActive ? "navlink active" : "navlink")} to="/cotizador/otros">
                 Presupuesto Otros
