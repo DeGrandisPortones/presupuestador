@@ -27,6 +27,13 @@ export default function UsersAdminPage() {
     enabled: !!user?.is_enc_comercial,
   });
 
+  const vendorUsersQ = useQuery({
+    queryKey: ["adminUsers", "vendedores-activos-para-distribuidores"],
+    queryFn: () => adminListUsers({ role: "vendedor", active: "true" }),
+    enabled: !!user?.is_enc_comercial,
+    staleTime: 60 * 1000,
+  });
+
   const pricelistsQ = useQuery({
     queryKey: ["odooPricelistsForUsersAdmin"],
     queryFn: getPricelists,
@@ -35,6 +42,7 @@ export default function UsersAdminPage() {
   });
 
   const users = usersQ.data || [];
+  const vendorUsers = vendorUsersQ.data || [];
   const pricelists = Array.isArray(pricelistsQ.data) ? pricelistsQ.data : [];
 
   const [mode, setMode] = useState("create");
@@ -47,6 +55,7 @@ export default function UsersAdminPage() {
   const [fIsSuperuser, setFIsSuperuser] = useState(false);
   const [fOdooPartnerId, setFOdooPartnerId] = useState("");
   const [fOdooPricelistId, setFOdooPricelistId] = useState("");
+  const [fAssignedSellerUserId, setFAssignedSellerUserId] = useState("");
   const [fDefaultMapsUrl, setFDefaultMapsUrl] = useState("");
   const [fIsActive, setFIsActive] = useState(true);
 
@@ -62,6 +71,7 @@ export default function UsersAdminPage() {
     setFIsSuperuser(roleTab === "superuser");
     setFOdooPartnerId("");
     setFOdooPricelistId("");
+    setFAssignedSellerUserId("");
     setFDefaultMapsUrl("");
     setFIsActive(true);
   };
@@ -78,13 +88,15 @@ export default function UsersAdminPage() {
     setFIsSuperuser(!!u.is_superuser);
     setFOdooPartnerId(u.odoo_partner_id ? String(u.odoo_partner_id) : "");
     setFOdooPricelistId(u.odoo_pricelist_id ? String(u.odoo_pricelist_id) : "");
+    setFAssignedSellerUserId(u.assigned_seller_user_id ? String(u.assigned_seller_user_id) : "");
     setFDefaultMapsUrl(u.default_maps_url ? String(u.default_maps_url) : "");
     setFIsActive(!!u.is_active);
   };
 
   useEffect(() => {
     if (!fIsDistribuidor && fOdooPricelistId) setFOdooPricelistId("");
-  }, [fIsDistribuidor, fOdooPricelistId]);
+    if (!fIsDistribuidor && fAssignedSellerUserId) setFAssignedSellerUserId("");
+  }, [fIsDistribuidor, fOdooPricelistId, fAssignedSellerUserId]);
 
   const createM = useMutation({
     mutationFn: () =>
@@ -98,6 +110,7 @@ export default function UsersAdminPage() {
         is_superuser: fIsSuperuser,
         odoo_partner_id: fOdooPartnerId ? Number(fOdooPartnerId) : null,
         odoo_pricelist_id: fIsDistribuidor && fOdooPricelistId ? Number(fOdooPricelistId) : null,
+        assigned_seller_user_id: fIsDistribuidor && fAssignedSellerUserId ? Number(fAssignedSellerUserId) : null,
         default_maps_url: fDefaultMapsUrl ? String(fDefaultMapsUrl) : null,
         is_active: fIsActive,
       }),
@@ -120,6 +133,7 @@ export default function UsersAdminPage() {
         is_superuser: fIsSuperuser,
         odoo_partner_id: fOdooPartnerId ? Number(fOdooPartnerId) : null,
         odoo_pricelist_id: fIsDistribuidor && fOdooPricelistId ? Number(fOdooPricelistId) : null,
+        assigned_seller_user_id: fIsDistribuidor && fAssignedSellerUserId ? Number(fAssignedSellerUserId) : null,
         default_maps_url: fDefaultMapsUrl ? String(fDefaultMapsUrl) : null,
         is_active: fIsActive,
       }),
@@ -175,6 +189,14 @@ export default function UsersAdminPage() {
   function ensureDistributorPricelist() {
     if (fIsDistribuidor && !fOdooPricelistId) {
       toast.error("Elegí una lista de precios para el distribuidor");
+      return false;
+    }
+    return true;
+  }
+
+  function ensureDistributorSeller() {
+    if (fIsDistribuidor && !fAssignedSellerUserId) {
+      toast.error("Elegí un vendedor asignado para el distribuidor");
       return false;
     }
     return true;
@@ -265,6 +287,12 @@ export default function UsersAdminPage() {
                         {u.odoo_partner_id ? ` · Odoo partner: ${u.odoo_partner_id}` : ""}
                         {u.odoo_pricelist_id ? ` · Lista: ${u.odoo_pricelist_id}` : ""}
                       </div>
+                      {u.is_distribuidor ? (
+                        <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>
+                          Vendedor asignado: <b>{u.assigned_seller_full_name || u.assigned_seller_username || "Sin asignar"}</b>
+                          {u.visible_password ? ` · Password visible: ${u.visible_password}` : ""}
+                        </div>
+                      ) : null}
                       {!!roles.length && (
                         <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>
                           {roles.join(" · ")}
@@ -318,6 +346,7 @@ export default function UsersAdminPage() {
                 style={{ width: "100%" }}
                 type="password"
               />
+              {mode === "edit" && fIsDistribuidor ? <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>Si cargás una nueva contraseña, se mostrará en Mis distribuidores.</div> : null}
             </div>
 
             <div>
@@ -342,6 +371,26 @@ export default function UsersAdminPage() {
                 </select>
                 {pricelistsQ.isLoading ? <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>Cargando listas desde Odoo…</div> : null}
                 {pricelistsQ.isError ? <div style={{ color: "#d93025", fontSize: 12, marginTop: 6 }}>{pricelistsQ.error.message}</div> : null}
+              </div>
+            ) : null}
+
+            {fIsDistribuidor ? (
+              <div>
+                <div className="muted" style={{ marginBottom: 6 }}>Vendedor asignado</div>
+                <select
+                  value={fAssignedSellerUserId}
+                  onChange={(e) => setFAssignedSellerUserId(e.target.value)}
+                  style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid #ddd" }}
+                >
+                  <option value="">Seleccione vendedor…</option>
+                  {vendorUsers.map((v) => (
+                    <option key={v.id} value={v.id}>
+                      {(v.full_name || v.username)} · {v.username}
+                    </option>
+                  ))}
+                </select>
+                {vendorUsersQ.isLoading ? <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>Cargando vendedores…</div> : null}
+                {vendorUsersQ.isError ? <div style={{ color: "#d93025", fontSize: 12, marginTop: 6 }}>{vendorUsersQ.error.message}</div> : null}
               </div>
             ) : null}
 
@@ -387,6 +436,7 @@ export default function UsersAdminPage() {
                   if (!fPassword) return toast.error("Falta password");
                   if (!ensureAtLeastOneRole()) return;
                   if (!ensureDistributorPricelist()) return;
+                  if (!ensureDistributorSeller()) return;
                   createM.mutate();
                 }}
                 disabled={createM.isPending}
@@ -399,6 +449,7 @@ export default function UsersAdminPage() {
                 onClick={() => {
                   if (!ensureAtLeastOneRole()) return;
                   if (!ensureDistributorPricelist()) return;
+                  if (!ensureDistributorSeller()) return;
                   updateM.mutate();
                 }}
                 disabled={updateM.isPending}

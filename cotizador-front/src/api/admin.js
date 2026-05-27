@@ -205,4 +205,3 @@ export async function adminSaveDoorTechnicalRules(payload = {}) {
   if (!data?.ok) throw new Error(data?.error || "No se pudieron guardar las reglas tecnicas de puertas");
   return data.rules || {};
 }
-

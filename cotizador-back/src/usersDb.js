@@ -12,6 +12,9 @@ export async function ensureUsersAdminColumns() {
   await dbQuery(`alter table public.presupuestador_users add column if not exists is_logistica boolean not null default false;`);
   await dbQuery(`alter table public.presupuestador_users add column if not exists is_superuser boolean not null default false;`);
   await dbQuery(`alter table public.presupuestador_users add column if not exists odoo_pricelist_id integer null;`);
+  await dbQuery(`alter table public.presupuestador_users add column if not exists assigned_seller_user_id integer null;`);
+  await dbQuery(`alter table public.presupuestador_users add column if not exists visible_password text null;`);
+  await dbQuery(`create index if not exists presupuestador_users_assigned_seller_idx on public.presupuestador_users(assigned_seller_user_id);`);
 
   try {
     await dbQuery(`alter table public.presupuestador_users drop constraint if exists presupuestador_users_role_check;`);
@@ -59,6 +62,22 @@ function normalizePricelistId(value) {
   return Number.isFinite(n) && n > 0 ? n : null;
 }
 
+function normalizeSellerUserId(value) {
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+async function assertValidSellerUserId(sellerUserId) {
+  const sellerId = normalizeSellerUserId(sellerUserId);
+  if (!sellerId) return null;
+  const r = await dbQuery(
+    `select id from public.presupuestador_users where id=$1 and coalesce(is_vendedor,false)=true and coalesce(is_active,true)=true limit 1`,
+    [sellerId]
+  );
+  if (!r.rows?.[0]) throw new Error("El vendedor asignado no existe o no está activo");
+  return sellerId;
+}
+
 export async function listUsers({ role = "all", q = "", active = "all" } = {}) {
   await ensureUsersAdminColumns();
 
@@ -69,35 +88,40 @@ export async function listUsers({ role = "all", q = "", active = "all" } = {}) {
   const where = [];
   const params = [];
 
-  where.push("(is_vendedor = true or is_distribuidor = true or is_medidor = true or is_logistica = true or is_superuser = true)");
+  where.push("(u.is_vendedor = true or u.is_distribuidor = true or u.is_medidor = true or u.is_logistica = true or u.is_superuser = true)");
 
-  if (roleN === "vendedor") where.push("is_vendedor = true");
-  if (roleN === "distribuidor") where.push("is_distribuidor = true");
-  if (roleN === "medidor") where.push("is_medidor = true");
-  if (roleN === "logistica") where.push("is_logistica = true");
-  if (roleN === "superuser") where.push("is_superuser = true");
+  if (roleN === "vendedor") where.push("u.is_vendedor = true");
+  if (roleN === "distribuidor") where.push("u.is_distribuidor = true");
+  if (roleN === "medidor") where.push("u.is_medidor = true");
+  if (roleN === "logistica") where.push("u.is_logistica = true");
+  if (roleN === "superuser") where.push("u.is_superuser = true");
 
-  if (activeN === "true") where.push("is_active = true");
-  if (activeN === "false") where.push("is_active = false");
+  if (activeN === "true") where.push("u.is_active = true");
+  if (activeN === "false") where.push("u.is_active = false");
 
   if (query) {
     params.push(`%${query}%`);
     params.push(`%${query}%`);
-    where.push(`(username ilike $${params.length - 1} or coalesce(full_name,'') ilike $${params.length})`);
+    where.push(`(u.username ilike $${params.length - 1} or coalesce(u.full_name,'') ilike $${params.length})`);
   }
 
   const sql = `
-    select id, username, full_name,
-           is_distribuidor, is_vendedor, is_medidor, is_logistica, is_superuser,
-           is_enc_comercial, is_rev_tecnica,
-           is_active,
-           odoo_partner_id,
-           odoo_pricelist_id,
-           default_maps_url,
-           created_at, updated_at
-    from public.presupuestador_users
+    select u.id, u.username, u.full_name,
+           u.is_distribuidor, u.is_vendedor, u.is_medidor, u.is_logistica, u.is_superuser,
+           u.is_enc_comercial, u.is_rev_tecnica,
+           u.is_active,
+           u.odoo_partner_id,
+           u.odoo_pricelist_id,
+           u.default_maps_url,
+           u.assigned_seller_user_id,
+           u.visible_password,
+           s.username as assigned_seller_username,
+           s.full_name as assigned_seller_full_name,
+           u.created_at, u.updated_at
+    from public.presupuestador_users u
+    left join public.presupuestador_users s on s.id = u.assigned_seller_user_id
     ${where.length ? `where ${where.join(" and ")}` : ""}
-    order by username asc
+    order by u.username asc
     limit 500
   `;
 
@@ -117,6 +141,7 @@ export async function createUser({
   odoo_partner_id = null,
   odoo_pricelist_id = null,
   default_maps_url = null,
+  assigned_seller_user_id = null,
   is_active = true,
 } = {}) {
   await ensureUsersAdminColumns();
@@ -139,24 +164,43 @@ export async function createUser({
   const pricelistId = dist ? normalizePricelistId(odoo_pricelist_id) : null;
   if (dist && !pricelistId) throw new Error("Falta lista de precios para el distribuidor");
 
+  const sellerUserId = dist ? await assertValidSellerUserId(assigned_seller_user_id) : null;
+  if (dist && !sellerUserId) throw new Error("Falta vendedor asignado para el distribuidor");
+
   const r = await dbQuery(
     `
     insert into public.presupuestador_users
-      (username, password_hash, full_name, is_active,
+      (username, password_hash, visible_password, full_name, is_active,
        is_distribuidor, is_vendedor, is_medidor, is_logistica, is_superuser,
        is_enc_comercial, is_rev_tecnica,
-       odoo_partner_id, odoo_pricelist_id, default_maps_url)
+       odoo_partner_id, odoo_pricelist_id, default_maps_url, assigned_seller_user_id)
     values
-      ($1, crypt($2, gen_salt('bf')), $3, $4,
-       $5, $6, $7, $8, $9,
+      ($1, crypt($2, gen_salt('bf')), $3, $4, $5,
+       $6, $7, $8, $9, $10,
        false, false,
-       $10, $11, $12)
+       $11, $12, $13, $14)
     returning id, username, full_name,
               is_distribuidor, is_vendedor, is_medidor, is_logistica, is_superuser,
               is_enc_comercial, is_rev_tecnica,
-              is_active, odoo_partner_id, odoo_pricelist_id, default_maps_url, created_at, updated_at
+              is_active, odoo_partner_id, odoo_pricelist_id, default_maps_url,
+              assigned_seller_user_id, visible_password, created_at, updated_at
     `,
-    [u, p, name, !!is_active, dist, vend, med, log, sup, pid, pricelistId, (default_maps_url ? String(default_maps_url).trim() : null)]
+    [
+      u,
+      p,
+      dist ? p : null,
+      name,
+      !!is_active,
+      dist,
+      vend,
+      med,
+      log,
+      sup,
+      pid,
+      pricelistId,
+      (default_maps_url ? String(default_maps_url).trim() : null),
+      sellerUserId,
+    ]
   );
 
   return r.rows?.[0] || null;
@@ -173,6 +217,7 @@ export async function updateUser(id, {
   odoo_partner_id,
   odoo_pricelist_id,
   default_maps_url,
+  assigned_seller_user_id,
   is_active,
 } = {}) {
   await ensureUsersAdminColumns();
@@ -181,7 +226,7 @@ export async function updateUser(id, {
   if (!userId) throw new Error("id inválido");
 
   const cur = await dbQuery(
-    `select id, is_distribuidor, is_vendedor, is_medidor, is_logistica, is_superuser, is_active, full_name, odoo_partner_id, odoo_pricelist_id, default_maps_url
+    `select id, is_distribuidor, is_vendedor, is_medidor, is_logistica, is_superuser, is_active, full_name, odoo_partner_id, odoo_pricelist_id, default_maps_url, assigned_seller_user_id, visible_password
        from public.presupuestador_users where id=$1 limit 1`,
     [userId]
   );
@@ -202,9 +247,21 @@ export async function updateUser(id, {
     ? (odoo_pricelist_id !== undefined ? normalizePricelistId(odoo_pricelist_id) : normalizePricelistId(current.odoo_pricelist_id))
     : null;
   if (dist && !pricelistId) throw new Error("Falta lista de precios para el distribuidor");
-  const mapsUrl = default_maps_url !== undefined ? (default_maps_url ? String(default_maps_url).trim() : null) : (current.default_maps_url ?? null);
 
+  const sellerFieldProvided = assigned_seller_user_id !== undefined;
+  const roleFieldProvided = is_distribuidor !== undefined || is_vendedor !== undefined || is_medidor !== undefined || is_logistica !== undefined || is_superuser !== undefined;
+  const requestedSellerId = sellerFieldProvided ? normalizeSellerUserId(assigned_seller_user_id) : normalizeSellerUserId(current.assigned_seller_user_id);
+  let sellerUserId = dist ? requestedSellerId : null;
+  if (dist && (sellerFieldProvided || roleFieldProvided)) {
+    sellerUserId = await assertValidSellerUserId(requestedSellerId);
+    if (!sellerUserId) throw new Error("Falta vendedor asignado para el distribuidor");
+  } else if (dist && sellerUserId) {
+    sellerUserId = await assertValidSellerUserId(sellerUserId);
+  }
+
+  const mapsUrl = default_maps_url !== undefined ? (default_maps_url ? String(default_maps_url).trim() : null) : (current.default_maps_url ?? null);
   const pass = password !== undefined ? String(password || "") : "";
+  const visiblePassword = pass ? pass : "";
 
   const r = await dbQuery(
     `
@@ -220,14 +277,17 @@ export async function updateUser(id, {
         odoo_pricelist_id = $10,
         default_maps_url = $11,
         password_hash = case when $12::text is null or $12::text = '' then password_hash else crypt($12::text, gen_salt('bf')) end,
+        visible_password = case when $13::text is null or $13::text = '' then visible_password else $13::text end,
+        assigned_seller_user_id = $14,
         updated_at = now()
     where id = $1
     returning id, username, full_name,
               is_distribuidor, is_vendedor, is_medidor, is_logistica, is_superuser,
               is_enc_comercial, is_rev_tecnica,
-              is_active, odoo_partner_id, odoo_pricelist_id, default_maps_url, created_at, updated_at
+              is_active, odoo_partner_id, odoo_pricelist_id, default_maps_url,
+              assigned_seller_user_id, visible_password, created_at, updated_at
     `,
-    [userId, name, active, dist, vend, med, log, sup, pid, pricelistId, mapsUrl, pass]
+    [userId, name, active, dist, vend, med, log, sup, pid, pricelistId, mapsUrl, pass, visiblePassword, sellerUserId]
   );
 
   return r.rows?.[0] || null;

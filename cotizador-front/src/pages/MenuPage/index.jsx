@@ -38,6 +38,7 @@ export default function MenuPage() {
   const showUsers = !!(isSuperuser || user?.is_enc_comercial);
   const showTechInbox = !!(isSuperuser || user?.is_rev_tecnica);
   const showDoors = !!(isSuperuser || user?.is_vendedor || user?.is_distribuidor);
+  const showMyDistributors = !!(isSuperuser || (user?.is_vendedor && !user?.is_distribuidor));
   const showMediciones = !!(isSuperuser || user?.is_medidor);
   const showTechnicalRules = !!isSuperuser;
   const showQuoteViewer = !!isSuperuser;
@@ -97,6 +98,15 @@ export default function MenuPage() {
             buttonText="Ver mis presupuestos"
             onClick={() => navigate("/presupuestos")}
             iconSrc="/menu-icons/mis-presupuestos.png"
+          />
+        )}
+
+        {showMyDistributors && (
+          <MenuTile
+            title="Mis distribuidores"
+            buttonText="Ver distribuidores"
+            onClick={() => navigate("/mis-distribuidores")}
+            icon="👥"
           />
         )}
 

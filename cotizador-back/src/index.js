@@ -23,6 +23,7 @@ import { buildTechnicalConsultsRouter } from "./routes/technicalConsults.routes.
 import { buildProductionPlanningRouter } from "./routes/productionPlanning.routes.js";
 import { buildQuoteViewerRouter } from "./routes/quoteViewer.routes.js";
 import { buildFinancingSettingsRouter } from "./routes/financingSettings.routes.js";
+import { buildSellerDistributorsRouter } from "./routes/sellerDistributors.routes.js";
 import { applyQuotesNpApprovalSyncPatch } from "./patches/quotesNpApprovalSyncPatch.js";
 
 applyQuotesNpApprovalSyncPatch();
@@ -61,6 +62,7 @@ app.use("/api/catalog", buildCatalogRouter(odoo));
 app.use("/api/admin", buildAdminRouter(odoo));
 app.use("/api/quote-viewer", buildQuoteViewerRouter());
 app.use("/api/technical-consults", buildTechnicalConsultsRouter());
+app.use("/api/seller-distributors", buildSellerDistributorsRouter());
 app.use("/api/pdf", buildPdfRouter(odoo));
 app.get("/health", (_req, res) => res.json({ ok: true }));
 
