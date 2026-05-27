@@ -35,7 +35,7 @@ function PasswordCell({ value }) {
   }
   return (
     <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-      <code style={{ fontSize: 14, fontWeight: 800 }}>{password}</code>
+      <code style={{ fontSize: 14, fontWeight: 800, whiteSpace: "nowrap" }}>{password}</code>
       <Button variant="ghost" onClick={() => copyToClipboard(password, "Contraseña")}>Copiar</Button>
     </div>
   );
@@ -55,18 +55,17 @@ function PricelistCell({ distributor, pricelistById }) {
   );
 }
 
-
 function MapsCell({ distributor, value, onChange, onSave, saving }) {
   const original = String(distributor?.default_maps_url || "").trim();
   const current = String(value || "").trim();
   const changed = current !== original;
   return (
-    <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", minWidth: 260 }}>
+    <div style={{ display: "grid", gridTemplateColumns: "minmax(180px, 1fr) auto", gap: 8, alignItems: "center", width: "100%" }}>
       <input
         value={value || ""}
         onChange={(e) => onChange(e.target.value)}
         placeholder="https://maps.app.goo.gl/..."
-        style={{ flex: 1, minWidth: 220, padding: 8, borderRadius: 10, border: "1px solid #ddd" }}
+        style={{ width: "100%", minWidth: 0, padding: 8, borderRadius: 10, border: "1px solid #ddd" }}
       />
       <Button variant="secondary" disabled={saving || !changed} onClick={() => onSave(current)}>
         {saving ? "Guardando…" : "Guardar"}
@@ -95,8 +94,6 @@ export default function MyDistributorsPage() {
     staleTime: 60 * 1000,
   });
 
-
-
   const saveMapsM = useMutation({
     mutationFn: ({ id, value }) => updateMyDistributorDefaultMapsUrl(id, value),
     onSuccess: () => {
@@ -122,6 +119,7 @@ export default function MyDistributorsPage() {
     for (const d of distributors) next[d.id] = String(d?.default_maps_url || "");
     setMapsDrafts(next);
   }, [distributors]);
+
   const filteredDistributors = useMemo(() => {
     const search = normalizeSearch(searchText);
     if (!search) return distributors;
@@ -156,8 +154,23 @@ export default function MyDistributorsPage() {
     );
   }
 
+  const pageStyle = {
+    maxWidth: "none",
+    width: "calc(100vw - 48px)",
+    marginLeft: "auto",
+    marginRight: "auto",
+    paddingLeft: 0,
+    paddingRight: 0,
+  };
+
+  const tableCellStyle = {
+    verticalAlign: "top",
+    whiteSpace: "normal",
+    wordBreak: "break-word",
+  };
+
   return (
-    <div className="container">
+    <div className="container" style={pageStyle}>
       <div className="spacer" />
       <div className="card" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
         <div>
@@ -190,14 +203,23 @@ export default function MyDistributorsPage() {
       </div>
 
       <div className="spacer" />
-      <div className="card">
+      <div className="card" style={{ overflowX: "auto" }}>
         {q.isLoading ? <div className="muted">Cargando distribuidores…</div> : null}
         {q.isError ? <div style={{ color: "#d93025", fontSize: 13 }}>{q.error?.message || "No se pudieron cargar los distribuidores"}</div> : null}
         {!q.isLoading && !distributors.length ? <div className="muted">No tenés distribuidores asignados.</div> : null}
         {!q.isLoading && !!distributors.length && !filteredDistributors.length ? <div className="muted">No hay distribuidores que coincidan con la búsqueda.</div> : null}
 
         {!!filteredDistributors.length ? (
-          <table>
+          <table style={{ width: "100%", minWidth: 1260, tableLayout: "fixed" }}>
+            <colgroup>
+              <col style={{ width: "18%" }} />
+              <col style={{ width: "18%" }} />
+              <col style={{ width: "10%" }} />
+              <col style={{ width: "12%" }} />
+              <col style={{ width: "9%" }} />
+              <col style={{ width: "25%" }} />
+              <col style={{ width: "8%" }} />
+            </colgroup>
             <thead>
               <tr>
                 <th>Distribuidor</th>
@@ -214,20 +236,20 @@ export default function MyDistributorsPage() {
                 const username = String(d.username || "").trim();
                 return (
                   <tr key={d.id}>
-                    <td>
+                    <td style={tableCellStyle}>
                       <div style={{ fontWeight: 900 }}>{d.full_name || username}</div>
                       {d.full_name ? <div className="muted" style={{ fontSize: 12 }}>{username}</div> : null}
                     </td>
-                    <td>
+                    <td style={tableCellStyle}>
                       <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
                         <code style={{ fontSize: 14, fontWeight: 800 }}>{username}</code>
                         <Button variant="ghost" onClick={() => copyToClipboard(username, "Usuario")}>Copiar</Button>
                       </div>
                     </td>
-                    <td><PasswordCell value={d.visible_password} /></td>
-                    <td><PricelistCell distributor={d} pricelistById={pricelistById} /></td>
-                    <td>{d.odoo_partner_id || <span className="muted">—</span>}</td>
-                    <td>
+                    <td style={tableCellStyle}><PasswordCell value={d.visible_password} /></td>
+                    <td style={tableCellStyle}><PricelistCell distributor={d} pricelistById={pricelistById} /></td>
+                    <td style={tableCellStyle}>{d.odoo_partner_id || <span className="muted">—</span>}</td>
+                    <td style={tableCellStyle}>
                       <MapsCell
                         distributor={d}
                         value={mapsDrafts[d.id] ?? ""}
@@ -236,7 +258,7 @@ export default function MyDistributorsPage() {
                         saving={saveMapsM.isPending && String(saveMapsM.variables?.id || "") === String(d.id)}
                       />
                     </td>
-                    <td>{d.is_active ? "Activo" : "Inactivo"}</td>
+                    <td style={tableCellStyle}>{d.is_active ? "Activo" : "Inactivo"}</td>
                   </tr>
                 );
               })}
