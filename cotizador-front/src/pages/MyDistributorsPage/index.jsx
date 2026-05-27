@@ -1,9 +1,9 @@
-import { useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useEffect, useMemo, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import toast from "react-hot-toast";
 
 import Button from "../../ui/Button.jsx";
-import { listMyDistributors } from "../../api/sellerDistributors.js";
+import { listMyDistributors, updateMyDistributorDefaultMapsUrl } from "../../api/sellerDistributors.js";
 import { getPricelists } from "../../api/odoo.js";
 import { useAuthStore } from "../../domain/auth/store.js";
 
@@ -55,10 +55,32 @@ function PricelistCell({ distributor, pricelistById }) {
   );
 }
 
+
+function MapsCell({ distributor, value, onChange, onSave, saving }) {
+  const original = String(distributor?.default_maps_url || "").trim();
+  const current = String(value || "").trim();
+  const changed = current !== original;
+  return (
+    <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", minWidth: 260 }}>
+      <input
+        value={value || ""}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder="https://maps.app.goo.gl/..."
+        style={{ flex: 1, minWidth: 220, padding: 8, borderRadius: 10, border: "1px solid #ddd" }}
+      />
+      <Button variant="secondary" disabled={saving || !changed} onClick={() => onSave(current)}>
+        {saving ? "Guardando…" : "Guardar"}
+      </Button>
+    </div>
+  );
+}
+
 export default function MyDistributorsPage() {
   const user = useAuthStore((s) => s.user);
   const canAccess = !!(user?.is_superuser || (user?.is_vendedor && !user?.is_distribuidor));
   const [searchText, setSearchText] = useState("");
+  const [mapsDrafts, setMapsDrafts] = useState({});
+  const qc = useQueryClient();
 
   const q = useQuery({
     queryKey: ["myDistributors"],
@@ -73,6 +95,17 @@ export default function MyDistributorsPage() {
     staleTime: 60 * 1000,
   });
 
+
+
+  const saveMapsM = useMutation({
+    mutationFn: ({ id, value }) => updateMyDistributorDefaultMapsUrl(id, value),
+    onSuccess: () => {
+      toast.success("URL de Google Maps guardada");
+      qc.invalidateQueries({ queryKey: ["myDistributors"] });
+    },
+    onError: (e) => toast.error(e?.message || "No se pudo guardar la URL"),
+  });
+
   const pricelistById = useMemo(() => {
     const map = new Map();
     for (const item of Array.isArray(pricelistsQ.data) ? pricelistsQ.data : []) {
@@ -83,6 +116,12 @@ export default function MyDistributorsPage() {
   }, [pricelistsQ.data]);
 
   const distributors = q.data || [];
+
+  useEffect(() => {
+    const next = {};
+    for (const d of distributors) next[d.id] = String(d?.default_maps_url || "");
+    setMapsDrafts(next);
+  }, [distributors]);
   const filteredDistributors = useMemo(() => {
     const search = normalizeSearch(searchText);
     if (!search) return distributors;
@@ -95,6 +134,7 @@ export default function MyDistributorsPage() {
         d?.visible_password,
         d?.odoo_partner_id,
         d?.odoo_pricelist_id,
+        d?.default_maps_url,
         pricelistName,
         d?.assigned_seller_username,
         d?.assigned_seller_full_name,
@@ -165,6 +205,7 @@ export default function MyDistributorsPage() {
                 <th>Contraseña</th>
                 <th>Lista de precios</th>
                 <th>Partner Odoo</th>
+                <th>Maps por defecto</th>
                 <th>Estado</th>
               </tr>
             </thead>
@@ -186,6 +227,15 @@ export default function MyDistributorsPage() {
                     <td><PasswordCell value={d.visible_password} /></td>
                     <td><PricelistCell distributor={d} pricelistById={pricelistById} /></td>
                     <td>{d.odoo_partner_id || <span className="muted">—</span>}</td>
+                    <td>
+                      <MapsCell
+                        distributor={d}
+                        value={mapsDrafts[d.id] ?? ""}
+                        onChange={(value) => setMapsDrafts((prev) => ({ ...prev, [d.id]: value }))}
+                        onSave={(value) => saveMapsM.mutate({ id: d.id, value })}
+                        saving={saveMapsM.isPending && String(saveMapsM.variables?.id || "") === String(d.id)}
+                      />
+                    </td>
                     <td>{d.is_active ? "Activo" : "Inactivo"}</td>
                   </tr>
                 );

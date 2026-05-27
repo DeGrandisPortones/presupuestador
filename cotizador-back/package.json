@@ -6,7 +6,8 @@
   "main": "src/index.js",
   "scripts": {
     "dev": "nodemon src/index.js",
-    "start": "node src/index.js"
+    "start": "node src/index.js",
+    "import:distribuidores": "node scripts/import_distribuidores_desde_listado_clientes.mjs"
   },
   "dependencies": {
     "axios": "^1.13.3",

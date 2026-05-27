@@ -1,0 +1,321 @@
+row,name,username,source_username,price_list_label,odoo_pricelist_id,seller_name,seller_user_id,seller_full_name_exact,password
+2,ABERTURAS ALUMIX S.A. NOOO,ABERTURAS ALUMIX S.A. NOOO,,3,24,Flavio Pelagagge,23,Flavio Pelagagge,123456
+3,ABERTURAS BARENGO SRL,barengo@gmail.com,barengo@gmail.com,6,27,Natalia Tabbia,18,Natalia Tabbia,123456
+4,ABERTURAS ALUMIX,ABERTURAS ALUMIX,,6,27,Flavio Pelagagge,23,Flavio Pelagagge,123456
+5,ABERTURAS GUILLERMO MARTIN SAS,aberturasmartinsrl@gmail.com,aberturasmartinsrl@gmail.com,3,24,Agustin,22,Agustin DeGrandis,123456
+6,ABERTURAS PH,mayco_67@hotmail.com,mayco_67@hotmail.com,6,27,Flavio Pelagagge,23,Flavio Pelagagge,123456
+7,ABert,aberturasalfa@hotmail.com,aberturasalfa@hotmail.com,3,24,Agustin,22,Agustin DeGrandis,123456
+8,ALUMINIOS BARRIOS,aluminiosbarrios@hotmail.com,aluminiosbarrios@hotmail.com,6,27,Natalia Tabbia,18,Natalia Tabbia,123456
+9,ALUSUR,ALUSUR,,3,24,Marcelo,21,Marcelo Koncija,123456
+10,AR & ASOCIADOS SRL,ventas@araberturas.net,ventas@araberturas.net,6,27,Flavio Pelagagge,23,Flavio Pelagagge,123456
+11,BERTONE ALUMINIO,BERTONE ALUMINIO,,3,24,Flavio Pelagagge,23,Flavio Pelagagge,123456
+12,CASA DEL BEL,CASA DEL BEL,,3,24,Flavio Pelagagge,23,Flavio Pelagagge,123456
+13,CERBAL,cerbalprone@hotmail.com,cerbalprone@hotmail.com,6,27,Flavio Pelagagge,23,Flavio Pelagagge,123456
+14,ABERTURAS ALFA,aberturasalfa@hotmail.com__aberturas_alfa,aberturasalfa@hotmail.com,3,24,Flavio Pelagagge,23,Flavio Pelagagge,123456
+15,DE GRANDIS PABLO,DE GRANDIS PABLO,,3,24,Marcelo,21,Marcelo Koncija,123456
+16,ECOALUM,ventas@ecoalum.com,ventas@ecoalum.com,3,24,Flavio Pelagagge,23,Flavio Pelagagge,123456
+17,ESPACIO CONCRETTO SAS,compras@concretto.com.ar,compras@concretto.com.ar,3,24,Agustin,22,Agustin DeGrandis,123456
+18,FRANCO ABERTURAS,ventasfrancoaberturas@hotmail.com,ventasfrancoaberturas@hotmail.com,3,24,Natalia Tabbia,18,Natalia Tabbia,123456
+19,GRIVEL ABERTURAS,grivelaberturas@riotel.com.ar,grivelaberturas@riotel.com.ar,6,27,Agustin,22,Agustin DeGrandis,123456
+20,GRUPO SHUTO,shutopvl@gmail.com,shutopvl@gmail.com,3,24,Natalia Tabbia,18,Natalia Tabbia,123456
+21,INDALMAD SA,ventas@indalmadsa.com.ar,ventas@indalmadsa.com.ar,3,24,Marcelo,21,Marcelo Koncija,123456
+22,INTERALUMINA SA,compras@interalumina.com.ar,compras@interalumina.com.ar,3,24,Agustin,22,Agustin DeGrandis,123456
+23,La Banderola,labanderola@gmail.com,labanderola@gmail.com,3,24,Daniel Pinto,24,Daniel Pinto,123456
+24,MODI ABERTURAS,modividrios_aluminio@hotmail.com,modividrios_aluminio@hotmail.com,3,24,Flavio Pelagagge,23,Flavio Pelagagge,123456
+25,PEÑA ABERTURAS S.A.,administracion@peniaaberturas.com.a,administracion@peniaaberturas.com.a,3,24,Daniel Pinto,24,Daniel Pinto,123456
+26,PERETTI ERNESTO,ernestoperettizing@gmail.com,ernestoperettizing@gmail.com,6,27,Flavio Pelagagge,23,Flavio Pelagagge,123456
+27,QCero,info@qcero.com.ar,info@qcero.com.ar,3,24,Ornella Petetta,17,Ornella Petetta,123456
+28,RDG ABERTURAS,rdgaberturas@gmail.com,rdgaberturas@gmail.com,3,24,Marcelo,21,Marcelo Koncija,123456
+29,RINDER ABERTURAS,administracion@rinderaberturas.com.,administracion@rinderaberturas.com.,3,24,Daniel Pinto,24,Daniel Pinto,123456
+30,SAMPA ABERTURAS,sampaaberturas@hotmail.com,sampaaberturas@hotmail.com,3,24,Marcelo,21,Marcelo Koncija,123456
+31,Urbantek SA,Urbantek SA,,3,24,Natalia Tabbia,18,Natalia Tabbia,123456
+32,ZUPPA HERMANOS,zuppahermanos@gmail.com,zuppahermanos@gmail.com,3,24,Agustin,22,Agustin DeGrandis,123456
+33,Ballaben Claudia Rosana,germanely@gmail.com,germanely@gmail.com,3,24,Ludmila Crotto,20,Ludmila Crotto,123456
+34,EXPO LEGNO SRL,EXPO LEGNO SRL,,6,27,Ornella Petetta,17,Ornella Petetta,123456
+35,LH ABERTURAS,LH ABERTURAS,,3,24,Ludmila Crotto,20,Ludmila Crotto,123456
+36,CONSTRUVIAL,CONSTRUVIAL,,3,24,Ludmila Crotto,20,Ludmila Crotto,123456
+37,TU DISEÑO,abertura_aluminio@outlook.com,abertura_aluminio@outlook.com,3,24,Ludmila Crotto,20,Ludmila Crotto,123456
+38,CONSTRUCTORA CAPMAN SRL,admconstructoracapman@gmail.com,admconstructoracapman@gmail.com,3,24,Ludmila Crotto,20,Ludmila Crotto,123456
+39,Abeturas Maipu S.R.L.,aberturasmaipusrl@gmail.com,aberturasmaipusrl@gmail.com,3,24,Flavio Pelagagge,23,Flavio Pelagagge,123456
+40,IVANA DEL ROSARIO GARINO Y NICOLAS ATILI,IVANA DEL ROSARIO GARINO Y NICOLAS ATILI,,3,24,Ludmila Crotto,20,Ludmila Crotto,123456
+41,LENARDON DANILO DAVID JESUS,LENARDON DANILO DAVID JESUS,,3,24,Flavio Pelagagge,23,Flavio Pelagagge,123456
+42,METALURGICA SOLMET,METALURGICA SOLMET,,3,24,Ludmila Crotto,20,Ludmila Crotto,123456
+43,MANCINELLI HNOS SAS,MANCINELLI HNOS SAS,,6,27,Flavio Pelagagge,23,Flavio Pelagagge,123456
+44,ABERTURAS PYP,Pablogsosa22@gmail.com,Pablogsosa22@gmail.com,3,24,Ludmila Crotto,20,Ludmila Crotto,123456
+45,Alumay srl,Info@jpaberturas.com.ar,Info@jpaberturas.com.ar,3,24,Flavio Pelagagge,23,Flavio Pelagagge,123456
+46,HENZE HORACIO JUAN,HENZE HORACIO JUAN,,3,24,Flavio Pelagagge,23,Flavio Pelagagge,123456
+47,Gonzalez Ivo Catriel,Gonzalez Ivo Catriel,,3,24,Marcelo,21,Marcelo Koncija,123456
+48,AFG ABERTURAS,afgaberturass@hotmail.com,afgaberturass@hotmail.com,3,24,Flavio Pelagagge,23,Flavio Pelagagge,123456
+49,Mariano Javier Arias,Closyvale@hotmail.com,Closyvale@hotmail.com,3,24,Ludmila Crotto,20,Ludmila Crotto,123456
+50,ABERTURAS BONATTI,ABERTURAS BONATTI,,3,24,Natalia Tabbia,18,Natalia Tabbia,123456
+51,TUTTE SAS,Zettadesarrollos@hotmail.com,Zettadesarrollos@hotmail.com,3,24,Ludmila Crotto,20,Ludmila Crotto,123456
+52,FERROCONS SA,pintoaberturas@hotmail.com,pintoaberturas@hotmail.com,3,24,Daniel Pinto,24,Daniel Pinto,123456
+53,AFG ABERTURAS,afgaberturass@hotmail.com__afg_aberturas,afgaberturass@hotmail.com,3,24,Natalia Tabbia,18,Natalia Tabbia,123456
+54,ALUMARC,admin@aberturasalumarc.com,admin@aberturasalumarc.com,6,27,Flavio Pelagagge,23,Flavio Pelagagge,123456
+55,HD ABERTURAS,ventas@hdaberturas.com,ventas@hdaberturas.com,3,24,Flavio Pelagagge,23,Flavio Pelagagge,123456
+56,BCH INGENIERIA SRL,ventasalucorsrl@gmail.com,ventasalucorsrl@gmail.com,3,24,Marcelo,21,Marcelo Koncija,123456
+57,Aberturas San Francisco,joseluisdaga2614@gmail.com,joseluisdaga2614@gmail.com,3,24,Natalia Tabbia,18,Natalia Tabbia,123456
+58,Megatek,rodrigobesso@hotmail.com,rodrigobesso@hotmail.com,3,24,Flavio Pelagagge,23,Flavio Pelagagge,123456
+59,ABERTURAS EL CEDRO,aberturaselcedro.merlo@gmail.com,aberturaselcedro.merlo@gmail.com,3,24,Natalia Tabbia,18,Natalia Tabbia,123456
+60,TREXUS ABERTURAS,TREXUS ABERTURAS,,3,24,Natalia Tabbia,18,Natalia Tabbia,123456
+61,CERRAMIENTOS MEYER,info@cerramientosmeyer.com.ar,info@cerramientosmeyer.com.ar,3,24,Natalia Tabbia,18,Natalia Tabbia,123456
+62,YPPOLITO ABERTURAS,yppolito@gmail.com,yppolito@gmail.com,3,24,Flavio Pelagagge,23,Flavio Pelagagge,123456
+63,TREVISI MARCELO,aberturasmelincue@yahoo.com,aberturasmelincue@yahoo.com,3,24,Flavio Pelagagge,23,Flavio Pelagagge,123456
+64,ANSELMI HNOS,ANSELMI HNOS,,3,24,Natalia Tabbia,18,Natalia Tabbia,123456
+65,ALUCAR,ALUCAR,,3,24,Natalia Tabbia,18,Natalia Tabbia,123456
+66,RJ OPENING,RJ OPENING,,3,24,Flavio Pelagagge,23,Flavio Pelagagge,123456
+67,Sandro Orona,sandroorona.obra@gmail.com,sandroorona.obra@gmail.com,3,24,Agustin,22,Agustin DeGrandis,123456
+68,GARCIA ELECTRODOMESTICOS,garciaelectrodomesticos@hotmail.com,garciaelectrodomesticos@hotmail.com,6,27,Flavio Pelagagge,23,Flavio Pelagagge,123456
+69,NSA PUERTAS Y VENTANAS,NSA PUERTAS Y VENTANAS,,6,27,Flavio Pelagagge,23,Flavio Pelagagge,123456
+70,AZ ABERTURAS,AZ ABERTURAS,,6,27,Flavio Pelagagge,23,Flavio Pelagagge,123456
+71,Industria Cordobesa SRL,bercarrara@hotmail.com,bercarrara@hotmail.com,3,24,Daniel Pinto,24,Daniel Pinto,123456
+72,RASGER NICHEA DAVID LEON,inoglassr4@gmail.com,inoglassr4@gmail.com,3,24,Flavio Pelagagge,23,Flavio Pelagagge,123456
+73,EL ALUBION,EL ALUBION,,3,24,Natalia Tabbia,18,Natalia Tabbia,123456
+74,ByB ABERTURAS,ByB ABERTURAS,,6,27,Flavio Pelagagge,23,Flavio Pelagagge,123456
+75,MEGATRON,MEGATRON,,3,24,Flavio Pelagagge,23,Flavio Pelagagge,123456
+76,Ribodino y Sacilotto,carpinteria-rys@hotmail.com,carpinteria-rys@hotmail.com,3,24,Natalia Tabbia,18,Natalia Tabbia,123456
+77,YOCCO ABERTURAS,YOCCO ABERTURAS,,3,24,Ludmila Crotto,20,Ludmila Crotto,123456
+78,L&D ABERTURAS DE ALUMINIO,L&D ABERTURAS DE ALUMINIO,,3,24,Flavio Pelagagge,23,Flavio Pelagagge,123456
+79,EQUIPAR,EQUIPAR,,3,24,Flavio Pelagagge,23,Flavio Pelagagge,123456
+80,CONTRERAS DIEGO IVAN,CONTRERAS DIEGO IVAN,,3,24,Daniel Pinto,24,Daniel Pinto,123456
+81,FONSA ABERTURAS,FONSA ABERTURAS,,3,24,Marcelo,21,Marcelo Koncija,123456
+82,EL IRANI ABERTURAS,EL IRANI ABERTURAS,,3,24,Marcelo,21,Marcelo Koncija,123456
+83,NSA,NSA,,6,27,Flavio Pelagagge,23,Flavio Pelagagge,123456
+84,ABERTURAS GARBARINO E HIJOS,ABERTURAS GARBARINO E HIJOS,,3,24,Flavio Pelagagge,23,Flavio Pelagagge,123456
+85,MARTINATTO Y TRIPPEL SH,MARTINATTO Y TRIPPEL SH,,3,24,Natalia Tabbia,18,Natalia Tabbia,123456
+86,FEBA ABERTURAS,info@febaaberturas.com,info@febaaberturas.com,3,24,Marcelo,21,Marcelo Koncija,123456
+87,JEVA ABERTURAS DE ALUMINIO,jevaberturasdealuminio@hotmail.com,jevaberturasdealuminio@hotmail.com,3,24,Flavio Pelagagge,23,Flavio Pelagagge,123456
+88,ECOWIN,icodo@ecowin.com.ar,icodo@ecowin.com.ar,3,24,Marcelo,21,Marcelo Koncija,123456
+89,HERRAJES CAMBAR,cambarherrajes@coop5.com.ar,cambarherrajes@coop5.com.ar,6,27,Flavio Pelagagge,23,Flavio Pelagagge,123456
+90,ABERTURAS GUTIERREZ,gutierrezaberturas@gmail.com,gutierrezaberturas@gmail.com,6,27,Flavio Pelagagge,23,Flavio Pelagagge,123456
+91,LOGAR ALUMINIO,logaraluminio@gmail.com,logaraluminio@gmail.com,6,27,Flavio Pelagagge,23,Flavio Pelagagge,123456
+92,ALUCOM,ALUCOM,,3,24,Daniel Pinto,24,Daniel Pinto,123456
+93,OSCAR TAURINO,OSCAR TAURINO,,3,24,Marcelo,21,Marcelo Koncija,123456
+94,OSCAR ANDRES MOLINA,OSCAR ANDRES MOLINA,,3,24,Flavio Pelagagge,23,Flavio Pelagagge,123456
+95,ALUVE ALUMINIOS SRL,aluveaberturas@gmail.com,aluveaberturas@gmail.com,6,27,Flavio Pelagagge,23,Flavio Pelagagge,123456
+96,LINEAL SA,LINEAL SA,,3,24,Marcelo,21,Marcelo Koncija,123456
+97,GABRIEL CEBALLOS,leandromaiataty@gmail.com,leandromaiataty@gmail.com,3,24,Marcelo,21,Marcelo Koncija,123456
+98,CASANOVES FABIAN,fcasanovesr2@gmail.com,fcasanovesr2@gmail.com,3,24,Natalia Tabbia,18,Natalia Tabbia,123456
+99,HEREDIA&MARTOS SAS,herediacristian312@gmail.com,herediacristian312@gmail.com,3,24,Natalia Tabbia,18,Natalia Tabbia,123456
+100,CRISTALES MONETTI SRL,francomonetti73@gmail.com,francomonetti73@gmail.com,3,24,Flavio Pelagagge,23,Flavio Pelagagge,123456
+101,ACTIS ALUMINIO,ACTIS ALUMINIO,,3,24,Marcelo,21,Marcelo Koncija,123456
+102,OMAR GALLEGOS,gallegos_omar67@hotmail.com,gallegos_omar67@hotmail.com,3,24,Flavio Pelagagge,23,Flavio Pelagagge,123456
+103,ABERTURAS IMPERIO,aberturas.imperio@hotmail.com,aberturas.imperio@hotmail.com,2,23,Flavio Pelagagge,23,Flavio Pelagagge,123456
+104,ABERTURAS MAIPU SRL,administracion@aberturasmaipu.com.a,administracion@aberturasmaipu.com.a,2,23,Flavio Pelagagge,23,Flavio Pelagagge,123456
+105,ABERTURAS PAMPEANAS S.A,comprasaberturaspampeanas@gmail.com,comprasaberturaspampeanas@gmail.com,3,24,Ludmila Crotto,20,Ludmila Crotto,123456
+106,ADA ABERTURAS,Matíaskretek@hotmail.com,Matíaskretek@hotmail.com,2,23,Flavio Pelagagge,23,Flavio Pelagagge,123456
+107,ALUMED,ALUMED,,2,23,Marcelo,21,Marcelo Koncija,123456
+108,ALUMET,alumet@outlook.com,alumet@outlook.com,2,23,Ludmila Crotto,20,Ludmila Crotto,123456
+109,Bio Aberturas,Bio Aberturas,,2,23,Marcelo,21,Marcelo Koncija,123456
+110,Carlos More,Carlos More,,2,23,Flavio Pelagagge,23,Flavio Pelagagge,123456
+111,CENTRO INTEGRAL DEL HERRAJE,herraplac@gmail.com,herraplac@gmail.com,2,23,Marcelo,21,Marcelo Koncija,123456
+112,EL HERRERO ABERTURAS,elherrero_aberturas@hotmail.com,elherrero_aberturas@hotmail.com,2,23,Ornella Petetta,17,Ornella Petetta,123456
+113,ESTRUCTURALES RANQUEL,alejandromartinez@estranquel.com.ar,alejandromartinez@estranquel.com.ar,2,23,Ornella Petetta,17,Ornella Petetta,123456
+114,EURO ALUMINIO,EURO ALUMINIO,,2,23,Marcelo,21,Marcelo Koncija,123456
+115,GABO,gabo.aluminios@gmail.com,gabo.aluminios@gmail.com,2,23,Natalia Tabbia,18,Natalia Tabbia,123456
+116,GARCIA ALUMINIOS,GARCIA ALUMINIOS,,2,23,Flavio Pelagagge,23,Flavio Pelagagge,123456
+117,HANS ABERTURAS,ventas@hansaberturas.com,ventas@hansaberturas.com,2,23,Ornella Petetta,17,Ornella Petetta,123456
+118,INDALPRO,INDALPRO,,2,23,Marcelo,21,Marcelo Koncija,123456
+119,INDOORS SRL,indoorsaberturas@gmail.com,indoorsaberturas@gmail.com,3,24,Flavio Pelagagge,23,Flavio Pelagagge,123456
+120,INDUAL,indualaluminios@hotmail.com.ar,indualaluminios@hotmail.com.ar,2,23,Flavio Pelagagge,23,Flavio Pelagagge,123456
+121,Javier Treccioli,saveitrek@gmail.com,saveitrek@gmail.com,2,23,Flavio Pelagagge,23,Flavio Pelagagge,123456
+122,Jose Zarate,grattonjc@hotmail.com,grattonjc@hotmail.com,2,23,Ornella Petetta,17,Ornella Petetta,123456
+123,JUAN CARLOS GRATON,grattonjc@hotmail.com__juan_carlos_graton,grattonjc@hotmail.com,2,23,Ornella Petetta,17,Ornella Petetta,123456
+124,JUNOT HOGAR,junot_aberturas@hotmail.com,junot_aberturas@hotmail.com,2,23,Flavio Pelagagge,23,Flavio Pelagagge,123456
+125,WINNER S.R.L.,laidealaberturas@gmail.com,laidealaberturas@gmail.com,2,23,Flavio Pelagagge,23,Flavio Pelagagge,123456
+126,LOPEZ ALUMINIOS,claudiaschiodi@gmail.com,claudiaschiodi@gmail.com,2,23,Marcelo,21,Marcelo Koncija,123456
+127,MARCOLETA LUIS,oestemar@gmail.com,oestemar@gmail.com,2,23,Marcelo,21,Marcelo Koncija,123456
+128,MEGA ABERTURAS,megaaberturas@gmail.com,megaaberturas@gmail.com,2,23,Marcelo,21,Marcelo Koncija,123456
+129,MERCALUM,mercalumsrl@hotmail.com,mercalumsrl@hotmail.com,2,23,Ludmila Crotto,20,Ludmila Crotto,123456
+130,Miguel GutiTrrez,grattonjc@hotmail.com__miguel_gutitrrez,grattonjc@hotmail.com,2,23,Marcelo,21,Marcelo Koncija,123456
+131,MODAL ABERTURAS,modalaluminios@gmail.com,modalaluminios@gmail.com,2,23,Marcelo,21,Marcelo Koncija,123456
+132,OPENDOOR S.A.S.,OPENDOOR S.A.S.,,2,23,Marcelo,21,Marcelo Koncija,123456
+133,Oscar Lescano,nangar07@hotmail.com,nangar07@hotmail.com,2,23,Flavio Pelagagge,23,Flavio Pelagagge,123456
+134,PABLO DONAT,PABLO DONAT,,2,23,Agustin,22,Agustin DeGrandis,123456
+135,Pablo Zan,Pablo Zan,,2,23,Agustin,22,Agustin DeGrandis,123456
+136,PLACK SYSTEM (LONDERO),placsystem2018@gmail.com,placsystem2018@gmail.com,2,23,Agustin,22,Agustin DeGrandis,123456
+137,Qs Open - Qs OPEN SRL,info@qsopen.com.ar,info@qsopen.com.ar,2,23,Flavio Pelagagge,23,Flavio Pelagagge,123456
+138,ROSSAROLI EMMANUEL,grattonjc@hotmail.com__rossaroli_emmanuel,grattonjc@hotmail.com,2,23,Ludmila Crotto,20,Ludmila Crotto,123456
+139,SALVATORI ALUMINIOS,mariano_ale_sv@hotmail.com,mariano_ale_sv@hotmail.com,2,23,Ludmila Crotto,20,Ludmila Crotto,123456
+140,SELEC ABERTURAS,selec.aberturas@gmail.com,selec.aberturas@gmail.com,2,23,Marcelo,21,Marcelo Koncija,123456
+141,WINDOOR,ezequielmarinograsso@gmail.com,ezequielmarinograsso@gmail.com,2,23,Natalia Tabbia,18,Natalia Tabbia,123456
+142,ZZ aberturas,ZZ aberturas,,2,23,Ludmila Crotto,20,Ludmila Crotto,123456
+143,FEDERICO MAGNI,federico_magni@hotmail.com,federico_magni@hotmail.com,2,23,Natalia Tabbia,18,Natalia Tabbia,123456
+144,VDV SA,ventasvdv@gmail.com,ventasvdv@gmail.com,2,23,Natalia Tabbia,18,Natalia Tabbia,123456
+145,INZPIRA SA,JPAEZ@INZPIRA.COM.AR,JPAEZ@INZPIRA.COM.AR,2,23,Natalia Tabbia,18,Natalia Tabbia,123456
+146,CASA BETO,casabeto@hotmail.com,casabeto@hotmail.com,2,23,Marcelo,21,Marcelo Koncija,123456
+147,MM VIDRIERIA Y ABERTURAS,mmvidrieriaaberturas@outlook.com,mmvidrieriaaberturas@outlook.com,2,23,Marcelo,21,Marcelo Koncija,123456
+148,ORELLANO ABERTURAS,ORELLANO ABERTURAS,,2,23,Marcelo,21,Marcelo Koncija,123456
+149,NK ABERTURAS,nkaberturas@gmail.com,nkaberturas@gmail.com,2,23,Marcelo,21,Marcelo Koncija,123456
+150,FUND VISION,emprenderlapampa@hotmail.com,emprenderlapampa@hotmail.com,2,23,Marcelo,21,Marcelo Koncija,123456
+151,MARIO JAVIER LAFFARGUE,locolaffargue@gmail.com,locolaffargue@gmail.com,2,23,Ludmila Crotto,20,Ludmila Crotto,123456
+152,BENEFICIAL GERMS SA,BENEFICIAL GERMS SA,,2,23,Ornella Petetta,17,Ornella Petetta,123456
+153,COASI SRL,gonnicolasi@hotmail.com,gonnicolasi@hotmail.com,2,23,Ludmila Crotto,20,Ludmila Crotto,123456
+154,ABERTURAS DEL OESTE,rosario@aberturadeloeste.com,rosario@aberturadeloeste.com,2,23,Ludmila Crotto,20,Ludmila Crotto,123456
+155,AJ ABERTURAS,ajaberturas@yahoo.com.ar,ajaberturas@yahoo.com.ar,2,23,Marcelo,21,Marcelo Koncija,123456
+156,SUAREZ ALUMINIO SRL,SUAREZ.ALUMINIO@GMAIL.COM,SUAREZ.ALUMINIO@GMAIL.COM,2,23,Natalia Tabbia,18,Natalia Tabbia,123456
+157,Plasticos Bahia SS,Plásticosbahia@gmail.com,Plásticosbahia@gmail.com,2,23,Ludmila Crotto,20,Ludmila Crotto,123456
+158,CALUM Aluminio,josemartin.sastre@gmail.com,josemartin.sastre@gmail.com,2,23,Marcelo,21,Marcelo Koncija,123456
+159,METALURGICA DEL NORTE,ariveros80@gmail.com,ariveros80@gmail.com,2,23,Marcelo,21,Marcelo Koncija,123456
+160,Dante Omar Ferrero,ferralum@yahoo.com.ar,ferralum@yahoo.com.ar,2,23,Natalia Tabbia,18,Natalia Tabbia,123456
+161,SANTOS LUIS PAULINO,santos57luis@gmail.com,santos57luis@gmail.com,2,23,Ornella Petetta,17,Ornella Petetta,123456
+162,ABERTURAS MUÑIZ SRL,munizsrl@hotmail.com,munizsrl@hotmail.com,2,23,Marcelo,21,Marcelo Koncija,123456
+163,Oriana Gutiérrez,Grzgerencia@gmail.com,Grzgerencia@gmail.com,2,23,Marcelo,21,Marcelo Koncija,123456
+164,FAM ABERTURAS SRL,famaberturas@hotmail.com,famaberturas@hotmail.com,2,23,Natalia Tabbia,18,Natalia Tabbia,123456
+165,Makxhaus SAS,makxhaus.aberturas@gmail.com,makxhaus.aberturas@gmail.com,2,23,Marcelo,21,Marcelo Koncija,123456
+166,Bluo Aberturas,carlaehaag87@gmail.com,carlaehaag87@gmail.com,2,23,Marcelo,21,Marcelo Koncija,123456
+167,ALUMIA SRL,alumiasrl@gmail.com,alumiasrl@gmail.com,2,23,Marcelo,21,Marcelo Koncija,123456
+168,ALBA ABERTURAS,ALBA ABERTURAS,,2,23,Agustin,22,Agustin DeGrandis,123456
+169,Kayfort SRL,Diego79lasfille@gmail.com,Diego79lasfille@gmail.com,2,23,Natalia Tabbia,18,Natalia Tabbia,123456
+170,ENGINEERING WORKS AND SERVICE SA,lorenzatoaberturas@fibertel.com.ar,lorenzatoaberturas@fibertel.com.ar,2,23,Natalia Tabbia,18,Natalia Tabbia,123456
+171,DIVANNI ALUMINIO,administracion@divanni.com.ar,administracion@divanni.com.ar,2,23,Ludmila Crotto,20,Ludmila Crotto,123456
+172,LEDESMA JUAN DANIEL,aluled.mza@gmail.com,aluled.mza@gmail.com,2,23,Natalia Tabbia,18,Natalia Tabbia,123456
+173,Godoy Gastón,Gastongodoy031@.com,Gastongodoy031@.com,2,23,Ludmila Crotto,20,Ludmila Crotto,123456
+174,Tecno Access,Tecno Access,,2,23,Natalia Tabbia,18,Natalia Tabbia,123456
+175,Grupo Teknal SRL,pfacetti@teknal.casa,pfacetti@teknal.casa,2,23,Ludmila Crotto,20,Ludmila Crotto,123456
+176,Doble Vidriado del Sur SAS,doblevidriadodelsur@hotmail.com,doblevidriadodelsur@hotmail.com,2,23,Natalia Tabbia,18,Natalia Tabbia,123456
+177,Hefesto Aberturas,hefestoaberturas@gmail.com,hefestoaberturas@gmail.com,2,23,Ludmila Crotto,20,Ludmila Crotto,123456
+178,Nuevo Niteroi S.A.,aberturasaconcagua@gmail.com,aberturasaconcagua@gmail.com,2,23,Ludmila Crotto,20,Ludmila Crotto,123456
+179,TRICAN S.A,info@kaiseraberturas.com.ar,info@kaiseraberturas.com.ar,2,23,Ludmila Crotto,20,Ludmila Crotto,123456
+180,Fortunato Jesús Quiroga,flaviogquiroga@gmail.com,flaviogquiroga@gmail.com,2,23,Ludmila Crotto,20,Ludmila Crotto,123456
+181,JULIO MATALONI,alumimat@hotmail.com,alumimat@hotmail.com,2,23,Natalia Tabbia,18,Natalia Tabbia,123456
+182,Aberturas La Para,Aberturas La Para,,2,23,Flavio Pelagagge,23,Flavio Pelagagge,123456
+183,Ortiz Matías Rodrigo,info@unitecaberturas.com.ar,info@unitecaberturas.com.ar,2,23,Natalia Tabbia,18,Natalia Tabbia,123456
+184,Vanessa Carradore,vanecarradore@gmail.com,vanecarradore@gmail.com,2,23,Ludmila Crotto,20,Ludmila Crotto,123456
+185,CARRICABURU DANILO JAVIER,ventas@kiboaluminio.com.ar,ventas@kiboaluminio.com.ar,2,23,Ludmila Crotto,20,Ludmila Crotto,123456
+186,Epulef Lucas Gaston,Epulefgaston9@gmail.com,Epulefgaston9@gmail.com,2,23,Natalia Tabbia,18,Natalia Tabbia,123456
+187,DOMO ARGENTINA SRL,sebastian.etchart@gmail.com,sebastian.etchart@gmail.com,2,23,Ludmila Crotto,20,Ludmila Crotto,123456
+188,N Y C SRL,casalaberturas22@gmail.com,casalaberturas22@gmail.com,2,23,Ludmila Crotto,20,Ludmila Crotto,123456
+189,INSAURRALDE BRUNO,insaurraldebrunoomar@gmail.com,insaurraldebrunoomar@gmail.com,2,23,Flavio Pelagagge,23,Flavio Pelagagge,123456
+190,Diaz Meiners S.R.L,info@diazmeiners.com,info@diazmeiners.com,2,23,Natalia Tabbia,18,Natalia Tabbia,123456
+191,Corralon Agrojuries,Agrojuries@hotmail.com,Agrojuries@hotmail.com,2,23,Ludmila Crotto,20,Ludmila Crotto,123456
+192,Nqn portones automaticos,nqnportonesautomaticos@gmail.com,nqnportonesautomaticos@gmail.com,2,23,Natalia Tabbia,18,Natalia Tabbia,123456
+193,Matias Moron,Innovaraberturas@hotmail.com,Innovaraberturas@hotmail.com,2,23,Natalia Tabbia,18,Natalia Tabbia,123456
+194,FRATELLO,Fratelloportonesyaberturas@gmail.co,Fratelloportonesyaberturas@gmail.co,3,24,Flavio Pelagagge,23,Flavio Pelagagge,123456
+195,Brian Aron Wiedemann,brianwiedemann01@gmail.com,brianwiedemann01@gmail.com,2,23,Natalia Tabbia,18,Natalia Tabbia,123456
+196,Jose Luis Medrano,alumedaberturas@hotmail.com,alumedaberturas@hotmail.com,2,23,Ludmila Crotto,20,Ludmila Crotto,123456
+197,Crema Nestor Fernando,Aberturascrema@aberturascrema.com.a,Aberturascrema@aberturascrema.com.a,3,24,Ornella Petetta,17,Ornella Petetta,123456
+198,CANNELLI LEONEL RODRIGO,CANNELLI LEONEL RODRIGO,,2,23,Flavio Pelagagge,23,Flavio Pelagagge,123456
+199,LINDON AYELEN MILAGRO MACARENA,LINDON AYELEN MILAGRO MACARENA,,2,23,Natalia Tabbia,18,Natalia Tabbia,123456
+200,MARCANI LUCAS ANDRES AGUSTIN,megso.2020@gmail.com,megso.2020@gmail.com,2,23,Natalia Tabbia,18,Natalia Tabbia,123456
+201,Gomez Alejandro Hernán,proveedores@alubun.com,proveedores@alubun.com,2,23,Natalia Tabbia,18,Natalia Tabbia,123456
+202,Metales Maipu SAS,ventasaberturasmaipu@gmail.com,ventasaberturasmaipu@gmail.com,2,23,Natalia Tabbia,18,Natalia Tabbia,123456
+203,Maximiliano Iciksonas,Maximilianoiciksonas@gmail.com,Maximilianoiciksonas@gmail.com,2,23,Ludmila Crotto,20,Ludmila Crotto,123456
+204,BMA Group SAS,dieg.gimenez@ecowindows.com.ar,dieg.gimenez@ecowindows.com.ar,2,23,Natalia Tabbia,18,Natalia Tabbia,123456
+205,GANDINI FABRICIO EMILIANO,Aberturasaluminioarm@hotmail.com,Aberturasaluminioarm@hotmail.com,2,23,Natalia Tabbia,18,Natalia Tabbia,123456
+206,NES-CAM SA,gus.rosa1963@gmail.com,gus.rosa1963@gmail.com,2,23,Ludmila Crotto,20,Ludmila Crotto,123456
+207,Guillermo Carlos Martinez y Luciano Dami,habitat@cerramientosdepvc.com,habitat@cerramientosdepvc.com,2,23,Ludmila Crotto,20,Ludmila Crotto,123456
+208,ARIEL RUBEN SERAVALLE,ARIEL RUBEN SERAVALLE,,2,23,Ludmila Crotto,20,Ludmila Crotto,123456
+209,MOSCONI FACUNDO,cmglasscristales@gmail.com,cmglasscristales@gmail.com,2,23,Ludmila Crotto,20,Ludmila Crotto,123456
+210,FAIL LUCAS GERMAN Y FAIL JUAN MARCOS,tallerfail@hotmail.com,tallerfail@hotmail.com,2,23,Ornella Petetta,17,Ornella Petetta,123456
+211,FERREYRA GRACIELA ROSAURA,FERREYRA GRACIELA ROSAURA,,2,23,Flavio Pelagagge,23,Flavio Pelagagge,123456
+212,LAG Solutions SAS,Solucioneslag@gmail.com,Solucioneslag@gmail.com,2,23,Daniel Pinto,24,Daniel Pinto,123456
+213,MIRIAN ITATI CARBALLO,vidrieriaalvear@hotmail.com.ar,vidrieriaalvear@hotmail.com.ar,2,23,Ludmila Crotto,20,Ludmila Crotto,123456
+214,BONETTO GUSTAVO,gustavo_bonetto@live.com,gustavo_bonetto@live.com,2,23,Flavio Pelagagge,23,Flavio Pelagagge,123456
+215,CANDELA OLIVERA,CANDELA OLIVERA,,2,23,Marcelo,21,Marcelo Koncija,123456
+216,RICKERT JOSE ALBERTO,Lacasadelasaberturasparana@gmail.co,Lacasadelasaberturasparana@gmail.co,3,24,Ludmila Crotto,20,Ludmila Crotto,123456
+217,MELCHIOR LUCAS SEBASTIAN,lmelchior@wintech.com.ar,lmelchior@wintech.com.ar,1,,Natalia Tabbia,18,Natalia Tabbia,123456
+218,MARCELO URBA,Decoexpress.logistica@hotmail.com,Decoexpress.logistica@hotmail.com,2,23,Natalia Tabbia,18,Natalia Tabbia,123456
+219,MARIA SOLEDAD OCHOA,MARISOL8A2010@HOTMAIL.COM,MARISOL8A2010@HOTMAIL.COM,2,23,Daniel Pinto,24,Daniel Pinto,123456
+220,SMARQ TRES ESPACIOS SA,smarq.info@gmail.com,smarq.info@gmail.com,2,23,Natalia Tabbia,18,Natalia Tabbia,123456
+221,ROSARIO ALUMINIO,Walterbittocco@hotmail.com,Walterbittocco@hotmail.com,2,23,Natalia Tabbia,18,Natalia Tabbia,123456
+222,GUIDETTI JESUS DAVID,guidettijesus@gmail.com,guidettijesus@gmail.com,2,23,Flavio Pelagagge,23,Flavio Pelagagge,123456
+223,LANGE SANTIAGO GERMAN,ventas@nutzenpvc.com.ar,ventas@nutzenpvc.com.ar,2,23,Natalia Tabbia,18,Natalia Tabbia,123456
+224,SUAREZ OSCAR ALBERTO,alejo11suarez@gmail.com,alejo11suarez@gmail.com,2,23,Natalia Tabbia,18,Natalia Tabbia,123456
+225,JM ABERTURAS CBA,Jmaberturascba@gmail.com,Jmaberturascba@gmail.com,2,23,Ludmila Crotto,20,Ludmila Crotto,123456
+226,JOSE MARIA FRANCHI,jmfranchi3@hotmail.com,jmfranchi3@hotmail.com,3,24,Ludmila Crotto,20,Ludmila Crotto,123456
+227,Grupo DM Ditam Bahia Blanca SRL,ditamaberturas@gmail.com,ditamaberturas@gmail.com,2,23,Natalia Tabbia,18,Natalia Tabbia,123456
+228,Elvio Vecchio,Elvio Vecchio,,1,,Natalia Tabbia,18,Natalia Tabbia,123456
+229,RICCI LUCAS MARTIN,RICCI LUCAS MARTIN,,2,23,Natalia Tabbia,18,Natalia Tabbia,123456
+230,LOS AMIGOS ABERTURAS Y HERRERIA,LOS AMIGOS ABERTURAS Y HERRERIA,,1,,Ornella Petetta,17,Ornella Petetta,123456
+231,Herreria Matias Rojo,Herreria Matias Rojo,,2,23,Flavio Pelagagge,23,Flavio Pelagagge,123456
+232,SIMA EQUIPAMIENTOS,simaequipamientos@gmail.com,simaequipamientos@gmail.com,1,,Natalia Tabbia,18,Natalia Tabbia,123456
+233,POTENCIAR SUR,POTENCIAR SUR,,1,,Natalia Tabbia,18,Natalia Tabbia,123456
+234,Antonio Nalli,Antonio Nalli,,2,23,Ludmila Crotto,20,Ludmila Crotto,123456
+235,ABERTURAS RANELAGH,ABERTURAS RANELAGH,,2,23,Flavio Pelagagge,23,Flavio Pelagagge,123456
+236,ABERTURAS CHANA SAS,ABERTURAS CHANA SAS,,2,23,Natalia Tabbia,18,Natalia Tabbia,123456
+237,ABERTURAS CENTRO,pablo.labrador@hotmail.com.ar,pablo.labrador@hotmail.com.ar,2,23,Flavio Pelagagge,23,Flavio Pelagagge,123456
+238,Sandrone Ruben,sandrone@gmail.com,sandrone@gmail.com,2,23,Flavio Pelagagge,23,Flavio Pelagagge,123456
+239,MATIAS GARRO,MATIAS GARRO,,2,23,Marcelo,21,Marcelo Koncija,123456
+240,Bensich Fabián,Santotoportones@yahoo.com.ar,Santotoportones@yahoo.com.ar,2,23,Ludmila Crotto,20,Ludmila Crotto,123456
+241,LD VIDRIOS Y ALUMINIOS,arieldiaz644@gmail.com,arieldiaz644@gmail.com,2,23,Flavio Pelagagge,23,Flavio Pelagagge,123456
+242,Aluherrajes,aluherrajesfirmat@gmail.com,aluherrajesfirmat@gmail.com,2,23,Flavio Pelagagge,23,Flavio Pelagagge,123456
+243,PAPP ALUMINIOS,pappesteban@gmail.com,pappesteban@gmail.com,2,23,Flavio Pelagagge,23,Flavio Pelagagge,123456
+244,Opentech,nbarrionuevo@alopentech.com.ar,nbarrionuevo@alopentech.com.ar,2,23,Natalia Tabbia,18,Natalia Tabbia,123456
+245,Comercial Santa Rita SRL,Comercial Santa Rita SRL,,2,23,Natalia Tabbia,18,Natalia Tabbia,123456
+246,REMIGIO ULLA,remigioulla@yahoo.com,remigioulla@yahoo.com,2,23,Flavio Pelagagge,23,Flavio Pelagagge,123456
+247,J&A ALUMINIOS Y VIDRIOS,J&A ALUMINIOS Y VIDRIOS,,2,23,Flavio Pelagagge,23,Flavio Pelagagge,123456
+248,SILVANO ABERTURAS,localsilvano@gmail.com,localsilvano@gmail.com,2,23,Natalia Tabbia,18,Natalia Tabbia,123456
+249,LD ALUMINIOS,arieldiaz644@gmail.com__ld_aluminios,arieldiaz644@gmail.com,2,23,Natalia Tabbia,18,Natalia Tabbia,123456
+250,SERAFINI ABERTURAS,SERAFINI ABERTURAS,,2,23,Natalia Tabbia,18,Natalia Tabbia,123456
+251,ABERTURAS SARMIENTO,andymartinezoviedo@hotmail.com,andymartinezoviedo@hotmail.com,2,23,Natalia Tabbia,18,Natalia Tabbia,123456
+252,Aberturas Marco,spsebastianperez@gmail.com,spsebastianperez@gmail.com,2,23,Natalia Tabbia,18,Natalia Tabbia,123456
+253,OVIEDO ABERTURAS,OVIEDO ABERTURAS,,2,23,Natalia Tabbia,18,Natalia Tabbia,123456
+254,EDUARDO GIANONNI,egianonni.74@gmail.com,egianonni.74@gmail.com,2,23,Natalia Tabbia,18,Natalia Tabbia,123456
+255,ABERTURAS SAN GABRIEL,ABERTURAS SAN GABRIEL,,2,23,Natalia Tabbia,18,Natalia Tabbia,123456
+256,EL PORTICO,EL PORTICO,,1,,Natalia Tabbia,18,Natalia Tabbia,123456
+257,LOGAR,LOGAR,,3,24,Flavio Pelagagge,23,Flavio Pelagagge,123456
+258,MATIAS VOTTERO,MATIAS VOTTERO,,2,23,Natalia Tabbia,18,Natalia Tabbia,123456
+259,ALUFAM,ALUFAM,,1,,Natalia Tabbia,18,Natalia Tabbia,123456
+260,TR ABERTURAS,TR ABERTURAS,,2,23,Natalia Tabbia,18,Natalia Tabbia,123456
+261,DARIO CURONE,DARIO CURONE,,2,23,Natalia Tabbia,18,Natalia Tabbia,123456
+262,ZAIRE MATIAS,ZAIRE MATIAS,,2,23,Ludmila Crotto,20,Ludmila Crotto,123456
+263,LA MORENITA,ventas@aberturaslamorenita.com.ar,ventas@aberturaslamorenita.com.ar,2,23,Ludmila Crotto,20,Ludmila Crotto,123456
+264,BOLDRINI ABERTURAS,BOLDRINI ABERTURAS,,2,23,Ludmila Crotto,20,Ludmila Crotto,123456
+265,LEONARDO BOHELER,LEONARDO BOHELER,,2,23,Agustin,22,Agustin DeGrandis,123456
+266,LUCIANO BOSSANO,LUCIANO BOSSANO,,2,23,Flavio Pelagagge,23,Flavio Pelagagge,123456
+267,ALUCAB,ALUCAB,,2,23,Flavio Pelagagge,23,Flavio Pelagagge,123456
+268,QUIERO GUSTAVO ARIEL,aberturaslavallezarate@gmail.com,aberturaslavallezarate@gmail.com,2,23,Ornella Petetta,17,Ornella Petetta,123456
+269,ABERTURAS AMEGHINO,ABERTURAS AMEGHINO,,2,23,Flavio Pelagagge,23,Flavio Pelagagge,123456
+270,ABERTURAS BUENOS AIRES,ABERTURAS BUENOS AIRES,,2,23,Marcelo,21,Marcelo Koncija,123456
+271,Soluciones Metálicas Lujan,solucionesmetalicaslujan@gmail.com,solucionesmetalicaslujan@gmail.com,2,23,Ornella Petetta,17,Ornella Petetta,123456
+272,Portones DIRONI,portonesdironi@gmail.com,portonesdironi@gmail.com,3,24,Natalia Tabbia,18,Natalia Tabbia,123456
+273,BONETTO DIEGO,BONETTO DIEGO,,2,23,Marcelo,21,Marcelo Koncija,123456
+274,ABERTURAS DEL PILAR,adppresupuesto@hotmail.com,adppresupuesto@hotmail.com,2,23,Natalia Tabbia,18,Natalia Tabbia,123456
+275,METALURGICA PB,ppavillamaria@gmail.com,ppavillamaria@gmail.com,6,27,Flavio Pelagagge,23,Flavio Pelagagge,123456
+276,CRISTIAN (DISTRIBUIDOR),CRISTIAN (DISTRIBUIDOR),,2,23,Marcelo,21,Marcelo Koncija,123456
+277,ABERTURAS SAN JERONIMO,Info@aberturassanjeronimo.com,Info@aberturassanjeronimo.com,2,23,Ornella Petetta,17,Ornella Petetta,123456
+278,ABERTURAS IBAÑEZ,IBANEZABERTURAS@GMAIL.COM,IBANEZABERTURAS@GMAIL.COM,2,23,Marcelo,21,Marcelo Koncija,123456
+279,JM ABERTURAS,JM ABERTURAS,,2,23,Marcelo,21,Marcelo Koncija,123456
+280,ALUCOR,ALUCOR,,2,23,Flavio Pelagagge,23,Flavio Pelagagge,123456
+281,ABERTURAS LA CANDELARIA,info@aberturaslacandelaria.com.ar,info@aberturaslacandelaria.com.ar,2,23,Marcelo,21,Marcelo Koncija,123456
+282,ABERTURAS EL FARO,gabriel@elfaro.com.ar,gabriel@elfaro.com.ar,2,23,Ornella Petetta,17,Ornella Petetta,123456
+283,GABRIEL,GABRIEL,,2,23,Marcelo,21,Marcelo Koncija,123456
+284,SAN RAFAEL,SAN RAFAEL,,2,23,Marcelo,21,Marcelo Koncija,123456
+285,PRS ABERTURAS,PRS ABERTURAS,,2,23,Marcelo,21,Marcelo Koncija,123456
+286,TECNO FE ALUMINIO,tecnofealuminio@hotmail.com,tecnofealuminio@hotmail.com,2,23,Marcelo,21,Marcelo Koncija,123456
+287,HIERRO PAMPA,hierropampa@gmail.com,hierropampa@gmail.com,2,23,Marcelo,21,Marcelo Koncija,123456
+288,HORACIO DEL VECHIO,HORACIO DEL VECHIO,,2,23,Marcelo,21,Marcelo Koncija,123456
+289,BRASCA MARTIN,martinbrasca1@gmail.com,martinbrasca1@gmail.com,2,23,Marcelo,21,Marcelo Koncija,123456
+290,ALUVID,ALUVID,,2,23,Ludmila Crotto,20,Ludmila Crotto,123456
+291,IGNACIO,IGNACIO,,2,23,Marcelo,21,Marcelo Koncija,123456
+292,ALTEZZA ABERTURAS,ALTEZZA ABERTURAS,,2,23,Marcelo,21,Marcelo Koncija,123456
+293,EZEQUIEL CAVERZAN,EZEQUIEL CAVERZAN,,2,23,Marcelo,21,Marcelo Koncija,123456
+294,OSCAR GODOY,Info@aberturasgodoy.com.ar,Info@aberturasgodoy.com.ar,2,23,Marcelo,21,Marcelo Koncija,123456
+295,HERRERIA DYM,diegomartin8330@gmail.com,diegomartin8330@gmail.com,2,23,Flavio Pelagagge,23,Flavio Pelagagge,123456
+296,JESUS EMANUEL COUSSE,JESUS EMANUEL COUSSE,,2,23,Ornella Petetta,17,Ornella Petetta,123456
+297,Graciela Alejandra Velis,Puertas.chascomus@gmail.com,Puertas.chascomus@gmail.com,2,23,Ludmila Crotto,20,Ludmila Crotto,123456
+298,ORTEGA MARIO CESAR,ORTEGA MARIO CESAR,,2,23,Marcelo,21,Marcelo Koncija,123456
+299,ABERTURAS EL MASTIL,aberturaselmastil@hotmail.com,aberturaselmastil@hotmail.com,2,23,Ornella Petetta,17,Ornella Petetta,123456
+300,OBERTURA PVC SRL,compras@oberturapvc.com.ar,compras@oberturapvc.com.ar,2,23,Ornella Petetta,17,Ornella Petetta,123456
+301,ABERTURAS SAN RAFAEL SAS,centroaberturassanrafael@gmail.com,centroaberturassanrafael@gmail.com,2,23,Natalia Tabbia,18,Natalia Tabbia,123456
+302,HERRERIA BMA,godoyp708@gmail.com,godoyp708@gmail.com,2,23,Marcelo,21,Marcelo Koncija,123456
+303,ABERTURAS TENAZ,pablo.tenaglia@live.com.ar,pablo.tenaglia@live.com.ar,2,23,Ornella Petetta,17,Ornella Petetta,123456
+304,CEROALUM ABERTURAS,ceroalumaberturas@gmail.com,ceroalumaberturas@gmail.com,2,23,Flavio Pelagagge,23,Flavio Pelagagge,123456
+305,ABERTURAS DORINZI,Danieladorinzi@hotmail.com,Danieladorinzi@hotmail.com,2,23,Ludmila Crotto,20,Ludmila Crotto,123456
+306,AJ COMPACTO SA,AJ COMPACTO SA,,2,23,Marcelo,21,Marcelo Koncija,123456
+307,ALWEIN ABERTURAS,alweinaberturas@hotmail.com,alweinaberturas@hotmail.com,2,23,Ornella Petetta,17,Ornella Petetta,123456
+308,ARDINO VIDRIOS,ardinovidrios@hotmail.com,ardinovidrios@hotmail.com,2,23,Marcelo,21,Marcelo Koncija,123456
+309,ABERTURAS ROMA,Aberturas_roma@hotmail.com,Aberturas_roma@hotmail.com,2,23,Marcelo,21,Marcelo Koncija,123456
+310,ABERTURAS BARCALA,Barcalaaberturas@gmail.com,Barcalaaberturas@gmail.com,2,23,Marcelo,21,Marcelo Koncija,123456
+311,ABERTURAS LOS AMIGOS,Aberturasla@hotmail.com,Aberturasla@hotmail.com,2,23,Natalia Tabbia,18,Natalia Tabbia,123456
+312,ABERTURAS TOMAS,jorgearancibia_12@hotmail.com,jorgearancibia_12@hotmail.com,2,23,Marcelo,21,Marcelo Koncija,123456
+313,ABERTURAS MADALUM,Info@aberturasmadalum.com.ar,Info@aberturasmadalum.com.ar,2,23,Ornella Petetta,17,Ornella Petetta,123456
+314,Gonzalez Mariano Germán,Gonzaleztem@gmail.com,Gonzaleztem@gmail.com,2,23,Marcelo,21,Marcelo Koncija,123456
+315,ABERTURAS DEL CENTRO SAS,admin@aberturasdelcentro.com.ar,admin@aberturasdelcentro.com.ar,2,23,Ludmila Crotto,20,Ludmila Crotto,123456
+316,MADECONST,MADECONST,,2,23,Marcelo,21,Marcelo Koncija,123456
+317,ALUMINIOS CHACABUCO,aluminiochacabuco@hotmail.com,aluminiochacabuco@hotmail.com,2,23,Marcelo,21,Marcelo Koncija,123456
+318,SAN JOSE ABERTURAS,sanjosejunin@gmail.com,sanjosejunin@gmail.com,2,23,Marcelo,21,Marcelo Koncija,123456
+319,ALUMAC,alumac_@hotmail.com,alumac_@hotmail.com,2,23,Marcelo,21,Marcelo Koncija,123456
+320,Aberturas Manchi,aberturasmanchi@gmail.com,aberturasmanchi@gmail.com,2,23,Marcelo,21,Marcelo Koncija,123456
+321,Gerardo Oscar Albeverio,aberturasmanchi@gmail.com__gerardo_oscar_albeverio,aberturasmanchi@gmail.com,2,23,Marcelo,21,Marcelo Koncija,123456
