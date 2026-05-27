@@ -1,8 +1,10 @@
+import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import toast from "react-hot-toast";
 
 import Button from "../../ui/Button.jsx";
 import { listMyDistributors } from "../../api/sellerDistributors.js";
+import { getPricelists } from "../../api/odoo.js";
 import { useAuthStore } from "../../domain/auth/store.js";
 
 function copyToClipboard(value, label) {
@@ -11,6 +13,14 @@ function copyToClipboard(value, label) {
   navigator.clipboard?.writeText(text)
     .then(() => toast.success(`${label} copiado`))
     .catch(() => toast.error("No se pudo copiar"));
+}
+
+function normalizeSearch(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
 }
 
 function PasswordCell({ value }) {
@@ -31,15 +41,68 @@ function PasswordCell({ value }) {
   );
 }
 
+function PricelistCell({ distributor, pricelistById }) {
+  const id = Number(distributor?.odoo_pricelist_id || 0) || 0;
+  if (!id) return <span className="muted">—</span>;
+  const pricelist = pricelistById.get(id);
+  const name = String(pricelist?.name || "").trim();
+  if (!name) return <span>{id}</span>;
+  return (
+    <div>
+      <div style={{ fontWeight: 800 }}>{name}</div>
+      <div className="muted" style={{ fontSize: 12 }}>ID Odoo: {id}</div>
+    </div>
+  );
+}
+
 export default function MyDistributorsPage() {
   const user = useAuthStore((s) => s.user);
   const canAccess = !!(user?.is_superuser || (user?.is_vendedor && !user?.is_distribuidor));
+  const [searchText, setSearchText] = useState("");
 
   const q = useQuery({
     queryKey: ["myDistributors"],
     queryFn: listMyDistributors,
     enabled: canAccess,
   });
+
+  const pricelistsQ = useQuery({
+    queryKey: ["myDistributorsPricelists"],
+    queryFn: getPricelists,
+    enabled: canAccess,
+    staleTime: 60 * 1000,
+  });
+
+  const pricelistById = useMemo(() => {
+    const map = new Map();
+    for (const item of Array.isArray(pricelistsQ.data) ? pricelistsQ.data : []) {
+      const id = Number(item?.id || 0) || 0;
+      if (id) map.set(id, item);
+    }
+    return map;
+  }, [pricelistsQ.data]);
+
+  const distributors = q.data || [];
+  const filteredDistributors = useMemo(() => {
+    const search = normalizeSearch(searchText);
+    if (!search) return distributors;
+    return distributors.filter((d) => {
+      const pricelistId = Number(d?.odoo_pricelist_id || 0) || 0;
+      const pricelistName = pricelistId ? String(pricelistById.get(pricelistId)?.name || "") : "";
+      const haystack = [
+        d?.full_name,
+        d?.username,
+        d?.visible_password,
+        d?.odoo_partner_id,
+        d?.odoo_pricelist_id,
+        pricelistName,
+        d?.assigned_seller_username,
+        d?.assigned_seller_full_name,
+        d?.is_active ? "activo" : "inactivo",
+      ].filter(Boolean).join(" ");
+      return normalizeSearch(haystack).includes(search);
+    });
+  }, [distributors, pricelistById, searchText]);
 
   if (!canAccess) {
     return (
@@ -53,8 +116,6 @@ export default function MyDistributorsPage() {
     );
   }
 
-  const distributors = q.data || [];
-
   return (
     <div className="container">
       <div className="spacer" />
@@ -63,7 +124,29 @@ export default function MyDistributorsPage() {
           <h2 style={{ margin: 0 }}>Mis distribuidores</h2>
           <div className="muted">Listado de distribuidores asignados a tu usuario, con sus credenciales de acceso.</div>
         </div>
-        <Button variant="secondary" onClick={() => q.refetch()} disabled={q.isFetching}>{q.isFetching ? "Actualizando…" : "Actualizar"}</Button>
+        <Button variant="secondary" onClick={() => { q.refetch(); pricelistsQ.refetch(); }} disabled={q.isFetching || pricelistsQ.isFetching}>
+          {q.isFetching || pricelistsQ.isFetching ? "Actualizando…" : "Actualizar"}
+        </Button>
+      </div>
+
+      <div className="spacer" />
+      <div className="card">
+        <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+          <input
+            value={searchText}
+            onChange={(e) => setSearchText(e.target.value)}
+            placeholder="Buscar por distribuidor, usuario, contraseña, lista de precios, partner o estado…"
+            style={{ flex: 1, minWidth: 280, padding: 10, borderRadius: 12, border: "1px solid #ddd" }}
+          />
+          <div className="muted" style={{ fontSize: 13 }}>
+            {filteredDistributors.length} de {distributors.length}
+          </div>
+        </div>
+        {pricelistsQ.isError ? (
+          <div style={{ color: "#d93025", fontSize: 13, marginTop: 10 }}>
+            No se pudieron cargar los nombres de listas desde Odoo. Se muestran los IDs.
+          </div>
+        ) : null}
       </div>
 
       <div className="spacer" />
@@ -71,21 +154,22 @@ export default function MyDistributorsPage() {
         {q.isLoading ? <div className="muted">Cargando distribuidores…</div> : null}
         {q.isError ? <div style={{ color: "#d93025", fontSize: 13 }}>{q.error?.message || "No se pudieron cargar los distribuidores"}</div> : null}
         {!q.isLoading && !distributors.length ? <div className="muted">No tenés distribuidores asignados.</div> : null}
+        {!q.isLoading && !!distributors.length && !filteredDistributors.length ? <div className="muted">No hay distribuidores que coincidan con la búsqueda.</div> : null}
 
-        {!!distributors.length ? (
+        {!!filteredDistributors.length ? (
           <table>
             <thead>
               <tr>
                 <th>Distribuidor</th>
                 <th>Usuario</th>
                 <th>Contraseña</th>
-                <th>Lista Odoo</th>
+                <th>Lista de precios</th>
                 <th>Partner Odoo</th>
                 <th>Estado</th>
               </tr>
             </thead>
             <tbody>
-              {distributors.map((d) => {
+              {filteredDistributors.map((d) => {
                 const username = String(d.username || "").trim();
                 return (
                   <tr key={d.id}>
@@ -100,7 +184,7 @@ export default function MyDistributorsPage() {
                       </div>
                     </td>
                     <td><PasswordCell value={d.visible_password} /></td>
-                    <td>{d.odoo_pricelist_id || <span className="muted">—</span>}</td>
+                    <td><PricelistCell distributor={d} pricelistById={pricelistById} /></td>
                     <td>{d.odoo_partner_id || <span className="muted">—</span>}</td>
                     <td>{d.is_active ? "Activo" : "Inactivo"}</td>
                   </tr>
