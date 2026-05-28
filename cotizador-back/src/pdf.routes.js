@@ -10,6 +10,44 @@ import { buildBudgetExtraSummaryLines } from "../pdfBudgetExtras.js";
 
 const IVA_RATE = 0.21;
 
+const TERMS_AND_CONDITIONS = [
+  {
+    title: "1. Formas de Pago:",
+    text:
+      "Aceptamos pagos en efectivo (pesos o dólares billete), transferencia bancaria, cheques o tarjeta de crédito (consultar por planes vigentes). Para confirmar el pedido se requiere una seña del 70% del valor total. El saldo restante deberá abonarse en su totalidad antes de la entrega del producto.",
+  },
+  {
+    title: "2. Plazos de Entrega:",
+    text:
+      "El plazo estimado de entrega es de 40 días para portones en lamas, contados a partir de la confirmación de las medidas y características del pedido por parte del cliente y/o encargado. Para modelos especiales como portones coplanares o varillados, el plazo será de 60 días. Estos plazos aplican a partir de la confirmación técnica y el pago de la seña correspondiente.",
+  },
+  {
+    title: "3. Garantía:",
+    text:
+      "Nuestros productos cuentan con una garantía de 60 meses contra defectos de fabricación. Esta garantía no cubre daños causados por uso inadecuado o negligencia del cliente.",
+  },
+  {
+    title: "4. Responsabilidad del Cliente:",
+    text:
+      "El cliente es responsable de proporcionar información completa y precisa al momento de realizar el pedido. Cualquier error u omisión en los datos brindados será responsabilidad exclusiva del cliente, pudiendo afectar la correcta producción y entrega del portón.",
+  },
+  {
+    title: "",
+    text:
+      "Asimismo, el cliente deberá garantizar que el lugar de instalación se encuentre limpio, ordenado y con libre acceso. No deben existir escombros, montículos de arena u otros obstáculos que dificulten el ingreso del personal o la manipulación del producto. En caso de ser necesario se deberá contar con personas disponibles al momento de la entrega para colaborar con la descarga del portón; desde el área de logística se dispondrá esta información.",
+  },
+  {
+    title: "5. Derechos de Propiedad:",
+    text:
+      "Todos los derechos de propiedad intelectual y derechos de autor de los productos y diseños son propiedad de DE GRANDIS PORTONES. Está prohibida la reproducción o distribución no autorizada.",
+  },
+  {
+    title: "6. Ajustes y Variaciones:",
+    text:
+      "En caso de existir diferencias entre el presupuesto confirmado y las características finales del pedido (como medidas, diseño, materiales, entre otros), que generen costos adicionales, nos reservamos el derecho de facturar dichos montos sin previo aviso. El cliente deberá abonar estos importes adicionales antes de que se inicie la producción del portón.",
+  },
+];
+
 function isUuid(v) {
   const s = String(v || "").trim();
   return /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(s);
@@ -308,7 +346,31 @@ function drawInfoTable(doc, payload, y, margin, innerW, useBasePrice) {
   return y + h + 10;
 }
 
-async function renderPdf({ title, payload, useBasePrice, odoo }) {
+function drawTermsAndConditionsPage(doc, { title, payload, margin, innerW, dateStr, validStr }) {
+  doc.addPage();
+  let y = drawHeader(doc, { title, payload, margin, innerW, dateStr, validStr });
+  y = drawInfoTable(doc, payload, y, margin, innerW, false);
+  y += 10;
+
+  const contentX = margin + 18;
+  const contentW = innerW - 36;
+  const bottomY = doc.page.height - margin - 32;
+
+  doc.font("Helvetica-Bold").fontSize(12).fillColor("#111827")
+    .text("Términos y Condiciones de Venta:", contentX, y, { width: contentW });
+  y = doc.y + 10;
+
+  TERMS_AND_CONDITIONS.forEach((item) => {
+    const text = item.title ? `${item.title} ${item.text}` : item.text;
+    const height = doc.heightOfString(text, { width: contentW, lineGap: 2 });
+    if (y + height > bottomY) return;
+    doc.font("Helvetica").fontSize(9.2).fillColor("#111827")
+      .text(text, contentX, y, { width: contentW, lineGap: 2 });
+    y = doc.y + 8;
+  });
+}
+
+async function renderPdf({ title, payload, useBasePrice, odoo, includeTerms = false }) {
   const doc = new PDFDocument({ size: "A4", margin: 0, bufferPages: true });
   const buffers = [];
   doc.on("data", buffers.push.bind(buffers));
@@ -405,6 +467,10 @@ async function renderPdf({ title, payload, useBasePrice, odoo }) {
     tableY += h;
   }
 
+  if (includeTerms) {
+    drawTermsAndConditionsPage(doc, { title, payload, margin, innerW, dateStr, validStr });
+  }
+
   const range = doc.bufferedPageRange();
   for (let i = range.start; i < range.start + range.count; i += 1) {
     doc.switchToPage(i);
@@ -480,7 +546,7 @@ export function buildPdfRouter(odoo = null) {
   router.post("/presupuesto", async (req, res, next) => {
     try {
       const payload = req.body || {};
-      const pdf = await renderPdf({ title: "PRESUPUESTO", payload, useBasePrice: false, odoo });
+      const pdf = await renderPdf({ title: "PRESUPUESTO", payload, useBasePrice: false, odoo, includeTerms: true });
       res.setHeader("Content-Type", "application/pdf");
       res.setHeader("Content-Disposition", `attachment; filename="${buildDownloadFilename(payload, "presupuesto")}"`);
       res.send(pdf);
