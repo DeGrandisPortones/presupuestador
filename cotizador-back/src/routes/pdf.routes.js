@@ -280,7 +280,7 @@ async function buildLines(payload, { useBasePrice, odoo }) {
       const resolvedName = overrideName || liveTemplateName || liveVariantName || payloadName;
 
       if (!resolvedName) {
-        throw new Error(`No se pudo resolver el nombre para la l\u00ednea ${productId || variantId || "sin id"}.`);
+        throw new Error(`No se pudo resolver el nombre para la línea ${productId || variantId || "sin id"}.`);
       }
 
       return {
@@ -304,7 +304,7 @@ function drawPageFrame(doc, margin, pageNo, pageCount, footerLeft = "De Grandis 
   doc.save().lineWidth(1).strokeColor("#B7BABC").roundedRect(margin, margin, w - margin * 2, h - margin * 2, 10).stroke().restore();
   doc.save().font("Helvetica").fontSize(9).fillColor("#6B7280")
     .text(footerLeft, margin, h - margin - 16, { width: w - margin * 2, align: "left" })
-    .text(`P\u00e1gina ${pageNo} de ${pageCount}`, margin, h - margin - 16, { width: w - margin * 2, align: "right" })
+    .text(`Página ${pageNo} de ${pageCount}`, margin, h - margin - 16, { width: w - margin * 2, align: "right" })
     .restore();
 }
 function drawHeader(doc, { title, payload, margin, innerW, dateStr, validStr }) {
@@ -316,7 +316,7 @@ function drawHeader(doc, { title, payload, margin, innerW, dateStr, validStr }) 
     doc.image(logoPath, margin + 8, margin + 8, getLogoDrawOptions(payload));
   }
   doc.font("Helvetica-Bold").fillColor("#111827").fontSize(16).text(title, margin, margin + 18, { width: innerW, align: "center" });
-  doc.font("Helvetica-Bold").fontSize(11).text(`N\u00daMERO ${quoteNo || "-"}`, margin, margin + 16, { width: innerW - 10, align: "right" });
+  doc.font("Helvetica-Bold").fontSize(11).text(`NÚMERO ${quoteNo || "-"}`, margin, margin + 16, { width: innerW - 10, align: "right" });
 
   let y = margin + headerH + 12;
   const customerName = safeStr(payload?.end_customer?.name) || "(sin nombre)";
@@ -333,18 +333,18 @@ function drawInfoTable(doc, payload, y, margin, innerW, useBasePrice) {
   const customerEmail = safeStr(endCustomer?.email) || "-";
   const sellerName = getSellerName(payload) || "-";
   const destinationRaw = safeStr(payload?.fulfillment_mode);
-  const destination = destinationRaw === "acopio" ? "Acopio" : destinationRaw === "produccion" ? "Producci\u00f3n" : (destinationRaw || "-");
+  const destination = destinationRaw === "acopio" ? "Acopio" : destinationRaw === "produccion" ? "Producción" : (destinationRaw || "-");
   const cols = useBasePrice
     ? [
         { w: innerW * 0.35, label: "Cliente", value: customerName },
-        { w: innerW * 0.18, label: "Tel\u00e9fono", value: customerPhone },
+        { w: innerW * 0.18, label: "Teléfono", value: customerPhone },
         { w: innerW * 0.22, label: "Email", value: customerEmail },
         { w: innerW * 0.13, label: "Destino", value: destination },
         { w: innerW * 0.12, label: "Vendedor", value: sellerName },
       ]
     : [
         { w: innerW * 0.38, label: "Cliente", value: customerName },
-        { w: innerW * 0.22, label: "Tel\u00e9fono", value: customerPhone },
+        { w: innerW * 0.22, label: "Teléfono", value: customerPhone },
         { w: innerW * 0.22, label: "Email", value: customerEmail },
         { w: innerW * 0.18, label: "Vendedor", value: sellerName },
       ];
@@ -378,7 +378,34 @@ function drawInfoBand(doc, { y, margin, innerW, items, fillColor = "#FFFFFF" }) 
   doc.font("Helvetica").fontSize(10).fillColor("#111827").text(text, margin + padX, y + padY, { width: textW, lineGap: 2 });
   return y + h + 4;
 }
-async function renderPdf({ title, payload, useBasePrice, odoo }) {
+
+const TERMS_AND_CONDITIONS = [
+  "1. Formas de Pago: Aceptamos pagos en efectivo (pesos o dólares billete), transferencia bancaria, cheques o tarjeta de crédito (consultar por planes vigentes). Para confirmar el pedido se requiere una seña del 70% del valor total. El saldo restante deberá abonarse en su totalidad antes de la entrega del producto.",
+  "2. Plazos de Entrega: El plazo estimado de entrega es de 40 días para portones en lamas, contados a partir de la confirmación de las medidas y características del pedido por parte del cliente y/o encargado. Para modelos especiales como portones coplanares o varillados, el plazo será de 60 días. Estos plazos aplican a partir de la confirmación técnica y el pago de la seña correspondiente.",
+  "3. Garantía: Nuestros productos cuentan con una garantía de 60 meses contra defectos de fabricación. Esta garantía no cubre daños causados por uso inadecuado o negligencia del cliente.",
+  "4. Responsabilidad del Cliente: El cliente es responsable de proporcionar información completa y precisa al momento de realizar el pedido. Cualquier error u omisión en los datos brindados será responsabilidad exclusiva del cliente, pudiendo afectar la correcta producción y entrega del portón. Asimismo, el cliente deberá garantizar que el lugar de instalación se encuentre limpio, ordenado y con libre acceso. No deben existir escombros, montículos de arena u otros obstáculos que dificulten el ingreso del personal o la manipulación del producto. En caso de ser necesario se deberá contar con personas disponibles al momento de la entrega para colaborar con la descarga del portón, desde el área de logística se dispondrá esta información.",
+  "5. Derechos de Propiedad: Todos los derechos de propiedad intelectual y derechos de autor de los productos y diseños son propiedad de DE GRANDIS PORTONES. Está prohibida la reproducción o distribución no autorizada.",
+  "6. Ajustes y Variaciones: En caso de existir diferencias entre el presupuesto confirmado y las características finales del pedido (como medidas, diseño, materiales, entre otros), que generen costos adicionales, nos reservamos el derecho de facturar dichos montos sin previo aviso. El cliente deberá abonar estos importes adicionales antes de que se inicie la producción del portón.",
+];
+
+function drawTermsAndConditionsPage(doc, { title, payload, margin, innerW, dateStr, validStr }) {
+  doc.addPage();
+  const titleY = drawHeader(doc, { title, payload, margin, innerW, dateStr, validStr });
+  const x = margin + 14;
+  const width = innerW - 28;
+  let y = titleY + 14;
+
+  doc.font("Helvetica-Bold").fontSize(12).fillColor("#111827").text("Términos y Condiciones de Venta:", x, y, { width });
+  y = doc.y + 10;
+
+  doc.font("Helvetica").fontSize(8.8).fillColor("#111827");
+  for (const paragraph of TERMS_AND_CONDITIONS) {
+    doc.text(paragraph, x, y, { width, lineGap: 2, align: "left" });
+    y = doc.y + 7;
+  }
+}
+
+async function renderPdf({ title, payload, useBasePrice, odoo, includeTerms = false }) {
   const doc = new PDFDocument({ size: "A4", margin: 0, bufferPages: true });
   const buffers = [];
   doc.on("data", buffers.push.bind(buffers));
@@ -426,7 +453,7 @@ async function renderPdf({ title, payload, useBasePrice, odoo }) {
     doc.save().fillColor("#E5E7EB").rect(margin, tableY, innerW, 28).fill().restore();
     doc.save().strokeColor("#D1D5DB").rect(margin, tableY, innerW, 28).stroke().restore();
     const headers = [
-      [margin + 8, colDesc - 16, "DESCRIPCI\u00d3N", "left"],
+      [margin + 8, colDesc - 16, "DESCRIPCIÓN", "left"],
       [margin + colDesc + 8, colQty - 16, "CANT", "right"],
       [margin + colDesc + colQty + 8, colUnit - 16, "PRECIO c/IVA", "right"],
       [margin + colDesc + colQty + colUnit + 8, colTot - 16, "TOTAL c/IVA", "right"],
@@ -476,6 +503,10 @@ async function renderPdf({ title, payload, useBasePrice, odoo }) {
     tableY += h;
   }
 
+  if (includeTerms) {
+    drawTermsAndConditionsPage(doc, { title, payload, margin, innerW, dateStr, validStr });
+  }
+
   const range = doc.bufferedPageRange();
   for (let i = range.start; i < range.start + range.count; i += 1) {
     doc.switchToPage(i);
@@ -488,9 +519,9 @@ async function renderPdf({ title, payload, useBasePrice, odoo }) {
 function prettyMeasurementValue(key, value) {
   const raw = safeStr(value);
   const maps = {
-    colocacion: { dentro_vano: "Por dentro del vano", detras_vano: "Por detr\u00e1s del vano" },
-    accionamiento: { manual: "Manual", automatico: "Autom\u00e1tico" },
-    levadizo: { coplanar: "Coplanar", comun: "Com\u00fan" },
+    colocacion: { dentro_vano: "Por dentro del vano", detras_vano: "Por detrás del vano" },
+    accionamiento: { manual: "Manual", automatico: "Automático" },
+    levadizo: { coplanar: "Coplanar", comun: "Común" },
   };
   return maps[key]?.[raw] || textOrDash(raw);
 }
@@ -500,14 +531,14 @@ async function renderMeasurementPdf({ quote, form }) {
   doc.on("data", buffers.push.bind(buffers));
   const logoPath = getLogoPath();
   if (fs.existsSync(logoPath)) doc.image(logoPath, 32, 20, { width: 160, height: 42, fit: [160, 42] });
-  doc.font("Helvetica-Bold").fontSize(18).fillColor("#111827").text("PLANILLA DE MEDICI\u00d3N", 32, 34, { width: doc.page.width - 64, align: "center" });
+  doc.font("Helvetica-Bold").fontSize(18).fillColor("#111827").text("PLANILLA DE MEDICIÓN", 32, 34, { width: doc.page.width - 64, align: "center" });
   doc.moveDown(2);
 
   const c = quote?.end_customer || {};
   const rows = [
     ["Cliente", c.name],
-    ["Tel\u00e9fono", c.phone],
-    ["Direcci\u00f3n", c.address],
+    ["Teléfono", c.phone],
+    ["Dirección", c.address],
     ["Localidad", c.city],
     ["Maps", c.maps_url],
     ["Fecha", pick(form, "fecha")],
@@ -516,7 +547,7 @@ async function renderMeasurementPdf({ quote, form }) {
     ["Alto final (mm)", form?.alto_final_mm],
     ["Ancho final (mm)", form?.ancho_final_mm],
     ["Accionamiento", prettyMeasurementValue("accionamiento", pick(form, "accionamiento"))],
-    ["Colocaci\u00f3n", prettyMeasurementValue("colocacion", pick(form, "colocacion"))],
+    ["Colocación", prettyMeasurementValue("colocacion", pick(form, "colocacion"))],
   ];
 
   rows.forEach(([label, value]) => {
@@ -536,7 +567,7 @@ async function renderMeasurementPdf({ quote, form }) {
   const range = doc.bufferedPageRange();
   for (let i = range.start; i < range.start + range.count; i += 1) {
     doc.switchToPage(i);
-    drawPageFrame(doc, 20, i + 1, range.count, "Planilla de medici\u00f3n - De Grandis Portones");
+    drawPageFrame(doc, 20, i + 1, range.count, "Planilla de medición - De Grandis Portones");
   }
 
   doc.end();
@@ -552,7 +583,7 @@ export function buildPdfRouter(odoo = null) {
         ...rawPayload,
         seller_name: resolveLoggedUserSellerName(req.user, rawPayload),
       };
-      const pdf = await renderPdf({ title: "PRESUPUESTO", payload, useBasePrice: false, odoo });
+      const pdf = await renderPdf({ title: "PRESUPUESTO", payload, useBasePrice: false, odoo, includeTerms: true });
       res.setHeader("Content-Type", "application/pdf");
       res.setHeader("Content-Disposition", `attachment; filename="${buildDownloadFilename(payload, "presupuesto")}"`);
       res.send(pdf);
@@ -577,7 +608,7 @@ export function buildPdfRouter(odoo = null) {
     try {
       await ensureQuotesMeasurementColumns();
       const token = String(req.params.token || "").trim();
-      if (!isShareToken(token)) return res.status(400).json({ ok: false, error: "token inv\u00e1lido" });
+      if (!isShareToken(token)) return res.status(400).json({ ok: false, error: "token inválido" });
       const r = await dbQuery(`select * from public.presupuestador_quotes where measurement_share_token = $1 and measurement_share_enabled_at is not null limit 1`, [token]);
       const quote = r.rows?.[0];
       if (!quote) return res.status(404).json({ ok: false, error: "Planilla no encontrada" });
@@ -594,7 +625,7 @@ export function buildPdfRouter(odoo = null) {
     try {
       await ensureQuotesMeasurementColumns();
       const id = String(req.params.id || "").trim();
-      if (!isUuid(id)) return res.status(400).json({ ok: false, error: "id inv\u00e1lido" });
+      if (!isUuid(id)) return res.status(400).json({ ok: false, error: "id inválido" });
       const r = await dbQuery(`select * from public.presupuestador_quotes where id=$1 limit 1`, [id]);
       const quote = r.rows?.[0];
       if (!quote) return res.status(404).json({ ok: false, error: "Presupuesto no encontrado" });
@@ -602,7 +633,7 @@ export function buildPdfRouter(odoo = null) {
       const can = isOwner || !!req.user.is_medidor || !!req.user.is_enc_comercial || !!req.user.is_rev_tecnica;
       if (!can) return res.status(403).json({ ok: false, error: "No autorizado" });
       const form = await resolveMeasurementForm(quote);
-      if (!form) return res.status(400).json({ ok: false, error: "Este presupuesto todav\u00eda no tiene medici\u00f3n cargada" });
+      if (!form) return res.status(400).json({ ok: false, error: "Este presupuesto todavía no tiene medición cargada" });
       const pdf = await renderMeasurementPdf({ quote, form });
       res.setHeader("Content-Type", "application/pdf");
       res.setHeader("Content-Disposition", `attachment; filename="medicion_${id}.pdf"`);
