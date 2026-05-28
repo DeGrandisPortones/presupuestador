@@ -343,13 +343,24 @@ function buildTechnicalSnapshot({ payload }) {
   const legsKey = mapLegsKeyForWidth(legsLabel);
   const pasoHeightDiscountMm = getNumberParam(params, ["paso_height_discount_mm", "paso_alto_descuento_mm", "step_height_discount_mm"], 110);
   const pasoWidthDiscountMm = getPasoWidthDiscountByLegMm(legsKey, params);
-  const altoPasoMm = Math.max(0, heightMm - pasoHeightDiscountMm);
+  const preliminaryAltoPasoMm = Math.max(0, heightMm - pasoHeightDiscountMm);
   const anchoPasoMm = Math.max(0, widthMm - pasoWidthDiscountMm);
 
   const hojaHeightDiscountMm = getNumberParam(params, ["hoja_height_discount_mm", "hoja_alto_descuento_mm", "leaf_height_discount_mm"], 10);
   const hojaRebajeLateralDiscountMm = getNumberParam(params, ["hoja_lateral_rebaje_width_discount_mm", "rebaje_lateral_hoja_discount_mm", "leaf_lateral_rebaje_width_discount_mm"], 5);
+  const pasoAltoFromHojaDiscountMm = getNumberParam(
+    params,
+    [
+      "paso_from_hoja_height_discount_mm",
+      "paso_alto_desde_hoja_descuento_mm",
+      "paso_alto_descuento_desde_hoja_mm",
+      "step_height_from_leaf_discount_mm",
+    ],
+    100,
+  );
   const hasRebajeLateral = hasHojaRebajeLateral(lines, params);
-  const altoHojaMm = Math.max(0, altoPasoMm - hojaHeightDiscountMm);
+  const altoHojaMm = Math.max(0, preliminaryAltoPasoMm - hojaHeightDiscountMm);
+  const altoPasoMm = Math.max(0, altoHojaMm - pasoAltoFromHojaDiscountMm);
   const anchoHojaMm = Math.max(0, anchoPasoMm - (hasRebajeLateral ? hojaRebajeLateralDiscountMm : 0));
 
   return {

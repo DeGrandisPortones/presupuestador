@@ -443,8 +443,14 @@ function getSavedMedidasPasoForApproval(dimensions = {}) {
     source.paso_alto_m ??
     nested.alto_m
   );
-  const text = String(source.medidas_paso_text || nested.text || "").trim();
-  return { anchoMm, altoMm, text };
+  const hojaAltoMm = parseSavedStepMm(source.hoja_alto_mm ?? source.hoja_alto_m);
+  const isStaleOldStepHeight = hojaAltoMm > 0 && altoMm > 0 && altoMm >= hojaAltoMm;
+  const text = isStaleOldStepHeight ? "" : String(source.medidas_paso_text || nested.text || "").trim();
+  return {
+    anchoMm: isStaleOldStepHeight ? 0 : anchoMm,
+    altoMm: isStaleOldStepHeight ? 0 : altoMm,
+    text,
+  };
 }
 
 function formatSavedMedidasPasoForApproval(dimensions = {}) {
@@ -499,8 +505,21 @@ function computeApprovalTechnicalPreview(quote) {
   const legsKey = mapLegsKeyForWidthForApproval(legsLabel);
   const pasoHeightDiscountMm = getNumberParamForApproval(params, ["paso_height_discount_mm", "paso_alto_descuento_mm", "step_height_discount_mm"], 110);
   const pasoWidthDiscountMm = getPasoWidthDiscountByLegMmForApproval(legsKey, params);
+  const hojaHeightDiscountMm = getNumberParamForApproval(params, ["hoja_height_discount_mm", "hoja_alto_descuento_mm", "leaf_height_discount_mm"], 10);
+  const pasoAltoFromHojaDiscountMm = getNumberParamForApproval(
+    params,
+    [
+      "paso_from_hoja_height_discount_mm",
+      "paso_alto_desde_hoja_descuento_mm",
+      "paso_alto_descuento_desde_hoja_mm",
+      "step_height_from_leaf_discount_mm",
+    ],
+    100,
+  );
   const savedStep = getSavedMedidasPasoForApproval(dimensions);
-  const altoPasoMm = savedStep.altoMm > 0 ? savedStep.altoMm : Math.max(0, heightMm - pasoHeightDiscountMm);
+  const preliminaryAltoPasoMm = Math.max(0, heightMm - pasoHeightDiscountMm);
+  const fallbackAltoHojaMm = Math.max(0, preliminaryAltoPasoMm - hojaHeightDiscountMm);
+  const altoPasoMm = savedStep.altoMm > 0 ? savedStep.altoMm : Math.max(0, fallbackAltoHojaMm - pasoAltoFromHojaDiscountMm);
   const anchoPasoMm = savedStep.anchoMm > 0 ? savedStep.anchoMm : Math.max(0, widthMm - pasoWidthDiscountMm);
   return { widthM, heightM, areaM2, effectiveKgM2, estimatedWeightKg, legsLabel, altoPasoMm, anchoPasoMm, medidasPasoText: savedStep.text };
 }
