@@ -20,6 +20,7 @@ const DEFAULT_PAYMENT_METHODS = [
   "OTRAS TC BANC 3 CUOTAS",
   "OTRAS TC BANC 6 CUOTAS",
 ];
+const MULTIPLE_PAYMENT_METHOD = "PAGO MÚLTIPLE";
 
 function requireEncComercialOrSuperuser(req, res, next) {
   if (!req.user?.is_enc_comercial && !req.user?.is_superuser) {
@@ -44,6 +45,9 @@ function normalizePaymentMethodKey(value) {
     .trim()
     .replace(/\s+/g, " ");
 }
+function isMultiplePaymentMethod(value) {
+  return normalizePaymentMethodKey(value).startsWith("PAGO MULTIPLE");
+}
 function parseTacaTacaPaymentMethod(paymentMethod) {
   const raw = String(paymentMethod || "").trim();
   const normalized = normalizePaymentMethodKey(raw);
@@ -65,6 +69,18 @@ function cleanPercent(value) {
   const n = Number(String(value ?? "").replace(",", "."));
   if (!Number.isFinite(n)) return 0;
   return round2(Math.max(-100, n));
+}
+function parseMultiplePaymentComponents(paymentMethod) {
+  const raw = String(paymentMethod || "").trim();
+  if (!isMultiplePaymentMethod(raw)) return null;
+  const matches = [...raw.matchAll(/\[([^\]]+)\]\s*([0-9.,]+)\s*%/g)];
+  if (!matches.length) return [];
+  return matches
+    .map((m) => ({
+      payment_method: String(m[1] || "").trim(),
+      share_percent: cleanPercent(m[2]),
+    }))
+    .filter((x) => x.payment_method && x.share_percent > 0);
 }
 
 let financingRateFieldCache = undefined;
@@ -119,18 +135,10 @@ async function resolveTacaTacaRate(odoo, { planId, cardType, installments }) {
     let domain = baseDomain.slice();
     if (meta.activeField) domain.push([meta.activeField, "=", true]);
 
-    let rows = await odoo.executeKw("sale.financing.rate", "search_read", [domain], {
-      fields,
-      limit: 1,
-      order: "id desc",
-    });
+    let rows = await odoo.executeKw("sale.financing.rate", "search_read", [domain], { fields, limit: 1, order: "id desc" });
     let rate = rows?.[0] || null;
     if (!rate) {
-      rows = await odoo.executeKw("sale.financing.rate", "search_read", [baseDomain], {
-        fields,
-        limit: 1,
-        order: "id desc",
-      });
+      rows = await odoo.executeKw("sale.financing.rate", "search_read", [baseDomain], { fields, limit: 1, order: "id desc" });
       rate = rows?.[0] || null;
     }
     return rate;
@@ -195,11 +203,7 @@ async function resolveOdooPreview(odoo, paymentMethod) {
     };
   }
 
-  const rate = await resolveTacaTacaRate(odoo, {
-    planId,
-    cardType: parsed.cardType,
-    installments: parsed.installments,
-  });
+  const rate = await resolveTacaTacaRate(odoo, { planId, cardType: parsed.cardType, installments: parsed.installments });
   const meta = await resolveFinancingRateFieldMeta(odoo);
   const rawPercent = meta?.percentField ? rate?.[meta.percentField] : null;
   const percent = cleanPercent(rawPercent);
@@ -216,7 +220,7 @@ async function resolveOdooPreview(odoo, paymentMethod) {
   };
 }
 
-async function resolveEffectivePreview(odoo, paymentMethod) {
+async function resolveSingleEffectivePreview(odoo, paymentMethod) {
   const method = String(paymentMethod || "").trim();
   if (!method) {
     return {
@@ -248,6 +252,57 @@ async function resolveEffectivePreview(odoo, paymentMethod) {
     };
   }
   return { ok: true, ...odooPreview, odoo_percent: odooPreview.percent || 0 };
+}
+
+async function resolveMultiplePreview(odoo, paymentMethod) {
+  const components = parseMultiplePaymentComponents(paymentMethod) || [];
+  const shareTotal = round2(components.reduce((acc, x) => acc + Number(x.share_percent || 0), 0));
+  if (!components.length || Math.abs(shareTotal - 100) > 0.01) {
+    return {
+      ok: true,
+      applies_financing: false,
+      percent: 0,
+      payment_method: paymentMethod,
+      source: "multiple",
+      multiple_valid: false,
+      multiple_share_total: shareTotal,
+      components,
+    };
+  }
+
+  const resolved = [];
+  let weighted = 0;
+  for (const component of components) {
+    const preview = await resolveSingleEffectivePreview(odoo, component.payment_method);
+    const componentPercent = cleanPercent(preview?.percent || 0);
+    const contribution = round2((Number(component.share_percent || 0) / 100) * componentPercent);
+    weighted += contribution;
+    resolved.push({
+      payment_method: component.payment_method,
+      share_percent: component.share_percent,
+      financing_percent: componentPercent,
+      weighted_percent: contribution,
+      source: preview?.source || "none",
+    });
+  }
+
+  const percent = round2(weighted);
+  return {
+    ok: true,
+    applies_financing: percent !== 0,
+    percent,
+    payment_method: paymentMethod,
+    source: "multiple",
+    multiple_valid: true,
+    multiple_share_total: shareTotal,
+    components: resolved,
+  };
+}
+
+async function resolveEffectivePreview(odoo, paymentMethod) {
+  const method = String(paymentMethod || "").trim();
+  if (isMultiplePaymentMethod(method)) return resolveMultiplePreview(odoo, method);
+  return resolveSingleEffectivePreview(odoo, method);
 }
 
 async function buildMethodsResponse(odoo) {
@@ -295,7 +350,7 @@ export function buildFinancingSettingsRouter(odoo) {
   router.get("/payment-methods", requireAuth, async (_req, res, next) => {
     try {
       const saved = await listSavedSettings();
-      const methodNames = [...new Set([...DEFAULT_PAYMENT_METHODS, ...saved.map((row) => row.payment_method)].filter(Boolean))];
+      const methodNames = [...new Set([MULTIPLE_PAYMENT_METHOD, ...DEFAULT_PAYMENT_METHODS, ...saved.map((row) => row.payment_method)].filter(Boolean))];
       methodNames.sort((a, b) => String(a).localeCompare(String(b), "es"));
       res.json({ ok: true, payment_methods: methodNames });
     } catch (e) { next(e); }
@@ -316,7 +371,7 @@ export function buildFinancingSettingsRouter(odoo) {
       for (const item of methods) {
         const paymentMethod = String(item?.payment_method || "").trim().replace(/\s+/g, " ");
         const key = normalizePaymentMethodKey(paymentMethod);
-        if (!key || !paymentMethod || seenKeys.has(key)) continue;
+        if (!key || !paymentMethod || seenKeys.has(key) || isMultiplePaymentMethod(paymentMethod)) continue;
         seenKeys.add(key);
         await dbQuery(`
           insert into public.presupuestador_financing_settings (payment_method_key, payment_method, percent, active, updated_at, updated_by)
