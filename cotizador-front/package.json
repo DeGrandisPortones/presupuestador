@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "node ./scripts/apply_presupuestos_distributor_no_legacy_doors_patch.cjs && node ./scripts/apply_presupuestos_devueltos_medicion_patch.cjs && node ./scripts/apply_hide_legacy_add_door_patch.cjs && node ./scripts/apply_acopio_revision_notice_patch.cjs && node ./scripts/apply_portones_parantes_y_distancia_patch.cjs && node ./scripts/apply_parantes_horizontal_labels_patch.cjs && node ./scripts/apply_parantes_sketch_compact_patch.cjs && node ./scripts/apply_quote_detail_medidas_paso_patch.cjs && vite build",
+    "build": "node ./scripts/apply_presupuestos_distributor_no_legacy_doors_patch.cjs && node ./scripts/apply_presupuestos_devueltos_medicion_patch.cjs && node ./scripts/apply_hide_legacy_add_door_patch.cjs && node ./scripts/apply_acopio_revision_notice_patch.cjs && node ./scripts/apply_portones_parantes_y_distancia_patch.cjs && node ./scripts/apply_parantes_horizontal_labels_patch.cjs && node ./scripts/apply_parantes_sketch_compact_patch.cjs && vite build",
     "lint": "eslint .",
     "preview": "vite preview"
   },
