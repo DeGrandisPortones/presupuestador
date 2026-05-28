@@ -390,19 +390,18 @@ function buildCalculatedPreview({ widthM, heightM, lines, params, portonType, di
     : 0;
   const legsLabel = legsTypeForWeight(estimatedWeightKg, aptoParaRevestir, params);
   const legsKey = mapLegsKeyForWidth(legsLabel);
-  const pasoHeightDiscountMm = getNumberParam(params, ["paso_height_discount_mm", "paso_alto_descuento_mm", "step_height_discount_mm"], 110);
+  const legacyPasoHeightDiscountMm = getNumberParam(params, ["paso_height_discount_mm", "paso_alto_descuento_mm", "step_height_discount_mm"], 110);
   const pasoWidthDiscountMm = getPasoWidthDiscountByLegMm(legsKey, params);
-  const preliminaryAltoPasoMm = Math.max(0, heightMm - pasoHeightDiscountMm);
   const anchoPasoMm = Math.max(0, widthMm - pasoWidthDiscountMm);
   const hojaHeightDiscountMm = getNumberParam(params, ["hoja_height_discount_mm", "hoja_alto_descuento_mm", "leaf_height_discount_mm"], 10);
   const hojaRebajeLateralDiscountMm = getNumberParam(params, ["hoja_lateral_rebaje_width_discount_mm", "rebaje_lateral_hoja_discount_mm", "leaf_lateral_rebaje_width_discount_mm"], 5);
   const pasoAltoFromHojaDiscountMm = getNumberParam(
     params,
     ["paso_from_hoja_height_discount_mm", "paso_alto_desde_hoja_descuento_mm", "paso_alto_descuento_desde_hoja_mm", "step_height_from_leaf_discount_mm"],
-    100,
+    Math.max(0, legacyPasoHeightDiscountMm - hojaHeightDiscountMm),
   );
   const hasRebajeLateral = hasHojaRebajeLateral(lines, params);
-  const altoHojaMm = Math.max(0, preliminaryAltoPasoMm - hojaHeightDiscountMm);
+  const altoHojaMm = Math.max(0, heightMm - hojaHeightDiscountMm);
   const altoPasoMm = Math.max(0, altoHojaMm - pasoAltoFromHojaDiscountMm);
   const anchoHojaMm = Math.max(0, anchoPasoMm - (hasRebajeLateral ? hojaRebajeLateralDiscountMm : 0));
   return { effectiveKgM2, estimatedWeightKg, legsLabel, altoPasoMm, anchoPasoMm, altoHojaMm, anchoHojaMm, hasRebajeLateral };
@@ -432,42 +431,275 @@ function ComputedCard({ label, value }) {
     </div>
   );
 }
-function ParantesSketchModal({ open, onClose, orientation, parantesCount, portonWidthMm = 0, portonHeightMm = 0 }) {
+function getBaseParantesDimensionMm({ orientation, widthM, heightM }) {
+  const baseM = normalizeOrientation(orientation) === "horizontal" ? Number(heightM || 0) : Number(widthM || 0);
+  return Math.max(0, Math.round((Number.isFinite(baseM) ? baseM : 0) * 1000));
+}
+function getParantesEffectiveSpanMm(baseDimensionMm, tubeDiscountMm) {
+  void tubeDiscountMm;
+  const base = Math.max(0, Number(baseDimensionMm || 0));
+  return Math.max(0, base);
+}
+function buildUniformParantesDistances({ firstDistanceMm, parantesCount, baseDimensionMm, tubeDiscountMm }) {
+  void tubeDiscountMm;
+  const count = Math.max(0, Math.trunc(Number(parantesCount || 0)));
+  if (!count) return [];
+  const base = Math.max(0, Number(baseDimensionMm || 0));
+  const next = Array(count).fill("");
+  const rawFirst = Number(firstDistanceMm || 0);
+  const hasFixedFirst = Number.isFinite(rawFirst) && rawFirst > 0;
+  if (hasFixedFirst) {
+    const first = Math.max(0, Math.min(rawFirst, base));
+    next[0] = formatNumberForInput(first);
+    if (count === 1) return next;
+    const remainingStep = Math.max(0, (base - first) / count);
+    for (let i = 1; i < count; i += 1) next[i] = formatNumberForInput(remainingStep);
+    return next;
+  }
+  const uniformStep = Math.max(0, base / (count + 1));
+  for (let i = 0; i < count; i += 1) next[i] = formatNumberForInput(uniformStep);
+  return next;
+}
+function buildResolvedParantesDistances({ distanceList, distributeUniformly, parantesCount, baseDimensionMm, tubeDiscountMm }) {
+  const current = padDistanceList(distanceList, parantesCount);
+  if (!distributeUniformly) return current;
+  const first = parseMmNumber(current[0]);
+  return buildUniformParantesDistances({ firstDistanceMm: first, parantesCount, baseDimensionMm, tubeDiscountMm });
+}
+function buildSketchParanteMarkers({ distances, parantesCount, baseDimensionMm, tubeDiscountMm }) {
+  const count = Math.max(0, Math.trunc(Number(parantesCount || 0)));
+  const tube = Math.max(0, Number(tubeDiscountMm || 0) || DEFAULT_PARANTES_TUBE_DISCOUNT_MM);
+  const span = getParantesEffectiveSpanMm(baseDimensionMm, tube);
+  if (!count || !span) return [];
+
+  const normalizedDistances = padDistanceList(distances, count);
+  const hasAnyDistance = normalizedDistances.some((item) => {
+    const n = parseMmNumber(item);
+    return Number.isFinite(n) && n > 0;
+  });
+  const distanceInputs = (hasAnyDistance
+    ? normalizedDistances
+    : buildUniformParantesDistances({ parantesCount: count, baseDimensionMm, tubeDiscountMm: tube })
+  ).map((item) => parseMmNumber(item));
+
+  const positions = [];
+  let centerCursor = 0;
+  for (let index = 0; index < count; index += 1) {
+    const distance = distanceInputs[index];
+    const gap = Number.isFinite(distance) && distance > 0 ? distance : 0;
+    centerCursor += gap;
+    const center = Math.max(tube / 2, Math.min(Math.max(tube / 2, span - tube / 2), centerCursor));
+    positions.push(Math.max(0, center - tube / 2));
+    centerCursor = center;
+  }
+  return positions.map((position, index) => ({
+    index,
+    position,
+    widthMm: tube,
+    label: ORDINAL_LABELS[index] ? `${ORDINAL_LABELS[index]} parante` : `parante ${index + 1}`,
+    distance: distanceInputs[index],
+  }));
+}
+function getFinalLateralGapMm(markers, baseDimensionMm, tubeDiscountMm) {
+  const tube = Math.max(0, Number(tubeDiscountMm || 0) || DEFAULT_PARANTES_TUBE_DISCOUNT_MM);
+  const span = getParantesEffectiveSpanMm(baseDimensionMm, tube);
+  if (!Number.isFinite(span) || span <= 0 || !Array.isArray(markers) || !markers.length) return null;
+  const last = markers[markers.length - 1];
+  const lastCenter = Number(last?.position || 0) + Number(last?.widthMm || tube) / 2;
+  const gap = span - lastCenter;
+  return Number.isFinite(gap) && gap >= 0 ? gap : null;
+}
+function buildDisplayMarkers(markers = [], effectiveSpanMm, reverseAxis) {
+  return (Array.isArray(markers) ? markers : []).map((marker) => {
+    const widthMm = Number(marker?.widthMm || 0) || 0;
+    const position = Math.max(0, Number(marker?.position || 0) || 0);
+    const drawPositionMm = reverseAxis ? Math.max(0, effectiveSpanMm - position - widthMm) : position;
+    const centerMm = drawPositionMm + widthMm / 2;
+    const distanceFromActiveLateralMm = reverseAxis
+      ? Math.max(0, effectiveSpanMm - drawPositionMm - widthMm)
+      : drawPositionMm;
+    return { ...marker, drawPositionMm, centerMm, distanceFromActiveLateralMm };
+  });
+}
+function buildDimensionSegments(markers = [], effectiveSpanMm, reverseAxis = false) {
+  const displayed = buildDisplayMarkers(markers, effectiveSpanMm, reverseAxis);
+  const orderedDisplayed = [...displayed].sort((a, b) => (a?.centerMm || 0) - (b?.centerMm || 0));
+  const points = [0, ...orderedDisplayed.map((marker) => marker.centerMm), effectiveSpanMm];
+  const segments = [];
+  for (let index = 0; index < points.length - 1; index += 1) {
+    const startMm = points[index];
+    const endMm = points[index + 1];
+    segments.push({ index, startMm, endMm, lengthMm: Math.max(0, endMm - startMm) });
+  }
+  return { displayed, segments };
+}
+function ParantesSketchModal({
+  open,
+  onClose,
+  orientation,
+  parantesCount,
+  baseDimensionMm,
+  distances,
+  distributeUniformly,
+  tubeDiscountMm,
+  portonWidthMm = 0,
+  portonHeightMm = 0,
+}) {
   if (!open) return null;
   const isHorizontal = normalizeOrientation(orientation) === "horizontal";
   const count = Math.max(0, Math.trunc(Number(parantesCount || 0)));
+  const tube = Math.max(0, Number(tubeDiscountMm || 0) || DEFAULT_PARANTES_TUBE_DISCOUNT_MM);
+  const effectiveSpan = Math.max(1, getParantesEffectiveSpanMm(baseDimensionMm, tube));
+  const distanceList = buildResolvedParantesDistances({
+    distanceList: distances,
+    distributeUniformly,
+    parantesCount: count,
+    baseDimensionMm,
+    tubeDiscountMm: tube,
+  });
+  const markers = buildSketchParanteMarkers({ distances: distanceList, parantesCount: count, baseDimensionMm, tubeDiscountMm: tube });
+  const reverseAxis = false;
+  const { displayed: displayMarkers, segments: dimensionSegments } = buildDimensionSegments(markers, effectiveSpan, reverseAxis);
+  const finalLateralGapMm = getFinalLateralGapMm(markers, baseDimensionMm, tube);
   const width = 720;
   const height = 360;
   const rectX = 70;
-  const rectY = 60;
+  const rectY = 55;
   const rectW = 560;
   const rectH = 220;
-  const items = Array.from({ length: count }, (_, i) => i + 1);
+  const axisLength = isHorizontal ? rectH : rectW;
+  const scale = axisLength / effectiveSpan;
+  const axisStart = isHorizontal ? rectY : rectX;
+  const crossStart = isHorizontal ? rectX : rectY;
+  const crossSize = isHorizontal ? rectW : rectH;
+  const segmentColor = "#dc2626";
+  const paranteColor = "#2563eb";
+  const lateralColor = "#111827";
+  const title = isHorizontal ? "Distribución sobre el alto del portón" : "Distribución sobre el ancho del portón";
+  const axisLabelA = isHorizontal ? "Superior" : "Izquierdo";
+  const axisLabelB = isHorizontal ? "Inferior" : "Derecho";
+
   return (
-    <div role="dialog" aria-modal="true" style={{ position: "fixed", inset: 0, background: "rgba(15, 23, 42, 0.45)", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }} onClick={onClose}>
-      <div style={{ width: "min(920px, 96vw)", maxHeight: "92vh", overflow: "auto", background: "#fff", borderRadius: 16, padding: 16, boxShadow: "0 20px 60px rgba(15,23,42,0.3)" }} onClick={(e) => e.stopPropagation()}>
-        <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center" }}>
+    <div
+      role="dialog"
+      aria-modal="true"
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "rgba(15, 23, 42, 0.45)",
+        zIndex: 9999,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: 16,
+      }}
+      onClick={onClose}
+    >
+      <div
+        style={{
+          width: "min(980px, 96vw)",
+          maxHeight: "92vh",
+          overflow: "auto",
+          background: "#fff",
+          borderRadius: 16,
+          padding: 16,
+          boxShadow: "0 20px 60px rgba(15,23,42,0.3)",
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start" }}>
           <div>
             <div style={{ fontWeight: 900, fontSize: 18 }}>Esquema de parantes</div>
-            <div className="muted">Orientacion {isHorizontal ? "horizontal" : "vertical"} - {count} parantes internos - ancho {formatMm(portonWidthMm)} - alto {formatMm(portonHeightMm)}</div>
+            <div className="muted">
+              Orientación {isHorizontal ? "horizontal" : "vertical"} - {count || 0} parantes internos + 2 laterales - base exterior {formatMm(baseDimensionMm)} - ancho caño {formatMm(tube)} - luz para repartir {formatMm(effectiveSpan)}
+            </div>
           </div>
-          <button type="button" onClick={onClose} style={{ border: "1px solid #ddd", borderRadius: 10, padding: "8px 12px", background: "#fff", cursor: "pointer" }}>Cerrar</button>
+          <button type="button" onClick={onClose} style={{ border: "1px solid #ddd", borderRadius: 10, padding: "8px 12px", background: "#fff", cursor: "pointer" }}>
+            Cerrar
+          </button>
         </div>
         <div className="spacer" />
         <svg viewBox={`0 0 ${width} ${height}`} style={{ width: "100%", height: "auto", border: "1px solid #e5e7eb", borderRadius: 14, background: "#f8fafc" }}>
-          <rect x={rectX} y={rectY} width={rectW} height={rectH} rx="10" fill="#ffffff" stroke="#334155" strokeWidth="3" />
-          {items.map((n, i) => {
-            const pos = (i + 1) / (count + 1);
+          <text x={width / 2} y="32" textAnchor="middle" fontSize="18" fontWeight="800" fill="#111827">{title}</text>
+          <text x="10" y={isHorizontal ? rectY + 8 : rectY + rectH / 2} fontSize="13" fontWeight="800" fill="#111827">{axisLabelA}</text>
+          <text x={isHorizontal ? 10 : rectX + rectW - 20} y={isHorizontal ? rectY + rectH + 18 : rectY + rectH / 2} fontSize="13" fontWeight="800" fill="#111827">{axisLabelB}</text>
+          <rect x={rectX} y={rectY} width={rectW} height={rectH} rx="8" fill="#ffffff" stroke="#334155" strokeWidth="3" />
+          <line x1={rectX + rectW / 2} y1={rectY} x2={rectX + rectW / 2} y2={rectY + rectH} stroke="#e5e7eb" strokeWidth="1" />
+          <line x1={rectX} y1={rectY + rectH / 2} x2={rectX + rectW} y2={rectY + rectH / 2} stroke="#e5e7eb" strokeWidth="1" />
+          {isHorizontal ? (
+            <>
+              <line x1={rectX} y1={rectY + 4} x2={rectX + rectW} y2={rectY + 4} stroke={lateralColor} strokeWidth="8" strokeLinecap="round" />
+              <line x1={rectX} y1={rectY + rectH - 4} x2={rectX + rectW} y2={rectY + rectH - 4} stroke={lateralColor} strokeWidth="8" strokeLinecap="round" />
+            </>
+          ) : (
+            <>
+              <line x1={rectX + 4} y1={rectY} x2={rectX + 4} y2={rectY + rectH} stroke={lateralColor} strokeWidth="8" strokeLinecap="round" />
+              <line x1={rectX + rectW - 4} y1={rectY} x2={rectX + rectW - 4} y2={rectY + rectH} stroke={lateralColor} strokeWidth="8" strokeLinecap="round" />
+            </>
+          )}
+          {displayMarkers.map((marker) => {
+            const posPx = axisStart + marker.centerMm * scale;
             if (isHorizontal) {
-              const y = rectY + rectH * pos;
-              return <line key={n} x1={rectX} y1={y} x2={rectX + rectW} y2={y} stroke="#2563eb" strokeWidth="5" />;
+              return (
+                <g key={`marker-${marker.index}`}>
+                  <line x1={rectX} y1={posPx} x2={rectX + rectW} y2={posPx} stroke={paranteColor} strokeWidth="5" />
+                  <circle cx={rectX + rectW + 22} cy={posPx} r="12" fill={paranteColor} />
+                  <text x={rectX + rectW + 22} y={posPx + 5} textAnchor="middle" fontSize="13" fontWeight="800" fill="#fff">{marker.index + 1}</text>
+                </g>
+              );
             }
-            const x = rectX + rectW * pos;
-            return <line key={n} x1={x} y1={rectY} x2={x} y2={rectY + rectH} stroke="#2563eb" strokeWidth="5" />;
+            return (
+              <g key={`marker-${marker.index}`}>
+                <line x1={posPx} y1={rectY} x2={posPx} y2={rectY + rectH} stroke={paranteColor} strokeWidth="5" />
+                <circle cx={posPx} cy={rectY + rectH + 22} r="12" fill={paranteColor} />
+                <text x={posPx} y={rectY + rectH + 27} textAnchor="middle" fontSize="13" fontWeight="800" fill="#fff">{marker.index + 1}</text>
+              </g>
+            );
+          })}
+          {dimensionSegments.map((segment) => {
+            const startPx = axisStart + segment.startMm * scale;
+            const endPx = axisStart + segment.endMm * scale;
+            const midPx = (startPx + endPx) / 2;
+            const label = `${Math.round(segment.lengthMm)} mm`;
+            if (isHorizontal) {
+              const x = rectX + rectW + 62;
+              return (
+                <g key={`seg-${segment.index}`}>
+                  <line x1={x} y1={startPx} x2={x} y2={endPx} stroke={segmentColor} strokeWidth="2" />
+                  <line x1={x - 6} y1={startPx} x2={x + 6} y2={startPx} stroke={segmentColor} strokeWidth="2" />
+                  <line x1={x - 6} y1={endPx} x2={x + 6} y2={endPx} stroke={segmentColor} strokeWidth="2" />
+                  <text x={x + 10} y={midPx + 4} fontSize="11" fontWeight="800" fill={segmentColor}>{label}</text>
+                </g>
+              );
+            }
+            const y = rectY + rectH + 62;
+            return (
+              <g key={`seg-${segment.index}`}>
+                <line x1={startPx} y1={y} x2={endPx} y2={y} stroke={segmentColor} strokeWidth="2" />
+                <line x1={startPx} y1={y - 6} x2={startPx} y2={y + 6} stroke={segmentColor} strokeWidth="2" />
+                <line x1={endPx} y1={y - 6} x2={endPx} y2={y + 6} stroke={segmentColor} strokeWidth="2" />
+                <text x={midPx} y={y + 18} textAnchor="middle" fontSize="11" fontWeight="800" fill={segmentColor}>{label}</text>
+              </g>
+            );
           })}
         </svg>
         <div className="spacer" />
-        <div className="muted">Esquema orientativo. Las medidas exactas se guardan en el presupuesto.</div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))", gap: 8 }}>
+          <ComputedCard label={isHorizontal ? "Parante superior" : "Parante lateral inicial"} value="0 mm" />
+          {displayMarkers.map((marker) => (
+            <ComputedCard
+              key={`card-${marker.index}`}
+              label={`Parante interno ${marker.index + 1}`}
+              value={`${Math.round(marker.distanceFromActiveLateralMm)} mm desde ${isHorizontal ? "superior" : "lateral"}`}
+            />
+          ))}
+          <ComputedCard label={isHorizontal ? "Parante inferior" : "Parante lateral final"} value={`${Math.round(effectiveSpan)} mm`} />
+        </div>
+        <div className="muted" style={{ marginTop: 8 }}>
+          {distributeUniformly ? "Resto distribuido uniformemente" : "Distribución cargada manualmente"}
+          {finalLateralGapMm !== null ? ` · Libre final: ${Math.round(finalLateralGapMm)} mm` : ""}
+          {portonWidthMm || portonHeightMm ? ` · Hoja ${formatMm(portonWidthMm)} x ${formatMm(portonHeightMm)}` : ""}
+        </div>
       </div>
     </div>
   );
@@ -513,6 +745,13 @@ export default function PortonDimensions({ kind = "porton" }) {
   const autoParantesCount = computeAutomaticParantesCount({ orientation: effectiveParantesOrientation, widthM: width, heightM: height, lines });
   const parantesCount = getParantesCount(dimensions?.cantidad_parantes);
   const tubeDiscountMm = getParantesTubeDiscountMm(params);
+  const baseParantesDimensionMm = useMemo(
+    () => {
+      if (effectiveParantesOrientation === "horizontal") return Math.max(0, Number(preview?.altoHojaMm || preview?.altoPasoMm || 0));
+      return Math.max(0, Number(preview?.anchoHojaMm || preview?.anchoPasoMm || 0));
+    },
+    [effectiveParantesOrientation, preview?.altoHojaMm, preview?.anchoHojaMm, preview?.altoPasoMm, preview?.anchoPasoMm],
+  );
   const rawParantesDistances = dimensions?.distancias_parantes_mm ?? dimensions?.distancias_parantes ?? [];
   const resolvedParantesDistances = padDistanceList(rawParantesDistances, parantesCount);
   const distributeUniformly = dimensions?.distribuir_parantes_uniformemente === true || String(dimensions?.distribuir_parantes_uniformemente || "").trim().toLowerCase() === "true";
@@ -664,7 +903,18 @@ export default function PortonDimensions({ kind = "porton" }) {
         <div className="muted" style={{ marginTop: 8 }}>Estas medidas se guardan dentro del presupuesto para usarlas despues en medicion, calculo de peso y comparacion de superficie.</div>
       </>) : null}
 
-      <ParantesSketchModal open={parantesSketchOpen} onClose={() => setParantesSketchOpen(false)} orientation={effectiveParantesOrientation} parantesCount={parantesCount} portonWidthMm={Math.max(0, Number(preview?.anchoHojaMm || preview?.anchoPasoMm || 0))} portonHeightMm={Math.max(0, Number(preview?.altoHojaMm || preview?.altoPasoMm || 0))} />
+      <ParantesSketchModal
+        open={parantesSketchOpen}
+        onClose={() => setParantesSketchOpen(false)}
+        orientation={effectiveParantesOrientation}
+        parantesCount={parantesCount}
+        baseDimensionMm={baseParantesDimensionMm || getBaseParantesDimensionMm({ orientation: effectiveParantesOrientation, widthM: width, heightM: height })}
+        distances={resolvedParantesDistances}
+        distributeUniformly={distributeUniformly || normalizeDistanceList(resolvedParantesDistances).every((item) => !parseMmNumber(item))}
+        tubeDiscountMm={tubeDiscountMm}
+        portonWidthMm={Math.max(0, Number(preview?.anchoHojaMm || preview?.anchoPasoMm || 0))}
+        portonHeightMm={Math.max(0, Number(preview?.altoHojaMm || preview?.altoPasoMm || 0))}
+      />
     </div>
   );
 }
