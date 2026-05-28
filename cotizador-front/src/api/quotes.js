@@ -1,4 +1,9 @@
 import { http } from "./http.js";
+import { attachTechnicalSnapshot } from "../domain/quote/technicalSnapshot.js";
+
+function withTechnicalSnapshot(payload) {
+  return attachTechnicalSnapshot(payload);
+}
 
 export async function listQuotes({ scope = "mine" } = {}) {
   const params = new URLSearchParams();
@@ -8,9 +13,9 @@ export async function listQuotes({ scope = "mine" } = {}) {
   return data.quotes || [];
 }
 export async function getQuote(id) { const { data } = await http.get(`/api/quotes/${id}`); if (!data?.ok) throw new Error(data?.error || "No se pudo cargar el presupuesto"); return data.quote; }
-export async function createQuote(payload) { const { data } = await http.post(`/api/quotes`, payload); if (!data?.ok) throw new Error(data?.error || "No se pudo crear el presupuesto"); return data.quote; }
-export async function updateQuote(id, payload) { const { data } = await http.put(`/api/quotes/${id}`, payload); if (!data?.ok) throw new Error(data?.error || "No se pudo actualizar el presupuesto"); return data.quote; }
-export async function submitQuote(id, payload = {}) { const body = payload && typeof payload === "object" ? payload : {}; const { data } = await http.post(`/api/quotes/${id}/submit`, body); if (!data?.ok) throw new Error(data?.error || "No se pudo enviar a aprobación"); return data.quote; }
+export async function createQuote(payload) { const body = withTechnicalSnapshot(payload); const { data } = await http.post(`/api/quotes`, body); if (!data?.ok) throw new Error(data?.error || "No se pudo crear el presupuesto"); return data.quote; }
+export async function updateQuote(id, payload) { const body = withTechnicalSnapshot(payload); const { data } = await http.put(`/api/quotes/${id}`, body); if (!data?.ok) throw new Error(data?.error || "No se pudo actualizar el presupuesto"); return data.quote; }
+export async function submitQuote(id, payload = {}) { const body = withTechnicalSnapshot(payload && typeof payload === "object" ? payload : {}); const { data } = await http.post(`/api/quotes/${id}/submit`, body); if (!data?.ok) throw new Error(data?.error || "No se pudo enviar a aprobación"); return data.quote; }
 export async function confirmQuote(id, payload = {}) { const body = payload && typeof payload === "object" ? payload : {}; try { const { data } = await http.post(`/api/quotes/${id}/confirm`, body); if (!data?.ok) throw new Error(data?.error || "No se pudo confirmar el presupuesto"); return data.quote; } catch (e) { const msg = String(e?.message || "").toLowerCase(); if (msg.includes("not found") || msg.includes("404") || msg.includes("cannot post")) return await submitQuote(id, body); throw e; } }
 export async function submitFinalQuote(id) { const { data } = await http.post(`/api/quotes/${id}/final/submit`, {}); if (!data?.ok) throw new Error(data?.error || "No se pudo enviar la cotización final a Odoo"); return data.quote; }
 export async function reviewCommercial(id, { action, notes, billingCustomer } = {}) { const body = { action, notes, billing_customer: billingCustomer || null }; const { data } = await http.post(`/api/quotes/${id}/review/commercial`, body); if (!data?.ok) throw new Error(data?.error || "No se pudo registrar revisión comercial"); return data; }

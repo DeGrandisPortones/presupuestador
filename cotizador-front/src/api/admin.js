@@ -1,4 +1,5 @@
 import { http } from "./http.js";
+import { storeTechnicalRulesForKind } from "../domain/quote/technicalSnapshot.js";
 
 export async function adminGetCatalog(kind = "porton") {
   const { data } = await http.get(`/api/admin/catalog?kind=${encodeURIComponent(kind)}`);
@@ -71,9 +72,12 @@ export async function adminSaveDoorQuoteSettings(payload) {
 }
 
 export async function adminGetTechnicalMeasurementRules(kind = "porton") {
-  const { data } = await http.get(`/api/admin/technical-measurement-rules?kind=${encodeURIComponent(kind || "porton")}`);
+  const normalizedKind = kind || "porton";
+  const { data } = await http.get(`/api/admin/technical-measurement-rules?kind=${encodeURIComponent(normalizedKind)}`);
   if (!data?.ok) throw new Error(data?.error || "No se pudieron cargar las reglas técnicas");
-  return data.rules || { rules: [] };
+  const rules = data.rules || { rules: [] };
+  storeTechnicalRulesForKind(normalizedKind, rules);
+  return rules;
 }
 
 export async function adminSaveTechnicalMeasurementRules(kindOrPayload = "porton", maybePayload) {
@@ -82,7 +86,9 @@ export async function adminSaveTechnicalMeasurementRules(kindOrPayload = "porton
   const payload = hasExplicitKind ? maybePayload : kindOrPayload;
   const { data } = await http.put(`/api/admin/technical-measurement-rules?kind=${encodeURIComponent(kind || "porton")}`, payload || {});
   if (!data?.ok) throw new Error(data?.error || "No se pudieron guardar las reglas técnicas");
-  return data.rules || { rules: [] };
+  const rules = data.rules || { rules: [] };
+  storeTechnicalRulesForKind(kind || "porton", rules);
+  return rules;
 }
 
 export async function adminGetTechnicalMeasurementFieldDefinitions() {

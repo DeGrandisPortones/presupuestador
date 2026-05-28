@@ -418,6 +418,44 @@ function formatMetersFromMmForApproval(valueMm) {
   return `${(n / 1000).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} m`;
 }
 
+function parseSavedStepMm(value) {
+  const n = Number(String(value ?? "").replace(",", "."));
+  if (!Number.isFinite(n) || n <= 0) return 0;
+  return n < 20 ? Math.round(n * 1000) : Math.round(n);
+}
+
+function getSavedMedidasPasoForApproval(dimensions = {}) {
+  const source = dimensions && typeof dimensions === "object" ? dimensions : {};
+  const nested = source.medidas_paso && typeof source.medidas_paso === "object" ? source.medidas_paso : {};
+  const anchoMm = parseSavedStepMm(
+    source.medidas_paso_ancho_mm ??
+    source.paso_ancho_mm ??
+    nested.ancho_mm ??
+    source.medidas_paso_ancho_m ??
+    source.paso_ancho_m ??
+    nested.ancho_m
+  );
+  const altoMm = parseSavedStepMm(
+    source.medidas_paso_alto_mm ??
+    source.paso_alto_mm ??
+    nested.alto_mm ??
+    source.medidas_paso_alto_m ??
+    source.paso_alto_m ??
+    nested.alto_m
+  );
+  const text = String(source.medidas_paso_text || nested.text || "").trim();
+  return { anchoMm, altoMm, text };
+}
+
+function formatSavedMedidasPasoForApproval(dimensions = {}) {
+  const saved = getSavedMedidasPasoForApproval(dimensions);
+  if (saved.text) return saved.text;
+  if (saved.anchoMm > 0 && saved.altoMm > 0) {
+    return `${formatMetersFromMmForApproval(saved.anchoMm)} x ${formatMetersFromMmForApproval(saved.altoMm)}`;
+  }
+  return "";
+}
+
 function normalizeOrientationLabelForApproval(value) {
   const raw = String(value || "").trim().toLowerCase();
   if (raw === "horizontal" || raw === "horizontales") return "Horizontal";
@@ -461,9 +499,10 @@ function computeApprovalTechnicalPreview(quote) {
   const legsKey = mapLegsKeyForWidthForApproval(legsLabel);
   const pasoHeightDiscountMm = getNumberParamForApproval(params, ["paso_height_discount_mm", "paso_alto_descuento_mm", "step_height_discount_mm"], 110);
   const pasoWidthDiscountMm = getPasoWidthDiscountByLegMmForApproval(legsKey, params);
-  const altoPasoMm = Math.max(0, heightMm - pasoHeightDiscountMm);
-  const anchoPasoMm = Math.max(0, widthMm - pasoWidthDiscountMm);
-  return { widthM, heightM, areaM2, effectiveKgM2, estimatedWeightKg, legsLabel, altoPasoMm, anchoPasoMm };
+  const savedStep = getSavedMedidasPasoForApproval(dimensions);
+  const altoPasoMm = savedStep.altoMm > 0 ? savedStep.altoMm : Math.max(0, heightMm - pasoHeightDiscountMm);
+  const anchoPasoMm = savedStep.anchoMm > 0 ? savedStep.anchoMm : Math.max(0, widthMm - pasoWidthDiscountMm);
+  return { widthM, heightM, areaM2, effectiveKgM2, estimatedWeightKg, legsLabel, altoPasoMm, anchoPasoMm, medidasPasoText: savedStep.text };
 }
 
 function conditionModeLabel(mode) {
@@ -526,7 +565,7 @@ function buildApprovalContextRows(quote, conditionMode) {
   pushApprovalContextEntry(rows, "Tipología / sistema", sistemaEntry);
   pushApprovalContextRow(rows, "Kg/m² efectivo", preview.effectiveKgM2 > 0 ? `${preview.effectiveKgM2.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} kg/m²` : "");
   pushApprovalContextRow(rows, "Superficie", preview.areaM2 > 0 ? `${preview.areaM2.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} m²` : "");
-  pushApprovalContextRow(rows, "Medidas de paso", preview.altoPasoMm > 0 && preview.anchoPasoMm > 0 ? `${formatMetersFromMmForApproval(preview.anchoPasoMm)} x ${formatMetersFromMmForApproval(preview.altoPasoMm)}` : "");
+  pushApprovalContextRow(rows, "Medidas de paso", formatSavedMedidasPasoForApproval(dimensions) || (preview.altoPasoMm > 0 && preview.anchoPasoMm > 0 ? `${formatMetersFromMmForApproval(preview.anchoPasoMm)} x ${formatMetersFromMmForApproval(preview.altoPasoMm)}` : ""));
   pushApprovalContextRow(rows, "Peso estimado", preview.estimatedWeightKg > 0 ? `${preview.estimatedWeightKg.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} kg` : "");
   pushApprovalContextRow(rows, "Piernas estimadas", preview.legsLabel || formatTechnicalValue(firstTechnicalEntry(sources, ["piernas_tipo", "tipo_piernas", "piernas", "leg_type", "legs_type"])?.value));
   const orientacionParantesValue = normalizeOrientationLabelForApproval(orientacionParantesEntry?.value || "verticales");
