@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import toast from "react-hot-toast";
 import Input from "../../../ui/Input.jsx";
@@ -6,8 +6,6 @@ import Button from "../../../ui/Button.jsx";
 import { useQuoteStore } from "../../../domain/quote/store.js";
 import { PAYMENT_METHODS } from "../../../domain/quote/portonConstants.js";
 import { getFinancingPaymentMethods } from "../../../api/financingSettings.js";
-import { IVA_RATE_DEFAULT } from "../../../domain/quote/defaults.js";
-import { calcTotals, formatARS } from "../../../domain/quote/pricing.js";
 
 const MULTIPLE_PAYMENT_METHOD = "PAGO MÚLTIPLE";
 
@@ -41,9 +39,30 @@ function formatPercent(n) {
   return new Intl.NumberFormat("es-AR", { maximumFractionDigits: 2 }).format(round2(n));
 }
 
+function normalizeKey(value) {
+  return String(value || "")
+    .trim()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, " ")
+    .trim()
+    .replace(/\s+/g, " ");
+}
+
 function isMultiplePaymentMethod(value) {
-  const raw = String(value || "").trim().normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase();
-  return raw.startsWith("PAGO MULTIPLE");
+  return normalizeKey(value).startsWith("PAGO MULTIPLE");
+}
+
+function paymentAllowsCondition2(value) {
+  const key = normalizeKey(value);
+  if (!key || isMultiplePaymentMethod(value)) return false;
+  return (
+    key.includes("CHEQUE") ||
+    key.includes("CTA CTE") ||
+    key.includes("CUENTA CORRIENTE") ||
+    key.includes("EFECTIVO")
+  );
 }
 
 function parseExistingMultiple(paymentMethod) {
@@ -53,29 +72,29 @@ function parseExistingMultiple(paymentMethod) {
   return matches.map((m, idx) => ({
     id: `${Date.now()}-${idx}`,
     method: String(m[1] || "").trim(),
-    valueMode: "percent",
     value: String(m[2] || "").replace(".", ","),
   }));
 }
 
-function buildRowPercent(row, baseTotal) {
-  const value = normalizeNumber(row.value);
-  if (row.valueMode === "amount") {
-    return baseTotal > 0 ? round2((value / baseTotal) * 100) : 0;
-  }
-  return round2(value);
+function buildRowPercent(row) {
+  return round2(normalizeNumber(row.value));
 }
 
-function MultiplePaymentModal({ open, onClose, paymentMethods, baseTotal, initialPaymentMethod, onApply }) {
+function MultiplePaymentModal({ open, onClose, paymentMethods, initialPaymentMethod, onApply }) {
   const [rows, setRows] = useState(() => {
     const parsed = parseExistingMultiple(initialPaymentMethod);
-    return parsed.length ? parsed : [{ id: `${Date.now()}-0`, method: "", valueMode: "percent", value: "" }];
+    return parsed.length ? parsed : [{ id: `${Date.now()}-0`, method: "", value: "" }];
   });
+
+  useEffect(() => {
+    if (!open) return;
+    const parsed = parseExistingMultiple(initialPaymentMethod);
+    setRows(parsed.length ? parsed : [{ id: `${Date.now()}-0`, method: "", value: "" }]);
+  }, [open, initialPaymentMethod]);
 
   if (!open) return null;
 
-  const safeBaseTotal = Number(baseTotal || 0) || 0;
-  const rowPercents = rows.map((row) => buildRowPercent(row, safeBaseTotal));
+  const rowPercents = rows.map((row) => buildRowPercent(row));
   const percentTotal = round2(rowPercents.reduce((acc, n) => acc + n, 0));
   const hasMissing = rows.some((row) => !String(row.method || "").trim() || !(normalizeNumber(row.value) > 0));
   const isComplete = !hasMissing && Math.abs(percentTotal - 100) <= 0.01;
@@ -89,16 +108,12 @@ function MultiplePaymentModal({ open, onClose, paymentMethods, baseTotal, initia
   };
 
   const addRow = () => {
-    setRows((current) => [...current, { id: `${Date.now()}-${current.length}`, method: "", valueMode: "percent", value: "" }]);
+    setRows((current) => [...current, { id: `${Date.now()}-${current.length}`, method: "", value: "" }]);
   };
 
   const apply = () => {
-    if (safeBaseTotal <= 0 && rows.some((row) => row.valueMode === "amount")) {
-      toast.error("Para cargar importes, primero agregá ítems al presupuesto.");
-      return;
-    }
     if (hasMissing) {
-      toast.error("Completá forma de pago y porcentaje/importe en todas las filas.");
+      toast.error("Completá forma de pago y porcentaje en todas las filas.");
       return;
     }
     if (!isComplete) {
@@ -107,24 +122,22 @@ function MultiplePaymentModal({ open, onClose, paymentMethods, baseTotal, initia
     }
 
     const parts = rows.map((row) => {
-      const pct = buildRowPercent(row, safeBaseTotal);
-      const amountText = row.valueMode === "amount" ? ` (${formatARS(normalizeNumber(row.value))})` : "";
-      return { method: String(row.method || "").trim(), percent: pct, amountText };
+      const pct = buildRowPercent(row);
+      return { method: String(row.method || "").trim(), percent: pct };
     });
 
-    const paymentMethod = `PAGO MÚLTIPLE: ${parts.map((p) => `[${p.method}] ${formatPercent(p.percent)}%${p.amountText}`).join("; ")}`;
-    const detail = `Pago múltiple:\n${parts.map((p) => `- ${p.method}: ${formatPercent(p.percent)}%${p.amountText}`).join("\n")}`;
+    const paymentMethod = `PAGO MÚLTIPLE: ${parts.map((p) => `[${p.method}] ${formatPercent(p.percent)}%`).join("; ")}`;
+    const detail = `Pago múltiple:\n${parts.map((p) => `- ${p.method}: ${formatPercent(p.percent)}%`).join("\n")}`;
     onApply({ paymentMethod, detail });
   };
 
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20, zIndex: 1200 }} onClick={onClose}>
-      <div className="card" style={{ width: "100%", maxWidth: 920, maxHeight: "90vh", overflow: "auto", background: "#fff", border: "1px solid #ddd", boxShadow: "0 20px 60px rgba(0,0,0,0.18)" }} onClick={(e) => e.stopPropagation()}>
+      <div className="card" style={{ width: "100%", maxWidth: 820, maxHeight: "90vh", overflow: "auto", background: "#fff", border: "1px solid #ddd", boxShadow: "0 20px 60px rgba(0,0,0,0.18)" }} onClick={(e) => e.stopPropagation()}>
         <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start" }}>
           <div>
             <div style={{ fontWeight: 900, fontSize: 24, marginBottom: 4 }}>Pago múltiple</div>
-            <div className="muted">Declarar el 100% de la forma de pago. Podés cargar porcentaje o importe.</div>
-            <div className="muted" style={{ marginTop: 4 }}>Base para importes: <b>{formatARS(safeBaseTotal)}</b></div>
+            <div className="muted">Declarar el 100% de la forma de pago. Se carga solo por porcentaje.</div>
           </div>
           <Button variant="ghost" onClick={onClose}>Cerrar</Button>
         </div>
@@ -133,9 +146,9 @@ function MultiplePaymentModal({ open, onClose, paymentMethods, baseTotal, initia
 
         <div style={{ display: "grid", gap: 10 }}>
           {rows.map((row, idx) => {
-            const pct = buildRowPercent(row, safeBaseTotal);
+            const pct = buildRowPercent(row);
             return (
-              <div key={row.id} style={{ display: "grid", gridTemplateColumns: "minmax(240px, 1.7fr) 120px minmax(140px, 1fr) 120px auto", gap: 8, alignItems: "end", border: "1px solid #eee", borderRadius: 12, padding: 10 }}>
+              <div key={row.id} style={{ display: "grid", gridTemplateColumns: "minmax(260px, 1.7fr) minmax(140px, 1fr) 120px auto", gap: 8, alignItems: "end", border: "1px solid #eee", borderRadius: 12, padding: 10 }}>
                 <div>
                   <div className="muted" style={{ marginBottom: 5 }}>Forma de pago {idx + 1}</div>
                   <select value={row.method} onChange={(e) => updateRow(row.id, { method: e.target.value })} style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: "1px solid #ddd" }}>
@@ -144,18 +157,11 @@ function MultiplePaymentModal({ open, onClose, paymentMethods, baseTotal, initia
                   </select>
                 </div>
                 <div>
-                  <div className="muted" style={{ marginBottom: 5 }}>Carga</div>
-                  <select value={row.valueMode} onChange={(e) => updateRow(row.id, { valueMode: e.target.value, value: "" })} style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: "1px solid #ddd" }}>
-                    <option value="percent">%</option>
-                    <option value="amount">$</option>
-                  </select>
+                  <div className="muted" style={{ marginBottom: 5 }}>Porcentaje</div>
+                  <Input value={row.value} onChange={(v) => updateRow(row.id, { value: v })} placeholder="50" inputMode="decimal" style={{ width: "100%" }} />
                 </div>
                 <div>
-                  <div className="muted" style={{ marginBottom: 5 }}>{row.valueMode === "amount" ? "Importe" : "Porcentaje"}</div>
-                  <Input value={row.value} onChange={(v) => updateRow(row.id, { value: v })} placeholder={row.valueMode === "amount" ? "100000" : "50"} inputMode="decimal" style={{ width: "100%" }} />
-                </div>
-                <div>
-                  <div className="muted" style={{ marginBottom: 5 }}>Equivale</div>
+                  <div className="muted" style={{ marginBottom: 5 }}>Declarado</div>
                   <div style={{ fontWeight: 900, paddingBottom: 8 }}>{formatPercent(pct)}%</div>
                 </div>
                 <Button variant="ghost" onClick={() => removeRow(row.id)} disabled={rows.length <= 1}>Quitar</Button>
@@ -193,7 +199,6 @@ export default function HeaderBar({ showMargin }) {
     setPaymentMethod,
     endCustomer,
     setEndCustomer,
-    lines,
   } = useQuoteStore();
   const [multipleOpen, setMultipleOpen] = useState(false);
 
@@ -208,8 +213,15 @@ export default function HeaderBar({ showMargin }) {
     [paymentMethodsQ.data, paymentMethod],
   );
 
-  const baseTotals = useMemo(() => calcTotals(lines, marginPercent, IVA_RATE_DEFAULT, 0), [lines, marginPercent]);
   const isMultiplePayment = isMultiplePaymentMethod(paymentMethod);
+  const allowsCondition2 = paymentAllowsCondition2(paymentMethod);
+  const conditionValue = allowsCondition2 && conditionMode === "cond2" ? "cond2" : "cond1";
+
+  useEffect(() => {
+    if (!["cond1", "cond2"].includes(conditionMode) || (!allowsCondition2 && conditionMode !== "cond1")) {
+      setConditionMode("cond1");
+    }
+  }, [allowsCondition2, conditionMode, setConditionMode]);
 
   const coefClass =
     marginPercent < 0 ? "coef-input coef-negative" :
@@ -222,11 +234,14 @@ export default function HeaderBar({ showMargin }) {
       return;
     }
     setPaymentMethod(nextValue);
+    if (!paymentAllowsCondition2(nextValue)) {
+      setConditionMode("cond1");
+    }
   };
 
   const applyMultiplePayment = ({ paymentMethod: nextPaymentMethod, detail }) => {
     setPaymentMethod(nextPaymentMethod);
-    setConditionMode("cond2");
+    setConditionMode("cond1");
     setConditionText(detail);
     setMultipleOpen(false);
   };
@@ -237,7 +252,6 @@ export default function HeaderBar({ showMargin }) {
         open={multipleOpen}
         onClose={() => setMultipleOpen(false)}
         paymentMethods={paymentMethods}
-        baseTotal={baseTotals.total}
         initialPaymentMethod={paymentMethod}
         onApply={applyMultiplePayment}
       />
@@ -316,20 +330,23 @@ export default function HeaderBar({ showMargin }) {
           <div className="muted">Condición</div>
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
             <select
-              value={isMultiplePayment ? "cond2" : (conditionMode || "cond1")}
-              onChange={(e) => setConditionMode(e.target.value)}
-              disabled={isMultiplePayment}
+              value={conditionValue}
+              onChange={(e) => {
+                const nextMode = e.target.value === "cond2" && allowsCondition2 ? "cond2" : "cond1";
+                setConditionMode(nextMode);
+              }}
+              disabled={!allowsCondition2}
               style={{ padding: "8px 10px", borderRadius: 8, border: "1px solid #ddd", minWidth: 150 }}
               title="Condición"
             >
               <option value="cond1">Condición 1</option>
-              <option value="cond2">Condición 2</option>
-              <option value="special">Especial</option>
+              {allowsCondition2 ? <option value="cond2">Condición 2</option> : null}
             </select>
-            {(conditionMode === "special" || isMultiplePayment) ? (
-              <Input value={conditionText || ""} onChange={(v) => setConditionText(v)} placeholder="Escribí la condición..." style={{ minWidth: 360 }} />
+            {allowsCondition2 && conditionValue === "cond2" ? (
+              <Input value={conditionText || ""} onChange={(v) => setConditionText(v)} placeholder="Detalle condición 2..." style={{ minWidth: 320 }} />
             ) : null}
           </div>
+          {!allowsCondition2 ? <div className="muted" style={{ marginTop: 4, fontSize: 12 }}>Condición 2 solo para cheque, cuenta corriente o efectivo.</div> : null}
         </div>
       </div>
     </div>
