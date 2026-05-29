@@ -36,14 +36,14 @@ function PasswordCell({ value }) {
   return (
     <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
       <code style={{ fontSize: 14, fontWeight: 800, whiteSpace: "nowrap" }}>{password}</code>
-      <Button variant="ghost" onClick={() => copyToClipboard(password, "Contraseña")}>Copiar</Button>
+      <Button variant="ghost" onClick={() => copyToClipboard(password, "Contrasena")}>Copiar</Button>
     </div>
   );
 }
 
 function PricelistCell({ distributor, pricelistById }) {
   const id = Number(distributor?.odoo_pricelist_id || 0) || 0;
-  if (!id) return <span className="muted">—</span>;
+  if (!id) return <span className="muted">-</span>;
   const pricelist = pricelistById.get(id);
   const name = String(pricelist?.name || "").trim();
   if (!name) return <span>{id}</span>;
@@ -51,6 +51,18 @@ function PricelistCell({ distributor, pricelistById }) {
     <div>
       <div style={{ fontWeight: 800 }}>{name}</div>
       <div className="muted" style={{ fontSize: 12 }}>ID Odoo: {id}</div>
+    </div>
+  );
+}
+
+function SellerCell({ distributor }) {
+  const sellerName = String(distributor?.assigned_seller_full_name || "").trim();
+  const sellerUser = String(distributor?.assigned_seller_username || "").trim();
+  if (!sellerName && !sellerUser) return <span className="muted">Sin vendedor</span>;
+  return (
+    <div>
+      <div style={{ fontWeight: 800 }}>{sellerName || sellerUser}</div>
+      {sellerName && sellerUser ? <div className="muted" style={{ fontSize: 12 }}>{sellerUser}</div> : null}
     </div>
   );
 }
@@ -68,7 +80,7 @@ function MapsCell({ distributor, value, onChange, onSave, saving }) {
         style={{ width: "100%", minWidth: 0, padding: 8, borderRadius: 10, border: "1px solid #ddd" }}
       />
       <Button variant="secondary" disabled={saving || !changed} onClick={() => onSave(current)}>
-        {saving ? "Guardando…" : "Guardar"}
+        {saving ? "Guardando..." : "Guardar"}
       </Button>
     </div>
   );
@@ -76,7 +88,8 @@ function MapsCell({ distributor, value, onChange, onSave, saving }) {
 
 export default function MyDistributorsPage() {
   const user = useAuthStore((s) => s.user);
-  const canAccess = !!(user?.is_superuser || (user?.is_vendedor && !user?.is_distribuidor));
+  const canAccess = !!(user?.is_superuser || user?.is_enc_comercial || (user?.is_vendedor && !user?.is_distribuidor));
+  const canSeeAll = !!(user?.is_superuser || user?.is_enc_comercial);
   const [searchText, setSearchText] = useState("");
   const [mapsDrafts, setMapsDrafts] = useState({});
   const qc = useQueryClient();
@@ -148,7 +161,7 @@ export default function MyDistributorsPage() {
         <div className="spacer" />
         <div className="card">
           <h2 style={{ marginTop: 0 }}>Mis distribuidores</h2>
-          <div className="muted">No tenés permisos para ver esta sección.</div>
+          <div className="muted">No tenes permisos para ver esta seccion.</div>
         </div>
       </div>
     );
@@ -175,10 +188,14 @@ export default function MyDistributorsPage() {
       <div className="card" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
         <div>
           <h2 style={{ margin: 0 }}>Mis distribuidores</h2>
-          <div className="muted">Listado de distribuidores asignados a tu usuario, con sus credenciales de acceso.</div>
+          <div className="muted">
+            {canSeeAll
+              ? "Listado completo de distribuidores, con vendedor asignado y credenciales de acceso."
+              : "Listado de distribuidores asignados a tu usuario, con sus credenciales de acceso."}
+          </div>
         </div>
         <Button variant="secondary" onClick={() => { q.refetch(); pricelistsQ.refetch(); }} disabled={q.isFetching || pricelistsQ.isFetching}>
-          {q.isFetching || pricelistsQ.isFetching ? "Actualizando…" : "Actualizar"}
+          {q.isFetching || pricelistsQ.isFetching ? "Actualizando..." : "Actualizar"}
         </Button>
       </div>
 
@@ -188,7 +205,7 @@ export default function MyDistributorsPage() {
           <input
             value={searchText}
             onChange={(e) => setSearchText(e.target.value)}
-            placeholder="Buscar por distribuidor, usuario, contraseña, lista de precios, partner o estado…"
+            placeholder="Buscar por distribuidor, vendedor, usuario, contrasena, lista de precios, partner o estado..."
             style={{ flex: 1, minWidth: 280, padding: 10, borderRadius: 12, border: "1px solid #ddd" }}
           />
           <div className="muted" style={{ fontSize: 13 }}>
@@ -204,27 +221,29 @@ export default function MyDistributorsPage() {
 
       <div className="spacer" />
       <div className="card" style={{ overflowX: "auto" }}>
-        {q.isLoading ? <div className="muted">Cargando distribuidores…</div> : null}
+        {q.isLoading ? <div className="muted">Cargando distribuidores...</div> : null}
         {q.isError ? <div style={{ color: "#d93025", fontSize: 13 }}>{q.error?.message || "No se pudieron cargar los distribuidores"}</div> : null}
-        {!q.isLoading && !distributors.length ? <div className="muted">No tenés distribuidores asignados.</div> : null}
-        {!q.isLoading && !!distributors.length && !filteredDistributors.length ? <div className="muted">No hay distribuidores que coincidan con la búsqueda.</div> : null}
+        {!q.isLoading && !distributors.length ? <div className="muted">No hay distribuidores para mostrar.</div> : null}
+        {!q.isLoading && !!distributors.length && !filteredDistributors.length ? <div className="muted">No hay distribuidores que coincidan con la busqueda.</div> : null}
 
         {!!filteredDistributors.length ? (
-          <table style={{ width: "100%", minWidth: 1260, tableLayout: "fixed" }}>
+          <table style={{ width: "100%", minWidth: 1380, tableLayout: "fixed" }}>
             <colgroup>
-              <col style={{ width: "18%" }} />
-              <col style={{ width: "18%" }} />
+              <col style={{ width: "16%" }} />
+              <col style={{ width: "14%" }} />
+              <col style={{ width: "15%" }} />
               <col style={{ width: "10%" }} />
               <col style={{ width: "12%" }} />
-              <col style={{ width: "9%" }} />
-              <col style={{ width: "25%" }} />
               <col style={{ width: "8%" }} />
+              <col style={{ width: "19%" }} />
+              <col style={{ width: "6%" }} />
             </colgroup>
             <thead>
               <tr>
                 <th>Distribuidor</th>
+                <th>Vendedor</th>
                 <th>Usuario</th>
-                <th>Contraseña</th>
+                <th>Contrasena</th>
                 <th>Lista de precios</th>
                 <th>Partner Odoo</th>
                 <th>Maps por defecto</th>
@@ -240,6 +259,7 @@ export default function MyDistributorsPage() {
                       <div style={{ fontWeight: 900 }}>{d.full_name || username}</div>
                       {d.full_name ? <div className="muted" style={{ fontSize: 12 }}>{username}</div> : null}
                     </td>
+                    <td style={tableCellStyle}><SellerCell distributor={d} /></td>
                     <td style={tableCellStyle}>
                       <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
                         <code style={{ fontSize: 14, fontWeight: 800 }}>{username}</code>
@@ -248,7 +268,7 @@ export default function MyDistributorsPage() {
                     </td>
                     <td style={tableCellStyle}><PasswordCell value={d.visible_password} /></td>
                     <td style={tableCellStyle}><PricelistCell distributor={d} pricelistById={pricelistById} /></td>
-                    <td style={tableCellStyle}>{d.odoo_partner_id || <span className="muted">—</span>}</td>
+                    <td style={tableCellStyle}>{d.odoo_partner_id || <span className="muted">-</span>}</td>
                     <td style={tableCellStyle}>
                       <MapsCell
                         distributor={d}

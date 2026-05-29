@@ -21,7 +21,7 @@ function OdooStatusBadge() {
         minWidth: 82,
         textAlign: "center",
       }}
-      title={isOnline ? "Conexión con Odoo disponible" : "Sin respuesta válida desde Odoo"}
+      title={isOnline ? "Conexion con Odoo disponible" : "Sin respuesta valida desde Odoo"}
     >
       {isOnline ? "Online" : "Offline"}
     </div>
@@ -58,10 +58,10 @@ function TechnicalConsultHeaderButton() {
       <Button
         variant={highlight ? "primary" : "ghost"}
         onClick={() => navigate("/consultas-tecnicas")}
-        title={highlight ? `${unreadCount} consulta(s) pendiente(s)` : "Abrir consultas técnicas"}
+        title={highlight ? `${unreadCount} consulta(s) pendiente(s)` : "Abrir consultas tecnicas"}
         style={{ position: "relative", paddingRight: highlight ? 38 : undefined }}
       >
-        Consulta técnica
+        Consulta tecnica
       </Button>
       {highlight ? (
         <span
@@ -102,16 +102,16 @@ export default function AppLayout() {
   if (user?.is_distribuidor) roles.push("Distribuidor");
   if (user?.is_vendedor) roles.push("Vendedor");
   if (user?.is_enc_comercial) roles.push("Enc. Comercial");
-  if (user?.is_rev_tecnica) roles.push("Rev. Técnica");
+  if (user?.is_rev_tecnica) roles.push("Rev. Tecnica");
   if (user?.is_medidor) roles.push("Medidor");
-  if (user?.is_logistica) roles.push("Logística");
+  if (user?.is_logistica) roles.push("Logistica");
 
-  const roleText = roles.length ? roles.join(" / ") : "Cargando sesión...";
+  const roleText = roles.length ? roles.join(" / ") : "Cargando sesion...";
 
   const showDashboard = !!(isSuperuser || user?.is_enc_comercial);
   const showUsers = !!(isSuperuser || user?.is_enc_comercial);
   const canQuote = !!(isSuperuser || user?.is_vendedor || user?.is_distribuidor);
-  const showMyDistributors = !!(isSuperuser || (user?.is_vendedor && !user?.is_distribuidor));
+  const showMyDistributors = !!(isSuperuser || user?.is_enc_comercial || (user?.is_vendedor && !user?.is_distribuidor));
   const showMediciones = !!(isSuperuser || user?.is_medidor) && !user?.is_rev_tecnica;
   const showCommercial = !!(isSuperuser || user?.is_enc_comercial);
   const showTechnical = !!(isSuperuser || user?.is_rev_tecnica);
@@ -123,7 +123,7 @@ export default function AppLayout() {
           <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
             <img className="brand-logo" src="/brands/dflex.png" alt="Dflex" />
             <div>
-              <div className="muted">{user ? `${user.username} · ${roleText}` : roleText}</div>
+              <div className="muted">{user ? `${user.username} - ${roleText}` : roleText}</div>
             </div>
           </div>
 
@@ -143,7 +143,7 @@ export default function AppLayout() {
         </div>
 
         <div className="container" style={{ padding: 0, marginTop: 10, display: "flex", gap: 10, flexWrap: "wrap" }}>
-          <NavLink className={({ isActive }) => (isActive ? "navlink active" : "navlink")} to="/menu">Menú</NavLink>
+          <NavLink className={({ isActive }) => (isActive ? "navlink active" : "navlink")} to="/menu">Menu</NavLink>
 
           {canQuote && (
             <>
@@ -167,10 +167,10 @@ export default function AppLayout() {
 
           {showMyDistributors && <NavLink className={({ isActive }) => (isActive ? "navlink active" : "navlink")} to="/mis-distribuidores">Mis distribuidores</NavLink>}
           {showMediciones && <NavLink className={({ isActive }) => (isActive ? "navlink active" : "navlink")} to="/mediciones">Mediciones</NavLink>}
-          {showCommercial && <NavLink className={({ isActive }) => (isActive ? "navlink active" : "navlink")} to="/aprobacion/comercial">Aprobación Comercial</NavLink>}
+          {showCommercial && <NavLink className={({ isActive }) => (isActive ? "navlink active" : "navlink")} to="/aprobacion/comercial">Aprobacion Comercial</NavLink>}
           {showDashboard && <NavLink className={({ isActive }) => (isActive ? "navlink active" : "navlink")} to="/dashboard">Dashboard</NavLink>}
           {showUsers && <NavLink className={({ isActive }) => (isActive ? "navlink active" : "navlink")} to="/usuarios">Gestor de usuarios</NavLink>}
-          {showTechnical && <NavLink className={({ isActive }) => (isActive ? "navlink active" : "navlink")} to="/aprobacion/tecnica">Revisión Técnica</NavLink>}
+          {showTechnical && <NavLink className={({ isActive }) => (isActive ? "navlink active" : "navlink")} to="/aprobacion/tecnica">Revision Tecnica</NavLink>}
         </div>
       </div>
 

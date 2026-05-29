@@ -3,7 +3,6 @@ import { requireAuth } from "../auth.js";
 import { dbQuery } from "../db.js";
 import { ensureUsersAdminColumns } from "../usersDb.js";
 
-
 function validateGoogleMapsUrl(value) {
   const raw = String(value || "").trim();
   if (!raw) return "";
@@ -14,26 +13,31 @@ function validateGoogleMapsUrl(value) {
     if (["maps.app.goo.gl", "www.google.com", "google.com", "maps.google.com", "g.page"].includes(host)) return raw;
     if (host.endsWith(".google.com") && path.includes("maps")) return raw;
   } catch {
-    throw new Error("Google Maps inválido");
+    throw new Error("Google Maps invalido");
   }
-  throw new Error("Google Maps inválido");
+  throw new Error("Google Maps invalido");
 }
 
-function requireSeller(req, res, next) {
-  if (!req.user?.is_vendedor && !req.user?.is_superuser) {
+function requireSellerOrCommercial(req, res, next) {
+  if (!req.user?.is_vendedor && !req.user?.is_enc_comercial && !req.user?.is_superuser) {
     return res.status(403).json({ ok: false, error: "No autorizado" });
   }
   next();
 }
 
+function canSeeAllDistributors(user) {
+  return !!(user?.is_superuser || user?.is_enc_comercial);
+}
+
 export function buildSellerDistributorsRouter() {
   const router = express.Router();
 
-  router.get("/mine", requireAuth, requireSeller, async (req, res, next) => {
+  router.get("/mine", requireAuth, requireSellerOrCommercial, async (req, res, next) => {
     try {
       await ensureUsersAdminColumns();
       const sellerId = Number(req.user?.user_id || req.user?.id || 0);
-      if (!sellerId) return res.status(400).json({ ok: false, error: "Usuario inválido" });
+      const seeAll = canSeeAllDistributors(req.user);
+      if (!sellerId && !seeAll) return res.status(400).json({ ok: false, error: "Usuario invalido" });
 
       const q = await dbQuery(
         `
@@ -53,32 +57,34 @@ export function buildSellerDistributorsRouter() {
           from public.presupuestador_users d
           left join public.presupuestador_users s on s.id = d.assigned_seller_user_id
          where coalesce(d.is_distribuidor,false) = true
-           and d.assigned_seller_user_id = $1
-         order by coalesce(nullif(d.full_name,''), d.username) asc, d.username asc
+           and ($1::boolean = true or d.assigned_seller_user_id = $2)
+         order by coalesce(nullif(s.full_name,''), s.username, '') asc,
+                  coalesce(nullif(d.full_name,''), d.username) asc,
+                  d.username asc
         `,
-        [sellerId]
+        [seeAll, sellerId]
       );
 
-      res.json({ ok: true, distributors: q.rows || [] });
+      res.json({ ok: true, distributors: q.rows || [], scope: seeAll ? "all" : "mine" });
     } catch (e) {
       next(e);
     }
   });
 
-
-  router.put("/:id/default-maps-url", requireAuth, requireSeller, async (req, res, next) => {
+  router.put("/:id/default-maps-url", requireAuth, requireSellerOrCommercial, async (req, res, next) => {
     try {
       await ensureUsersAdminColumns();
       const distributorId = Number(req.params.id || 0);
       const sellerId = Number(req.user?.user_id || req.user?.id || 0);
-      if (!distributorId) return res.status(400).json({ ok: false, error: "Distribuidor inválido" });
-      if (!sellerId) return res.status(400).json({ ok: false, error: "Usuario inválido" });
+      const seeAll = canSeeAllDistributors(req.user);
+      if (!distributorId) return res.status(400).json({ ok: false, error: "Distribuidor invalido" });
+      if (!sellerId && !seeAll) return res.status(400).json({ ok: false, error: "Usuario invalido" });
 
       const defaultMapsUrl = validateGoogleMapsUrl(req.body?.default_maps_url || "");
-      const params = req.user?.is_superuser
+      const params = seeAll
         ? [distributorId, defaultMapsUrl]
         : [distributorId, defaultMapsUrl, sellerId];
-      const ownerWhere = req.user?.is_superuser ? "" : "and d.assigned_seller_user_id = $3";
+      const ownerWhere = seeAll ? "" : "and d.assigned_seller_user_id = $3";
 
       const q = await dbQuery(
         `

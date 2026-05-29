@@ -38,7 +38,7 @@ export default function MenuPage() {
   const showUsers = !!(isSuperuser || user?.is_enc_comercial);
   const showTechInbox = !!(isSuperuser || user?.is_rev_tecnica);
   const showDoors = !!(isSuperuser || user?.is_vendedor || user?.is_distribuidor);
-  const showMyDistributors = !!(isSuperuser || (user?.is_vendedor && !user?.is_distribuidor));
+  const showMyDistributors = !!(isSuperuser || user?.is_enc_comercial || (user?.is_vendedor && !user?.is_distribuidor));
   const showMediciones = !!(isSuperuser || user?.is_medidor);
   const showTechnicalRules = !!isSuperuser;
   const showQuoteViewer = !!isSuperuser;
@@ -50,7 +50,7 @@ export default function MenuPage() {
     <div className="container">
       <div className="spacer" />
       <div className="card">
-        <h2 style={{ margin: 0, textAlign: "center" }}>Menú</h2>
+        <h2 style={{ margin: 0, textAlign: "center" }}>Menu</h2>
       </div>
       <div className="spacer" />
       <div className="menu-grid">
@@ -106,7 +106,7 @@ export default function MenuPage() {
             title="Mis distribuidores"
             buttonText="Ver distribuidores"
             onClick={() => navigate("/mis-distribuidores")}
-            icon="👥"
+            icon=""
           />
         )}
 
@@ -115,16 +115,16 @@ export default function MenuPage() {
         )}
 
         {showDashboard && <MenuTile title="Dashboard" buttonText="Abrir dashboard" onClick={() => navigate("/dashboard")} iconSrc="/menu-icons/dashboard.png" />}
-        {isSuperuser && <MenuTile title="Catálogo Puertas" buttonText="Configurar puertas" onClick={() => navigate("/dashboard/catalogo-puertas")} iconSrc="/menu-icons/puertas.png" />}
-        {showPlanning && <MenuTile title="Planificación" buttonText="Abrir planificación" onClick={() => navigate("/planificacion")} iconSrc="/menu-icons/planificacion.png" />}
-        {showFinancing && <MenuTile title="Financiamiento" buttonText="Abrir financiamiento" onClick={() => navigate("/financiamiento")} icon="💳" />}
-        {showTechnicalRules && <MenuTile title="Reglas Técnicas" buttonText="Abrir reglas" onClick={() => navigate("/dashboard/reglas-tecnicas")} iconSrc="/menu-icons/reglas-tecnicas.png" />}
-        {showPdfNamesAdmin && <MenuTile title="Nombres PDF productos" buttonText="Abrir nombres PDF" onClick={() => navigate("/superuser/nombres-pdf")} icon="📝" />}
-        {showProductionAssignments && <MenuTile title="Asignación de propiedades a producción" buttonText="Abrir asignación" onClick={() => navigate("/superuser/asignacion-produccion")} icon="🧩" />}
-        {showQuoteViewer && <MenuTile title="Visualizador de portones" buttonText="Abrir visualizador" onClick={() => navigate("/superuser/visualizador-porton")} icon="🔎" />}
-        {showSellerActivity && <MenuTile title="Actividad vendedores / distribuidores" buttonText="Abrir actividad" onClick={() => navigate("/superuser/actividad-vendedores")} icon="📊" />}
+        {isSuperuser && <MenuTile title="Catalogo Puertas" buttonText="Configurar puertas" onClick={() => navigate("/dashboard/catalogo-puertas")} iconSrc="/menu-icons/puertas.png" />}
+        {showPlanning && <MenuTile title="Planificacion" buttonText="Abrir planificacion" onClick={() => navigate("/planificacion")} iconSrc="/menu-icons/planificacion.png" />}
+        {showFinancing && <MenuTile title="Financiamiento" buttonText="Abrir financiamiento" onClick={() => navigate("/financiamiento")} icon="" />}
+        {showTechnicalRules && <MenuTile title="Reglas Tecnicas" buttonText="Abrir reglas" onClick={() => navigate("/dashboard/reglas-tecnicas")} iconSrc="/menu-icons/reglas-tecnicas.png" />}
+        {showPdfNamesAdmin && <MenuTile title="Nombres PDF productos" buttonText="Abrir nombres PDF" onClick={() => navigate("/superuser/nombres-pdf")} icon="" />}
+        {showProductionAssignments && <MenuTile title="Asignacion de propiedades a produccion" buttonText="Abrir asignacion" onClick={() => navigate("/superuser/asignacion-produccion")} icon="" />}
+        {showQuoteViewer && <MenuTile title="Visualizador de portones" buttonText="Abrir visualizador" onClick={() => navigate("/superuser/visualizador-porton")} icon="" />}
+        {showSellerActivity && <MenuTile title="Actividad vendedores / distribuidores" buttonText="Abrir actividad" onClick={() => navigate("/superuser/actividad-vendedores")} icon="" />}
         {showUsers && <MenuTile title="Gestor de usuarios" buttonText="Abrir gestor" onClick={() => navigate("/usuarios")} iconSrc="/menu-icons/gestor-usuarios.png" />}
-        {showCommercialInbox && <MenuTile title="Aprobación Comercial" buttonText="Ir a aprobación" onClick={() => navigate("/aprobacion/comercial")} iconSrc="/menu-icons/aprobacion-comercial.png" />}
+        {showCommercialInbox && <MenuTile title="Aprobacion Comercial" buttonText="Ir a aprobacion" onClick={() => navigate("/aprobacion/comercial")} iconSrc="/menu-icons/aprobacion-comercial.png" />}
 
         {showTechInbox && (
           <>
