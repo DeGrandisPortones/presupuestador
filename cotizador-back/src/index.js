@@ -54,7 +54,6 @@ const odoo = createOdooClient({
 app.use("/api/auth", buildAuthRouter());
 app.use("/api/odoo", buildOdooRouter(odoo));
 app.use("/api/financing-settings", buildFinancingSettingsRouter(odoo));
-app.use("/api/price-lists", buildPriceListsRouter(odoo));
 app.use("/api/production-planning", buildProductionPlanningRouter());
 app.use("/api/quotes", buildQuotesRouter(odoo));
 app.use("/api/doors", buildDoorsRouter(odoo));
@@ -65,6 +64,7 @@ app.use("/api/admin", buildAdminRouter(odoo));
 app.use("/api/quote-viewer", buildQuoteViewerRouter());
 app.use("/api/technical-consults", buildTechnicalConsultsRouter());
 app.use("/api/seller-distributors", buildSellerDistributorsRouter());
+app.use("/api/price-lists", buildPriceListsRouter(odoo));
 app.use("/api/pdf", buildPdfRouter(odoo));
 app.get("/health", (_req, res) => res.json({ ok: true }));
 
