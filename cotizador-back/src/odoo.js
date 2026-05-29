@@ -8,6 +8,7 @@ function extractDoorOrderReferenceFromNote(note) {
   const ref = String(match[1] || "").trim().toUpperCase();
   return ref.startsWith("PNP") ? ref : "";
 }
+
 function normalizeIdList(value) {
   if (Array.isArray(value)) return value.map(Number).filter((id) => Number.isFinite(id) && id > 0);
   const n = Number(value);
@@ -65,11 +66,26 @@ export function createOdooClient({ url, db, username, password, companyId = null
 
   function withCompanyContext(kwargs = {}) {
     const ctx = { ...(kwargs.context || {}) };
-    if (ODOO_COMPANY_ID) {
+    const skipDefaultCompanyContext =
+      kwargs.skipDefaultCompanyContext === true ||
+      ctx.__skip_default_company_context === true;
+
+    delete ctx.__skip_default_company_context;
+
+    // Si un router pasa company_id / allowed_company_ids, respetamos ese contexto.
+    // Esto permite consultar listas de Vert aunque ODOO_COMPANY_ID apunte a Dflex.
+    const hasExplicitCompany =
+      ctx.company_id != null ||
+      (Array.isArray(ctx.allowed_company_ids) && ctx.allowed_company_ids.length > 0);
+
+    if (!skipDefaultCompanyContext && ODOO_COMPANY_ID && !hasExplicitCompany) {
       ctx.company_id = ODOO_COMPANY_ID;
       ctx.allowed_company_ids = [ODOO_COMPANY_ID];
     }
-    return { ...kwargs, context: ctx };
+
+    const finalKwargs = { ...kwargs, context: ctx };
+    delete finalKwargs.skipDefaultCompanyContext;
+    return finalKwargs;
   }
 
   async function executeKw(model, method, args = [], kwargs = {}) {

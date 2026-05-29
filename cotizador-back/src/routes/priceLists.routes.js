@@ -32,6 +32,23 @@ function roundMoney(value) {
   return Math.round(n * 100) / 100;
 }
 
+function low(value) {
+  return cleanText(value).toLowerCase();
+}
+
+function isDefaultPricelistName(name) {
+  const n = low(name);
+  return n === "predeterminada" || n === "predeterminado" || n.includes("predeterminad") || n === "default";
+}
+
+function companyContext(companyId, extra = {}) {
+  const id = toId(companyId);
+  if (!id) {
+    return { active_test: false, __skip_default_company_context: true, ...extra };
+  }
+  return { active_test: false, company_id: id, allowed_company_ids: [id], ...extra };
+}
+
 async function searchRead(odoo, model, domain, fields, extra = {}) {
   return odoo.executeKw(model, "search_read", [domain], {
     fields,
@@ -39,21 +56,24 @@ async function searchRead(odoo, model, domain, fields, extra = {}) {
   });
 }
 
-async function readRecords(odoo, model, ids, fields) {
+async function readRecords(odoo, model, ids, fields, context = {}) {
   const cleanIds = uniqNumbers(ids);
   if (!cleanIds.length) return [];
-  return odoo.executeKw(model, "read", [cleanIds], { fields, context: { active_test: false } });
+  return odoo.executeKw(model, "read", [cleanIds], { fields, context });
+}
+
+function parseRef(value, defaultType = "item") {
+  const raw = String(value || "").trim();
+  const match = raw.match(/^([a-z_]+):(\d+)$/i);
+  if (match) return { type: match[1].toLowerCase(), id: toId(match[2]) };
+  const id = toId(raw);
+  return id ? { type: defaultType, id } : { type: "", id: null };
 }
 
 function normalizeCompanyFromM2o(company) {
   const id = m2oId(company);
   if (!id) return null;
   return { id, name: m2oName(company) || `Empresa #${id}` };
-}
-
-function buildPricelistCompanyDomain(companyId) {
-  if (!companyId) return [];
-  return ["|", ["company_id", "=", companyId], ["company_id", "=", false]];
 }
 
 function normalizePricelist(pl, fallbackCompanyId = null) {
@@ -65,32 +85,42 @@ function normalizePricelist(pl, fallbackCompanyId = null) {
     name: cleanText(pl?.name || pl?.display_name || `Lista #${id}`),
     company_resolved_id: company?.id || fallbackCompanyId || null,
     company_resolved_name: company?.name || "",
+    is_default_pricelist: isDefaultPricelistName(pl?.name || pl?.display_name),
   };
 }
 
+function pricelistSort(a, b) {
+  const ad = a?.is_default_pricelist ? -1 : 0;
+  const bd = b?.is_default_pricelist ? -1 : 0;
+  if (ad !== bd) return ad - bd;
+  return String(a?.name || "").localeCompare(String(b?.name || ""), "es", { numeric: true });
+}
+
 async function listPricelistsForCompany(odoo, companyId) {
+  const company = toId(companyId);
   const fields = ["id", "name", "display_name", "company_id", "currency_id", "active"];
-  const options = { order: "name asc", context: { active_test: false } };
+  const options = { order: "name asc", context: companyContext(company) };
 
-  // Primero intentamos respetar la empresa asignada en Odoo.
-  let pricelists = await searchRead(
-    odoo,
-    "product.pricelist",
-    buildPricelistCompanyDomain(companyId),
-    fields,
-    options
-  );
+  let domain = [];
+  if (company) domain = [["company_id", "=", company]];
 
-  // En varias bases las listas no tienen company_id explícito. Si no aparece nada
-  // para la empresa elegida, devolvemos todas para que se puedan consultar/editar.
-  if (companyId && (!Array.isArray(pricelists) || pricelists.length === 0)) {
-    pricelists = await searchRead(odoo, "product.pricelist", [], fields, options);
+  let pricelists = await searchRead(odoo, "product.pricelist", domain, fields, options);
+
+  // Fallback solo a listas sin empresa. Nunca devolvemos listas de otra empresa.
+  if (company && (!Array.isArray(pricelists) || pricelists.length === 0)) {
+    pricelists = await searchRead(
+      odoo,
+      "product.pricelist",
+      [["company_id", "=", false]],
+      fields,
+      { order: "name asc", context: companyContext(null) }
+    );
   }
 
   return (pricelists || [])
-    .map((pl) => normalizePricelist(pl, companyId))
+    .map((pl) => normalizePricelist(pl, company))
     .filter((pl) => pl.id)
-    .sort((a, b) => String(a.name).localeCompare(String(b.name), "es"));
+    .sort(pricelistSort);
 }
 
 async function getPricelistOrFail(odoo, id) {
@@ -99,7 +129,7 @@ async function getPricelistOrFail(odoo, id) {
     "product.pricelist",
     [["id", "=", Number(id)]],
     ["id", "name", "display_name", "company_id", "currency_id", "active"],
-    { limit: 1, context: { active_test: false } }
+    { limit: 1, context: companyContext(null) }
   );
   const row = rows?.[0];
   if (!row) {
@@ -108,6 +138,199 @@ async function getPricelistOrFail(odoo, id) {
     throw err;
   }
   return normalizePricelist(row);
+}
+
+async function getPricelistItems(odoo, pricelistId, context) {
+  return searchRead(
+    odoo,
+    "product.pricelist.item",
+    [["pricelist_id", "=", pricelistId]],
+    [
+      "id",
+      "pricelist_id",
+      "product_tmpl_id",
+      "product_id",
+      "categ_id",
+      "applied_on",
+      "compute_price",
+      "fixed_price",
+      "percent_price",
+      "price_discount",
+      "base",
+      "base_pricelist_id",
+      "min_quantity",
+      "date_start",
+      "date_end",
+    ],
+    { order: "applied_on asc, id asc", limit: 10000, context }
+  );
+}
+
+async function productTemplatesForCompany(odoo, companyId) {
+  const context = companyContext(companyId);
+  const domain = [["sale_ok", "=", true]];
+  const rows = await searchRead(
+    odoo,
+    "product.template",
+    domain,
+    ["id", "name", "display_name", "default_code", "list_price", "company_id", "active", "sale_ok"],
+    { order: "name asc", limit: 10000, context }
+  );
+
+  return (rows || [])
+    .filter((p) => p?.active !== false)
+    .map((p) => ({
+      id: `template:${Number(p.id)}`,
+      item_id: null,
+      item_model: "product.template",
+      pricelist_id: null,
+      product_id: null,
+      product_tmpl_id: Number(p.id),
+      product_name: cleanText(p.display_name || p.name || `Producto #${p.id}`),
+      default_code: cleanText(p.default_code || ""),
+      applied_on: "product_template",
+      compute_price: "list_price",
+      fixed_price: Number(p.list_price || 0),
+      percent_price: 0,
+      price_discount: 0,
+      base: "list_price",
+      base_pricelist_id: null,
+      min_quantity: 0,
+      date_start: null,
+      date_end: null,
+    }));
+}
+
+async function normalizePricelistItems(odoo, items, pricelistId, pricelistName, context) {
+  const productVariantIds = items.map((it) => m2oId(it.product_id)).filter(Boolean);
+  const variants = await readRecords(odoo, "product.product", productVariantIds, ["id", "display_name", "default_code", "product_tmpl_id"], context);
+  const variantById = new Map(variants.map((v) => [Number(v.id), v]));
+
+  const tmplIds = [
+    ...items.map((it) => m2oId(it.product_tmpl_id)).filter(Boolean),
+    ...variants.map((v) => m2oId(v.product_tmpl_id)).filter(Boolean),
+  ];
+  const templates = await readRecords(odoo, "product.template", tmplIds, ["id", "name", "display_name", "default_code", "list_price"], context);
+  const tmplById = new Map(templates.map((t) => [Number(t.id), t]));
+
+  return items.map((it) => {
+    const variantId = m2oId(it.product_id);
+    const variant = variantId ? variantById.get(variantId) : null;
+    const tmplId = m2oId(it.product_tmpl_id) || m2oId(variant?.product_tmpl_id);
+    const tmpl = tmplId ? tmplById.get(tmplId) : null;
+    const productName =
+      m2oName(it.product_id) ||
+      m2oName(it.product_tmpl_id) ||
+      cleanText(variant?.display_name) ||
+      cleanText(tmpl?.display_name || tmpl?.name) ||
+      m2oName(it.categ_id) ||
+      "Regla global / categoría";
+
+    return {
+      id: `item:${Number(it.id)}`,
+      item_id: Number(it.id),
+      item_model: "product.pricelist.item",
+      pricelist_id: pricelistId,
+      pricelist_name: pricelistName,
+      product_id: variantId,
+      product_tmpl_id: tmplId,
+      product_name: productName,
+      default_code: cleanText(variant?.default_code || tmpl?.default_code || ""),
+      applied_on: it.applied_on,
+      compute_price: it.compute_price,
+      fixed_price: Number(it.fixed_price || 0),
+      percent_price: Number(it.percent_price || 0),
+      price_discount: Number(it.price_discount || 0),
+      base: it.base,
+      base_pricelist_id: it.base_pricelist_id,
+      min_quantity: Number(it.min_quantity || 0),
+      date_start: it.date_start || null,
+      date_end: it.date_end || null,
+    };
+  });
+}
+
+async function productsForPricelist(odoo, pricelist) {
+  const companyId = pricelist.company_resolved_id || null;
+  const context = companyContext(companyId);
+  const items = await getPricelistItems(odoo, pricelist.id, context);
+
+  if (Array.isArray(items) && items.length) {
+    return normalizePricelistItems(odoo, items, pricelist.id, pricelist.name, context);
+  }
+
+  // En Odoo, la lista Predeterminado suele usar el precio base del producto
+  // y no genera reglas product.pricelist.item. Para esa lista mostramos productos.
+  if (pricelist.is_default_pricelist) {
+    return productTemplatesForCompany(odoo, companyId);
+  }
+
+  return [];
+}
+
+async function updateItemRef(odoo, ref, fixedPrice, companyId = null) {
+  if (ref.type === "template") {
+    await odoo.executeKw(
+      "product.template",
+      "write",
+      [[ref.id], { list_price: roundMoney(fixedPrice) }],
+      { context: companyContext(companyId) }
+    );
+    return { id: `template:${ref.id}`, item_model: "product.template", fixed_price: roundMoney(fixedPrice) };
+  }
+
+  await odoo.executeKw(
+    "product.pricelist.item",
+    "write",
+    [[ref.id], { compute_price: "fixed", fixed_price: roundMoney(fixedPrice) }],
+    { context: companyContext(companyId) }
+  );
+  return { id: `item:${ref.id}`, item_model: "product.pricelist.item", fixed_price: roundMoney(fixedPrice) };
+}
+
+async function increaseTemplatesForCompany(odoo, companyId, pct) {
+  const products = await productTemplatesForCompany(odoo, companyId);
+  let updated = 0;
+  const details = [];
+
+  for (const p of products) {
+    const ref = parseRef(p.id, "template");
+    const current = Number(p.fixed_price || 0);
+    if (!ref.id || !Number.isFinite(current) || current <= 0) continue;
+    const nextPrice = roundMoney(current * (1 + pct / 100));
+    await updateItemRef(odoo, ref, nextPrice, companyId);
+    updated += 1;
+    details.push({ id: p.id, previous_price: current, fixed_price: nextPrice });
+  }
+
+  return { updated, details };
+}
+
+async function increasePricelistItems(odoo, itemIds, pct, companyId = null) {
+  const ids = uniqNumbers(itemIds);
+  if (!ids.length) return { updated: 0, details: [] };
+
+  const items = await searchRead(
+    odoo,
+    "product.pricelist.item",
+    [["id", "in", ids]],
+    ["id", "fixed_price", "compute_price", "pricelist_id", "product_tmpl_id", "product_id"],
+    { limit: 10000, context: companyContext(companyId) }
+  );
+
+  let updated = 0;
+  const details = [];
+
+  for (const item of items || []) {
+    const current = Number(item.fixed_price || 0);
+    if (!Number.isFinite(current) || current <= 0) continue;
+    const nextPrice = roundMoney(current * (1 + pct / 100));
+    await updateItemRef(odoo, { type: "item", id: Number(item.id) }, nextPrice, companyId);
+    updated += 1;
+    details.push({ id: `item:${Number(item.id)}`, previous_price: current, fixed_price: nextPrice });
+  }
+
+  return { updated, details };
 }
 
 export function buildPriceListsRouter(odoo) {
@@ -123,7 +346,7 @@ export function buildPriceListsRouter(odoo) {
           "res.company",
           [],
           ["id", "name", "display_name"],
-          { order: "name asc", context: { active_test: false } }
+          { order: "name asc", context: companyContext(null) }
         );
       } catch (_e) {
         companies = [];
@@ -144,7 +367,7 @@ export function buildPriceListsRouter(odoo) {
         "product.pricelist",
         [],
         ["id", "name", "company_id"],
-        { order: "name asc", context: { active_test: false } }
+        { order: "name asc", context: companyContext(null) }
       );
 
       for (const pl of pricelists || []) {
@@ -169,7 +392,6 @@ export function buildPriceListsRouter(odoo) {
     }
   }
 
-  // Alias explícitos. La pantalla v3 usa /lists para evitar problemas con la ruta raíz.
   router.get("/lists", sendLists);
   router.get("/company/:companyId/lists", sendLists);
   router.get("/by-company/:companyId", sendLists);
@@ -181,76 +403,7 @@ export function buildPriceListsRouter(odoo) {
       if (!pricelistId) return res.status(400).json({ ok: false, error: "Lista inválida." });
 
       const pricelist = await getPricelistOrFail(odoo, pricelistId);
-
-      const items = await searchRead(
-        odoo,
-        "product.pricelist.item",
-        [["pricelist_id", "=", pricelistId]],
-        [
-          "id",
-          "pricelist_id",
-          "product_tmpl_id",
-          "product_id",
-          "categ_id",
-          "applied_on",
-          "compute_price",
-          "fixed_price",
-          "percent_price",
-          "price_discount",
-          "base",
-          "base_pricelist_id",
-          "min_quantity",
-          "date_start",
-          "date_end",
-        ],
-        { order: "applied_on asc, id asc", limit: 5000, context: { active_test: false } }
-      );
-
-      const productVariantIds = items.map((it) => m2oId(it.product_id)).filter(Boolean);
-      const variants = await readRecords(odoo, "product.product", productVariantIds, ["id", "display_name", "default_code", "product_tmpl_id"]);
-      const variantById = new Map(variants.map((v) => [Number(v.id), v]));
-
-      const tmplIds = [
-        ...items.map((it) => m2oId(it.product_tmpl_id)).filter(Boolean),
-        ...variants.map((v) => m2oId(v.product_tmpl_id)).filter(Boolean),
-      ];
-      const templates = await readRecords(odoo, "product.template", tmplIds, ["id", "name", "display_name", "default_code", "list_price"]);
-      const tmplById = new Map(templates.map((t) => [Number(t.id), t]));
-
-      const products = items.map((it) => {
-        const variantId = m2oId(it.product_id);
-        const variant = variantId ? variantById.get(variantId) : null;
-        const tmplId = m2oId(it.product_tmpl_id) || m2oId(variant?.product_tmpl_id);
-        const tmpl = tmplId ? tmplById.get(tmplId) : null;
-        const productName =
-          m2oName(it.product_id) ||
-          m2oName(it.product_tmpl_id) ||
-          cleanText(variant?.display_name) ||
-          cleanText(tmpl?.display_name || tmpl?.name) ||
-          m2oName(it.categ_id) ||
-          "Regla global / categoría";
-
-        return {
-          id: Number(it.id),
-          item_id: Number(it.id),
-          pricelist_id: pricelistId,
-          pricelist_name: pricelist.name,
-          product_id: variantId,
-          product_tmpl_id: tmplId,
-          product_name: productName,
-          default_code: cleanText(variant?.default_code || tmpl?.default_code || ""),
-          applied_on: it.applied_on,
-          compute_price: it.compute_price,
-          fixed_price: Number(it.fixed_price || 0),
-          percent_price: Number(it.percent_price || 0),
-          price_discount: Number(it.price_discount || 0),
-          base: it.base,
-          base_pricelist_id: it.base_pricelist_id,
-          min_quantity: Number(it.min_quantity || 0),
-          date_start: it.date_start || null,
-          date_end: it.date_end || null,
-        };
-      });
+      const products = await productsForPricelist(odoo, pricelist);
 
       res.json({ ok: true, pricelist, products });
     } catch (e) {
@@ -260,20 +413,17 @@ export function buildPriceListsRouter(odoo) {
 
   router.patch("/items/:itemId", async (req, res, next) => {
     try {
-      const itemId = toId(req.params.itemId);
+      const ref = parseRef(req.params.itemId);
       const fixedPrice = Number(req.body?.fixed_price);
+      const companyId = toId(req.body?.company_id);
 
-      if (!itemId) return res.status(400).json({ ok: false, error: "Ítem inválido." });
+      if (!ref.id) return res.status(400).json({ ok: false, error: "Ítem inválido." });
       if (!Number.isFinite(fixedPrice) || fixedPrice < 0) {
         return res.status(400).json({ ok: false, error: "Precio inválido." });
       }
 
-      await odoo.executeKw("product.pricelist.item", "write", [
-        [itemId],
-        { compute_price: "fixed", fixed_price: roundMoney(fixedPrice) },
-      ]);
-
-      res.json({ ok: true, item_id: itemId, fixed_price: roundMoney(fixedPrice) });
+      const result = await updateItemRef(odoo, ref, fixedPrice, companyId);
+      res.json({ ok: true, ...result });
     } catch (e) {
       next(e);
     }
@@ -286,41 +436,50 @@ export function buildPriceListsRouter(odoo) {
         return res.status(400).json({ ok: false, error: "Porcentaje inválido." });
       }
 
-      const itemIds = uniqNumbers(req.body?.item_ids);
+      const companyId = toId(req.body?.company_id);
+      const rawItemIds = asArray(req.body?.item_ids).map((v) => String(v || "").trim()).filter(Boolean);
       const pricelistIds = uniqNumbers(req.body?.pricelist_ids);
 
-      let domain = [];
-      if (itemIds.length) {
-        domain = [["id", "in", itemIds]];
+      let updated = 0;
+      let details = [];
+
+      if (rawItemIds.length) {
+        const itemRefs = rawItemIds.map((id) => parseRef(id)).filter((ref) => ref.id);
+        const priceListItemIds = itemRefs.filter((ref) => ref.type !== "template").map((ref) => ref.id);
+        const templateRefs = itemRefs.filter((ref) => ref.type === "template");
+
+        const itemResult = await increasePricelistItems(odoo, priceListItemIds, pct, companyId);
+        updated += itemResult.updated;
+        details = details.concat(itemResult.details);
+
+        for (const ref of templateRefs) {
+          const rows = await readRecords(odoo, "product.template", [ref.id], ["id", "list_price"], companyContext(companyId));
+          const row = rows?.[0];
+          const current = Number(row?.list_price || 0);
+          if (!row || !Number.isFinite(current) || current <= 0) continue;
+          const nextPrice = roundMoney(current * (1 + pct / 100));
+          await updateItemRef(odoo, ref, nextPrice, companyId);
+          updated += 1;
+          details.push({ id: `template:${ref.id}`, previous_price: current, fixed_price: nextPrice });
+        }
       } else if (pricelistIds.length) {
-        domain = [["pricelist_id", "in", pricelistIds]];
+        for (const pricelistId of pricelistIds) {
+          const pricelist = await getPricelistOrFail(odoo, pricelistId);
+          const ctx = companyContext(pricelist.company_resolved_id || companyId);
+          const items = await getPricelistItems(odoo, pricelistId, ctx);
+
+          if (Array.isArray(items) && items.length) {
+            const result = await increasePricelistItems(odoo, items.map((it) => Number(it.id)), pct, pricelist.company_resolved_id || companyId);
+            updated += result.updated;
+            details = details.concat(result.details);
+          } else if (pricelist.is_default_pricelist) {
+            const result = await increaseTemplatesForCompany(odoo, pricelist.company_resolved_id || companyId, pct);
+            updated += result.updated;
+            details = details.concat(result.details);
+          }
+        }
       } else {
         return res.status(400).json({ ok: false, error: "Faltan listas o productos para actualizar." });
-      }
-
-      const items = await searchRead(
-        odoo,
-        "product.pricelist.item",
-        domain,
-        ["id", "fixed_price", "compute_price", "pricelist_id", "product_tmpl_id", "product_id"],
-        { limit: 10000, context: { active_test: false } }
-      );
-
-      let updated = 0;
-      const details = [];
-
-      for (const item of items || []) {
-        const current = Number(item.fixed_price || 0);
-        if (!Number.isFinite(current) || current <= 0) continue;
-
-        const nextPrice = roundMoney(current * (1 + pct / 100));
-        await odoo.executeKw("product.pricelist.item", "write", [
-          [Number(item.id)],
-          { compute_price: "fixed", fixed_price: nextPrice },
-        ]);
-
-        updated += 1;
-        details.push({ id: Number(item.id), previous_price: current, fixed_price: nextPrice });
       }
 
       res.json({ ok: true, updated, details });
