@@ -533,6 +533,13 @@ function buildDimensionSegments(markers = [], effectiveSpanMm, reverseAxis = fal
   }
   return { displayed, segments };
 }
+function buildFixedReferenceSketchDistances({ distances = [], orientation, fixedDistanceMm }) {
+  const list = normalizeDistanceList(distances);
+  if (normalizeOrientation(orientation) !== "verticales" || !list.length) return list;
+  const fixed = Math.max(0, parseMmNumber(fixedDistanceMm) || 0);
+  const firstGap = parseMmNumber(list[0]) || 0;
+  return [formatNumberForInput(fixed + firstGap), ...list.slice(1)];
+}
 function ParantesSketchModal({
   open,
   onClose,
@@ -544,6 +551,9 @@ function ParantesSketchModal({
   tubeDiscountMm,
   portonWidthMm = 0,
   portonHeightMm = 0,
+  hasFixedVerticalReference = false,
+  fixedReferenceSide = "izquierdo",
+  fixedReferenceDistanceMm = 0,
 }) {
   if (!open) return null;
   const isHorizontal = normalizeOrientation(orientation) === "horizontal";
@@ -574,10 +584,24 @@ function ParantesSketchModal({
   const crossSize = isHorizontal ? rectW : rectH;
   const segmentColor = "#dc2626";
   const paranteColor = "#2563eb";
+  const fixedColor = "#16a34a";
   const lateralColor = "#111827";
   const title = isHorizontal ? "Distribución sobre el alto del portón" : "Distribución sobre el ancho del portón";
   const axisLabelA = isHorizontal ? "Superior" : "Izquierdo";
   const axisLabelB = isHorizontal ? "Inferior" : "Derecho";
+  const fixedSide = String(fixedReferenceSide || "izquierdo").trim().toLowerCase() === "derecho" ? "derecho" : "izquierdo";
+  const fixedDistance = Math.max(0, Number(fixedReferenceDistanceMm || 0) || 0);
+  const effectivePortonWidthMm = Math.max(1, Number(portonWidthMm || 0) || Number(baseDimensionMm || 0) || 1);
+  const fixedBoundaryMm = Math.max(0, Math.min(effectivePortonWidthMm, fixedSide === "derecho" ? effectivePortonWidthMm - fixedDistance : fixedDistance));
+  const fixedBoundaryPx = rectX + (fixedBoundaryMm / effectivePortonWidthMm) * rectW;
+  const showFixedVerticalReference = !!hasFixedVerticalReference && fixedDistance > 0 && effectivePortonWidthMm > 1;
+  const horizontalStartX = isHorizontal && showFixedVerticalReference
+    ? (fixedSide === "izquierdo" ? fixedBoundaryPx : rectX)
+    : rectX;
+  const horizontalEndX = isHorizontal && showFixedVerticalReference
+    ? (fixedSide === "izquierdo" ? rectX + rectW : fixedBoundaryPx)
+    : rectX + rectW;
+  const horizontalMarkerLabelX = fixedSide === "derecho" && showFixedVerticalReference ? horizontalStartX - 22 : horizontalEndX + 22;
 
   return (
     <div
@@ -611,7 +635,7 @@ function ParantesSketchModal({
           <div>
             <div style={{ fontWeight: 900, fontSize: 18 }}>Esquema de parantes</div>
             <div className="muted">
-              Orientación {isHorizontal ? "horizontal" : "vertical"} - {count || 0} parantes internos + 2 laterales - base exterior {formatMm(baseDimensionMm)} - ancho caño {formatMm(tube)} - luz para repartir {formatMm(effectiveSpan)}
+              Orientación {isHorizontal ? "horizontal" : "vertical"} - {count || 0} parantes internos + 2 laterales - base exterior {formatMm(baseDimensionMm)} - ancho caño {formatMm(tube)} - luz para repartir {formatMm(effectiveSpan)}{showFixedVerticalReference ? ` - parante fijo ${fixedSide} a ${formatNumberForInput(fixedDistance)} mm` : ""}
             </div>
           </div>
           <button type="button" onClick={onClose} style={{ border: "1px solid #ddd", borderRadius: 10, padding: "8px 12px", background: "#fff", cursor: "pointer" }}>
@@ -628,8 +652,8 @@ function ParantesSketchModal({
           <line x1={rectX} y1={rectY + rectH / 2} x2={rectX + rectW} y2={rectY + rectH / 2} stroke="#e5e7eb" strokeWidth="1" />
           {isHorizontal ? (
             <>
-              <line x1={rectX} y1={rectY + 4} x2={rectX + rectW} y2={rectY + 4} stroke={lateralColor} strokeWidth="8" strokeLinecap="round" />
-              <line x1={rectX} y1={rectY + rectH - 4} x2={rectX + rectW} y2={rectY + rectH - 4} stroke={lateralColor} strokeWidth="8" strokeLinecap="round" />
+              <line x1={horizontalStartX} y1={rectY + 4} x2={horizontalEndX} y2={rectY + 4} stroke={lateralColor} strokeWidth="8" strokeLinecap="round" />
+              <line x1={horizontalStartX} y1={rectY + rectH - 4} x2={horizontalEndX} y2={rectY + rectH - 4} stroke={lateralColor} strokeWidth="8" strokeLinecap="round" />
             </>
           ) : (
             <>
@@ -637,14 +661,25 @@ function ParantesSketchModal({
               <line x1={rectX + rectW - 4} y1={rectY} x2={rectX + rectW - 4} y2={rectY + rectH} stroke={lateralColor} strokeWidth="8" strokeLinecap="round" />
             </>
           )}
+          {showFixedVerticalReference ? (
+            <g>
+              <line x1={fixedBoundaryPx} y1={rectY} x2={fixedBoundaryPx} y2={rectY + rectH} stroke={fixedColor} strokeWidth="6" strokeLinecap="round" />
+              <rect x={Math.max(rectX + 4, Math.min(rectX + rectW - 100, fixedBoundaryPx - 50))} y={rectY + 10} width="100" height="22" rx="7" fill="#dcfce7" stroke={fixedColor} />
+              <text x={Math.max(rectX + 54, Math.min(rectX + rectW - 50, fixedBoundaryPx))} y={rectY + 26} textAnchor="middle" fontSize="11" fontWeight="900" fill="#166534">Parante fijo</text>
+              <line x1={fixedSide === "izquierdo" ? rectX : fixedBoundaryPx} y1={rectY - 16} x2={fixedSide === "izquierdo" ? fixedBoundaryPx : rectX + rectW} y2={rectY - 16} stroke={fixedColor} strokeWidth="2" />
+              <line x1={fixedSide === "izquierdo" ? rectX : fixedBoundaryPx} y1={rectY - 21} x2={fixedSide === "izquierdo" ? rectX : fixedBoundaryPx} y2={rectY - 11} stroke={fixedColor} strokeWidth="2" />
+              <line x1={fixedSide === "izquierdo" ? fixedBoundaryPx : rectX + rectW} y1={rectY - 21} x2={fixedSide === "izquierdo" ? fixedBoundaryPx : rectX + rectW} y2={rectY - 11} stroke={fixedColor} strokeWidth="2" />
+              <text x={(fixedSide === "izquierdo" ? (rectX + fixedBoundaryPx) : (fixedBoundaryPx + rectX + rectW)) / 2} y={rectY - 22} textAnchor="middle" fontSize="11" fontWeight="900" fill={fixedColor}>{Math.round(fixedDistance)} mm</text>
+            </g>
+          ) : null}
           {displayMarkers.map((marker) => {
             const posPx = axisStart + marker.centerMm * scale;
             if (isHorizontal) {
               return (
                 <g key={`marker-${marker.index}`}>
-                  <line x1={rectX} y1={posPx} x2={rectX + rectW} y2={posPx} stroke={paranteColor} strokeWidth="5" />
-                  <circle cx={rectX + rectW + 22} cy={posPx} r="12" fill={paranteColor} />
-                  <text x={rectX + rectW + 22} y={posPx + 5} textAnchor="middle" fontSize="13" fontWeight="800" fill="#fff">{marker.index + 1}</text>
+                  <line x1={horizontalStartX} y1={posPx} x2={horizontalEndX} y2={posPx} stroke={paranteColor} strokeWidth="5" />
+                  <circle cx={horizontalMarkerLabelX} cy={posPx} r="12" fill={paranteColor} />
+                  <text x={horizontalMarkerLabelX} y={posPx + 5} textAnchor="middle" fontSize="13" fontWeight="800" fill="#fff">{marker.index + 1}</text>
                 </g>
               );
             }
@@ -753,7 +788,6 @@ export default function PortonDimensions({ kind = "porton" }) {
     [effectiveParantesOrientation, preview?.altoHojaMm, preview?.anchoHojaMm, preview?.altoPasoMm, preview?.anchoPasoMm],
   );
   const rawParantesDistances = dimensions?.distancias_parantes_mm ?? dimensions?.distancias_parantes ?? [];
-  const resolvedParantesDistances = padDistanceList(rawParantesDistances, parantesCount);
   const distributeUniformly = dimensions?.distribuir_parantes_uniformemente === true || String(dimensions?.distribuir_parantes_uniformemente || "").trim().toLowerCase() === "true";
   const showSpecialParantesDistances = isPorton && aptoParaRevestir && distribution === "especial";
   const showAptoFixedFirstParanteOption = showSpecialParantesDistances;
@@ -765,6 +799,33 @@ export default function PortonDimensions({ kind = "porton" }) {
   );
   const aptoReferenciaLado = String(dimensions?.parantes_referencia_lado || "izquierdo").trim().toLowerCase() === "derecho" ? "derecho" : "izquierdo";
   const aptoReferenciaDistancia = String(dimensions?.parantes_referencia_distancia_mm ?? dimensions?.parantes_primer_parante_distancia_mm ?? "");
+  const aptoReferenciaDistanciaMm = Math.max(0, parseMmNumber(aptoReferenciaDistancia) || 800);
+  const aptoParantesRestantesCount = aptoSimulaHorizontalReferencia ? Math.max(0, parantesCount - 1) : parantesCount;
+  const aptoDistributionBaseDimensionMm = aptoSimulaHorizontalReferencia && effectiveParantesOrientation === "verticales"
+    ? Math.max(0, baseParantesDimensionMm - aptoReferenciaDistanciaMm)
+    : baseParantesDimensionMm;
+  const resolvedParantesDistances = useMemo(() => {
+    const current = normalizeDistanceList(rawParantesDistances);
+    const countForDistances = showSpecialParantesDistances ? aptoParantesRestantesCount : parantesCount;
+    if (showSpecialParantesDistances && distributeUniformly) {
+      return buildResolvedParantesDistances({
+        distanceList: [],
+        distributeUniformly: true,
+        parantesCount: countForDistances,
+        baseDimensionMm: aptoDistributionBaseDimensionMm,
+        tubeDiscountMm,
+      });
+    }
+    return padDistanceList(current, countForDistances);
+  }, [rawParantesDistances, showSpecialParantesDistances, distributeUniformly, aptoParantesRestantesCount, parantesCount, aptoDistributionBaseDimensionMm, tubeDiscountMm]);
+  const sketchParantesDistances = aptoSimulaHorizontalReferencia
+    ? buildFixedReferenceSketchDistances({
+        distances: resolvedParantesDistances,
+        orientation: effectiveParantesOrientation,
+        fixedDistanceMm: aptoReferenciaDistanciaMm,
+      })
+    : resolvedParantesDistances;
+  const sketchParantesCount = aptoSimulaHorizontalReferencia ? aptoParantesRestantesCount : parantesCount;
 
   useEffect(() => {
     if (!isPorton) return;
@@ -821,7 +882,7 @@ export default function PortonDimensions({ kind = "porton" }) {
 
   function setParantesDistanceAt(index, value) {
     if (parantesFieldsReadOnly) return;
-    const targetCount = Math.max(parantesCount, index + 1);
+    const targetCount = aptoSimulaHorizontalReferencia ? Math.max(aptoParantesRestantesCount, index + 1) : Math.max(parantesCount, index + 1);
     const next = padDistanceList(rawParantesDistances, targetCount);
     next[index] = normalizeDecimalMmInput(value);
     setDimensions(buildParantesPayload({ distances: next, tubeDiscountMm }));
@@ -829,7 +890,8 @@ export default function PortonDimensions({ kind = "porton" }) {
   function addParanteDistance() {
     if (parantesFieldsReadOnly) return;
     const nextCount = Math.max(0, parantesCount) + 1;
-    const nextDistances = padDistanceList(rawParantesDistances, nextCount);
+    const nextRestantesCount = aptoSimulaHorizontalReferencia ? Math.max(0, nextCount - 1) : nextCount;
+    const nextDistances = padDistanceList(rawParantesDistances, nextRestantesCount);
     setDimensions({ cantidad_parantes: String(nextCount), ...buildParantesPayload({ distances: nextDistances, tubeDiscountMm }) });
   }
   function setAptoFixedFirstParante(checked) {
@@ -875,11 +937,17 @@ export default function PortonDimensions({ kind = "porton" }) {
           <label style={{ display: "flex", gap: 8, alignItems: "center", fontWeight: 700 }}><input type="checkbox" checked={distributeUniformly} onChange={(e) => setDimensions({ distribuir_parantes_uniformemente: e.target.checked })} />Distribuir uniformemente</label>
           <div className="spacer" />
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(230px, 1fr))", gap: 10 }}>
-            {padDistanceList(resolvedParantesDistances, Math.max(parantesCount, 0)).map((distance, index) => (
-              <FieldBox key={`distance-${index}`} label={paranteDistanceLabel(index)} helper={distributeUniformly ? "Calculado automaticamente." : "Numero en mm. Puede tener decimales."}>
+            {padDistanceList(resolvedParantesDistances, Math.max(aptoParantesRestantesCount, 0)).map((distance, index) => {
+              const distanceLabel = aptoSimulaHorizontalReferencia ? `Parante restante ${index + 1}` : paranteDistanceLabel(index);
+              const distanceHelper = distributeUniformly
+                ? "Calculado automaticamente."
+                : (aptoSimulaHorizontalReferencia ? "Distancia manual desde el parante fijo o desde el parante restante anterior." : "Numero en mm. Puede tener decimales.");
+              return (
+              <FieldBox key={`distance-${index}`} label={distanceLabel} helper={distanceHelper}>
                 <Input type="text" inputMode="decimal" value={String(distance ?? "")} disabled={distributeUniformly} onChange={(v) => setParantesDistanceAt(index, v)} onBlur={(e) => setParantesDistanceAt(index, e?.target?.value)} placeholder={index === 0 ? "Ej: 800" : "Ej: 720"} style={distributeUniformly ? disabledComputedInputStyle() : { width: "100%" }} />
               </FieldBox>
-            ))}
+              );
+            })}
           </div>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 4 }}><button type="button" onClick={addParanteDistance} style={{ border: "1px solid #ddd", borderRadius: 10, background: "#fff", padding: "9px 12px", fontWeight: 800, cursor: "pointer" }}>+ Agregar parante</button></div>
         </div>
@@ -907,13 +975,16 @@ export default function PortonDimensions({ kind = "porton" }) {
         open={parantesSketchOpen}
         onClose={() => setParantesSketchOpen(false)}
         orientation={effectiveParantesOrientation}
-        parantesCount={parantesCount}
+        parantesCount={sketchParantesCount}
         baseDimensionMm={baseParantesDimensionMm || getBaseParantesDimensionMm({ orientation: effectiveParantesOrientation, widthM: width, heightM: height })}
-        distances={resolvedParantesDistances}
-        distributeUniformly={distributeUniformly || normalizeDistanceList(resolvedParantesDistances).every((item) => !parseMmNumber(item))}
+        distances={sketchParantesDistances}
+        distributeUniformly={false}
         tubeDiscountMm={tubeDiscountMm}
         portonWidthMm={Math.max(0, Number(preview?.anchoHojaMm || preview?.anchoPasoMm || 0))}
         portonHeightMm={Math.max(0, Number(preview?.altoHojaMm || preview?.altoPasoMm || 0))}
+        hasFixedVerticalReference={aptoSimulaHorizontalReferencia}
+        fixedReferenceSide={aptoReferenciaLado}
+        fixedReferenceDistanceMm={aptoReferenciaDistanciaMm}
       />
     </div>
   );
