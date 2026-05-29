@@ -628,7 +628,6 @@ function ParantesSketchModal({
   const paranteColor = "#2563eb";
   const fixedColor = "#16a34a";
   const lateralColor = "#111827";
-  const title = isHorizontal ? "Distribución sobre el alto del portón" : "Distribución sobre el ancho del portón";
   const axisLabelA = isHorizontal ? "Superior" : "Izquierdo";
   const axisLabelB = isHorizontal ? "Inferior" : "Derecho";
   const effectivePortonWidthMm = Math.max(1, Number(portonWidthMm || 0) || Number(baseDimensionMm || 0) || 1);
@@ -691,9 +690,37 @@ function ParantesSketchModal({
         </div>
         <div className="spacer" />
         <svg viewBox={`0 0 ${width} ${height}`} style={{ width: "100%", height: "auto", border: "1px solid #e5e7eb", borderRadius: 14, background: "#f8fafc" }}>
-          <text x={width / 2} y="32" textAnchor="middle" fontSize="18" fontWeight="800" fill="#111827">{title}</text>
-          <text x="10" y={isHorizontal ? rectY + 8 : rectY + rectH / 2} fontSize="13" fontWeight="800" fill="#111827">{axisLabelA}</text>
-          <text x={isHorizontal ? 10 : rectX + rectW - 20} y={isHorizontal ? rectY + rectH + 18 : rectY + rectH / 2} fontSize="13" fontWeight="800" fill="#111827">{axisLabelB}</text>
+          {isHorizontal ? (
+            <>
+              <text x="10" y={rectY + 8} fontSize="13" fontWeight="800" fill="#111827">{axisLabelA}</text>
+              <text x="10" y={rectY + rectH + 18} fontSize="13" fontWeight="800" fill="#111827">{axisLabelB}</text>
+            </>
+          ) : (
+            <>
+              <text
+                x={rectX - 36}
+                y={rectY + rectH / 2}
+                textAnchor="middle"
+                fontSize="13"
+                fontWeight="800"
+                fill="#111827"
+                transform={`rotate(-90 ${rectX - 36} ${rectY + rectH / 2})`}
+              >
+                {axisLabelA}
+              </text>
+              <text
+                x={rectX + rectW + 36}
+                y={rectY + rectH / 2}
+                textAnchor="middle"
+                fontSize="13"
+                fontWeight="800"
+                fill="#111827"
+                transform={`rotate(90 ${rectX + rectW + 36} ${rectY + rectH / 2})`}
+              >
+                {axisLabelB}
+              </text>
+            </>
+          )}
           <rect x={rectX} y={rectY} width={rectW} height={rectH} rx="8" fill="#ffffff" stroke="#334155" strokeWidth="3" />
           <line x1={rectX + rectW / 2} y1={rectY} x2={rectX + rectW / 2} y2={rectY + rectH} stroke="#e5e7eb" strokeWidth="1" />
           <line x1={rectX} y1={rectY + rectH / 2} x2={rectX + rectW} y2={rectY + rectH / 2} stroke="#e5e7eb" strokeWidth="1" />
