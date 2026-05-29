@@ -24,6 +24,7 @@ import { buildProductionPlanningRouter } from "./routes/productionPlanning.route
 import { buildQuoteViewerRouter } from "./routes/quoteViewer.routes.js";
 import { buildFinancingSettingsRouter } from "./routes/financingSettings.routes.js";
 import { buildSellerDistributorsRouter } from "./routes/sellerDistributors.routes.js";
+import { buildPriceListsRouter } from "./routes/priceLists.routes.js";
 import { applyQuotesNpApprovalSyncPatch } from "./patches/quotesNpApprovalSyncPatch.js";
 
 applyQuotesNpApprovalSyncPatch();
@@ -53,6 +54,7 @@ const odoo = createOdooClient({
 app.use("/api/auth", buildAuthRouter());
 app.use("/api/odoo", buildOdooRouter(odoo));
 app.use("/api/financing-settings", buildFinancingSettingsRouter(odoo));
+app.use("/api/price-lists", buildPriceListsRouter(odoo));
 app.use("/api/production-planning", buildProductionPlanningRouter());
 app.use("/api/quotes", buildQuotesRouter(odoo));
 app.use("/api/doors", buildDoorsRouter(odoo));
