@@ -46,7 +46,7 @@ function companyContext(companyId, extra = {}) {
   if (!id) {
     return { active_test: false, __skip_default_company_context: true, ...extra };
   }
-  return { active_test: false, company_id: id, allowed_company_ids: [id], ...extra };
+  return { active_test: false, company_id: id, force_company: id, allowed_company_ids: [id], ...extra };
 }
 
 async function searchRead(odoo, model, domain, fields, extra = {}) {
@@ -89,10 +89,115 @@ function normalizePricelist(pl, fallbackCompanyId = null) {
   };
 }
 
+
+function rowName(row) {
+  const id = toId(row?.id);
+  return cleanText(row?.name || row?.display_name || `Lista #${id}`);
+}
+
+function scorePricelistNameRows(rows, expectedCount = 0) {
+  const names = asArray(rows).map(rowName).filter(Boolean);
+  const lowered = names.map((n) => low(n));
+  const uniqueCount = new Set(lowered).size;
+  const duplicateCount = Math.max(0, names.length - uniqueCount);
+  const missingCount = Math.max(0, Number(expectedCount || 0) - names.length);
+  const defaultLikeCount = lowered.filter((n) => isDefaultPricelistName(n)).length;
+  const genericDistributorCount = lowered.filter((n) => n === "distribuidor mayorista").length;
+
+  // En Vert se estaban leyendo nombres viejos/de base, con duplicados como
+  // "Distribuidor Mayorista" y un "Predeterminado" que en Odoo se ve como
+  // "Tarjeta de crédito". Preferimos el idioma/contexto que tenga nombres
+  // más específicos y menos repetidos.
+  return (
+    missingCount * 10000 +
+    duplicateCount * 1000 +
+    Math.max(0, genericDistributorCount - 1) * 200 +
+    Math.max(0, defaultLikeCount - 1) * 50
+  );
+}
+
+function mergePricelistRowsWithNames(baseRows, nameRows, fallbackCompanyId = null) {
+  const namesById = new Map();
+  for (const row of asArray(nameRows)) {
+    const id = toId(row?.id);
+    if (!id) continue;
+    namesById.set(id, rowName(row));
+  }
+
+  return asArray(baseRows).map((row) => {
+    const id = toId(row?.id);
+    const name = cleanText(namesById.get(id) || row?.name || row?.display_name || `Lista #${id}`);
+    return normalizePricelist({ ...row, name, display_name: name }, fallbackCompanyId);
+  });
+}
+
+async function activeLangCodes(odoo) {
+  try {
+    const rows = await searchRead(
+      odoo,
+      "res.lang",
+      [["active", "=", true]],
+      ["code", "name", "active"],
+      { context: companyContext(null), limit: 200 }
+    );
+    return asArray(rows)
+      .map((r) => cleanText(r?.code))
+      .filter(Boolean);
+  } catch (_e) {
+    return [];
+  }
+}
+
+async function choosePricelistRowsForDisplayNames(odoo, ids, baseRows, companyId, fields) {
+  const cleanIds = uniqNumbers(ids);
+  if (!cleanIds.length) return baseRows;
+
+  const installedLangs = await activeLangCodes(odoo);
+  const langCandidates = [
+    null,
+    false,
+    "es_AR",
+    "es_419",
+    "es_ES",
+    "es_UY",
+    "es_MX",
+    ...installedLangs.filter((code) => low(code).startsWith("es")),
+    ...installedLangs,
+  ];
+
+  const seen = new Set();
+  const candidates = [{ label: "base", rows: baseRows, order: 0 }];
+  let order = 1;
+
+  for (const lang of langCandidates) {
+    const key = String(lang);
+    if (seen.has(key)) continue;
+    seen.add(key);
+
+    const context = companyContext(companyId, lang === null ? {} : { lang });
+    try {
+      const rows = await readRecords(odoo, "product.pricelist", cleanIds, fields, context);
+      candidates.push({ label: key, rows, order });
+    } catch (_e) {
+      // Algunos Odoo no aceptan todos los códigos de idioma. Se ignora y sigue.
+    }
+    order += 1;
+  }
+
+  candidates.sort((a, b) => {
+    const sa = scorePricelistNameRows(a.rows, cleanIds.length);
+    const sb = scorePricelistNameRows(b.rows, cleanIds.length);
+    if (sa !== sb) return sa - sb;
+    return a.order - b.order;
+  });
+
+  return candidates[0]?.rows || baseRows;
+}
+
 function pricelistSort(a, b) {
-  const ad = a?.is_default_pricelist ? -1 : 0;
-  const bd = b?.is_default_pricelist ? -1 : 0;
-  if (ad !== bd) return ad - bd;
+  const aid = Number(a?.id || 0);
+  const bid = Number(b?.id || 0);
+  if (aid !== bid) return aid - bid;
   return String(a?.name || "").localeCompare(String(b?.name || ""), "es", { numeric: true });
 }
 
@@ -117,8 +222,11 @@ async function listPricelistsForCompany(odoo, companyId) {
     );
   }
 
-  return (pricelists || [])
-    .map((pl) => normalizePricelist(pl, company))
+  const baseRows = asArray(pricelists).filter((pl) => toId(pl?.id));
+  const ids = baseRows.map((pl) => toId(pl?.id));
+  const nameRows = await choosePricelistRowsForDisplayNames(odoo, ids, baseRows, company, fields);
+
+  return mergePricelistRowsWithNames(baseRows, nameRows, company)
     .filter((pl) => pl.id)
     .sort(pricelistSort);
 }
