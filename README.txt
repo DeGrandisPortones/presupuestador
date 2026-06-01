@@ -3,12 +3,14 @@ ZIP directo para copiar y reemplazar.
 Archivo incluido:
 - cotizador-back/src/routes/odoo.routes.js
 
-Cambio:
-- Corrige el cálculo de precios de /api/odoo/prices para productos cuya variante product.product tiene list_price = 0 pero cuya plantilla product.template sí tiene precio de venta.
-- Esto evita que el parante interno automático de portones aptos para revestir se agregue con precio $0.
+Que corrige:
+- El precio automatico de Parante Interno en portones aptos para revestir.
+- Si Odoo devuelve precio 0 desde product.product, ahora intenta leer el precio desde product.template.
+- Tambien contempla el caso frecuente en Odoo donde el ID que se ve en /odoo/products/<id> corresponde a la plantilla del producto y no a la variante.
 
-Aplicación:
-1. Descomprimir este ZIP sobre la raíz del repo.
-2. Reemplazar archivos.
-3. Reiniciar backend.
-4. Recargar el presupuesto.
+Despues de copiar:
+1) Reiniciar backend.
+2) Recargar el presupuesto con Ctrl+F5.
+3) Probar un porton apto para revestir con parantes internos.
+
+No hace falta cargar una regla en la lista de precios Predeterminado si el producto ya tiene Precio de venta cargado en su ficha.

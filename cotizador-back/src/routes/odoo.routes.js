@@ -259,7 +259,8 @@ export function buildOdooRouter(odoo) {
         const p = byId.get(productId);
         if (!p) throw new Error(`Producto no encontrado: ${productId}`);
 
-        const price = await getPriceFromPricelist({ odoo, pricelistId, productId, qty, partnerId });
+        const lineTemplateId = toPositiveInt(l.template_id || l.odoo_template_id || l.product_tmpl_id);
+        const price = await getPriceFromPricelist({ odoo, pricelistId, productId, qty, partnerId, templateId: lineTemplateId || null });
         const templateId = Array.isArray(p.product_tmpl_id) ? Number(p.product_tmpl_id[0]) : 0;
         const templateName = cleanText(templateNameById.get(templateId));
         const productName = cleanText(p.name);
@@ -399,31 +400,46 @@ async function findPricelistIdByName(odoo, name) {
   return ids?.[0] || null;
 }
 
-async function getPriceFromPricelist({ odoo, pricelistId, productId, qty, partnerId }) {
+async function readProductTemplatePrice(odoo, templateId) {
+  const id = toPositiveInt(templateId);
+  if (!id) return 0;
+  try {
+    const [template] = await odoo.executeKw("product.template", "read", [[id]], { fields: ["list_price"] });
+    const price = Number(template?.list_price || 0) || 0;
+    return price > 0 ? price : 0;
+  } catch (_) {
+    return 0;
+  }
+}
+
+async function getPriceFromPricelist({ odoo, pricelistId, productId, qty, partnerId, templateId = null }) {
   void pricelistId;
   void qty;
   void partnerId;
 
-  let templateId = null;
+  const requestedProductId = toPositiveInt(productId);
+  const explicitTemplateId = toPositiveInt(templateId);
+  let variantTemplateId = null;
 
   try {
-    const [p] = await odoo.executeKw("product.product", "read", [[productId]], { fields: ["list_price", "product_tmpl_id"] });
-    const variantPrice = Number(p?.list_price || 0) || 0;
+    const [product] = await odoo.executeKw("product.product", "read", [[requestedProductId]], { fields: ["list_price", "product_tmpl_id"] });
+    const variantPrice = Number(product?.list_price || 0) || 0;
     if (variantPrice > 0) return variantPrice;
-    templateId = Array.isArray(p?.product_tmpl_id) ? Number(p.product_tmpl_id[0]) : Number(p?.product_tmpl_id || 0) || null;
+    variantTemplateId = Array.isArray(product?.product_tmpl_id) ? Number(product.product_tmpl_id[0]) : Number(product?.product_tmpl_id || 0) || null;
   } catch (_) {}
 
-  try {
-    if (!templateId) {
-      const [p2] = await odoo.executeKw("product.product", "read", [[productId]], { fields: ["product_tmpl_id"] });
-      templateId = Array.isArray(p2?.product_tmpl_id) ? Number(p2.product_tmpl_id[0]) : Number(p2?.product_tmpl_id || 0) || null;
-    }
-    if (templateId) {
-      const [t] = await odoo.executeKw("product.template", "read", [[templateId]], { fields: ["list_price"] });
-      const templatePrice = Number(t?.list_price || 0) || 0;
-      if (templatePrice > 0) return templatePrice;
-    }
-  } catch (_) {}
+  // En Odoo la URL /odoo/products/<id> suele apuntar al product.template.
+  // Para productos configurados desde el dashboard, a veces se guarda ese ID de plantilla
+  // y no el ID real de variante. Si la variante leida devuelve 0, probamos la plantilla explicita
+  // y tambien la plantilla con el mismo ID solicitado antes de rendirnos.
+  const templateCandidates = [explicitTemplateId, requestedProductId, variantTemplateId]
+    .map((id) => toPositiveInt(id))
+    .filter((id, index, arr) => id > 0 && arr.indexOf(id) === index);
+
+  for (const candidateTemplateId of templateCandidates) {
+    const templatePrice = await readProductTemplatePrice(odoo, candidateTemplateId);
+    if (templatePrice > 0) return templatePrice;
+  }
 
   return 0;
 }
