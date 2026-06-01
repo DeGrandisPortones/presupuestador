@@ -9,19 +9,42 @@ import { getFinancingPaymentMethods } from "../../../api/financingSettings.js";
 
 const MULTIPLE_PAYMENT_METHOD = "PAGO MÚLTIPLE";
 
-function mergePaymentMethods(baseMethods, customMethods, currentMethod) {
+function normalizeKey(value) {
+  return String(value || "")
+    .trim()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, " ")
+    .trim()
+    .replace(/\s+/g, " ");
+}
+
+function isMultiplePaymentMethod(value) {
+  return normalizeKey(value).startsWith("PAGO MULTIPLE");
+}
+
+function mergePaymentMethods(baseMethods, apiMethods, currentMethod, apiLoaded) {
   const out = [];
   const seen = new Set();
   const add = (value) => {
     const label = String(value || "").trim();
-    const key = label.toUpperCase();
+    const key = normalizeKey(label);
     if (!label || seen.has(key)) return;
     seen.add(key);
     out.push(label);
   };
+
   add(MULTIPLE_PAYMENT_METHOD);
-  (Array.isArray(baseMethods) ? baseMethods : []).forEach(add);
-  (Array.isArray(customMethods) ? customMethods : []).forEach(add);
+
+  // Si el backend respondió, esa lista es la fuente de verdad: ya trae los nombres editados
+  // y reemplaza los defaults viejos. Los defaults locales sólo quedan como fallback si falla/carga la API.
+  const sourceMethods = apiLoaded && Array.isArray(apiMethods) && apiMethods.length
+    ? apiMethods
+    : baseMethods;
+  (Array.isArray(sourceMethods) ? sourceMethods : []).forEach(add);
+
+  // Conserva una forma ya seleccionada en presupuestos viejos, pero no vuelve a mezclar todos los defaults viejos.
   add(currentMethod);
   return out;
 }
@@ -37,21 +60,6 @@ function round2(n) {
 
 function formatPercent(n) {
   return new Intl.NumberFormat("es-AR", { maximumFractionDigits: 2 }).format(round2(n));
-}
-
-function normalizeKey(value) {
-  return String(value || "")
-    .trim()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toUpperCase()
-    .replace(/[^A-Z0-9]+/g, " ")
-    .trim()
-    .replace(/\s+/g, " ");
-}
-
-function isMultiplePaymentMethod(value) {
-  return normalizeKey(value).startsWith("PAGO MULTIPLE");
 }
 
 function paymentAllowsCondition2(value) {
@@ -205,12 +213,14 @@ export default function HeaderBar({ showMargin }) {
   const paymentMethodsQ = useQuery({
     queryKey: ["financing-payment-methods"],
     queryFn: getFinancingPaymentMethods,
-    staleTime: 60 * 1000,
+    staleTime: 0,
+    refetchOnMount: "always",
+    refetchOnWindowFocus: true,
   });
 
   const paymentMethods = useMemo(
-    () => mergePaymentMethods(PAYMENT_METHODS, paymentMethodsQ.data, paymentMethod),
-    [paymentMethodsQ.data, paymentMethod],
+    () => mergePaymentMethods(PAYMENT_METHODS, paymentMethodsQ.data, paymentMethod, paymentMethodsQ.isSuccess),
+    [paymentMethodsQ.data, paymentMethodsQ.isSuccess, paymentMethod],
   );
 
   const isMultiplePayment = isMultiplePaymentMethod(paymentMethod);
