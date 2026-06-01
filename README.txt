@@ -1,12 +1,13 @@
-ZIP directo para copiar y reemplazar.
+Reemplazar estos archivos desde la raiz del repo.
 
-Cambio:
-- Agrega una leyenda debajo del total cuando el presupuesto está en Condición 2:
-  "El 10,5% del IVA está aplicado directamente en los productos."
+Cambios:
+- Medidas de hoja: alto = alto del porton - 100 mm.
+- Medidas de paso: alto = alto de hoja - 100 mm.
+- Se corrigio tanto la vista del presupuestador como el snapshot tecnico guardado en el presupuesto.
 
-Archivo incluido:
-- cotizador-front/src/pages/CotizadorPage/components/SummaryBox.jsx
+Archivos:
+- cotizador-front/src/pages/CotizadorPage/components/PortonDimensions.jsx
+- cotizador-front/src/domain/quote/technicalSnapshot.js
 
-Después de copiar:
-1. Recompilar/redeployar frontend.
-2. Refrescar navegador con Ctrl+F5.
+Ejemplo:
+Alto porton 2.99 m -> hoja 2.89 m -> paso 2.79 m.
