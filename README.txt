@@ -1,12 +1,14 @@
 ZIP directo para copiar y reemplazar.
 
-Contenido:
-- cotizador-back/src/routes/quotes.routes.js
+Archivo incluido:
+- cotizador-back/src/routes/odoo.routes.js
 
-Cambios incluidos:
-- Corrige y completa el mapeo de productos Odoo por tipo de portón según la tabla indicada.
-- Corrige "corredizo simil madera clásico" para usar el producto Odoo 3246.
-- Agrega alias explícitos para los nombres con "clásico" y "doble inyectado".
-- Para presupuestos de iPanel, Puertas y Otros, la orden inicial enviada a Odoo ahora usa los ítems elegidos en el presupuesto en vez de una única línea placeholder.
+Cambio:
+- Corrige el cálculo de precios de /api/odoo/prices para productos cuya variante product.product tiene list_price = 0 pero cuya plantilla product.template sí tiene precio de venta.
+- Esto evita que el parante interno automático de portones aptos para revestir se agregue con precio $0.
 
-No modifica otros archivos.
+Aplicación:
+1. Descomprimir este ZIP sobre la raíz del repo.
+2. Reemplazar archivos.
+3. Reiniciar backend.
+4. Recargar el presupuesto.

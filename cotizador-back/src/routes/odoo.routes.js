@@ -400,17 +400,28 @@ async function findPricelistIdByName(odoo, name) {
 }
 
 async function getPriceFromPricelist({ odoo, pricelistId, productId, qty, partnerId }) {
+  void pricelistId;
+  void qty;
+  void partnerId;
+
+  let templateId = null;
+
   try {
-    const [p] = await odoo.executeKw("product.product", "read", [[productId]], { fields: ["list_price"] });
-    if (typeof p?.list_price === "number") return p.list_price;
+    const [p] = await odoo.executeKw("product.product", "read", [[productId]], { fields: ["list_price", "product_tmpl_id"] });
+    const variantPrice = Number(p?.list_price || 0) || 0;
+    if (variantPrice > 0) return variantPrice;
+    templateId = Array.isArray(p?.product_tmpl_id) ? Number(p.product_tmpl_id[0]) : Number(p?.product_tmpl_id || 0) || null;
   } catch (_) {}
 
   try {
-    const [p2] = await odoo.executeKw("product.product", "read", [[productId]], { fields: ["product_tmpl_id"] });
-    const tmplId = Array.isArray(p2?.product_tmpl_id) ? p2.product_tmpl_id[0] : null;
-    if (tmplId) {
-      const [t] = await odoo.executeKw("product.template", "read", [[tmplId]], { fields: ["list_price"] });
-      if (typeof t?.list_price === "number") return t.list_price;
+    if (!templateId) {
+      const [p2] = await odoo.executeKw("product.product", "read", [[productId]], { fields: ["product_tmpl_id"] });
+      templateId = Array.isArray(p2?.product_tmpl_id) ? Number(p2.product_tmpl_id[0]) : Number(p2?.product_tmpl_id || 0) || null;
+    }
+    if (templateId) {
+      const [t] = await odoo.executeKw("product.template", "read", [[templateId]], { fields: ["list_price"] });
+      const templatePrice = Number(t?.list_price || 0) || 0;
+      if (templatePrice > 0) return templatePrice;
     }
   } catch (_) {}
 
