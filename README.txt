@@ -1,10 +1,12 @@
-ZIP directo para copiar y reemplazar.
+ZIP directo para copiar y reemplazar en la raiz del repo.
 
-Cambios incluidos:
-- Se separa "EFECTIVO - TRANSFERENCIA" en dos formas de pago: "EFECTIVO" y "TRANSFERENCIA".
-- EFECTIVO conserva el descuento configurado en la forma anterior "EFECTIVO - TRANSFERENCIA" si todavía existe en la base.
-- EFECTIVO conserva la habilitación de Condición 2.
-- TRANSFERENCIA queda como forma independiente con 0% por defecto y sin Condición 2.
-- La opción vieja "EFECTIVO - TRANSFERENCIA" se oculta del listado nuevo, pero se conserva como respaldo para presupuestos históricos.
+Cambio aplicado:
+- En portones, ancho minimo: 2.30 m / 2300 mm.
+- En portones, alto minimo: 2.00 m / 2000 mm.
+- La validacion al guardar, confirmar y generar PDF queda alineada con esos limites.
 
-Copiar el contenido del ZIP sobre la raíz del repo y reemplazar archivos existentes.
+Archivo incluido:
+- cotizador-front/src/pages/CotizadorPage/index.jsx
+
+Nota:
+- Si la pantalla de medidas sigue mostrando la ayuda vieja de 2.4 m, tambien hay que ajustar el texto visual en PortonDimensions.jsx.

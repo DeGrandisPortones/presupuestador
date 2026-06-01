@@ -29,7 +29,7 @@ import SectionCatalog from "./components/SectionCatalog";
 import LinesTable from "./components/LinesTable";
 import SummaryBox from "./components/SummaryBox";
 
-const WIDTH_MIN_M = 2;
+const WIDTH_MIN_M = 2.3;
 const WIDTH_MAX_M = 7;
 const HEIGHT_MIN_M = 2;
 const HEIGHT_MAX_M = 3;
@@ -109,7 +109,7 @@ function validateDimensionsRequired(payload, kind = "porton") {
   if (!(height > 0)) throw new Error(`Completá el alto del ${itemLabel}.`);
 
   if (normalizedKind === "porton") {
-    if (width < WIDTH_MIN_M || width > WIDTH_MAX_M) throw new Error("El ancho debe estar entre 2 m y 7 m.");
+    if (width < WIDTH_MIN_M || width > WIDTH_MAX_M) throw new Error("El ancho debe estar entre 2.3 m y 7 m.");
     if (height < HEIGHT_MIN_M || height > HEIGHT_MAX_M) throw new Error("El alto debe estar entre 2 m y 3 m.");
   }
 
