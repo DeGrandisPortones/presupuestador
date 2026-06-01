@@ -1,11 +1,10 @@
 ZIP directo para copiar y reemplazar.
 
-Descomprimir el contenido en la raíz del repo presupuestador.
-Sobrescribe estos archivos:
-- cotizador-front/src/domain/quote/pricing.js
-- cotizador-front/src/pages/CotizadorPage/index.jsx
-- cotizador-front/src/pages/CotizadorPage/components/LinesTable.jsx
+Cambios incluidos:
+- Se separa "EFECTIVO - TRANSFERENCIA" en dos formas de pago: "EFECTIVO" y "TRANSFERENCIA".
+- EFECTIVO conserva el descuento configurado en la forma anterior "EFECTIVO - TRANSFERENCIA" si todavía existe en la base.
+- EFECTIVO conserva la habilitación de Condición 2.
+- TRANSFERENCIA queda como forma independiente con 0% por defecto y sin Condición 2.
+- La opción vieja "EFECTIVO - TRANSFERENCIA" se oculta del listado nuevo, pero se conserva como respaldo para presupuestos históricos.
 
-Cambio:
-- Condición 2 aplica un descuento del 10,5% en el presupuesto.
-- Se calcula igual que los recargos/descuentos de forma de pago: afecta precio final, subtotal, IVA, total y PDF de presupuesto/proforma.
+Copiar el contenido del ZIP sobre la raíz del repo y reemplazar archivos existentes.

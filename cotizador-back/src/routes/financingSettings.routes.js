@@ -3,6 +3,9 @@ import { requireAuth } from "../auth.js";
 import { dbQuery } from "../db.js";
 
 const TACA_TACA_PLAN_NAME = String(process.env.ODOO_TACA_TACA_PLAN_NAME || "Taca Taca").trim();
+const CASH_PAYMENT_METHOD = "EFECTIVO";
+const TRANSFER_PAYMENT_METHOD = "TRANSFERENCIA";
+const LEGACY_CASH_TRANSFER_PAYMENT_METHOD = "EFECTIVO - TRANSFERENCIA";
 
 const DEFAULT_PAYMENT_METHODS = [
   "CHEQUE 0 - 30 - 60",
@@ -13,7 +16,8 @@ const DEFAULT_PAYMENT_METHODS = [
   "CORDOBESA 4 CUOTAS",
   "CORDOBESA 6 CUOTAS",
   "CUENTA CORRIENTE",
-  "EFECTIVO - TRANSFERENCIA",
+  CASH_PAYMENT_METHOD,
+  TRANSFER_PAYMENT_METHOD,
   "NARANJA 12 CUOTAS",
   "NARANJA 3 CUOTAS",
   "NARANJA 6 CUOTAS",
@@ -47,6 +51,25 @@ function normalizePaymentMethodKey(value) {
 }
 function isMultiplePaymentMethod(value) {
   return normalizePaymentMethodKey(value).startsWith("PAGO MULTIPLE");
+}
+function isCashPaymentMethod(value) {
+  return normalizePaymentMethodKey(value) === normalizePaymentMethodKey(CASH_PAYMENT_METHOD);
+}
+function isLegacyCashTransferPaymentMethod(value) {
+  return normalizePaymentMethodKey(value) === normalizePaymentMethodKey(LEGACY_CASH_TRANSFER_PAYMENT_METHOD);
+}
+function isVisibleSavedPaymentMethod(value) {
+  return !isLegacyCashTransferPaymentMethod(value);
+}
+function getSavedRowFromMap(byKey, paymentMethod) {
+  const key = normalizePaymentMethodKey(paymentMethod);
+  if (!key || !byKey) return null;
+  const direct = byKey.get(key);
+  if (direct) return direct;
+  if (isCashPaymentMethod(paymentMethod)) {
+    return byKey.get(normalizePaymentMethodKey(LEGACY_CASH_TRANSFER_PAYMENT_METHOD)) || null;
+  }
+  return null;
 }
 function parseTacaTacaPaymentMethod(paymentMethod) {
   const raw = String(paymentMethod || "").trim();
@@ -166,12 +189,28 @@ async function listSavedSettings() {
   return r.rows || [];
 }
 
+async function getSavedSettingByKey(key) {
+  const normalizedKey = normalizePaymentMethodKey(key);
+  if (!normalizedKey) return null;
+  const r = await dbQuery(`select payment_method_key, payment_method, percent, active from public.presupuestador_financing_settings where payment_method_key=$1 limit 1`, [normalizedKey]);
+  return r.rows?.[0] || null;
+}
+
 async function getSavedSetting(paymentMethod) {
   await ensureFinancingSettingsTable();
   const key = normalizePaymentMethodKey(paymentMethod);
   if (!key) return null;
-  const r = await dbQuery(`select payment_method_key, payment_method, percent, active from public.presupuestador_financing_settings where payment_method_key=$1 limit 1`, [key]);
-  return r.rows?.[0] || null;
+
+  const direct = await getSavedSettingByKey(key);
+  if (direct) return direct;
+
+  // La opción vieja "EFECTIVO - TRANSFERENCIA" se conserva como respaldo sólo para EFECTIVO.
+  // Así el descuento ya cargado (por ejemplo -5%) no se pierde al separar Transferencia.
+  if (isCashPaymentMethod(paymentMethod)) {
+    return await getSavedSettingByKey(LEGACY_CASH_TRANSFER_PAYMENT_METHOD);
+  }
+
+  return null;
 }
 
 async function resolveOdooPreview(odoo, paymentMethod) {
@@ -307,13 +346,17 @@ async function resolveEffectivePreview(odoo, paymentMethod) {
 
 async function buildMethodsResponse(odoo) {
   const saved = await listSavedSettings();
-  const byKey = new Map(saved.map((row) => [row.payment_method_key, row]));
-  const methodNames = [...new Set([...DEFAULT_PAYMENT_METHODS, ...saved.map((row) => row.payment_method)].filter(Boolean))];
+  const byKey = new Map(saved.map((row) => [normalizePaymentMethodKey(row.payment_method_key || row.payment_method), row]));
+  const visibleSavedMethods = saved
+    .map((row) => row.payment_method)
+    .filter((method) => method && isVisibleSavedPaymentMethod(method));
+  const methodNames = [...new Set([...DEFAULT_PAYMENT_METHODS, ...visibleSavedMethods].filter(Boolean))];
+  const defaultKeys = DEFAULT_PAYMENT_METHODS.map(normalizePaymentMethodKey);
   const methods = [];
 
   for (const paymentMethod of methodNames) {
     const key = normalizePaymentMethodKey(paymentMethod);
-    const row = byKey.get(key) || null;
+    const row = getSavedRowFromMap(byKey, paymentMethod);
     const odooPreview = await resolveOdooPreview(odoo, paymentMethod);
     const percent = row ? (row.active === false ? 0 : cleanPercent(row.percent)) : odooPreview.percent;
     methods.push({
@@ -330,7 +373,7 @@ async function buildMethodsResponse(odoo) {
       installments: odooPreview.installments,
       plan_id: odooPreview.plan_id,
       rate_id: odooPreview.rate_id,
-      is_custom: !DEFAULT_PAYMENT_METHODS.map(normalizePaymentMethodKey).includes(key),
+      is_custom: !defaultKeys.includes(key),
     });
   }
 
@@ -350,7 +393,10 @@ export function buildFinancingSettingsRouter(odoo) {
   router.get("/payment-methods", requireAuth, async (_req, res, next) => {
     try {
       const saved = await listSavedSettings();
-      const methodNames = [...new Set([MULTIPLE_PAYMENT_METHOD, ...DEFAULT_PAYMENT_METHODS, ...saved.map((row) => row.payment_method)].filter(Boolean))];
+      const visibleSavedMethods = saved
+        .map((row) => row.payment_method)
+        .filter((method) => method && isVisibleSavedPaymentMethod(method));
+      const methodNames = [...new Set([MULTIPLE_PAYMENT_METHOD, ...DEFAULT_PAYMENT_METHODS, ...visibleSavedMethods].filter(Boolean))];
       methodNames.sort((a, b) => String(a).localeCompare(String(b), "es"));
       res.json({ ok: true, payment_methods: methodNames });
     } catch (e) { next(e); }
@@ -371,7 +417,7 @@ export function buildFinancingSettingsRouter(odoo) {
       for (const item of methods) {
         const paymentMethod = String(item?.payment_method || "").trim().replace(/\s+/g, " ");
         const key = normalizePaymentMethodKey(paymentMethod);
-        if (!key || !paymentMethod || seenKeys.has(key) || isMultiplePaymentMethod(paymentMethod)) continue;
+        if (!key || !paymentMethod || seenKeys.has(key) || isMultiplePaymentMethod(paymentMethod) || isLegacyCashTransferPaymentMethod(paymentMethod)) continue;
         seenKeys.add(key);
         await dbQuery(`
           insert into public.presupuestador_financing_settings (payment_method_key, payment_method, percent, active, updated_at, updated_by)
