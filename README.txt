@@ -1,19 +1,11 @@
-Reemplazo directo - Historial sección sin Partida
+ZIP directo para copiar y reemplazar.
 
-Copiar el contenido de este zip sobre la raíz del repo planificacion y reemplazar archivos existentes.
-
-Archivos incluidos:
-- Frontend/src/App.jsx
-- Frontend/src/components/StageColumn.jsx
+Descomprimir el contenido en la raíz del repo presupuestador.
+Sobrescribe estos archivos:
+- cotizador-front/src/domain/quote/pricing.js
+- cotizador-front/src/pages/CotizadorPage/index.jsx
+- cotizador-front/src/pages/CotizadorPage/components/LinesTable.jsx
 
 Cambio:
-- En el modal Hist. sección se quitó la visualización de Partida.
-- Ahora muestra: Portón X · NV Y
-- El resto queda igual.
-
-Mantiene:
-- QC automático al hacer Stop.
-- Botón QC manual.
-- Etiquetas:
-  - Despacho: Semana N° X
-  - Producción: Semana N° X
+- Condición 2 aplica un descuento del 10,5% en el presupuesto.
+- Se calcula igual que los recargos/descuentos de forma de pago: afecta precio final, subtotal, IVA, total y PDF de presupuesto/proforma.

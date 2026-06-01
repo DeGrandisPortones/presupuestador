@@ -1,7 +1,17 @@
-export function calcFinalUnitPrice(basePrice, marginPercent, financingPercent = 0) {
+export const CONDITION_2_DISCOUNT_PERCENT = -10.5;
+
+export function resolveQuoteAdjustmentPercent(financingPercent = 0, conditionMode = "cond1") {
+  const financing = Number(financingPercent || 0) || 0;
+  const conditionDiscount = String(conditionMode || "").trim().toLowerCase() === "cond2"
+    ? CONDITION_2_DISCOUNT_PERCENT
+    : 0;
+  return round2(financing + conditionDiscount);
+}
+
+export function calcFinalUnitPrice(basePrice, marginPercent, financingPercent = 0, conditionMode = "cond1") {
   const base = Number(basePrice || 0);
   const m = Number(marginPercent || 0);
-  const f = Number(financingPercent || 0);
+  const f = resolveQuoteAdjustmentPercent(financingPercent, conditionMode);
   const marginFactor = 1 + m / 100;
   const financingFactor = 1 + f / 100;
   return round2(base * marginFactor * financingFactor);
@@ -13,10 +23,11 @@ export function calcLineTotal(qty, unitPrice) {
   return round2(q * p);
 }
 
-export function calcTotals(lines, marginPercent, ivaRate, financingPercent = 0) {
+export function calcTotals(lines, marginPercent, ivaRate, financingPercent = 0, conditionMode = "cond1") {
+  const effectiveAdjustmentPercent = resolveQuoteAdjustmentPercent(financingPercent, conditionMode);
   const subtotal = round2(
     (lines || []).reduce((acc, l) => {
-      const finalUnit = calcFinalUnitPrice(l.basePrice, marginPercent, financingPercent);
+      const finalUnit = calcFinalUnitPrice(l.basePrice, marginPercent, effectiveAdjustmentPercent);
       const total = calcLineTotal(l.qty, finalUnit);
       return acc + total;
     }, 0)
@@ -29,7 +40,7 @@ export function calcTotals(lines, marginPercent, ivaRate, financingPercent = 0) 
     subtotal,
     iva,
     total,
-    financingPercent: round2(financingPercent),
+    financingPercent: round2(effectiveAdjustmentPercent),
   };
 }
 

@@ -1,11 +1,11 @@
 import { useQuery } from "@tanstack/react-query";
 import { useQuoteStore } from "../../../domain/quote/store";
-import { calcFinalUnitPrice, calcLineTotal, formatARS } from "../../../domain/quote/pricing";
+import { calcFinalUnitPrice, calcLineTotal, formatARS, resolveQuoteAdjustmentPercent } from "../../../domain/quote/pricing";
 import { getFinancingPreview } from "../../../api/odoo";
 import LineRow from "./LineRow";
 
 export default function LinesTable({ financingPercent = null }) {
-  const { lines, marginPercent, paymentMethod } = useQuoteStore();
+  const { lines, marginPercent, paymentMethod, conditionMode } = useQuoteStore();
   const shouldResolveFinancing = financingPercent === null || financingPercent === undefined;
   const financingQ = useQuery({
     queryKey: ["financing-preview-lines", paymentMethod],
@@ -13,9 +13,12 @@ export default function LinesTable({ financingPercent = null }) {
     enabled: shouldResolveFinancing && !!String(paymentMethod || "").trim(),
     staleTime: 60 * 1000,
   });
-  const effectiveFinancingPercent = Number(
+  const rawFinancingPercent = Number(
     shouldResolveFinancing ? financingQ.data?.percent || 0 : financingPercent || 0,
   ) || 0;
+  const effectiveFinancingPercent = shouldResolveFinancing
+    ? resolveQuoteAdjustmentPercent(rawFinancingPercent, conditionMode)
+    : rawFinancingPercent;
 
   if (!lines.length) return <div className="muted">Agregá productos para armar el presupuesto.</div>;
 
@@ -24,7 +27,7 @@ export default function LinesTable({ financingPercent = null }) {
       <h3 style={{ marginTop: 0 }}>Ítems</h3>
       {effectiveFinancingPercent !== 0 ? (
         <div className="muted" style={{ marginBottom: 8 }}>
-          Los precios finales por ítem incluyen {effectiveFinancingPercent > 0 ? "el recargo" : "el descuento"} de financiamiento ({Math.abs(effectiveFinancingPercent).toFixed(2)}%).
+          Los precios finales por ítem incluyen {effectiveFinancingPercent > 0 ? "el recargo" : "el descuento"} aplicado ({Math.abs(effectiveFinancingPercent).toFixed(2)}%).
         </div>
       ) : null}
       <table>

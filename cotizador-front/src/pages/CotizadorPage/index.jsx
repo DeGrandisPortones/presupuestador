@@ -18,7 +18,7 @@ import toast from "react-hot-toast";
 
 import { useQuoteStore } from "../../domain/quote/store";
 import { IVA_RATE_DEFAULT } from "../../domain/quote/defaults";
-import { calcTotals } from "../../domain/quote/pricing";
+import { calcTotals, resolveQuoteAdjustmentPercent } from "../../domain/quote/pricing";
 import { validateArgentinaPhone, validateEmailAddress, validateGoogleMapsUrl } from "../../utils/contactValidation.js";
 
 import Button from "../../ui/Button.jsx";
@@ -90,9 +90,7 @@ function formatProductionDeliveryDisplay(planning) {
   const endLabel = String(planning.end_date_label || "").trim();
   if (!weekNumber && !startLabel && !endLabel) return "";
   const weekPart = weekNumber ? `Semana ${weekNumber}` : "Semana estimada";
-  if (startLabel || endLabel) {
-    return `${weekPart}, entre ${startLabel || "—"} y ${endLabel || "—"}`;
-  }
+  if (startLabel || endLabel) return `${weekPart}, entre ${startLabel || "—"} y ${endLabel || "—"}`;
   return weekPart;
 }
 function getTodayIsoDate() {
@@ -170,6 +168,7 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
     marginPercent,
     partnerId,
     paymentMethod,
+    conditionMode,
     lines,
     dimensions,
     setPricelist,
@@ -242,7 +241,11 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
 
   const financingQ = useQuery({ queryKey: ["financing-preview", paymentMethod], queryFn: () => getFinancingPreview(paymentMethod), enabled: !!String(paymentMethod || "").trim(), staleTime: 60 * 1000 });
   const financingPercent = Number(financingQ.data?.percent || 0) || 0;
-  const totals = useMemo(() => calcTotals(lines, marginPercent, ivaRate, financingPercent), [lines, marginPercent, ivaRate, financingPercent]);
+  const quoteAdjustmentPercent = useMemo(
+    () => resolveQuoteAdjustmentPercent(financingPercent, conditionMode),
+    [financingPercent, conditionMode],
+  );
+  const totals = useMemo(() => calcTotals(lines, marginPercent, ivaRate, quoteAdjustmentPercent), [lines, marginPercent, ivaRate, quoteAdjustmentPercent]);
   const linesKey = useMemo(() => lines.map((l) => `${l.product_id}:${l.qty}`).join("|"), [lines]);
 
   const currentWidthMeters = parseNum(dimensions?.width);
@@ -413,7 +416,7 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
       const latestProductionPlanning = await getLatestProductionPlanning();
       const pdfPayload = buildPdfPayloadForDownload(
         payload,
-        financingPercent,
+        quoteAdjustmentPercent,
         latestProductionPlanning ? { production_planning: latestProductionPlanning } : {},
       );
       console.log("[PDF FRONT] payload completo presupuesto", pdfPayload);
@@ -428,7 +431,7 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
       const latestProductionPlanning = await getLatestProductionPlanning();
       const pdfPayload = buildPdfPayloadForDownload(
         payload,
-        financingPercent,
+        quoteAdjustmentPercent,
         latestProductionPlanning ? { production_planning: latestProductionPlanning } : {},
       );
       console.log("[PDF FRONT] payload completo proforma", pdfPayload);
@@ -523,7 +526,7 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
           <SectionCatalog kind={catalogKind} onDownloadPresupuesto={onDownloadPresupuesto} />
         </div>
         <div className="card" style={{ flex: 2, minWidth: 560 }}>
-          <LinesTable />
+          <LinesTable financingPercent={quoteAdjustmentPercent} />
           <div className="spacer" />
           <SummaryBox totals={totals} paymentMethod={paymentMethod} />
         </div>
