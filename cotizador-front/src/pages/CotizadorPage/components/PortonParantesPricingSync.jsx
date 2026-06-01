@@ -7,6 +7,8 @@ import { getOdooBootstrap, setOdooBootstrap } from "../../../domain/odoo/bootstr
 import { useQuoteStore } from "../../../domain/quote/store";
 
 const APTOS_PARA_REVESTIR_TYPE = "para_revestir_con_al_pvc_otros";
+const PARANTES_SPECIAL_PRODUCT_ID = 3006;
+const PARANTES_INTERNAL_ODOO_PRODUCT_ID = 3538;
 const PARAM_PRODUCT_ID_KEYS = [
   "parantes_pricing_product_id",
   "parantes_price_product_id",
@@ -100,6 +102,9 @@ function matchesConfiguredProduct(product, productId) {
   return [
     product?.id,
     product?.product_id,
+    product?.presupuestador_id,
+    product?.presupuestador_product_id,
+    product?.catalog_product_id,
     product?.odoo_id,
     product?.odoo_external_id,
     product?.odoo_variant_id,
@@ -112,7 +117,34 @@ function resolveCatalogProduct(catalogData, productId) {
   return products.find((product) => matchesConfiguredProduct(product, productId)) || null;
 }
 
-function buildPlaceholderLine({ productId, qty, multiplier, existing = null, catalogProduct = null }) {
+function getCatalogOdooProductId(catalogProduct) {
+  if (!catalogProduct) return 0;
+  const candidates = [
+    catalogProduct?.odoo_variant_id,
+    catalogProduct?.odoo_external_id,
+    catalogProduct?.odoo_id,
+    catalogProduct?.odoo_template_id,
+  ];
+  for (const value of candidates) {
+    const n = Number(value || 0);
+    if (Number.isFinite(n) && n > 0) return Math.trunc(n);
+  }
+  return 0;
+}
+
+function resolveParantesOdooProductId({ configuredProductId, catalogProduct }) {
+  const fromCatalog = getCatalogOdooProductId(catalogProduct);
+  if (fromCatalog > 0) return fromCatalog;
+
+  // En el dashboard quedó guardado 3006 como ID del presupuestador para la línea automática,
+  // pero en Odoo 3006 corresponde a "SIN PUERTA DE PASO PEATONAL". El producto real de
+  // "Parante Interno" en Odoo es el template 3538, que /api/odoo/prices ya resuelve bien.
+  if (Number(configuredProductId || 0) === PARANTES_SPECIAL_PRODUCT_ID) return PARANTES_INTERNAL_ODOO_PRODUCT_ID;
+
+  return Number(configuredProductId || 0) || 0;
+}
+
+function buildPlaceholderLine({ productId, odooProductId, qty, multiplier, existing = null, catalogProduct = null }) {
   const previousMultiplier = Number(existing?.auto_parantes_pricing_multiplier || 1) || 1;
   const storedRaw = Number(existing?.auto_parantes_pricing_raw_price || 0) || 0;
   const inferredRaw = !storedRaw && Number(existing?.basePrice || 0) > 0
@@ -122,16 +154,19 @@ function buildPlaceholderLine({ productId, qty, multiplier, existing = null, cat
   const basePrice = rawPrice > 0 ? rawPrice * multiplier : Number(existing?.basePrice || 0) || 0;
   const catalogName = getProductLabel(catalogProduct);
   const catalogRawName = getClientFacingProductName(catalogProduct);
+  const effectiveOdooProductId = Number(odooProductId || productId || 0) || productId;
 
   return {
     ...(existing || {}),
-    product_id: productId,
-    odoo_external_id: Number(catalogProduct?.odoo_variant_id || catalogProduct?.odoo_external_id || existing?.odoo_external_id || existing?.odoo_variant_id || productId) || productId,
-    odoo_variant_id: Number(catalogProduct?.odoo_variant_id || catalogProduct?.odoo_external_id || existing?.odoo_variant_id || existing?.odoo_external_id || productId) || productId,
+    product_id: effectiveOdooProductId,
+    presupuestador_product_id: productId,
+    catalog_product_id: productId,
+    odoo_external_id: Number(catalogProduct?.odoo_variant_id || catalogProduct?.odoo_external_id || existing?.odoo_external_id || existing?.odoo_variant_id || effectiveOdooProductId) || effectiveOdooProductId,
+    odoo_variant_id: Number(catalogProduct?.odoo_variant_id || catalogProduct?.odoo_external_id || existing?.odoo_variant_id || existing?.odoo_external_id || effectiveOdooProductId) || effectiveOdooProductId,
     odoo_id: Number(catalogProduct?.odoo_id || existing?.odoo_id || 0) || 0,
-    odoo_template_id: Number(catalogProduct?.odoo_template_id || existing?.odoo_template_id || 0) || 0,
-    name: catalogName || String(existing?.name || "").trim(),
-    raw_name: catalogRawName || String(existing?.raw_name || "").trim(),
+    odoo_template_id: Number(catalogProduct?.odoo_template_id || existing?.odoo_template_id || effectiveOdooProductId) || effectiveOdooProductId,
+    name: catalogName || String(existing?.name || "").trim() || "Parante Interno",
+    raw_name: catalogRawName || String(existing?.raw_name || "").trim() || catalogName || "Parante Interno",
     code: catalogProduct?.code ?? existing?.code ?? null,
     qty,
     basePrice,
@@ -140,6 +175,8 @@ function buildPlaceholderLine({ productId, qty, multiplier, existing = null, cat
     auto_parantes_pricing_line: true,
     auto_parantes_pricing_raw_price: rawPrice,
     auto_parantes_pricing_multiplier: multiplier,
+    auto_parantes_configured_product_id: productId,
+    auto_parantes_odoo_product_id: effectiveOdooProductId,
     line_key: `auto-parantes-pricing-${productId}`,
   };
 }
@@ -185,6 +222,11 @@ export default function PortonParantesPricingSync() {
     return resolveCatalogProduct(getOdooBootstrap("porton"), productId);
   }, [catalogQ.data, productId]);
 
+  const odooProductId = useMemo(
+    () => resolveParantesOdooProductId({ configuredProductId: productId, catalogProduct }),
+    [productId, catalogProduct],
+  );
+
   const catalogProductKey = useMemo(() => {
     if (!catalogProduct) return "";
     return JSON.stringify({
@@ -206,7 +248,7 @@ export default function PortonParantesPricingSync() {
   useEffect(() => {
     useQuoteStore.setState((state) => {
       const current = Array.isArray(state.lines) ? state.lines : [];
-      const autoLine = current.find((line) => line?.auto_parantes_pricing_line && Number(line.product_id) === productId) || null;
+      const autoLine = current.find((line) => line?.auto_parantes_pricing_line && Number(line.auto_parantes_configured_product_id || line.presupuestador_product_id || line.product_id) === productId) || null;
       const manualSameProduct = current.find((line) => Number(line.product_id) === productId && !line?.previously_billed_line) || null;
 
       if (!shouldApply) {
@@ -216,24 +258,26 @@ export default function PortonParantesPricingSync() {
 
       const withoutAuto = removeAutoParantesLines(current).filter((line) => Number(line.product_id) !== productId || line?.previously_billed_line);
       const existing = autoLine || manualSameProduct || null;
-      const nextLine = buildPlaceholderLine({ productId, qty, multiplier, existing, catalogProduct });
+      const nextLine = buildPlaceholderLine({ productId, odooProductId, qty, multiplier, existing, catalogProduct });
       return { lines: [...withoutAuto, nextLine] };
     });
-  }, [shouldApply, productId, qty, multiplier, catalogProductKey]);
+  }, [shouldApply, productId, odooProductId, qty, multiplier, catalogProductKey]);
 
   useEffect(() => {
-    if (!shouldApply || !productId || !pricelistId) return undefined;
+    if (!shouldApply || !odooProductId || !pricelistId) return undefined;
 
     let cancelled = false;
     async function run() {
       const data = await getPrices({
         pricelist_id: pricelistId,
         partner_id: partnerId,
-        lines: [{ product_id: productId, qty: 1 }],
+        lines: [{ product_id: odooProductId, qty: 1 }],
       });
       if (cancelled) return;
 
-      const priceRow = Array.isArray(data?.prices) ? data.prices.find((item) => Number(item.product_id) === productId) || data.prices[0] : null;
+      const priceRow = Array.isArray(data?.prices)
+        ? data.prices.find((item) => Number(item.product_id) === odooProductId) || data.prices[0]
+        : null;
       const rawPrice = Number(priceRow?.price || 0) || 0;
       const odooName = String(priceRow?.name || "").trim();
       const code = priceRow?.code || null;
@@ -244,20 +288,25 @@ export default function PortonParantesPricingSync() {
         const current = Array.isArray(state.lines) ? state.lines : [];
         let changed = false;
         const next = current.map((line) => {
-          if (!line?.auto_parantes_pricing_line || Number(line.product_id) !== productId) return line;
+          if (!line?.auto_parantes_pricing_line || Number(line.auto_parantes_configured_product_id || line.presupuestador_product_id || line.product_id) !== productId) return line;
           changed = true;
           return {
             ...line,
-            name: catalogName || line.name || odooName || `Producto ${productId}`,
-            raw_name: catalogRawName || odooName || line.raw_name || line.name || `Producto ${productId}`,
+            product_id: odooProductId,
+            presupuestador_product_id: productId,
+            catalog_product_id: productId,
+            name: catalogName || line.name || odooName || `Producto ${odooProductId}`,
+            raw_name: catalogRawName || odooName || line.raw_name || line.name || `Producto ${odooProductId}`,
             code: catalogProduct?.code ?? code ?? line.code ?? null,
-            odoo_external_id: Number(catalogProduct?.odoo_variant_id || catalogProduct?.odoo_external_id || line.odoo_external_id || line.odoo_variant_id || productId) || productId,
-            odoo_variant_id: Number(catalogProduct?.odoo_variant_id || catalogProduct?.odoo_external_id || line.odoo_variant_id || line.odoo_external_id || productId) || productId,
+            odoo_external_id: Number(catalogProduct?.odoo_variant_id || catalogProduct?.odoo_external_id || line.odoo_external_id || line.odoo_variant_id || odooProductId) || odooProductId,
+            odoo_variant_id: Number(catalogProduct?.odoo_variant_id || catalogProduct?.odoo_external_id || line.odoo_variant_id || line.odoo_external_id || odooProductId) || odooProductId,
             odoo_id: Number(catalogProduct?.odoo_id || line.odoo_id || 0) || 0,
-            odoo_template_id: Number(catalogProduct?.odoo_template_id || line.odoo_template_id || 0) || 0,
+            odoo_template_id: Number(catalogProduct?.odoo_template_id || priceRow?.odoo_template_id || line.odoo_template_id || odooProductId) || odooProductId,
             basePrice: rawPrice * multiplier,
             auto_parantes_pricing_raw_price: rawPrice,
             auto_parantes_pricing_multiplier: multiplier,
+            auto_parantes_configured_product_id: productId,
+            auto_parantes_odoo_product_id: odooProductId,
           };
         });
         return changed ? { lines: next } : {};
@@ -271,26 +320,31 @@ export default function PortonParantesPricingSync() {
     return () => {
       cancelled = true;
     };
-  }, [shouldApply, productId, pricelistId, partnerId, multiplier, catalogProductKey]);
+  }, [shouldApply, productId, odooProductId, pricelistId, partnerId, multiplier, catalogProductKey]);
 
   useEffect(() => {
     if (!shouldApply) return;
-    const autoLine = (Array.isArray(lines) ? lines : []).find((line) => line?.auto_parantes_pricing_line && Number(line.product_id) === productId);
+    const autoLine = (Array.isArray(lines) ? lines : []).find((line) => line?.auto_parantes_pricing_line && Number(line.auto_parantes_configured_product_id || line.presupuestador_product_id || line.product_id) === productId);
     if (!autoLine) return;
     if (Number(autoLine.qty) === qty && Number(autoLine.auto_parantes_pricing_multiplier || 1) === multiplier) return;
     useQuoteStore.setState((state) => ({
       lines: (Array.isArray(state.lines) ? state.lines : []).map((line) => {
-        if (!line?.auto_parantes_pricing_line || Number(line.product_id) !== productId) return line;
+        if (!line?.auto_parantes_pricing_line || Number(line.auto_parantes_configured_product_id || line.presupuestador_product_id || line.product_id) !== productId) return line;
         const rawPrice = Number(line.auto_parantes_pricing_raw_price || 0) || 0;
         return {
           ...line,
+          product_id: odooProductId || line.product_id,
+          presupuestador_product_id: productId,
+          catalog_product_id: productId,
           qty,
           auto_parantes_pricing_multiplier: multiplier,
+          auto_parantes_configured_product_id: productId,
+          auto_parantes_odoo_product_id: odooProductId || line.auto_parantes_odoo_product_id,
           basePrice: rawPrice > 0 ? rawPrice * multiplier : line.basePrice,
         };
       }),
     }));
-  }, [lines, shouldApply, productId, qty, multiplier]);
+  }, [lines, shouldApply, productId, odooProductId, qty, multiplier]);
 
   return null;
 }

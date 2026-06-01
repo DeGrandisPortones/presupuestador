@@ -1,26 +1,19 @@
 ZIP directo para copiar y reemplazar.
 
-Archivo incluido:
-- cotizador-back/src/routes/odoo.routes.js
+Reemplaza:
+  cotizador-front/src/pages/CotizadorPage/components/PortonParantesPricingSync.jsx
 
-Objetivo:
-- Evitar que el precio del Parante Interno quede en 0 cuando Odoo restringe lectura sobre product.product.
-- El endpoint /api/odoo/prices ya no corta si no puede leer product.product; intenta leer product.template con el mismo ID y/o template_id informado.
-- El endpoint /api/odoo/debug-product/:id ahora responde el resultado parcial aunque product.product este restringido, incluyendo el intento contra product.template.
+Motivo:
+- La línea automática de parantes para portón apto para revestir estaba tomando el ID 3006.
+- /api/odoo/prices confirmó que 3006 corresponde a "SIN PUERTA DE PASO PEATONAL" y devuelve precio 0.
+- El producto correcto de Odoo para "Parante Interno" es 3538 y devuelve precio 9917.4.
 
-Despues de copiar:
-1) Reiniciar backend.
-2) Refrescar el navegador con Ctrl+F5.
-3) Probar en consola:
+Cambio:
+- La línea automática conserva el ID configurado como presupuestador_product_id/catalog_product_id.
+- Para precio y para Odoo usa el ID real 3538 cuando detecta el caso 3006.
+- No toca backend ni otros archivos.
 
-fetch('/api/odoo/debug-product/3538')
-  .then(r => r.json())
-  .then(console.log);
-
-fetch('/api/odoo/prices', {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({ pricelist_id: 1, partner_id: null, lines: [{ product_id: 3538, qty: 1 }] })
-})
-  .then(r => r.json())
-  .then(console.log);
+Pasos:
+1. Copiar el contenido del ZIP sobre la raíz del repo.
+2. Recompilar/redeployar frontend.
+3. Refrescar el navegador con Ctrl+F5.
