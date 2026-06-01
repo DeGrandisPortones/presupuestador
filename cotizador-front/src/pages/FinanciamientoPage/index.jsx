@@ -44,33 +44,31 @@ const DEFAULT_METHOD_INDEX = new Map(DEFAULT_FINANCING_METHODS.map((method, inde
 
 function rowFromApiItem(item, fallbackName = "") {
   const paymentMethod = String(item?.payment_method || fallbackName || "").trim();
-  const stableKey = methodKey(item?.payment_method_key || paymentMethod);
+  const key = methodKey(item?.payment_method_key || item?.default_payment_method || paymentMethod);
   const inputPercent = item?.saved_percent ?? item?.percent ?? item?.odoo_percent ?? 0;
   return {
     payment_method: paymentMethod,
-    payment_method_key: stableKey,
-    original_payment_method_key: stableKey,
+    payment_method_key: key,
+    default_payment_method: item?.default_payment_method || null,
     percent: normalizePercent(inputPercent),
     active: item?.active !== false,
     odoo_percent: Number(item?.odoo_percent || 0) || 0,
     saved_percent: item?.saved_percent,
     source: item?.source || (item?.has_override ? "config" : "odoo"),
     has_override: !!item?.has_override,
-    is_custom: item?.is_custom !== undefined ? !!item.is_custom : !DEFAULT_METHOD_KEYS.has(stableKey),
+    is_custom: item?.is_custom === true || !DEFAULT_METHOD_KEYS.has(key),
+    is_default: item?.is_default !== false && DEFAULT_METHOD_KEYS.has(key),
     is_new: false,
   };
 }
 
-function asRows(data) {
-  const fromApi = Array.isArray(data) ? data : [];
-  const byKey = new Map();
-
-  for (const method of DEFAULT_FINANCING_METHODS) {
+function fallbackDefaultRows() {
+  return DEFAULT_FINANCING_METHODS.map((method) => {
     const key = methodKey(method);
-    byKey.set(key, {
+    return {
       payment_method: method,
       payment_method_key: key,
-      original_payment_method_key: key,
+      default_payment_method: method,
       percent: "0",
       active: true,
       odoo_percent: 0,
@@ -78,18 +76,14 @@ function asRows(data) {
       source: "odoo",
       has_override: false,
       is_custom: false,
+      is_default: true,
       is_new: false,
-    });
-  }
+    };
+  });
+}
 
-  for (const item of fromApi) {
-    const row = rowFromApiItem(item);
-    const key = row.payment_method_key;
-    if (!key) continue;
-    byKey.set(key, row);
-  }
-
-  return Array.from(byKey.values()).sort((a, b) => {
+function sortRows(rows) {
+  return [...rows].sort((a, b) => {
     const aDefault = DEFAULT_METHOD_INDEX.has(a.payment_method_key);
     const bDefault = DEFAULT_METHOD_INDEX.has(b.payment_method_key);
     if (aDefault && bDefault) return DEFAULT_METHOD_INDEX.get(a.payment_method_key) - DEFAULT_METHOD_INDEX.get(b.payment_method_key);
@@ -99,23 +93,25 @@ function asRows(data) {
   });
 }
 
+function asRows(data) {
+  const fromApi = Array.isArray(data) ? data : [];
+  if (fromApi.length) {
+    const byKey = new Map();
+    for (const item of fromApi) {
+      const row = rowFromApiItem(item);
+      if (!row.payment_method_key) continue;
+      byKey.set(row.payment_method_key, row);
+    }
+    return sortRows(Array.from(byKey.values()));
+  }
+  return sortRows(fallbackDefaultRows());
+}
+
 function findDuplicateNames(rows) {
   const seen = new Set();
   const duplicates = new Set();
   for (const row of rows) {
     const key = methodKey(row.payment_method);
-    if (!key) continue;
-    if (seen.has(key)) duplicates.add(key);
-    seen.add(key);
-  }
-  return duplicates;
-}
-
-function findDuplicateStableKeys(rows) {
-  const seen = new Set();
-  const duplicates = new Set();
-  for (const row of rows) {
-    const key = methodKey(row.payment_method_key || row.payment_method);
     if (!key) continue;
     if (seen.has(key)) duplicates.add(key);
     seen.add(key);
@@ -142,21 +138,20 @@ export default function FinanciamientoPage() {
   }, [q.data]);
 
   const duplicateNameKeys = useMemo(() => findDuplicateNames(rows), [rows]);
-  const duplicateStableKeys = useMemo(() => findDuplicateStableKeys(rows), [rows]);
   const invalidRows = useMemo(() => rows.filter((row) => {
     const nameKey = methodKey(row.payment_method);
-    const stableKey = methodKey(row.payment_method_key || row.payment_method);
+    const stableKey = methodKey(row.payment_method_key || row.default_payment_method || row.payment_method);
     const n = Number(String(row.percent || "").replace(",", "."));
-    return !nameKey || !stableKey || duplicateNameKeys.has(nameKey) || duplicateStableKeys.has(stableKey) || row.percent !== "" && (!Number.isFinite(n) || n < -100);
-  }), [rows, duplicateNameKeys, duplicateStableKeys]);
+    return !nameKey || !stableKey || duplicateNameKeys.has(nameKey) || row.percent !== "" && (!Number.isFinite(n) || n < -100);
+  }), [rows, duplicateNameKeys]);
 
   const saveM = useMutation({
     mutationFn: () => saveFinancingSettings(rows
       .filter((row) => methodKey(row.payment_method))
       .map((row) => ({
-        payment_method_key: row.payment_method_key || row.original_payment_method_key || methodKey(row.payment_method),
-        original_payment_method_key: row.original_payment_method_key || row.payment_method_key || methodKey(row.payment_method),
         payment_method: cleanMethodName(row.payment_method),
+        payment_method_key: row.payment_method_key || row.default_payment_method || row.payment_method,
+        default_payment_method: row.default_payment_method || null,
         percent: Number(String(row.percent || "0").replace(",", ".")) || 0,
         active: row.active !== false,
       }))),
@@ -175,6 +170,25 @@ export default function FinanciamientoPage() {
     setRows((prev) => prev.map((row, idx) => idx === index ? { ...row, ...patch } : row));
   }
 
+  function updatePaymentMethodName(index, value) {
+    setRows((prev) => prev.map((row, idx) => {
+      if (idx !== index) return row;
+      const patch = { payment_method: value };
+      if (row.is_new) patch.payment_method_key = methodKey(value);
+      return { ...row, ...patch };
+    }));
+  }
+
+  function blurPaymentMethodName(index, value) {
+    const clean = cleanMethodName(value);
+    setRows((prev) => prev.map((row, idx) => {
+      if (idx !== index) return row;
+      const patch = { payment_method: clean };
+      if (row.is_new) patch.payment_method_key = methodKey(clean);
+      return { ...row, ...patch };
+    }));
+  }
+
   function addCustomRow() {
     if (!canEditNames) return;
     setRows((prev) => ([
@@ -182,7 +196,7 @@ export default function FinanciamientoPage() {
       {
         payment_method: "",
         payment_method_key: "",
-        original_payment_method_key: "",
+        default_payment_method: null,
         percent: "0",
         active: true,
         odoo_percent: 0,
@@ -190,6 +204,7 @@ export default function FinanciamientoPage() {
         source: "config",
         has_override: true,
         is_custom: true,
+        is_default: false,
         is_new: true,
       },
     ]));
@@ -198,34 +213,6 @@ export default function FinanciamientoPage() {
   function removeNewRow(index) {
     if (!canEditNames) return;
     setRows((prev) => prev.filter((_, idx) => idx !== index));
-  }
-
-  function updatePaymentMethodName(index, value) {
-    const nextName = value;
-    setRows((prev) => prev.map((row, idx) => {
-      if (idx !== index) return row;
-      const next = { ...row, payment_method: nextName };
-      if (row.is_new) {
-        const key = methodKey(nextName);
-        next.payment_method_key = key;
-        next.original_payment_method_key = key;
-      }
-      return next;
-    }));
-  }
-
-  function normalizePaymentMethodName(index, value) {
-    const cleaned = cleanMethodName(value);
-    setRows((prev) => prev.map((row, idx) => {
-      if (idx !== index) return row;
-      const next = { ...row, payment_method: cleaned };
-      if (row.is_new) {
-        const key = methodKey(cleaned);
-        next.payment_method_key = key;
-        next.original_payment_method_key = key;
-      }
-      return next;
-    }));
   }
 
   if (!canEdit) {
@@ -244,8 +231,7 @@ export default function FinanciamientoPage() {
       <div className="card">
         <h2 style={{ margin: 0 }}>Financiamiento</h2>
         <div className="muted" style={{ marginTop: 6 }}>
-          Configurá el porcentaje de recargo o descuento por forma de pago. Usá valores negativos para descuentos, por ejemplo -5 para efectivo.
-          {canEditNames ? " Como superusuario también podés editar los nombres sin duplicar la forma de pago." : " Los nombres sólo los puede editar un superusuario."}
+          Configurá el porcentaje de recargo o descuento por forma de pago. Usá valores negativos para descuentos, por ejemplo -5 para efectivo. Sólo superusuario puede editar nombres o agregar formas nuevas.
         </div>
       </div>
 
@@ -274,31 +260,28 @@ export default function FinanciamientoPage() {
               <tbody>
                 {rows.map((row, index) => {
                   const nameKey = methodKey(row.payment_method);
-                  const stableKey = methodKey(row.payment_method_key || row.payment_method);
-                  const hasDuplicateName = !!nameKey && duplicateNameKeys.has(nameKey);
-                  const hasDuplicateStableKey = !!stableKey && duplicateStableKeys.has(stableKey);
+                  const hasDuplicate = !!nameKey && duplicateNameKeys.has(nameKey);
                   const missingName = !nameKey;
                   const percentNumber = Number(String(row.percent || "").replace(",", "."));
                   const invalidPercent = row.percent !== "" && (!Number.isFinite(percentNumber) || percentNumber < -100);
+                  const editableName = canEditNames;
                   return (
                     <tr key={`${row.payment_method_key || "new"}-${index}`}>
                       <td>
-                        {canEditNames ? (
+                        {editableName ? (
                           <Input
                             value={row.payment_method}
                             onChange={(v) => updatePaymentMethodName(index, v)}
-                            onBlur={(e) => normalizePaymentMethodName(index, e?.target?.value)}
-                            placeholder="Ej: CHEQUE 0 - 30 - 60"
-                            style={{ width: "100%", borderColor: missingName || hasDuplicateName || hasDuplicateStableKey ? "#d93025" : undefined }}
+                            onBlur={(e) => blurPaymentMethodName(index, e?.target?.value)}
+                            placeholder="Ej: CHEQUE 0 - 30 - 60 - 90"
+                            style={{ width: "100%", borderColor: missingName || hasDuplicate ? "#d93025" : undefined }}
                           />
                         ) : (
                           <div style={{ fontWeight: 800 }}>{row.payment_method}</div>
                         )}
                         <div className="muted">
-                          {row.is_new ? "Nuevo tipo manual" : row.is_custom ? "Agregado manualmente" : row.source === "config" ? "Configurado en Presupuestador" : "Tomado desde Odoo hasta que se guarde acá"}
-                          {canEditNames && !row.is_new ? " · Nombre editable" : ""}
-                          {hasDuplicateName ? " · Nombre duplicado" : ""}
-                          {hasDuplicateStableKey ? " · Clave interna duplicada" : ""}
+                          {row.is_new ? "Nuevo tipo manual" : row.is_custom ? "Agregado manualmente" : row.source === "config" ? "Configurado en Presupuestador · Nombre editable por superusuario" : "Tomado desde Odoo hasta que se guarde acá"}
+                          {hasDuplicate ? " · Nombre duplicado" : ""}
                           {missingName ? " · Completá el nombre" : ""}
                         </div>
                       </td>
@@ -324,7 +307,7 @@ export default function FinanciamientoPage() {
                       </td>
                       <td className="right">{Number(row.odoo_percent || 0).toFixed(2)}%</td>
                       <td className="right">
-                        {canEditNames && row.is_new ? <Button variant="ghost" onClick={() => removeNewRow(index)} disabled={saveM.isPending}>Quitar</Button> : null}
+                        {row.is_new && canEditNames ? <Button variant="ghost" onClick={() => removeNewRow(index)} disabled={saveM.isPending}>Quitar</Button> : null}
                       </td>
                     </tr>
                   );
