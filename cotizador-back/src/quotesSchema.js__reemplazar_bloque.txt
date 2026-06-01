@@ -1,0 +1,39 @@
+En cotizador-back/src/quotesSchema.js, reemplazar este bloque:
+
+  await dbQuery(`create sequence if not exists public.presupuestador_quote_number_seq start with 1000 increment by 1;`);
+  await dbQuery(`alter table public.presupuestador_quotes add column if not exists quote_number bigint null;`);
+  await dbQuery(`alter table public.presupuestador_quotes alter column quote_number set default nextval('public.presupuestador_quote_number_seq');`);
+  await dbQuery(`update public.presupuestador_quotes set quote_number = nextval('public.presupuestador_quote_number_seq') where quote_number is null;`);
+  await dbQuery(`create unique index if not exists presupuestador_quotes_quote_number_uidx on public.presupuestador_quotes (quote_number);`);
+
+Por este bloque:
+
+  await dbQuery(`create sequence if not exists public.presupuestador_quote_number_seq start with 32500 increment by 1;`);
+  await dbQuery(`alter table public.presupuestador_quotes add column if not exists quote_number bigint null;`);
+  await dbQuery(`
+    select setval(
+      'public.presupuestador_quote_number_seq',
+      greatest(
+        coalesce((select max(quote_number) from public.presupuestador_quotes), 32499),
+        32499
+      ),
+      true
+    );
+  `);
+  await dbQuery(`alter table public.presupuestador_quotes alter column quote_number set default nextval('public.presupuestador_quote_number_seq');`);
+  await dbQuery(`update public.presupuestador_quotes set quote_number = nextval('public.presupuestador_quote_number_seq') where quote_number is null;`);
+  await dbQuery(`create unique index if not exists presupuestador_quotes_quote_number_uidx on public.presupuestador_quotes (quote_number);`);
+
+  await dbQuery(`create sequence if not exists public.presupuestador_order_reference_number_seq start with 4239 increment by 1;`);
+  await dbQuery(`alter table public.presupuestador_quotes add column if not exists order_reference_number bigint null;`);
+  await dbQuery(`
+    select setval(
+      'public.presupuestador_order_reference_number_seq',
+      greatest(
+        coalesce((select max(order_reference_number) from public.presupuestador_quotes), 4238),
+        4238
+      ),
+      true
+    );
+  `);
+  await dbQuery(`create unique index if not exists presupuestador_quotes_order_reference_number_uidx on public.presupuestador_quotes (order_reference_number) where order_reference_number is not null;`);

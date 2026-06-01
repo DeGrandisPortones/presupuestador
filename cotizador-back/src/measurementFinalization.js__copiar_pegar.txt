@@ -1,0 +1,72 @@
+Archivo: cotizador-back/src/measurementFinalization.js
+
+1) Despues de este bloque:
+
+function referenceNumberFromQuote(originalQuote, revisionQuote) {
+  const direct =
+    toText(originalQuote?.odoo_sale_order_name) ||
+    toText(originalQuote?.final_sale_order_name) ||
+    toText(originalQuote?.quote_number) ||
+    toText(revisionQuote?.final_sale_order_name) ||
+    toText(revisionQuote?.quote_number);
+  const digits = onlyDigits(direct);
+  if (digits) return digits;
+  return direct || "";
+}
+
+Pegar este bloque:
+
+function getSaleReferencePrefix(quote, documentKind) {
+  const catalogKind = String(quote?.catalog_kind || "porton").toLowerCase().trim();
+  const kind = String(documentKind || "pedido").toLowerCase().trim();
+  if (catalogKind === "ipanel") return kind === "venta" ? "INV" : "INP";
+  if (catalogKind === "puerta") return kind === "venta" ? "PNV" : "PNP";
+  return kind === "venta" ? "NV" : "NP";
+}
+function buildSaleReference(quote, documentKind, number) {
+  const n = toIntId(number);
+  if (!n) return "";
+  return getSaleReferencePrefix(quote, documentKind) + String(n);
+}
+async function ensureOrderReferenceNumber(quote) {
+  const existing = toIntId(quote?.order_reference_number);
+  if (existing) return existing;
+  const id = toText(quote?.id);
+  if (!id) throw new Error("Quote sin id para generar referencia NP/NV");
+
+  const updated = await dbQuery(
+    "update public.presupuestador_quotes\n"
+      + "   set order_reference_number = nextval('public.presupuestador_order_reference_number_seq')\n"
+      + " where id = $1\n"
+      + "   and order_reference_number is null\n"
+      + " returning order_reference_number",
+    [id],
+  );
+  const next = toIntId(updated.rows?.[0]?.order_reference_number);
+  if (next) {
+    quote.order_reference_number = next;
+    return next;
+  }
+
+  const current = await dbQuery(
+    "select order_reference_number from public.presupuestador_quotes where id=$1 limit 1",
+    [id],
+  );
+  const currentNumber = toIntId(current.rows?.[0]?.order_reference_number);
+  if (!currentNumber) throw new Error("No se pudo generar número correlativo NP/NV");
+  quote.order_reference_number = currentNumber;
+  return currentNumber;
+}
+
+2) En syncFinalQuoteToOdoo, reemplazar este bloque:
+
+  const refNo = referenceNumberFromQuote(originalQuote, revisionQuote);
+  const referenceNv = refNo
+    ? `NV${refNo}`
+    : `NV${toText(revisionQuote?.quote_number || originalQuote?.quote_number)}`;
+
+Por este bloque:
+
+  const referenceQuote = originalQuote || sourceQuote || revisionQuote;
+  const orderReferenceNumber = await ensureOrderReferenceNumber(referenceQuote);
+  const referenceNv = buildSaleReference(referenceQuote, "venta", orderReferenceNumber);

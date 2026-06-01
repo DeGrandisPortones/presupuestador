@@ -1,0 +1,89 @@
+Archivo: cotizador-back/src/routes/quotes.routes.js
+
+1) Despues de este bloque:
+
+function extractReferenceCore(value) {
+  const raw = toText(value);
+  if (!raw) return "";
+  return raw.replace(/^(NV|NP|S)+/i, "");
+}
+
+Pegar este bloque:
+
+function getSaleReferencePrefix(quote, documentKind) {
+  const catalogKind = String(quote?.catalog_kind || "porton").toLowerCase().trim();
+  const kind = String(documentKind || "pedido").toLowerCase().trim();
+  if (catalogKind === "ipanel") return kind === "venta" ? "INV" : "INP";
+  if (catalogKind === "puerta") return kind === "venta" ? "PNV" : "PNP";
+  return kind === "venta" ? "NV" : "NP";
+}
+function buildSaleReference(quote, documentKind, number) {
+  const n = toIntId(number);
+  if (!n) return "";
+  return getSaleReferencePrefix(quote, documentKind) + String(n);
+}
+async function ensureOrderReferenceNumber(quote) {
+  const existing = toIntId(quote?.order_reference_number);
+  if (existing) return existing;
+  const id = toText(quote?.id);
+  if (!id) throw new Error("Quote sin id para generar referencia NP/NV");
+
+  const updated = await dbQuery(
+    "update public.presupuestador_quotes\n"
+      + "   set order_reference_number = nextval('public.presupuestador_order_reference_number_seq')\n"
+      + " where id = $1\n"
+      + "   and order_reference_number is null\n"
+      + " returning order_reference_number",
+    [id],
+  );
+  const next = toIntId(updated.rows?.[0]?.order_reference_number);
+  if (next) {
+    quote.order_reference_number = next;
+    return next;
+  }
+
+  const current = await dbQuery(
+    "select order_reference_number from public.presupuestador_quotes where id=$1 limit 1",
+    [id],
+  );
+  const currentNumber = toIntId(current.rows?.[0]?.order_reference_number);
+  if (!currentNumber) throw new Error("No se pudo generar número correlativo NP/NV");
+  quote.order_reference_number = currentNumber;
+  return currentNumber;
+}
+
+2) Reemplazar este bloque de syncQuoteToOdoo:
+
+  const orderReference = quote?.quote_number ? `NP${quote.quote_number}` : null;
+  const order = orderReference
+    ? (await renameOrderToReference(odoo, orderId, orderReference))
+    : (await odoo.executeKw("sale.order", "read", [[orderId]], { fields: ["id", "name", "amount_total", "partner_id", "state", "pricelist_id"] }))?.[0];
+
+Por este bloque:
+
+  const orderReferenceNumber = await ensureOrderReferenceNumber(quote);
+  const orderReference = buildSaleReference(quote, "pedido", orderReferenceNumber);
+  const order = orderReference
+    ? (await renameOrderToReference(odoo, orderId, orderReference))
+    : (await odoo.executeKw("sale.order", "read", [[orderId]], { fields: ["id", "name", "amount_total", "partner_id", "state", "pricelist_id"] }))?.[0];
+
+3) Reemplazar este bloque de syncFinalQuoteToOdoo:
+
+  const originalReferenceCore = extractReferenceCore(originalQuote.odoo_sale_order_name || originalQuote.quote_number || "");
+  const referenceNv = originalReferenceCore ? `NV${originalReferenceCore}` : `NV${String(originalQuote.id).slice(0, 8)}`;
+
+Por este bloque:
+
+  const orderReferenceNumber = await ensureOrderReferenceNumber(originalQuote);
+  const referenceNv = buildSaleReference(originalQuote, "venta", orderReferenceNumber);
+
+4) Reemplazar este bloque de syncDirectProductionFinalToOdoo:
+
+  const [createdOrder] = await odoo.executeKw("sale.order", "read", [[orderId]], { fields: ["id", "name"] });
+  const directReferenceCore = extractReferenceCore(createdOrder?.name || quote?.quote_number || "");
+  const referenceNv = directReferenceCore ? `NV${directReferenceCore}` : `NV${String(quote.id).slice(0, 8)}`;
+
+Por este bloque:
+
+  const orderReferenceNumber = await ensureOrderReferenceNumber(quote);
+  const referenceNv = buildSaleReference(quote, "venta", orderReferenceNumber);
