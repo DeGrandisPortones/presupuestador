@@ -25,6 +25,7 @@ const DEFAULT_PAYMENT_METHODS = [
   "OTRAS TC BANC 6 CUOTAS",
 ];
 const MULTIPLE_PAYMENT_METHOD = "PAGO MÚLTIPLE";
+const DEFAULT_PAYMENT_METHOD_BY_KEY = new Map(DEFAULT_PAYMENT_METHODS.map((method) => [normalizePaymentMethodKey(method), method]));
 
 function requireEncComercialOrSuperuser(req, res, next) {
   if (!req.user?.is_enc_comercial && !req.user?.is_superuser) {
@@ -61,15 +62,54 @@ function isLegacyCashTransferPaymentMethod(value) {
 function isVisibleSavedPaymentMethod(value) {
   return !isLegacyCashTransferPaymentMethod(value);
 }
-function getSavedRowFromMap(byKey, paymentMethod) {
-  const key = normalizePaymentMethodKey(paymentMethod);
-  if (!key || !byKey) return null;
-  const direct = byKey.get(key);
+function buildSavedMaps(saved = []) {
+  const byStableKey = new Map();
+  const byDisplayKey = new Map();
+  for (const row of Array.isArray(saved) ? saved : []) {
+    const stableKey = normalizePaymentMethodKey(row?.payment_method_key || row?.payment_method);
+    const displayKey = normalizePaymentMethodKey(row?.payment_method);
+    if (stableKey) byStableKey.set(stableKey, row);
+    if (displayKey && isVisibleSavedPaymentMethod(row?.payment_method)) byDisplayKey.set(displayKey, row);
+  }
+  return { byStableKey, byDisplayKey };
+}
+function getSavedRowFromMaps(maps, paymentMethodOrKey) {
+  const key = normalizePaymentMethodKey(paymentMethodOrKey);
+  if (!key || !maps) return null;
+  const direct = maps.byStableKey?.get(key);
   if (direct) return direct;
-  if (isCashPaymentMethod(paymentMethod)) {
-    return byKey.get(normalizePaymentMethodKey(LEGACY_CASH_TRANSFER_PAYMENT_METHOD)) || null;
+  const byName = maps.byDisplayKey?.get(key);
+  if (byName) return byName;
+  if (isCashPaymentMethod(paymentMethodOrKey)) {
+    return maps.byStableKey?.get(normalizePaymentMethodKey(LEGACY_CASH_TRANSFER_PAYMENT_METHOD)) || null;
   }
   return null;
+}
+function buildPaymentMethodEntries(saved = []) {
+  const maps = buildSavedMaps(saved);
+  const defaultKeys = new Set(DEFAULT_PAYMENT_METHODS.map(normalizePaymentMethodKey));
+  const usedStableKeys = new Set();
+  const entries = [];
+
+  for (const defaultMethod of DEFAULT_PAYMENT_METHODS) {
+    const stableKey = normalizePaymentMethodKey(defaultMethod);
+    const row = maps.byStableKey.get(stableKey) || null;
+    const displayName = row?.payment_method && isVisibleSavedPaymentMethod(row.payment_method)
+      ? row.payment_method
+      : defaultMethod;
+    entries.push({ stableKey, paymentMethod: displayName, row });
+    usedStableKeys.add(stableKey);
+  }
+
+  for (const row of saved) {
+    if (!row?.payment_method || !isVisibleSavedPaymentMethod(row.payment_method)) continue;
+    const stableKey = normalizePaymentMethodKey(row.payment_method_key || row.payment_method);
+    if (!stableKey || usedStableKeys.has(stableKey) || defaultKeys.has(stableKey)) continue;
+    entries.push({ stableKey, paymentMethod: row.payment_method, row });
+    usedStableKeys.add(stableKey);
+  }
+
+  return entries;
 }
 function parseTacaTacaPaymentMethod(paymentMethod) {
   const raw = String(paymentMethod || "").trim();
@@ -203,6 +243,11 @@ async function getSavedSetting(paymentMethod) {
 
   const direct = await getSavedSettingByKey(key);
   if (direct) return direct;
+
+  const saved = await listSavedSettings();
+  const maps = buildSavedMaps(saved);
+  const byDisplayName = maps.byDisplayKey.get(key);
+  if (byDisplayName) return byDisplayName;
 
   // La opción vieja "EFECTIVO - TRANSFERENCIA" se conserva como respaldo sólo para EFECTIVO.
   // Así el descuento ya cargado (por ejemplo -5%) no se pierde al separar Transferencia.
@@ -346,17 +391,13 @@ async function resolveEffectivePreview(odoo, paymentMethod) {
 
 async function buildMethodsResponse(odoo) {
   const saved = await listSavedSettings();
-  const byKey = new Map(saved.map((row) => [normalizePaymentMethodKey(row.payment_method_key || row.payment_method), row]));
-  const visibleSavedMethods = saved
-    .map((row) => row.payment_method)
-    .filter((method) => method && isVisibleSavedPaymentMethod(method));
-  const methodNames = [...new Set([...DEFAULT_PAYMENT_METHODS, ...visibleSavedMethods].filter(Boolean))];
   const defaultKeys = DEFAULT_PAYMENT_METHODS.map(normalizePaymentMethodKey);
   const methods = [];
 
-  for (const paymentMethod of methodNames) {
-    const key = normalizePaymentMethodKey(paymentMethod);
-    const row = getSavedRowFromMap(byKey, paymentMethod);
+  for (const entry of buildPaymentMethodEntries(saved)) {
+    const paymentMethod = entry.paymentMethod;
+    const key = entry.stableKey;
+    const row = entry.row || null;
     const odooPreview = await resolveOdooPreview(odoo, paymentMethod);
     const percent = row ? (row.active === false ? 0 : cleanPercent(row.percent)) : odooPreview.percent;
     methods.push({
@@ -393,10 +434,7 @@ export function buildFinancingSettingsRouter(odoo) {
   router.get("/payment-methods", requireAuth, async (_req, res, next) => {
     try {
       const saved = await listSavedSettings();
-      const visibleSavedMethods = saved
-        .map((row) => row.payment_method)
-        .filter((method) => method && isVisibleSavedPaymentMethod(method));
-      const methodNames = [...new Set([MULTIPLE_PAYMENT_METHOD, ...DEFAULT_PAYMENT_METHODS, ...visibleSavedMethods].filter(Boolean))];
+      const methodNames = [MULTIPLE_PAYMENT_METHOD, ...buildPaymentMethodEntries(saved).map((entry) => entry.paymentMethod)];
       methodNames.sort((a, b) => String(a).localeCompare(String(b), "es"));
       res.json({ ok: true, payment_methods: methodNames });
     } catch (e) { next(e); }
@@ -414,11 +452,25 @@ export function buildFinancingSettingsRouter(odoo) {
       await ensureFinancingSettingsTable();
       const methods = Array.isArray(req.body?.methods) ? req.body.methods : [];
       const seenKeys = new Set();
+      const seenNames = new Set();
       for (const item of methods) {
-        const paymentMethod = String(item?.payment_method || "").trim().replace(/\s+/g, " ");
-        const key = normalizePaymentMethodKey(paymentMethod);
-        if (!key || !paymentMethod || seenKeys.has(key) || isMultiplePaymentMethod(paymentMethod) || isLegacyCashTransferPaymentMethod(paymentMethod)) continue;
-        seenKeys.add(key);
+        let paymentMethod = String(item?.payment_method || "").trim().replace(/\s+/g, " ");
+        const displayKey = normalizePaymentMethodKey(paymentMethod);
+        const requestedStableKey = normalizePaymentMethodKey(item?.payment_method_key || "");
+        const stableKey = requestedStableKey || displayKey;
+        if (!stableKey || !displayKey || seenKeys.has(stableKey) || seenNames.has(displayKey) || isMultiplePaymentMethod(paymentMethod) || isLegacyCashTransferPaymentMethod(paymentMethod)) continue;
+
+        const existing = await getSavedSettingByKey(stableKey);
+        const defaultName = DEFAULT_PAYMENT_METHOD_BY_KEY.get(stableKey) || null;
+        const previousName = existing?.payment_method || defaultName || null;
+        if (!req.user?.is_superuser) {
+          if (!previousName) throw new Error("Solo el superusuario puede agregar nuevas formas de pago.");
+          if (normalizePaymentMethodKey(previousName) !== displayKey) throw new Error("Solo el superusuario puede editar nombres de formas de pago.");
+          paymentMethod = previousName;
+        }
+
+        seenKeys.add(stableKey);
+        seenNames.add(displayKey);
         await dbQuery(`
           insert into public.presupuestador_financing_settings (payment_method_key, payment_method, percent, active, updated_at, updated_by)
           values ($1, $2, $3, $4, now(), $5)
@@ -428,7 +480,7 @@ export function buildFinancingSettingsRouter(odoo) {
             active = excluded.active,
             updated_at = now(),
             updated_by = excluded.updated_by
-        `, [key, paymentMethod, cleanPercent(item?.percent), item?.active !== false, req.user?.user_id || null]);
+        `, [stableKey, paymentMethod, cleanPercent(item?.percent), item?.active !== false, req.user?.user_id || null]);
       }
 
       const out = await buildMethodsResponse(odoo);

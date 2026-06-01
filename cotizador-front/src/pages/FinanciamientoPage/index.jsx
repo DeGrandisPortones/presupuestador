@@ -44,7 +44,7 @@ const DEFAULT_METHOD_INDEX = new Map(DEFAULT_FINANCING_METHODS.map((method, inde
 
 function rowFromApiItem(item, fallbackName = "") {
   const paymentMethod = String(item?.payment_method || fallbackName || "").trim();
-  const key = methodKey(paymentMethod);
+  const key = methodKey(item?.payment_method_key || paymentMethod);
   const inputPercent = item?.saved_percent ?? item?.percent ?? item?.odoo_percent ?? 0;
   return {
     payment_method: paymentMethod,
@@ -81,7 +81,7 @@ function asRows(data) {
   }
 
   for (const item of fromApi) {
-    const key = methodKey(item?.payment_method);
+    const key = methodKey(item?.payment_method_key || item?.payment_method);
     if (!key) continue;
     byKey.set(key, rowFromApiItem(item));
   }
@@ -112,6 +112,7 @@ export default function FinanciamientoPage() {
   const user = useAuthStore((s) => s.user);
   const qc = useQueryClient();
   const canEdit = !!(user?.is_superuser || user?.is_enc_comercial);
+  const canRename = !!user?.is_superuser;
   const [rows, setRows] = useState([]);
 
   const q = useQuery({
@@ -136,6 +137,7 @@ export default function FinanciamientoPage() {
     mutationFn: () => saveFinancingSettings(rows
       .filter((row) => methodKey(row.payment_method))
       .map((row) => ({
+        payment_method_key: row.payment_method_key || methodKey(row.payment_method),
         payment_method: cleanMethodName(row.payment_method),
         percent: Number(String(row.percent || "0").replace(",", ".")) || 0,
         active: row.active !== false,
@@ -193,8 +195,13 @@ export default function FinanciamientoPage() {
       <div className="card">
         <h2 style={{ margin: 0 }}>Financiamiento</h2>
         <div className="muted" style={{ marginTop: 6 }}>
-          Configurá el porcentaje de recargo o descuento por forma de pago. Usá valores negativos para descuentos, por ejemplo -5 para efectivo / transferencia.
+          Configurá el porcentaje de recargo o descuento por forma de pago. Usá valores negativos para descuentos, por ejemplo -5 para efectivo.
         </div>
+        {!canRename ? (
+          <div className="muted" style={{ marginTop: 6 }}>
+            Los nombres de las formas de pago solo puede editarlos el superusuario.
+          </div>
+        ) : null}
       </div>
 
       <div className="spacer" />
@@ -205,8 +212,10 @@ export default function FinanciamientoPage() {
         {!!rows.length ? (
           <>
             <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap", alignItems: "center", marginBottom: 12 }}>
-              <div className="muted">Las formas agregadas manualmente quedan disponibles en el selector de Forma de pago. Para descuentos, cargá porcentaje negativo.</div>
-              <Button variant="secondary" onClick={addCustomRow} disabled={saveM.isPending}>Agregar tipo de financiamiento</Button>
+              <div className="muted">
+                Las formas agregadas manualmente quedan disponibles en el selector de Forma de pago. Para descuentos, cargá porcentaje negativo.
+              </div>
+              {canRename ? <Button variant="secondary" onClick={addCustomRow} disabled={saveM.isPending}>Agregar tipo de financiamiento</Button> : null}
             </div>
 
             <table>
@@ -226,15 +235,16 @@ export default function FinanciamientoPage() {
                   const missingName = !key;
                   const percentNumber = Number(String(row.percent || "").replace(",", "."));
                   const invalidPercent = row.percent !== "" && (!Number.isFinite(percentNumber) || percentNumber < -100);
+                  const canEditName = canRename || row.is_new;
                   return (
                     <tr key={`${row.payment_method_key || "new"}-${index}`}>
                       <td>
-                        {row.is_new ? (
+                        {canEditName ? (
                           <Input
                             value={row.payment_method}
-                            onChange={(v) => updateRow(index, { payment_method: v, payment_method_key: methodKey(v) })}
-                            onBlur={(e) => updateRow(index, { payment_method: cleanMethodName(e?.target?.value), payment_method_key: methodKey(e?.target?.value) })}
-                            placeholder="Ej: VISA 9 CUOTAS"
+                            onChange={(v) => updateRow(index, { payment_method: v, payment_method_key: row.is_new ? methodKey(v) : row.payment_method_key })}
+                            onBlur={(e) => updateRow(index, { payment_method: cleanMethodName(e?.target?.value), payment_method_key: row.is_new ? methodKey(e?.target?.value) : row.payment_method_key })}
+                            placeholder="Ej: CHEQUE 0-30-60-90"
                             style={{ width: "100%", borderColor: missingName || hasDuplicate ? "#d93025" : undefined }}
                           />
                         ) : (
@@ -242,6 +252,7 @@ export default function FinanciamientoPage() {
                         )}
                         <div className="muted">
                           {row.is_new ? "Nuevo tipo manual" : row.is_custom ? "Agregado manualmente" : row.source === "config" ? "Configurado en Presupuestador" : "Tomado desde Odoo hasta que se guarde acá"}
+                          {canRename && !row.is_new ? " · Nombre editable" : ""}
                           {hasDuplicate ? " · Nombre duplicado" : ""}
                           {missingName ? " · Completá el nombre" : ""}
                         </div>
@@ -268,7 +279,7 @@ export default function FinanciamientoPage() {
                       </td>
                       <td className="right">{Number(row.odoo_percent || 0).toFixed(2)}%</td>
                       <td className="right">
-                        {row.is_new ? <Button variant="ghost" onClick={() => removeNewRow(index)} disabled={saveM.isPending}>Quitar</Button> : null}
+                        {row.is_new && canRename ? <Button variant="ghost" onClick={() => removeNewRow(index)} disabled={saveM.isPending}>Quitar</Button> : null}
                       </td>
                     </tr>
                   );
@@ -287,8 +298,7 @@ export default function FinanciamientoPage() {
         ) : (!q.isLoading ? (
           <>
             <div className="muted">Sin formas de pago configurables.</div>
-            <div className="spacer" />
-            <Button variant="secondary" onClick={addCustomRow}>Agregar tipo de financiamiento</Button>
+            {canRename ? (<><div className="spacer" /><Button variant="secondary" onClick={addCustomRow}>Agregar tipo de financiamiento</Button></>) : null}
           </>
         ) : null)}
       </div>
