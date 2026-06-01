@@ -27,50 +27,63 @@ export function buildOdooRouter(odoo) {
 
   router.get("/debug-product/:id", async (req, res, next) => {
     try {
-      const variantId = Number(req.params.id || 0);
-      if (!variantId) throw new Error("id inválido");
+      const requestedId = Number(req.params.id || 0);
+      if (!requestedId) throw new Error("id inválido");
 
-      const variantRows = await odoo.executeKw("product.product", "read", [[variantId]], {
-        fields: ["id", "name", "display_name", "product_tmpl_id", "write_date"],
-      });
+      const env = {
+        url: process.env.ODOO_URL,
+        db: process.env.ODOO_DB,
+        username: process.env.ODOO_USERNAME,
+        companyId: process.env.ODOO_COMPANY_ID || null,
+      };
 
-      const variant = Array.isArray(variantRows) ? variantRows[0] || null : null;
-      const templateId = Array.isArray(variant?.product_tmpl_id)
-        ? Number(variant.product_tmpl_id[0])
-        : Number(variant?.product_tmpl_id || 0);
+      const debug = {
+        ok: true,
+        env,
+        requested_id: requestedId,
+        product_product: { ok: false, data: null, error: null },
+        product_template_same_id: { ok: false, data: null, error: null },
+        product_template_from_variant: { ok: false, data: null, error: null },
+      };
 
-      let template = null;
-      if (templateId) {
-        const templateRows = await odoo.executeKw("product.template", "read", [[templateId]], {
-          fields: ["id", "name", "display_name", "write_date"],
+      let variantTemplateId = null;
+      try {
+        const variantRows = await odoo.executeKw("product.product", "read", [[requestedId]], {
+          fields: ["id", "name", "display_name", "default_code", "list_price", "lst_price", "product_tmpl_id", "write_date"],
         });
-        template = Array.isArray(templateRows) ? templateRows[0] || null : null;
+        const variant = Array.isArray(variantRows) ? variantRows[0] || null : null;
+        debug.product_product = { ok: !!variant, data: variant, error: null };
+        variantTemplateId = Array.isArray(variant?.product_tmpl_id)
+          ? Number(variant.product_tmpl_id[0])
+          : Number(variant?.product_tmpl_id || 0) || null;
+      } catch (e) {
+        debug.product_product.error = String(e?.message || e || "Error leyendo product.product");
       }
 
-      console.log("[ODOO DEBUG PRODUCT]", {
-        env: {
-          url: process.env.ODOO_URL,
-          db: process.env.ODOO_DB,
-          username: process.env.ODOO_USERNAME,
-          companyId: process.env.ODOO_COMPANY_ID || null,
-        },
-        requested_variant_id: variantId,
-        variant,
-        template,
-      });
+      try {
+        const templateRows = await odoo.executeKw("product.template", "read", [[requestedId]], {
+          fields: ["id", "name", "display_name", "list_price", "write_date"],
+        });
+        const template = Array.isArray(templateRows) ? templateRows[0] || null : null;
+        debug.product_template_same_id = { ok: !!template, data: template, error: null };
+      } catch (e) {
+        debug.product_template_same_id.error = String(e?.message || e || "Error leyendo product.template con mismo ID");
+      }
 
-      res.json({
-        ok: true,
-        env: {
-          url: process.env.ODOO_URL,
-          db: process.env.ODOO_DB,
-          username: process.env.ODOO_USERNAME,
-          companyId: process.env.ODOO_COMPANY_ID || null,
-        },
-        requested_variant_id: variantId,
-        variant,
-        template,
-      });
+      if (variantTemplateId && variantTemplateId !== requestedId) {
+        try {
+          const templateRows = await odoo.executeKw("product.template", "read", [[variantTemplateId]], {
+            fields: ["id", "name", "display_name", "list_price", "write_date"],
+          });
+          const template = Array.isArray(templateRows) ? templateRows[0] || null : null;
+          debug.product_template_from_variant = { ok: !!template, data: template, error: null };
+        } catch (e) {
+          debug.product_template_from_variant.error = String(e?.message || e || "Error leyendo product.template desde variante");
+        }
+      }
+
+      console.log("[ODOO DEBUG PRODUCT]", debug);
+      res.json(debug);
     } catch (e) {
       next(e);
     }
@@ -231,49 +244,34 @@ export function buildOdooRouter(odoo) {
         if (!pricelistId) throw new Error(`No existe la lista de precios "${name}"`);
       }
 
-      const productIds = [...new Set(lines.map((l) => Number(l.product_id)).filter(Boolean))];
-      const products = await odoo.executeKw("product.product", "read", [productIds], {
-        fields: ["id", "name", "default_code", "product_tmpl_id"],
-      });
-      const byId = new Map((Array.isArray(products) ? products : []).map((p) => [Number(p.id), p]));
-
-      const templateIds = [...new Set(
-        (Array.isArray(products) ? products : [])
-          .map((p) => Array.isArray(p.product_tmpl_id) ? Number(p.product_tmpl_id[0]) : 0)
-          .filter(Boolean)
-      )];
-      let templates = [];
-      if (templateIds.length) {
-        templates = await odoo.executeKw("product.template", "read", [templateIds], {
-          fields: ["id", "name"],
-        });
-      }
-      const templateNameById = new Map(
-        (Array.isArray(templates) ? templates : []).map((t) => [Number(t.id), cleanText(t.name)])
-      );
-
       const out = [];
       for (const l of lines) {
         const productId = Number(l.product_id);
         const qty = Number(l.qty || 1);
-        const p = byId.get(productId);
-        if (!p) throw new Error(`Producto no encontrado: ${productId}`);
+        if (!productId) throw new Error("Producto inválido en lines[]");
 
-        const lineTemplateId = toPositiveInt(l.template_id || l.odoo_template_id || l.product_tmpl_id);
-        const price = await getPriceFromPricelist({ odoo, pricelistId, productId, qty, partnerId, templateId: lineTemplateId || null });
-        const templateId = Array.isArray(p.product_tmpl_id) ? Number(p.product_tmpl_id[0]) : 0;
-        const templateName = cleanText(templateNameById.get(templateId));
-        const productName = cleanText(p.name);
-        const resolvedName = templateName || productName;
+        const productInfo = await resolveProductInfoForPricing(odoo, l);
+        const price = await getPriceFromPricelist({
+          odoo,
+          pricelistId,
+          productId,
+          qty,
+          partnerId,
+          templateId: productInfo.odoo_template_id || null,
+        });
+        const finalPrice = price > 0 ? price : productInfo.list_price;
+        const resolvedName = cleanText(productInfo.name) || `Producto ${productId}`;
 
         out.push({
           product_id: productId,
           qty,
-          price: round2(price),
+          price: round2(finalPrice),
           name: resolvedName,
           raw_name: resolvedName,
-          code: p.default_code || null,
-          odoo_template_id: templateId || null,
+          code: productInfo.code || null,
+          odoo_template_id: productInfo.odoo_template_id || null,
+          product_product_access_error: productInfo.product_product_access_error || null,
+          product_template_access_error: productInfo.product_template_access_error || null,
         });
       }
 
@@ -398,6 +396,79 @@ async function resolveTacaTacaRate(odoo, { planId, cardType, installments }) {
 async function findPricelistIdByName(odoo, name) {
   const ids = await odoo.executeKw("product.pricelist", "search", [[[[ "name", "=", name ]]]], { limit: 1 });
   return ids?.[0] || null;
+}
+
+
+async function readProductProductForPricing(odoo, productId) {
+  const id = toPositiveInt(productId);
+  if (!id) return { data: null, error: null };
+  try {
+    const [product] = await odoo.executeKw("product.product", "read", [[id]], {
+      fields: ["id", "name", "default_code", "list_price", "product_tmpl_id"],
+    });
+    return { data: product || null, error: null };
+  } catch (e) {
+    return { data: null, error: String(e?.message || e || "Error leyendo product.product") };
+  }
+}
+
+async function readProductTemplateForPricing(odoo, templateId) {
+  const id = toPositiveInt(templateId);
+  if (!id) return { data: null, error: null };
+  try {
+    const [template] = await odoo.executeKw("product.template", "read", [[id]], {
+      fields: ["id", "name", "display_name", "list_price"],
+    });
+    return { data: template || null, error: null };
+  } catch (e) {
+    return { data: null, error: String(e?.message || e || "Error leyendo product.template") };
+  }
+}
+
+async function resolveProductInfoForPricing(odoo, line) {
+  const productId = toPositiveInt(line?.product_id);
+  const explicitTemplateId = toPositiveInt(line?.template_id || line?.odoo_template_id || line?.product_tmpl_id);
+  const out = {
+    product_id: productId,
+    name: "",
+    code: null,
+    odoo_template_id: explicitTemplateId || null,
+    list_price: 0,
+    product_product_access_error: null,
+    product_template_access_error: null,
+  };
+
+  const productResult = await readProductProductForPricing(odoo, productId);
+  if (productResult.data) {
+    const p = productResult.data;
+    const variantTemplateId = Array.isArray(p.product_tmpl_id) ? Number(p.product_tmpl_id[0]) : Number(p.product_tmpl_id || 0) || null;
+    out.name = cleanText(p.name);
+    out.code = p.default_code || null;
+    out.odoo_template_id = explicitTemplateId || variantTemplateId || null;
+    out.list_price = Number(p.list_price || 0) || 0;
+  } else if (productResult.error) {
+    out.product_product_access_error = productResult.error;
+  }
+
+  const templateCandidates = [explicitTemplateId, out.odoo_template_id, productId]
+    .map((id) => toPositiveInt(id))
+    .filter((id, index, arr) => id > 0 && arr.indexOf(id) === index);
+
+  for (const templateId of templateCandidates) {
+    const templateResult = await readProductTemplateForPricing(odoo, templateId);
+    if (templateResult.data) {
+      const t = templateResult.data;
+      out.odoo_template_id = Number(t.id) || out.odoo_template_id || templateId;
+      out.name = cleanText(t.display_name || t.name) || out.name;
+      const templatePrice = Number(t.list_price || 0) || 0;
+      if (templatePrice > 0) out.list_price = templatePrice;
+      out.product_template_access_error = null;
+      break;
+    }
+    if (templateResult.error && !out.product_template_access_error) out.product_template_access_error = templateResult.error;
+  }
+
+  return out;
 }
 
 async function readProductTemplatePrice(odoo, templateId) {

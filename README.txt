@@ -3,14 +3,24 @@ ZIP directo para copiar y reemplazar.
 Archivo incluido:
 - cotizador-back/src/routes/odoo.routes.js
 
-Que corrige:
-- El precio automatico de Parante Interno en portones aptos para revestir.
-- Si Odoo devuelve precio 0 desde product.product, ahora intenta leer el precio desde product.template.
-- Tambien contempla el caso frecuente en Odoo donde el ID que se ve en /odoo/products/<id> corresponde a la plantilla del producto y no a la variante.
+Objetivo:
+- Evitar que el precio del Parante Interno quede en 0 cuando Odoo restringe lectura sobre product.product.
+- El endpoint /api/odoo/prices ya no corta si no puede leer product.product; intenta leer product.template con el mismo ID y/o template_id informado.
+- El endpoint /api/odoo/debug-product/:id ahora responde el resultado parcial aunque product.product este restringido, incluyendo el intento contra product.template.
 
 Despues de copiar:
 1) Reiniciar backend.
-2) Recargar el presupuesto con Ctrl+F5.
-3) Probar un porton apto para revestir con parantes internos.
+2) Refrescar el navegador con Ctrl+F5.
+3) Probar en consola:
 
-No hace falta cargar una regla en la lista de precios Predeterminado si el producto ya tiene Precio de venta cargado en su ficha.
+fetch('/api/odoo/debug-product/3538')
+  .then(r => r.json())
+  .then(console.log);
+
+fetch('/api/odoo/prices', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ pricelist_id: 1, partner_id: null, lines: [{ product_id: 3538, qty: 1 }] })
+})
+  .then(r => r.json())
+  .then(console.log);
