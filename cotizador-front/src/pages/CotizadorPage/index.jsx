@@ -45,6 +45,53 @@ function normalizeCatalogKind(kind) { return String(kind || "porton").toLowerCas
 function normalizeUrl(value) { return String(value || "").trim().replace(/\/+$/, "").toLowerCase(); }
 function editorRouteForKind(kind, id, search = "") { const safeId = String(id || "").trim(); const suffix = search || ""; const normalizedKind = normalizeCatalogKind(kind); if (normalizedKind === "ipanel") return `/cotizador/ipanel/${safeId}${suffix}`; if (normalizedKind === "otros") return `/cotizador/otros/${safeId}${suffix}`; if (normalizedKind === "puerta") return `/cotizador/puerta/${safeId}${suffix}`; return `/cotizador/${safeId}${suffix}`; }
 function parseNum(v) { const n = Number(String(v ?? "").replace(",", ".")); return Number.isFinite(n) ? n : 0; }
+function parseOptionalDimensionForUiPatch(value) {
+  const raw = String(value ?? "").trim().replace(",", ".");
+  if (!raw) return null;
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : null;
+}
+function patchPortonDimensionValidationUi(dimensions) {
+  if (typeof document === "undefined") return;
+  const title = Array.from(document.querySelectorAll("div")).find((node) => node.textContent?.trim() === "Medidas del porton");
+  const root = title?.parentElement || null;
+  if (!root) return;
+
+  const width = parseOptionalDimensionForUiPatch(dimensions?.width);
+  const height = parseOptionalDimensionForUiPatch(dimensions?.height);
+  const widthOk = width === null || (width >= WIDTH_MIN_M && width <= WIDTH_MAX_M);
+  const heightOk = height === null || (height >= HEIGHT_MIN_M && height <= HEIGHT_MAX_M);
+  const allOk = widthOk && heightOk;
+
+  const helperNodes = Array.from(root.querySelectorAll("*"));
+  for (const node of helperNodes) {
+    if (String(node.textContent || "").trim() === "Minimo 2.4 m - Maximo 7 m") {
+      node.textContent = `Minimo ${WIDTH_MIN_M} m - Maximo ${WIDTH_MAX_M} m`;
+      if (widthOk) node.style.color = "#6b7280";
+    }
+  }
+
+  const banner = Array.from(root.querySelectorAll("div")).find((node) => node.textContent?.trim() === "Se encuentra fuera de los limites de tamano.");
+  if (allOk) {
+    root.style.border = "1px solid transparent";
+    root.style.background = "transparent";
+    if (banner) banner.style.display = "none";
+  } else {
+    if (banner) banner.style.display = "";
+  }
+
+  const inputs = Array.from(root.querySelectorAll("input"));
+  if (widthOk && inputs[0]) {
+    inputs[0].style.borderColor = "#d1d5db";
+    inputs[0].style.boxShadow = "none";
+    inputs[0].style.background = "#fff";
+  }
+  if (heightOk && inputs[1]) {
+    inputs[1].style.borderColor = "#d1d5db";
+    inputs[1].style.boxShadow = "none";
+    inputs[1].style.background = "#fff";
+  }
+}
 function formatMetric(v) { const n = Number(v || 0); return Number.isFinite(n) && n > 0 ? String(n).replace(/\.00$/, "") : ""; }
 function buildPortonMetricsText(payload) {
   const dims = payload?.payload?.dimensions || payload?.dimensions || {};

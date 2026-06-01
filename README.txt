@@ -1,12 +1,7 @@
-ZIP directo para copiar y reemplazar en la raiz del repo.
+Correccion directa para reemplazar archivos.
 
-Cambio aplicado:
-- En portones, ancho minimo: 2.30 m / 2300 mm.
-- En portones, alto minimo: 2.00 m / 2000 mm.
-- La validacion al guardar, confirmar y generar PDF queda alineada con esos limites.
+Este ZIP corrige la validacion y la visualizacion de medidas de portones:
+- ancho minimo: 2.30 m / 2300 mm
+- alto minimo: 2.00 m / 2000 mm
 
-Archivo incluido:
-- cotizador-front/src/pages/CotizadorPage/index.jsx
-
-Nota:
-- Si la pantalla de medidas sigue mostrando la ayuda vieja de 2.4 m, tambien hay que ajustar el texto visual en PortonDimensions.jsx.
+Copiar el contenido del ZIP sobre la raiz del repo y reemplazar los archivos existentes.
