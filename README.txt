@@ -1,24 +1,12 @@
-ZIP directo para reemplazar desde la raiz del repo.
-
-Incluye:
-- cotizador-back/src/routes/odoo.routes.js
+ZIP directo para copiar y reemplazar.
 
 Cambio:
-- /api/odoo/prices ahora revisa las reglas reales de product.pricelist.item antes de caer al precio predeterminado del producto.
-- Esto permite que un distribuidor con Lista 6 (id 27) vea como precio base el precio fijo cargado en esa lista.
-- Mantiene los arreglos anteriores para Parante Interno/product.template.
+- Agrega una leyenda debajo del total cuando el presupuesto está en Condición 2:
+  "El 10,5% del IVA está aplicado directamente en los productos."
 
-Despues de copiar:
-1) Reiniciar backend.
-2) Probar en consola:
+Archivo incluido:
+- cotizador-front/src/pages/CotizadorPage/components/SummaryBox.jsx
 
-fetch("/api/odoo/prices", {
-  method: "POST",
-  headers: {
-    "Content-Type": "application/json",
-    Authorization: `Bearer ${localStorage.getItem("presupuestador_token")}`
-  },
-  body: JSON.stringify({ pricelist_id: 27, partner_id: null, lines: [{ product_id: 3008, qty: 1 }] })
-}).then(r => r.json()).then(console.log);
-
-Debe devolver el precio de Lista 6, por ejemplo 136469.75 para el producto 3008 si esa regla esta cargada en Odoo.
+Después de copiar:
+1. Recompilar/redeployar frontend.
+2. Refrescar navegador con Ctrl+F5.

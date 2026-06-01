@@ -1,6 +1,10 @@
+import { useQuoteStore } from "../../../domain/quote/store";
 import { formatARS } from "../../../domain/quote/pricing";
 
 export default function SummaryBox({ totals }) {
+  const conditionMode = useQuoteStore((s) => s.conditionMode);
+  const isCondition2 = String(conditionMode || "").trim().toLowerCase() === "cond2";
+
   return (
     <div style={{ display: "flex", justifyContent: "flex-end" }}>
       <div style={{ minWidth: 320 }}>
@@ -16,6 +20,21 @@ export default function SummaryBox({ totals }) {
           <div>Total</div>
           <div>{formatARS(totals.total)}</div>
         </div>
+        {isCondition2 ? (
+          <div
+            className="muted"
+            style={{
+              marginTop: 6,
+              paddingTop: 8,
+              borderTop: "1px solid #eee",
+              fontSize: 12,
+              textAlign: "right",
+              lineHeight: 1.35,
+            }}
+          >
+            El 10,5% del IVA está aplicado directamente en los productos.
+          </div>
+        ) : null}
       </div>
     </div>
   );
