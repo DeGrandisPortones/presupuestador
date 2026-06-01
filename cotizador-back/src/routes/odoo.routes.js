@@ -246,7 +246,15 @@ export function buildOdooRouter(odoo) {
 
       const out = [];
       for (const l of lines) {
-        const productId = Number(l.product_id);
+        const productId = toPositiveInt(l.product_id || l.odoo_product_id || l.odoo_external_id || l.odoo_variant_id || l.odoo_template_id);
+        const sourceProductId = toPositiveInt(
+          l.source_product_id ||
+          l.presupuestador_product_id ||
+          l.catalog_product_id ||
+          l.local_product_id ||
+          l.line_product_id ||
+          productId
+        );
         const qty = Number(l.qty || 1);
         if (!productId) throw new Error("Producto inválido en lines[]");
 
@@ -257,13 +265,15 @@ export function buildOdooRouter(odoo) {
           productId,
           qty,
           partnerId,
-          templateId: productInfo.odoo_template_id || null,
+          templateId: productInfo.odoo_template_id || toPositiveInt(l.odoo_template_id) || null,
         });
         const finalPrice = price > 0 ? price : productInfo.list_price;
         const resolvedName = cleanText(productInfo.name) || `Producto ${productId}`;
 
         out.push({
-          product_id: productId,
+          // product_id queda como ID interno/presupuestador para que el frontend actualice la linea correcta.
+          product_id: sourceProductId || productId,
+          odoo_product_id: productId,
           qty,
           price: round2(finalPrice),
           name: resolvedName,
@@ -483,14 +493,79 @@ async function readProductTemplatePrice(odoo, templateId) {
   }
 }
 
-async function getPriceFromPricelist({ odoo, pricelistId, productId, qty, partnerId, templateId = null }) {
-  void pricelistId;
-  void qty;
-  void partnerId;
+function normalizeOdooPriceValue(value, pricelistId, productId) {
+  if (value === null || value === undefined || value === false) return 0;
+  if (typeof value === "number") return Number.isFinite(value) ? value : 0;
+  if (typeof value === "string") {
+    const n = Number(value.replace(",", "."));
+    return Number.isFinite(n) ? n : 0;
+  }
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const n = normalizeOdooPriceValue(item, pricelistId, productId);
+      if (n > 0) return n;
+    }
+    return 0;
+  }
+  if (typeof value === "object") {
+    const directKeys = [String(pricelistId || ""), String(productId || "")].filter(Boolean);
+    for (const key of directKeys) {
+      if (Object.prototype.hasOwnProperty.call(value, key)) {
+        const n = normalizeOdooPriceValue(value[key], pricelistId, productId);
+        if (n > 0) return n;
+      }
+    }
+    for (const item of Object.values(value)) {
+      const n = normalizeOdooPriceValue(item, pricelistId, productId);
+      if (n > 0) return n;
+    }
+  }
+  return 0;
+}
 
+async function tryPricelistMethod(odoo, method, args, pricelistId, productId) {
+  try {
+    const result = await odoo.executeKw("product.pricelist", method, args);
+    return normalizeOdooPriceValue(result, pricelistId, productId);
+  } catch (_) {
+    return 0;
+  }
+}
+
+async function getPriceFromOdooPricelist({ odoo, pricelistId, productId, qty, partnerId }) {
+  const plId = toPositiveInt(pricelistId);
+  const requestedProductId = toPositiveInt(productId);
+  const quantity = Number(qty || 1) || 1;
+  const partner = partnerId ? Number(partnerId) : false;
+  if (!plId || !requestedProductId) return 0;
+
+  const attempts = [
+    ["_get_product_price", [[plId], requestedProductId, quantity, partner]],
+    ["_get_product_price", [[plId], requestedProductId, quantity]],
+    ["get_product_price", [[plId], requestedProductId, quantity, partner]],
+    ["get_product_price", [[plId], requestedProductId, quantity]],
+    ["price_get", [[plId], requestedProductId, quantity, partner]],
+    ["price_get", [[plId], requestedProductId, quantity]],
+    ["_compute_price_rule", [[plId], [requestedProductId], quantity, partner]],
+    ["_compute_price_rule", [[plId], [requestedProductId], quantity]],
+  ];
+
+  for (const [method, args] of attempts) {
+    const price = await tryPricelistMethod(odoo, method, args, plId, requestedProductId);
+    if (price > 0) return price;
+  }
+  return 0;
+}
+
+async function getPriceFromPricelist({ odoo, pricelistId, productId, qty, partnerId, templateId = null }) {
   const requestedProductId = toPositiveInt(productId);
   const explicitTemplateId = toPositiveInt(templateId);
   let variantTemplateId = null;
+
+  // Primero usamos la lista de precios asignada. Esto permite que distribuidores vean y calculen
+  // con Lista 2/3/6 en vez de caer siempre al precio predeterminado del producto.
+  const pricelistPrice = await getPriceFromOdooPricelist({ odoo, pricelistId, productId: requestedProductId, qty, partnerId });
+  if (pricelistPrice > 0) return pricelistPrice;
 
   try {
     const [product] = await odoo.executeKw("product.product", "read", [[requestedProductId]], { fields: ["list_price", "product_tmpl_id"] });

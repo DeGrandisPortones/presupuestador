@@ -51,6 +51,25 @@ function parseOptionalDimensionForUiPatch(value) {
   const n = Number(raw);
   return Number.isFinite(n) ? n : null;
 }
+function getAssignedPricelistIdFromUser(user) {
+  const n = Number(user?.odoo_pricelist_id || 0);
+  return Number.isFinite(n) && n > 0 ? Math.trunc(n) : null;
+}
+function resolveLinePricingProductId(line) {
+  const candidates = [
+    line?.odoo_variant_id,
+    line?.odoo_external_id,
+    line?.odoo_product_id,
+    line?.odoo_id,
+    line?.odoo_template_id,
+    line?.product_id,
+  ];
+  for (const value of candidates) {
+    const n = Number(value || 0);
+    if (Number.isFinite(n) && n > 0) return Math.trunc(n);
+  }
+  return 0;
+}
 function patchPortonDimensionValidationUi(dimensions) {
   if (typeof document === "undefined") return;
   const title = Array.from(document.querySelectorAll("div")).find((node) => node.textContent?.trim() === "Medidas del porton");
@@ -220,6 +239,7 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
     lines,
     dimensions,
     setPricelist,
+    setPartnerId,
     applyBasePrices,
     loadFromQuote,
     reset,
@@ -235,7 +255,20 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
   useEffect(() => { if (!idParam) { reset(); if (user?.default_maps_url) setEndCustomer({ maps_url: user.default_maps_url }); } }, [idParam, reset, user?.default_maps_url, setEndCustomer]);
 
   const pricelistsQ = useQuery({ queryKey: ["pricelists"], queryFn: getPricelists });
-  useEffect(() => { if (!pricelistId && pricelistsQ.data?.length) setPricelist(pricelistsQ.data[0]); }, [pricelistId, pricelistsQ.data, setPricelist]);
+  useEffect(() => {
+    if (pricelistId || !pricelistsQ.data?.length) return;
+    const assignedPricelistId = getAssignedPricelistIdFromUser(user);
+    if (user?.is_distribuidor && assignedPricelistId) {
+      const assigned = pricelistsQ.data.find((pl) => Number(pl?.id) === assignedPricelistId);
+      setPricelist(assigned || { id: assignedPricelistId, name: `Lista asignada ${assignedPricelistId}` });
+      return;
+    }
+    setPricelist(pricelistsQ.data[0]);
+  }, [pricelistId, pricelistsQ.data, setPricelist, user?.is_distribuidor, user?.odoo_pricelist_id]);
+  useEffect(() => {
+    if (!user?.is_distribuidor || !user?.odoo_partner_id || partnerId) return;
+    setPartnerId(user.odoo_partner_id);
+  }, [partnerId, setPartnerId, user?.is_distribuidor, user?.odoo_partner_id]);
 
   const quoteQ = useQuery({ queryKey: ["quote", idParam], queryFn: () => getQuote(idParam), enabled: !!idParam });
 
@@ -301,7 +334,10 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
     [financingPercent, conditionMode],
   );
   const totals = useMemo(() => calcTotals(lines, marginPercent, ivaRate, quoteAdjustmentPercent), [lines, marginPercent, ivaRate, quoteAdjustmentPercent]);
-  const linesKey = useMemo(() => lines.map((l) => `${l.product_id}:${l.qty}`).join("|"), [lines]);
+  const linesKey = useMemo(
+    () => lines.map((l) => `${l.product_id}:${resolveLinePricingProductId(l)}:${l.odoo_template_id || ""}:${l.qty}`).join("|"),
+    [lines],
+  );
 
   const currentWidthMeters = parseNum(dimensions?.width);
   const autoRebajeEnabled = normalizedCatalogKind === "porton"
@@ -337,7 +373,18 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
   useEffect(() => {
     async function run() {
       if (!pricelistId || !lines.length) return;
-      const payload = { pricelist_id: pricelistId, partner_id: partnerId, lines: lines.filter((line) => !line.previously_billed_line).map((l) => ({ product_id: l.product_id, qty: l.qty })) };
+      const payload = {
+        pricelist_id: pricelistId,
+        partner_id: partnerId,
+        lines: lines
+          .filter((line) => !line.previously_billed_line)
+          .map((l) => ({
+            product_id: resolveLinePricingProductId(l),
+            source_product_id: l.product_id,
+            odoo_template_id: l.odoo_template_id || null,
+            qty: l.qty,
+          })),
+      };
       const data = await getPrices(payload);
       applyBasePrices(data);
     }

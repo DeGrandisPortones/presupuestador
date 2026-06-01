@@ -1,19 +1,17 @@
-ZIP directo para copiar y reemplazar.
+ZIP directo para reemplazar archivos desde la raiz del repo.
 
-Reemplaza:
-  cotizador-front/src/pages/CotizadorPage/components/PortonParantesPricingSync.jsx
+Incluye:
+- cotizador-back/src/routes/odoo.routes.js
+- cotizador-front/src/pages/CotizadorPage/index.jsx
 
-Motivo:
-- La línea automática de parantes para portón apto para revestir estaba tomando el ID 3006.
-- /api/odoo/prices confirmó que 3006 corresponde a "SIN PUERTA DE PASO PEATONAL" y devuelve precio 0.
-- El producto correcto de Odoo para "Parante Interno" es 3538 y devuelve precio 9917.4.
+Cambios:
+1) El presupuestador usa la lista de precios asignada al distribuidor (odoo_pricelist_id) al iniciar un presupuesto nuevo.
+2) El precio base de las lineas se recalcula contra /api/odoo/prices usando esa lista asignada.
+3) El backend ahora consulta Odoo con product.pricelist antes de caer al precio base del producto.
+4) Si el ID interno del presupuestador difiere del ID Odoo, el frontend consulta con el ID Odoo pero actualiza la linea interna correcta.
+5) Se conserva el fallback de Parante Interno/product.template para evitar precios en cero por restricciones de product.product.
 
-Cambio:
-- La línea automática conserva el ID configurado como presupuestador_product_id/catalog_product_id.
-- Para precio y para Odoo usa el ID real 3538 cuando detecta el caso 3006.
-- No toca backend ni otros archivos.
-
-Pasos:
-1. Copiar el contenido del ZIP sobre la raíz del repo.
-2. Recompilar/redeployar frontend.
-3. Refrescar el navegador con Ctrl+F5.
+Despues de reemplazar:
+- Reiniciar backend/frontend.
+- Recompilar/redeployar frontend.
+- Probar con un usuario distribuidor que tenga odoo_pricelist_id 25, 26 o 27.
