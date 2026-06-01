@@ -11,21 +11,42 @@ const IVA_RATE = 0.21;
 const TACA_TACA_PLAN_NAME = String(process.env.ODOO_TACA_TACA_PLAN_NAME || "Taca Taca").trim();
 
 const PORTON_TYPE_TO_ODOO_PRODUCT_ID = Object.freeze({
+  // Portones estándar / base
+  apto_para_revestir: 3233,
+  para_revestir: 3233,
   para_revestir_con_al_pvc_otros: 3233,
   acero_simil_aluminio_clasico: 3234,
+  acero_simil_aluminio_madera_clasico: 3235,
   acero_simil_madera_clasico: 3235,
   acero_simil_madera_doble_iny: 3236,
+  acero_simil_madera_doble_inyectado: 3236,
   acero_simil_aluminio_doble_iny: 3237,
+  acero_simil_aluminio_doble_inyectado: 3237,
+
+  // Portones estándar
   estandar_acero_simil_aluminio: 3238,
+  estandar_acero_simil_aluminio_clasico: 3238,
   estandar_acero_simil_madera: 3239,
+  estandar_acero_simil_madera_clasico: 3239,
+
+  // Portones coplanares
   coplanar_acero_simil_aluminio_clasico: 3240,
-  corredizo_simil_aluminio: 3241,
   coplanar_acero_simil_madera_clasico: 3242,
   coplanar_acero_simil_madera_doble_iny: 3243,
+  coplanar_acero_simil_madera_doble_inyectado: 3243,
   coplanar_acero_simil_aluminio_doble_iny: 3244,
+  coplanar_acero_simil_aluminio_doble_inyectado: 3244,
+
+  // Portones corredizos
+  corredizo_simil_aluminio: 3241,
+  corredizo_simil_aluminio_clasico: 3241,
   corredizo_simil_aluminio_doble: 3245,
+  corredizo_simil_aluminio_doble_inyectado: 3245,
+  corredizo_simil_madera: 3246,
+  corredizo_simil_madera_clasico: 3246,
+
+  // Compatibilidad con claves viejas/no listadas.
   revestimiento_wpc: 3220,
-  corredizo_simil_madera: 3221,
   corredizo_simil_madera_doble: 3223,
 });
 
@@ -315,6 +336,42 @@ function getInitialOdooProductIdForQuote(quote) {
   const normalizedPortonType = normalizePortonTypeKey(rawPortonType);
   const mapped = PORTON_TYPE_TO_ODOO_PRODUCT_ID[String(rawPortonType || "").trim()] ?? PORTON_TYPE_TO_ODOO_PRODUCT_ID[normalizedPortonType];
   return Number(mapped || PLACEHOLDER_PRODUCT_ID);
+}
+function shouldUseDetailedInitialOrderLines(quote) {
+  const kind = String(quote?.catalog_kind || "porton").toLowerCase().trim();
+  return ["ipanel", "puerta", "otros"].includes(kind);
+}
+async function buildDetailedOrderLinesForOdoo({ odoo, lines, payload }) {
+  const arr = Array.isArray(lines) ? lines : [];
+  if (!arr.length) throw new Error("El presupuesto no tiene items");
+
+  const productIds = [...new Set(arr.map((l) => Number(l.product_id)).filter(Boolean))];
+  if (!productIds.length) throw new Error("El presupuesto no tiene productos válidos");
+
+  const products = await odoo.executeKw("product.product", "read", [productIds], { fields: ["id", "name", "uom_id"] });
+  const byId = new Map((products || []).map((p) => [Number(p.id), p]));
+
+  const orderLines = [];
+  let detailedTotal = 0;
+  for (const l of arr) {
+    const productId = Number(l.product_id);
+    const qty = Number(l.qty || 1) || 1;
+    const p = byId.get(productId);
+    if (!p) throw new Error(`Producto no encontrado: ${productId}`);
+    const uomId = toIntId(p?.uom_id);
+    if (!uomId) throw new Error(`Producto sin uom_id: ${productId}`);
+    const priceUnit = calcDetailedUnitWithIva(l, payload || {});
+    detailedTotal = round2(detailedTotal + (qty * priceUnit));
+    orderLines.push([0, 0, {
+      product_id: productId,
+      product_uom_qty: qty,
+      product_uom: uomId,
+      name: p.name,
+      price_unit: priceUnit,
+    }]);
+  }
+
+  return { orderLines, detailedTotal: round2(detailedTotal) };
 }
 async function resolveInitialOdooProduct(odoo, requestedProductId) {
   const requestedId = Number(requestedProductId);
@@ -709,18 +766,29 @@ async function syncQuoteToOdoo({ odoo, quote, approverUser }) {
   partnerId = toIntId(partnerId);
   if (!partnerId) throw new Error("partner_id invalido para Odoo");
 
-  const total = calcQuoteTotalWithIva({ lines: quote.lines, payload: quote.payload });
   const sellerName = await resolveSellerDisplayNameForQuote(quote, approverUser);
-  const requestedInitialProductId = getInitialOdooProductIdForQuote(quote);
-  const initialProduct = await resolveInitialOdooProduct(odoo, requestedInitialProductId);
+  let total = calcQuoteTotalWithIva({ lines: quote.lines, payload: quote.payload });
+  let orderLines = [];
 
-  const orderLines = [[0, 0, {
-    product_id: Number(initialProduct.productId),
-    product_uom_qty: 1,
-    product_uom: initialProduct.uomId,
-    name: initialProduct.productName,
-    price_unit: round2(total),
-  }]];
+  if (shouldUseDetailedInitialOrderLines(quote)) {
+    const detailed = await buildDetailedOrderLinesForOdoo({
+      odoo,
+      lines: quote.lines,
+      payload: quote.payload,
+    });
+    orderLines = detailed.orderLines;
+    total = detailed.detailedTotal;
+  } else {
+    const requestedInitialProductId = getInitialOdooProductIdForQuote(quote);
+    const initialProduct = await resolveInitialOdooProduct(odoo, requestedInitialProductId);
+    orderLines = [[0, 0, {
+      product_id: Number(initialProduct.productId),
+      product_uom_qty: 1,
+      product_uom: initialProduct.uomId,
+      name: initialProduct.productName,
+      price_unit: round2(total),
+    }]];
+  }
 
   const noteBase = quote.created_by_role === "distribuidor"
     ? buildDistributorNote({ quote })
