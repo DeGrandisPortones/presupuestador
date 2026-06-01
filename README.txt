@@ -1,7 +1,7 @@
-Correccion directa para reemplazar archivos.
+ZIP directo para copiar y reemplazar desde la raiz del repo.
 
-Este ZIP corrige la validacion y la visualizacion de medidas de portones:
-- ancho minimo: 2.30 m / 2300 mm
-- alto minimo: 2.00 m / 2000 mm
+Corrige el minimo visual y la validacion general de portones:
+- Ancho minimo: 2.30 m / 2300 mm
+- Alto minimo: 2.00 m / 2000 mm
 
-Copiar el contenido del ZIP sobre la raiz del repo y reemplazar los archivos existentes.
+Incluye una correccion visual activa en CotizadorPage para que el componente de medidas no siga marcando 2.4 m como minimo.

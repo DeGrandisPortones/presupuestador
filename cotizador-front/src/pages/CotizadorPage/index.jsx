@@ -65,8 +65,9 @@ function patchPortonDimensionValidationUi(dimensions) {
 
   const helperNodes = Array.from(root.querySelectorAll("*"));
   for (const node of helperNodes) {
-    if (String(node.textContent || "").trim() === "Minimo 2.4 m - Maximo 7 m") {
-      node.textContent = `Minimo ${WIDTH_MIN_M} m - Maximo ${WIDTH_MAX_M} m`;
+    const text = String(node.textContent || "").trim();
+    if (/^Minimo\s+2\.4\s*m\s*-\s*Maximo\s+7\s*m$/i.test(text) || /^Minimo\s+2\.30?\s*m\s*-\s*Maximo\s+7\s*m$/i.test(text)) {
+      node.textContent = `Minimo ${WIDTH_MIN_M.toFixed(2)} m - Maximo ${WIDTH_MAX_M} m`;
       if (widthOk) node.style.color = "#6b7280";
     }
   }
@@ -285,6 +286,13 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
     }
     loadFromQuote(quoteQ.data);
   }, [quoteQ.data, loadFromQuote, normalizedCatalogKind, navigate]);
+
+  useEffect(() => {
+    if (normalizedCatalogKind !== "porton") return;
+    patchPortonDimensionValidationUi(dimensions);
+    const timer = window.setTimeout(() => patchPortonDimensionValidationUi(dimensions), 0);
+    return () => window.clearTimeout(timer);
+  }, [normalizedCatalogKind, dimensions?.width, dimensions?.height]);
 
   const financingQ = useQuery({ queryKey: ["financing-preview", paymentMethod], queryFn: () => getFinancingPreview(paymentMethod), enabled: !!String(paymentMethod || "").trim(), staleTime: 60 * 1000 });
   const financingPercent = Number(financingQ.data?.percent || 0) || 0;
