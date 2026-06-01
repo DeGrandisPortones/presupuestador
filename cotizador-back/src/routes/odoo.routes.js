@@ -493,6 +493,209 @@ async function readProductTemplatePrice(odoo, templateId) {
   }
 }
 
+let pricelistItemFieldsCache = undefined;
+async function getPricelistItemFields(odoo) {
+  if (pricelistItemFieldsCache !== undefined) return pricelistItemFieldsCache;
+  try {
+    const fields = await odoo.executeKw("product.pricelist.item", "fields_get", [], {
+      attributes: ["type"],
+    });
+    pricelistItemFieldsCache = fields || {};
+  } catch (_) {
+    pricelistItemFieldsCache = null;
+  }
+  return pricelistItemFieldsCache;
+}
+
+function hasPricelistItemField(fields, fieldName) {
+  return !!fields && Object.prototype.hasOwnProperty.call(fields, fieldName);
+}
+
+function relId(value) {
+  if (Array.isArray(value)) return toPositiveInt(value[0]);
+  return toPositiveInt(value);
+}
+
+function parseDateOnly(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return null;
+  const d = new Date(raw.length <= 10 ? `${raw}T00:00:00` : raw);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+function pricelistItemIsActiveForDate(item, now = new Date()) {
+  const start = parseDateOnly(item?.date_start);
+  const end = parseDateOnly(item?.date_end);
+  if (start && now < start) return false;
+  if (end) {
+    const endInclusive = new Date(end.getTime());
+    endInclusive.setHours(23, 59, 59, 999);
+    if (now > endInclusive) return false;
+  }
+  return true;
+}
+
+function pricelistItemSpecificity(item, productId, templateId) {
+  const appliedOn = String(item?.applied_on || "").trim();
+  const ruleProductId = relId(item?.product_id);
+  const ruleTemplateId = relId(item?.product_tmpl_id);
+  let score = 0;
+
+  if (ruleProductId && ruleProductId === productId) score = Math.max(score, 400);
+  if (ruleTemplateId && (ruleTemplateId === templateId || ruleTemplateId === productId)) score = Math.max(score, 300);
+  if (appliedOn.includes("product_variant")) score += 40;
+  if (appliedOn.includes("product")) score += 30;
+  if (appliedOn.includes("category")) score += 10;
+  if (appliedOn.includes("global")) score += 1;
+
+  score += Number(item?.min_quantity || 0) || 0;
+  score += (Number(item?.id || 0) || 0) / 1000000;
+  return score;
+}
+
+function normalizePricelistItemPrice(value) {
+  const n = Number(value || 0);
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
+async function readBasePriceForPricelistFormula({ odoo, productId, templateId }) {
+  const variantPrice = await getPriceFromProductVariantOnly(odoo, productId);
+  if (variantPrice > 0) return variantPrice;
+  const templateCandidates = [templateId, productId]
+    .map((id) => toPositiveInt(id))
+    .filter((id, index, arr) => id > 0 && arr.indexOf(id) === index);
+  for (const candidate of templateCandidates) {
+    const templatePrice = await readProductTemplatePrice(odoo, candidate);
+    if (templatePrice > 0) return templatePrice;
+  }
+  return 0;
+}
+
+async function getPriceFromProductVariantOnly(odoo, productId) {
+  const id = toPositiveInt(productId);
+  if (!id) return 0;
+  try {
+    const [product] = await odoo.executeKw("product.product", "read", [[id]], { fields: ["list_price"] });
+    return normalizePricelistItemPrice(product?.list_price);
+  } catch (_) {
+    return 0;
+  }
+}
+
+async function computePricelistItemPrice({ odoo, item, productId, templateId }) {
+  const computePrice = String(item?.compute_price || "").trim();
+  const fixedPrice = normalizePricelistItemPrice(item?.fixed_price);
+  if (!computePrice || computePrice === "fixed") {
+    if (fixedPrice > 0) return fixedPrice;
+  }
+  if (fixedPrice > 0 && computePrice !== "percentage" && computePrice !== "formula") {
+    return fixedPrice;
+  }
+
+  const basePrice = await readBasePriceForPricelistFormula({ odoo, productId, templateId });
+  if (!(basePrice > 0)) return 0;
+
+  if (computePrice === "percentage") {
+    const percent = Number(item?.percent_price || 0) || 0;
+    return round2(basePrice * (1 - percent / 100));
+  }
+
+  if (computePrice === "formula") {
+    // En Odoo, price_discount suele guardarse como decimal. Ej.: -0.10 o 0.10.
+    const discount = Number(item?.price_discount || 0) || 0;
+    const surcharge = Number(item?.price_surcharge || 0) || 0;
+    const minMargin = Number(item?.price_min_margin || 0) || 0;
+    const maxMargin = Number(item?.price_max_margin || 0) || 0;
+    let price = basePrice * (1 - discount) + surcharge;
+    if (minMargin) price = Math.max(price, basePrice + minMargin);
+    if (maxMargin) price = Math.min(price, basePrice + maxMargin);
+    return round2(price);
+  }
+
+  return 0;
+}
+
+async function searchPricelistItems(odoo, domain, fields) {
+  try {
+    const rows = await odoo.executeKw("product.pricelist.item", "search_read", [domain], {
+      fields,
+      limit: 80,
+      order: "min_quantity desc, id desc",
+    });
+    return Array.isArray(rows) ? rows : [];
+  } catch (_) {
+    return [];
+  }
+}
+
+async function getPriceFromPricelistItems({ odoo, pricelistId, productId, templateId, qty }) {
+  const fieldsMeta = await getPricelistItemFields(odoo);
+  if (!fieldsMeta) return 0;
+
+  const plId = toPositiveInt(pricelistId);
+  const pId = toPositiveInt(productId);
+  const tId = toPositiveInt(templateId) || pId;
+  const quantity = Number(qty || 1) || 1;
+  if (!plId || !pId) return 0;
+
+  const fields = [
+    "id",
+    "pricelist_id",
+    "applied_on",
+    "product_id",
+    "product_tmpl_id",
+    "min_quantity",
+    "compute_price",
+    "fixed_price",
+    "percent_price",
+    "price_discount",
+    "price_surcharge",
+    "price_min_margin",
+    "price_max_margin",
+    "date_start",
+    "date_end",
+  ].filter((field) => field === "id" || hasPricelistItemField(fieldsMeta, field));
+
+  const baseDomain = [["pricelist_id", "=", plId]];
+  if (hasPricelistItemField(fieldsMeta, "min_quantity")) {
+    baseDomain.push(["min_quantity", "<=", quantity]);
+  }
+
+  const domains = [];
+  if (hasPricelistItemField(fieldsMeta, "product_id")) {
+    domains.push([...baseDomain, ["product_id", "=", pId]]);
+  }
+  if (hasPricelistItemField(fieldsMeta, "product_tmpl_id")) {
+    domains.push([...baseDomain, ["product_tmpl_id", "=", tId]]);
+    if (tId !== pId) domains.push([...baseDomain, ["product_tmpl_id", "=", pId]]);
+  }
+
+  // Fallback para reglas globales de la lista. No tiene prioridad sobre producto/plantilla.
+  if (hasPricelistItemField(fieldsMeta, "applied_on")) {
+    domains.push([...baseDomain, ["applied_on", "=", "3_global"]]);
+  }
+
+  const byId = new Map();
+  for (const domain of domains) {
+    const rows = await searchPricelistItems(odoo, domain, fields);
+    for (const row of rows) {
+      const id = Number(row?.id || 0);
+      if (id) byId.set(id, row);
+    }
+  }
+
+  const candidates = [...byId.values()]
+    .filter((item) => pricelistItemIsActiveForDate(item))
+    .sort((a, b) => pricelistItemSpecificity(b, pId, tId) - pricelistItemSpecificity(a, pId, tId));
+
+  for (const item of candidates) {
+    const price = await computePricelistItemPrice({ odoo, item, productId: pId, templateId: tId });
+    if (price > 0) return price;
+  }
+
+  return 0;
+}
+
 function normalizeOdooPriceValue(value, pricelistId, productId) {
   if (value === null || value === undefined || value === false) return 0;
   if (typeof value === "number") return Number.isFinite(value) ? value : 0;
@@ -562,8 +765,18 @@ async function getPriceFromPricelist({ odoo, pricelistId, productId, qty, partne
   const explicitTemplateId = toPositiveInt(templateId);
   let variantTemplateId = null;
 
-  // Primero usamos la lista de precios asignada. Esto permite que distribuidores vean y calculen
-  // con Lista 2/3/6 en vez de caer siempre al precio predeterminado del producto.
+  // Primero usamos las reglas de product.pricelist.item, que son las que muestra Odoo
+  // en la pantalla de cada lista. Esto evita caer siempre al precio predeterminado.
+  const itemPrice = await getPriceFromPricelistItems({
+    odoo,
+    pricelistId,
+    productId: requestedProductId,
+    templateId: explicitTemplateId || requestedProductId,
+    qty,
+  });
+  if (itemPrice > 0) return itemPrice;
+
+  // Luego intentamos los métodos nativos de la lista, por si Odoo tiene reglas heredadas/globales.
   const pricelistPrice = await getPriceFromOdooPricelist({ odoo, pricelistId, productId: requestedProductId, qty, partnerId });
   if (pricelistPrice > 0) return pricelistPrice;
 
