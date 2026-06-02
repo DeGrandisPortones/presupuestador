@@ -71,6 +71,49 @@ function resolveLinePricingProductId(line) {
   }
   return 0;
 }
+
+function buildPriceRefreshLines(lines = []) {
+  return (Array.isArray(lines) ? lines : [])
+    .filter((line) => !line?.previously_billed_line)
+    .map((line) => ({
+      product_id: resolveLinePricingProductId(line),
+      source_product_id: line?.product_id,
+      odoo_template_id: line?.odoo_template_id || null,
+      qty: line?.qty,
+    }))
+    .filter((line) => Number(line.product_id || 0) > 0);
+}
+function mergeUpdatedBasePrices(lines = [], pricesResponse = {}) {
+  const prices = Array.isArray(pricesResponse?.prices) ? pricesResponse.prices : [];
+  const bySourceProductId = new Map();
+  const byOdooProductId = new Map();
+
+  for (const item of prices) {
+    const sourceId = Number(item?.product_id || 0);
+    const odooId = Number(item?.odoo_product_id || item?.odoo_template_id || 0);
+    if (Number.isFinite(sourceId) && sourceId > 0) bySourceProductId.set(sourceId, item);
+    if (Number.isFinite(odooId) && odooId > 0) byOdooProductId.set(odooId, item);
+  }
+
+  return (Array.isArray(lines) ? lines : []).map((line) => {
+    if (!line || line.previously_billed_line) return line;
+    const sourceId = Number(line?.product_id || 0);
+    const odooId = Number(resolveLinePricingProductId(line) || 0);
+    const next = bySourceProductId.get(sourceId) || byOdooProductId.get(odooId);
+    if (!next) return line;
+    const nextPrice = Number(next.price ?? line.basePrice ?? 0);
+    return {
+      ...line,
+      basePrice: Number.isFinite(nextPrice) ? nextPrice : line.basePrice,
+      code: next.code ?? line.code,
+      raw_name: line.raw_name,
+      name: line.name || next.name || line.raw_name,
+    };
+  });
+}
+function todayIsoDate() {
+  return new Date().toISOString().slice(0, 10);
+}
 function patchPortonDimensionValidationUi(dimensions) {
   if (typeof document === "undefined") return;
   const title = Array.from(document.querySelectorAll("div")).find((node) => node.textContent?.trim() === "Medidas del porton");
@@ -685,6 +728,75 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
   const resetReturnedM = useMutation({ mutationFn: async () => { if (!quoteId) throw new Error("Quote inválida"); return await resetReturnedMeasurementQuote(quoteId); }, onSuccess: async () => { await qc.invalidateQueries({ queryKey: ["quote", quoteId] }); toast.success("Se restablecieron los productos originales del presupuesto."); }, onError: (e) => toast.error(e?.message || "No se pudo restablecer") });
   const confirmReturnedM = useMutation({ mutationFn: async () => { const payload = getDraftPayload(); validateConfirm(payload); if (!quoteId) throw new Error("Quote inválida"); await updateQuote(quoteId, payload); return await confirmReturnedMeasurementQuote(quoteId); }, onSuccess: async () => { await qc.invalidateQueries({ queryKey: ["quote", quoteId] }); await qc.invalidateQueries({ queryKey: ["quotes", "mine"] }); navigate("/menu", { replace: true }); toast.success("Se envió a su aprobación técnica final."); }, onError: (e) => toast.error(e?.message || "No se pudo enviar a técnica") });
 
+  function resolveRefreshPricelist() {
+    const assignedPricelistId = getAssignedPricelistIdFromUser(user);
+    if (user?.is_distribuidor && assignedPricelistId) {
+      const assigned = (pricelistsQ.data || []).find((pl) => Number(pl?.id) === assignedPricelistId);
+      return assigned || { id: assignedPricelistId, name: `Lista asignada ${assignedPricelistId}` };
+    }
+    const currentId = Number(pricelistId || 0);
+    if (Number.isFinite(currentId) && currentId > 0) {
+      const current = (pricelistsQ.data || []).find((pl) => Number(pl?.id) === currentId);
+      return current || { id: currentId, name: `Lista ${currentId}` };
+    }
+    return (pricelistsQ.data || [])[0] || null;
+  }
+
+  const refreshQuoteM = useMutation({
+    mutationFn: async () => {
+      const id = quoteId || idParam;
+      if (!id) throw new Error("Abrí o guardá el presupuesto antes de actualizarlo.");
+
+      const ok = window.confirm(
+        "Los valores del presupuesto se sobrescribirán con la lista de precios actual. ¿Deseás continuar?",
+      );
+      if (!ok) return null;
+
+      const refreshPricelist = resolveRefreshPricelist();
+      const refreshPricelistId = Number(refreshPricelist?.id || 0);
+      if (!refreshPricelistId) throw new Error("No se pudo resolver la lista de precios actual.");
+
+      const currentLines = useQuoteStore.getState().lines || [];
+      if (!currentLines.filter((line) => !line?.previously_billed_line).length) {
+        throw new Error("Agregá al menos un producto para actualizar precios.");
+      }
+
+      const pricesPayload = {
+        pricelist_id: refreshPricelistId,
+        partner_id: partnerId,
+        lines: buildPriceRefreshLines(currentLines),
+      };
+      const prices = await getPrices(pricesPayload);
+      const refreshedLines = mergeUpdatedBasePrices(currentLines, prices);
+
+      setPricelist(refreshPricelist);
+      useQuoteStore.setState({ lines: refreshedLines });
+
+      const issuedAt = new Date().toISOString();
+      const payload = getDraftPayload();
+      payload.pricelist_id = refreshPricelistId;
+      payload.refresh_emission_date = true;
+      payload.payload = {
+        ...(payload.payload || {}),
+        quote_issued_at: issuedAt,
+        quote_issued_date: todayIsoDate(),
+        price_refreshed_at: issuedAt,
+        refreshed_pricelist_id: refreshPricelistId,
+      };
+      validateDraft(payload);
+      return await updateQuote(id, payload);
+    },
+    onSuccess: async (q) => {
+      if (!q) return;
+      setQuoteMeta({ quoteId: q.id, status: q.status, rejectionNotes: q.rejection_notes });
+      loadFromQuote(q);
+      await qc.invalidateQueries({ queryKey: ["quote", q.id] });
+      await qc.invalidateQueries({ queryKey: ["quotes", "mine"] });
+      toast.success("Presupuesto actualizado con fecha y lista de precios actual.");
+    },
+    onError: (e) => toast.error(e?.message || "No se pudo actualizar el presupuesto"),
+  });
+
   async function getLatestProductionPlanning() {
     try {
       return await getProductionPlanningEstimate({
@@ -729,6 +841,10 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
   };
 
   const canConfirm = isAcopioRevision ? false : (isReturnedMeasurementQuote ? false : (isRevisionQuote ? ["", "draft", "rejected"].includes(finalStatus || "") : ["draft", "rejected_commercial", "rejected_technical"].includes(status)));
+  const canRefreshSavedQuote = !!(quoteId || idParam)
+    && !isRevisionQuote
+    && !isReturnedMeasurementQuote
+    && ["draft", "rejected_commercial", "rejected_technical"].includes(String(status || ""));
 
   return (
     <div className="container" style={{ maxWidth: "100%", width: "100%" }}>
@@ -859,6 +975,17 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
           <LinesTable financingPercent={quoteAdjustmentPercent} />
           <div className="spacer" />
           <SummaryBox totals={totals} paymentMethod={paymentMethod} />
+          {canRefreshSavedQuote ? (
+            <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 10 }}>
+              <Button
+                variant="secondary"
+                disabled={refreshQuoteM.isPending}
+                onClick={() => refreshQuoteM.mutate()}
+              >
+                {refreshQuoteM.isPending ? "Actualizando..." : "Actualizar presupuesto"}
+              </Button>
+            </div>
+          ) : null}
         </div>
       </div>
 

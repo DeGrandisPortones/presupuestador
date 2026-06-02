@@ -1423,7 +1423,8 @@ export function buildQuotesRouter(odoo) {
                 measurement_mode=$11,
                 measurement_subtype=$12,
                 measurement_status=case when status='draft' then $13 else measurement_status end,
-                acopio_to_produccion_status=$14
+                acopio_to_produccion_status=$14,
+                created_at=case when $15::boolean then now() else created_at end
           where id=$1
           returning *`,
         [
@@ -1441,6 +1442,7 @@ export function buildQuotesRouter(odoo) {
           measurementFlow.measurement_subtype,
           quote.status === "draft" ? measurementFlow.measurement_status : quote.measurement_status,
           nextAcopioStatus,
+          body.refresh_emission_date === true,
         ]
       );
       res.json({ ok: true, quote: upd.rows[0] });
