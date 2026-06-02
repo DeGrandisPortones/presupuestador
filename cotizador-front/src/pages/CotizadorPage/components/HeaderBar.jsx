@@ -7,7 +7,16 @@ import { useQuoteStore } from "../../../domain/quote/store.js";
 import { PAYMENT_METHODS } from "../../../domain/quote/portonConstants.js";
 import { getFinancingPaymentMethods } from "../../../api/financingSettings.js";
 
-const MULTIPLE_PAYMENT_METHOD = "PAGO MÚLTIPLE";
+const MULTIPLE_PAYMENT_METHOD = "Pago Multiple";
+const CARD_CATEGORY = "Tarjetas";
+const MAIN_PAYMENT_METHODS = [
+  MULTIPLE_PAYMENT_METHOD,
+  "Efectivo",
+  "Transferencia",
+  "Cheques 0 - 30 - 60 - 90 - 120",
+  "Cheques 0 - 30 - 60 - 90 - 120 - 150 - 180",
+  CARD_CATEGORY,
+];
 
 function normalizeKey(value) {
   return String(value || "")
@@ -24,6 +33,39 @@ function isMultiplePaymentMethod(value) {
   return normalizeKey(value).startsWith("PAGO MULTIPLE");
 }
 
+function isCardPaymentMethod(value) {
+  const key = normalizeKey(value);
+  if (!key || isMultiplePaymentMethod(value)) return false;
+  return (
+    key.startsWith("CORDOBESA") ||
+    key.startsWith("NARANJA") ||
+    key.startsWith("OTRAS TC BANC") ||
+    key.startsWith("OTRAS") ||
+    (key.includes("CUOTAS") && !key.includes("CHEQUE"))
+  );
+}
+
+function sortCardMethods(methods) {
+  const groupOrder = (value) => {
+    const key = normalizeKey(value);
+    if (key.startsWith("CORDOBESA")) return 1;
+    if (key.startsWith("NARANJA")) return 2;
+    if (key.startsWith("OTRAS")) return 3;
+    return 9;
+  };
+  const installments = (value) => {
+    const m = normalizeKey(value).match(/\b(\d{1,2})\b/);
+    return m ? Number(m[1]) : 999;
+  };
+  return [...methods].sort((a, b) => {
+    const g = groupOrder(a) - groupOrder(b);
+    if (g) return g;
+    const q = installments(a) - installments(b);
+    if (q) return q;
+    return String(a).localeCompare(String(b), "es");
+  });
+}
+
 function mergePaymentMethods(baseMethods, apiMethods, currentMethod, apiLoaded) {
   const out = [];
   const seen = new Set();
@@ -37,14 +79,12 @@ function mergePaymentMethods(baseMethods, apiMethods, currentMethod, apiLoaded) 
 
   add(MULTIPLE_PAYMENT_METHOD);
 
-  // Si el backend respondió, esa lista es la fuente de verdad: ya trae los nombres editados
-  // y reemplaza los defaults viejos. Los defaults locales sólo quedan como fallback si falla/carga la API.
-  const sourceMethods = apiLoaded && Array.isArray(apiMethods) && apiMethods.length
-    ? apiMethods
-    : baseMethods;
-  (Array.isArray(sourceMethods) ? sourceMethods : []).forEach(add);
+  if (apiLoaded && Array.isArray(apiMethods)) {
+    apiMethods.forEach(add);
+  }
 
-  // Conserva una forma ya seleccionada en presupuestos viejos, pero no vuelve a mezclar todos los defaults viejos.
+  // Los defaults locales agregan opciones nuevas aunque el backend todavía no haya devuelto configuración.
+  (Array.isArray(baseMethods) ? baseMethods : []).forEach(add);
   add(currentMethod);
   return out;
 }
@@ -64,7 +104,7 @@ function formatPercent(n) {
 
 function paymentAllowsCondition2(value) {
   const key = normalizeKey(value);
-  if (!key || isMultiplePaymentMethod(value)) return false;
+  if (!key || isMultiplePaymentMethod(value) || key === normalizeKey(CARD_CATEGORY)) return false;
   return (
     key.includes("CHEQUE") ||
     key.includes("CTA CTE") ||
@@ -86,6 +126,24 @@ function parseExistingMultiple(paymentMethod) {
 
 function buildRowPercent(row) {
   return round2(normalizeNumber(row.value));
+}
+
+function paymentCategoryFromMethod(paymentMethod, categoryOverride = "") {
+  const raw = String(paymentMethod || "").trim();
+  const key = normalizeKey(raw);
+  if (categoryOverride === CARD_CATEGORY && (!raw || isCardPaymentMethod(raw))) return CARD_CATEGORY;
+  if (!raw) return "";
+  if (isMultiplePaymentMethod(raw)) return MULTIPLE_PAYMENT_METHOD;
+  if (isCardPaymentMethod(raw)) return CARD_CATEGORY;
+  if (key === normalizeKey("Efectivo")) return "Efectivo";
+  if (key === normalizeKey("Transferencia")) return "Transferencia";
+  if (key === normalizeKey("Cheques 0 - 30 - 60 - 90 - 120") || key === normalizeKey("Cheque 0 - 30 - 60 - 90 -120")) {
+    return "Cheques 0 - 30 - 60 - 90 - 120";
+  }
+  if (key === normalizeKey("Cheques 0 - 30 - 60 - 90 - 120 - 150 - 180")) {
+    return "Cheques 0 - 30 - 60 - 90 - 120 - 150 - 180";
+  }
+  return raw;
 }
 
 function MultiplePaymentModal({ open, onClose, paymentMethods, initialPaymentMethod, onApply }) {
@@ -134,7 +192,7 @@ function MultiplePaymentModal({ open, onClose, paymentMethods, initialPaymentMet
       return { method: String(row.method || "").trim(), percent: pct };
     });
 
-    const paymentMethod = `PAGO MÚLTIPLE: ${parts.map((p) => `[${p.method}] ${formatPercent(p.percent)}%`).join("; ")}`;
+    const paymentMethod = `Pago Multiple: ${parts.map((p) => `[${p.method}] ${formatPercent(p.percent)}%`).join("; ")}`;
     const detail = `Pago múltiple:\n${parts.map((p) => `- ${p.method}: ${formatPercent(p.percent)}%`).join("\n")}`;
     onApply({ paymentMethod, detail });
   };
@@ -209,6 +267,7 @@ export default function HeaderBar({ showMargin }) {
     setEndCustomer,
   } = useQuoteStore();
   const [multipleOpen, setMultipleOpen] = useState(false);
+  const [paymentCategoryOverride, setPaymentCategoryOverride] = useState("");
 
   const paymentMethodsQ = useQuery({
     queryKey: ["financing-payment-methods"],
@@ -223,9 +282,28 @@ export default function HeaderBar({ showMargin }) {
     [paymentMethodsQ.data, paymentMethodsQ.isSuccess, paymentMethod],
   );
 
+  const cardPaymentMethods = useMemo(
+    () => sortCardMethods(paymentMethods.filter((x) => isCardPaymentMethod(x))),
+    [paymentMethods],
+  );
+
   const isMultiplePayment = isMultiplePaymentMethod(paymentMethod);
+  const currentPaymentCategory = paymentCategoryFromMethod(paymentMethod, paymentCategoryOverride);
+  const paymentCategoryOptions = useMemo(() => {
+    const options = [...MAIN_PAYMENT_METHODS];
+    if (currentPaymentCategory && !options.some((x) => normalizeKey(x) === normalizeKey(currentPaymentCategory))) {
+      options.push(currentPaymentCategory);
+    }
+    return options;
+  }, [currentPaymentCategory]);
+  const showCardSelector = currentPaymentCategory === CARD_CATEGORY;
   const allowsCondition2 = paymentAllowsCondition2(paymentMethod);
   const conditionValue = allowsCondition2 && conditionMode === "cond2" ? "cond2" : "cond1";
+
+  useEffect(() => {
+    if (!paymentMethod || isCardPaymentMethod(paymentMethod)) return;
+    setPaymentCategoryOverride("");
+  }, [paymentMethod]);
 
   useEffect(() => {
     if (!["cond1", "cond2"].includes(conditionMode) || (!allowsCondition2 && conditionMode !== "cond1")) {
@@ -240,9 +318,21 @@ export default function HeaderBar({ showMargin }) {
 
   const handlePaymentChange = (nextValue) => {
     if (String(nextValue || "") === MULTIPLE_PAYMENT_METHOD) {
+      setPaymentCategoryOverride("");
       setMultipleOpen(true);
       return;
     }
+
+    if (String(nextValue || "") === CARD_CATEGORY) {
+      setPaymentCategoryOverride(CARD_CATEGORY);
+      if (!isCardPaymentMethod(paymentMethod)) {
+        setPaymentMethod("");
+        setConditionMode("cond1");
+      }
+      return;
+    }
+
+    setPaymentCategoryOverride("");
     setPaymentMethod(nextValue);
     if (!paymentAllowsCondition2(nextValue)) {
       setConditionMode("cond1");
@@ -250,10 +340,17 @@ export default function HeaderBar({ showMargin }) {
   };
 
   const applyMultiplePayment = ({ paymentMethod: nextPaymentMethod, detail }) => {
+    setPaymentCategoryOverride("");
     setPaymentMethod(nextPaymentMethod);
     setConditionMode("cond1");
     setConditionText(detail);
     setMultipleOpen(false);
+  };
+
+  const handleCardPaymentChange = (nextValue) => {
+    setPaymentCategoryOverride(CARD_CATEGORY);
+    setPaymentMethod(nextValue);
+    setConditionMode("cond1");
   };
 
   return (
@@ -319,20 +416,35 @@ export default function HeaderBar({ showMargin }) {
 
         <div style={{ minWidth: 280 }}>
           <div className="muted">Forma de pago</div>
-          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-            <select
-              value={isMultiplePayment ? MULTIPLE_PAYMENT_METHOD : (paymentMethod || "")}
-              onChange={(e) => handlePaymentChange(e.target.value)}
-              style={{ padding: "8px 10px", borderRadius: 8, border: "1px solid #ddd", minWidth: 220 }}
-            >
-              <option value="">Seleccione forma de pago</option>
-              {paymentMethods.map((x) => (
-                <option key={x} value={x}>{x}</option>
-              ))}
-            </select>
-            {isMultiplePayment ? <Button variant="ghost" onClick={() => setMultipleOpen(true)}>Editar</Button> : null}
+          <div style={{ display: "grid", gap: 8 }}>
+            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <select
+                value={isMultiplePayment ? MULTIPLE_PAYMENT_METHOD : (currentPaymentCategory || "")}
+                onChange={(e) => handlePaymentChange(e.target.value)}
+                style={{ padding: "8px 10px", borderRadius: 8, border: "1px solid #ddd", minWidth: 220 }}
+              >
+                <option value="">Seleccione forma de pago</option>
+                {paymentCategoryOptions.map((x) => (
+                  <option key={x} value={x}>{x}</option>
+                ))}
+              </select>
+              {isMultiplePayment ? <Button variant="ghost" onClick={() => setMultipleOpen(true)}>Editar</Button> : null}
+            </div>
+            {showCardSelector ? (
+              <select
+                value={isCardPaymentMethod(paymentMethod) ? paymentMethod : ""}
+                onChange={(e) => handleCardPaymentChange(e.target.value)}
+                style={{ padding: "8px 10px", borderRadius: 8, border: "1px solid #ddd", minWidth: 220 }}
+              >
+                <option value="">Seleccione tarjeta/cuotas</option>
+                {cardPaymentMethods.map((x) => (
+                  <option key={x} value={x}>{x}</option>
+                ))}
+              </select>
+            ) : null}
           </div>
           {isMultiplePayment ? <div className="muted" style={{ marginTop: 4, fontSize: 12 }}>{paymentMethod}</div> : null}
+          {showCardSelector && !paymentMethod ? <div className="muted" style={{ marginTop: 4, fontSize: 12 }}>Elegí la tarjeta y cuotas para aplicar el recargo correspondiente.</div> : null}
           {paymentMethodsQ.isError ? <div className="muted" style={{ marginTop: 4, fontSize: 12 }}>No se pudieron cargar formas agregadas.</div> : null}
         </div>
 
@@ -356,7 +468,7 @@ export default function HeaderBar({ showMargin }) {
               <Input value={conditionText || ""} onChange={(v) => setConditionText(v)} placeholder="Detalle condición 2..." style={{ minWidth: 320 }} />
             ) : null}
           </div>
-          {!allowsCondition2 ? <div className="muted" style={{ marginTop: 4, fontSize: 12 }}>Condición 2 solo para cheque, cuenta corriente o efectivo.</div> : null}
+          {!allowsCondition2 ? <div className="muted" style={{ marginTop: 4, fontSize: 12 }}>Condición 2 solo para cheque o efectivo.</div> : null}
         </div>
       </div>
     </div>

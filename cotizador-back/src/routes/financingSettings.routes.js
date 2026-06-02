@@ -8,23 +8,23 @@ const TRANSFER_PAYMENT_METHOD = "TRANSFERENCIA";
 const LEGACY_CASH_TRANSFER_PAYMENT_METHOD = "EFECTIVO - TRANSFERENCIA";
 
 const DEFAULT_PAYMENT_METHODS = [
-  "CHEQUE 0 - 30 - 60",
-  "CHEQUE 0 - 30 - 60 - 90 -120",
-  "CORDOBESA 10 CUOTAS",
-  "CORDOBESA 14 CUOTAS",
-  "CORDOBESA 18 CUOTAS",
+  "Efectivo",
+  "Transferencia",
+  "Cheques 0 - 30 - 60 - 90 - 120",
+  "Cheques 0 - 30 - 60 - 90 - 120 - 150 - 180",
   "CORDOBESA 4 CUOTAS",
   "CORDOBESA 6 CUOTAS",
-  "CUENTA CORRIENTE",
-  CASH_PAYMENT_METHOD,
-  TRANSFER_PAYMENT_METHOD,
-  "NARANJA 12 CUOTAS",
+  "CORDOBESA 10 CUOTAS",
+  "CORDOBESA 12 CUOTAS",
+  "CORDOBESA 14 CUOTAS",
+  "CORDOBESA 18 CUOTAS",
   "NARANJA 3 CUOTAS",
   "NARANJA 6 CUOTAS",
+  "NARANJA 12 CUOTAS",
   "OTRAS TC BANC 3 CUOTAS",
   "OTRAS TC BANC 6 CUOTAS",
 ];
-const MULTIPLE_PAYMENT_METHOD = "PAGO MÚLTIPLE";
+const MULTIPLE_PAYMENT_METHOD = "Pago Multiple";
 
 function requireEncComercialOrSuperuser(req, res, next) {
   if (!req.user?.is_enc_comercial && !req.user?.is_superuser) {
@@ -49,6 +49,18 @@ function normalizePaymentMethodKey(value) {
     .trim()
     .replace(/\s+/g, " ");
 }
+function defaultPercentOverride(paymentMethod) {
+  const key = normalizePaymentMethodKey(paymentMethod);
+  if (key === normalizePaymentMethodKey("CORDOBESA 12 CUOTAS")) return 24;
+  return null;
+}
+function methodKeyAliases(value) {
+  const key = normalizePaymentMethodKey(value);
+  const aliases = [key];
+  if (key.startsWith("CHEQUES ")) aliases.push(key.replace(/^CHEQUES /, "CHEQUE "));
+  if (key.startsWith("CHEQUE ")) aliases.push(key.replace(/^CHEQUE /, "CHEQUES "));
+  return [...new Set(aliases.filter(Boolean))];
+}
 function isMultiplePaymentMethod(value) {
   return normalizePaymentMethodKey(value).startsWith("PAGO MULTIPLE");
 }
@@ -71,10 +83,11 @@ function defaultMethodKeySet() {
   return new Set(defaultMethodKeys());
 }
 function getSavedRowFromMap(byKey, paymentMethod) {
-  const key = normalizePaymentMethodKey(paymentMethod);
-  if (!key || !byKey) return null;
-  const direct = byKey.get(key);
-  if (direct) return direct;
+  if (!byKey) return null;
+  for (const key of methodKeyAliases(paymentMethod)) {
+    const direct = byKey.get(key);
+    if (direct) return direct;
+  }
   if (isCashPaymentMethod(paymentMethod)) {
     return byKey.get(normalizePaymentMethodKey(LEGACY_CASH_TRANSFER_PAYMENT_METHOD)) || null;
   }
@@ -210,9 +223,9 @@ async function getSavedSettingByKey(key) {
 }
 
 function findSavedSettingByDisplayName(saved, paymentMethod) {
-  const key = normalizePaymentMethodKey(paymentMethod);
-  if (!key) return null;
-  return (saved || []).find((row) => isVisibleSavedPaymentMethod(row?.payment_method) && normalizePaymentMethodKey(row?.payment_method) === key) || null;
+  const keys = methodKeyAliases(paymentMethod);
+  if (!keys.length) return null;
+  return (saved || []).find((row) => isVisibleSavedPaymentMethod(row?.payment_method) && keys.includes(normalizePaymentMethodKey(row?.payment_method))) || null;
 }
 
 async function getSavedSetting(paymentMethod) {
@@ -222,13 +235,13 @@ async function getSavedSetting(paymentMethod) {
 
   const saved = await listSavedSettings();
 
-  // Primero buscamos por el nombre visible. Esto permite renombrar un default a un nombre que antes era otro default
-  // sin que se aplique el porcentaje del registro viejo por coincidencia de texto.
   const byDisplayName = findSavedSettingByDisplayName(saved, paymentMethod);
   if (byDisplayName) return byDisplayName;
 
-  const direct = await getSavedSettingByKey(key);
-  if (direct) return direct;
+  for (const aliasKey of methodKeyAliases(paymentMethod)) {
+    const direct = await getSavedSettingByKey(aliasKey);
+    if (direct) return direct;
+  }
 
   // La opción vieja "EFECTIVO - TRANSFERENCIA" se conserva como respaldo sólo para EFECTIVO.
   // Así el descuento ya cargado (por ejemplo -5%) no se pierde al separar Transferencia.
@@ -316,6 +329,21 @@ async function resolveSingleEffectivePreview(odoo, paymentMethod) {
       odoo_percent: odooPreview.percent || 0,
     };
   }
+
+  const defaultPercent = defaultPercentOverride(method);
+  if (defaultPercent !== null) {
+    const percent = cleanPercent(defaultPercent);
+    return {
+      ok: true,
+      ...odooPreview,
+      applies_financing: percent !== 0,
+      percent,
+      payment_method: method,
+      source: "default",
+      odoo_percent: odooPreview.percent || 0,
+    };
+  }
+
   return { ok: true, ...odooPreview, odoo_percent: odooPreview.percent || 0 };
 }
 
@@ -380,18 +408,19 @@ async function buildMethodsResponse(odoo) {
   for (const defaultPaymentMethod of DEFAULT_PAYMENT_METHODS) {
     const key = normalizePaymentMethodKey(defaultPaymentMethod);
     const row = getSavedRowFromMap(byKey, defaultPaymentMethod);
-    const displayName = getSavedDisplayName(row, defaultPaymentMethod);
+    const displayName = row ? getSavedDisplayName(row, defaultPaymentMethod) : defaultPaymentMethod;
     const odooPreview = await resolveOdooPreview(odoo, displayName);
-    const percent = row ? (row.active === false ? 0 : cleanPercent(row.percent)) : odooPreview.percent;
+    const defaultPercent = defaultPercentOverride(defaultPaymentMethod);
+    const percent = row ? (row.active === false ? 0 : cleanPercent(row.percent)) : (defaultPercent !== null ? defaultPercent : odooPreview.percent);
     methods.push({
       payment_method: displayName,
       payment_method_key: key,
       default_payment_method: defaultPaymentMethod,
       percent: cleanPercent(percent),
-      saved_percent: row ? cleanPercent(row.percent) : null,
+      saved_percent: row ? cleanPercent(row.percent) : (defaultPercent !== null ? cleanPercent(defaultPercent) : null),
       active: row ? row.active !== false : true,
-      has_override: !!row,
-      source: row ? "config" : "odoo",
+      has_override: !!row || defaultPercent !== null,
+      source: row ? "config" : (defaultPercent !== null ? "default" : "odoo"),
       odoo_percent: cleanPercent(odooPreview.percent),
       applies_financing: cleanPercent(percent) !== 0,
       card_type: odooPreview.card_type,
@@ -440,7 +469,7 @@ async function buildPaymentMethodNames() {
 
   for (const defaultPaymentMethod of DEFAULT_PAYMENT_METHODS) {
     const row = getSavedRowFromMap(byKey, defaultPaymentMethod);
-    names.push(getSavedDisplayName(row, defaultPaymentMethod));
+    names.push(row ? getSavedDisplayName(row, defaultPaymentMethod) : defaultPaymentMethod);
   }
 
   for (const row of saved) {
@@ -466,8 +495,8 @@ export function buildFinancingSettingsRouter(odoo) {
     try {
       const paymentMethods = await buildPaymentMethodNames();
       paymentMethods.sort((a, b) => {
-        if (a === MULTIPLE_PAYMENT_METHOD) return -1;
-        if (b === MULTIPLE_PAYMENT_METHOD) return 1;
+        if (isMultiplePaymentMethod(a)) return -1;
+        if (isMultiplePaymentMethod(b)) return 1;
         return String(a).localeCompare(String(b), "es");
       });
       res.json({ ok: true, payment_methods: paymentMethods });

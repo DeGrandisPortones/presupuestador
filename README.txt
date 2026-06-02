@@ -1,23 +1,25 @@
-ZIP: actualizar presupuesto fecha + lista de precios
+Cambio: financiamiento con categoria Tarjetas y Cordobesa 12 cuotas 24%
 
 Copiar y reemplazar desde la raiz del repo.
 
 Incluye:
-- cotizador-front/src/pages/CotizadorPage/index.jsx
-- cotizador-back/src/routes/quotes.routes.js
+- cotizador-front/src/pages/CotizadorPage/components/HeaderBar.jsx
+- cotizador-front/src/domain/quote/portonConstants.js
+- cotizador-back/src/routes/financingSettings.routes.js
 
-Que hace:
-- Agrega el boton "Actualizar presupuesto" debajo del total, solo cuando se abre un presupuesto guardado editable.
-- Muestra una confirmacion antes de sobreescribir valores.
-- Reconsulta precios actuales en Odoo con la lista actual.
-  - En distribuidores usa la lista asignada al usuario.
-  - En otros usuarios usa la lista que tenga seleccionada el presupuesto.
-- Sobreescribe los precios base de las lineas del presupuesto.
-- Guarda el presupuesto actualizado.
-- Actualiza la fecha de emision moviendo created_at a now() solo cuando se usa este boton.
-- Guarda metadata en payload: quote_issued_at, quote_issued_date, price_refreshed_at, refreshed_pricelist_id.
+Que cambia:
+- El selector principal de Forma de pago muestra:
+  - Pago Multiple
+  - Efectivo
+  - Transferencia
+  - Cheques 0 - 30 - 60 - 90 - 120
+  - Cheques 0 - 30 - 60 - 90 - 120 - 150 - 180
+  - Tarjetas
+- Al elegir Tarjetas aparece un segundo selector con los planes de tarjeta.
+- Agrega CORDOBESA 12 CUOTAS con 24% de recargo por defecto.
+- Si luego se edita CORDOBESA 12 CUOTAS desde Financiamiento, el valor guardado pisa el 24% default.
 
 Despues de copiar:
-1) Reiniciar backend.
-2) Recompilar/redeployar frontend sin cache.
-3) Refrescar navegador con Ctrl+F5.
+1. Reiniciar backend.
+2. Recompilar/redeployar frontend sin cache.
+3. Refrescar navegador con Ctrl+F5.
