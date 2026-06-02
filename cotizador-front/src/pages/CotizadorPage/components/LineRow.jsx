@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import Button from "../../../ui/Button";
 import { useQuoteStore } from "../../../domain/quote/store";
 
@@ -8,11 +9,22 @@ function isFreeQtyLine(line) {
   return !!line?.free_quantity || !!line?.quantity_editable || String(line?.quantity_mode || "").toLowerCase() === "free";
 }
 
-function getQtyMode({ isProtectedLine, isFreeQuantityLine, isIntegerQtyLine }) {
-  if (isProtectedLine) return "protected";
-  if (isFreeQuantityLine) return "free";
-  if (isIntegerQtyLine) return "integer";
-  return "fixed";
+function normalizeDecimalText(value) {
+  return String(value ?? "").trim().replace(",", ".");
+}
+
+function isPartialDecimalInput(value) {
+  const raw = String(value ?? "").trim();
+  if (raw === "" || raw === "." || raw === ",") return true;
+  return /^\d+[\.,]$/.test(raw);
+}
+
+function isValidDecimalInput(value) {
+  const raw = String(value ?? "").trim();
+  if (isPartialDecimalInput(raw)) return false;
+  if (!/^\d*([\.,]\d*)?$/.test(raw)) return false;
+  const n = Number(normalizeDecimalText(raw));
+  return Number.isFinite(n) && n >= 0;
 }
 
 export default function LineRow({ line, finalUnit, total, formatARS }) {
@@ -23,9 +35,40 @@ export default function LineRow({ line, finalUnit, total, formatARS }) {
   const isFreeQuantityLine = !isProtectedLine && isFreeQtyLine(line);
   const isIntegerQtyLine = !isProtectedLine && !isFreeQuantityLine && INTEGER_QTY_PRODUCT_IDS.has(Number(line.product_id));
   const isUnitOnlyLine = !isProtectedLine && !isFreeQuantityLine && !isIntegerQtyLine;
-  const qtyMode = getQtyMode({ isProtectedLine, isFreeQuantityLine, isIntegerQtyLine });
-  const canEditQty = qtyMode === "free" || qtyMode === "integer";
-  const qtyStep = qtyMode === "integer" ? "1" : "0.01";
+  const canEditQty = isFreeQuantityLine || isIntegerQtyLine;
+  const [qtyText, setQtyText] = useState(String(line.qty ?? ""));
+
+  useEffect(() => {
+    setQtyText(String(line.qty ?? ""));
+  }, [line.product_id, line.qty]);
+
+  function handleQtyChange(e) {
+    const raw = e.target.value;
+
+    if (isFreeQuantityLine) {
+      const cleaned = String(raw || "").replace(/[^0-9.,]/g, "");
+      setQtyText(cleaned);
+      if (isValidDecimalInput(cleaned)) {
+        setQty(line.product_id, cleaned);
+      }
+      return;
+    }
+
+    setQtyText(raw);
+    setQty(line.product_id, raw);
+  }
+
+  function handleQtyBlur() {
+    if (!isFreeQuantityLine) return;
+
+    const raw = String(qtyText || "").trim();
+    if (isValidDecimalInput(raw)) {
+      setQty(line.product_id, raw);
+      return;
+    }
+
+    setQtyText(String(line.qty ?? ""));
+  }
 
   return (
     <tr>
@@ -47,15 +90,14 @@ export default function LineRow({ line, finalUnit, total, formatARS }) {
 
       <td className="right">
         <input
-          type="number"
-          value={line.qty}
-          min={0}
-          step={qtyStep}
+          type={isFreeQuantityLine ? "text" : "number"}
+          inputMode={isFreeQuantityLine ? "decimal" : undefined}
+          value={qtyText}
+          min={isFreeQuantityLine ? undefined : 0}
+          step={isIntegerQtyLine ? "1" : "0.01"}
           disabled={!canEditQty}
-          data-qty-mode={qtyMode}
-          aria-label={`Cantidad de ${visibleName}`}
-          title={canEditQty ? "Editar cantidad" : "Cantidad fija"}
-          onChange={(e) => setQty(line.product_id, e.target.value)}
+          onChange={handleQtyChange}
+          onBlur={handleQtyBlur}
           style={{
             width: 90,
             padding: "6px 8px",

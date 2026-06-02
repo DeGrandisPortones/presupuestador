@@ -1,22 +1,15 @@
-FIX pantalla blanca en Presupuesto Otros
+FIX: Cantidad editable en Presupuesto Otros acepta punto y coma decimal.
 
-Reemplazar desde la raiz del repo:
+Archivo incluido:
+- cotizador-front/src/pages/CotizadorPage/components/LineRow.jsx
 
-cotizador-front/src/pages/CotizadorPage/components/LineRow.jsx
+Cambio:
+- En lineas con cantidad editable, el input usa texto decimal controlado.
+- Acepta tanto punto como coma: 2.5 / 2,5.
+- Si el usuario esta escribiendo un valor parcial como '.', ',', '2.' o '2,', no se manda cero al store y no se borra el producto.
+- Al salir del campo con un valor incompleto, vuelve al ultimo valor valido.
 
-Correccion:
-- Elimina cualquier referencia a usesIntegerQty.
-- Mantiene cantidad editable para lineas marcadas como free_quantity / quantity_editable / quantity_mode='free'.
-- Agrega un cambio real en el output del bundle (data-qty-mode / title / aria-label) para forzar hash nuevo del build.
-
-Despues de copiar:
-1) cd cotizador-front
-2) rm -rf dist node_modules/.vite
-3) npm run build
-4) redeploy del frontend sin cache si estas en Vercel
-5) Ctrl+F5 en el navegador
-
-Verificacion:
-grep -R "usesIntegerQty" cotizador-front/src
-
-No deberia devolver nada.
+Luego de copiar:
+cd cotizador-front
+rm -rf dist node_modules/.vite
+npm run build
