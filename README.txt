@@ -1,15 +1,16 @@
-FIX: Cantidad editable en Presupuesto Otros acepta punto y coma decimal.
+Correccion para Presupuesto Otros - cantidad editable
 
-Archivo incluido:
+Reemplaza:
 - cotizador-front/src/pages/CotizadorPage/components/LineRow.jsx
 
-Cambio:
-- En lineas con cantidad editable, el input usa texto decimal controlado.
-- Acepta tanto punto como coma: 2.5 / 2,5.
-- Si el usuario esta escribiendo un valor parcial como '.', ',', '2.' o '2,', no se manda cero al store y no se borra el producto.
-- Al salir del campo con un valor incompleto, vuelve al ultimo valor valido.
+Corrige:
+- elimina la variable rota que generaba pantalla blanca
+- permite cantidades con punto o coma en Otros
+- no elimina el producto mientras se escribe un valor intermedio como 2. o 2,
 
-Luego de copiar:
+Despues de copiar:
 cd cotizador-front
 rm -rf dist node_modules/.vite
 npm run build
+
+Luego redeployar frontend sin cache.

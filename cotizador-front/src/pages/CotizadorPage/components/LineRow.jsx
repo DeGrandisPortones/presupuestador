@@ -9,22 +9,25 @@ function isFreeQtyLine(line) {
   return !!line?.free_quantity || !!line?.quantity_editable || String(line?.quantity_mode || "").toLowerCase() === "free";
 }
 
-function normalizeDecimalText(value) {
-  return String(value ?? "").trim().replace(",", ".");
+function formatQtyInput(value) {
+  const n = Number(value || 0);
+  if (!Number.isFinite(n)) return "";
+  return String(n);
 }
 
-function isPartialDecimalInput(value) {
-  const raw = String(value ?? "").trim();
-  if (raw === "" || raw === "." || raw === ",") return true;
-  return /^\d+[\.,]$/.test(raw);
+function isAllowedQtyText(raw, integerOnly) {
+  const value = String(raw ?? "").trim();
+  if (value === "") return true;
+  if (integerOnly) return /^\d*$/.test(value);
+  return /^\d*(?:[.,]\d*)?$/.test(value);
 }
 
-function isValidDecimalInput(value) {
-  const raw = String(value ?? "").trim();
-  if (isPartialDecimalInput(raw)) return false;
-  if (!/^\d*([\.,]\d*)?$/.test(raw)) return false;
-  const n = Number(normalizeDecimalText(raw));
-  return Number.isFinite(n) && n >= 0;
+function parseQtyText(raw) {
+  const value = String(raw ?? "").trim().replace(",", ".");
+  if (!value || value === ".") return null;
+  if (value.endsWith(".")) return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
 }
 
 export default function LineRow({ line, finalUnit, total, formatARS }) {
@@ -36,38 +39,43 @@ export default function LineRow({ line, finalUnit, total, formatARS }) {
   const isIntegerQtyLine = !isProtectedLine && !isFreeQuantityLine && INTEGER_QTY_PRODUCT_IDS.has(Number(line.product_id));
   const isUnitOnlyLine = !isProtectedLine && !isFreeQuantityLine && !isIntegerQtyLine;
   const canEditQty = isFreeQuantityLine || isIntegerQtyLine;
-  const [qtyText, setQtyText] = useState(String(line.qty ?? ""));
+  const [qtyText, setQtyText] = useState(() => formatQtyInput(line.qty));
 
   useEffect(() => {
-    setQtyText(String(line.qty ?? ""));
-  }, [line.product_id, line.qty]);
+    setQtyText(formatQtyInput(line.qty));
+  }, [line.qty]);
+
+  function commitQty(raw, { force = false } = {}) {
+    if (!canEditQty) return;
+    const parsed = parseQtyText(raw);
+    if (parsed === null) {
+      if (force) setQtyText(formatQtyInput(line.qty));
+      return;
+    }
+
+    if (isIntegerQtyLine) {
+      const next = Math.trunc(Math.max(0, parsed));
+      setQty(line.product_id, next);
+      setQtyText(String(next));
+      return;
+    }
+
+    const next = Math.round(Math.max(0, parsed) * 100) / 100;
+    if (next > 0) {
+      setQty(line.product_id, next);
+      setQtyText(String(next));
+      return;
+    }
+
+    if (force) setQtyText(formatQtyInput(line.qty));
+  }
 
   function handleQtyChange(e) {
     const raw = e.target.value;
-
-    if (isFreeQuantityLine) {
-      const cleaned = String(raw || "").replace(/[^0-9.,]/g, "");
-      setQtyText(cleaned);
-      if (isValidDecimalInput(cleaned)) {
-        setQty(line.product_id, cleaned);
-      }
-      return;
-    }
-
+    if (!canEditQty) return;
+    if (!isAllowedQtyText(raw, isIntegerQtyLine)) return;
     setQtyText(raw);
-    setQty(line.product_id, raw);
-  }
-
-  function handleQtyBlur() {
-    if (!isFreeQuantityLine) return;
-
-    const raw = String(qtyText || "").trim();
-    if (isValidDecimalInput(raw)) {
-      setQty(line.product_id, raw);
-      return;
-    }
-
-    setQtyText(String(line.qty ?? ""));
+    commitQty(raw);
   }
 
   return (
@@ -90,14 +98,12 @@ export default function LineRow({ line, finalUnit, total, formatARS }) {
 
       <td className="right">
         <input
-          type={isFreeQuantityLine ? "text" : "number"}
-          inputMode={isFreeQuantityLine ? "decimal" : undefined}
+          type="text"
+          inputMode={isIntegerQtyLine ? "numeric" : "decimal"}
           value={qtyText}
-          min={isFreeQuantityLine ? undefined : 0}
-          step={isIntegerQtyLine ? "1" : "0.01"}
           disabled={!canEditQty}
           onChange={handleQtyChange}
-          onBlur={handleQtyBlur}
+          onBlur={(e) => commitQty(e.target.value, { force: true })}
           style={{
             width: 90,
             padding: "6px 8px",
