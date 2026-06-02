@@ -483,6 +483,26 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
     return () => window.clearTimeout(timer);
   }, [normalizedCatalogKind, dimensions?.width, dimensions?.height]);
 
+  useEffect(() => {
+    if (normalizedCatalogKind !== "otros") return;
+    const currentLines = useQuoteStore.getState().lines || [];
+    const needsPatch = currentLines.some((line) => (
+      line
+      && !line.free_quantity
+      && !line.quantity_editable
+      && !line.auto_system_item
+      && !line.surface_quantity
+      && !line.previously_billed_line
+    ));
+    if (!needsPatch) return;
+    useQuoteStore.setState({
+      lines: currentLines.map((line) => {
+        if (!line || line.free_quantity || line.quantity_editable || line.auto_system_item || line.surface_quantity || line.previously_billed_line) return line;
+        return { ...line, free_quantity: true, quantity_editable: true };
+      }),
+    });
+  }, [normalizedCatalogKind, lines]);
+
   const financingQ = useQuery({ queryKey: ["financing-preview", paymentMethod], queryFn: () => getFinancingPreview(paymentMethod), enabled: !!String(paymentMethod || "").trim(), staleTime: 60 * 1000 });
   const financingPercent = Number(financingQ.data?.percent || 0) || 0;
   const quoteAdjustmentPercent = useMemo(

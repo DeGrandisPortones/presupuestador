@@ -4,13 +4,19 @@ import { useQuoteStore } from "../../../domain/quote/store";
 const SYSTEM_PRODUCT_IDS = new Set([3008, 3009]);
 const INTEGER_QTY_PRODUCT_IDS = new Set([3582, 3251]);
 
+function isFreeQtyLine(line) {
+  return !!line?.free_quantity || !!line?.quantity_editable || String(line?.quantity_mode || "").toLowerCase() === "free";
+}
+
 export default function LineRow({ line, finalUnit, total, formatARS }) {
   const { setQty, removeLine } = useQuoteStore();
   const visibleName = String(line.name || line.raw_name || `Producto ${line.product_id}`).trim();
   const visibleOdooId = Number(line.odoo_id || line.product_id || 0) || Number(line.product_id || 0);
   const isProtectedLine = !!line.auto_system_item || !!line.surface_quantity || !!line.previously_billed_line || SYSTEM_PRODUCT_IDS.has(Number(line.product_id));
-  const isIntegerQtyLine = !isProtectedLine && INTEGER_QTY_PRODUCT_IDS.has(Number(line.product_id));
-  const isUnitOnlyLine = !isProtectedLine && !isIntegerQtyLine;
+  const isFreeQuantityLine = !isProtectedLine && isFreeQtyLine(line);
+  const isIntegerQtyLine = !isProtectedLine && !isFreeQuantityLine && INTEGER_QTY_PRODUCT_IDS.has(Number(line.product_id));
+  const isUnitOnlyLine = !isProtectedLine && !isFreeQuantityLine && !isIntegerQtyLine;
+  const canEditQty = isFreeQuantityLine || isIntegerQtyLine;
 
   return (
     <tr>
@@ -25,6 +31,7 @@ export default function LineRow({ line, finalUnit, total, formatARS }) {
           {!line.auto_system_item && line.surface_quantity ? " · Cantidad por superficie" : ""}
           {isUnitOnlyLine ? " · Unidad fija" : ""}
           {isIntegerQtyLine ? " · Cantidad entera" : ""}
+          {isFreeQuantityLine ? " · Cantidad editable" : ""}
           {line.previously_billed_line ? " · Facturado previamente" : ""}
         </div>
       </td>
@@ -35,7 +42,7 @@ export default function LineRow({ line, finalUnit, total, formatARS }) {
           value={line.qty}
           min={0}
           step={isIntegerQtyLine ? "1" : "0.01"}
-          disabled={isProtectedLine || isUnitOnlyLine}
+          disabled={!canEditQty}
           onChange={(e) => setQty(line.product_id, e.target.value)}
           style={{
             width: 90,
@@ -43,7 +50,7 @@ export default function LineRow({ line, finalUnit, total, formatARS }) {
             borderRadius: 8,
             border: "1px solid #ddd",
             textAlign: "right",
-            opacity: isProtectedLine || isUnitOnlyLine ? 0.7 : 1,
+            opacity: canEditQty ? 1 : 0.7,
           }}
         />
       </td>

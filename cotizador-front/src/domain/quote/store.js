@@ -32,6 +32,9 @@ function parseDimensionNumber(v) {
 function isIntegerQtyProductId(productId) {
   return INTEGER_QTY_PRODUCT_IDS.has(Number(productId));
 }
+function isFreeQuantityLine(line) {
+  return !!line?.free_quantity || !!line?.quantity_editable || String(line?.quantity_mode || "").toLowerCase() === "free";
+}
 function isProtectedLine(line) {
   return !!line?.auto_system_item || !!line?.surface_quantity || !!line?.previously_billed_line;
 }
@@ -40,10 +43,14 @@ function normalizeIntegerQty(value) {
   if (!Number.isFinite(n)) return 0;
   return Math.max(0, Math.trunc(n));
 }
-function normalizeEditableQty({ productId, qty, surfaceQuantity = false }) {
-  if (surfaceQuantity) {
-    const n = Number(String(qty ?? "").replace(",", "."));
-    return Number.isFinite(n) ? Math.max(0, n) : 0;
+function normalizeFreeQty(value) {
+  const n = Number(String(value ?? "").replace(",", "."));
+  if (!Number.isFinite(n)) return 0;
+  return Math.max(0, round2(n));
+}
+function normalizeEditableQty({ productId, qty, surfaceQuantity = false, freeQuantity = false }) {
+  if (surfaceQuantity || freeQuantity) {
+    return normalizeFreeQty(qty);
   }
   if (isIntegerQtyProductId(productId)) {
     return normalizeIntegerQty(qty);
@@ -62,6 +69,9 @@ function syncSurfaceLines(lines, dimensions) {
     .filter((line) => !line?.auto_system_item)
     .map((line) => {
       if (line?.surface_quantity) return { ...line, qty: area };
+      if (isFreeQuantityLine(line)) {
+        return { ...line, qty: normalizeFreeQty(line?.qty) };
+      }
       if (isIntegerQtyProductId(line?.product_id)) {
         return { ...line, qty: normalizeIntegerQty(line?.qty) };
       }
@@ -195,6 +205,7 @@ export const useQuoteStore = create((set, get) => ({
         const rawName = cleanText(l.raw_name || l.rawName || l.raw || l.original_name || "");
         const visibleName =
           cleanText(l.name || l.display_name || l.alias || rawName) || `Producto ${l.product_id || idx}`;
+        const freeQuantity = !!l.free_quantity || !!l.quantity_editable || String(l.quantity_mode || "").toLowerCase() === "free";
         return {
           product_id: Number(l.product_id ?? idx + 1),
           odoo_external_id: resolveOdooExternalId(l),
@@ -208,10 +219,13 @@ export const useQuoteStore = create((set, get) => ({
             productId: l.product_id,
             qty: l.qty || 1,
             surfaceQuantity: !!l.surface_quantity,
+            freeQuantity,
           }),
           basePrice: Number(l.basePrice ?? l.base_price ?? l.price ?? 0) || 0,
           auto_system_item: !!l.auto_system_item,
           surface_quantity: !!l.surface_quantity,
+          free_quantity: freeQuantity,
+          quantity_editable: freeQuantity,
           previously_billed_line: !!l.previously_billed_line,
           locked_line: !!l.locked_line,
           line_key: String(l.line_key || l.product_id || idx),
@@ -336,11 +350,15 @@ export const useQuoteStore = create((set, get) => ({
       const existing = s.lines.find((l) => l.product_id === id && !l.previously_billed_line);
       const isSurfaceQuantity = !!p.uses_surface_quantity;
       const isIntegerQty = isIntegerQtyProductId(id);
+      const isFreeQuantity = !!p.free_quantity || !!p.quantity_editable || String(p.quantity_mode || "").toLowerCase() === "free";
       const surfaceQty = getSurfaceQuantity(s.dimensions);
 
       if (existing) {
         if (existing.surface_quantity) {
           return { lines: s.lines.map((l) => l.product_id === id ? { ...l, qty: surfaceQty } : l) };
+        }
+        if (isFreeQuantityLine(existing)) {
+          return { lines: s.lines.map((l) => l.product_id === id ? { ...l, qty: normalizeFreeQty(l.qty || 1), free_quantity: true, quantity_editable: true } : l) };
         }
         if (isIntegerQty) {
           return { lines: s.lines.map((l) => l.product_id === id ? { ...l, qty: normalizeIntegerQty(l.qty) } : l) };
@@ -360,7 +378,7 @@ export const useQuoteStore = create((set, get) => ({
             name: getInternalVisibleName(p),
             raw_name: getClientFacingName(p),
             code: p.code || null,
-            qty: isSurfaceQuantity ? surfaceQty : (isIntegerQty ? 0 : 1),
+            qty: isSurfaceQuantity ? surfaceQty : (isFreeQuantity ? 1 : (isIntegerQty ? 0 : 1)),
             basePrice:
               Number(
                 p.price ??
@@ -373,6 +391,8 @@ export const useQuoteStore = create((set, get) => ({
                   0,
               ) || 0,
             surface_quantity: isSurfaceQuantity,
+            free_quantity: isFreeQuantity,
+            quantity_editable: isFreeQuantity,
             line_key: `${id}-${Date.now()}`,
           },
         ],
@@ -402,6 +422,7 @@ export const useQuoteStore = create((set, get) => ({
       productId: id,
       qty,
       surfaceQuantity: !!current?.surface_quantity,
+      freeQuantity: isFreeQuantityLine(current),
     });
 
     set((s) => ({
@@ -445,27 +466,33 @@ export const useQuoteStore = create((set, get) => ({
     const safeDimensions = s.dimensions && typeof s.dimensions === "object" ? s.dimensions : {};
     const lines = s.lines
       .filter((l) => !l.ui_only_line && !l.auto_system_item)
-      .map((l) => ({
-        product_id: l.product_id,
-        odoo_external_id: resolveOdooExternalId(l),
-        odoo_id: toPositiveInt(l.odoo_id),
-        odoo_template_id: toPositiveInt(l.odoo_template_id),
-        odoo_variant_id: toPositiveInt(l.odoo_variant_id),
-        qty: normalizeEditableQty({
-          productId: l.product_id,
-          qty: l.qty,
-          surfaceQuantity: !!l.surface_quantity,
-        }),
-        name: l.name,
-        raw_name: l.raw_name || null,
-        code: l.code,
-        basePrice: l.basePrice,
-        auto_system_item: !!l.auto_system_item,
-        surface_quantity: !!l.surface_quantity,
-        previously_billed_line: !!l.previously_billed_line,
-        locked_line: !!l.locked_line,
-        line_key: l.line_key || null,
-      }));
+      .map((l) => {
+        const freeQuantity = isFreeQuantityLine(l);
+        return {
+          product_id: l.product_id,
+          odoo_external_id: resolveOdooExternalId(l),
+          odoo_id: toPositiveInt(l.odoo_id),
+          odoo_template_id: toPositiveInt(l.odoo_template_id),
+          odoo_variant_id: toPositiveInt(l.odoo_variant_id),
+          qty: normalizeEditableQty({
+            productId: l.product_id,
+            qty: l.qty,
+            surfaceQuantity: !!l.surface_quantity,
+            freeQuantity,
+          }),
+          name: l.name,
+          raw_name: l.raw_name || null,
+          code: l.code,
+          basePrice: l.basePrice,
+          auto_system_item: !!l.auto_system_item,
+          surface_quantity: !!l.surface_quantity,
+          free_quantity: freeQuantity,
+          quantity_editable: freeQuantity,
+          previously_billed_line: !!l.previously_billed_line,
+          locked_line: !!l.locked_line,
+          line_key: l.line_key || null,
+        };
+      });
     return {
       fulfillment_mode: s.fulfillmentMode,
       pricelist_id: s.pricelistId,

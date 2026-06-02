@@ -1,23 +1,21 @@
-ZIP para copiar y reemplazar desde la raiz del repo.
+ZIP: otros_cantidad_editable_copy_replace
 
-NO incluye cambios en Mis presupuestos / PresupuestosPage.
-La vinculacion se hace desde el cotizador de Ipanel u Otros, igual que en Presupuestar Puertas.
+Copiar y reemplazar desde la raiz del repo.
 
-Archivos incluidos:
+Incluye:
 - cotizador-front/src/pages/CotizadorPage/index.jsx
+- cotizador-front/src/domain/quote/store.js
+- cotizador-front/src/pages/CotizadorPage/components/LineRow.jsx
 - cotizador-back/src/routes/quotes.routes.js
 
-Cambios:
-- En /cotizador/ipanel aparece el bloque "Vincular a porton existente".
-- En /cotizador/otros aparece el bloque "Vincular a porton existente".
-- El bloque permite buscar por presupuesto, NP, NV, cliente, telefono o localidad.
-- Al elegir un porton, copia cliente, destino, lista de precios y partner de facturacion si corresponde.
-- Si se vincula a un porton, usa el mismo numero base:
-  - Ipanel: INP / INV
-  - Otros: ONP / ONV
-- No agrega botones "Agregar Ipanel" ni "Agregar Otros" en Mis presupuestos.
+Cambio principal:
+- En el cotizador Otros, las lineas permiten cantidad editable libre.
+- Sirve para servicios por m2, instalacion, controles remotos u otros extras.
+- No cambia el comportamiento de Porton, Ipanel ni Puerta: ahi las cantidades siguen con la logica existente.
 
-Despues de copiar:
-1. Reiniciar backend.
+Tambien mantiene la logica anterior de vincular Ipanel/Otros a un porton y usar el mismo numero con prefijo I/O.
+
+Luego de copiar:
+1. Reiniciar backend si se reemplaza quotes.routes.js.
 2. Recompilar/redeployar frontend.
 3. Refrescar navegador con Ctrl+F5.
