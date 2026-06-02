@@ -8,6 +8,13 @@ function isFreeQtyLine(line) {
   return !!line?.free_quantity || !!line?.quantity_editable || String(line?.quantity_mode || "").toLowerCase() === "free";
 }
 
+function getQtyMode({ isProtectedLine, isFreeQuantityLine, isIntegerQtyLine }) {
+  if (isProtectedLine) return "protected";
+  if (isFreeQuantityLine) return "free";
+  if (isIntegerQtyLine) return "integer";
+  return "fixed";
+}
+
 export default function LineRow({ line, finalUnit, total, formatARS }) {
   const { setQty, removeLine } = useQuoteStore();
   const visibleName = String(line.name || line.raw_name || `Producto ${line.product_id}`).trim();
@@ -16,7 +23,9 @@ export default function LineRow({ line, finalUnit, total, formatARS }) {
   const isFreeQuantityLine = !isProtectedLine && isFreeQtyLine(line);
   const isIntegerQtyLine = !isProtectedLine && !isFreeQuantityLine && INTEGER_QTY_PRODUCT_IDS.has(Number(line.product_id));
   const isUnitOnlyLine = !isProtectedLine && !isFreeQuantityLine && !isIntegerQtyLine;
-  const canEditQty = isFreeQuantityLine || isIntegerQtyLine;
+  const qtyMode = getQtyMode({ isProtectedLine, isFreeQuantityLine, isIntegerQtyLine });
+  const canEditQty = qtyMode === "free" || qtyMode === "integer";
+  const qtyStep = qtyMode === "integer" ? "1" : "0.01";
 
   return (
     <tr>
@@ -41,8 +50,11 @@ export default function LineRow({ line, finalUnit, total, formatARS }) {
           type="number"
           value={line.qty}
           min={0}
-          step={isIntegerQtyLine ? "1" : "0.01"}
+          step={qtyStep}
           disabled={!canEditQty}
+          data-qty-mode={qtyMode}
+          aria-label={`Cantidad de ${visibleName}`}
+          title={canEditQty ? "Editar cantidad" : "Cantidad fija"}
           onChange={(e) => setQty(line.product_id, e.target.value)}
           style={{
             width: 90,
