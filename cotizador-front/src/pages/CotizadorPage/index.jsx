@@ -11,6 +11,7 @@ import {
   confirmQuote,
   submitFinalQuote,
   updateQuote,
+  listQuotes,
 } from "../../api/quotes";
 import { confirmReturnedMeasurementQuote, resetReturnedMeasurementQuote } from "../../api/measurements";
 import { downloadPresupuestoPdf, downloadProformaPdf } from "../../api/pdf";
@@ -132,7 +133,7 @@ function appendMetricsToNote(note, payload) {
   filtered.push(metrics);
   return filtered.join("\n").trim();
 }
-function buildPdfPayloadForDownload(payload, financingPercent, extras = {}) {
+function buildPdfPayloadForDownload(payload, financingPercent, extras = {}, options = {}) {
   const percent = Number(financingPercent || 0) || 0;
   const factor = 1 + percent / 100;
   const nextLines = Array.isArray(payload?.lines)
@@ -143,6 +144,15 @@ function buildPdfPayloadForDownload(payload, financingPercent, extras = {}) {
       })
     : [];
   const nextPayload = { ...(payload || {}), ...extras, lines: nextLines, payload: { ...(payload?.payload || {}), ...(extras.payload || {}) } };
+  if (options?.stripMarginPercent) {
+    nextPayload.margin_percent_ui = 0;
+    nextPayload.marginPercent = 0;
+    nextPayload.payload = {
+      ...(nextPayload.payload || {}),
+      margin_percent_ui: 0,
+      marginPercent: 0,
+    };
+  }
   if (normalizeCatalogKind(nextPayload.catalog_kind || nextPayload.payload?.catalog_kind) !== "otros") {
     nextPayload.note = appendMetricsToNote(nextPayload.note, nextPayload);
   } else {
@@ -191,6 +201,97 @@ function formatVisibleStatus(rawStatus, hasPersistedQuote) {
   if (!normalized) return hasPersistedQuote ? "Guardado" : "Draft";
   return String(rawStatus || "");
 }
+
+function extractReferenceCore(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  return raw.replace(/^[A-Za-z]+/, "").trim() || raw;
+}
+function linkedPortonReferenceLabel(quote) {
+  if (!quote) return "";
+  return String(quote.odoo_sale_order_name || quote.final_sale_order_name || quote.quote_number || "").trim();
+}
+function quoteDisplayReference(quote) {
+  return String(quote?.odoo_sale_order_name || quote?.final_sale_order_name || quote?.quote_number || quote?.id || "").trim();
+}
+function normalizeSearchText(value) {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim();
+}
+function buildPortonSearchText(quote = {}) {
+  const c = quote?.end_customer || {};
+  return normalizeSearchText([
+    quoteDisplayReference(quote),
+    quote?.quote_number,
+    quote?.odoo_sale_order_name,
+    quote?.final_sale_order_name,
+    quote?.status,
+    c?.name,
+    c?.first_name,
+    c?.last_name,
+    c?.phone,
+    c?.email,
+    c?.address,
+    c?.city,
+  ].filter(Boolean).join(" "));
+}
+function buildLinkedPortonPayload(linkedPorton, linkedPortonId) {
+  if (!linkedPortonId) return null;
+  const reference = linkedPortonReferenceLabel(linkedPorton);
+  return {
+    linked_porton_quote_id: linkedPorton?.id || linkedPortonId,
+    linked_porton_quote_number: linkedPorton?.quote_number || "",
+    linked_porton_reference: reference,
+    linked_porton_odoo_sale_order_name: linkedPorton?.odoo_sale_order_name || "",
+    linked_porton_final_sale_order_name: linkedPorton?.final_sale_order_name || "",
+    linked_porton_reference_core: extractReferenceCore(reference || linkedPorton?.quote_number || ""),
+  };
+}
+
+function extractLinkedPortonPayloadFromQuote(quote) {
+  const payload = quote?.payload && typeof quote.payload === "object" ? quote.payload : {};
+  const out = {};
+  [
+    "linked_porton_quote_id",
+    "linked_porton_quote_number",
+    "linked_porton_reference",
+    "linked_porton_odoo_sale_order_name",
+    "linked_porton_final_sale_order_name",
+    "linked_porton_reference_core",
+  ].forEach((key) => {
+    if (payload[key] !== undefined && payload[key] !== null && String(payload[key]).trim() !== "") out[key] = payload[key];
+  });
+  return Object.keys(out).length ? out : null;
+}
+function buildSubQuoteDisplayReferenceFromPayload(kind, payload) {
+  const p = payload && typeof payload === "object" ? payload : {};
+  const core = extractReferenceCore(p.linked_porton_reference || p.linked_porton_odoo_sale_order_name || p.linked_porton_final_sale_order_name || p.linked_porton_quote_number || p.linked_porton_reference_core || "");
+  if (!core) return "";
+  const normalizedKind = normalizeCatalogKind(kind);
+  if (normalizedKind === "ipanel") return `INP${core}`;
+  if (normalizedKind === "otros") return `ONP${core}`;
+  if (normalizedKind === "puerta") return `PNP${core}`;
+  return `NP${core}`;
+}
+
+function buildSubQuoteDisplayReference(kind, linkedPorton) {
+  const normalizedKind = normalizeCatalogKind(kind);
+  const reference = linkedPortonReferenceLabel(linkedPorton);
+  const core = extractReferenceCore(reference || linkedPorton?.quote_number || "");
+  if (!core) return "";
+  if (normalizedKind === "ipanel") return `INP${core}`;
+  if (normalizedKind === "otros") return `ONP${core}`;
+  if (normalizedKind === "puerta") return `PNP${core}`;
+  return `NP${core}`;
+}
+
+function displayQuoteNumberForKind(kind, quote, fallback = "") {
+  return buildSubQuoteDisplayReferenceFromPayload(kind, extractLinkedPortonPayloadFromQuote(quote)) || fallback;
+}
+
 function quoteLooksLikeReturnedMeasurement(quote) {
   if (!quote || typeof quote !== "object") return false;
   if (String(quote?.measurement_status || "").trim().toLowerCase() === "returned_to_seller") return true;
@@ -227,6 +328,8 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
   const workflowStage = String(searchParams.get("workflow_stage") || "").trim();
   const workflowDoorId = String(searchParams.get("door_id") || "").trim();
   const workflowPortonId = String(searchParams.get("porton_id") || "").trim();
+  const initialLinkedPortonId = String(searchParams.get("linked_porton_id") || (normalizedCatalogKind !== "porton" ? workflowPortonId : "") || "").trim();
+  const canLinkToPorton = ["ipanel", "otros"].includes(normalizedCatalogKind);
 
   const {
     quoteId,
@@ -240,6 +343,8 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
     dimensions,
     setPricelist,
     setPartnerId,
+    setFulfillmentMode,
+    setNote,
     applyBasePrices,
     loadFromQuote,
     reset,
@@ -251,8 +356,17 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
   } = useQuoteStore();
   const [ivaRate] = useState(IVA_RATE_DEFAULT);
   const [confirmChoiceOpen, setConfirmChoiceOpen] = useState(false);
+  const [linkedPortonId, setLinkedPortonId] = useState("");
+  const [portonSearch, setPortonSearch] = useState("");
 
-  useEffect(() => { if (!idParam) { reset(); if (user?.default_maps_url) setEndCustomer({ maps_url: user.default_maps_url }); } }, [idParam, reset, user?.default_maps_url, setEndCustomer]);
+  useEffect(() => {
+    if (!idParam) {
+      reset();
+      setLinkedPortonId(initialLinkedPortonId || "");
+      setPortonSearch("");
+      if (user?.default_maps_url) setEndCustomer({ maps_url: user.default_maps_url });
+    }
+  }, [idParam, reset, user?.default_maps_url, setEndCustomer, initialLinkedPortonId]);
 
   const pricelistsQ = useQuery({ queryKey: ["pricelists"], queryFn: getPricelists });
   useEffect(() => {
@@ -271,6 +385,19 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
   }, [partnerId, setPartnerId, user?.is_distribuidor, user?.odoo_partner_id]);
 
   const quoteQ = useQuery({ queryKey: ["quote", idParam], queryFn: () => getQuote(idParam), enabled: !!idParam });
+  const portonQuotesQ = useQuery({
+    queryKey: ["quotes", "mine", "portones-for-link", normalizedCatalogKind],
+    queryFn: () => listQuotes({ scope: "mine" }),
+    enabled: canLinkToPorton && !!user,
+    staleTime: 60 * 1000,
+  });
+  const portonQuotes = useMemo(() => (portonQuotesQ.data || []).filter((q) => normalizeCatalogKind(q?.catalog_kind || "porton") === "porton"), [portonQuotesQ.data]);
+  const filteredPortonQuotes = useMemo(() => {
+    const needle = normalizeSearchText(portonSearch);
+    if (!needle) return portonQuotes;
+    return portonQuotes.filter((q) => buildPortonSearchText(q).includes(needle));
+  }, [portonQuotes, portonSearch]);
+  const linkedPorton = useMemo(() => portonQuotes.find((q) => String(q.id) === String(linkedPortonId)) || null, [portonQuotes, linkedPortonId]);
 
   const isRevisionQuote = (quoteQ.data?.quote_kind || "original") === "copy";
   const finalStatus = String(quoteQ.data?.final_status || "");
@@ -278,7 +405,9 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
   const isReturnedMeasurementQuote = !isRevisionQuote && quoteLooksLikeReturnedMeasurement(quoteQ.data);
   const returnedMeasurementReason = String(quoteQ.data?.measurement_review_notes || "").trim();
   const returnedMeasurementForced = quoteQ.data?.measurement_return_force_reason === true;
-  const visibleQuoteNumber = String(quoteQ.data?.quote_number || quoteQ.data?.odoo_sale_order_name || "").trim();
+  const persistedLinkedPortonPayload = extractLinkedPortonPayloadFromQuote(quoteQ.data);
+  const linkedPortonDisplayReference = buildSubQuoteDisplayReference(normalizedCatalogKind, linkedPorton) || buildSubQuoteDisplayReferenceFromPayload(normalizedCatalogKind, persistedLinkedPortonPayload);
+  const visibleQuoteNumber = String(linkedPortonDisplayReference || quoteQ.data?.quote_number || quoteQ.data?.odoo_sale_order_name || "").trim();
   const visibleParentQuoteNumber = String(quoteQ.data?.parent_quote_number || quoteQ.data?.parent_quote_quote_number || quoteQ.data?.parent_odoo_sale_order_name || "").trim();
   const visibleStatusLabel = formatVisibleStatus(isRevisionQuote ? (finalStatus || status) : status, !!(quoteQ.data?.id || quoteId || idParam));
 
@@ -318,7 +447,34 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
       return;
     }
     loadFromQuote(quoteQ.data);
+    const persistedLinked = extractLinkedPortonPayloadFromQuote(quoteQ.data);
+    setLinkedPortonId(String(persistedLinked?.linked_porton_quote_id || "").trim());
   }, [quoteQ.data, loadFromQuote, normalizedCatalogKind, navigate]);
+
+  function applyLinkedPortonData(portonId) {
+    const selectedId = String(portonId || "").trim();
+    setLinkedPortonId(selectedId);
+    if (!selectedId) return;
+    const linked = portonQuotes.find((q) => String(q.id) === selectedId);
+    if (!linked) return;
+    const linkedKind = normalizeCatalogKind(linked.catalog_kind || "porton");
+    if (linkedKind !== "porton") {
+      toast.error("El presupuesto vinculado debe ser de portón.");
+      return;
+    }
+    if (linked.end_customer) setEndCustomer(linked.end_customer);
+    if (linked.fulfillment_mode) setFulfillmentMode(linked.fulfillment_mode);
+    if (linked.pricelist_id) setPricelist({ id: linked.pricelist_id, name: linked.pricelist_name || `Lista ${linked.pricelist_id}` });
+    if (linked.bill_to_odoo_partner_id) setPartnerId(linked.bill_to_odoo_partner_id);
+    const label = buildSubQuoteDisplayReference(normalizedCatalogKind, linked);
+    if (label) setNote((normalizedCatalogKind === "ipanel" ? "Ipanel" : "Otros") + ` vinculado al portón ${linkedPortonReferenceLabel(linked) || linked.quote_number || linked.id}`);
+    toast.success(`${normalizedCatalogKind === "ipanel" ? "Ipanel" : "Otros"} vinculado al portón.`);
+  }
+
+  useEffect(() => {
+    if (!canLinkToPorton || idParam || !initialLinkedPortonId || !linkedPorton) return;
+    applyLinkedPortonData(initialLinkedPortonId);
+  }, [canLinkToPorton, idParam, initialLinkedPortonId, linkedPorton]);
 
   useEffect(() => {
     if (normalizedCatalogKind !== "porton") return;
@@ -409,7 +565,16 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
   }
   function getDraftPayload() {
     const base = buildPayloadForBack() || {};
-    return withCreatorRole({ ...base, catalog_kind: catalogKind, fulfillment_mode: base?.fulfillment_mode || "acopio", note: normalizeNoteWithSeller(base?.note) });
+    const linkedPortonMeta = buildLinkedPortonPayload(linkedPorton, linkedPortonId) || extractLinkedPortonPayloadFromQuote(quoteQ.data);
+    const payloadExtra = linkedPortonMeta ? { ...(base.payload || {}), ...linkedPortonMeta } : (base.payload || {});
+    return withCreatorRole({
+      ...base,
+      catalog_kind: catalogKind,
+      linked_porton_quote_id: linkedPortonMeta?.linked_porton_quote_id || undefined,
+      fulfillment_mode: base?.fulfillment_mode || linkedPorton?.fulfillment_mode || "acopio",
+      payload: payloadExtra,
+      note: normalizeNoteWithSeller(base?.note),
+    });
   }
   function validateCustomerContact(customer, { requirePhone = false, requireMaps = false, requireCity = false } = {}) {
     const c = customer || {};
@@ -455,12 +620,12 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
       const created = await createQuote(payload);
       setQuoteMeta({ quoteId: created.id, status: created.status, rejectionNotes: created.rejection_notes });
       qc.invalidateQueries({ queryKey: ["quotes", "mine"] });
-      return { quote: created, payload: { ...payload, id: created.id, quote_id: created.id, quote_number: created.quote_number || "", seller_name: user?.full_name || user?.username || "" } };
+      return { quote: created, payload: { ...payload, id: created.id, quote_id: created.id, quote_number: displayQuoteNumberForKind(catalogKind, created, created.quote_number || ""), seller_name: user?.full_name || user?.username || "" } };
     }
     const q = await updateQuote(quoteId, payload);
     setQuoteMeta({ quoteId: q.id, status: q.status, rejectionNotes: q.rejection_notes });
     qc.invalidateQueries({ queryKey: ["quotes", "mine"] });
-    return { quote: q, payload: { ...payload, id: q.id, quote_id: q.id, quote_number: q.quote_number || "", seller_name: user?.full_name || user?.username || "" } };
+    return { quote: q, payload: { ...payload, id: q.id, quote_id: q.id, quote_number: displayQuoteNumberForKind(catalogKind, q, q.quote_number || ""), seller_name: user?.full_name || user?.username || "" } };
   }
   function maybeContinueDoorWorkflow(savedQuote) {
     if (!isDoorWorkflow || !["ipanel", "puerta"].includes(normalizedCatalogKind) || !workflowDoorId) return false;
@@ -535,6 +700,7 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
         payload,
         quoteAdjustmentPercent,
         latestProductionPlanning ? { production_planning: latestProductionPlanning } : {},
+        { stripMarginPercent: true },
       );
       console.log("[PDF FRONT] payload completo proforma", pdfPayload);
       console.log("[PDF FRONT] lineas proforma", summarizeLinesForDebug(pdfPayload?.lines || []));
@@ -576,6 +742,48 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
       ) : null}
 
       {isAcopioRevision ? (<><div className="spacer" /><div className="card" style={{ background: "#fff8f3", border: "1px solid #f2d3bf" }}><div style={{ fontWeight: 900, marginBottom: 6 }}>Ajuste de presupuesto en Acopio</div><div className="muted">Este ajuste no se envía desde acá. Guardá los cambios y luego usá <b>Solicitar paso a Producción</b> desde <b>Mis presupuestos</b>. Cuando Comercial y Técnica aprueben ese paso, el sistema enviará la venta final a Odoo.</div></div></>) : null}
+
+      {canLinkToPorton ? (
+        <>
+          <div className="spacer" />
+          <div className="card">
+            <div style={{ fontWeight: 800, marginBottom: 8 }}>Vincular a portón existente</div>
+            <div className="muted" style={{ marginBottom: 8 }}>
+              Opcional. Si elegís un portón, {normalizedCatalogKind === "ipanel" ? "el Ipanel" : "Otros"} copia los datos del cliente y usa el mismo número con prefijo <b>{normalizedCatalogKind === "ipanel" ? "I" : "O"}</b>: {normalizedCatalogKind === "ipanel" ? "INP/INV" : "ONP/ONV"}.
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "minmax(240px, 1fr) minmax(260px, 1.4fr)", gap: 10, alignItems: "end" }}>
+              <div>
+                <div className="muted" style={{ marginBottom: 6 }}>Buscar portón</div>
+                <input
+                  value={portonSearch}
+                  onChange={(e) => setPortonSearch(e.target.value)}
+                  placeholder="Buscar por presupuesto, NP, NV, cliente, teléfono o localidad..."
+                  style={{ padding: "10px 12px", borderRadius: 10, border: "1px solid #ddd", width: "100%" }}
+                />
+              </div>
+              <div>
+                <div className="muted" style={{ marginBottom: 6 }}>
+                  Presupuesto / NP / NV de portón {portonSearch ? `(${filteredPortonQuotes.length} resultado${filteredPortonQuotes.length === 1 ? "" : "s"})` : ""}
+                </div>
+                <select value={linkedPortonId} onChange={(e) => applyLinkedPortonData(e.target.value)} style={{ padding: "10px 12px", borderRadius: 10, border: "1px solid #ddd", width: "100%" }}>
+                  <option value="">Sin portón vinculado</option>
+                  {filteredPortonQuotes.map((q) => (
+                    <option key={q.id} value={q.id}>{quoteDisplayReference(q)} · {q?.end_customer?.name || [q?.end_customer?.first_name, q?.end_customer?.last_name].filter(Boolean).join(" ") || "Sin cliente"} · {q?.status || "draft"}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            {linkedPortonId ? (
+              <div className="muted" style={{ marginTop: 8 }}>
+                Número vinculado: <b>{linkedPortonDisplayReference || "—"}</b>. En Odoo saldrá como <b>{normalizedCatalogKind === "ipanel" ? "INP/INV" : "ONP/ONV"}</b>.
+              </div>
+            ) : null}
+            {portonSearch && !filteredPortonQuotes.length ? (
+              <div className="muted" style={{ marginTop: 8 }}>No se encontraron portones con esa búsqueda.</div>
+            ) : null}
+          </div>
+        </>
+      ) : null}
 
       {normalizedCatalogKind === "porton" ? (
         <>
