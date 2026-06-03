@@ -41,12 +41,7 @@ const IPANEL_LAMAS_HEIGHT_MAX_M = 3;
 const IPANEL_LAMAS_PRODUCT_ID = 3974;
 const IPANEL_LAMAS_ODOO_ID = 3503;
 const IPANEL_NON_LAMAS_PLEGADO_PRODUCT_IDS = [4036, 3973];
-const REBAJE_AUTO_PRODUCT_ID = 2903;
-const REBAJE_AUTO_PRODUCT_NAME = "PLANCHUELA LATERAL E INFERIOR DE 40MM (Apto aluminio - Otros)";
-const REBAJE_AUTO_PRODUCT_BASE_PRICE = 400;
-const REBAJE_AUTO_MIN_WIDTH_M = 3.5;
 const PREVIOUSLY_BILLED_PRODUCT_ID = -900001;
-
 function normalizeCatalogKind(kind) { return String(kind || "porton").toLowerCase().trim(); }
 function normalizeUrl(value) { return String(value || "").trim().replace(/\/+$/, "").toLowerCase(); }
 function editorRouteForKind(kind, id, search = "") { const safeId = String(id || "").trim(); const suffix = search || ""; const normalizedKind = normalizeCatalogKind(kind); if (normalizedKind === "ipanel") return `/cotizador/ipanel/${safeId}${suffix}`; if (normalizedKind === "otros") return `/cotizador/otros/${safeId}${suffix}`; if (normalizedKind === "puerta") return `/cotizador/puerta/${safeId}${suffix}`; return `/cotizador/${safeId}${suffix}`; }
@@ -506,6 +501,7 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
     partnerId,
     paymentMethod,
     conditionMode,
+    portonType,
     lines,
     dimensions,
     setPricelist,
@@ -717,36 +713,8 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
     [lines],
   );
 
-  const currentWidthMeters = parseNum(dimensions?.width);
-  const autoRebajeEnabled = normalizedCatalogKind === "porton"
-    && !user?.is_distribuidor
-    && !!(user?.is_vendedor || user?.is_enc_comercial)
-    && currentWidthMeters >= REBAJE_AUTO_MIN_WIDTH_M;
-  const rebajeLine = useMemo(
-    () => (Array.isArray(lines) ? lines.find((line) => Number(line?.product_id) === REBAJE_AUTO_PRODUCT_ID && !line?.previously_billed_line) : null) || null,
-    [lines],
-  );
-
-  useEffect(() => {
-    const hasRebajeLine = !!rebajeLine;
-    if (!autoRebajeEnabled) {
-      if (hasRebajeLine) {
-        forceRemoveLine(REBAJE_AUTO_PRODUCT_ID);
-      }
-      return;
-    }
-    if (rebajeLine?.surface_quantity) return;
-    if (hasRebajeLine) {
-      forceRemoveLine(REBAJE_AUTO_PRODUCT_ID);
-    }
-    addLine({
-      id: REBAJE_AUTO_PRODUCT_ID,
-      name: REBAJE_AUTO_PRODUCT_NAME,
-      raw_name: REBAJE_AUTO_PRODUCT_NAME,
-      price: REBAJE_AUTO_PRODUCT_BASE_PRICE,
-      uses_surface_quantity: true,
-    });
-  }, [autoRebajeEnabled, rebajeLine, addLine, forceRemoveLine]);
+  // La planchuela 2903 ya no se agrega automaticamente.
+  // Queda disponible para que el usuario la elija manualmente desde su seccion.
 
   useEffect(() => {
     async function run() {
@@ -987,10 +955,9 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
       const { payload } = await persistDraftForPdf();
       validatePdfDownload(payload);
       const latestProductionPlanning = await getLatestProductionPlanning();
-      const proformaAdjustmentPercent = String(conditionMode || "").trim().toLowerCase() === "cond2" ? -10.5 : 0;
       const pdfPayload = buildPdfPayloadForDownload(
         payload,
-        proformaAdjustmentPercent,
+        0,
         latestProductionPlanning ? { production_planning: latestProductionPlanning } : {},
         { stripMarginPercent: true },
       );

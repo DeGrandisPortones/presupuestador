@@ -1,32 +1,28 @@
-ZIP proforma condición 2 con etiqueta IVA simple
+ZIP copy/replace - proforma base + planchuela manual
 
-Copiar y reemplazar estos archivos:
-
+Archivos incluidos:
 - cotizador-front/src/pages/CotizadorPage/index.jsx
 - cotizador-back/src/routes/pdf.routes.js
 
-Qué cambia:
-
-1) PDF proforma:
+Cambios:
+1) Proforma:
+   - Las lineas usan siempre precio base limpio.
    - No aplica coeficiente del distribuidor.
-   - No aplica financiación ni recargos/descuentos de forma de pago.
-   - Sí aplica el descuento de Condición 2 cuando corresponde.
-   - Muestra las líneas como PRECIO s/IVA y TOTAL s/IVA.
-   - En el resumen muestra Subtotal s/IVA, IVA y TOTAL.
-   - Si es Condición 2, el renglón IVA calcula internamente 10.5%, pero no lo muestra en la etiqueta.
-   - Si no es Condición 2, mantiene el cálculo normal de IVA, pero también mostrando líneas sin IVA.
+   - No aplica recargos ni descuentos de forma de pago.
+   - No aplica descuento de Condicion 2 en las lineas.
+   - Si es Condicion 2, el IVA se calcula al 10.5%.
+   - Si no es Condicion 2, el IVA se calcula al 21%.
+   - La etiqueta visible queda como "IVA".
 
-2) PDF presupuesto cliente:
-   - Queda sin cambios.
+2) Planchuela 2903:
+   - Se deshabilita el agregado automatico en todos los portones.
+   - El usuario debe elegirla manualmente desde la seccion correspondiente.
 
-Después de copiar:
-
-Backend:
-- Reiniciar el servicio backend.
-
-Frontend:
-cd cotizador-front
-rm -rf dist node_modules/.vite
-npm run build
-
-Luego redeploy sin cache y refrescar con Ctrl+F5.
+Pasos:
+1. Copiar y reemplazar los archivos en el repo.
+2. Recompilar frontend:
+   cd cotizador-front
+   rm -rf dist node_modules/.vite
+   npm run build
+3. Reiniciar backend y redeployar frontend sin cache.
+4. Refrescar navegador con Ctrl+F5.
