@@ -7,6 +7,8 @@ import { commitQuoteProductionWeek } from "../productionPlanning.js";
 
 const MEASUREMENT_PRODUCT_ID = Number(process.env.ODOO_MEASUREMENT_PRODUCT_ID || 2865);
 const PLACEHOLDER_PRODUCT_ID = Number(process.env.ODOO_PLACEHOLDER_PRODUCT_ID || 2880);
+const IPANEL_ACOPIO_PRODUCT_ID = Number(process.env.ODOO_IPANEL_ACOPIO_PRODUCT_ID || 3557);
+const PUERTA_ACOPIO_PRODUCT_ID = Number(process.env.ODOO_PUERTA_ACOPIO_PRODUCT_ID || 3558);
 const IVA_RATE = 0.21;
 const TACA_TACA_PLAN_NAME = String(process.env.ODOO_TACA_TACA_PLAN_NAME || "Taca Taca").trim();
 
@@ -262,6 +264,8 @@ function normalizeMeasurementSubtype(value) {
   return String(value || "normal").toLowerCase().trim() === "sin_medicion" ? "sin_medicion" : "normal";
 }
 function quoteNeedsMeasurement(quote) {
+  const kind = String(quote?.catalog_kind || quote?.payload?.catalog_kind || "porton").toLowerCase().trim();
+  if (kind === "otros") return false;
   return !!(
     quote?.requires_measurement === true
     || hasMeasurementLine(quote?.lines)
@@ -271,8 +275,17 @@ function quoteNeedsMeasurement(quote) {
 }
 function getMeasurementFlowForQuote({ catalog_kind, fulfillment_mode, lines }) {
   const kind = String(catalog_kind || "porton").toLowerCase().trim();
-  const mode = String(fulfillment_mode || "acopio").trim();
-  const hasLine = hasMeasurementLine(lines);
+  const mode = kind === "otros" ? "produccion" : String(fulfillment_mode || "acopio").trim();
+  const hasLine = kind === "otros" ? false : hasMeasurementLine(lines);
+
+  if (kind === "otros") {
+    return {
+      requires_measurement: false,
+      measurement_mode: "medidor",
+      measurement_subtype: "normal",
+      measurement_status: "none",
+    };
+  }
 
   if (kind === "porton" && mode === "produccion") {
     return {
@@ -331,6 +344,8 @@ function normalizePortonTypeKey(value) {
 }
 function getInitialOdooProductIdForQuote(quote) {
   const kind = String(quote?.catalog_kind || "porton").toLowerCase().trim();
+  if (kind === "ipanel") return Number(IPANEL_ACOPIO_PRODUCT_ID);
+  if (kind === "puerta") return Number(PUERTA_ACOPIO_PRODUCT_ID);
   if (kind !== "porton") return Number(PLACEHOLDER_PRODUCT_ID);
   const rawPortonType = quote?.payload?.porton_type ?? "";
   const normalizedPortonType = normalizePortonTypeKey(rawPortonType);
@@ -338,8 +353,12 @@ function getInitialOdooProductIdForQuote(quote) {
   return Number(mapped || PLACEHOLDER_PRODUCT_ID);
 }
 function shouldUseDetailedInitialOrderLines(quote) {
-  const kind = String(quote?.catalog_kind || "porton").toLowerCase().trim();
-  return ["ipanel", "puerta", "otros"].includes(kind);
+  // La NP inicial usa un único producto resumen:
+  // - Portones: producto definido por tipo de portón.
+  // - Ipanel en acopio: producto Odoo 3557.
+  // - Puertas en acopio: producto Odoo 3558.
+  // Otros nunca debe generar NP; siempre sale como NV/ONV en producción.
+  return false;
 }
 async function buildDetailedOrderLinesForOdoo({ odoo, lines, payload }) {
   const arr = Array.isArray(lines) ? lines : [];
@@ -1026,21 +1045,24 @@ async function syncDirectProductionFinalToOdoo({ odoo, quote, approverUser }) {
   partnerId = toIntId(partnerId);
   if (!partnerId) throw new Error("partner_id invalido para Odoo");
 
-  const initialProduct = await resolveInitialOdooProduct(odoo, getInitialOdooProductIdForQuote(quote));
+  const kind = String(quote?.catalog_kind || "porton").toLowerCase().trim();
+  const includeInitialProductLine = kind === "porton";
+  const initialProduct = includeInitialProductLine ? await resolveInitialOdooProduct(odoo, getInitialOdooProductIdForQuote(quote)) : null;
   const lines = Array.isArray(quote.lines) ? quote.lines : [];
   if (!lines.length) throw new Error("El presupuesto no tiene items");
 
-  const productIds = [...new Set(lines.map((l) => Number(l.product_id)).filter(Boolean).concat([Number(initialProduct.productId)]))];
+  const extraProductIds = includeInitialProductLine && initialProduct?.productId ? [Number(initialProduct.productId)] : [];
+  const productIds = [...new Set(lines.map((l) => Number(l.product_id)).filter(Boolean).concat(extraProductIds))];
   const products = await odoo.executeKw("product.product", "read", [productIds], { fields: ["id", "name", "uom_id"] });
   const byId = new Map((products || []).map((p) => [Number(p.id), p]));
 
-  const orderLines = [[0, 0, {
+  const orderLines = includeInitialProductLine ? [[0, 0, {
     product_id: Number(initialProduct.productId),
     product_uom_qty: 1,
     product_uom: initialProduct.uomId,
     name: initialProduct.productName,
     price_unit: 0,
-  }]];
+  }]] : [];
 
   let detailedTotal = 0;
   for (const l of lines) {
@@ -1200,9 +1222,9 @@ export function buildQuotesRouter(odoo) {
       const u = req.user;
       const body = req.body || {};
       const created_by_role = (body.created_by_role === "distribuidor" || body.created_by_role === "vendedor") ? body.created_by_role : (u.is_distribuidor ? "distribuidor" : "vendedor");
-      const fulfillment_mode = String(body.fulfillment_mode || "acopio").trim();
-      if (!["produccion", "acopio"].includes(fulfillment_mode)) throw new Error("fulfillment_mode debe ser 'produccion' o 'acopio'");
       const catalog_kind = normCatalogKind(body.catalog_kind || "porton");
+      const fulfillment_mode = catalog_kind === "otros" ? "produccion" : String(body.fulfillment_mode || "acopio").trim();
+      if (!["produccion", "acopio"].includes(fulfillment_mode)) throw new Error("fulfillment_mode debe ser 'produccion' o 'acopio'");
       const linkedPortonQuoteId = getLinkedPortonQuoteIdFromBody(body);
       let linkedPortonQuote = null;
       if (linkedPortonQuoteId) {
@@ -1399,7 +1421,8 @@ export function buildQuotesRouter(odoo) {
       const custErr = validateEndCustomerDraft(nextEndCustomer);
       if (custErr) return res.status(400).json({ ok: false, error: custErr });
 
-      const fulfillment_mode = body.fulfillment_mode ? String(body.fulfillment_mode) : quote.fulfillment_mode;
+      const requestedFulfillmentMode = body.fulfillment_mode ? String(body.fulfillment_mode) : quote.fulfillment_mode;
+      const fulfillment_mode = catalog_kind === "otros" ? "produccion" : requestedFulfillmentMode;
       if (!["produccion", "acopio"].includes(fulfillment_mode)) throw new Error("fulfillment_mode invalido");
 
       const nextAcopioStatus = quote.status === "synced_odoo" && quote.fulfillment_mode === "acopio"
@@ -1468,7 +1491,8 @@ export function buildQuotesRouter(odoo) {
       }
       if (!["draft", "rejected_commercial", "rejected_technical"].includes(quote.status)) throw new Error("Solo confirmar desde borrador");
 
-      const fm = String(fulfillment_mode || quote.fulfillment_mode || "acopio").trim();
+      const quoteCatalogKind = normCatalogKind(quote.catalog_kind || "porton");
+      const fm = quoteCatalogKind === "otros" ? "produccion" : String(fulfillment_mode || quote.fulfillment_mode || "acopio").trim();
       if (!["produccion", "acopio"].includes(fm)) return res.status(400).json({ ok: false, error: "fulfillment_mode invalido (usar 'acopio' o 'produccion')" });
 
       const isDistributor = quote.created_by_role === "distribuidor";
