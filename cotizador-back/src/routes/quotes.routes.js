@@ -9,6 +9,7 @@ const MEASUREMENT_PRODUCT_ID = Number(process.env.ODOO_MEASUREMENT_PRODUCT_ID ||
 const PLACEHOLDER_PRODUCT_ID = Number(process.env.ODOO_PLACEHOLDER_PRODUCT_ID || 2880);
 const IPANEL_ACOPIO_PRODUCT_ID = Number(process.env.ODOO_IPANEL_ACOPIO_PRODUCT_ID || 3557);
 const PUERTA_ACOPIO_PRODUCT_ID = Number(process.env.ODOO_PUERTA_ACOPIO_PRODUCT_ID || 3558);
+const DEFAULT_PRICELIST_ID = Number(process.env.ODOO_DEFAULT_PRICELIST_ID || 1);
 const IVA_RATE = 0.21;
 const TACA_TACA_PLAN_NAME = String(process.env.ODOO_TACA_TACA_PLAN_NAME || "Taca Taca").trim();
 
@@ -74,6 +75,13 @@ function toIntId(v) { const n = Number(toScalar(v)); return Number.isFinite(n) ?
 function toText(v) { const x = toScalar(v); return x === null || x === undefined ? "" : String(x).trim(); }
 function isUuid(v) { return /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(String(v || "").trim()); }
 function round2(n) { return Math.round(Number(n || 0) * 100) / 100; }
+function resolveQuotePricelistId(roleOrQuote, requestedPricelistId, fallbackPricelistId = null) {
+  const role = typeof roleOrQuote === "object"
+    ? String(roleOrQuote?.created_by_role || "vendedor").trim().toLowerCase()
+    : String(roleOrQuote || "vendedor").trim().toLowerCase();
+  if (role !== "distribuidor") return DEFAULT_PRICELIST_ID;
+  return toIntId(requestedPricelistId) || toIntId(fallbackPricelistId) || DEFAULT_PRICELIST_ID;
+}
 function normalizePhoneForLookup(v) { return String(v || "").replace(/\D+/g, "").trim(); }
 function normalizeNameForLookup(v) {
   return String(v || "")
@@ -851,7 +859,7 @@ function mergeLinkedPortonPayload(payload = {}, linkedPorton = null) {
 }
 
 async function syncQuoteToOdoo({ odoo, quote, approverUser }) {
-  const pricelistId = toIntId(quote?.pricelist_id) || 1;
+  const pricelistId = resolveQuotePricelistId(quote, quote?.pricelist_id);
   let partnerId = null;
   if (quote.created_by_role === "distribuidor") {
     partnerId = toIntId(quote?.bill_to_odoo_partner_id) || await getCreatorOdooPartnerId(quote.created_by_user_id) || toIntId(approverUser?.odoo_partner_id);
@@ -919,7 +927,7 @@ async function syncQuoteToOdoo({ odoo, quote, approverUser }) {
 }
 
 async function syncFinalQuoteToOdoo({ odoo, revisionQuote, originalQuote, approverUser }) {
-  const pricelistId = toIntId(revisionQuote?.pricelist_id) || toIntId(originalQuote?.pricelist_id) || 1;
+  const pricelistId = resolveQuotePricelistId(originalQuote, revisionQuote?.pricelist_id, originalQuote?.pricelist_id);
   const sellerName = await resolveSellerDisplayNameForOdoo(originalQuote, approverUser);
   let partnerId = null;
   if (originalQuote.created_by_role === "distribuidor") {
@@ -1036,7 +1044,7 @@ async function syncFinalQuoteToOdoo({ odoo, revisionQuote, originalQuote, approv
 }
 
 async function syncDirectProductionFinalToOdoo({ odoo, quote, approverUser }) {
-  const pricelistId = toIntId(quote?.pricelist_id) || 1;
+  const pricelistId = resolveQuotePricelistId(quote, quote?.pricelist_id);
   const sellerName = await resolveSellerDisplayNameForOdoo(quote, approverUser);
   let partnerId = null;
   if (quote.created_by_role === "distribuidor") {
@@ -1248,7 +1256,7 @@ export function buildQuotesRouter(odoo) {
       const lines = Array.isArray(body.lines) ? body.lines : [];
       const payload = mergeLinkedPortonPayload(body.payload || {}, linkedPortonQuote);
       const note = body.note || null;
-      const pricelist_id = Number(body.pricelist_id || linkedPortonQuote?.pricelist_id || 1);
+      const pricelist_id = resolveQuotePricelistId(created_by_role, body.pricelist_id, linkedPortonQuote?.pricelist_id);
       let bill_to_odoo_partner_id = body.bill_to_odoo_partner_id ? Number(body.bill_to_odoo_partner_id) : (linkedPortonQuote?.bill_to_odoo_partner_id ? Number(linkedPortonQuote.bill_to_odoo_partner_id) : null);
       if (created_by_role === "distribuidor" && !bill_to_odoo_partner_id) bill_to_odoo_partner_id = u.odoo_partner_id ? Number(u.odoo_partner_id) : null;
 
@@ -1461,7 +1469,7 @@ export function buildQuotesRouter(odoo) {
         [
           id,
           fulfillment_mode,
-          body.pricelist_id ? Number(body.pricelist_id) : quote.pricelist_id,
+          resolveQuotePricelistId(quote, body.pricelist_id, quote.pricelist_id),
           body.bill_to_odoo_partner_id !== undefined ? (body.bill_to_odoo_partner_id ? Number(body.bill_to_odoo_partner_id) : null) : quote.bill_to_odoo_partner_id,
           JSON.stringify(body.end_customer !== undefined ? body.end_customer : quote.end_customer),
           JSON.stringify(nextLines),

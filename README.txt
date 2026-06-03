@@ -1,18 +1,27 @@
-ZIP copiar y reemplazar - Vendedor Odoo para no distribuidores
+FIX LISTA PREDETERMINADA PARA VENDEDORES / ENC. COMERCIAL
 
-Incluye:
+Copiar y reemplazar estos archivos:
+
 - cotizador-back/src/routes/quotes.routes.js
+- cotizador-back/src/routes/odoo.routes.js
 
-Cambio:
-- El presupuestador sigue escribiendo el vendedor en Odoo para presupuestos de vendedor.
-- Aplica en Portones, Ipanels, Puertas y Otros, tanto NP como NV/directas.
-- Para distribuidores NO escribe el campo vendedor, porque el partner/cliente de Odoo ya es el distribuidor.
-- Tampoco agrega la leyenda "Vendedor:" en la nota de Odoo cuando el creador es distribuidor.
+Que cambia:
 
-Campo Odoo esperado:
-- x_studio_vendedor preferentemente, tipo Texto/Char en sale.order.
-- Si usas otro nombre tecnico, configurar en backend:
-  ODOO_SALE_ORDER_VENDOR_FIELD=nombre_tecnico_del_campo
+1) Usuarios NO distribuidores:
+   - Siempre usan Lista Predeterminada ID 1.
+   - Aplica al consultar precios desde el presupuestador.
+   - Aplica al guardar/actualizar presupuestos.
+   - Aplica al crear NP/NV en Odoo.
+   - Aplica a Portones, Ipanels, Puertas y Otros.
+
+2) Usuarios distribuidores:
+   - Siguen usando su lista asignada.
+   - No se modifica la logica de listas de distribuidores.
+
+3) /api/odoo/pricelists ahora devuelve las listas ordenadas por ID ascendente,
+   para que la Predeterminada ID 1 quede primero.
 
 Despues de copiar:
 - Reiniciar backend.
+- Recompilar/redeployar frontend solo si lo tenes cacheado, aunque el cambio principal esta en backend.
+- Refrescar navegador con Ctrl+F5.

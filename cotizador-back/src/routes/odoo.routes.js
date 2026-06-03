@@ -2,6 +2,7 @@ import express from "express";
 import { requireAuth } from "../auth.js";
 
 const TACA_TACA_PLAN_NAME = String(process.env.ODOO_TACA_TACA_PLAN_NAME || "Taca Taca").trim();
+const DEFAULT_PRICELIST_ID = Number(process.env.ODOO_DEFAULT_PRICELIST_ID || 1);
 
 function cleanText(value) {
   return String(value || "").trim();
@@ -95,7 +96,7 @@ export function buildOdooRouter(odoo) {
         "product.pricelist",
         "search_read",
         [[]],
-        { fields: ["id", "name", "currency_id", "active"], limit: 200, order: "name asc" }
+        { fields: ["id", "name", "currency_id", "active"], limit: 200, order: "id asc" }
       );
 
       res.json({
@@ -229,14 +230,14 @@ export function buildOdooRouter(odoo) {
     }
   });
 
-  router.post("/prices", async (req, res, next) => {
+  router.post("/prices", requireAuth, async (req, res, next) => {
     try {
       const body = req.body || {};
       const lines = Array.isArray(body.lines) ? body.lines : [];
       if (!lines.length) throw new Error("Faltan lines[]");
 
       const partnerId = body.partner_id ? Number(body.partner_id) : false;
-      let pricelistId = body.pricelist_id ? Number(body.pricelist_id) : null;
+      let pricelistId = req.user?.is_distribuidor ? (body.pricelist_id ? Number(body.pricelist_id) : null) : DEFAULT_PRICELIST_ID;
 
       if (!pricelistId) {
         const name = (process.env.ODOO_BASE_PRICELIST_NAME || process.env.ODOO_CUSTOMER_PRICELIST_NAME || "Predeterminado").trim();
