@@ -1,20 +1,18 @@
-ZIP SIN ADJUNTOS - COPIAR Y REEMPLAZAR
+ZIP copiar y reemplazar - Vendedor Odoo para no distribuidores
 
 Incluye:
 - cotizador-back/src/routes/quotes.routes.js
 
-Mantiene:
-- Otros siempre Producción / ONV, nunca NP.
-- Otros vinculado a portón usa el mismo número base con prefijo O.
-- Ipanel en acopio usa producto Odoo 3557.
-- Puerta en acopio usa producto Odoo 3558.
-- Ipanel/Puerta en NV/final usan sus ítems reales.
+Cambio:
+- El presupuestador sigue escribiendo el vendedor en Odoo para presupuestos de vendedor.
+- Aplica en Portones, Ipanels, Puertas y Otros, tanto NP como NV/directas.
+- Para distribuidores NO escribe el campo vendedor, porque el partner/cliente de Odoo ya es el distribuidor.
+- Tampoco agrega la leyenda "Vendedor:" en la nota de Odoo cuando el creador es distribuidor.
 
-No incluye:
-- Adjuntos.
-- Scripts.
-- Patches.
+Campo Odoo esperado:
+- x_studio_vendedor preferentemente, tipo Texto/Char en sale.order.
+- Si usas otro nombre tecnico, configurar en backend:
+  ODOO_SALE_ORDER_VENDOR_FIELD=nombre_tecnico_del_campo
 
-IMPORTANTE:
-El cambio del mensaje de WhatsApp vive en cotizador-back/src/measurementFinalization.js.
-Para pasarlo también como archivo directo de copiar y reemplazar hace falta trabajar sobre ese archivo completo actual.
+Despues de copiar:
+- Reiniciar backend.

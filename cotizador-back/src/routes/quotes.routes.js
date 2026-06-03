@@ -174,6 +174,14 @@ async function resolveSellerDisplayNameForQuote(quote, fallbackUser = null) {
   return normalizeSellerDisplayName(fallbackUser?.full_name || fallbackUser?.username || "");
 }
 
+function shouldSendSellerToOdoo(quote) {
+  return String(quote?.created_by_role || "").trim().toLowerCase() !== "distribuidor";
+}
+async function resolveSellerDisplayNameForOdoo(quote, fallbackUser = null) {
+  if (!shouldSendSellerToOdoo(quote)) return "";
+  return await resolveSellerDisplayNameForQuote(quote, fallbackUser);
+}
+
 async function findOrCreateCustomerPartner(odoo, customer) {
   const name = toText(customer?.name);
   if (!name) throw new Error("Falta end_customer.name (vendedor)");
@@ -859,7 +867,7 @@ async function syncQuoteToOdoo({ odoo, quote, approverUser }) {
   partnerId = toIntId(partnerId);
   if (!partnerId) throw new Error("partner_id invalido para Odoo");
 
-  const sellerName = await resolveSellerDisplayNameForQuote(quote, approverUser);
+  const sellerName = await resolveSellerDisplayNameForOdoo(quote, approverUser);
   let total = calcQuoteTotalWithIva({ lines: quote.lines, payload: quote.payload });
   let orderLines = [];
 
@@ -912,7 +920,7 @@ async function syncQuoteToOdoo({ odoo, quote, approverUser }) {
 
 async function syncFinalQuoteToOdoo({ odoo, revisionQuote, originalQuote, approverUser }) {
   const pricelistId = toIntId(revisionQuote?.pricelist_id) || toIntId(originalQuote?.pricelist_id) || 1;
-  const sellerName = await resolveSellerDisplayNameForQuote(originalQuote, approverUser);
+  const sellerName = await resolveSellerDisplayNameForOdoo(originalQuote, approverUser);
   let partnerId = null;
   if (originalQuote.created_by_role === "distribuidor") {
     partnerId = toIntId(originalQuote?.bill_to_odoo_partner_id) || await getCreatorOdooPartnerId(originalQuote.created_by_user_id) || toIntId(approverUser?.odoo_partner_id);
@@ -1029,7 +1037,7 @@ async function syncFinalQuoteToOdoo({ odoo, revisionQuote, originalQuote, approv
 
 async function syncDirectProductionFinalToOdoo({ odoo, quote, approverUser }) {
   const pricelistId = toIntId(quote?.pricelist_id) || 1;
-  const sellerName = await resolveSellerDisplayNameForQuote(quote, approverUser);
+  const sellerName = await resolveSellerDisplayNameForOdoo(quote, approverUser);
   let partnerId = null;
   if (quote.created_by_role === "distribuidor") {
     partnerId = toIntId(quote?.bill_to_odoo_partner_id) || await getCreatorOdooPartnerId(quote.created_by_user_id) || toIntId(approverUser?.odoo_partner_id);
