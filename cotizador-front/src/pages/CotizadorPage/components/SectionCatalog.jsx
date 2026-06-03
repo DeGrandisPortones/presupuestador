@@ -11,10 +11,21 @@ import {
 import Button from "../../../ui/Button";
 
 const CATALOG_KINDS = new Set(["porton", "ipanel", "otros"]);
+const APTOS_PARA_REVESTIR_TYPE = "para_revestir_con_al_pvc_otros";
 
 function normalizeCatalogKind(kind) {
   const normalized = String(kind || "porton").toLowerCase().trim();
   return CATALOG_KINDS.has(normalized) ? normalized : "porton";
+}
+
+function norm(value) {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
 }
 
 function getClientFacingProductName(product) {
@@ -74,6 +85,38 @@ function getVisibleOdooId(product) {
   return Number(product?.odoo_id || product?.odoo_template_id || product?.id || 0) || 0;
 }
 
+function collectProductIdsFromProduct(product = {}) {
+  return [
+    product?.id,
+    product?.product_id,
+    product?.odoo_id,
+    product?.odoo_template_id,
+    product?.odoo_variant_id,
+    product?.odoo_external_id,
+  ]
+    .map((value) => Number(value || 0))
+    .filter((value) => Number.isFinite(value) && value > 0);
+}
+
+function collectProductIdsFromLine(line = {}) {
+  return [
+    line?.product_id,
+    line?.id,
+    line?.odoo_id,
+    line?.odoo_template_id,
+    line?.odoo_variant_id,
+    line?.odoo_external_id,
+  ]
+    .map((value) => Number(value || 0))
+    .filter((value) => Number.isFinite(value) && value > 0);
+}
+
+function findProductByAnyId(products = [], targetId) {
+  const id = Number(targetId || 0);
+  if (!id) return null;
+  return (Array.isArray(products) ? products : []).find((product) => collectProductIdsFromProduct(product).includes(id)) || null;
+}
+
 function isDisabledForUser(product, user) {
   if (!product || !user) return false;
   const disableForVendedor = !!product.disable_for_vendedor;
@@ -97,6 +140,81 @@ function matchProductIds(selectedIds, requiredIds, matchMode = "any") {
     return required.every((id) => selected.has(id));
   }
   return required.some((id) => selected.has(id));
+}
+
+function parseTriggerGroups(value) {
+  const text = String(value || "").trim();
+  if (!text) return [];
+  return text
+    .split(/[;,\n]+/)
+    .flatMap((part) => String(part || "").trim().split(/\s+/))
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .map((part) => part.split("+").map((item) => Number(item.trim())).filter((item) => Number.isFinite(item) && item > 0))
+    .filter((group) => group.length > 0);
+}
+
+function triggerGroupsMatch(selectedIds, triggerText) {
+  const selected = selectedIds instanceof Set ? selectedIds : new Set(selectedIds || []);
+  const groups = parseTriggerGroups(triggerText);
+  return groups.some((group) => group.every((id) => selected.has(id)));
+}
+
+function hasSurfaceParamContent(value) {
+  return !!(value && typeof value === "object" && !Array.isArray(value) && Object.keys(value).length);
+}
+
+function getRulesSurfaceParameters(rulesData = {}) {
+  const root = rulesData || {};
+  return {
+    ...(hasSurfaceParamContent(root.measurement_surface_params) ? root.measurement_surface_params : {}),
+    ...(hasSurfaceParamContent(root.surface_params) ? root.surface_params : {}),
+    ...(hasSurfaceParamContent(root.surface_calc_params) ? root.surface_calc_params : {}),
+    ...(hasSurfaceParamContent(root.surface_parameters) ? root.surface_parameters : {}),
+    ...(hasSurfaceParamContent(root.parantes_config) ? root.parantes_config : {}),
+  };
+}
+
+function normalizeAutoBudgetRules(surfaceParameters = {}) {
+  const rawJson = String(surfaceParameters?.auto_budget_product_rules_json || "").trim();
+  let parsed = [];
+  if (rawJson) {
+    try {
+      parsed = JSON.parse(rawJson);
+    } catch (_err) {
+      parsed = [];
+    }
+  }
+
+  const rules = (Array.isArray(parsed) ? parsed : [])
+    .map((rule, index) => ({
+      id: String(rule?.id || `auto_budget_rule_${index + 1}`),
+      name: String(rule?.name || `Automatización #${index + 1}`).trim(),
+      active: rule?.active !== false,
+      trigger_product_ids: String(rule?.trigger_product_ids || rule?.trigger_ids || "").trim(),
+      target_product_id: Number(rule?.target_product_id || rule?.product_id || rule?.target_odoo_id || 0) || null,
+      target_product_label: String(rule?.target_product_label || rule?.product_label || "").trim(),
+      quantity_mode: String(rule?.quantity_mode || "unit").trim().toLowerCase() === "surface" ? "surface" : "unit",
+      only_apto_revestir: rule?.only_apto_revestir !== false,
+    }))
+    .filter((rule) => rule.trigger_product_ids && rule.target_product_id);
+
+  const legacyTriggerText = String(surfaceParameters?.apto_revestir_profile_trigger_product_ids || "").trim();
+  const legacyProductId = Number(surfaceParameters?.apto_revestir_profile_odoo_id || 0) || 0;
+  if (legacyTriggerText && legacyProductId && !rules.some((rule) => Number(rule.target_product_id) === legacyProductId && rule.trigger_product_ids === legacyTriggerText)) {
+    rules.push({
+      id: "legacy_perfil_apto_revestir",
+      name: "Perfil apto para revestir",
+      active: true,
+      trigger_product_ids: legacyTriggerText,
+      target_product_id: legacyProductId,
+      target_product_label: "Perfil",
+      quantity_mode: "surface",
+      only_apto_revestir: true,
+    });
+  }
+
+  return rules;
 }
 
 function cloneSelectionMap(sectionList, selectedProductIdsBySection) {
@@ -263,6 +381,8 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
   });
 
   const initialSectionId = Number(rulesQ.data?.initial_section_id || 0) || null;
+  const surfaceParameters = useMemo(() => getRulesSurfaceParameters(rulesQ.data || {}), [rulesQ.data]);
+  const autoBudgetProductRules = useMemo(() => normalizeAutoBudgetRules(surfaceParameters), [surfaceParameters]);
 
   const dependencyRules = useMemo(() => {
     const raw = Array.isArray(rulesQ.data?.section_dependency_rules)
@@ -373,6 +493,12 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
     [lines],
   );
 
+  const selectedProductIdsForAutomation = useMemo(() => {
+    const ids = [];
+    for (const line of Array.isArray(lines) ? lines : []) ids.push(...collectProductIdsFromLine(line));
+    return new Set(ids);
+  }, [lines]);
+
   const selectedProductIdsBySection = useMemo(() => {
     const map = new Map();
     for (const section of sectionList) map.set(Number(section.id), new Set());
@@ -414,6 +540,13 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
     return !!selected && selected.size > 0;
   }, [visibleSections, selectedProductIdsBySection]);
 
+  const isAptoParaRevestir = useMemo(() => {
+    const normalizedType = norm(portonType);
+    if (normalizedType === APTOS_PARA_REVESTIR_TYPE || normalizedType.includes("para_revestir") || normalizedType.includes("apto")) return true;
+    const aptoProductId = Number(surfaceParameters?.no_cladding_product_id || 0);
+    return !!(aptoProductId && selectedProductIdsForAutomation.has(aptoProductId));
+  }, [portonType, selectedProductIdsForAutomation, surfaceParameters]);
+
   useEffect(() => {
     if (catalogKind !== "porton") return;
 
@@ -435,6 +568,47 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
       setPortonType(derivedType);
     }
   }, [catalogKind, systemRules, selectedProductIdsGlobal, portonType, setPortonType]);
+
+  useEffect(() => {
+    if (catalogKind !== "porton" || !products.length || !autoBudgetProductRules.length) return;
+
+    const desiredProductIds = new Set();
+
+    for (const rule of autoBudgetProductRules) {
+      if (rule?.active === false) continue;
+      if (rule?.only_apto_revestir !== false && !isAptoParaRevestir) continue;
+      if (!triggerGroupsMatch(selectedProductIdsForAutomation, rule?.trigger_product_ids)) continue;
+
+      const product = findProductByAnyId(products, rule?.target_product_id);
+      if (!product) continue;
+
+      const productId = Number(product.id || 0);
+      if (!productId) continue;
+      desiredProductIds.add(productId);
+
+      const isAlreadySelected = (Array.isArray(lines) ? lines : []).some((line) => Number(line?.product_id) === productId);
+      if (!isAlreadySelected) {
+        addLine({
+          ...product,
+          name: getProductLabel(product) || rule.target_product_label || `Producto ${productId}`,
+          raw_name: getClientFacingProductName(product) || rule.target_product_label || getProductLabel(product) || `Producto ${productId}`,
+          uses_surface_quantity: rule.quantity_mode === "surface",
+        });
+      }
+    }
+
+    const possibleTargetProductIds = new Set();
+    for (const rule of autoBudgetProductRules) {
+      const product = findProductByAnyId(products, rule?.target_product_id);
+      if (product?.id) possibleTargetProductIds.add(Number(product.id));
+    }
+
+    for (const productId of possibleTargetProductIds) {
+      if (!desiredProductIds.has(productId)) {
+        forceRemoveLine(productId);
+      }
+    }
+  }, [catalogKind, products, autoBudgetProductRules, selectedProductIdsForAutomation, isAptoParaRevestir, lines, addLine, forceRemoveLine]);
 
   useEffect(() => {
     if (!visibleSections.length) return;

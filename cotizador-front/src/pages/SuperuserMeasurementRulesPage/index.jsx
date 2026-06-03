@@ -6,30 +6,8 @@ import { useAuthStore } from "../../domain/auth/store.js";
 import {
   adminGetTechnicalMeasurementRules,
   adminSaveTechnicalMeasurementRules,
-  adminGetTechnicalMeasurementFieldDefinitions,
-  adminSaveTechnicalMeasurementFieldDefinitions,
 } from "../../api/admin.js";
 import { getCatalogBootstrap } from "../../api/catalog.js";
-import { PORTON_TYPES } from "../../domain/quote/portonConstants.js";
-import {
-  TECHNICAL_RULE_OPERATORS,
-  TECHNICAL_RULE_ACTIONS,
-  VALUE_SOURCE_TYPE_OPTIONS,
-  EDITABLE_BY_OPTIONS,
-  FIELD_TYPE_OPTIONS,
-  mergeMeasurementFields,
-  parseOptions,
-} from "../../domain/measurement/technicalMeasurementRuleFields.js";
-
-const SECTION_OPTIONS = [
-  { value: "datos_generales", label: "Datos generales" },
-  { value: "esquema_medidas", label: "Esquema (medidas)" },
-  { value: "revestimiento", label: "Revestimiento" },
-  { value: "puerta_estructura", label: "Puerta / estructura" },
-  { value: "rebajes_suelo", label: "Rebajes / suelo" },
-  { value: "observaciones", label: "Observaciones" },
-  { value: "otros", label: "Otros / bloque aparte" },
-];
 
 const DEFAULT_SURFACE_PARAMETERS = {
   classic_kg_m2: 15,
@@ -70,10 +48,18 @@ const DEFAULT_SURFACE_PARAMETERS = {
   parantes_left_door_product_ids: "",
   parantes_door_first_distance_mm: 800,
   parantes_tube_discount_mm: 40,
+  auto_budget_product_rules_json: "[]",
 };
 
 const SURFACE_PARAMETERS_STORAGE_KEY = "presupuestador:technical_surface_parameters:porton";
 
+function textValue(value) { return String(value ?? "").trim(); }
+function textPayload(value) { return String(value ?? "").trim(); }
+function numericPayload(value) {
+  if (value === "" || value === null || value === undefined) return null;
+  const n = Number(String(value).replace(",", "."));
+  return Number.isFinite(n) ? n : null;
+}
 function readStoredSurfaceParameters() {
   try {
     if (typeof window === "undefined" || !window.localStorage) return {};
@@ -107,39 +93,39 @@ function mergeStoredSurfaceParameters(base = {}) {
   }
   return next;
 }
-function pickParantesConfig(surfaceParameters = {}) {
+function hasSurfaceParamContent(value) {
+  return !!(value && typeof value === "object" && !Array.isArray(value) && Object.keys(value).length);
+}
+function getSurfaceParametersFromRulesData(rulesData = {}) {
   return {
-    non_apto_parantes_vertical_product_ids: textPayload(surfaceParameters.non_apto_parantes_vertical_product_ids),
-    non_apto_parantes_horizontal_product_ids: textPayload(surfaceParameters.non_apto_parantes_horizontal_product_ids),
-    parantes_door_product_ids: textPayload(surfaceParameters.parantes_door_product_ids),
-    parantes_right_door_product_ids: textPayload(surfaceParameters.parantes_right_door_product_ids),
-    parantes_left_door_product_ids: textPayload(surfaceParameters.parantes_left_door_product_ids),
-    parantes_door_first_distance_mm: numericPayload(surfaceParameters.parantes_door_first_distance_mm) || 800,
-    parantes_tube_discount_mm: numericPayload(surfaceParameters.parantes_tube_discount_mm) || 40,
+    ...(hasSurfaceParamContent(rulesData?.measurement_surface_params) ? rulesData.measurement_surface_params : {}),
+    ...(hasSurfaceParamContent(rulesData?.surface_params) ? rulesData.surface_params : {}),
+    ...(hasSurfaceParamContent(rulesData?.surface_calc_params) ? rulesData.surface_calc_params : {}),
+    ...(hasSurfaceParamContent(rulesData?.surface_parameters) ? rulesData.surface_parameters : {}),
+    ...(hasSurfaceParamContent(rulesData?.parantes_config) ? rulesData.parantes_config : {}),
+    ...(hasSurfaceParamContent(rulesData?.catalog_rules?.porton?.parantes_config) ? rulesData.catalog_rules.porton.parantes_config : {}),
   };
-}
-
-function textValue(value) {
-  return String(value ?? "").trim();
-}
-function numericPayload(value) {
-  if (value === "" || value === null || value === undefined) return null;
-  const n = Number(String(value).replace(",", "."));
-  return Number.isFinite(n) ? n : null;
-}
-function textPayload(value) {
-  return String(value ?? "").trim();
 }
 function productLabel(product = {}) {
   return `${product.display_name || product.alias || product.name || `Producto ${product.id}`}${product.code ? ` · ${product.code}` : ""}`;
 }
+function productSearchText(product = {}) {
+  return [product.id, product.odoo_id, product.odoo_template_id, product.odoo_variant_id, product.display_name, product.alias, product.name, product.code]
+    .map((item) => String(item || "").toLowerCase())
+    .join(" ");
+}
+function productMatchesAnyId(product = {}, targetId) {
+  const id = Number(targetId || 0);
+  if (!id) return false;
+  return [product?.id, product?.odoo_id, product?.odoo_template_id, product?.odoo_variant_id, product?.odoo_external_id]
+    .map((value) => Number(value || 0))
+    .includes(id);
+}
+function getVisibleOdooId(product = {}) {
+  return Number(product?.odoo_id || product?.odoo_template_id || product?.odoo_variant_id || product?.id || 0) || 0;
+}
 function newAptoKgRule(index = 1) {
-  return {
-    id: `apto_rule_${Date.now()}_${index}`,
-    product_id: "",
-    product_label: "",
-    kg_m2: "",
-  };
+  return { id: `apto_rule_${Date.now()}_${index}`, product_id: "", product_label: "", kg_m2: "" };
 }
 function normalizeAptoKgRuleDraft(rule = {}, index = 0) {
   return {
@@ -152,61 +138,117 @@ function normalizeAptoKgRuleDraft(rule = {}, index = 0) {
 function normalizeAptoKgRulesDraft(raw = []) {
   return (Array.isArray(raw) ? raw : []).map((rule, index) => normalizeAptoKgRuleDraft(rule, index));
 }
+function safeParseAutoRulesJson(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (_err) {
+    return [];
+  }
+}
+function safeStringifyAutoRules(rules = []) {
+  const normalized = (Array.isArray(rules) ? rules : [])
+    .map((rule, index) => ({
+      id: String(rule?.id || `auto_budget_rule_${index + 1}`),
+      name: textValue(rule?.name || `Automatización #${index + 1}`),
+      active: rule?.active !== false,
+      trigger_product_ids: textValue(rule?.trigger_product_ids),
+      target_product_id: Number(rule?.target_product_id || 0) || null,
+      target_product_label: textValue(rule?.target_product_label),
+      quantity_mode: String(rule?.quantity_mode || "unit") === "surface" ? "surface" : "unit",
+      only_apto_revestir: rule?.only_apto_revestir !== false,
+    }))
+    .filter((rule) => rule.trigger_product_ids && rule.target_product_id);
+  return JSON.stringify(normalized);
+}
+function newAutoBudgetRule(index = 1) {
+  return {
+    id: `auto_budget_rule_${Date.now()}_${index}`,
+    name: "",
+    active: true,
+    trigger_product_ids: "",
+    target_product_id: "",
+    target_product_label: "",
+    quantity_mode: "surface",
+    only_apto_revestir: true,
+  };
+}
+function normalizeAutoBudgetRuleDraft(rule = {}, index = 0) {
+  return {
+    id: String(rule?.id || `auto_budget_rule_${index + 1}`),
+    name: textValue(rule?.name || `Automatización #${index + 1}`),
+    active: rule?.active !== false,
+    trigger_product_ids: textValue(rule?.trigger_product_ids || rule?.trigger_ids),
+    target_product_id: Number(rule?.target_product_id || rule?.target_odoo_id || rule?.product_id || 0) || "",
+    target_product_label: textValue(rule?.target_product_label || rule?.product_label),
+    quantity_mode: String(rule?.quantity_mode || "unit") === "surface" ? "surface" : "unit",
+    only_apto_revestir: rule?.only_apto_revestir !== false,
+  };
+}
+function normalizeAutoBudgetRulesDraft(surfaceParameters = {}) {
+  const rawRules = safeParseAutoRulesJson(surfaceParameters?.auto_budget_product_rules_json);
+  const rules = rawRules.map((rule, index) => normalizeAutoBudgetRuleDraft(rule, index));
+
+  const legacyTriggerText = textValue(surfaceParameters?.apto_revestir_profile_trigger_product_ids);
+  const legacyProductId = Number(surfaceParameters?.apto_revestir_profile_odoo_id || 0) || 0;
+  if (legacyTriggerText && legacyProductId && !rules.some((rule) => Number(rule.target_product_id) === legacyProductId && rule.trigger_product_ids === legacyTriggerText)) {
+    rules.push({
+      id: "legacy_perfil_apto_revestir",
+      name: "Perfil apto para revestir",
+      active: true,
+      trigger_product_ids: legacyTriggerText,
+      target_product_id: legacyProductId,
+      target_product_label: "Perfil",
+      quantity_mode: "surface",
+      only_apto_revestir: true,
+    });
+  }
+
+  return rules;
+}
 function normalizeSurfaceParametersDraft(raw = {}) {
+  const source = raw && typeof raw === "object" ? raw : {};
   return {
     ...DEFAULT_SURFACE_PARAMETERS,
-    ...(raw && typeof raw === "object" ? raw : {}),
-    installation_inside_product_id: raw?.installation_inside_product_id ?? "",
-    installation_behind_product_id: raw?.installation_behind_product_id ?? "",
-    no_cladding_product_id: raw?.no_cladding_product_id ?? "",
-    apto_revestir_kg_m2_rules: normalizeAptoKgRulesDraft(raw?.apto_revestir_kg_m2_rules),
-    non_apto_parantes_vertical_product_ids: raw?.non_apto_parantes_vertical_product_ids ?? "",
-    non_apto_parantes_horizontal_product_ids: raw?.non_apto_parantes_horizontal_product_ids ?? "",
-    parantes_door_product_ids: raw?.parantes_door_product_ids ?? raw?.door_product_ids ?? raw?.puerta_product_ids ?? "",
-    parantes_right_door_product_ids: raw?.parantes_right_door_product_ids ?? raw?.right_door_product_ids ?? raw?.puerta_derecha_product_ids ?? raw?.door_right_product_ids ?? "",
-    parantes_left_door_product_ids: raw?.parantes_left_door_product_ids ?? raw?.left_door_product_ids ?? raw?.puerta_izquierda_product_ids ?? raw?.door_left_product_ids ?? "",
-    parantes_door_first_distance_mm: raw?.parantes_door_first_distance_mm ?? 800,
-    parantes_tube_discount_mm: raw?.parantes_tube_discount_mm ?? raw?.parantes_cano_discount_mm ?? raw?.descuento_cano_parantes_mm ?? 40,
-    paso_height_discount_mm: raw?.paso_height_discount_mm ?? raw?.paso_alto_descuento_mm ?? raw?.step_height_discount_mm ?? 110,
-    paso_width_discount_angostas_mm: raw?.paso_width_discount_angostas_mm ?? raw?.paso_ancho_descuento_angostas_mm ?? 80,
-    paso_width_discount_comunes_mm: raw?.paso_width_discount_comunes_mm ?? raw?.paso_ancho_descuento_comunes_mm ?? 110,
-    paso_width_discount_anchas_mm: raw?.paso_width_discount_anchas_mm ?? raw?.paso_ancho_descuento_anchas_mm ?? 150,
-    paso_width_discount_superanchas_mm: raw?.paso_width_discount_superanchas_mm ?? raw?.paso_ancho_descuento_superanchas_mm ?? 200,
-    paso_width_discount_especiales_mm: raw?.paso_width_discount_especiales_mm ?? raw?.paso_ancho_descuento_especiales_mm ?? 200,
-    hoja_height_discount_mm: raw?.hoja_height_discount_mm ?? raw?.hoja_alto_descuento_mm ?? raw?.leaf_height_discount_mm ?? 10,
-    hoja_lateral_rebaje_width_discount_mm: raw?.hoja_lateral_rebaje_width_discount_mm ?? raw?.rebaje_lateral_hoja_discount_mm ?? raw?.leaf_lateral_rebaje_width_discount_mm ?? 5,
-    hoja_rebaje_lateral_product_ids: raw?.hoja_rebaje_lateral_product_ids ?? raw?.rebaje_lateral_product_ids ?? raw?.leaf_lateral_rebaje_product_ids ?? "",
+    ...source,
+    installation_inside_product_id: source?.installation_inside_product_id ?? "",
+    installation_behind_product_id: source?.installation_behind_product_id ?? "",
+    no_cladding_product_id: source?.no_cladding_product_id ?? "",
+    apto_revestir_kg_m2_rules: normalizeAptoKgRulesDraft(source?.apto_revestir_kg_m2_rules),
+    non_apto_parantes_vertical_product_ids: source?.non_apto_parantes_vertical_product_ids ?? "",
+    non_apto_parantes_horizontal_product_ids: source?.non_apto_parantes_horizontal_product_ids ?? "",
+    parantes_door_product_ids: source?.parantes_door_product_ids ?? source?.door_product_ids ?? source?.puerta_product_ids ?? "",
+    parantes_right_door_product_ids: source?.parantes_right_door_product_ids ?? source?.right_door_product_ids ?? source?.puerta_derecha_product_ids ?? source?.door_right_product_ids ?? "",
+    parantes_left_door_product_ids: source?.parantes_left_door_product_ids ?? source?.left_door_product_ids ?? source?.puerta_izquierda_product_ids ?? source?.door_left_product_ids ?? "",
+    parantes_door_first_distance_mm: source?.parantes_door_first_distance_mm ?? 800,
+    parantes_tube_discount_mm: source?.parantes_tube_discount_mm ?? source?.parantes_cano_discount_mm ?? source?.descuento_cano_parantes_mm ?? 40,
+    paso_height_discount_mm: source?.paso_height_discount_mm ?? source?.paso_alto_descuento_mm ?? source?.step_height_discount_mm ?? 110,
+    paso_width_discount_angostas_mm: source?.paso_width_discount_angostas_mm ?? source?.paso_ancho_descuento_angostas_mm ?? 80,
+    paso_width_discount_comunes_mm: source?.paso_width_discount_comunes_mm ?? source?.paso_ancho_descuento_comunes_mm ?? 110,
+    paso_width_discount_anchas_mm: source?.paso_width_discount_anchas_mm ?? source?.paso_ancho_descuento_anchas_mm ?? 150,
+    paso_width_discount_superanchas_mm: source?.paso_width_discount_superanchas_mm ?? source?.paso_ancho_descuento_superanchas_mm ?? 200,
+    paso_width_discount_especiales_mm: source?.paso_width_discount_especiales_mm ?? source?.paso_ancho_descuento_especiales_mm ?? 200,
+    hoja_height_discount_mm: source?.hoja_height_discount_mm ?? source?.hoja_alto_descuento_mm ?? source?.leaf_height_discount_mm ?? 10,
+    hoja_lateral_rebaje_width_discount_mm: source?.hoja_lateral_rebaje_width_discount_mm ?? source?.rebaje_lateral_hoja_discount_mm ?? source?.leaf_lateral_rebaje_width_discount_mm ?? 5,
+    hoja_rebaje_lateral_product_ids: source?.hoja_rebaje_lateral_product_ids ?? source?.rebaje_lateral_product_ids ?? source?.leaf_lateral_rebaje_product_ids ?? "",
+    auto_budget_product_rules_json: source?.auto_budget_product_rules_json ?? "[]",
   };
 }
-function hasSurfaceParamContent(value) {
-  return !!(value && typeof value === "object" && Object.keys(value).length);
-}
-function getSurfaceParametersFromRulesData(rulesData = {}) {
+function pickParantesConfig(surfaceParameters = {}) {
   return {
-    ...(hasSurfaceParamContent(rulesData?.measurement_surface_params) ? rulesData.measurement_surface_params : {}),
-    ...(hasSurfaceParamContent(rulesData?.surface_params) ? rulesData.surface_params : {}),
-    ...(hasSurfaceParamContent(rulesData?.surface_calc_params) ? rulesData.surface_calc_params : {}),
-    ...(hasSurfaceParamContent(rulesData?.surface_parameters) ? rulesData.surface_parameters : {}),
-    ...(hasSurfaceParamContent(rulesData?.parantes_config) ? rulesData.parantes_config : {}),
-    ...(hasSurfaceParamContent(rulesData?.catalog_rules?.porton?.parantes_config) ? rulesData.catalog_rules.porton.parantes_config : {}),
-  };
-}
-function buildTechnicalRulesSavePayload({ rules, surfaceFinalFormula, surfaceParameters }) {
-  const surfacePayload = buildSurfaceParametersPayload(surfaceParameters);
-  const parantesConfig = pickParantesConfig(surfacePayload);
-  return {
-    kind: "porton",
-    rules: buildRulesPayload(rules),
-    surface_final_formula: surfaceFinalFormula,
-    surface_parameters: surfacePayload,
-    surface_calc_params: surfacePayload,
-    surface_params: surfacePayload,
-    measurement_surface_params: surfacePayload,
-    parantes_config: parantesConfig,
-    ...surfacePayload,
+    non_apto_parantes_vertical_product_ids: textPayload(surfaceParameters.non_apto_parantes_vertical_product_ids),
+    non_apto_parantes_horizontal_product_ids: textPayload(surfaceParameters.non_apto_parantes_horizontal_product_ids),
+    parantes_door_product_ids: textPayload(surfaceParameters.parantes_door_product_ids),
+    parantes_right_door_product_ids: textPayload(surfaceParameters.parantes_right_door_product_ids),
+    parantes_left_door_product_ids: textPayload(surfaceParameters.parantes_left_door_product_ids),
+    parantes_door_first_distance_mm: numericPayload(surfaceParameters.parantes_door_first_distance_mm) || 800,
+    parantes_tube_discount_mm: numericPayload(surfaceParameters.parantes_tube_discount_mm) || 40,
   };
 }
 function buildSurfaceParametersPayload(surfaceParameters = {}) {
+  const autoRulesJson = safeStringifyAutoRules(surfaceParameters?.auto_budget_product_rules || safeParseAutoRulesJson(surfaceParameters?.auto_budget_product_rules_json));
   return {
     classic_kg_m2: numericPayload(surfaceParameters.classic_kg_m2),
     injected_kg_m2: numericPayload(surfaceParameters.injected_kg_m2),
@@ -245,6 +287,7 @@ function buildSurfaceParametersPayload(surfaceParameters = {}) {
     parantes_left_door_product_ids: textPayload(surfaceParameters.parantes_left_door_product_ids),
     parantes_door_first_distance_mm: numericPayload(surfaceParameters.parantes_door_first_distance_mm) || 800,
     parantes_tube_discount_mm: numericPayload(surfaceParameters.parantes_tube_discount_mm) || 40,
+    auto_budget_product_rules_json: autoRulesJson,
     apto_revestir_kg_m2_rules: (Array.isArray(surfaceParameters?.apto_revestir_kg_m2_rules)
       ? surfaceParameters.apto_revestir_kg_m2_rules
       : [])
@@ -256,156 +299,20 @@ function buildSurfaceParametersPayload(surfaceParameters = {}) {
       .filter((rule) => Number(rule.product_id || 0) > 0 && Number(rule.kg_m2 || 0) > 0),
   };
 }
-function newField(index = 1) {
+function buildTechnicalRulesSavePayload({ rulesData, surfaceFinalFormula, surfaceParameters }) {
+  const surfacePayload = buildSurfaceParametersPayload(surfaceParameters);
+  const parantesConfig = pickParantesConfig(surfacePayload);
   return {
-    key: "",
-    label: "",
-    type: "text",
-    section: "otros",
-    optionsText: "",
-    active: true,
-    required: false,
-    sort_order: index,
-    value_source_type: "manual",
-    value_source_path: "",
-    fixed_value: "",
-    budget_section_id: "",
-    budget_section_name: "",
-    budget_product_value_key: "display_name",
-    budget_multiple_mode: "first",
-    editable_by: "both",
-    odoo_binding_type: "none",
-    odoo_product_id: "",
-    odoo_product_label: "",
-    send_modification_to_commercial: false,
+    ...(rulesData && typeof rulesData === "object" ? rulesData : {}),
+    kind: "porton",
+    surface_final_formula: surfaceFinalFormula,
+    surface_parameters: surfacePayload,
+    surface_calc_params: surfacePayload,
+    surface_params: surfacePayload,
+    measurement_surface_params: surfacePayload,
+    parantes_config: parantesConfig,
+    ...surfacePayload,
   };
-}
-function normalizeFieldDraft(field = {}, index = 0) {
-  return {
-    key: textValue(field?.key),
-    label: textValue(field?.label),
-    type: textValue(field?.type || "text").toLowerCase(),
-    section: textValue(field?.section || "otros").toLowerCase(),
-    optionsText: Array.isArray(field?.options)
-      ? field.options.map((item) => item?.value || item).filter(Boolean).join(", ")
-      : textValue(field?.optionsText),
-    active: field?.active !== false,
-    required: field?.required === true,
-    sort_order: Number(field?.sort_order || index + 1) || index + 1,
-    value_source_type: String(field?.value_source_type || "manual"),
-    value_source_path: textValue(field?.value_source_path),
-    fixed_value: field?.fixed_value ?? "",
-    budget_section_id: Number(field?.budget_section_id || 0) || "",
-    budget_section_name: textValue(field?.budget_section_name),
-    budget_product_value_key: String(field?.budget_product_value_key || "display_name"),
-    budget_multiple_mode: String(field?.budget_multiple_mode || "first"),
-    editable_by: String(field?.editable_by || "both"),
-    odoo_binding_type: String(field?.odoo_binding_type || "none"),
-    odoo_product_id: Number(field?.odoo_product_id || 0) || "",
-    odoo_product_label: textValue(field?.odoo_product_label),
-    send_modification_to_commercial: field?.send_modification_to_commercial === true,
-    system: field?.system === true,
-    context_only: field?.context_only === true,
-    can_delete: field?.can_delete !== false,
-  };
-}
-function buildFieldsPayload(fields = []) {
-  return {
-    fields: fields
-      .map((field, index) => ({
-        key: textValue(field.key),
-        label: textValue(field.label),
-        type: textValue(field.type || "text").toLowerCase(),
-        section: textValue(field.section || "otros").toLowerCase(),
-        options: parseOptions(field.optionsText),
-        active: field.active !== false,
-        required: field.required === true,
-        sort_order: index + 1,
-        value_source_type: String(field.value_source_type || "manual"),
-        value_source_path: textValue(field.value_source_path),
-        fixed_value: field.fixed_value ?? "",
-        budget_section_id: Number(field.budget_section_id || 0) || null,
-        budget_section_name: textValue(field.budget_section_name),
-        budget_product_value_key: String(field.budget_product_value_key || "display_name"),
-        budget_multiple_mode: String(field.budget_multiple_mode || "first"),
-        editable_by: String(field.editable_by || "both"),
-        odoo_binding_type: String(field.odoo_binding_type || "none"),
-        odoo_product_id: Number(field.odoo_product_id || 0) || null,
-        odoo_product_label: textValue(field.odoo_product_label),
-        send_modification_to_commercial: field.send_modification_to_commercial === true,
-      }))
-      .filter((field) => field.key && field.label),
-  };
-}
-function newRule(index = 1) {
-  return {
-    id: `rule_${Date.now()}_${index}`,
-    name: "",
-    active: true,
-    source_key: "",
-    operator: "=",
-    compare_value: "",
-    action_type: "set_value",
-    target_field: "",
-    target_value: "",
-    target_options_text: "",
-    apply_to_odoo: false,
-    product_id: "",
-    product_label: "",
-    sort_order: index,
-  };
-}
-function normalizeRuleDraft(rule = {}, index = 0) {
-  return {
-    id: String(rule?.id || `rule_${index + 1}`),
-    name: textValue(rule?.name),
-    active: rule?.active !== false,
-    source_key: textValue(rule?.source_key),
-    operator: String(rule?.operator || "="),
-    compare_value: rule?.compare_value ?? "",
-    action_type: String(rule?.action_type || "set_value"),
-    target_field: textValue(rule?.target_field),
-    target_value: rule?.target_value ?? "",
-    target_options_text: Array.isArray(rule?.target_options) ? rule.target_options.join(", ") : textValue(rule?.target_options),
-    apply_to_odoo: rule?.apply_to_odoo === true,
-    product_id: Number(rule?.product_id || 0) || "",
-    product_label: textValue(rule?.product_label),
-    sort_order: Number(rule?.sort_order || index + 1) || index + 1,
-  };
-}
-function buildRulesPayload(rules = []) {
-  return rules
-    .map((rule, index) => ({
-      id: rule.id || `rule_${index + 1}`,
-      name: textValue(rule.name),
-      active: rule.active !== false,
-      source_key: textValue(rule.source_key),
-      operator: String(rule.operator || "="),
-      compare_value: rule.compare_value ?? "",
-      action_type: String(rule.action_type || "set_value"),
-      target_field: textValue(rule.target_field),
-      target_value: rule.target_value ?? "",
-      target_options: parseOptions(rule.target_options_text || "").map((item) => item.value),
-      apply_to_odoo: rule.apply_to_odoo === true,
-      product_id: Number(rule.product_id || 0) || null,
-      product_label: textValue(rule.product_label),
-      sort_order: index + 1,
-    }))
-    .filter((rule) => rule.source_key);
-}
-function updateFieldAt(setFieldDraft, index, patch) {
-  setFieldDraft((prev) => {
-    const next = [...(prev.fields || [])];
-    next[index] = { ...next[index], ...patch };
-    return { fields: next };
-  });
-}
-function updateRuleAt(setRuleDraft, index, patch) {
-  setRuleDraft((prev) => {
-    const next = [...(prev.rules || [])];
-    next[index] = { ...next[index], ...patch };
-    return { rules: next };
-  });
 }
 function updateAptoKgRuleAt(setSurfaceParameters, index, patch) {
   setSurfaceParameters((prev) => {
@@ -420,42 +327,33 @@ function removeAptoKgRuleAt(setSurfaceParameters, index) {
     apto_revestir_kg_m2_rules: (prev?.apto_revestir_kg_m2_rules || []).filter((_, i) => i !== index),
   }));
 }
-function removeCustomField(setFieldDraft, field, index) {
-  if (!field?.can_delete) return;
-  const label = textValue(field?.label || field?.key || `Campo #${index + 1}`);
-  if (!window.confirm(`Vas a eliminar definitivamente el campo "${label}". Esta acción se guarda cuando presiones "Guardar campos".`)) return;
-  setFieldDraft((prev) => ({ fields: (prev.fields || []).filter((_, i) => i !== index) }));
+function updateAutoRuleAt(setSurfaceParameters, index, patch) {
+  setSurfaceParameters((prev) => {
+    const nextRules = [...(prev?.auto_budget_product_rules || [])];
+    nextRules[index] = { ...nextRules[index], ...patch };
+    return { ...prev, auto_budget_product_rules: nextRules, auto_budget_product_rules_json: safeStringifyAutoRules(nextRules) };
+  });
 }
-function removeRule(setRuleDraft, rule, index) {
-  const label = textValue(rule?.name || `Regla #${index + 1}`);
-  if (!window.confirm(`Vas a eliminar definitivamente la regla "${label}". Esta acción se guarda cuando presiones "Guardar reglas".`)) return;
-  setRuleDraft((prev) => ({ rules: (prev.rules || []).filter((_, i) => i !== index) }));
+function removeAutoRuleAt(setSurfaceParameters, index) {
+  setSurfaceParameters((prev) => {
+    const nextRules = (prev?.auto_budget_product_rules || []).filter((_, i) => i !== index);
+    return { ...prev, auto_budget_product_rules: nextRules, auto_budget_product_rules_json: safeStringifyAutoRules(nextRules) };
+  });
 }
-function detectRuleConflicts(rules = [], fields = []) {
-  const byTarget = new Map();
-  const fieldLabelByKey = new Map((Array.isArray(fields) ? fields : []).map((field) => [field.key, field.label]));
-  for (const rule of Array.isArray(rules) ? rules : []) {
-    if (rule?.active === false || !rule?.target_field) continue;
-    const target = textValue(rule.target_field);
-    if (!target) continue;
-    const list = byTarget.get(target) || [];
-    list.push(rule);
-    byTarget.set(target, list);
-  }
-  const warnings = [];
-  for (const [target, list] of byTarget.entries()) {
-    if (list.length < 2) continue;
-    warnings.push({
-      target,
-      label: fieldLabelByKey.get(target) || target,
-      count: list.length,
-      actions: [...new Set(list.map((item) => String(item.action_type || "set_value")))],
-    });
-  }
-  return warnings;
+function addAutoRule(setSurfaceParameters) {
+  setSurfaceParameters((prev) => {
+    const nextRules = [...(prev?.auto_budget_product_rules || []), newAutoBudgetRule((prev?.auto_budget_product_rules || []).length + 1)];
+    return { ...prev, auto_budget_product_rules: nextRules, auto_budget_product_rules_json: safeStringifyAutoRules(nextRules) };
+  });
 }
 function productOptions(products = []) {
   return products.map((product) => <option key={product.id} value={product.id}>{productLabel(product)}</option>);
+}
+function targetProductOptions(products = []) {
+  return products.map((product) => {
+    const visibleOdooId = getVisibleOdooId(product);
+    return <option key={product.id} value={visibleOdooId || product.id}>{productLabel(product)} · ID Presupuestador: {product.id} · ID Odoo: {visibleOdooId || product.id}</option>;
+  });
 }
 function ParamInput({ label, value, onChange, textarea = false, helper = "" }) {
   return (
@@ -475,7 +373,6 @@ function ParamInput({ label, value, onChange, textarea = false, helper = "" }) {
     </div>
   );
 }
-
 function SavedParamItem({ label, value }) {
   const display = value === undefined || value === null || String(value).trim() === "" ? "-" : String(value);
   return (
@@ -488,27 +385,18 @@ function SavedParamItem({ label, value }) {
 
 export default function SuperuserMeasurementRulesPage() {
   const user = useAuthStore((s) => s.user);
-  const [savingFields, setSavingFields] = useState(false);
-  const [savingRules, setSavingRules] = useState(false);
   const [savingSurfaceConfig, setSavingSurfaceConfig] = useState(false);
   const [surfaceFinalFormula, setSurfaceFinalFormula] = useState("surface_automatica_m2");
   const [surfaceParameters, setSurfaceParameters] = useState(normalizeSurfaceParametersDraft());
-  const [fieldDraft, setFieldDraft] = useState({ fields: [] });
-  const [ruleDraft, setRuleDraft] = useState({ rules: [] });
-  const [fieldFilter, setFieldFilter] = useState("all");
-  const [fieldSearch, setFieldSearch] = useState("");
-  const [ruleSearch, setRuleSearch] = useState("");
   const [savedSurfaceParameters, setSavedSurfaceParameters] = useState(normalizeSurfaceParametersDraft());
   const [savedSurfaceStatus, setSavedSurfaceStatus] = useState("");
+  const [kgSectionFilter, setKgSectionFilter] = useState("all");
+  const [kgProductSearch, setKgProductSearch] = useState("");
+  const [autoProductSearch, setAutoProductSearch] = useState("");
 
-  const fieldsQ = useQuery({
-    queryKey: ["technicalMeasurementFields"],
-    queryFn: adminGetTechnicalMeasurementFieldDefinitions,
-    enabled: !!user?.is_superuser,
-  });
   const rulesQ = useQuery({
     queryKey: ["technicalMeasurementRules"],
-    queryFn: adminGetTechnicalMeasurementRules,
+    queryFn: () => adminGetTechnicalMeasurementRules("porton"),
     enabled: !!user?.is_superuser,
   });
   const catalogQ = useQuery({
@@ -518,85 +406,63 @@ export default function SuperuserMeasurementRulesPage() {
   });
 
   useEffect(() => {
-    if (!fieldsQ.data) return;
-    const merged = mergeMeasurementFields(fieldsQ.data.fields || []).filter((field) => field?.context_only !== true);
-    setFieldDraft({ fields: merged.map((field, index) => normalizeFieldDraft(field, index)) });
-  }, [fieldsQ.data]);
-
-  useEffect(() => {
     if (!rulesQ.data) return;
-    setRuleDraft({ rules: (rulesQ.data.rules || []).map((rule, index) => normalizeRuleDraft(rule, index)) });
     setSurfaceFinalFormula(String(rulesQ.data.surface_final_formula || "surface_automatica_m2"));
-    const loadedSurfaceParameters = normalizeSurfaceParametersDraft(mergeStoredSurfaceParameters(getSurfaceParametersFromRulesData(rulesQ.data)));
+    const loadedBase = normalizeSurfaceParametersDraft(mergeStoredSurfaceParameters(getSurfaceParametersFromRulesData(rulesQ.data)));
+    const loadedSurfaceParameters = {
+      ...loadedBase,
+      auto_budget_product_rules: normalizeAutoBudgetRulesDraft(loadedBase),
+    };
+    loadedSurfaceParameters.auto_budget_product_rules_json = safeStringifyAutoRules(loadedSurfaceParameters.auto_budget_product_rules);
     setSurfaceParameters(loadedSurfaceParameters);
     setSavedSurfaceParameters(loadedSurfaceParameters);
     setSavedSurfaceStatus("Cargado desde Supabase");
   }, [rulesQ.data]);
 
   const products = useMemo(() => Array.isArray(catalogQ.data?.products) ? catalogQ.data.products : [], [catalogQ.data]);
-  const portonTypeOptions = useMemo(() => PORTON_TYPES.slice(), []);
-  const allFields = useMemo(() => {
-    const dynamicFields = (fieldDraft.fields || [])
-      .filter((field) => field?.context_only !== true)
-      .map((field, index) => ({
-        key: field.key,
-        label: field.label,
-        type: field.type,
-        section: field.section,
-        options: parseOptions(field.optionsText),
-        active: field.active !== false,
-        required: field.required === true,
-        sort_order: field.sort_order || index + 1,
-        value_source_type: field.value_source_type,
-        value_source_path: field.value_source_path,
-        fixed_value: field.fixed_value,
-        budget_section_id: field.budget_section_id,
-        budget_section_name: field.budget_section_name,
-        budget_product_value_key: field.budget_product_value_key,
-        budget_multiple_mode: field.budget_multiple_mode,
-        editable_by: field.editable_by,
-        odoo_binding_type: field.odoo_binding_type,
-        odoo_product_id: field.odoo_product_id,
-        odoo_product_label: field.odoo_product_label,
-        send_modification_to_commercial: field.send_modification_to_commercial === true,
-      }));
-    return mergeMeasurementFields(dynamicFields);
-  }, [fieldDraft.fields]);
-  const visibleFields = useMemo(() => allFields.filter((field) => field?.context_only !== true), [allFields]);
-  const ruleSourceOptions = allFields;
-  const targetFieldOptions = visibleFields;
-  const fields = Array.isArray(fieldDraft?.fields) ? fieldDraft.fields : [];
-  const rules = Array.isArray(ruleDraft?.rules) ? ruleDraft.rules : [];
+  const sections = useMemo(() => Array.isArray(catalogQ.data?.sections) ? catalogQ.data.sections : [], [catalogQ.data]);
   const aptoKgRules = Array.isArray(surfaceParameters?.apto_revestir_kg_m2_rules) ? surfaceParameters.apto_revestir_kg_m2_rules : [];
+  const autoRules = Array.isArray(surfaceParameters?.auto_budget_product_rules) ? surfaceParameters.auto_budget_product_rules : [];
 
-  const filteredFields = useMemo(() => {
-    const q = textValue(fieldSearch).toLowerCase();
-    return fields.filter((field) => {
-      const matchesType = fieldFilter === "all" ? true : fieldFilter === "system" ? field?.system === true : field?.system !== true;
-      if (!matchesType) return false;
+  const kgProductsFiltered = useMemo(() => {
+    const q = textValue(kgProductSearch).toLowerCase();
+    const selectedSectionId = Number(kgSectionFilter || 0);
+    return products.filter((product) => {
+      if (selectedSectionId && !(Array.isArray(product.section_ids) && product.section_ids.map(Number).includes(selectedSectionId))) return false;
       if (!q) return true;
-      return [field?.label, field?.key, field?.section, field?.value_source_type, field?.budget_section_name, field?.odoo_product_label]
-        .map((item) => String(item || "").toLowerCase())
-        .join(" ")
-        .includes(q);
+      return productSearchText(product).includes(q);
     });
-  }, [fields, fieldFilter, fieldSearch]);
-  const filteredRules = useMemo(() => {
-    const q = textValue(ruleSearch).toLowerCase();
-    if (!q) return rules;
-    const fieldLabelByKey = new Map(visibleFields.map((field) => [field.key, String(field.label || field.key || "")]));
-    return rules.filter((rule) => [rule?.name, rule?.source_key, rule?.target_field, rule?.compare_value, rule?.target_value, fieldLabelByKey.get(rule?.source_key), fieldLabelByKey.get(rule?.target_field)]
-      .map((item) => String(item || "").toLowerCase())
-      .join(" ")
-      .includes(q));
-  }, [rules, ruleSearch, visibleFields]);
-  const conflictWarnings = useMemo(() => detectRuleConflicts(rules, visibleFields), [rules, visibleFields]);
+  }, [products, kgSectionFilter, kgProductSearch]);
+
+  const autoProductsFiltered = useMemo(() => {
+    const q = textValue(autoProductSearch).toLowerCase();
+    if (!q) return products;
+    return products.filter((product) => productSearchText(product).includes(q));
+  }, [products, autoProductSearch]);
+
+  function productsForKgRule(rule) {
+    if (!rule?.product_id) return kgProductsFiltered;
+    const selected = products.find((product) => Number(product.id) === Number(rule.product_id));
+    if (!selected || kgProductsFiltered.some((product) => Number(product.id) === Number(selected.id))) return kgProductsFiltered;
+    return [selected, ...kgProductsFiltered];
+  }
+  function productsForAutoRule(rule) {
+    if (!rule?.target_product_id) return autoProductsFiltered;
+    const selected = products.find((product) => productMatchesAnyId(product, rule.target_product_id));
+    if (!selected || autoProductsFiltered.some((product) => Number(product.id) === Number(selected.id))) return autoProductsFiltered;
+    return [selected, ...autoProductsFiltered];
+  }
 
   async function reloadSavedSurfaceConfig() {
     setSavingSurfaceConfig(true);
     try {
       const result = await rulesQ.refetch();
-      const loadedSurfaceParameters = normalizeSurfaceParametersDraft(mergeStoredSurfaceParameters(getSurfaceParametersFromRulesData(result.data || {})));
+      const loadedBase = normalizeSurfaceParametersDraft(mergeStoredSurfaceParameters(getSurfaceParametersFromRulesData(result.data || {})));
+      const loadedSurfaceParameters = {
+        ...loadedBase,
+        auto_budget_product_rules: normalizeAutoBudgetRulesDraft(loadedBase),
+      };
+      loadedSurfaceParameters.auto_budget_product_rules_json = safeStringifyAutoRules(loadedSurfaceParameters.auto_budget_product_rules);
       setSurfaceParameters(loadedSurfaceParameters);
       setSavedSurfaceParameters(loadedSurfaceParameters);
       writeStoredSurfaceParameters(loadedSurfaceParameters);
@@ -609,53 +475,27 @@ export default function SuperuserMeasurementRulesPage() {
   async function saveSurfaceConfig() {
     setSavingSurfaceConfig(true);
     try {
-      const payload = buildTechnicalRulesSavePayload({ rules, surfaceFinalFormula, surfaceParameters });
+      const payload = buildTechnicalRulesSavePayload({ rulesData: rulesQ.data || {}, surfaceFinalFormula, surfaceParameters });
       writeStoredSurfaceParameters(payload.surface_parameters);
       const saved = await adminSaveTechnicalMeasurementRules("porton", payload);
-      const savedSurfaceParameters = normalizeSurfaceParametersDraft({
+      const savedBase = normalizeSurfaceParametersDraft({
         ...mergeStoredSurfaceParameters(getSurfaceParametersFromRulesData(saved)),
         ...payload.surface_parameters,
         ...payload.parantes_config,
       });
+      const savedSurfaceParameters = {
+        ...savedBase,
+        auto_budget_product_rules: normalizeAutoBudgetRulesDraft(savedBase),
+      };
+      savedSurfaceParameters.auto_budget_product_rules_json = safeStringifyAutoRules(savedSurfaceParameters.auto_budget_product_rules);
       writeStoredSurfaceParameters(savedSurfaceParameters);
       setSurfaceFinalFormula(String(saved.surface_final_formula || surfaceFinalFormula || "surface_automatica_m2"));
       setSurfaceParameters(savedSurfaceParameters);
       setSavedSurfaceParameters(savedSurfaceParameters);
       setSavedSurfaceStatus(`Guardado en Supabase ${new Date().toLocaleString("es-AR")}`);
-      window.alert("Configuración de superficie guardada.");
+      window.alert("Configuración técnica guardada.");
     } finally {
       setSavingSurfaceConfig(false);
-    }
-  }
-  async function saveRules() {
-    setSavingRules(true);
-    try {
-      const payload = buildTechnicalRulesSavePayload({ rules, surfaceFinalFormula, surfaceParameters });
-      writeStoredSurfaceParameters(payload.surface_parameters);
-      const saved = await adminSaveTechnicalMeasurementRules("porton", payload);
-      const savedSurfaceParameters = normalizeSurfaceParametersDraft({
-        ...mergeStoredSurfaceParameters(getSurfaceParametersFromRulesData(saved)),
-        ...payload.surface_parameters,
-        ...payload.parantes_config,
-      });
-      writeStoredSurfaceParameters(savedSurfaceParameters);
-      setRuleDraft({ rules: (saved.rules || []).map((rule, index) => normalizeRuleDraft(rule, index)) });
-      setSurfaceFinalFormula(String(saved.surface_final_formula || surfaceFinalFormula || "surface_automatica_m2"));
-      setSurfaceParameters(savedSurfaceParameters);
-      window.alert("Reglas guardadas.");
-    } finally {
-      setSavingRules(false);
-    }
-  }
-  async function saveFields() {
-    setSavingFields(true);
-    try {
-      const saved = await adminSaveTechnicalMeasurementFieldDefinitions(buildFieldsPayload(fields));
-      const merged = mergeMeasurementFields(saved.fields || []).filter((field) => field?.context_only !== true);
-      setFieldDraft({ fields: merged.map((field, index) => normalizeFieldDraft(field, index)) });
-      window.alert("Campos guardados.");
-    } finally {
-      setSavingFields(false);
     }
   }
 
@@ -672,155 +512,107 @@ export default function SuperuserMeasurementRulesPage() {
 
   return (
     <div className="container">
-      <div className="card">
-        <h2 style={{ marginTop: 0 }}>Campos dinámicos de medición</h2>
-        <div className="muted">Cada campo puede tomar valores del presupuesto, quedar fijo, enviarse a Odoo o editarse en medición.</div>
-        <div className="spacer" />
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <Button onClick={() => setFieldDraft((prev) => ({ fields: [...(prev.fields || []), newField((prev.fields || []).length + 1)] }))}>+ Agregar campo</Button>
-          <Button variant="primary" disabled={savingFields} onClick={saveFields}>{savingFields ? "Guardando..." : "Guardar campos"}</Button>
-        </div>
-        <div className="spacer" />
-        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <Button variant={fieldFilter === "all" ? "primary" : "ghost"} onClick={() => setFieldFilter("all")}>Todos ({fields.length})</Button>
-            <Button variant={fieldFilter === "system" ? "primary" : "ghost"} onClick={() => setFieldFilter("system")}>Sistema ({fields.filter((field) => field?.system === true).length})</Button>
-            <Button variant={fieldFilter === "custom" ? "primary" : "ghost"} onClick={() => setFieldFilter("custom")}>Custom ({fields.filter((field) => field?.system !== true).length})</Button>
-          </div>
-          <div style={{ flex: 1, minWidth: 280 }}>
-            <Input value={fieldSearch} onChange={setFieldSearch} placeholder="Buscar campos por nombre, clave, sector u origen..." style={{ width: "100%" }} />
-          </div>
-        </div>
-      </div>
-
-      <div className="spacer" />
-      <div className="card">
-        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-          {filteredFields.map((field) => {
-            const index = fields.findIndex((candidate) => candidate === field);
-            return (
-              <div key={`${field.key || "field"}-${index}`} style={{ border: "1px solid #eee", borderRadius: 12, padding: 12 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center" }}>
-                  <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                    <div style={{ fontWeight: 800 }}>Campo #{index + 1}</div>
-                    {field.system ? <span style={{ fontSize: 12, fontWeight: 700, padding: "4px 8px", borderRadius: 999, background: "#eef6ff", color: "#1b4b7a" }}>Sistema</span> : null}
-                  </div>
-                  <Button variant="ghost" onClick={() => removeCustomField(setFieldDraft, field, index)} disabled={!field.can_delete}>{field.can_delete ? "Eliminar campo" : "Campo protegido"}</Button>
-                </div>
-                <div className="spacer" />
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 10 }}>
-                  <ParamInput label="Clave interna" value={field.key || ""} onChange={(v) => updateFieldAt(setFieldDraft, index, { key: v.replace(/\s+/g, "_").toLowerCase() })} />
-                  <ParamInput label="Etiqueta" value={field.label || ""} onChange={(v) => updateFieldAt(setFieldDraft, index, { label: v })} />
-                  <div>
-                    <div className="muted" style={{ marginBottom: 6 }}>Tipo</div>
-                    <select value={field.type || "text"} onChange={(e) => updateFieldAt(setFieldDraft, index, { type: e.target.value })} style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid #ddd" }} disabled={field.system === true}>{FIELD_TYPE_OPTIONS.map((opt) => <option key={opt.value} value={opt.value}>{opt.label}</option>)}</select>
-                  </div>
-                  <div>
-                    <div className="muted" style={{ marginBottom: 6 }}>Sector en planilla</div>
-                    <select value={field.section || "otros"} onChange={(e) => updateFieldAt(setFieldDraft, index, { section: e.target.value })} style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid #ddd" }} disabled={field.system === true}>{SECTION_OPTIONS.map((opt) => <option key={opt.value} value={opt.value}>{opt.label}</option>)}</select>
-                  </div>
-                  <ParamInput label="Opciones (coma)" value={field.optionsText || ""} onChange={(v) => updateFieldAt(setFieldDraft, index, { optionsText: v })} />
-                  <div>
-                    <div className="muted" style={{ marginBottom: 6 }}>Editable por</div>
-                    <select value={field.editable_by || "both"} onChange={(e) => updateFieldAt(setFieldDraft, index, { editable_by: e.target.value })} style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid #ddd" }}>{EDITABLE_BY_OPTIONS.map((opt) => <option key={opt.value} value={opt.value}>{opt.label}</option>)}</select>
-                  </div>
-                </div>
-                <div className="spacer" />
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 10 }}>
-                  <div>
-                    <div className="muted" style={{ marginBottom: 6 }}>Cómo se completa</div>
-                    <select value={field.value_source_type || "manual"} onChange={(e) => updateFieldAt(setFieldDraft, index, { value_source_type: e.target.value })} style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid #ddd" }}>{VALUE_SOURCE_TYPE_OPTIONS.map((opt) => <option key={opt.value} value={opt.value}>{opt.label}</option>)}</select>
-                  </div>
-                  <ParamInput label="Ruta / origen" value={field.value_source_path || ""} onChange={(v) => updateFieldAt(setFieldDraft, index, { value_source_path: v })} />
-                  <ParamInput label="Valor fijo" value={field.fixed_value ?? ""} onChange={(v) => updateFieldAt(setFieldDraft, index, { fixed_value: v })} />
-                  <div>
-                    <div className="muted" style={{ marginBottom: 6 }}>Producto Odoo</div>
-                    <select value={field.odoo_product_id || ""} onChange={(e) => {
-                      const product = products.find((item) => Number(item.id) === Number(e.target.value));
-                      updateFieldAt(setFieldDraft, index, { odoo_product_id: e.target.value ? Number(e.target.value) : "", odoo_product_label: product ? productLabel(product) : "" });
-                    }} style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid #ddd" }}>
-                      <option value="">(sin producto)</option>
-                      {productOptions(products)}
-                    </select>
-                  </div>
-                </div>
-                <div className="spacer" />
-                <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
-                  <label style={{ display: "flex", gap: 8, alignItems: "center" }}><input type="checkbox" checked={field.required === true} disabled={field.system === true} onChange={(e) => updateFieldAt(setFieldDraft, index, { required: e.target.checked })} /><span className="muted">Obligatorio</span></label>
-                  <label style={{ display: "flex", gap: 8, alignItems: "center" }}><input type="checkbox" checked={field.active !== false} disabled={field.system === true} onChange={(e) => updateFieldAt(setFieldDraft, index, { active: e.target.checked })} /><span className="muted">Activo</span></label>
-                  <label style={{ display: "flex", gap: 8, alignItems: "center" }}><input type="checkbox" checked={field.send_modification_to_commercial === true} onChange={(e) => updateFieldAt(setFieldDraft, index, { send_modification_to_commercial: e.target.checked })} /><span className="muted">Envía modificación a comercial</span></label>
-                </div>
-              </div>
-            );
-          })}
-          {!filteredFields.length && fields.length > 0 ? <div className="muted">No hay campos que coincidan con el filtro o la búsqueda.</div> : null}
-          {!fields.length ? <div className="muted">Todavía no hay campos dinámicos cargados.</div> : null}
-        </div>
-      </div>
-
-      <div className="spacer" />
       <div className="card" style={{ background: "#fafafa" }}>
         <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "flex-start" }}>
           <div>
-            <h2 style={{ marginTop: 0, marginBottom: 6 }}>Parámetros de cálculo de piernas, superficie y parantes</h2>
-            <div className="muted" style={{ marginBottom: 10 }}>Estos parámetros se guardan dentro de reglas técnicas y son consumidos por el presupuestador.</div>
+            <h2 style={{ marginTop: 0, marginBottom: 6 }}>Reglas técnicas</h2>
+            <div className="muted">Campos dinámicos de medición ocultos. Las configuraciones existentes no se borran.</div>
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 6, alignItems: "flex-end" }}>
-            <Button variant="primary" onClick={saveSurfaceConfig} disabled={savingSurfaceConfig || savingRules}>
-              {savingSurfaceConfig ? "Guardando..." : "Guardar parámetros"}
+            <Button variant="primary" onClick={saveSurfaceConfig} disabled={savingSurfaceConfig || rulesQ.isLoading}>
+              {savingSurfaceConfig ? "Guardando..." : "Guardar configuración"}
             </Button>
             <div className="muted" style={{ fontSize: 12 }}>{savedSurfaceStatus || "Parámetros guardados todavía no cargados"}</div>
           </div>
         </div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 10 }}>
-          <ParamInput label="ID producto Dentro del vano" value={surfaceParameters.installation_inside_product_id} onChange={(v) => setSurfaceParameters((prev) => ({ ...prev, installation_inside_product_id: v }))} />
-          <ParamInput label="ID producto Detrás del vano" value={surfaceParameters.installation_behind_product_id} onChange={(v) => setSurfaceParameters((prev) => ({ ...prev, installation_behind_product_id: v }))} />
-          <ParamInput label="ID producto Apto para revestir" value={surfaceParameters.no_cladding_product_id} onChange={(v) => setSurfaceParameters((prev) => ({ ...prev, no_cladding_product_id: v }))} />
-          <ParamInput label="Ruta entry kg/m² vendedor" value={surfaceParameters.seller_kg_m2_field_path} onChange={(v) => setSurfaceParameters((prev) => ({ ...prev, seller_kg_m2_field_path: v }))} />
-          <ParamInput label="kg/m² clásico" value={surfaceParameters.classic_kg_m2} onChange={(v) => setSurfaceParameters((prev) => ({ ...prev, classic_kg_m2: v }))} />
-          <ParamInput label="kg/m² inyectado" value={surfaceParameters.injected_kg_m2} onChange={(v) => setSurfaceParameters((prev) => ({ ...prev, injected_kg_m2: v }))} />
-          <ParamInput label="Descuento alto peso (mm)" value={surfaceParameters.weight_height_discount_mm} onChange={(v) => setSurfaceParameters((prev) => ({ ...prev, weight_height_discount_mm: v }))} />
-          <ParamInput label="Descuento ancho peso (mm)" value={surfaceParameters.weight_width_discount_mm} onChange={(v) => setSurfaceParameters((prev) => ({ ...prev, weight_width_discount_mm: v }))} />
-          <ParamInput label="Límite angostas (kg)" value={surfaceParameters.legs_angostas_max_kg} onChange={(v) => setSurfaceParameters((prev) => ({ ...prev, legs_angostas_max_kg: v }))} />
-          <ParamInput label="Límite angostas sin revestir (kg)" value={surfaceParameters.no_cladding_angostas_max_kg} onChange={(v) => setSurfaceParameters((prev) => ({ ...prev, no_cladding_angostas_max_kg: v }))} />
-          <ParamInput label="Límite comunes (kg)" value={surfaceParameters.legs_comunes_max_kg} onChange={(v) => setSurfaceParameters((prev) => ({ ...prev, legs_comunes_max_kg: v }))} />
-          <ParamInput label="Límite anchas (kg)" value={surfaceParameters.legs_anchas_max_kg} onChange={(v) => setSurfaceParameters((prev) => ({ ...prev, legs_anchas_max_kg: v }))} />
-          <ParamInput label="Límite superanchas (kg)" value={surfaceParameters.legs_superanchas_max_kg} onChange={(v) => setSurfaceParameters((prev) => ({ ...prev, legs_superanchas_max_kg: v }))} />
-          <ParamInput label="Detrás del vano + alto (mm)" value={surfaceParameters.behind_vano_add_height_mm} onChange={(v) => setSurfaceParameters((prev) => ({ ...prev, behind_vano_add_height_mm: v }))} />
-          <ParamInput label="Dentro del vano - alto (mm)" value={surfaceParameters.inside_vano_subtract_height_mm} onChange={(v) => setSurfaceParameters((prev) => ({ ...prev, inside_vano_subtract_height_mm: v }))} />
-          <ParamInput label="Dentro del vano - ancho (mm)" value={surfaceParameters.inside_vano_subtract_width_mm} onChange={(v) => setSurfaceParameters((prev) => ({ ...prev, inside_vano_subtract_width_mm: v }))} />
-          <ParamInput label="Piernas angostas + ancho (mm)" value={surfaceParameters.legs_angostas_add_width_mm} onChange={(v) => setSurfaceParameters((prev) => ({ ...prev, legs_angostas_add_width_mm: v }))} />
-          <ParamInput label="Piernas comunes + ancho (mm)" value={surfaceParameters.legs_comunes_add_width_mm} onChange={(v) => setSurfaceParameters((prev) => ({ ...prev, legs_comunes_add_width_mm: v }))} />
-          <ParamInput label="Piernas anchas + ancho (mm)" value={surfaceParameters.legs_anchas_add_width_mm} onChange={(v) => setSurfaceParameters((prev) => ({ ...prev, legs_anchas_add_width_mm: v }))} />
-          <ParamInput label="Piernas superanchas + ancho (mm)" value={surfaceParameters.legs_superanchas_add_width_mm} onChange={(v) => setSurfaceParameters((prev) => ({ ...prev, legs_superanchas_add_width_mm: v }))} />
-          <ParamInput label="Piernas especiales + ancho (mm)" value={surfaceParameters.legs_especiales_add_width_mm} onChange={(v) => setSurfaceParameters((prev) => ({ ...prev, legs_especiales_add_width_mm: v }))} />
-          <ParamInput label="Ancho caño/parante para esquema (mm)" value={surfaceParameters.parantes_tube_discount_mm} onChange={(v) => setSurfaceParameters((prev) => ({ ...prev, parantes_tube_discount_mm: v }))} helper="Default 40 mm. Se usa para dibujar el ancho del parante en el esquema." />
+
+        <div className="spacer" />
+        <div style={{ border: "1px solid #f4e3c4", borderRadius: 12, padding: 12, background: "#fff" }}>
+          <div style={{ fontWeight: 900, marginBottom: 6 }}>Automatización del presupuesto</div>
+          <div className="muted" style={{ marginBottom: 10 }}>
+            Definí reglas para agregar productos automáticamente. En disparadores podés poner IDs separados por coma, espacio, punto y coma o salto de línea. Para exigir un grupo completo usá +, por ejemplo 4037+3996.
+          </div>
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+            <Button onClick={() => addAutoRule(setSurfaceParameters)}>+ Agregar automatización</Button>
+            <div style={{ minWidth: 260, flex: 1 }}>
+              <Input value={autoProductSearch} onChange={setAutoProductSearch} placeholder="Filtrar productos destino por ID o nombre..." style={{ width: "100%" }} />
+            </div>
+          </div>
+          <div className="spacer" />
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            {autoRules.map((rule, index) => (
+              <div key={rule.id || index} style={{ border: "1px solid #eee", borderRadius: 12, padding: 12, background: "#fff" }}>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 10, alignItems: "end" }}>
+                  <ParamInput label="Nombre" value={rule.name || ""} onChange={(v) => updateAutoRuleAt(setSurfaceParameters, index, { name: v })} />
+                  <ParamInput label="Si el presupuesto contiene estos IDs/combinaciones" textarea value={rule.trigger_product_ids || ""} onChange={(v) => updateAutoRuleAt(setSurfaceParameters, index, { trigger_product_ids: v })} helper="Ej: 4037,3996 o 4037+3996" />
+                  <div>
+                    <div className="muted" style={{ marginBottom: 6 }}>Agregar producto automáticamente</div>
+                    <select value={rule.target_product_id || ""} onChange={(e) => {
+                      const selectedValue = Number(e.target.value || 0) || "";
+                      const product = products.find((item) => productMatchesAnyId(item, selectedValue));
+                      updateAutoRuleAt(setSurfaceParameters, index, { target_product_id: selectedValue, target_product_label: product ? productLabel(product) : "" });
+                    }} style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid #ddd" }}>
+                      <option value="">Seleccione producto…</option>
+                      {targetProductOptions(productsForAutoRule(rule))}
+                    </select>
+                  </div>
+                  <div>
+                    <div className="muted" style={{ marginBottom: 6 }}>Cantidad</div>
+                    <select value={rule.quantity_mode || "unit"} onChange={(e) => updateAutoRuleAt(setSurfaceParameters, index, { quantity_mode: e.target.value })} style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid #ddd" }}>
+                      <option value="unit">1 unidad</option>
+                      <option value="surface">Superficie del portón</option>
+                    </select>
+                  </div>
+                  <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                    <input type="checkbox" checked={rule.only_apto_revestir !== false} onChange={(e) => updateAutoRuleAt(setSurfaceParameters, index, { only_apto_revestir: e.target.checked })} />
+                    <span className="muted">Sólo apto para revestir</span>
+                  </label>
+                  <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                    <input type="checkbox" checked={rule.active !== false} onChange={(e) => updateAutoRuleAt(setSurfaceParameters, index, { active: e.target.checked })} />
+                    <span className="muted">Activa</span>
+                  </label>
+                  <Button variant="ghost" onClick={() => removeAutoRuleAt(setSurfaceParameters, index)}>Eliminar</Button>
+                </div>
+              </div>
+            ))}
+            {!autoRules.length ? <div className="muted">Todavía no hay automatizaciones cargadas.</div> : null}
+          </div>
+        </div>
+
+        <div className="spacer" />
+        <div style={{ border: "1px solid #dbeafe", borderRadius: 12, padding: 12, background: "#fff" }}>
+          <div style={{ fontWeight: 900, marginBottom: 6 }}>Parámetros de cálculo de piernas, superficie y parantes</div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 10 }}>
+            <ParamInput label="ID producto Dentro del vano" value={surfaceParameters.installation_inside_product_id} onChange={(v) => setSurfaceParameters((prev) => ({ ...prev, installation_inside_product_id: v }))} />
+            <ParamInput label="ID producto Detrás del vano" value={surfaceParameters.installation_behind_product_id} onChange={(v) => setSurfaceParameters((prev) => ({ ...prev, installation_behind_product_id: v }))} />
+            <ParamInput label="ID producto Apto para revestir" value={surfaceParameters.no_cladding_product_id} onChange={(v) => setSurfaceParameters((prev) => ({ ...prev, no_cladding_product_id: v }))} />
+            <ParamInput label="Ruta entry kg/m² vendedor" value={surfaceParameters.seller_kg_m2_field_path} onChange={(v) => setSurfaceParameters((prev) => ({ ...prev, seller_kg_m2_field_path: v }))} />
+            <ParamInput label="kg/m² clásico" value={surfaceParameters.classic_kg_m2} onChange={(v) => setSurfaceParameters((prev) => ({ ...prev, classic_kg_m2: v }))} />
+            <ParamInput label="kg/m² inyectado" value={surfaceParameters.injected_kg_m2} onChange={(v) => setSurfaceParameters((prev) => ({ ...prev, injected_kg_m2: v }))} />
+            <ParamInput label="Descuento alto peso (mm)" value={surfaceParameters.weight_height_discount_mm} onChange={(v) => setSurfaceParameters((prev) => ({ ...prev, weight_height_discount_mm: v }))} />
+            <ParamInput label="Descuento ancho peso (mm)" value={surfaceParameters.weight_width_discount_mm} onChange={(v) => setSurfaceParameters((prev) => ({ ...prev, weight_width_discount_mm: v }))} />
+            <ParamInput label="Límite angostas (kg)" value={surfaceParameters.legs_angostas_max_kg} onChange={(v) => setSurfaceParameters((prev) => ({ ...prev, legs_angostas_max_kg: v }))} />
+            <ParamInput label="Límite angostas sin revestir (kg)" value={surfaceParameters.no_cladding_angostas_max_kg} onChange={(v) => setSurfaceParameters((prev) => ({ ...prev, no_cladding_angostas_max_kg: v }))} />
+            <ParamInput label="Límite comunes (kg)" value={surfaceParameters.legs_comunes_max_kg} onChange={(v) => setSurfaceParameters((prev) => ({ ...prev, legs_comunes_max_kg: v }))} />
+            <ParamInput label="Límite anchas (kg)" value={surfaceParameters.legs_anchas_max_kg} onChange={(v) => setSurfaceParameters((prev) => ({ ...prev, legs_anchas_max_kg: v }))} />
+            <ParamInput label="Límite superanchas (kg)" value={surfaceParameters.legs_superanchas_max_kg} onChange={(v) => setSurfaceParameters((prev) => ({ ...prev, legs_superanchas_max_kg: v }))} />
+            <ParamInput label="Ancho caño/parante para esquema (mm)" value={surfaceParameters.parantes_tube_discount_mm} onChange={(v) => setSurfaceParameters((prev) => ({ ...prev, parantes_tube_discount_mm: v }))} helper="Default 40 mm." />
+          </div>
         </div>
 
         <div className="spacer" />
         <div style={{ border: "1px solid #bbf7d0", borderRadius: 12, padding: 12, background: "#f7fff9" }}>
           <div style={{ fontWeight: 900, marginBottom: 6 }}>Medidas de paso y hoja</div>
-          <div className="muted" style={{ marginBottom: 10 }}>Estas reglas definen primero la medida de paso y despues la medida real de la hoja para el esquema y la distribucion de parantes.</div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 10 }}>
-            <ParamInput label="Paso: descuento alto total (mm)" value={surfaceParameters.paso_height_discount_mm} onChange={(v) => setSurfaceParameters((prev) => ({ ...prev, paso_height_discount_mm: v }))} helper="Default 110 mm. Alto de paso = alto del porton - este valor." />
+            <ParamInput label="Paso: descuento alto total (mm)" value={surfaceParameters.paso_height_discount_mm} onChange={(v) => setSurfaceParameters((prev) => ({ ...prev, paso_height_discount_mm: v }))} />
             <ParamInput label="Paso ancho - Piernas angostas (mm)" value={surfaceParameters.paso_width_discount_angostas_mm} onChange={(v) => setSurfaceParameters((prev) => ({ ...prev, paso_width_discount_angostas_mm: v }))} />
             <ParamInput label="Paso ancho - Piernas comunes (mm)" value={surfaceParameters.paso_width_discount_comunes_mm} onChange={(v) => setSurfaceParameters((prev) => ({ ...prev, paso_width_discount_comunes_mm: v }))} />
             <ParamInput label="Paso ancho - Piernas anchas (mm)" value={surfaceParameters.paso_width_discount_anchas_mm} onChange={(v) => setSurfaceParameters((prev) => ({ ...prev, paso_width_discount_anchas_mm: v }))} />
             <ParamInput label="Paso ancho - Piernas superanchas (mm)" value={surfaceParameters.paso_width_discount_superanchas_mm} onChange={(v) => setSurfaceParameters((prev) => ({ ...prev, paso_width_discount_superanchas_mm: v }))} />
             <ParamInput label="Paso ancho - Piernas especiales (mm)" value={surfaceParameters.paso_width_discount_especiales_mm} onChange={(v) => setSurfaceParameters((prev) => ({ ...prev, paso_width_discount_especiales_mm: v }))} />
-            <ParamInput label="Hoja: descuento alto desde paso (mm)" value={surfaceParameters.hoja_height_discount_mm} onChange={(v) => setSurfaceParameters((prev) => ({ ...prev, hoja_height_discount_mm: v }))} helper="Default 10 mm. Alto de hoja = alto de paso - este valor." />
-            <ParamInput label="IDs/combinaciones que indican rebaje lateral" textarea value={surfaceParameters.hoja_rebaje_lateral_product_ids} onChange={(v) => setSurfaceParameters((prev) => ({ ...prev, hoja_rebaje_lateral_product_ids: v }))} helper="Si matchea, el ancho de hoja resta el descuento de rebaje lateral. Acepta 3001,3002 o 3001+3002." />
-            <ParamInput label="Hoja: descuento ancho por rebaje lateral (mm)" value={surfaceParameters.hoja_lateral_rebaje_width_discount_mm} onChange={(v) => setSurfaceParameters((prev) => ({ ...prev, hoja_lateral_rebaje_width_discount_mm: v }))} helper="Default 5 mm total." />
-          </div>
-          <div className="spacer" />
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-            <Button variant="primary" onClick={saveSurfaceConfig} disabled={savingSurfaceConfig || savingRules}>
-              {savingSurfaceConfig ? "Guardando..." : "Guardar medidas de paso y hoja"}
-            </Button>
-            <Button variant="ghost" onClick={reloadSavedSurfaceConfig} disabled={savingSurfaceConfig || savingRules}>
-              Recargar guardados
-            </Button>
-            <span className="muted">{savedSurfaceStatus || "Sin datos guardados cargados"}</span>
+            <ParamInput label="Hoja: descuento alto desde paso (mm)" value={surfaceParameters.hoja_height_discount_mm} onChange={(v) => setSurfaceParameters((prev) => ({ ...prev, hoja_height_discount_mm: v }))} />
+            <ParamInput label="IDs/combinaciones que indican rebaje lateral" textarea value={surfaceParameters.hoja_rebaje_lateral_product_ids} onChange={(v) => setSurfaceParameters((prev) => ({ ...prev, hoja_rebaje_lateral_product_ids: v }))} />
+            <ParamInput label="Hoja: descuento ancho por rebaje lateral (mm)" value={surfaceParameters.hoja_lateral_rebaje_width_discount_mm} onChange={(v) => setSurfaceParameters((prev) => ({ ...prev, hoja_lateral_rebaje_width_discount_mm: v }))} />
           </div>
           <div className="spacer" />
           <div style={{ border: "1px solid #86efac", borderRadius: 12, padding: 12, background: "#ecfdf5" }}>
@@ -833,7 +625,6 @@ export default function SuperuserMeasurementRulesPage() {
               <SavedParamItem label="Paso ancho: superanchas (mm)" value={savedSurfaceParameters.paso_width_discount_superanchas_mm} />
               <SavedParamItem label="Paso ancho: especiales (mm)" value={savedSurfaceParameters.paso_width_discount_especiales_mm} />
               <SavedParamItem label="Hoja alto: descuento desde paso (mm)" value={savedSurfaceParameters.hoja_height_discount_mm} />
-              <SavedParamItem label="Hoja ancho: descuento rebaje lateral (mm)" value={savedSurfaceParameters.hoja_lateral_rebaje_width_discount_mm} />
               <SavedParamItem label="IDs rebaje lateral" value={savedSurfaceParameters.hoja_rebaje_lateral_product_ids} />
             </div>
           </div>
@@ -842,19 +633,15 @@ export default function SuperuserMeasurementRulesPage() {
         <div className="spacer" />
         <div style={{ border: "1px solid #dbeafe", borderRadius: 12, padding: 12, background: "#fff" }}>
           <div style={{ fontWeight: 900, marginBottom: 6 }}>Orientación de parantes para portones NO apto para revestir</div>
-          <div className="muted" style={{ marginBottom: 10 }}>Cargá IDs individuales separados con coma, punto, punto y coma o salto de línea. Para exigir una combinación, usá +. Ejemplos: <b>3025,3026</b> matchea cualquiera; <b>3591+3025</b> exige ambos.</div>
+          <div className="muted" style={{ marginBottom: 10 }}>Cargá IDs individuales separados con coma, punto, punto y coma o salto de línea. Para exigir una combinación, usá +.</div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 10 }}>
-            <ParamInput label="Vertical si contiene estos IDs/combinaciones" textarea value={surfaceParameters.non_apto_parantes_vertical_product_ids} onChange={(v) => setSurfaceParameters((prev) => ({ ...prev, non_apto_parantes_vertical_product_ids: v }))} helper="Matchea cualquiera de los IDs cargados. Para combinación obligatoria usá +." />
-            <ParamInput label="Horizontal si contiene estos IDs/combinaciones" textarea value={surfaceParameters.non_apto_parantes_horizontal_product_ids} onChange={(v) => setSurfaceParameters((prev) => ({ ...prev, non_apto_parantes_horizontal_product_ids: v }))} helper="Tiene prioridad sobre Vertical si ambas reglas matchean. Acepta 3025,3026 o 3591+3025." />
-            <ParamInput label="IDs/combinaciones que indican portón con puerta" textarea value={surfaceParameters.parantes_door_product_ids} onChange={(v) => setSurfaceParameters((prev) => ({ ...prev, parantes_door_product_ids: v }))} helper="Matchea cualquiera de los IDs de puerta. Cuando matchea, deja el primer parante a 800 mm y reparte el resto." />
-            <ParamInput label="IDs/combinaciones que indican puerta derecha" textarea value={surfaceParameters.parantes_right_door_product_ids} onChange={(v) => setSurfaceParameters((prev) => ({ ...prev, parantes_right_door_product_ids: v }))} helper="Si matchea y el portón tiene puerta, el esquema se muestra de derecha a izquierda." />
-            <ParamInput label="IDs/combinaciones que indican puerta izquierda" textarea value={surfaceParameters.parantes_left_door_product_ids} onChange={(v) => setSurfaceParameters((prev) => ({ ...prev, parantes_left_door_product_ids: v }))} helper="Si matchea y el portón tiene puerta, el esquema se muestra de izquierda a derecha." />
-            <ParamInput label="Distancia primer parante con puerta (mm)" value={surfaceParameters.parantes_door_first_distance_mm} onChange={(v) => setSurfaceParameters((prev) => ({ ...prev, parantes_door_first_distance_mm: v }))} helper="Default 800 mm. Se usa para fijar el parante de la puerta y el arranque del reparto." />
+            <ParamInput label="Vertical si contiene estos IDs/combinaciones" textarea value={surfaceParameters.non_apto_parantes_vertical_product_ids} onChange={(v) => setSurfaceParameters((prev) => ({ ...prev, non_apto_parantes_vertical_product_ids: v }))} />
+            <ParamInput label="Horizontal si contiene estos IDs/combinaciones" textarea value={surfaceParameters.non_apto_parantes_horizontal_product_ids} onChange={(v) => setSurfaceParameters((prev) => ({ ...prev, non_apto_parantes_horizontal_product_ids: v }))} />
+            <ParamInput label="IDs/combinaciones que indican portón con puerta" textarea value={surfaceParameters.parantes_door_product_ids} onChange={(v) => setSurfaceParameters((prev) => ({ ...prev, parantes_door_product_ids: v }))} />
+            <ParamInput label="IDs/combinaciones que indican puerta derecha" textarea value={surfaceParameters.parantes_right_door_product_ids} onChange={(v) => setSurfaceParameters((prev) => ({ ...prev, parantes_right_door_product_ids: v }))} />
+            <ParamInput label="IDs/combinaciones que indican puerta izquierda" textarea value={surfaceParameters.parantes_left_door_product_ids} onChange={(v) => setSurfaceParameters((prev) => ({ ...prev, parantes_left_door_product_ids: v }))} />
+            <ParamInput label="Distancia primer parante con puerta (mm)" value={surfaceParameters.parantes_door_first_distance_mm} onChange={(v) => setSurfaceParameters((prev) => ({ ...prev, parantes_door_first_distance_mm: v }))} />
           </div>
-          <div className="spacer" />
-          <Button variant="primary" onClick={saveSurfaceConfig} disabled={savingSurfaceConfig || savingRules}>
-            {savingSurfaceConfig ? "Guardando..." : "Guardar configuración de parantes"}
-          </Button>
         </div>
 
         <div className="spacer" />
@@ -867,6 +654,17 @@ export default function SuperuserMeasurementRulesPage() {
             <Button onClick={() => setSurfaceParameters((prev) => ({ ...prev, apto_revestir_kg_m2_rules: [...(prev?.apto_revestir_kg_m2_rules || []), newAptoKgRule((prev?.apto_revestir_kg_m2_rules || []).length + 1)] }))}>+ Agregar fila</Button>
           </div>
           <div className="spacer" />
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 10 }}>
+            <div>
+              <div className="muted" style={{ marginBottom: 6 }}>Filtrar productos por sección</div>
+              <select value={kgSectionFilter} onChange={(e) => setKgSectionFilter(e.target.value)} style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid #ddd" }}>
+                <option value="all">Todas las secciones</option>
+                {sections.map((section) => <option key={section.id} value={section.id}>{section.name}</option>)}
+              </select>
+            </div>
+            <ParamInput label="Buscar producto" value={kgProductSearch} onChange={setKgProductSearch} />
+          </div>
+          <div className="spacer" />
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             {aptoKgRules.map((rule, index) => (
               <div key={rule.id || index} style={{ display: "grid", gridTemplateColumns: "minmax(260px, 2fr) minmax(140px, 1fr) auto", gap: 10, alignItems: "end" }}>
@@ -877,7 +675,7 @@ export default function SuperuserMeasurementRulesPage() {
                     updateAptoKgRuleAt(setSurfaceParameters, index, { product_id: e.target.value ? Number(e.target.value) : "", product_label: product ? productLabel(product) : "" });
                   }} style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid #ddd" }}>
                     <option value="">Seleccione producto…</option>
-                    {productOptions(products)}
+                    {productOptions(productsForKgRule(rule))}
                   </select>
                 </div>
                 <ParamInput label="kg/m²" value={rule.kg_m2 ?? ""} onChange={(v) => updateAptoKgRuleAt(setSurfaceParameters, index, { kg_m2: v })} />
@@ -892,89 +690,11 @@ export default function SuperuserMeasurementRulesPage() {
         <h3 style={{ marginTop: 0 }}>Fórmula de superficie final</h3>
         <textarea value={surfaceFinalFormula} onChange={(e) => setSurfaceFinalFormula(e.target.value)} style={{ width: "100%", minHeight: 96, padding: 10, borderRadius: 10, border: "1px solid #ddd", resize: "vertical", background: "#fff", color: "#111827" }} />
         <div className="muted" style={{ marginTop: 8 }}>Variables útiles: <b>surface_automatica_m2</b>, <b>alto_calculado_mm</b>, <b>ancho_calculado_mm</b>, <b>peso_estimado_kg</b>, <b>kg_m2_porton</b>, <b>instalacion_dentro_vano</b>, <b>instalacion_detras_vano</b>, <b>piernas_angostas</b>, <b>piernas_comunes</b>, <b>piernas_anchas</b>, <b>piernas_superanchas</b>, <b>piernas_especiales</b>.</div>
-        <div className="spacer" />
-        <Button variant="primary" onClick={saveSurfaceConfig} disabled={savingSurfaceConfig || savingRules}>{savingSurfaceConfig ? "Guardando..." : "Guardar parámetros y fórmula"}</Button>
-      </div>
 
-      <div className="spacer" />
-      <div className="card">
-        <h2 style={{ marginTop: 0 }}>Reglas de dependencia y Odoo</h2>
-        <div className="muted">Estas reglas siguen funcionando para mostrar, ocultar, completar o restringir campos.</div>
         <div className="spacer" />
-        <div style={{ border: "1px solid #f4e3c4", borderRadius: 10, padding: 12, background: "#fff9ef", marginBottom: 12 }}>
-          <div style={{ fontWeight: 800, marginBottom: 6 }}>Precedencia</div>
-          <div className="muted">Primero se aplica la configuración base del campo y después las reglas activas.</div>
-          {conflictWarnings.length ? <div className="muted" style={{ marginTop: 10 }}>Posibles conflictos: {conflictWarnings.map((warning) => `${warning.label} (${warning.actions.join(" / ")}, ${warning.count} reglas)`).join(" · ")}</div> : null}
-        </div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <Button onClick={() => setRuleDraft((prev) => ({ rules: [...(prev.rules || []), newRule((prev.rules || []).length + 1)] }))}>+ Agregar regla</Button>
-          <Button variant="primary" disabled={savingRules} onClick={saveRules}>{savingRules ? "Guardando..." : "Guardar reglas"}</Button>
-        </div>
-        <div className="spacer" />
-        <div style={{ maxWidth: 520 }}><Input value={ruleSearch} onChange={setRuleSearch} placeholder="Buscar reglas por nombre, campo origen, destino o valor..." style={{ width: "100%" }} /></div>
-      </div>
-
-      <div className="spacer" />
-      <div className="card">
-        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-          {filteredRules.map((rule) => {
-            const index = rules.findIndex((candidate) => candidate === rule);
-            return (
-              <div key={rule.id || index} style={{ border: "1px solid #eee", borderRadius: 12, padding: 12 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center" }}>
-                  <div style={{ fontWeight: 800 }}>Regla #{index + 1}</div>
-                  <Button variant="ghost" onClick={() => removeRule(setRuleDraft, rule, index)}>Eliminar regla</Button>
-                </div>
-                <div className="spacer" />
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 10 }}>
-                  <ParamInput label="Nombre" value={rule.name || ""} onChange={(v) => updateRuleAt(setRuleDraft, index, { name: v })} />
-                  <div>
-                    <div className="muted" style={{ marginBottom: 6 }}>Campo origen</div>
-                    <select value={rule.source_key || ""} onChange={(e) => updateRuleAt(setRuleDraft, index, { source_key: e.target.value })} style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid #ddd" }}><option value="">Seleccione campo…</option>{ruleSourceOptions.map((item) => <option key={item.key} value={item.key}>{item.label}</option>)}</select>
-                  </div>
-                  <div>
-                    <div className="muted" style={{ marginBottom: 6 }}>Operador</div>
-                    <select value={rule.operator || "="} onChange={(e) => updateRuleAt(setRuleDraft, index, { operator: e.target.value })} style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid #ddd" }}>{TECHNICAL_RULE_OPERATORS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select>
-                  </div>
-                  <div>
-                    <div className="muted" style={{ marginBottom: 6 }}>Comparar contra</div>
-                    {String(rule.source_key || "") === "porton_type" ? (
-                      <select value={rule.compare_value ?? ""} onChange={(e) => updateRuleAt(setRuleDraft, index, { compare_value: e.target.value })} style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid #ddd" }}><option value="">Seleccione un sistema…</option>{portonTypeOptions.map((item) => <option key={item.key} value={item.key}>{item.label}</option>)}</select>
-                    ) : (
-                      <Input value={rule.compare_value ?? ""} onChange={(v) => updateRuleAt(setRuleDraft, index, { compare_value: v })} style={{ width: "100%" }} />
-                    )}
-                  </div>
-                </div>
-                <div className="spacer" />
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 10 }}>
-                  <div>
-                    <div className="muted" style={{ marginBottom: 6 }}>Acción</div>
-                    <select value={rule.action_type || "set_value"} onChange={(e) => updateRuleAt(setRuleDraft, index, { action_type: e.target.value })} style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid #ddd" }}>{TECHNICAL_RULE_ACTIONS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select>
-                  </div>
-                  <div>
-                    <div className="muted" style={{ marginBottom: 6 }}>Campo destino</div>
-                    <select value={rule.target_field || ""} onChange={(e) => updateRuleAt(setRuleDraft, index, { target_field: e.target.value })} style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid #ddd" }}><option value="">Seleccione campo…</option>{targetFieldOptions.map((item) => <option key={item.key} value={item.key}>{item.label}</option>)}</select>
-                  </div>
-                  <ParamInput label="Valor destino" value={rule.target_value ?? ""} onChange={(v) => updateRuleAt(setRuleDraft, index, { target_value: v })} />
-                  <ParamInput label="Opciones permitidas (coma)" value={rule.target_options_text ?? ""} onChange={(v) => updateRuleAt(setRuleDraft, index, { target_options_text: v })} />
-                </div>
-                <div className="spacer" />
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 10 }}>
-                  <label style={{ display: "flex", gap: 8, alignItems: "center" }}><input type="checkbox" checked={rule.apply_to_odoo === true} onChange={(e) => updateRuleAt(setRuleDraft, index, { apply_to_odoo: e.target.checked })} /><span className="muted">Pegarlo a Odoo</span></label>
-                  <div>
-                    <div className="muted" style={{ marginBottom: 6 }}>Producto Odoo</div>
-                    <select value={rule.product_id || ""} onChange={(e) => {
-                      const product = products.find((item) => Number(item.id) === Number(e.target.value));
-                      updateRuleAt(setRuleDraft, index, { product_id: e.target.value ? Number(e.target.value) : "", product_label: product ? productLabel(product) : "" });
-                    }} style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid #ddd" }}><option value="">(sin producto)</option>{productOptions(products)}</select>
-                  </div>
-                  <label style={{ display: "flex", gap: 8, alignItems: "center" }}><input type="checkbox" checked={rule.active !== false} onChange={(e) => updateRuleAt(setRuleDraft, index, { active: e.target.checked })} /><span className="muted">Regla activa</span></label>
-                </div>
-              </div>
-            );
-          })}
-          {!filteredRules.length && rules.length > 0 ? <div className="muted">No hay reglas que coincidan con la búsqueda.</div> : null}
-          {!rules.length ? <div className="muted">Todavía no hay reglas técnicas configuradas.</div> : null}
+          <Button variant="primary" onClick={saveSurfaceConfig} disabled={savingSurfaceConfig || rulesQ.isLoading}>{savingSurfaceConfig ? "Guardando..." : "Guardar configuración"}</Button>
+          <Button variant="ghost" onClick={reloadSavedSurfaceConfig} disabled={savingSurfaceConfig || rulesQ.isLoading}>Recargar guardados</Button>
         </div>
       </div>
     </div>
