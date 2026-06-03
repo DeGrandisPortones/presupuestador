@@ -78,6 +78,9 @@ function formatQty(value) {
 function getMarginPct(payload) {
   return n2(payload?.payload?.margin_percent_ui ?? payload?.margin_percent_ui ?? payload?.marginPercent ?? 0);
 }
+function isCondition2(payload) {
+  return safeStr(payload?.payload?.condition_mode ?? payload?.condition_mode).toLowerCase() === "cond2";
+}
 function getQuoteNumber(payload) {
   return safeStr(
     payload?.quote_number ??
@@ -240,7 +243,8 @@ async function readOdooNamesFlexible(odoo, rawLines = []) {
 
   return out;
 }
-async function buildLines(payload, { useBasePrice, odoo }) {
+async function buildLines(payload, { useBasePrice, odoo, displayNetPrices = false, taxRate = IVA_RATE }) {
+  const effectiveTaxRate = Number.isFinite(Number(taxRate)) ? Number(taxRate) : IVA_RATE;
   const coefPct = getMarginPct(payload);
   const coefFactor = 1 + coefPct / 100;
   const rawLines = Array.isArray(payload?.lines) ? payload.lines : [];
@@ -261,7 +265,7 @@ async function buildLines(payload, { useBasePrice, odoo }) {
       const qty = n2(l?.qty);
       const basePrice = n2(l?.base_price ?? l?.basePrice ?? l?.base_price_unit ?? l?.price_unit ?? l?.priceUnit ?? l?.price ?? 0);
       const unitNet = useBasePrice ? basePrice : basePrice * coefFactor;
-      const unit = unitNet * (1 + IVA_RATE);
+      const unit = displayNetPrices ? unitNet : unitNet * (1 + effectiveTaxRate);
       const totalNet = unitNet * qty;
       const total = unit * qty;
 
@@ -284,9 +288,9 @@ async function buildLines(payload, { useBasePrice, odoo }) {
     .filter((l) => l.qty > 0);
 
   const subtotalNet = lines.reduce((acc, l) => acc + l.totalNet, 0);
-  const ivaAmount = subtotalNet * IVA_RATE;
+  const ivaAmount = subtotalNet * effectiveTaxRate;
   const grandTotal = subtotalNet + ivaAmount;
-  return { lines, grandTotal, subtotalNet, ivaAmount, coefPct };
+  return { lines, grandTotal, subtotalNet, ivaAmount, coefPct, taxRate: effectiveTaxRate, displayNetPrices };
 }
 function drawPageFrame(doc, margin, pageNo, pageCount, footerLeft = "De Grandis Portones") {
   const w = doc.page.width;
@@ -393,7 +397,7 @@ function drawTermsAndConditionsPage(doc, { title, payload, margin, innerW, dateS
   }
 }
 
-async function renderPdf({ title, payload, useBasePrice, odoo, includeTerms = false, hideIvaBreakdown = false }) {
+async function renderPdf({ title, payload, useBasePrice, odoo, includeTerms = false, hideIvaBreakdown = false, displayNetPrices = false, taxRate = IVA_RATE }) {
   const doc = new PDFDocument({ size: "A4", margin: 0, bufferPages: true });
   const buffers = [];
   doc.on("data", buffers.push.bind(buffers));
@@ -410,7 +414,7 @@ async function renderPdf({ title, payload, useBasePrice, odoo, includeTerms = fa
   const paymentMethod = safeStr(payload?.payload?.payment_method ?? payload?.payment_method);
   const productionPlanningText = getProductionPlanningText(payload);
   const obs = stripSellerLines(safeStr(payload?.note));
-  const { lines, grandTotal, subtotalNet, ivaAmount } = await buildLines(payload, { useBasePrice, odoo });
+  const { lines, grandTotal, subtotalNet, ivaAmount, taxRate: effectiveTaxRate } = await buildLines(payload, { useBasePrice, odoo, displayNetPrices, taxRate });
 
   let y = drawHeader(doc, { title, payload, margin, innerW, dateStr, validStr });
   y = drawInfoTable(doc, payload, y, margin, innerW, useBasePrice);
@@ -443,8 +447,8 @@ async function renderPdf({ title, payload, useBasePrice, odoo, includeTerms = fa
     const headers = [
       [margin + 8, colDesc - 16, "DESCRIPCIÓN", "left"],
       [margin + colDesc + 8, colQty - 16, "CANT", "right"],
-      [margin + colDesc + colQty + 8, colUnit - 16, hideIvaBreakdown ? "PRECIO" : "PRECIO c/IVA", "right"],
-      [margin + colDesc + colQty + colUnit + 8, colTot - 16, hideIvaBreakdown ? "TOTAL" : "TOTAL c/IVA", "right"],
+      [margin + colDesc + colQty + 8, colUnit - 16, displayNetPrices ? "PRECIO s/IVA" : (hideIvaBreakdown ? "PRECIO" : "PRECIO c/IVA"), "right"],
+      [margin + colDesc + colQty + colUnit + 8, colTot - 16, displayNetPrices ? "TOTAL s/IVA" : (hideIvaBreakdown ? "TOTAL" : "TOTAL c/IVA"), "right"],
     ];
     doc.font("Helvetica-Bold").fontSize(10).fillColor("#111827");
     headers.forEach(([x, w, text, align]) => doc.text(text, x, tableY + 8, { width: w, align }));
@@ -482,7 +486,7 @@ async function renderPdf({ title, payload, useBasePrice, odoo, includeTerms = fa
     : [
         ["Subtotal s/IVA", subtotalNet, 28, false],
         ["IVA", ivaAmount, 28, false],
-        ["TOTAL (IVA incluido)", grandTotal, 36, true],
+        ["TOTAL", grandTotal, 36, true],
       ];
   for (const [label, amount, h, bold] of rows) {
     if (bold) doc.save().fillColor("#F3F4F6").rect(margin, tableY, innerW, h).fill().restore();
@@ -579,7 +583,14 @@ export function buildPdfRouter(odoo = null) {
     try {
       const rawPayload = req.body || {};
       const payload = { ...rawPayload, seller_name: resolveLoggedUserSellerName(req.user, rawPayload) };
-      const pdf = await renderPdf({ title: "PROFORMA", payload, useBasePrice: true, odoo });
+      const pdf = await renderPdf({
+        title: "PROFORMA",
+        payload,
+        useBasePrice: true,
+        odoo,
+        displayNetPrices: true,
+        taxRate: isCondition2(payload) ? 0.105 : IVA_RATE,
+      });
       res.setHeader("Content-Type", "application/pdf");
       res.setHeader("Content-Disposition", `attachment; filename="${buildDownloadFilename(payload, "proforma")}"`);
       res.send(pdf);

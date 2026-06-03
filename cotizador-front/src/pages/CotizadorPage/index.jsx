@@ -987,9 +987,10 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
       const { payload } = await persistDraftForPdf();
       validatePdfDownload(payload);
       const latestProductionPlanning = await getLatestProductionPlanning();
+      const proformaAdjustmentPercent = String(conditionMode || "").trim().toLowerCase() === "cond2" ? -10.5 : 0;
       const pdfPayload = buildPdfPayloadForDownload(
         payload,
-        0,
+        proformaAdjustmentPercent,
         latestProductionPlanning ? { production_planning: latestProductionPlanning } : {},
         { stripMarginPercent: true },
       );
