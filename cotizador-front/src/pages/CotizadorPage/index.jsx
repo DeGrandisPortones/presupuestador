@@ -989,7 +989,7 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
       const latestProductionPlanning = await getLatestProductionPlanning();
       const pdfPayload = buildPdfPayloadForDownload(
         payload,
-        quoteAdjustmentPercent,
+        0,
         latestProductionPlanning ? { production_planning: latestProductionPlanning } : {},
         { stripMarginPercent: true },
       );
