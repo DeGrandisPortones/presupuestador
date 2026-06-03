@@ -603,8 +603,14 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
       if (product?.id) possibleTargetProductIds.add(Number(product.id));
     }
 
+    const currentLineProductIds = new Set(
+      (Array.isArray(lines) ? lines : [])
+        .map((line) => Number(line?.product_id || 0))
+        .filter((id) => Number.isFinite(id) && id > 0),
+    );
+
     for (const productId of possibleTargetProductIds) {
-      if (!desiredProductIds.has(productId)) {
+      if (!desiredProductIds.has(productId) && currentLineProductIds.has(productId)) {
         forceRemoveLine(productId);
       }
     }
