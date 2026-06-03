@@ -116,6 +116,19 @@ async function ensureCatalogControls() {
     );
   `);
 
+  for (const table of [
+    "presupuestador_sections",
+    "presupuestador_tag_sections",
+    "presupuestador_product_aliases",
+    "presupuestador_type_sections",
+    "presupuestador_product_visibility",
+    "presupuestador_type_visibility",
+    "presupuestador_product_pdf_names",
+  ]) {
+    await dbQuery(`alter table public.${table} add column if not exists created_at timestamptz not null default now();`);
+    await dbQuery(`alter table public.${table} add column if not exists updated_at timestamptz not null default now();`);
+  }
+
   await dropCatalogKindChecks([
     "presupuestador_sections",
     "presupuestador_tag_sections",

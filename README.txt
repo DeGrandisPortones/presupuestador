@@ -1,32 +1,21 @@
-ZIP copiar y reemplazar - Automatizaciones en Reglas Técnicas
+ZIP directo para copiar y reemplazar.
 
-Archivos incluidos:
+Incluye:
 - cotizador-front/src/pages/SuperuserMeasurementRulesPage/index.jsx
 - cotizador-front/src/pages/CotizadorPage/components/SectionCatalog.jsx
+- cotizador-back/src/catalogDb.js
 
-Cambios:
-1) En Reglas Técnicas se oculta la sección de Campos dinámicos de medición.
-   No se borra configuración. Solo deja de mostrarse en pantalla.
+Notas:
+1) La ruta para guardar la automatización ya existe: PUT /api/admin/technical-measurement-rules?kind=porton.
+   La automatización se guarda dentro de public.presupuestador_settings, key='technical_measurement_rules', en surface_parameters.auto_budget_product_rules_json.
 
-2) Se agrega la sección "Automatización del presupuesto".
-   Permite cargar reglas del tipo:
-   - Si el presupuesto contiene tal ID o grupo de IDs
-   - Agregar tal producto automáticamente
-   - Cantidad: 1 unidad o superficie del portón
-   - Opción "Sólo apto para revestir"
-
-3) Los disparadores aceptan:
-   - IDs separados por coma, espacio, punto y coma o salto de línea.
-   - Grupos obligatorios con +. Ejemplo: 4037+3996 exige ambos productos.
-
-4) El producto destino se elige desde desplegable. El selector muestra ID Presupuestador e ID Odoo.
-
-5) En el cotizador de portones, cuando la regla matchea, se agrega el producto automático.
-   Si deja de matchear, se quita.
+2) El fix de backend agrega created_at/updated_at cuando esas columnas faltan en tablas existentes de catálogo.
+   Esto corrige el error: column "updated_at" of relation "presupuestador_sections" does not exist.
 
 Después de copiar:
-cd cotizador-front
-rm -rf dist node_modules/.vite
-npm run build
-
-Luego redeploy frontend sin cache y Ctrl+F5.
+- Reiniciar backend.
+- Recompilar frontend:
+  cd cotizador-front
+  rm -rf dist node_modules/.vite
+  npm run build
+- Redeploy sin cache y Ctrl+F5.
