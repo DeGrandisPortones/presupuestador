@@ -281,6 +281,10 @@ function buildPortonSearchText(quote = {}) {
     c?.city,
   ].filter(Boolean).join(" "));
 }
+function isPortonQuoteForLink(quote = {}) {
+  const rawKind = String(quote?.catalog_kind ?? "").trim().toLowerCase();
+  return !rawKind || rawKind === "porton";
+}
 function buildLinkedPortonPayload(linkedPorton, linkedPortonId) {
   if (!linkedPortonId) return null;
   const reference = linkedPortonReferenceLabel(linkedPorton);
@@ -429,12 +433,14 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
 
   const quoteQ = useQuery({ queryKey: ["quote", idParam], queryFn: () => getQuote(idParam), enabled: !!idParam });
   const portonQuotesQ = useQuery({
-    queryKey: ["quotes", "mine", "portones-for-link", normalizedCatalogKind],
+    queryKey: ["quotes", "mine", "portones-for-link", user?.user_id || user?.id || "current"],
     queryFn: () => listQuotes({ scope: "mine" }),
     enabled: canLinkToPorton && !!user,
-    staleTime: 60 * 1000,
+    staleTime: 0,
+    refetchOnMount: "always",
+    refetchOnWindowFocus: true,
   });
-  const portonQuotes = useMemo(() => (portonQuotesQ.data || []).filter((q) => normalizeCatalogKind(q?.catalog_kind || "porton") === "porton"), [portonQuotesQ.data]);
+  const portonQuotes = useMemo(() => (portonQuotesQ.data || []).filter(isPortonQuoteForLink), [portonQuotesQ.data]);
   const filteredPortonQuotes = useMemo(() => {
     const needle = normalizeSearchText(portonSearch);
     if (!needle) return portonQuotes;

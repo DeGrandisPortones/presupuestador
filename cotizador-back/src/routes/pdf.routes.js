@@ -51,9 +51,7 @@ function getLogoPath(payload = null) {
 }
 function getLogoDrawOptions(payload = null) {
   const catalogKind = getCatalogKindFromPayload(payload);
-  if (catalogKind === "ipanel") {
-    return { fit: [142, 48], align: "left", valign: "center" };
-  }
+  if (catalogKind === "ipanel") return { fit: [142, 48], align: "left", valign: "center" };
   return { width: 180, height: 48, fit: [180, 48] };
 }
 function getPdfFooterLeft(payload = null, fallback = "De Grandis Portones") {
@@ -279,17 +277,9 @@ async function buildLines(payload, { useBasePrice, odoo }) {
       const payloadName = safeStr(l?.name || l?.raw_name);
       const resolvedName = overrideName || liveTemplateName || liveVariantName || payloadName;
 
-      if (!resolvedName) {
-        throw new Error(`No se pudo resolver el nombre para la línea ${productId || variantId || "sin id"}.`);
-      }
+      if (!resolvedName) throw new Error(`No se pudo resolver el nombre para la línea ${productId || variantId || "sin id"}.`);
 
-      return {
-        qty,
-        name: resolvedName,
-        unit,
-        total,
-        totalNet,
-      };
+      return { qty, name: resolvedName, unit, total, totalNet };
     })
     .filter((l) => l.qty > 0);
 
@@ -312,9 +302,7 @@ function drawHeader(doc, { title, payload, margin, innerW, dateStr, validStr }) 
   const headerH = 64;
   const quoteNo = getQuoteNumber(payload);
   doc.save().strokeColor("#111827").lineWidth(1).moveTo(margin, margin + headerH).lineTo(margin + innerW, margin + headerH).stroke().restore();
-  if (fs.existsSync(logoPath)) {
-    doc.image(logoPath, margin + 8, margin + 8, getLogoDrawOptions(payload));
-  }
+  if (fs.existsSync(logoPath)) doc.image(logoPath, margin + 8, margin + 8, getLogoDrawOptions(payload));
   doc.font("Helvetica-Bold").fillColor("#111827").fontSize(16).text(title, margin, margin + 18, { width: innerW, align: "center" });
   doc.font("Helvetica-Bold").fontSize(11).text(`NÚMERO ${quoteNo || "-"}`, margin, margin + 16, { width: innerW - 10, align: "right" });
 
@@ -405,7 +393,7 @@ function drawTermsAndConditionsPage(doc, { title, payload, margin, innerW, dateS
   }
 }
 
-async function renderPdf({ title, payload, useBasePrice, odoo, includeTerms = false }) {
+async function renderPdf({ title, payload, useBasePrice, odoo, includeTerms = false, hideIvaBreakdown = false }) {
   const doc = new PDFDocument({ size: "A4", margin: 0, bufferPages: true });
   const buffers = [];
   doc.on("data", buffers.push.bind(buffers));
@@ -455,8 +443,8 @@ async function renderPdf({ title, payload, useBasePrice, odoo, includeTerms = fa
     const headers = [
       [margin + 8, colDesc - 16, "DESCRIPCIÓN", "left"],
       [margin + colDesc + 8, colQty - 16, "CANT", "right"],
-      [margin + colDesc + colQty + 8, colUnit - 16, "PRECIO c/IVA", "right"],
-      [margin + colDesc + colQty + colUnit + 8, colTot - 16, "TOTAL c/IVA", "right"],
+      [margin + colDesc + colQty + 8, colUnit - 16, hideIvaBreakdown ? "PRECIO" : "PRECIO c/IVA", "right"],
+      [margin + colDesc + colQty + colUnit + 8, colTot - 16, hideIvaBreakdown ? "TOTAL" : "TOTAL c/IVA", "right"],
     ];
     doc.font("Helvetica-Bold").fontSize(10).fillColor("#111827");
     headers.forEach(([x, w, text, align]) => doc.text(text, x, tableY + 8, { width: w, align }));
@@ -486,14 +474,16 @@ async function renderPdf({ title, payload, useBasePrice, odoo, includeTerms = fa
     tableY += rowH;
   }
 
-  ensureSpace(100);
+  ensureSpace(hideIvaBreakdown ? 48 : 100);
   const summaryX = margin + innerW * 0.68;
   const summaryW = innerW * 0.32;
-  const rows = [
-    ["Subtotal s/IVA", subtotalNet, 28, false],
-    ["IVA", ivaAmount, 28, false],
-    ["TOTAL (IVA incluido)", grandTotal, 36, true],
-  ];
+  const rows = hideIvaBreakdown
+    ? [["TOTAL", grandTotal, 36, true]]
+    : [
+        ["Subtotal s/IVA", subtotalNet, 28, false],
+        ["IVA", ivaAmount, 28, false],
+        ["TOTAL (IVA incluido)", grandTotal, 36, true],
+      ];
   for (const [label, amount, h, bold] of rows) {
     if (bold) doc.save().fillColor("#F3F4F6").rect(margin, tableY, innerW, h).fill().restore();
     doc.save().strokeColor("#D1D5DB").rect(margin, tableY, innerW, h).stroke().restore();
@@ -503,9 +493,7 @@ async function renderPdf({ title, payload, useBasePrice, odoo, includeTerms = fa
     tableY += h;
   }
 
-  if (includeTerms) {
-    drawTermsAndConditionsPage(doc, { title, payload, margin, innerW, dateStr, validStr });
-  }
+  if (includeTerms) drawTermsAndConditionsPage(doc, { title, payload, margin, innerW, dateStr, validStr });
 
   const range = doc.bufferedPageRange();
   for (let i = range.start; i < range.start + range.count; i += 1) {
@@ -579,11 +567,8 @@ export function buildPdfRouter(odoo = null) {
   router.post("/presupuesto", requireAuth, async (req, res, next) => {
     try {
       const rawPayload = req.body || {};
-      const payload = {
-        ...rawPayload,
-        seller_name: resolveLoggedUserSellerName(req.user, rawPayload),
-      };
-      const pdf = await renderPdf({ title: "PRESUPUESTO", payload, useBasePrice: false, odoo, includeTerms: true });
+      const payload = { ...rawPayload, seller_name: resolveLoggedUserSellerName(req.user, rawPayload) };
+      const pdf = await renderPdf({ title: "PRESUPUESTO", payload, useBasePrice: false, odoo, includeTerms: true, hideIvaBreakdown: true });
       res.setHeader("Content-Type", "application/pdf");
       res.setHeader("Content-Disposition", `attachment; filename="${buildDownloadFilename(payload, "presupuesto")}"`);
       res.send(pdf);
@@ -593,10 +578,7 @@ export function buildPdfRouter(odoo = null) {
   router.post("/proforma", requireAuth, async (req, res, next) => {
     try {
       const rawPayload = req.body || {};
-      const payload = {
-        ...rawPayload,
-        seller_name: resolveLoggedUserSellerName(req.user, rawPayload),
-      };
+      const payload = { ...rawPayload, seller_name: resolveLoggedUserSellerName(req.user, rawPayload) };
       const pdf = await renderPdf({ title: "PROFORMA", payload, useBasePrice: true, odoo });
       res.setHeader("Content-Type", "application/pdf");
       res.setHeader("Content-Disposition", `attachment; filename="${buildDownloadFilename(payload, "proforma")}"`);

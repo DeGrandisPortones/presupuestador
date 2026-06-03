@@ -1,27 +1,33 @@
-FIX LISTA PREDETERMINADA PARA VENDEDORES / ENC. COMERCIAL
+ZIP: PDF sin IVA discriminado + selector Ipanel
 
 Copiar y reemplazar estos archivos:
 
-- cotizador-back/src/routes/quotes.routes.js
-- cotizador-back/src/routes/odoo.routes.js
+- cotizador-back/src/routes/pdf.routes.js
+- cotizador-front/src/pages/CotizadorPage/index.jsx
 
-Que cambia:
+Cambios:
 
-1) Usuarios NO distribuidores:
-   - Siempre usan Lista Predeterminada ID 1.
-   - Aplica al consultar precios desde el presupuestador.
-   - Aplica al guardar/actualizar presupuestos.
-   - Aplica al crear NP/NV en Odoo.
-   - Aplica a Portones, Ipanels, Puertas y Otros.
+1) PDF Presupuesto cliente
+- Ya no muestra Subtotal s/IVA.
+- Ya no muestra IVA.
+- Ya no muestra textos c/IVA ni IVA incluido.
+- Sigue usando el mismo importe final, con IVA incluido en el precio, pero sin discriminarlo.
+- La Proforma queda igual que antes.
 
-2) Usuarios distribuidores:
-   - Siguen usando su lista asignada.
-   - No se modifica la logica de listas de distribuidores.
-
-3) /api/odoo/pricelists ahora devuelve las listas ordenadas por ID ascendente,
-   para que la Predeterminada ID 1 quede primero.
+2) Ipanel vinculado a porton
+- Fuerza recarga del listado de portones disponibles al entrar.
+- Evita quedar con cache vacia en /cotizador/ipanel.
+- Trata catalog_kind vacio/null como porton para que aparezcan presupuestos viejos.
+- El selector sigue buscando por presupuesto, NP, NV, cliente, telefono o localidad.
 
 Despues de copiar:
+
+Backend:
 - Reiniciar backend.
-- Recompilar/redeployar frontend solo si lo tenes cacheado, aunque el cambio principal esta en backend.
-- Refrescar navegador con Ctrl+F5.
+
+Frontend:
+cd cotizador-front
+rm -rf dist node_modules/.vite
+npm run build
+
+Luego redeploy sin cache y Ctrl+F5.
