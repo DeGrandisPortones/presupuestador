@@ -1,33 +1,20 @@
-ZIP: PDF sin IVA discriminado + selector Ipanel
+ZIP copiar y reemplazar - Ipanel medidas extendidas solo en lamas
 
-Copiar y reemplazar estos archivos:
-
-- cotizador-back/src/routes/pdf.routes.js
+Archivo incluido:
 - cotizador-front/src/pages/CotizadorPage/index.jsx
 
 Cambios:
-
-1) PDF Presupuesto cliente
-- Ya no muestra Subtotal s/IVA.
-- Ya no muestra IVA.
-- Ya no muestra textos c/IVA ni IVA incluido.
-- Sigue usando el mismo importe final, con IVA incluido en el precio, pero sin discriminarlo.
-- La Proforma queda igual que antes.
-
-2) Ipanel vinculado a porton
-- Fuerza recarga del listado de portones disponibles al entrar.
-- Evita quedar con cache vacia en /cotizador/ipanel.
-- Trata catalog_kind vacio/null como porton para que aparezcan presupuestos viejos.
-- El selector sigue buscando por presupuesto, NP, NV, cliente, telefono o localidad.
+- Para Ipanels, el limite normal sigue siendo ancho 1.13 m y alto 2.45 m.
+- Si las medidas superan ese limite normal pero no superan ancho 2.00 m y alto 3.00 m, se permite solamente con Tipo de plegado: Revestimiento en lamas.
+- Al detectar ese rango extendido, muestra un alert indicando que solo se puede producir en lamas.
+- En el bloque Tipo de plegado, oculta Panel simple y Revestimiento Varillado, dejando solo Revestimiento en lamas.
+- Si ya estaba elegido Panel simple o Varillado, lo quita del presupuesto para evitar combinaciones invalidas.
+- Si se intenta guardar/confirmar/descargar sin Revestimiento en lamas dentro del rango extendido, muestra error y no continua.
+- Si supera ancho 2.00 m o alto 3.00 m, sigue bloqueando por fuera de limite.
 
 Despues de copiar:
-
-Backend:
-- Reiniciar backend.
-
-Frontend:
 cd cotizador-front
 rm -rf dist node_modules/.vite
 npm run build
 
-Luego redeploy sin cache y Ctrl+F5.
+Luego redeployar frontend sin cache y refrescar con Ctrl+F5.

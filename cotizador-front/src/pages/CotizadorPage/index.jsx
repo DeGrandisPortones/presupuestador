@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useParams, useLocation } from "react-router-dom";
 import { useAuthStore } from "../../domain/auth/store.js";
@@ -36,6 +36,11 @@ const HEIGHT_MIN_M = 2;
 const HEIGHT_MAX_M = 3;
 const IPANEL_WIDTH_MAX_M = 1.13;
 const IPANEL_HEIGHT_MAX_M = 2.45;
+const IPANEL_LAMAS_WIDTH_MAX_M = 2;
+const IPANEL_LAMAS_HEIGHT_MAX_M = 3;
+const IPANEL_LAMAS_PRODUCT_ID = 3974;
+const IPANEL_LAMAS_ODOO_ID = 3503;
+const IPANEL_NON_LAMAS_PLEGADO_PRODUCT_IDS = [4036, 3973];
 const REBAJE_AUTO_PRODUCT_ID = 2903;
 const REBAJE_AUTO_PRODUCT_NAME = "PLANCHUELA LATERAL E INFERIOR DE 40MM (Apto aluminio - Otros)";
 const REBAJE_AUTO_PRODUCT_BASE_PRICE = 400;
@@ -51,6 +56,64 @@ function parseOptionalDimensionForUiPatch(value) {
   if (!raw) return null;
   const n = Number(raw);
   return Number.isFinite(n) ? n : null;
+}
+function normalizeUiText(value) {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim();
+}
+function lineMatchesAnyProductId(line, productIds = []) {
+  const ids = new Set((Array.isArray(productIds) ? productIds : []).map((item) => Number(item)).filter((item) => Number.isFinite(item) && item > 0));
+  if (!ids.size || !line) return false;
+  const candidates = [
+    line?.product_id,
+    line?.id,
+    line?.odoo_id,
+    line?.odoo_template_id,
+    line?.odoo_variant_id,
+    line?.odoo_external_id,
+    line?.odoo_product_id,
+  ];
+  return candidates.some((value) => ids.has(Number(value || 0)));
+}
+function hasIpanelLamasProduct(payload) {
+  return (Array.isArray(payload?.lines) ? payload.lines : []).some((line) => lineMatchesAnyProductId(line, [IPANEL_LAMAS_PRODUCT_ID, IPANEL_LAMAS_ODOO_ID]));
+}
+function isIpanelExtendedLamasDimensions(dimensions = {}) {
+  const width = parseNum(dimensions?.width);
+  const height = parseNum(dimensions?.height);
+  if (!(width > 0) || !(height > 0)) return false;
+  const exceedsNormalLimit = width > IPANEL_WIDTH_MAX_M || height > IPANEL_HEIGHT_MAX_M;
+  const withinLamasLimit = width <= IPANEL_LAMAS_WIDTH_MAX_M && height <= IPANEL_LAMAS_HEIGHT_MAX_M;
+  return exceedsNormalLimit && withinLamasLimit;
+}
+function patchIpanelLamasOnlyUi(enabled) {
+  if (typeof document === "undefined") return;
+  const accordionItems = Array.from(document.querySelectorAll(".dg-acc-item"));
+  for (const item of accordionItems) {
+    const title = normalizeUiText(item.querySelector(".dg-acc-title")?.textContent);
+    if (title !== "tipo de plegado") continue;
+
+    const cards = Array.from(item.querySelectorAll(".dg-product-card"));
+    for (const card of cards) {
+      const text = String(card.textContent || "");
+      const normalized = normalizeUiText(text);
+      const isLamas = /ID Presupuestador:\s*3974\b/i.test(text) || /ID Odoo:\s*3503\b/i.test(text) || normalized.includes("revestimiento en lamas");
+      card.style.display = enabled && !isLamas ? "none" : "";
+    }
+
+    const meta = item.querySelector(".dg-acc-meta");
+    if (meta) {
+      if (enabled) {
+        const selectedPart = String(meta.textContent || "Sin selección").split("·")[0].trim() || "Sin selección";
+        meta.textContent = `${selectedPart} · 1`;
+      } else {
+        meta.textContent = meta.textContent;
+      }
+    }
+  }
 }
 function getAssignedPricelistIdFromUser(user) {
   const n = Number(user?.odoo_pricelist_id || 0);
@@ -156,6 +219,53 @@ function patchPortonDimensionValidationUi(dimensions) {
     inputs[1].style.background = "#fff";
   }
 }
+function patchIpanelDimensionValidationUi(dimensions) {
+  if (typeof document === "undefined") return;
+  const title = Array.from(document.querySelectorAll("div")).find((node) => node.textContent?.trim() === "Medidas del Ipanel");
+  const root = title?.parentElement || null;
+  if (!root) return;
+
+  const width = parseOptionalDimensionForUiPatch(dimensions?.width);
+  const height = parseOptionalDimensionForUiPatch(dimensions?.height);
+  const widthOk = width === null || width <= IPANEL_LAMAS_WIDTH_MAX_M;
+  const heightOk = height === null || height <= IPANEL_LAMAS_HEIGHT_MAX_M;
+  const mustUseLamas = isIpanelExtendedLamasDimensions(dimensions);
+  const allOk = widthOk && heightOk;
+
+  const helperNodes = Array.from(root.querySelectorAll("*"));
+  for (const node of helperNodes) {
+    const text = String(node.textContent || "").trim();
+    if (/^Maximo\s+1\.13\s*m/i.test(text)) {
+      node.textContent = mustUseLamas ? "Máximo 2.00 m sólo en Revestimiento en lamas" : "Máximo 1.13 m (113 cm). En lamas hasta 2.00 m";
+      if (widthOk) node.style.color = "#6b7280";
+    }
+    if (/^Maximo\s+2\.45\s*m/i.test(text)) {
+      node.textContent = mustUseLamas ? "Máximo 3.00 m sólo en Revestimiento en lamas" : "Máximo 2.45 m (245 cm). En lamas hasta 3.00 m";
+      if (heightOk) node.style.color = "#6b7280";
+    }
+  }
+
+  const banner = Array.from(root.querySelectorAll("div")).find((node) => node.textContent?.trim() === "Se encuentra fuera de los limites de tamano.");
+  if (allOk) {
+    root.style.border = "1px solid transparent";
+    root.style.background = "transparent";
+    if (banner) banner.style.display = "none";
+  } else if (banner) {
+    banner.style.display = "";
+  }
+
+  const inputs = Array.from(root.querySelectorAll("input"));
+  if (widthOk && inputs[0]) {
+    inputs[0].style.borderColor = "#d1d5db";
+    inputs[0].style.boxShadow = "none";
+    inputs[0].style.background = "#fff";
+  }
+  if (heightOk && inputs[1]) {
+    inputs[1].style.borderColor = "#d1d5db";
+    inputs[1].style.boxShadow = "none";
+    inputs[1].style.background = "#fff";
+  }
+}
 function formatMetric(v) { const n = Number(v || 0); return Number.isFinite(n) && n > 0 ? String(n).replace(/\.00$/, "") : ""; }
 function buildPortonMetricsText(payload) {
   const dims = payload?.payload?.dimensions || payload?.dimensions || {};
@@ -234,8 +344,18 @@ function validateDimensionsRequired(payload, kind = "porton") {
   }
 
   if (normalizedKind === "ipanel") {
-    if (width > IPANEL_WIDTH_MAX_M) throw new Error("El ancho del Ipanel no puede superar 1.13 m (113 cm).");
-    if (height > IPANEL_HEIGHT_MAX_M) throw new Error("El alto del Ipanel no puede superar 2.45 m (245 cm).");
+    if (width > IPANEL_LAMAS_WIDTH_MAX_M) throw new Error("El ancho del Ipanel no puede superar 2.00 m. Entre 1.13 m y 2.00 m sólo se puede producir en lamas.");
+    if (height > IPANEL_LAMAS_HEIGHT_MAX_M) throw new Error("El alto del Ipanel no puede superar 3.00 m. Entre 2.45 m y 3.00 m sólo se puede producir en lamas.");
+
+    if (isIpanelExtendedLamasDimensions(dims)) {
+      if (!hasIpanelLamasProduct(payload)) {
+        throw new Error("Las medidas ingresadas sólo son posibles en Revestimiento en lamas. En Tipo de plegado elegí Revestimiento en lamas.");
+      }
+      return;
+    }
+
+    if (width > IPANEL_WIDTH_MAX_M) throw new Error("El ancho del Ipanel no puede superar 1.13 m (113 cm), salvo en Revestimiento en lamas hasta 2.00 m.");
+    if (height > IPANEL_HEIGHT_MAX_M) throw new Error("El alto del Ipanel no puede superar 2.45 m (245 cm), salvo en Revestimiento en lamas hasta 3.00 m.");
   }
 }
 function formatVisibleStatus(rawStatus, hasPersistedQuote) {
@@ -403,6 +523,7 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
   } = useQuoteStore();
   const [ivaRate] = useState(IVA_RATE_DEFAULT);
   const [confirmChoiceOpen, setConfirmChoiceOpen] = useState(false);
+  const ipanelLamasAlertShownRef = useRef(false);
   const [linkedPortonId, setLinkedPortonId] = useState("");
   const [portonSearch, setPortonSearch] = useState("");
 
@@ -531,6 +652,38 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
     const timer = window.setTimeout(() => patchPortonDimensionValidationUi(dimensions), 0);
     return () => window.clearTimeout(timer);
   }, [normalizedCatalogKind, dimensions?.width, dimensions?.height]);
+
+  useEffect(() => {
+    if (normalizedCatalogKind !== "ipanel") {
+      ipanelLamasAlertShownRef.current = false;
+      patchIpanelLamasOnlyUi(false);
+      return undefined;
+    }
+
+    const mustUseLamas = isIpanelExtendedLamasDimensions(dimensions);
+    if (mustUseLamas) {
+      const currentLines = useQuoteStore.getState().lines || [];
+      const nextLines = currentLines.filter((line) => !lineMatchesAnyProductId(line, IPANEL_NON_LAMAS_PLEGADO_PRODUCT_IDS));
+      if (nextLines.length !== currentLines.length) {
+        useQuoteStore.setState({ lines: nextLines });
+      }
+
+      if (!ipanelLamasAlertShownRef.current) {
+        window.alert("Las medidas ingresadas sólo es posible producirlas en lamas. En Tipo de plegado sólo quedará disponible Revestimiento en lamas.");
+        ipanelLamasAlertShownRef.current = true;
+      }
+    } else {
+      ipanelLamasAlertShownRef.current = false;
+    }
+
+    patchIpanelDimensionValidationUi(dimensions);
+    patchIpanelLamasOnlyUi(mustUseLamas);
+    const timer = window.setTimeout(() => {
+      patchIpanelDimensionValidationUi(dimensions);
+      patchIpanelLamasOnlyUi(mustUseLamas);
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [normalizedCatalogKind, dimensions?.width, dimensions?.height, lines]);
 
   useEffect(() => {
     if (normalizedCatalogKind !== "otros") return;
