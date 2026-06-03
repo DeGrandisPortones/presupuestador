@@ -3,6 +3,7 @@ import { Outlet, useNavigate, NavLink } from "react-router-dom";
 import Button from "../ui/Button.jsx";
 import { useAuthStore } from "../domain/auth/store.js";
 import { getTechnicalConsultUnreadSummary } from "../api/technicalConsults.js";
+import AptoKgProductSectionFilterPatch from "../components/AptoKgProductSectionFilterPatch.jsx";
 
 function OdooStatusBadge() {
   const odooStatus = useAuthStore((s) => s.odooStatus);
@@ -174,6 +175,7 @@ export default function AppLayout() {
         </div>
       </div>
 
+      <AptoKgProductSectionFilterPatch />
       <Outlet />
     </div>
   );

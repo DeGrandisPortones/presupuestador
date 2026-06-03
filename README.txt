@@ -1,20 +1,18 @@
-ZIP copiar y reemplazar - Ipanel medidas extendidas solo en lamas
+ZIP copiar y reemplazar - Filtro de seccion para kg/m2 apto para revestir
 
-Archivo incluido:
-- cotizador-front/src/pages/CotizadorPage/index.jsx
+Archivos incluidos:
+- cotizador-front/src/layouts/AppLayout.jsx
+- cotizador-front/src/components/AptoKgProductSectionFilterPatch.jsx
 
-Cambios:
-- Para Ipanels, el limite normal sigue siendo ancho 1.13 m y alto 2.45 m.
-- Si las medidas superan ese limite normal pero no superan ancho 2.00 m y alto 3.00 m, se permite solamente con Tipo de plegado: Revestimiento en lamas.
-- Al detectar ese rango extendido, muestra un alert indicando que solo se puede producir en lamas.
-- En el bloque Tipo de plegado, oculta Panel simple y Revestimiento Varillado, dejando solo Revestimiento en lamas.
-- Si ya estaba elegido Panel simple o Varillado, lo quita del presupuesto para evitar combinaciones invalidas.
-- Si se intenta guardar/confirmar/descargar sin Revestimiento en lamas dentro del rango extendido, muestra error y no continua.
-- Si supera ancho 2.00 m o alto 3.00 m, sigue bloqueando por fuera de limite.
+Que hace:
+- Agrega en /dashboard/reglas-tecnicas un filtro de seccion para la tabla "kg/m2 para apto para revestir".
+- El filtro no cambia como se guarda la configuracion.
+- Solo filtra visualmente los productos de los desplegables de esa tabla.
+- Si una fila ya tenia un producto seleccionado fuera de la seccion filtrada, lo conserva visible para no perder la seleccion.
 
 Despues de copiar:
 cd cotizador-front
 rm -rf dist node_modules/.vite
 npm run build
 
-Luego redeployar frontend sin cache y refrescar con Ctrl+F5.
+Luego redeploy frontend sin cache y Ctrl+F5.
