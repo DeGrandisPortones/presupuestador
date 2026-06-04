@@ -9,7 +9,7 @@ import { listDoorsByQuote } from "../../api/doors.js";
 import { downloadMedicionPdf } from "../../api/pdf.js";
 import { getBillingOptions, getFinancingPreview } from "../../api/odoo.js";
 import { useAuthStore } from "../../domain/auth/store.js";
-import { formatARS, calcTotals } from "../../domain/quote/pricing.js";
+import { formatARS, calcTotals, calcFinalUnitPrice, calcLineTotal } from "../../domain/quote/pricing.js";
 import MeasurementReadOnlyView from "../../components/MeasurementReadOnlyView.jsx";
 
 function quoteEditorPath(quote) {
@@ -616,6 +616,22 @@ function getQuoteCommercialTotalsForApproval(quote, conditionMode, financingPerc
   );
 }
 
+function buildApprovalLineRows(lines, marginPercent, financingPercent = 0, conditionMode = "cond1") {
+  return (Array.isArray(lines) ? lines : []).map((line, idx) => {
+    const qty = Number(line?.qty || 0) || 0;
+    const basePrice = Number(line?.basePrice ?? line?.base_price ?? line?.price ?? 0) || 0;
+    const finalUnit = calcFinalUnitPrice(basePrice, marginPercent, Number(financingPercent || 0) || 0, conditionMode);
+    const total = calcLineTotal(qty, finalUnit);
+    return {
+      ...line,
+      _approvalKey: `${line?.product_id || "line"}-${idx}`,
+      _approvalQty: qty,
+      _approvalFinalUnit: finalUnit,
+      _approvalTotal: total,
+    };
+  });
+}
+
 function formatIvaRateForApproval(rate) {
   const n = Number(rate || 0) * 100;
   return `${n.toLocaleString("es-AR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`;
@@ -835,6 +851,7 @@ export default function QuoteDetailPage() {
   const techM = useMutation({ mutationFn: ({ action }) => reviewTechnical(quoteId, { action, notes }), onSuccess: () => navigate(approvalReturnPath) });
 
   const lines = Array.isArray(quote?.lines) ? quote.lines : [];
+  const approvalLineRows = useMemo(() => buildApprovalLineRows(lines, getQuoteMarginPercentForApproval(quote), approvalFinancingPercent, conditionMode), [lines, quote, approvalFinancingPercent, conditionMode]);
   const rejectionBoxes = useMemo(() => {
     if (!quote) return [];
     const arr = [];
@@ -966,7 +983,7 @@ export default function QuoteDetailPage() {
             {showMeasurement && !isRevision ? <><div className="spacer" /><div className="card" style={{ background: "#fafafa" }}><div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}><div><div style={{ fontWeight: 900 }}>Planilla de medición</div><div className="muted">Estado: <b>{measurementStatusLabel(quote.measurement_status)}</b></div></div>{hasMeasurementForPdf(quote) ? <Button variant="secondary" onClick={() => downloadMedicionPdf(quote.id)}>Descargar PDF</Button> : null}</div><div className="spacer" />{quote.measurement_form ? <MeasurementReadOnlyView quote={quote} /> : null}</div></> : null}
             <h3 style={{ marginTop: 0 }}>Ítems</h3>
             {!lines.length ? <div className="muted">Sin ítems</div> : null}
-            {!!lines.length ? <table><thead><tr><th>Producto</th><th className="right">Cant.</th><th className="right">Base</th><th className="right">Total</th></tr></thead><tbody>{lines.map((l, idx) => { const qty = Number(l.qty || 0); const base = Number(l.basePrice ?? l.price ?? 0); const total = qty * base; return <tr key={`${l.product_id}-${idx}`}><td><div style={{ fontWeight: 700 }}>{l.name || `Producto ${l.product_id}`}</div><div className="muted">ID: {l.product_id} {l.code ? `| ${l.code}` : ""}</div></td><td className="right">{qty}</td><td className="right">{formatARS(base)}</td><td className="right" style={{ fontWeight: 800 }}>{formatARS(total)}</td></tr>; })}</tbody></table> : null}
+            {!!lines.length ? <table><thead><tr><th>Producto</th><th className="right">Cant.</th><th className="right">Precio calculado</th><th className="right">Total ítem</th></tr></thead><tbody>{approvalLineRows.map((l) => <tr key={l._approvalKey}><td><div style={{ fontWeight: 700 }}>{l.name || `Producto ${l.product_id}`}</div><div className="muted">ID: {l.product_id} {l.code ? `| ${l.code}` : ""}</div></td><td className="right">{l._approvalQty}</td><td className="right">{formatARS(l._approvalFinalUnit)}</td><td className="right" style={{ fontWeight: 800 }}>{formatARS(l._approvalTotal)}</td></tr>)}</tbody></table> : null}
             {(canCommercial || canTech) ? <><div className="spacer" /><div className="card" style={{ background: "#fafafa" }}><div style={{ fontWeight: 900 }}>Acciones de revisión</div><div className="muted">Solo si está en <b>pending_approvals</b> y tu decisión está en <b>pending</b>.</div><div className="spacer" /><div className="muted">Observaciones del revisor</div><textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Motivo si rechaza / notas si aprueba…" style={{ width: "100%", minHeight: 60, padding: "8px 10px", borderRadius: 8, border: "1px solid #ddd", outline: "none", resize: "vertical" }} /><div className="spacer" /><div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>{canCommercial ? <><Button disabled={!canCommercialAct || commercialM.isPending} onClick={handleCommercialApproveClick}>{commercialM.isPending ? "Procesando..." : "Aprobar Comercial"}</Button><Button variant="danger" disabled={!canCommercialAct || commercialM.isPending} onClick={() => commercialM.mutate({ action: "reject", billingCustomer: null })}>Rechazar Comercial</Button></> : null}{canTech ? <><Button disabled={!canTechAct || techM.isPending} onClick={() => techM.mutate({ action: "approve" })}>{techM.isPending ? "Procesando..." : "Aprobar Técnica"}</Button><Button variant="danger" disabled={!canTechAct || techM.isPending} onClick={() => techM.mutate({ action: "reject" })}>Rechazar Técnica</Button></> : null}</div>{commercialM.isError ? <div style={{ color: "#d93025", fontSize: 13, marginTop: 10 }}>{commercialM.error.message}</div> : null}{techM.isError ? <div style={{ color: "#d93025", fontSize: 13, marginTop: 10 }}>{techM.error.message}</div> : null}</div></> : null}
           </>
         ) : null}
