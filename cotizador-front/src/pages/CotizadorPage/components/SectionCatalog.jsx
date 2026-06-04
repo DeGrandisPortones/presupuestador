@@ -306,6 +306,7 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
   const [openSectionId, setOpenSectionId] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
   const [autoloadAttempted, setAutoloadAttempted] = useState(false);
+  const [helpSectionId, setHelpSectionId] = useState(null);
   const sectionRefs = useRef(new Map());
   const pendingAutoScrollSectionIdRef = useRef(null);
   const autoScrollTimeoutRef = useRef(null);
@@ -751,6 +752,8 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
             const isOpen = openSectionId === sectionId;
             const sectionProducts = productsBySection.get(sectionId) || [];
             const selectedInSection = selectedProductIdsBySection.get(sectionId) || new Set();
+            const showExteriorHelp = catalogKind === "porton" && [11, 39].includes(sectionId);
+            const isHelpOpen = helpSectionId === sectionId;
 
             return (
               <div
@@ -769,12 +772,57 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
                   <div className="dg-acc-title">
                     {section.name}
                   </div>
-                  <div className="dg-acc-meta">
-                    {selectedInSection.size ? `${selectedInSection.size} seleccionado` : "Sin selección"}{" "}
-                    · {sectionProducts.length}
+                  <div className="dg-acc-meta" style={{ display: "flex", alignItems: "center", gap: 8, justifyContent: "flex-end" }}>
+                    <span>
+                      {selectedInSection.size ? `${selectedInSection.size} seleccionado` : "Sin selección"}{" "}
+                      · {sectionProducts.length}
+                    </span>
+                    {showExteriorHelp ? (
+                      <span
+                        role="button"
+                        tabIndex={0}
+                        title="Ver aclaración"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          setHelpSectionId(isHelpOpen ? null : sectionId);
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key !== "Enter" && e.key !== " ") return;
+                          e.preventDefault();
+                          e.stopPropagation();
+                          setHelpSectionId(isHelpOpen ? null : sectionId);
+                        }}
+                        style={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          width: 22,
+                          height: 22,
+                          borderRadius: 999,
+                          border: "1px solid #c7d2fe",
+                          background: isHelpOpen ? "#eef2ff" : "#fff",
+                          color: "#3730a3",
+                          fontWeight: 900,
+                          lineHeight: 1,
+                          cursor: "pointer",
+                          userSelect: "none",
+                        }}
+                      >
+                        ?
+                      </span>
+                    ) : null}
                   </div>
                   <div className="dg-acc-chevron">{isOpen ? "▾" : "▸"}</div>
                 </button>
+
+                {showExteriorHelp && isHelpOpen ? (
+                  <div style={{ padding: "0 14px 12px" }}>
+                    <div style={{ border: "1px solid #dbeafe", background: "#eff6ff", color: "#1e3a8a", borderRadius: 10, padding: "10px 12px", fontWeight: 800 }}>
+                      Siempre observando desde afuera de la vivienda/obra (Exterior).
+                    </div>
+                  </div>
+                ) : null}
 
                 {isOpen ? (
                   <div className="dg-acc-body">
