@@ -572,6 +572,61 @@ function fulfillmentModeLabel(mode) {
   return key;
 }
 
+function formatDateForApproval(value) {
+  if (!value) return "—";
+  const raw = String(value);
+  const d = /^\d{4}-\d{2}-\d{2}$/.test(raw) ? new Date(`${raw}T00:00:00`) : new Date(raw);
+  if (Number.isNaN(d.getTime())) return "—";
+  return d.toLocaleDateString("es-AR");
+}
+
+function getQuoteMarginPercentForApproval(quote) {
+  const payload = quote?.payload && typeof quote.payload === "object" ? quote.payload : {};
+  const candidates = [
+    payload?.margin_percent_ui,
+    payload?.marginPercent,
+    quote?.margin_percent_ui,
+    quote?.marginPercent,
+  ];
+  for (const value of candidates) {
+    const n = Number(String(value ?? "").replace(",", "."));
+    if (Number.isFinite(n)) return n;
+  }
+  return 0;
+}
+
+function formatPercentForApproval(value) {
+  const n = Number(value || 0);
+  return `${n.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%`;
+}
+
+function getQuoteTotalWithIvaForApproval(quote) {
+  const payload = quote?.payload && typeof quote.payload === "object" ? quote.payload : {};
+  const lines = Array.isArray(quote?.lines) ? quote.lines : [];
+  const marginPercent = getQuoteMarginPercentForApproval(quote);
+  const subtotal = lines.reduce((acc, line) => {
+    const qty = Number(line?.qty || 0) || 0;
+    const base = Number(line?.basePrice ?? line?.base_price ?? line?.price ?? 0) || 0;
+    return acc + (qty * base * (1 + marginPercent / 100));
+  }, 0);
+  const total = Math.round((subtotal * 1.21) * 100) / 100;
+  const explicitTotal = Number(String(payload?.total_with_iva ?? payload?.total_con_iva ?? quote?.total_with_iva ?? "").replace(",", "."));
+  return Number.isFinite(explicitTotal) && explicitTotal > 0 ? explicitTotal : total;
+}
+
+function buildApprovalCommercialRows(quote, conditionMode) {
+  if (!quote) return [];
+  const payload = quote?.payload && typeof quote.payload === "object" ? quote.payload : {};
+  const rows = [];
+  pushApprovalContextRow(rows, "Fecha del presupuesto", formatDateForApproval(quote?.confirmed_at || quote?.created_at));
+  pushApprovalContextRow(rows, "Forma de pago", payload?.payment_method || "—");
+  pushApprovalContextRow(rows, "Condición", conditionModeLabel(conditionMode));
+  pushApprovalContextRow(rows, "Destino", fulfillmentModeLabel(quote?.fulfillment_mode));
+  pushApprovalContextRow(rows, "Coeficiente aplicado", formatPercentForApproval(getQuoteMarginPercentForApproval(quote)));
+  pushApprovalContextRow(rows, "Total del presupuesto con IVA", formatARS(getQuoteTotalWithIvaForApproval(quote)));
+  return rows;
+}
+
 function pushApprovalContextRow(rows, label, value) {
   const formatted = formatTechnicalValue(value);
   if (!formatted) return;
@@ -609,7 +664,6 @@ function buildApprovalContextRows(quote, conditionMode) {
   const rows = [];
   const isPlegados = isPlegadosQuote(quote);
   const sistemaEntry = firstTechnicalEntry(sources, ["tipologia_sistema", "tipologia", "tipología", "sistema", "system", "system_type", "tipo_sistema", "porton_type", "tipo_porton", "levadizo"]);
-  const paymentEntry = firstTechnicalEntry(sources, ["payment_method", "paymentMethod", "forma_pago", "forma_de_pago", "metodo_pago", "método_pago", "selected_payment_method", "financing_label", "financing"]);
   const cantidadParantesEntry = firstTechnicalEntry(sources, ["cantidad_parantes", "parantes_cantidad", "cant_parantes", "parantes_cant"]);
   const orientacionParantesEntry = firstTechnicalEntry(sources, ["orientacion_parantes", "orientación_parantes", "parantes_orientacion", "parantes_orientación"]);
   const distribucionParantesEntry = firstTechnicalEntry(sources, ["distribucion_parantes", "distribución_parantes", "parantes_distribucion", "parantes_distribución"]);
@@ -629,28 +683,49 @@ function buildApprovalContextRows(quote, conditionMode) {
   pushApprovalContextRow(rows, "Cantidad de parantes", cantidadParantesValue);
   pushApprovalContextRow(rows, "Distribución de parantes", normalizeDistributionLabelForApproval(distribucionParantesEntry?.value || "repartido"));
   pushApprovalContextEntry(rows, "Obs. parantes", observacionesParantesEntry);
-  pushApprovalContextEntry(rows, "Forma de pago", paymentEntry);
-  pushApprovalContextRow(rows, "Condición", conditionModeLabel(conditionMode));
-  pushApprovalContextRow(rows, "Destino", fulfillmentModeLabel(quote?.fulfillment_mode));
   pushApprovalContextRow(rows, "Estado medición", measurementStatusLabel(quote?.measurement_status));
   pushApprovalContextRow(rows, "Observación presupuesto / NP / NV", extractBudgetObservation(quote));
   return rows;
 }
 
-function ApprovalContextCard({ rows }) {
+function ApprovalRowsGrid({ rows }) {
   if (!Array.isArray(rows) || !rows.length) return null;
   return (
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 10 }}>
+      {rows.map((item) => (
+        <div key={item.label} style={{ border: "1px solid #e5e5e5", borderRadius: 10, padding: "8px 10px", background: "#fff" }}>
+          <div className="muted" style={{ fontSize: 12 }}>{item.label}</div>
+          <div style={{ fontWeight: 800, marginTop: 4 }}>{item.value}</div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function ApprovalContextCard({ commercialRows, technicalRows }) {
+  const hasCommercial = Array.isArray(commercialRows) && commercialRows.length > 0;
+  const hasTechnical = Array.isArray(technicalRows) && technicalRows.length > 0;
+  if (!hasCommercial && !hasTechnical) return null;
+  return (
     <div className="card" style={{ background: "#fafafa" }}>
-      <div style={{ fontWeight: 900, marginBottom: 6 }}>Datos técnicos y comerciales para aprobar</div>
+      <div style={{ fontWeight: 900, marginBottom: 6 }}>Datos para aprobar</div>
       <div className="muted" style={{ marginBottom: 10 }}>Resumen de solo lectura para Comercial y Técnica. No modifica el flujo de aprobación.</div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 10 }}>
-        {rows.map((item) => (
-          <div key={item.label} style={{ border: "1px solid #e5e5e5", borderRadius: 10, padding: "8px 10px", background: "#fff" }}>
-            <div className="muted" style={{ fontSize: 12 }}>{item.label}</div>
-            <div style={{ fontWeight: 800, marginTop: 4 }}>{item.value}</div>
-          </div>
-        ))}
-      </div>
+
+      {hasCommercial ? (
+        <>
+          <div style={{ fontWeight: 900, marginBottom: 8 }}>Datos comerciales</div>
+          <ApprovalRowsGrid rows={commercialRows} />
+        </>
+      ) : null}
+
+      {hasCommercial && hasTechnical ? <div className="spacer" /> : null}
+
+      {hasTechnical ? (
+        <>
+          <div style={{ fontWeight: 900, marginBottom: 8 }}>Datos técnicos</div>
+          <ApprovalRowsGrid rows={technicalRows} />
+        </>
+      ) : null}
     </div>
   );
 }
@@ -748,7 +823,8 @@ export default function QuoteDetailPage() {
     if (quote.technical_decision === "rejected") arr.push({ title: "Rechazo Técnica", body: quote.technical_notes || "(sin motivo)" });
     return arr;
   }, [quote]);
-  const approvalContextRows = useMemo(() => buildApprovalContextRows(quote, conditionMode), [quote, conditionMode]);
+  const approvalCommercialRows = useMemo(() => buildApprovalCommercialRows(quote, conditionMode), [quote, conditionMode]);
+  const approvalTechnicalRows = useMemo(() => buildApprovalContextRows(quote, conditionMode), [quote, conditionMode]);
   const budgetObservation = useMemo(() => extractBudgetObservation(quote), [quote]);
   const plegadoDescription = useMemo(() => extractPlegadoDescription(quote), [quote]);
   const plegadoSurface = useMemo(() => formatPlegadoSurface(quote), [quote]);
@@ -867,7 +943,7 @@ export default function QuoteDetailPage() {
             ) : null}
             <div className="spacer" />
             {!isRevision ? <div className="card" style={{ background: "#fafafa" }}><div style={{ fontWeight: 900, marginBottom: 6 }}>Aprobaciones</div><div className="muted" style={{ display: "flex", gap: 12, flexWrap: "wrap" }}><span>Comercial: <b>{decisionLabel(quote.commercial_decision)}</b>{quote.commercial_decision === "rejected" && quote.commercial_notes ? ` · ${quote.commercial_notes}` : ""}</span><span>Técnica: <b>{decisionLabel(quote.technical_decision)}</b>{quote.technical_decision === "rejected" && quote.technical_notes ? ` · ${quote.technical_notes}` : ""}</span></div></div> : null}
-            {!!approvalContextRows.length ? <><div className="spacer" /><ApprovalContextCard rows={approvalContextRows} /></> : null}
+            {(!!approvalCommercialRows.length || !!approvalTechnicalRows.length) ? <><div className="spacer" /><ApprovalContextCard commercialRows={approvalCommercialRows} technicalRows={approvalTechnicalRows} /></> : null}
             {showMeasurement && !isRevision ? <><div className="spacer" /><div className="card" style={{ background: "#fafafa" }}><div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}><div><div style={{ fontWeight: 900 }}>Planilla de medición</div><div className="muted">Estado: <b>{measurementStatusLabel(quote.measurement_status)}</b></div></div>{hasMeasurementForPdf(quote) ? <Button variant="secondary" onClick={() => downloadMedicionPdf(quote.id)}>Descargar PDF</Button> : null}</div><div className="spacer" />{quote.measurement_form ? <MeasurementReadOnlyView quote={quote} /> : null}</div></> : null}
             <h3 style={{ marginTop: 0 }}>Ítems</h3>
             {!lines.length ? <div className="muted">Sin ítems</div> : null}
