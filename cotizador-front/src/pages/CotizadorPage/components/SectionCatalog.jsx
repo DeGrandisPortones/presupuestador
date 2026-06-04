@@ -12,40 +12,7 @@ import Button from "../../../ui/Button";
 
 const CATALOG_KINDS = new Set(["porton", "ipanel", "plegados", "otros"]);
 const APTOS_PARA_REVESTIR_TYPE = "para_revestir_con_al_pvc_otros";
-const EXTERIOR_HELP_SECTION_IDS = new Set([11, 39]);
-const EXTERIOR_HELP_SECTION_NAME_KEYS = new Set(["lado_motor", "lado_de_motor", "lado_soporte", "lado_del_soporte"]);
 const EXTERIOR_HELP_TEXT = "Siempre observando desde afuera de la vivienda/obra (Exterior).";
-
-function getSectionPossibleIds(section = {}) {
-  return [
-    section?.id,
-    section?.section_id,
-    section?.sectionId,
-    section?.source_section_id,
-    section?.original_section_id,
-    section?.legacy_section_id,
-    section?.odoo_section_id,
-  ]
-    .map((value) => Number(value || 0))
-    .filter((value) => Number.isFinite(value) && value > 0);
-}
-
-function getSectionNameKey(section = {}) {
-  return String(section?.name || section?.label || section?.title || "")
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase()
-    .trim()
-    .replace(/[^a-z0-9]+/g, "_")
-    .replace(/^_+|_+$/g, "")
-    .replace(/_+/g, "_");
-}
-
-function shouldShowExteriorHelp({ catalogKind, section }) {
-  if (String(catalogKind || "").toLowerCase().trim() !== "porton") return false;
-  if (getSectionPossibleIds(section).some((sectionId) => EXTERIOR_HELP_SECTION_IDS.has(sectionId))) return true;
-  return EXTERIOR_HELP_SECTION_NAME_KEYS.has(getSectionNameKey(section));
-}
 
 function ExteriorHelpButton({ open, onToggle }) {
   return (
@@ -383,7 +350,7 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
   const [openSectionId, setOpenSectionId] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
   const [autoloadAttempted, setAutoloadAttempted] = useState(false);
-  const [helpSectionId, setHelpSectionId] = useState(null);
+  const [catalogHelpOpen, setCatalogHelpOpen] = useState(false);
   const sectionRefs = useRef(new Map());
   const pendingAutoScrollSectionIdRef = useRef(null);
   const autoScrollTimeoutRef = useRef(null);
@@ -792,10 +759,16 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
       <div>
         <div className="dg-row dg-row--between dg-row--center">
           <h3 className="dg-h3">{title}</h3>
-          <Button variant="ghost" disabled={refreshing} onClick={refreshCatalog}>
-            {refreshing ? "Cargando…" : "Actualizar catálogo"}
-          </Button>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <Button variant="ghost" disabled={refreshing} onClick={refreshCatalog}>
+              {refreshing ? "Cargando…" : "Actualizar catálogo"}
+            </Button>
+            {catalogKind === "porton" ? (
+              <ExteriorHelpButton open={catalogHelpOpen} onToggle={() => setCatalogHelpOpen((prev) => !prev)} />
+            ) : null}
+          </div>
         </div>
+        {catalogKind === "porton" && catalogHelpOpen ? <ExteriorHelpBox /> : null}
         <div className="spacer" />
         <div className="muted">
           {refreshing
@@ -810,10 +783,16 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
     <div>
       <div className="dg-row dg-row--between dg-row--center">
         <h3 className="dg-h3">{title}</h3>
-        <Button variant="ghost" disabled={refreshing} onClick={refreshCatalog}>
-          {refreshing ? "Actualizando…" : "Actualizar catálogo"}
-        </Button>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <Button variant="ghost" disabled={refreshing} onClick={refreshCatalog}>
+            {refreshing ? "Actualizando…" : "Actualizar catálogo"}
+          </Button>
+          {catalogKind === "porton" ? (
+            <ExteriorHelpButton open={catalogHelpOpen} onToggle={() => setCatalogHelpOpen((prev) => !prev)} />
+          ) : null}
+        </div>
       </div>
+      {catalogKind === "porton" && catalogHelpOpen ? <ExteriorHelpBox /> : null}
 
       {!visibleSections.length ? (
         <>
@@ -829,9 +808,6 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
             const isOpen = openSectionId === sectionId;
             const sectionProducts = productsBySection.get(sectionId) || [];
             const selectedInSection = selectedProductIdsBySection.get(sectionId) || new Set();
-            const showExteriorHelp = shouldShowExteriorHelp({ catalogKind, section });
-            const isHelpOpen = showExteriorHelp && helpSectionId === sectionId;
-
             return (
               <div
                 key={sectionId}
@@ -841,7 +817,7 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
                 }}
                 className={isOpen ? "dg-acc-item is-open" : "dg-acc-item"}
               >
-                <div className="dg-acc-header" style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto auto", gap: 10, alignItems: "center" }}>
+                <div className="dg-acc-header" style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto", gap: 10, alignItems: "center" }}>
                   <button
                     type="button"
                     onClick={() => setOpenSectionId(isOpen ? null : sectionId)}
@@ -866,12 +842,6 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
                       · {sectionProducts.length}
                     </div>
                   </button>
-                  {showExteriorHelp ? (
-                    <ExteriorHelpButton
-                      open={isHelpOpen}
-                      onToggle={() => setHelpSectionId(isHelpOpen ? null : sectionId)}
-                    />
-                  ) : <span />}
                   <button
                     type="button"
                     className="dg-acc-chevron"
@@ -882,8 +852,6 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
                     {isOpen ? "▾" : "▸"}
                   </button>
                 </div>
-
-                {showExteriorHelp && isHelpOpen ? <ExteriorHelpBox /> : null}
 
                 {isOpen ? (
                   <div className="dg-acc-body">
