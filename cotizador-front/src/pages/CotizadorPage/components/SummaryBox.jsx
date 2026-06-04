@@ -1,10 +1,12 @@
-import { useQuoteStore } from "../../../domain/quote/store";
 import { formatARS } from "../../../domain/quote/pricing";
 
-export default function SummaryBox({ totals }) {
-  const conditionMode = useQuoteStore((s) => s.conditionMode);
-  const isCondition2 = String(conditionMode || "").trim().toLowerCase() === "cond2";
+function formatIvaLabel(rate) {
+  const n = Number(rate || 0);
+  if (!Number.isFinite(n) || n <= 0) return "IVA";
+  return `IVA (${(n * 100).toLocaleString("es-AR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%)`;
+}
 
+export default function SummaryBox({ totals }) {
   return (
     <div style={{ display: "flex", justifyContent: "flex-end" }}>
       <div style={{ minWidth: 320 }}>
@@ -13,28 +15,13 @@ export default function SummaryBox({ totals }) {
           <div>{formatARS(totals.subtotal)}</div>
         </div>
         <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 0" }}>
-          <div className="muted">IVA</div>
+          <div className="muted">{formatIvaLabel(totals.ivaRate)}</div>
           <div>{formatARS(totals.iva)}</div>
         </div>
         <div style={{ display: "flex", justifyContent: "space-between", padding: "10px 0", borderTop: "1px solid #eee", fontWeight: 800 }}>
           <div>Total</div>
           <div>{formatARS(totals.total)}</div>
         </div>
-        {isCondition2 ? (
-          <div
-            className="muted"
-            style={{
-              marginTop: 6,
-              paddingTop: 8,
-              borderTop: "1px solid #eee",
-              fontSize: 12,
-              textAlign: "right",
-              lineHeight: 1.35,
-            }}
-          >
-            El 10,5% del IVA está aplicado directamente en los productos.
-          </div>
-        ) : null}
       </div>
     </div>
   );

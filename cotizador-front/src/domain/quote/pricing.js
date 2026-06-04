@@ -1,11 +1,18 @@
-export const CONDITION_2_DISCOUNT_PERCENT = -10.5;
+export const CONDITION_2_IVA_RATE = 0.105;
 
-export function resolveQuoteAdjustmentPercent(financingPercent = 0, conditionMode = "cond1") {
+export function isCondition2Mode(conditionMode = "cond1") {
+  return String(conditionMode || "").trim().toLowerCase() === "cond2";
+}
+
+export function resolveQuoteIvaRate(ivaRate, conditionMode = "cond1") {
+  return isCondition2Mode(conditionMode) ? CONDITION_2_IVA_RATE : Number(ivaRate || 0);
+}
+
+export function resolveQuoteAdjustmentPercent(financingPercent = 0, _conditionMode = "cond1") {
+  // Condición 2 ya no descuenta 10,5% en los productos.
+  // Sólo se mantiene el recargo/descuento propio de la forma de pago.
   const financing = Number(financingPercent || 0) || 0;
-  const conditionDiscount = String(conditionMode || "").trim().toLowerCase() === "cond2"
-    ? CONDITION_2_DISCOUNT_PERCENT
-    : 0;
-  return round2(financing + conditionDiscount);
+  return round2(financing);
 }
 
 export function calcFinalUnitPrice(basePrice, marginPercent, financingPercent = 0, conditionMode = "cond1") {
@@ -25,6 +32,7 @@ export function calcLineTotal(qty, unitPrice) {
 
 export function calcTotals(lines, marginPercent, ivaRate, financingPercent = 0, conditionMode = "cond1") {
   const effectiveAdjustmentPercent = resolveQuoteAdjustmentPercent(financingPercent, conditionMode);
+  const effectiveIvaRate = resolveQuoteIvaRate(ivaRate, conditionMode);
   const subtotal = round2(
     (lines || []).reduce((acc, l) => {
       const finalUnit = calcFinalUnitPrice(l.basePrice, marginPercent, effectiveAdjustmentPercent);
@@ -33,13 +41,14 @@ export function calcTotals(lines, marginPercent, ivaRate, financingPercent = 0, 
     }, 0)
   );
 
-  const iva = round2(subtotal * Number(ivaRate || 0));
+  const iva = round2(subtotal * effectiveIvaRate);
   const total = round2(subtotal + iva);
 
   return {
     subtotal,
     iva,
     total,
+    ivaRate: effectiveIvaRate,
     financingPercent: round2(effectiveAdjustmentPercent),
   };
 }

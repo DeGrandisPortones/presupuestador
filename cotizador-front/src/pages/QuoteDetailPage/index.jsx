@@ -600,6 +600,11 @@ function formatPercentForApproval(value) {
   return `${n.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%`;
 }
 
+function getQuoteIvaRateForApproval(quote) {
+  const payload = quote?.payload && typeof quote.payload === "object" ? quote.payload : {};
+  return String(payload?.condition_mode || "cond1").trim().toLowerCase() === "cond2" ? 0.105 : 0.21;
+}
+
 function getQuoteTotalWithIvaForApproval(quote) {
   const payload = quote?.payload && typeof quote.payload === "object" ? quote.payload : {};
   const lines = Array.isArray(quote?.lines) ? quote.lines : [];
@@ -609,7 +614,7 @@ function getQuoteTotalWithIvaForApproval(quote) {
     const base = Number(line?.basePrice ?? line?.base_price ?? line?.price ?? 0) || 0;
     return acc + (qty * base * (1 + marginPercent / 100));
   }, 0);
-  const total = Math.round((subtotal * 1.21) * 100) / 100;
+  const total = Math.round((subtotal * (1 + getQuoteIvaRateForApproval(quote))) * 100) / 100;
   const explicitTotal = Number(String(payload?.total_with_iva ?? payload?.total_con_iva ?? quote?.total_with_iva ?? "").replace(",", "."));
   return Number.isFinite(explicitTotal) && explicitTotal > 0 ? explicitTotal : total;
 }

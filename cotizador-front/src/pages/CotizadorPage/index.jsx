@@ -759,7 +759,7 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
     () => resolveQuoteAdjustmentPercent(financingPercent, conditionMode),
     [financingPercent, conditionMode],
   );
-  const totals = useMemo(() => calcTotals(lines, marginPercent, ivaRate, quoteAdjustmentPercent), [lines, marginPercent, ivaRate, quoteAdjustmentPercent]);
+  const totals = useMemo(() => calcTotals(lines, marginPercent, ivaRate, quoteAdjustmentPercent, conditionMode), [lines, marginPercent, ivaRate, quoteAdjustmentPercent, conditionMode]);
   const linesKey = useMemo(
     () => lines.map((l) => `${l.product_id}:${resolveLinePricingProductId(l)}:${l.odoo_template_id || ""}:${l.qty}`).join("|"),
     [lines],

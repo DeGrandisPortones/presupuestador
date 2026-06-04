@@ -129,6 +129,7 @@ export default function PresupuestadorPuertasPage() {
     pricelistId,
     partnerId,
     paymentMethod,
+    conditionMode,
     lines,
     dimensions,
     marginPercent,
@@ -181,7 +182,7 @@ export default function PresupuestadorPuertasPage() {
 
   const financingQ = useQuery({ queryKey: ["financing-preview", paymentMethod], queryFn: () => getFinancingPreview(paymentMethod), enabled: !!cleanText(paymentMethod), staleTime: 60 * 1000 });
   const financingPercent = Number(financingQ.data?.percent || 0) || 0;
-  const totals = useMemo(() => calcTotals(lines, marginPercent, ivaRate, financingPercent), [lines, marginPercent, ivaRate, financingPercent]);
+  const totals = useMemo(() => calcTotals(lines, marginPercent, ivaRate, financingPercent, conditionMode), [lines, marginPercent, ivaRate, financingPercent, conditionMode]);
   const linesKey = useMemo(() => lines.map((l) => `${l.product_id}:${l.qty}`).join("|"), [lines]);
 
   useEffect(() => {

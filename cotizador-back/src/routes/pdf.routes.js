@@ -572,7 +572,7 @@ export function buildPdfRouter(odoo = null) {
     try {
       const rawPayload = req.body || {};
       const payload = { ...rawPayload, seller_name: resolveLoggedUserSellerName(req.user, rawPayload) };
-      const pdf = await renderPdf({ title: "PRESUPUESTO", payload, useBasePrice: false, odoo, includeTerms: true, hideIvaBreakdown: true });
+      const pdf = await renderPdf({ title: "PRESUPUESTO", payload, useBasePrice: false, odoo, includeTerms: true, hideIvaBreakdown: true, taxRate: isCondition2(payload) ? 0.105 : IVA_RATE });
       res.setHeader("Content-Type", "application/pdf");
       res.setHeader("Content-Disposition", `attachment; filename="${buildDownloadFilename(payload, "presupuesto")}"`);
       res.send(pdf);
