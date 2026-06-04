@@ -11,6 +11,7 @@ const DEFAULT_PAYMENT_METHODS = [
   "Efectivo",
   "Transferencia",
   "Cta Cte",
+  "Cheques 30",
   "Cheques 0 - 30 - 60 - 90 - 120",
   "Cheques 0 - 30 - 60 - 90 - 120 - 150 - 180",
   "CORDOBESA 4 CUOTAS",

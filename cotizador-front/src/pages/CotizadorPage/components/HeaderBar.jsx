@@ -14,6 +14,7 @@ const MAIN_PAYMENT_METHODS = [
   "Efectivo",
   "Transferencia",
   "Cta Cte",
+  "Cheques 30",
   "Cheques 0 - 30 - 60 - 90 - 120",
   "Cheques 0 - 30 - 60 - 90 - 120 - 150 - 180",
   CARD_CATEGORY,
@@ -137,6 +138,9 @@ function paymentCategoryFromMethod(paymentMethod, categoryOverride = "") {
   if (key === normalizeKey("Efectivo")) return "Efectivo";
   if (key === normalizeKey("Transferencia")) return "Transferencia";
   if (key === normalizeKey("Cta Cte") || key === normalizeKey("Cuenta Corriente")) return "Cta Cte";
+  if (key === normalizeKey("Cheques 30") || key === normalizeKey("Cheque 30")) {
+    return "Cheques 30";
+  }
   if (key === normalizeKey("Cheques 0 - 30 - 60 - 90 - 120") || key === normalizeKey("Cheque 0 - 30 - 60 - 90 -120")) {
     return "Cheques 0 - 30 - 60 - 90 - 120";
   }
@@ -468,7 +472,6 @@ export default function HeaderBar({ showMargin }) {
               <Input value={conditionText || ""} onChange={(v) => setConditionText(v)} placeholder="Detalle condición 2..." style={{ minWidth: 320 }} />
             ) : null}
           </div>
-          {!allowsCondition2 ? <div className="muted" style={{ marginTop: 4, fontSize: 12 }}>Condición 2 solo para cheque o efectivo.</div> : null}
         </div>
       </div>
     </div>
