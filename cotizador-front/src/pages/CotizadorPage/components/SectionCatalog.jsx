@@ -13,6 +13,7 @@ import Button from "../../../ui/Button";
 const CATALOG_KINDS = new Set(["porton", "ipanel", "plegados", "otros"]);
 const APTOS_PARA_REVESTIR_TYPE = "para_revestir_con_al_pvc_otros";
 const EXTERIOR_HELP_SECTION_IDS = new Set([11, 39]);
+const EXTERIOR_HELP_SECTION_NAME_KEYS = new Set(["lado_motor", "lado_de_motor", "lado_soporte", "lado_del_soporte"]);
 const EXTERIOR_HELP_TEXT = "Siempre observando desde afuera de la vivienda/obra (Exterior).";
 
 function getSectionPossibleIds(section = {}) {
@@ -24,31 +25,26 @@ function getSectionPossibleIds(section = {}) {
     section?.original_section_id,
     section?.legacy_section_id,
     section?.odoo_section_id,
-    section?.tag_id,
-    section?.tagId,
-    section?.position,
   ]
     .map((value) => Number(value || 0))
     .filter((value) => Number.isFinite(value) && value > 0);
 }
 
-function getProductPossibleTagIds(product = {}) {
-  return [
-    ...(Array.isArray(product?.tag_ids) ? product.tag_ids : []),
-    ...(Array.isArray(product?.tagIds) ? product.tagIds : []),
-    ...(Array.isArray(product?.tags) ? product.tags.map((tag) => (typeof tag === "object" ? tag?.id : tag)) : []),
-    ...(Array.isArray(product?.tag_debug) ? product.tag_debug.map((tag) => tag?.id) : []),
-  ]
-    .map((value) => Number(value || 0))
-    .filter((value) => Number.isFinite(value) && value > 0);
+function getSectionNameKey(section = {}) {
+  return String(section?.name || section?.label || section?.title || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .replace(/_+/g, "_");
 }
 
-function shouldShowExteriorHelp({ catalogKind, section, sectionProducts = [] }) {
+function shouldShowExteriorHelp({ catalogKind, section }) {
   if (String(catalogKind || "").toLowerCase().trim() !== "porton") return false;
   if (getSectionPossibleIds(section).some((sectionId) => EXTERIOR_HELP_SECTION_IDS.has(sectionId))) return true;
-  return (Array.isArray(sectionProducts) ? sectionProducts : []).some((product) =>
-    getProductPossibleTagIds(product).some((tagId) => EXTERIOR_HELP_SECTION_IDS.has(tagId)),
-  );
+  return EXTERIOR_HELP_SECTION_NAME_KEYS.has(getSectionNameKey(section));
 }
 
 function ExteriorHelpButton({ open, onToggle }) {
@@ -833,7 +829,7 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
             const isOpen = openSectionId === sectionId;
             const sectionProducts = productsBySection.get(sectionId) || [];
             const selectedInSection = selectedProductIdsBySection.get(sectionId) || new Set();
-            const showExteriorHelp = shouldShowExteriorHelp({ catalogKind, section, sectionProducts });
+            const showExteriorHelp = shouldShowExteriorHelp({ catalogKind, section });
             const isHelpOpen = showExteriorHelp && helpSectionId === sectionId;
 
             return (
