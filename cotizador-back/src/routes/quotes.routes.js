@@ -385,16 +385,42 @@ function calcQuoteSubtotal({ lines, payload }) {
     return acc + (qty * unit);
   }, 0));
 }
+function getPayloadConditionMode(payload) {
+  return String(payload?.condition_mode || "cond1").trim().toLowerCase();
+}
+function getOdooConditionPriceFactor(payload) {
+  // Odoo recibe valores sin IVA para Condición 1.
+  // Para Condición 2 se envía neto + 10,5%.
+  return getPayloadConditionMode(payload) === "cond2" ? 1.105 : 1;
+}
+function getOdooConditionLabel(payload) {
+  const mode = getPayloadConditionMode(payload);
+  if (mode === "cond2") return "Condición 2";
+  if (mode === "special") {
+    const text = toText(payload?.condition_text);
+    return text ? `Condición especial: ${text}` : "Condición especial";
+  }
+  return "Condición 1";
+}
+function appendSaleConditionToNote(note, quoteOrPayload) {
+  const payload = quoteOrPayload?.payload && typeof quoteOrPayload.payload === "object"
+    ? quoteOrPayload.payload
+    : (quoteOrPayload && typeof quoteOrPayload === "object" ? quoteOrPayload : {});
+  return `${note}
+Condición vendida: ${getOdooConditionLabel(payload)}`;
+}
 function calcQuoteTotalWithIva({ lines, payload }) {
+  // Nombre legacy: este total es el que se envía a Odoo.
   const subtotal = calcQuoteSubtotal({ lines, payload });
-  return round2(subtotal + round2(subtotal * IVA_RATE));
+  return round2(subtotal * getOdooConditionPriceFactor(payload || {}));
 }
 function calcDetailedUnitWithIva(line, payload) {
+  // Nombre legacy: este precio unitario es el que se envía a Odoo.
   if (typeof line?.price_unit === "number") return round2(line.price_unit);
   if (typeof line?.unit_price === "number") return round2(line.unit_price);
   const base = Number(line?.basePrice ?? line?.base_price ?? line?.price ?? 0) || 0;
   const margin = Number(payload?.margin_percent_ui || 0) || 0;
-  return round2(base * (1 + margin / 100) * (1 + IVA_RATE));
+  return round2(base * (1 + margin / 100) * getOdooConditionPriceFactor(payload || {}));
 }
 function normalizePortonTypeKey(value) {
   return String(value || "")
@@ -1056,6 +1082,7 @@ async function syncQuoteToOdoo({ odoo, quote, approverUser }) {
   let note = appendBudgetObservationToNote(noteBase, quote) + (sellerName ? `\nVendedor: ${sellerName}` : "");
   if (forcedNp) note += formatHardcodedOdooNote(forcedNp);
   note = appendPaymentMethodToNote(note, quote?.payload?.payment_method);
+  note = appendSaleConditionToNote(note, quote);
 
   const financingVals = await buildFinancingSaleOrderVals(odoo, quote?.payload?.payment_method);
   const createdOrderId = await odoo.executeKw("sale.order", "create", [{
@@ -1182,6 +1209,7 @@ async function syncFinalQuoteToOdoo({ odoo, revisionQuote, originalQuote, approv
   if (forcedNv) note += formatHardcodedOdooNote(forcedNv);
   note = appendBudgetObservationToNote(note, revisionQuote || originalQuote);
   note = appendPaymentMethodToNote(note, revisionQuote?.payload?.payment_method || originalQuote?.payload?.payment_method);
+  note = appendSaleConditionToNote(note, revisionQuote?.payload?.condition_mode ? revisionQuote : originalQuote);
 
   const financingVals = await buildFinancingSaleOrderVals(odoo, revisionQuote?.payload?.payment_method || originalQuote?.payload?.payment_method);
   const createdOrderId = await odoo.executeKw("sale.order", "create", [{
@@ -1293,6 +1321,7 @@ async function syncDirectProductionFinalToOdoo({ odoo, quote, approverUser }) {
   note = appendBudgetObservationToNote(note, quote);
   if (forcedDirectNv) note += formatHardcodedOdooNote(forcedDirectNv);
   note = appendPaymentMethodToNote(note, quote?.payload?.payment_method);
+  note = appendSaleConditionToNote(note, quote);
 
   const financingVals = await buildFinancingSaleOrderVals(odoo, quote?.payload?.payment_method);
   const createdOrderId = await odoo.executeKw("sale.order", "create", [{

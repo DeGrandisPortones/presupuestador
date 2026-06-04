@@ -455,12 +455,30 @@ async function upsertPreproduccionValoresForNv({ originalQuote, sourceQuote, rev
     updated_at: q.rows?.[0]?.updated_at || null,
   };
 }
+function getPayloadConditionMode(payload) {
+  return String(payload?.condition_mode || "cond1").trim().toLowerCase();
+}
+function getOdooConditionPriceFactor(payload) {
+  // Odoo recibe valores sin IVA para Condición 1.
+  // Para Condición 2 se envía neto + 10,5%.
+  return getPayloadConditionMode(payload) === "cond2" ? 1.105 : 1;
+}
+function getOdooConditionLabel(payload) {
+  const mode = getPayloadConditionMode(payload);
+  if (mode === "cond2") return "Condición 2";
+  if (mode === "special") {
+    const text = toText(payload?.condition_text);
+    return text ? `Condición especial: ${text}` : "Condición especial";
+  }
+  return "Condición 1";
+}
 function calcDetailedUnitWithIva(line, payload) {
+  // Nombre legacy: este precio unitario es el que se envía a Odoo.
   if (typeof line?.price_unit === "number") return round2(line.price_unit);
   if (typeof line?.unit_price === "number") return round2(line.unit_price);
   const base = Number(line?.basePrice ?? line?.base_price ?? line?.price ?? 0) || 0;
   const margin = Number(payload?.margin_percent_ui || 0) || 0;
-  return round2(base * (1 + margin / 100) * (1 + IVA_RATE));
+  return round2(base * (1 + margin / 100) * getOdooConditionPriceFactor(payload || {}));
 }
 function compareValues(currentRaw, operator, compareRaw) {
   const currentText = normalizeValue(currentRaw);
@@ -979,6 +997,11 @@ async function syncFinalQuoteToOdoo({ odoo, revisionQuote, originalQuote, source
     ? `NV${refNo}`
     : `NV${toText(revisionQuote?.quote_number || originalQuote?.quote_number)}`;
 
+  const conditionPayload = revisionQuote?.payload?.condition_mode
+    ? revisionQuote.payload
+    : (sourceQuote?.payload?.condition_mode ? sourceQuote.payload : (originalQuote?.payload || {}));
+  const note = `Condición vendida: ${getOdooConditionLabel(conditionPayload)}`;
+
   const createdOrderId = await odoo.executeKw("sale.order", "create", [{
     partner_id: partnerId,
     pricelist_id:
@@ -989,6 +1012,7 @@ async function syncFinalQuoteToOdoo({ odoo, revisionQuote, originalQuote, source
     order_line: orderLines,
     origin: referenceNv,
     client_order_ref: referenceNv,
+    note,
   }]);
 
   const orderId = Number(createdOrderId);
