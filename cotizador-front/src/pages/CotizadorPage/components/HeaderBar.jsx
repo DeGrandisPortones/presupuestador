@@ -13,6 +13,7 @@ const MAIN_PAYMENT_METHODS = [
   MULTIPLE_PAYMENT_METHOD,
   "Efectivo",
   "Transferencia",
+  "Cta Cte",
   "Cheques 0 - 30 - 60 - 90 - 120",
   "Cheques 0 - 30 - 60 - 90 - 120 - 150 - 180",
   CARD_CATEGORY,
@@ -107,8 +108,6 @@ function paymentAllowsCondition2(value) {
   if (!key || isMultiplePaymentMethod(value) || key === normalizeKey(CARD_CATEGORY)) return false;
   return (
     key.includes("CHEQUE") ||
-    key.includes("CTA CTE") ||
-    key.includes("CUENTA CORRIENTE") ||
     key.includes("EFECTIVO")
   );
 }
@@ -137,6 +136,7 @@ function paymentCategoryFromMethod(paymentMethod, categoryOverride = "") {
   if (isCardPaymentMethod(raw)) return CARD_CATEGORY;
   if (key === normalizeKey("Efectivo")) return "Efectivo";
   if (key === normalizeKey("Transferencia")) return "Transferencia";
+  if (key === normalizeKey("Cta Cte") || key === normalizeKey("Cuenta Corriente")) return "Cta Cte";
   if (key === normalizeKey("Cheques 0 - 30 - 60 - 90 - 120") || key === normalizeKey("Cheque 0 - 30 - 60 - 90 -120")) {
     return "Cheques 0 - 30 - 60 - 90 - 120";
   }

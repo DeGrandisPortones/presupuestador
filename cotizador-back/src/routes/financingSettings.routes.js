@@ -10,6 +10,7 @@ const LEGACY_CASH_TRANSFER_PAYMENT_METHOD = "EFECTIVO - TRANSFERENCIA";
 const DEFAULT_PAYMENT_METHODS = [
   "Efectivo",
   "Transferencia",
+  "Cta Cte",
   "Cheques 0 - 30 - 60 - 90 - 120",
   "Cheques 0 - 30 - 60 - 90 - 120 - 150 - 180",
   "CORDOBESA 4 CUOTAS",
