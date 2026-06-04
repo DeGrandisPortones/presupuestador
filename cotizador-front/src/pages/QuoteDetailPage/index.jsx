@@ -7,9 +7,9 @@ import Input from "../../ui/Input.jsx";
 import { getQuote, reviewCommercial, reviewTechnical, createRevisionQuote } from "../../api/quotes.js";
 import { listDoorsByQuote } from "../../api/doors.js";
 import { downloadMedicionPdf } from "../../api/pdf.js";
-import { getBillingOptions } from "../../api/odoo.js";
+import { getBillingOptions, getFinancingPreview } from "../../api/odoo.js";
 import { useAuthStore } from "../../domain/auth/store.js";
-import { formatARS } from "../../domain/quote/pricing.js";
+import { formatARS, calcTotals } from "../../domain/quote/pricing.js";
 import MeasurementReadOnlyView from "../../components/MeasurementReadOnlyView.jsx";
 
 function quoteEditorPath(quote) {
@@ -600,35 +600,41 @@ function formatPercentForApproval(value) {
   return `${n.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%`;
 }
 
-function getQuoteIvaRateForApproval(quote) {
-  const payload = quote?.payload && typeof quote.payload === "object" ? quote.payload : {};
-  return String(payload?.condition_mode || "cond1").trim().toLowerCase() === "cond2" ? 0.105 : 0.21;
-}
-
-function getQuoteTotalWithIvaForApproval(quote) {
-  const payload = quote?.payload && typeof quote.payload === "object" ? quote.payload : {};
+function getQuoteCommercialTotalsForApproval(quote, conditionMode, financingPercent = 0) {
   const lines = Array.isArray(quote?.lines) ? quote.lines : [];
-  const marginPercent = getQuoteMarginPercentForApproval(quote);
-  const subtotal = lines.reduce((acc, line) => {
-    const qty = Number(line?.qty || 0) || 0;
-    const base = Number(line?.basePrice ?? line?.base_price ?? line?.price ?? 0) || 0;
-    return acc + (qty * base * (1 + marginPercent / 100));
-  }, 0);
-  const total = Math.round((subtotal * (1 + getQuoteIvaRateForApproval(quote))) * 100) / 100;
-  const explicitTotal = Number(String(payload?.total_with_iva ?? payload?.total_con_iva ?? quote?.total_with_iva ?? "").replace(",", "."));
-  return Number.isFinite(explicitTotal) && explicitTotal > 0 ? explicitTotal : total;
+  const normalizedLines = lines.map((line) => ({
+    ...line,
+    qty: Number(line?.qty || 0) || 0,
+    basePrice: Number(line?.basePrice ?? line?.base_price ?? line?.price ?? 0) || 0,
+  }));
+  return calcTotals(
+    normalizedLines,
+    getQuoteMarginPercentForApproval(quote),
+    0.21,
+    Number(financingPercent || 0) || 0,
+    conditionMode,
+  );
 }
 
-function buildApprovalCommercialRows(quote, conditionMode) {
+function formatIvaRateForApproval(rate) {
+  const n = Number(rate || 0) * 100;
+  return `${n.toLocaleString("es-AR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`;
+}
+
+function buildApprovalCommercialRows(quote, conditionMode, financingPercent = 0) {
   if (!quote) return [];
   const payload = quote?.payload && typeof quote.payload === "object" ? quote.payload : {};
+  const totals = getQuoteCommercialTotalsForApproval(quote, conditionMode, financingPercent);
   const rows = [];
   pushApprovalContextRow(rows, "Fecha del presupuesto", formatDateForApproval(quote?.confirmed_at || quote?.created_at));
   pushApprovalContextRow(rows, "Forma de pago", payload?.payment_method || "—");
   pushApprovalContextRow(rows, "Condición", conditionModeLabel(conditionMode));
   pushApprovalContextRow(rows, "Destino", fulfillmentModeLabel(quote?.fulfillment_mode));
   pushApprovalContextRow(rows, "Coeficiente aplicado", formatPercentForApproval(getQuoteMarginPercentForApproval(quote)));
-  pushApprovalContextRow(rows, "Total del presupuesto con IVA", formatARS(getQuoteTotalWithIvaForApproval(quote)));
+  pushApprovalContextRow(rows, "Neto", formatARS(totals.subtotal));
+  pushApprovalContextRow(rows, "IVA aplicado", formatIvaRateForApproval(totals.ivaRate));
+  pushApprovalContextRow(rows, "Monto IVA", formatARS(totals.iva));
+  pushApprovalContextRow(rows, "Total del presupuesto", formatARS(totals.total));
   return rows;
 }
 
@@ -799,6 +805,14 @@ export default function QuoteDetailPage() {
   const canCommercialAct = canCommercial && quote?.status === "pending_approvals" && quote?.commercial_decision === "pending";
   const canTechAct = canTech && quote?.status === "pending_approvals" && quote?.technical_decision === "pending";
   const conditionMode = String(quote?.payload?.condition_mode || "cond1").trim();
+  const paymentMethodForApproval = String(quote?.payload?.payment_method || "").trim();
+  const financingApprovalQ = useQuery({
+    queryKey: ["financing-preview-approval", paymentMethodForApproval],
+    queryFn: () => getFinancingPreview(paymentMethodForApproval),
+    enabled: !!paymentMethodForApproval,
+    staleTime: 60 * 1000,
+  });
+  const approvalFinancingPercent = Number(financingApprovalQ.data?.percent || 0) || 0;
   const requiresCommercialBillingData = quote?.created_by_role === "vendedor" && conditionMode === "cond1";
   const billingOptionsQ = useQuery({ queryKey: ["billing-options"], queryFn: () => getBillingOptions(), enabled: billingModalOpen && canCommercialAct && requiresCommercialBillingData, staleTime: 1000 * 60 * 30 });
 
@@ -828,7 +842,7 @@ export default function QuoteDetailPage() {
     if (quote.technical_decision === "rejected") arr.push({ title: "Rechazo Técnica", body: quote.technical_notes || "(sin motivo)" });
     return arr;
   }, [quote]);
-  const approvalCommercialRows = useMemo(() => buildApprovalCommercialRows(quote, conditionMode), [quote, conditionMode]);
+  const approvalCommercialRows = useMemo(() => buildApprovalCommercialRows(quote, conditionMode, approvalFinancingPercent), [quote, conditionMode, approvalFinancingPercent]);
   const approvalTechnicalRows = useMemo(() => buildApprovalContextRows(quote, conditionMode), [quote, conditionMode]);
   const budgetObservation = useMemo(() => extractBudgetObservation(quote), [quote]);
   const plegadoDescription = useMemo(() => extractPlegadoDescription(quote), [quote]);
