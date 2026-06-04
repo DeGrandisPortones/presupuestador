@@ -24,14 +24,31 @@ function getSectionPossibleIds(section = {}) {
     section?.original_section_id,
     section?.legacy_section_id,
     section?.odoo_section_id,
+    section?.tag_id,
+    section?.tagId,
+    section?.position,
   ]
     .map((value) => Number(value || 0))
     .filter((value) => Number.isFinite(value) && value > 0);
 }
 
-function shouldShowExteriorHelp({ catalogKind, section }) {
+function getProductPossibleTagIds(product = {}) {
+  return [
+    ...(Array.isArray(product?.tag_ids) ? product.tag_ids : []),
+    ...(Array.isArray(product?.tagIds) ? product.tagIds : []),
+    ...(Array.isArray(product?.tags) ? product.tags.map((tag) => (typeof tag === "object" ? tag?.id : tag)) : []),
+    ...(Array.isArray(product?.tag_debug) ? product.tag_debug.map((tag) => tag?.id) : []),
+  ]
+    .map((value) => Number(value || 0))
+    .filter((value) => Number.isFinite(value) && value > 0);
+}
+
+function shouldShowExteriorHelp({ catalogKind, section, sectionProducts = [] }) {
   if (String(catalogKind || "").toLowerCase().trim() !== "porton") return false;
-  return getSectionPossibleIds(section).some((sectionId) => EXTERIOR_HELP_SECTION_IDS.has(sectionId));
+  if (getSectionPossibleIds(section).some((sectionId) => EXTERIOR_HELP_SECTION_IDS.has(sectionId))) return true;
+  return (Array.isArray(sectionProducts) ? sectionProducts : []).some((product) =>
+    getProductPossibleTagIds(product).some((tagId) => EXTERIOR_HELP_SECTION_IDS.has(tagId)),
+  );
 }
 
 function ExteriorHelpButton({ open, onToggle }) {
@@ -816,7 +833,7 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
             const isOpen = openSectionId === sectionId;
             const sectionProducts = productsBySection.get(sectionId) || [];
             const selectedInSection = selectedProductIdsBySection.get(sectionId) || new Set();
-            const showExteriorHelp = shouldShowExteriorHelp({ catalogKind, section });
+            const showExteriorHelp = shouldShowExteriorHelp({ catalogKind, section, sectionProducts });
             const isHelpOpen = showExteriorHelp && helpSectionId === sectionId;
 
             return (
