@@ -354,14 +354,25 @@ function getMeasurementFlowForQuote({ catalog_kind, fulfillment_mode, lines }) {
     measurement_status: hasLine && mode === "produccion" ? "pending" : "none",
   };
 }
-function shouldDeferSyncUntilMeasurement(quote) {
-  const forced = getHardcodedOdooOverride(quote);
-  if (forced?.stage === "nv") return false;
+function isDirectProductionTechnicalOnlyQuote(quote) {
   return String(quote?.catalog_kind || "porton").toLowerCase().trim() === "porton"
     && String(quote?.fulfillment_mode || "").trim() === "produccion"
     && (
       normalizeMeasurementMode(quote?.measurement_mode) === "tecnica_only"
       || normalizeMeasurementSubtype(quote?.measurement_subtype) === "sin_medicion"
+    );
+}
+function shouldDeferSyncUntilMeasurement(quote) {
+  const forced = getHardcodedOdooOverride(quote);
+  if (forced?.stage === "nv") return false;
+  // Porton a produccion sin medicion: se crea la NV en la aprobacion inicial,
+  // pero queda en circuito tecnico para la aprobacion final/WhatsApp.
+  if (isDirectProductionTechnicalOnlyQuote(quote)) return false;
+  return String(quote?.catalog_kind || "porton").toLowerCase().trim() === "porton"
+    && String(quote?.fulfillment_mode || "").trim() === "produccion"
+    && (
+      quote?.requires_measurement === true
+      || hasMeasurementLine(quote?.lines)
     );
 }
 function calcQuoteSubtotal({ lines, payload }) {
@@ -1746,14 +1757,33 @@ export function buildQuotesRouter(odoo) {
 
   async function handleReadyQuoteSync({ qSync, approverUser }) {
     const forced = getHardcodedOdooOverride(qSync);
-    const directFinal = forced?.stage === "nv" || (qSync.fulfillment_mode === "produccion" && !quoteNeedsMeasurement(qSync));
+    const directTechnicalOnly = isDirectProductionTechnicalOnlyQuote(qSync);
+    const directFinal = forced?.stage === "nv" || directTechnicalOnly || (qSync.fulfillment_mode === "produccion" && !quoteNeedsMeasurement(qSync));
     if (directFinal) {
       const { order } = await syncDirectProductionFinalToOdoo({ odoo, quote: qSync, approverUser });
       const upd = await dbQuery(
-        `update public.presupuestador_quotes set status='synced_odoo', odoo_sale_order_id=$2, odoo_sale_order_name=$3, deposit_amount=0, final_status='synced_odoo', final_sale_order_id=$2, final_sale_order_name=$3, final_synced_at=now(), final_tolerance_percent=0, final_tolerance_amount=0, final_difference_amount=0, final_absorbed_by_company=false, requires_measurement=false, measurement_status='none' where id=$1 returning *`,
-        [qSync.id, Number(order.id), order.name]
+        `update public.presupuestador_quotes
+            set status='synced_odoo',
+                odoo_sale_order_id=$2,
+                odoo_sale_order_name=$3,
+                deposit_amount=0,
+                final_status='synced_odoo',
+                final_sale_order_id=$2,
+                final_sale_order_name=$3,
+                final_synced_at=now(),
+                final_tolerance_percent=0,
+                final_tolerance_amount=0,
+                final_difference_amount=0,
+                final_absorbed_by_company=false,
+                requires_measurement=case when $4::boolean then true else false end,
+                measurement_mode=case when $4::boolean then 'tecnica_only' else measurement_mode end,
+                measurement_subtype=case when $4::boolean then 'sin_medicion' else measurement_subtype end,
+                measurement_status=case when $4::boolean then 'pending' else 'none' end
+          where id=$1
+          returning *`,
+        [qSync.id, Number(order.id), order.name, directTechnicalOnly]
       );
-      return { quote: upd.rows?.[0] || qSync, order, directFinal: true };
+      return { quote: upd.rows?.[0] || qSync, order, directFinal: true, directTechnicalOnly };
     }
 
     const { order, deposit_amount } = await syncQuoteToOdoo({ odoo, quote: qSync, approverUser });

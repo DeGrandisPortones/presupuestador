@@ -1207,6 +1207,21 @@ async function maybeSendMeasurementApprovedWhatsApp({ odoo, quote }) {
   }
 }
 
+function isDirectNvAlreadyCreated(originalQuote) {
+  const saleOrderId = Number(originalQuote?.odoo_sale_order_id || 0) || 0;
+  const finalSaleOrderId = Number(originalQuote?.final_sale_order_id || 0) || 0;
+  const finalStatus = String(originalQuote?.final_status || "").toLowerCase().trim();
+  const initialName = toText(originalQuote?.odoo_sale_order_name);
+  const finalName = toText(originalQuote?.final_sale_order_name);
+  return !!(
+    saleOrderId > 0
+    && finalSaleOrderId > 0
+    && saleOrderId === finalSaleOrderId
+    && finalStatus === "synced_odoo"
+    && (finalName || initialName).toUpperCase().includes("NV")
+  );
+}
+
 async function buildMeasurementFinalizationBase({ odoo, originalQuote, measurementForm }) {
   const sourceQuote = await resolveBaseSourceQuote(originalQuote);
   const legacyMappings = await getMeasurementProductMappings();
@@ -1325,6 +1340,29 @@ export async function finalizeMeasurementToRevisionQuote({ odoo, originalQuote, 
   const base = await buildMeasurementFinalizationBase({ odoo, originalQuote, measurementForm });
   const finalLines = base.generated_lines || [];
   const whatsappNotification = await maybeSendMeasurementApprovedWhatsApp({ odoo, quote: originalQuote });
+
+  // Porton a produccion sin medicion: la NV ya fue creada al aprobar Comercial+Tecnica.
+  // La aprobacion final del circuito tecnico solo debe disparar WhatsApp y no crear otra NV.
+  if (isDirectNvAlreadyCreated(originalQuote)) {
+    const existingOrder = {
+      id: Number(originalQuote?.final_sale_order_id || originalQuote?.odoo_sale_order_id || 0) || null,
+      name: toText(originalQuote?.final_sale_order_name || originalQuote?.odoo_sale_order_name),
+    };
+    return {
+      revisionQuote: null,
+      generated_lines: finalLines,
+      synced: false,
+      skipped_odoo: true,
+      reason: "NV ya generada previamente. Solo se envio/disparo WhatsApp de aprobacion final.",
+      order: existingOrder,
+      metrics: {
+        ...(base.metrics || {}),
+        reference_nv: existingOrder.name || base.metrics?.reference_nv || "",
+      },
+      whatsappNotification,
+      source_quote_id: base.source_quote_id,
+    };
+  }
 
   if (!finalLines.length) {
     return {
