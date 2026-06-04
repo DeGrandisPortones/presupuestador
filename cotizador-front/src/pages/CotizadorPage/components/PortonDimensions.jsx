@@ -819,6 +819,7 @@ export default function PortonDimensions({ kind = "porton" }) {
   const normalizedKind = normalizeKind(kind);
   const isPorton = normalizedKind === "porton";
   const isIpanel = normalizedKind === "ipanel";
+  const isPlegados = normalizedKind === "plegados";
   const dimensions = useQuoteStore((s) => s.dimensions);
   const setDimensions = useQuoteStore((s) => s.setDimensions);
   const portonType = useQuoteStore((s) => s.portonType);
@@ -1003,7 +1004,7 @@ export default function PortonDimensions({ kind = "porton" }) {
   }, [isPorton, preview.anchoPasoMm, preview.altoPasoMm, preview.anchoHojaMm, preview.altoHojaMm, setDimensions]);
 
   if (!isPorton && !isIpanel) return null;
-  const title = isPorton ? "Medidas del porton" : "Medidas del Ipanel";
+  const title = isPlegados ? "Medidas del plegado" : (isPorton ? "Medidas del porton" : "Medidas del Ipanel");
   const parantesHelper = parantesFieldsReadOnly
     ? (hasDoorParantesConfig ? `Solo lectura. ${detectedDoorLabel}: primer parante a ${DOOR_FIXED_PARANTE_DISTANCE_MM} mm del lateral ${detectedDoorSide}.` : "Solo lectura. Se calcula automaticamente segun reglas tecnicas, orientacion y medidas cargadas.")
     : effectiveParantesOrientation === "verticales"
@@ -1044,6 +1045,10 @@ export default function PortonDimensions({ kind = "porton" }) {
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 12, alignItems: "start" }}>
         <FieldBox label="Ancho (m)" helper={widthHelper} helperColor={widthOutOfBounds ? "#b91c1c" : undefined}><Input type="text" inputMode="decimal" value={widthRaw} onChange={(v) => setDimensions({ width: normalizeDecimal(v) })} onBlur={(e) => setDimensions({ width: normalizeDecimal(e?.target?.value) })} placeholder={isIpanel ? "Ej: 1.13" : "Ej: 3.2"} style={inputStateStyle(widthOutOfBounds)} /></FieldBox>
         <FieldBox label="Alto (m)" helper={heightHelper} helperColor={heightOutOfBounds ? "#b91c1c" : undefined}><Input type="text" inputMode="decimal" value={heightRaw} onChange={(v) => setDimensions({ height: normalizeDecimal(v) })} onBlur={(e) => setDimensions({ height: normalizeDecimal(e?.target?.value) })} placeholder={heightPlaceholder} style={inputStateStyle(heightOutOfBounds)} /></FieldBox>
+        {isPlegados ? (<>
+          <FieldBox label="Superficie del plegado"><div style={{ fontWeight: 800, fontSize: 16, minHeight: 40, display: "flex", alignItems: "center", padding: "9px 12px", borderRadius: 10, border: "1px solid #d1d5db", background: "#f3f4f6", color: "#334155" }}>{area ? `${area.toFixed(2)} m2` : "-"}</div></FieldBox>
+          <FieldBox label="Descripción del plegado" helper="Información técnica o detalle que verá Comercial y Técnica."><textarea value={String(dimensions?.plegado_descripcion ?? dimensions?.descripcion_plegado ?? dimensions?.description ?? "")} onChange={(e) => setDimensions({ plegado_descripcion: e.target.value, descripcion_plegado: e.target.value })} rows={3} style={{ width: "100%", borderRadius: 10, border: "1px solid #ddd", padding: "10px 12px", resize: "vertical", fontFamily: "inherit" }} placeholder="Describí el plegado, material, observaciones o cualquier dato técnico necesario..." /></FieldBox>
+        </>) : null}
         {isPorton ? (<>
           <FieldBox label="Tipo / Sistema derivado"><Input value={portonType || ""} disabled placeholder="Se completa segun la combinacion de productos" style={disabledComputedInputStyle()} /></FieldBox>
           <FieldBox label="Kg por m2"><Input value={formatNumberForInput(preview.effectiveKgM2)} placeholder="Se calcula automaticamente segun el sistema" style={disabledComputedInputStyle()} disabled /></FieldBox>

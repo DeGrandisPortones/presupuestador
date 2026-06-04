@@ -61,6 +61,35 @@ function BudgetObservationCell({ row }) {
   if (!text) return <span className="muted">—</span>;
   return <div style={{ fontWeight: 800, background: "#fff8e1", border: "1px solid #f2d08a", borderRadius: 10, padding: "6px 8px", maxWidth: 280, whiteSpace: "pre-wrap" }}>{text}</div>;
 }
+
+function isPlegadosRow(row) {
+  return String(row?.payload?.quote_subkind || row?.catalog_kind || "").toLowerCase().trim() === "plegados";
+}
+function plegadoDescription(row) {
+  const payload = row?.payload && typeof row.payload === "object" ? row.payload : {};
+  const dimensions = payload?.dimensions && typeof payload.dimensions === "object" ? payload.dimensions : {};
+  return String(dimensions?.plegado_descripcion || dimensions?.descripcion_plegado || dimensions?.description || payload?.plegado_descripcion || payload?.descripcion_plegado || "").trim();
+}
+function plegadoSurface(row) {
+  const payload = row?.payload && typeof row.payload === "object" ? row.payload : {};
+  const dimensions = payload?.dimensions && typeof payload.dimensions === "object" ? payload.dimensions : {};
+  const direct = Number(String(dimensions?.area_m2 ?? "").replace(",", "."));
+  const width = Number(String(dimensions?.width ?? "").replace(",", "."));
+  const height = Number(String(dimensions?.height ?? "").replace(",", "."));
+  const area = Number.isFinite(direct) && direct > 0 ? direct : (Number.isFinite(width) && Number.isFinite(height) ? width * height : 0);
+  return Number.isFinite(area) && area > 0 ? `${area.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} m²` : "";
+}
+function PlegadoInfoCell({ row }) {
+  if (!isPlegadosRow(row)) return <span className="muted">—</span>;
+  const surface = plegadoSurface(row);
+  const description = plegadoDescription(row);
+  return (
+    <div style={{ background: "#f7fbff", border: "1px solid #d9e5f7", borderRadius: 10, padding: "6px 8px", maxWidth: 320 }}>
+      <div style={{ fontWeight: 900 }}>{surface || "Sin superficie"}</div>
+      <div className="muted" style={{ whiteSpace: "pre-wrap", marginTop: 3 }}>{description || "Sin descripción"}</div>
+    </div>
+  );
+}
 function matchesSearch(values, searchText) {
   const s = String(searchText || "").trim().toLowerCase();
   if (!s) return true;
@@ -137,21 +166,21 @@ export default function AprobacionComercialPage() {
     let out = arr;
     if (filter === "pending") out = arr.filter((x) => x.status === "pending_approvals" && x.commercial_decision === "pending");
     if (filter === "rejected") out = arr.filter((x) => x.status === "draft" && x.technical_decision === "rejected");
-    return out.filter((r) => matchesSearch([createdByLabel(r), r?.end_customer?.name, r?.end_customer?.city, r?.end_customer?.address, rowLabel(r), budgetObservation(r)], searchText));
+    return out.filter((r) => matchesSearch([createdByLabel(r), r?.end_customer?.name, r?.end_customer?.city, r?.end_customer?.address, rowLabel(r), budgetObservation(r), plegadoSurface(r), plegadoDescription(r)], searchText));
   }, [q.data, filter, searchText]);
 
   const acopioRows = useMemo(() => {
     return (acopioQ.data || [])
       .slice()
       .sort((a, b) => toTimeDesc(b?.acopio_to_produccion_requested_at || b?.created_at) - toTimeDesc(a?.acopio_to_produccion_requested_at || a?.created_at))
-      .filter((r) => matchesSearch([createdByLabel(r), r?.end_customer?.name, r?.end_customer?.city, r?.end_customer?.address, r?.acopio_to_produccion_notes, acopioReqLabel(r), budgetObservation(r)], searchText));
+      .filter((r) => matchesSearch([createdByLabel(r), r?.end_customer?.name, r?.end_customer?.city, r?.end_customer?.address, r?.acopio_to_produccion_notes, acopioReqLabel(r), budgetObservation(r), plegadoSurface(r), plegadoDescription(r)], searchText));
   }, [acopioQ.data, searchText]);
 
   const acopioListadoRows = useMemo(() => {
     return (acopioListadoQ.data || [])
       .slice()
       .sort((a, b) => toTimeDesc(b?.confirmed_at || b?.created_at) - toTimeDesc(a?.confirmed_at || a?.created_at))
-      .filter((r) => matchesSearch([createdByLabel(r), r?.end_customer?.name, r?.end_customer?.city, r?.end_customer?.address, rowLabel(r), acopioReqLabel(r), budgetObservation(r)], searchText));
+      .filter((r) => matchesSearch([createdByLabel(r), r?.end_customer?.name, r?.end_customer?.city, r?.end_customer?.address, rowLabel(r), acopioReqLabel(r), budgetObservation(r), plegadoSurface(r), plegadoDescription(r)], searchText));
   }, [acopioListadoQ.data, searchText]);
 
   const doorRows = useMemo(() => {
@@ -239,7 +268,7 @@ export default function AprobacionComercialPage() {
             {!!rows.length && (
               <>
                 <table>
-                  <thead><tr><th>Fecha</th><th>Vendedor/Distribuidor</th><th>Cliente</th><th>Dirección</th><th>Estado</th><th>Obs. presupuesto</th><th></th></tr></thead>
+                  <thead><tr><th>Fecha</th><th>Vendedor/Distribuidor</th><th>Cliente</th><th>Dirección</th><th>Estado</th><th>Datos plegado</th><th>Obs. presupuesto</th><th></th></tr></thead>
                   <tbody>
                     {visibleRows.map((r) => {
                       const pdfKey = `quote-${r.id}`;
@@ -250,6 +279,7 @@ export default function AprobacionComercialPage() {
                           <td>{r.end_customer?.name || <span className="muted">(sin nombre)</span>}</td>
                           <td>{r.end_customer?.address || "—"}</td>
                           <td>{rowLabel(r)}</td>
+                          <td><PlegadoInfoCell row={r} /></td>
                           <td><BudgetObservationCell row={r} /></td>
                           <td className="right" style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
                             <PdfIconButton disabled={downloadingPdfKey === pdfKey} onClick={() => handleDownloadQuotePdf(r.id)} />
@@ -309,7 +339,7 @@ export default function AprobacionComercialPage() {
             {!!acopioRows.length && (
               <>
                 <table>
-                  <thead><tr><th>Fecha</th><th>Vendedor/Distribuidor</th><th>Cliente</th><th>Dirección</th><th>Solicitud</th><th>Obs. presupuesto</th><th>Decisiones</th><th></th></tr></thead>
+                  <thead><tr><th>Fecha</th><th>Vendedor/Distribuidor</th><th>Cliente</th><th>Dirección</th><th>Solicitud</th><th>Datos plegado</th><th>Obs. presupuesto</th><th>Decisiones</th><th></th></tr></thead>
                   <tbody>
                     {visibleAcopioRows.map((r) => {
                       const canAct = (r.acopio_to_produccion_commercial_decision || "pending") === "pending";
@@ -321,6 +351,7 @@ export default function AprobacionComercialPage() {
                           <td>{r.end_customer?.name || <span className="muted">(sin nombre)</span>}</td>
                           <td>{r.end_customer?.address || "—"}</td>
                           <td>{r.acopio_to_produccion_notes || <span className="muted">(sin nota)</span>}</td>
+                          <td><PlegadoInfoCell row={r} /></td>
                           <td><BudgetObservationCell row={r} /></td>
                           <td>{acopioReqLabel(r)}</td>
                           <td className="right" style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
@@ -352,7 +383,7 @@ export default function AprobacionComercialPage() {
             {!!acopioListadoRows.length && (
               <>
                 <table>
-                  <thead><tr><th>Fecha</th><th>Vendedor/Distribuidor</th><th>Cliente</th><th>Dirección</th><th>Estado</th><th>Obs. presupuesto</th><th>Solicitud Prod.</th><th></th></tr></thead>
+                  <thead><tr><th>Fecha</th><th>Vendedor/Distribuidor</th><th>Cliente</th><th>Dirección</th><th>Estado</th><th>Datos plegado</th><th>Obs. presupuesto</th><th>Solicitud Prod.</th><th></th></tr></thead>
                   <tbody>
                     {visibleAcopioListadoRows.map((r) => {
                       const pdfKey = `quote-${r.id}`;
@@ -363,6 +394,7 @@ export default function AprobacionComercialPage() {
                           <td>{r.end_customer?.name || <span className="muted">(sin nombre)</span>}</td>
                           <td>{r.end_customer?.address || "—"}</td>
                           <td>{rowLabel(r)}</td>
+                          <td><PlegadoInfoCell row={r} /></td>
                           <td><BudgetObservationCell row={r} /></td>
                           <td>{r.acopio_to_produccion_status ? acopioReqLabel(r) : "—"}</td>
                           <td className="right" style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>

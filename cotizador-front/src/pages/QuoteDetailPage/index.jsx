@@ -63,6 +63,34 @@ function extractBudgetObservation(quote) {
   return String(quote?.budget_observation || payload?.budget_observation || payload?.presupuesto_observacion || payload?.quote_observation || "").trim();
 }
 
+function extractPlegadoDescription(quote) {
+  const payload = quote?.payload && typeof quote.payload === "object" ? quote.payload : {};
+  const dimensions = payload?.dimensions && typeof payload.dimensions === "object" ? payload.dimensions : {};
+  return String(
+    dimensions?.plegado_descripcion ||
+    dimensions?.descripcion_plegado ||
+    dimensions?.description ||
+    payload?.plegado_descripcion ||
+    payload?.descripcion_plegado ||
+    quote?.plegado_descripcion ||
+    ""
+  ).trim();
+}
+
+function formatPlegadoSurface(quote) {
+  const payload = quote?.payload && typeof quote.payload === "object" ? quote.payload : {};
+  const dimensions = payload?.dimensions && typeof payload.dimensions === "object" ? payload.dimensions : {};
+  const direct = Number(String(dimensions?.area_m2 ?? "").replace(",", "."));
+  const width = Number(String(dimensions?.width ?? "").replace(",", "."));
+  const height = Number(String(dimensions?.height ?? "").replace(",", "."));
+  const area = Number.isFinite(direct) && direct > 0 ? direct : (Number.isFinite(width) && Number.isFinite(height) ? width * height : 0);
+  return Number.isFinite(area) && area > 0 ? `${area.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} m²` : "";
+}
+
+function isPlegadosQuote(quote) {
+  return String(quote?.payload?.quote_subkind || quote?.catalog_kind || "").toLowerCase().trim() === "plegados";
+}
+
 function normalizeBillingText(value) {
   return String(value || "").trim();
 }
@@ -579,6 +607,7 @@ function buildApprovalContextRows(quote, conditionMode) {
     measurementForm?.automatic_context,
   ].filter(Boolean);
   const rows = [];
+  const isPlegados = isPlegadosQuote(quote);
   const sistemaEntry = firstTechnicalEntry(sources, ["tipologia_sistema", "tipologia", "tipología", "sistema", "system", "system_type", "tipo_sistema", "porton_type", "tipo_porton", "levadizo"]);
   const paymentEntry = firstTechnicalEntry(sources, ["payment_method", "paymentMethod", "forma_pago", "forma_de_pago", "metodo_pago", "método_pago", "selected_payment_method", "financing_label", "financing"]);
   const cantidadParantesEntry = firstTechnicalEntry(sources, ["cantidad_parantes", "parantes_cantidad", "cant_parantes", "parantes_cant"]);
@@ -589,7 +618,8 @@ function buildApprovalContextRows(quote, conditionMode) {
   pushApprovalContextRow(rows, "Alto", formatMetersForApproval(preview.heightM) || formatDimensionEntry(firstTechnicalEntry(sources, ["alto", "height", "alto_m", "height_m", "alto_mm", "height_mm"])));
   pushApprovalContextEntry(rows, "Tipología / sistema", sistemaEntry);
   pushApprovalContextRow(rows, "Kg/m² efectivo", preview.effectiveKgM2 > 0 ? `${preview.effectiveKgM2.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} kg/m²` : "");
-  pushApprovalContextRow(rows, "Superficie", preview.areaM2 > 0 ? `${preview.areaM2.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} m²` : "");
+  pushApprovalContextRow(rows, isPlegados ? "Superficie del plegado" : "Superficie", preview.areaM2 > 0 ? `${preview.areaM2.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} m²` : "");
+  if (isPlegados) pushApprovalContextRow(rows, "Descripción del plegado", extractPlegadoDescription(quote));
   pushApprovalContextRow(rows, "Medidas de paso", formatSavedMedidasPasoForApproval(dimensions) || (preview.altoPasoMm > 0 && preview.anchoPasoMm > 0 ? `${formatMetersFromMmForApproval(preview.anchoPasoMm)} x ${formatMetersFromMmForApproval(preview.altoPasoMm)}` : ""));
   pushApprovalContextRow(rows, "Peso estimado", preview.estimatedWeightKg > 0 ? `${preview.estimatedWeightKg.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} kg` : "");
   pushApprovalContextRow(rows, "Piernas estimadas", preview.legsLabel || formatTechnicalValue(firstTechnicalEntry(sources, ["piernas_tipo", "tipo_piernas", "piernas", "leg_type", "legs_type"])?.value));
@@ -720,6 +750,8 @@ export default function QuoteDetailPage() {
   }, [quote]);
   const approvalContextRows = useMemo(() => buildApprovalContextRows(quote, conditionMode), [quote, conditionMode]);
   const budgetObservation = useMemo(() => extractBudgetObservation(quote), [quote]);
+  const plegadoDescription = useMemo(() => extractPlegadoDescription(quote), [quote]);
+  const plegadoSurface = useMemo(() => formatPlegadoSurface(quote), [quote]);
 
   function handleCommercialApproveClick() {
     if (requiresCommercialBillingData) {
@@ -778,6 +810,18 @@ export default function QuoteDetailPage() {
                 <div className="card" style={{ background: "#fff8e1", border: "1px solid #f2d08a" }}>
                   <div style={{ fontWeight: 900, marginBottom: 6 }}>Observación del presupuesto / NP / NV</div>
                   <div style={{ whiteSpace: "pre-wrap", fontWeight: 700 }}>{budgetObservation}</div>
+                </div>
+              </>
+            ) : null}
+            {isPlegadosQuote(quote) ? (
+              <>
+                <div className="spacer" />
+                <div className="card" style={{ background: "#f7fbff", border: "1px solid #d9e5f7" }}>
+                  <div style={{ fontWeight: 900, marginBottom: 6 }}>Datos del plegado</div>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 10 }}>
+                    <div><div className="muted">Superficie</div><div style={{ fontWeight: 800 }}>{plegadoSurface || "—"}</div></div>
+                    <div style={{ gridColumn: "1 / -1" }}><div className="muted">Descripción</div><div style={{ whiteSpace: "pre-wrap", fontWeight: 700 }}>{plegadoDescription || <span className="muted">(sin descripción)</span>}</div></div>
+                  </div>
                 </div>
               </>
             ) : null}

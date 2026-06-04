@@ -377,7 +377,7 @@ function validateDimensionsRequired(payload, kind = "porton") {
   const dims = payload?.payload?.dimensions || {};
   const width = parseNum(dims?.width);
   const height = parseNum(dims?.height);
-  const itemLabel = normalizedKind === "ipanel" ? "Ipanel" : (normalizedKind === "plegados" ? "Plegados" : (normalizedKind === "puerta" ? "puerta" : "portón"));
+  const itemLabel = normalizedKind === "ipanel" ? "Ipanel" : (normalizedKind === "plegados" ? "plegado" : (normalizedKind === "puerta" ? "puerta" : "portón"));
 
   if (!(width > 0)) throw new Error(`Completá el ancho del ${itemLabel}.`);
   if (!(height > 0)) throw new Error(`Completá el alto del ${itemLabel}.`);
@@ -387,7 +387,7 @@ function validateDimensionsRequired(payload, kind = "porton") {
     if (height < HEIGHT_MIN_M || height > HEIGHT_MAX_M) throw new Error("El alto debe estar entre 2 m y 3 m.");
   }
 
-  if (["ipanel", "plegados"].includes(normalizedKind)) {
+  if (normalizedKind === "ipanel") {
     if (width > IPANEL_LAMAS_WIDTH_MAX_M) throw new Error(`El ancho del ${itemLabel} no puede superar 2.00 m. Entre 1.13 m y 2.00 m sólo se puede producir en lamas.`);
     if (height > IPANEL_LAMAS_HEIGHT_MAX_M) throw new Error(`El alto del ${itemLabel} no puede superar 3.00 m. Entre 2.45 m y 3.00 m sólo se puede producir en lamas.`);
 
@@ -702,7 +702,7 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
   }, [normalizedCatalogKind, dimensions?.width, dimensions?.height]);
 
   useEffect(() => {
-    if (!["ipanel", "plegados"].includes(normalizedCatalogKind)) {
+    if (normalizedCatalogKind !== "ipanel") {
       ipanelLamasAlertShownRef.current = false;
       patchIpanelLamasOnlyUi(false);
       return undefined;
