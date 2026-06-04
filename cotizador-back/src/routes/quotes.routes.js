@@ -294,12 +294,12 @@ function validateEndCustomerRequired(end_customer) {
 }
 function paymentAllowsCondition2ForQuote(paymentMethod) {
   const key = normalizePaymentMethodKey(paymentMethod);
-  return !!key && (key.includes("CHEQUE") || key.includes("EFECTIVO"));
+  return key === normalizePaymentMethodKey("Efectivo") || key === normalizePaymentMethodKey("Cheques 30") || key === normalizePaymentMethodKey("Cheque 30");
 }
 function validateBusinessRequired(payload, catalog_kind) {
   const p = payload || {};
   if (!String(p.payment_method || "").trim()) return "Falta payload.payment_method";
-  if (String(p.condition_mode || "") === "cond2" && !paymentAllowsCondition2ForQuote(p.payment_method)) return "Condicion 2 solo para cheque o efectivo";
+  if (String(p.condition_mode || "") === "cond2" && !paymentAllowsCondition2ForQuote(p.payment_method)) return "Condicion 2 solo para Efectivo o Cheques 30";
   if (String(p.condition_mode || "") === "special" && !String(p.condition_text || "").trim()) return "Falta payload.condition_text (condicion especial)";
   if (String(catalog_kind || "porton").toLowerCase().trim() === "porton" && !String(p.porton_type || "").trim()) return "Falta payload.porton_type";
   return null;

@@ -107,10 +107,7 @@ function formatPercent(n) {
 function paymentAllowsCondition2(value) {
   const key = normalizeKey(value);
   if (!key || isMultiplePaymentMethod(value) || key === normalizeKey(CARD_CATEGORY)) return false;
-  return (
-    key.includes("CHEQUE") ||
-    key.includes("EFECTIVO")
-  );
+  return key === normalizeKey("Efectivo") || key === normalizeKey("Cheques 30") || key === normalizeKey("Cheque 30");
 }
 
 function parseExistingMultiple(paymentMethod) {
