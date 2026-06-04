@@ -43,8 +43,57 @@ const IPANEL_LAMAS_ODOO_ID = 3503;
 const IPANEL_NON_LAMAS_PLEGADO_PRODUCT_IDS = [4036, 3973];
 const PREVIOUSLY_BILLED_PRODUCT_ID = -900001;
 function normalizeCatalogKind(kind) { return String(kind || "porton").toLowerCase().trim(); }
+
+function catalogKindDisplayName(kind) {
+  const normalized = normalizeCatalogKind(kind);
+  if (normalized === "ipanel") return "Ipanel";
+  if (normalized === "plegados") return "Plegados";
+  if (normalized === "otros") return "Otros";
+  if (normalized === "puerta") return "Puerta";
+  return "Portón";
+}
+function catalogKindLinkedObjectLabel(kind) {
+  const normalized = normalizeCatalogKind(kind);
+  if (normalized === "ipanel") return "el Ipanel";
+  if (normalized === "plegados") return "Plegados";
+  if (normalized === "otros") return "Otros";
+  if (normalized === "puerta") return "la puerta";
+  return "el portón";
+}
+function catalogKindShortReferencePrefix(kind) {
+  const normalized = normalizeCatalogKind(kind);
+  if (normalized === "ipanel") return "I";
+  if (normalized === "plegados") return "PL";
+  if (normalized === "otros") return "O";
+  if (normalized === "puerta") return "P";
+  return "";
+}
+function catalogKindOdooReferenceLabel(kind) {
+  const normalized = normalizeCatalogKind(kind);
+  if (normalized === "ipanel") return "INP/INV";
+  if (normalized === "plegados") return "PLNP/PLNV";
+  if (normalized === "otros") return "ONP/ONV";
+  if (normalized === "puerta") return "PNP/PNV";
+  return "NP/NV";
+}
+function readBudgetObservationFromPayload(payloadLike) {
+  const p = payloadLike?.payload && typeof payloadLike.payload === "object" ? payloadLike.payload : payloadLike || {};
+  return String(p?.budget_observation || p?.presupuesto_observacion || p?.quote_observation || "").trim();
+}
+function applyBudgetObservationToPayload(payload, observation) {
+  const next = payload && typeof payload === "object" ? { ...payload } : {};
+  const value = String(observation || "").trim();
+  if (value) {
+    next.budget_observation = value;
+    next.presupuesto_observacion = value;
+  } else {
+    delete next.budget_observation;
+    delete next.presupuesto_observacion;
+  }
+  return next;
+}
 function normalizeUrl(value) { return String(value || "").trim().replace(/\/+$/, "").toLowerCase(); }
-function editorRouteForKind(kind, id, search = "") { const safeId = String(id || "").trim(); const suffix = search || ""; const normalizedKind = normalizeCatalogKind(kind); if (normalizedKind === "ipanel") return `/cotizador/ipanel/${safeId}${suffix}`; if (normalizedKind === "otros") return `/cotizador/otros/${safeId}${suffix}`; if (normalizedKind === "puerta") return `/cotizador/puerta/${safeId}${suffix}`; return `/cotizador/${safeId}${suffix}`; }
+function editorRouteForKind(kind, id, search = "") { const safeId = String(id || "").trim(); const suffix = search || ""; const normalizedKind = normalizeCatalogKind(kind); if (normalizedKind === "ipanel") return `/cotizador/ipanel/${safeId}${suffix}`; if (normalizedKind === "plegados") return `/cotizador/plegados/${safeId}${suffix}`; if (normalizedKind === "otros") return `/cotizador/otros/${safeId}${suffix}`; if (normalizedKind === "puerta") return `/cotizador/puerta/${safeId}${suffix}`; return `/cotizador/${safeId}${suffix}`; }
 function parseNum(v) { const n = Number(String(v ?? "").replace(",", ".")); return Number.isFinite(n) ? n : 0; }
 function parseOptionalDimensionForUiPatch(value) {
   const raw = String(value ?? "").trim().replace(",", ".");
@@ -328,7 +377,7 @@ function validateDimensionsRequired(payload, kind = "porton") {
   const dims = payload?.payload?.dimensions || {};
   const width = parseNum(dims?.width);
   const height = parseNum(dims?.height);
-  const itemLabel = normalizedKind === "ipanel" ? "Ipanel" : (normalizedKind === "puerta" ? "puerta" : "portón");
+  const itemLabel = normalizedKind === "ipanel" ? "Ipanel" : (normalizedKind === "plegados" ? "Plegados" : (normalizedKind === "puerta" ? "puerta" : "portón"));
 
   if (!(width > 0)) throw new Error(`Completá el ancho del ${itemLabel}.`);
   if (!(height > 0)) throw new Error(`Completá el alto del ${itemLabel}.`);
@@ -338,9 +387,9 @@ function validateDimensionsRequired(payload, kind = "porton") {
     if (height < HEIGHT_MIN_M || height > HEIGHT_MAX_M) throw new Error("El alto debe estar entre 2 m y 3 m.");
   }
 
-  if (normalizedKind === "ipanel") {
-    if (width > IPANEL_LAMAS_WIDTH_MAX_M) throw new Error("El ancho del Ipanel no puede superar 2.00 m. Entre 1.13 m y 2.00 m sólo se puede producir en lamas.");
-    if (height > IPANEL_LAMAS_HEIGHT_MAX_M) throw new Error("El alto del Ipanel no puede superar 3.00 m. Entre 2.45 m y 3.00 m sólo se puede producir en lamas.");
+  if (["ipanel", "plegados"].includes(normalizedKind)) {
+    if (width > IPANEL_LAMAS_WIDTH_MAX_M) throw new Error(`El ancho del ${itemLabel} no puede superar 2.00 m. Entre 1.13 m y 2.00 m sólo se puede producir en lamas.`);
+    if (height > IPANEL_LAMAS_HEIGHT_MAX_M) throw new Error(`El alto del ${itemLabel} no puede superar 3.00 m. Entre 2.45 m y 3.00 m sólo se puede producir en lamas.`);
 
     if (isIpanelExtendedLamasDimensions(dims)) {
       if (!hasIpanelLamasProduct(payload)) {
@@ -349,8 +398,8 @@ function validateDimensionsRequired(payload, kind = "porton") {
       return;
     }
 
-    if (width > IPANEL_WIDTH_MAX_M) throw new Error("El ancho del Ipanel no puede superar 1.13 m (113 cm), salvo en Revestimiento en lamas hasta 2.00 m.");
-    if (height > IPANEL_HEIGHT_MAX_M) throw new Error("El alto del Ipanel no puede superar 2.45 m (245 cm), salvo en Revestimiento en lamas hasta 3.00 m.");
+    if (width > IPANEL_WIDTH_MAX_M) throw new Error(`El ancho del ${itemLabel} no puede superar 1.13 m (113 cm), salvo en Revestimiento en lamas hasta 2.00 m.`);
+    if (height > IPANEL_HEIGHT_MAX_M) throw new Error(`El alto del ${itemLabel} no puede superar 2.45 m (245 cm), salvo en Revestimiento en lamas hasta 3.00 m.`);
   }
 }
 function formatVisibleStatus(rawStatus, hasPersistedQuote) {
@@ -434,6 +483,7 @@ function buildSubQuoteDisplayReferenceFromPayload(kind, payload) {
   if (!core) return "";
   const normalizedKind = normalizeCatalogKind(kind);
   if (normalizedKind === "ipanel") return `INP${core}`;
+  if (normalizedKind === "plegados") return `PLNP${core}`;
   if (normalizedKind === "otros") return `ONP${core}`;
   if (normalizedKind === "puerta") return `PNP${core}`;
   return `NP${core}`;
@@ -445,6 +495,7 @@ function buildSubQuoteDisplayReference(kind, linkedPorton) {
   const core = extractReferenceCore(reference || linkedPorton?.quote_number || "");
   if (!core) return "";
   if (normalizedKind === "ipanel") return `INP${core}`;
+  if (normalizedKind === "plegados") return `PLNP${core}`;
   if (normalizedKind === "otros") return `ONP${core}`;
   if (normalizedKind === "puerta") return `PNP${core}`;
   return `NP${core}`;
@@ -491,7 +542,7 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
   const workflowDoorId = String(searchParams.get("door_id") || "").trim();
   const workflowPortonId = String(searchParams.get("porton_id") || "").trim();
   const initialLinkedPortonId = String(searchParams.get("linked_porton_id") || (normalizedCatalogKind !== "porton" ? workflowPortonId : "") || "").trim();
-  const canLinkToPorton = ["ipanel", "otros"].includes(normalizedCatalogKind);
+  const canLinkToPorton = ["ipanel", "plegados", "otros"].includes(normalizedCatalogKind);
 
   const {
     quoteId,
@@ -519,6 +570,7 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
   } = useQuoteStore();
   const [ivaRate] = useState(IVA_RATE_DEFAULT);
   const [confirmChoiceOpen, setConfirmChoiceOpen] = useState(false);
+  const [confirmBudgetObservation, setConfirmBudgetObservation] = useState("");
   const ipanelLamasAlertShownRef = useRef(false);
   const [linkedPortonId, setLinkedPortonId] = useState("");
   const [portonSearch, setPortonSearch] = useState("");
@@ -633,8 +685,8 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
     if (linked.pricelist_id) setPricelist({ id: linked.pricelist_id, name: linked.pricelist_name || `Lista ${linked.pricelist_id}` });
     if (linked.bill_to_odoo_partner_id) setPartnerId(linked.bill_to_odoo_partner_id);
     const label = buildSubQuoteDisplayReference(normalizedCatalogKind, linked);
-    if (label) setNote((normalizedCatalogKind === "ipanel" ? "Ipanel" : "Otros") + ` vinculado al portón ${linkedPortonReferenceLabel(linked) || linked.quote_number || linked.id}`);
-    toast.success(`${normalizedCatalogKind === "ipanel" ? "Ipanel" : "Otros"} vinculado al portón.`);
+    if (label) setNote(`${catalogKindDisplayName(normalizedCatalogKind)} vinculado al portón ${linkedPortonReferenceLabel(linked) || linked.quote_number || linked.id}`);
+    toast.success(`${catalogKindDisplayName(normalizedCatalogKind)} vinculado al portón.`);
   }
 
   useEffect(() => {
@@ -650,7 +702,7 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
   }, [normalizedCatalogKind, dimensions?.width, dimensions?.height]);
 
   useEffect(() => {
-    if (normalizedCatalogKind !== "ipanel") {
+    if (!["ipanel", "plegados"].includes(normalizedCatalogKind)) {
       ipanelLamasAlertShownRef.current = false;
       patchIpanelLamasOnlyUi(false);
       return undefined;
@@ -753,10 +805,18 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
     filtered.push(`Vendedor: ${sellerLabel}`);
     return filtered.join("\n");
   }
-  function getDraftPayload() {
+  function getDraftPayload(options = {}) {
     const base = buildPayloadForBack() || {};
     const linkedPortonMeta = buildLinkedPortonPayload(linkedPorton, linkedPortonId) || extractLinkedPortonPayloadFromQuote(quoteQ.data);
-    const payloadExtra = linkedPortonMeta ? { ...(base.payload || {}), ...linkedPortonMeta } : (base.payload || {});
+    let payloadExtra = linkedPortonMeta ? { ...(base.payload || {}), ...linkedPortonMeta } : (base.payload || {});
+    if (Object.prototype.hasOwnProperty.call(options, "budgetObservation")) {
+      payloadExtra = applyBudgetObservationToPayload(payloadExtra, options.budgetObservation);
+    } else {
+      const existingBudgetObservation = readBudgetObservationFromPayload(quoteQ.data);
+      if (existingBudgetObservation && !readBudgetObservationFromPayload(payloadExtra)) {
+        payloadExtra = applyBudgetObservationToPayload(payloadExtra, existingBudgetObservation);
+      }
+    }
     return withCreatorRole({
       ...base,
       catalog_kind: catalogKind,
@@ -833,6 +893,7 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
       const wantsToContinue = window.confirm(alertText);
       if (!wantsToContinue) { toast("Actualizá dirección, localidad o Maps antes de confirmar."); return; }
     }
+    setConfirmBudgetObservation(readBudgetObservationFromPayload(getDraftPayload()));
     setConfirmChoiceOpen(true);
   }
 
@@ -841,7 +902,10 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
   const confirmM = useMutation({
     mutationFn: async (variables) => {
       const chosenMode = String(variables?.fulfillmentMode || buildPayloadForBack()?.fulfillment_mode || "acopio").trim();
-      const payload = { ...getDraftPayload(), catalog_kind: catalogKind, fulfillment_mode: chosenMode };
+      const payloadOptions = Object.prototype.hasOwnProperty.call(variables || {}, "budgetObservation")
+        ? { budgetObservation: variables?.budgetObservation }
+        : {};
+      const payload = { ...getDraftPayload(payloadOptions), catalog_kind: catalogKind, fulfillment_mode: chosenMode };
       validateConfirm(payload);
       let id = quoteId || idParam;
       if (id) await updateQuote(id, payload); else { const created = await createQuote(payload); id = created.id; setQuoteMeta({ quoteId: created.id, status: created.status, rejectionNotes: created.rejection_notes }); }
@@ -977,7 +1041,7 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
     <div className="container" style={{ maxWidth: "100%", width: "100%" }}>
       <div className="card" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <img className="product-logo" src={catalogKind === "ipanel" ? "/brands/ipanel.png" : "/brands/degrandis.png"} alt={catalogKind === "ipanel" ? "Ipanel" : "DeGrandis Portones"} />
+          <img className="product-logo" src={catalogKind === "ipanel" ? "/brands/ipanel.png" : "/brands/degrandis.png"} alt={catalogKindDisplayName(catalogKind)} />
           <div>
             <h2 style={{ margin: 0 }}>{visibleQuoteNumber ? `${isRevisionQuote ? "Ajuste" : "Presupuesto"} #${visibleQuoteNumber}` : "Nuevo presupuesto"}</h2>
             <div className="muted">Estado: <b>{visibleStatusLabel}</b>{isRevisionQuote && quoteQ.data?.parent_quote_id ? <> · Ref. original: <b>{visibleParentQuoteNumber || "—"}</b></> : null}</div>
@@ -1012,7 +1076,7 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
           <div className="card">
             <div style={{ fontWeight: 800, marginBottom: 8 }}>Vincular a portón existente</div>
             <div className="muted" style={{ marginBottom: 8 }}>
-              Opcional. Si elegís un portón, {normalizedCatalogKind === "ipanel" ? "el Ipanel" : "Otros"} copia los datos del cliente y usa el mismo número con prefijo <b>{normalizedCatalogKind === "ipanel" ? "I" : "O"}</b>: {normalizedCatalogKind === "ipanel" ? "INP/INV" : "ONP/ONV"}.
+              Opcional. Si elegís un portón, {catalogKindLinkedObjectLabel(normalizedCatalogKind)} copia los datos del cliente y usa el mismo número con prefijo <b>{catalogKindShortReferencePrefix(normalizedCatalogKind)}</b>: {catalogKindOdooReferenceLabel(normalizedCatalogKind)}.
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "minmax(240px, 1fr) minmax(260px, 1.4fr)", gap: 10, alignItems: "end" }}>
               <div>
@@ -1038,7 +1102,7 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
             </div>
             {linkedPortonId ? (
               <div className="muted" style={{ marginTop: 8 }}>
-                Número vinculado: <b>{linkedPortonDisplayReference || "—"}</b>. En Odoo saldrá como <b>{normalizedCatalogKind === "ipanel" ? "INP/INV" : "ONP/ONV"}</b>.
+                Número vinculado: <b>{linkedPortonDisplayReference || "—"}</b>. En Odoo saldrá como <b>{catalogKindOdooReferenceLabel(normalizedCatalogKind)}</b>.
               </div>
             ) : null}
             {portonSearch && !filteredPortonQuotes.length ? (
@@ -1072,9 +1136,19 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
           <div className="card" style={{ width: "100%", maxWidth: 880, background: "#fff", border: "1px solid #ddd", boxShadow: "0 20px 60px rgba(0,0,0,0.18)" }} onClick={(e) => e.stopPropagation()}>
             <div style={{ fontWeight: 900, fontSize: 22, marginBottom: 6 }}>Elegí el destino del presupuesto</div>
             <div className="muted" style={{ marginBottom: 18 }}>Esta decisión cambia cómo sigue el circuito del portón después de confirmar.</div>
+            <div style={{ border: "1px solid #f2d08a", background: "#fff8e1", borderRadius: 14, padding: 14, marginBottom: 16 }}>
+              <div style={{ fontWeight: 900, marginBottom: 6 }}>Observación del presupuesto / NP / NV</div>
+              <div className="muted" style={{ marginBottom: 8 }}>Opcional. Este comentario queda guardado en el presupuesto y visible para Comercial y Técnica.</div>
+              <textarea
+                value={confirmBudgetObservation}
+                onChange={(e) => setConfirmBudgetObservation(e.target.value)}
+                placeholder="Escribí una observación para esta confirmación..."
+                style={{ width: "100%", minHeight: 78, padding: "10px 12px", borderRadius: 10, border: "1px solid #ddd", outline: "none", resize: "vertical" }}
+              />
+            </div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 14 }}>
-              <div style={{ border: "1px solid #d9e5f7", background: "#f7fbff", borderRadius: 14, padding: 16 }}><div style={{ fontWeight: 900, fontSize: 18, marginBottom: 8 }}>Acopio</div><div className="muted" style={{ marginBottom: 14 }}>El portón queda en espera. Se podrá seguir gestionando desde <b>Acopio → Producción</b> y mantiene una instancia de edición.</div><Button onClick={() => confirmM.mutate({ fulfillmentMode: "acopio" })} disabled={confirmM.isPending}>{confirmM.isPending ? "Confirmando..." : "Confirmar en Acopio"}</Button></div>
-              <div style={{ border: "1px solid #f2d3bf", background: "#fff8f3", borderRadius: 14, padding: 16 }}><div style={{ fontWeight: 900, fontSize: 18, marginBottom: 8 }}>Producción</div><div className="muted" style={{ marginBottom: 14 }}>El portón entra directo en circuito productivo. Ya no podrá editarse desde <b>Presupuestos</b>.</div><Button variant="primary" onClick={() => confirmM.mutate({ fulfillmentMode: "produccion" })} disabled={confirmM.isPending}>{confirmM.isPending ? "Confirmando..." : "Confirmar en Producción"}</Button></div>
+              <div style={{ border: "1px solid #d9e5f7", background: "#f7fbff", borderRadius: 14, padding: 16 }}><div style={{ fontWeight: 900, fontSize: 18, marginBottom: 8 }}>Acopio</div><div className="muted" style={{ marginBottom: 14 }}>El portón queda en espera. Se podrá seguir gestionando desde <b>Acopio → Producción</b> y mantiene una instancia de edición.</div><Button onClick={() => confirmM.mutate({ fulfillmentMode: "acopio", budgetObservation: confirmBudgetObservation })} disabled={confirmM.isPending}>{confirmM.isPending ? "Confirmando..." : "Confirmar en Acopio"}</Button></div>
+              <div style={{ border: "1px solid #f2d3bf", background: "#fff8f3", borderRadius: 14, padding: 16 }}><div style={{ fontWeight: 900, fontSize: 18, marginBottom: 8 }}>Producción</div><div className="muted" style={{ marginBottom: 14 }}>El portón entra directo en circuito productivo. Ya no podrá editarse desde <b>Presupuestos</b>.</div><Button variant="primary" onClick={() => confirmM.mutate({ fulfillmentMode: "produccion", budgetObservation: confirmBudgetObservation })} disabled={confirmM.isPending}>{confirmM.isPending ? "Confirmando..." : "Confirmar en Producción"}</Button></div>
             </div>
             <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 16 }}><Button variant="ghost" onClick={() => setConfirmChoiceOpen(false)} disabled={confirmM.isPending}>Cancelar</Button></div>
           </div>

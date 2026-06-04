@@ -76,6 +76,23 @@ function appendDoorReferenceToNote(note, ref) {
   if (ref) rows.push(`PRESUPUESTADOR_PUERTA_ORDER_REF:${ref}`);
   return rows.join("\n").trim();
 }
+function readBudgetObservationFromPayload(payloadLike) {
+  const p = payloadLike?.payload && typeof payloadLike.payload === "object" ? payloadLike.payload : payloadLike || {};
+  return String(p?.budget_observation || p?.presupuesto_observacion || p?.quote_observation || "").trim();
+}
+function applyBudgetObservationToPayload(payload, observation) {
+  const next = payload && typeof payload === "object" ? { ...payload } : {};
+  const value = String(observation || "").trim();
+  if (value) {
+    next.budget_observation = value;
+    next.presupuesto_observacion = value;
+  } else {
+    delete next.budget_observation;
+    delete next.presupuesto_observacion;
+  }
+  return next;
+}
+
 function validateCustomerContact(customer, { requirePhone = false, requireMaps = false, requireCity = false } = {}) {
   const c = customer || {};
   if (requireCity && !cleanText(c.city)) throw new Error("Completá la localidad del cliente.");
@@ -125,6 +142,7 @@ export default function PresupuestadorPuertasPage() {
   } = useQuoteStore();
 
   const [confirmChoiceOpen, setConfirmChoiceOpen] = useState(false);
+  const [confirmBudgetObservation, setConfirmBudgetObservation] = useState("");
   const [linkedPortonId, setLinkedPortonId] = useState("");
   const [portonSearch, setPortonSearch] = useState("");
   const [ivaRate] = useState(IVA_RATE_DEFAULT);
@@ -243,8 +261,16 @@ export default function PresupuestadorPuertasPage() {
     validateCustomerContact(c, { requirePhone: true, requireMaps: true, requireCity: true });
   }
 
-  async function saveDoorQuote({ fulfillmentMode = null, forConfirm = false } = {}) {
+  async function saveDoorQuote({ fulfillmentMode = null, forConfirm = false, budgetObservation } = {}) {
     let payload = buildDoorPayload();
+    if (Object.prototype.hasOwnProperty.call(arguments[0] || {}, "budgetObservation")) {
+      payload.payload = applyBudgetObservationToPayload(payload.payload, budgetObservation);
+    } else {
+      const existingBudgetObservation = readBudgetObservationFromPayload(quoteQ.data);
+      if (existingBudgetObservation && !readBudgetObservationFromPayload(payload.payload)) {
+        payload.payload = applyBudgetObservationToPayload(payload.payload, existingBudgetObservation);
+      }
+    }
     if (fulfillmentMode) payload.fulfillment_mode = fulfillmentMode;
     if (forConfirm) validateConfirm(payload);
     else validateDraft(payload);
@@ -256,6 +282,14 @@ export default function PresupuestadorPuertasPage() {
 
     const doorRef = buildDoorOrderReference({ linkedQuote: linkedPorton, savedQuote: saved });
     const payloadWithReference = buildDoorPayload({ savedQuote: saved, forceDoorRef: doorRef });
+    if (Object.prototype.hasOwnProperty.call(arguments[0] || {}, "budgetObservation")) {
+      payloadWithReference.payload = applyBudgetObservationToPayload(payloadWithReference.payload, budgetObservation);
+    } else {
+      const existingBudgetObservation = readBudgetObservationFromPayload(quoteQ.data);
+      if (existingBudgetObservation && !readBudgetObservationFromPayload(payloadWithReference.payload)) {
+        payloadWithReference.payload = applyBudgetObservationToPayload(payloadWithReference.payload, existingBudgetObservation);
+      }
+    }
     if (fulfillmentMode) payloadWithReference.fulfillment_mode = fulfillmentMode;
     saved = await updateQuote(saved.id, payloadWithReference);
 
@@ -271,8 +305,8 @@ export default function PresupuestadorPuertasPage() {
   });
 
   const confirmM = useMutation({
-    mutationFn: async ({ fulfillmentMode }) => {
-      const saved = await saveDoorQuote({ fulfillmentMode, forConfirm: true });
+    mutationFn: async ({ fulfillmentMode, budgetObservation }) => {
+      const saved = await saveDoorQuote({ fulfillmentMode, forConfirm: true, budgetObservation });
       return await confirmQuote(saved.id, { fulfillment_mode: fulfillmentMode });
     },
     onSuccess: (q) => { setConfirmChoiceOpen(false); setQuoteMeta({ quoteId: q.id, status: q.status, rejectionNotes: q.rejection_notes }); qc.invalidateQueries({ queryKey: ["quotes", "mine"] }); navigate(`/presupuestos/${q.id}`); toast.success("Presupuesto de puerta enviado a aprobación."); },
@@ -289,7 +323,7 @@ export default function PresupuestadorPuertasPage() {
         return;
       }
     }
-    confirmM.mutate({ fulfillmentMode });
+    confirmM.mutate({ fulfillmentMode, budgetObservation: confirmBudgetObservation });
   }
 
   async function onDownloadPdf(mode = "presupuesto") {
@@ -326,7 +360,7 @@ export default function PresupuestadorPuertasPage() {
           <Button variant="secondary" onClick={() => onDownloadPdf("presupuesto")}>PDF presupuesto</Button>
           {user?.is_distribuidor ? <Button variant="secondary" onClick={() => onDownloadPdf("proforma")}>PDF proforma</Button> : null}
           <Button onClick={() => saveM.mutate()} disabled={saveM.isPending}>{saveM.isPending ? "Guardando..." : "Guardar"}</Button>
-          <Button variant="primary" onClick={() => setConfirmChoiceOpen(true)} disabled={!canConfirm || confirmM.isPending}>{confirmM.isPending ? "Confirmando..." : "Confirmar presupuesto"}</Button>
+          <Button variant="primary" onClick={() => { setConfirmBudgetObservation(readBudgetObservationFromPayload(buildDoorPayload())); setConfirmChoiceOpen(true); }} disabled={!canConfirm || confirmM.isPending}>{confirmM.isPending ? "Confirmando..." : "Confirmar presupuesto"}</Button>
           <Button variant="ghost" onClick={() => navigate("/menu")}>Volver</Button>
         </div>
       </div>
@@ -339,6 +373,16 @@ export default function PresupuestadorPuertasPage() {
           <div className="card" style={{ width: "100%", maxWidth: 880, background: "#fff", border: "1px solid #ddd", boxShadow: "0 20px 60px rgba(0,0,0,0.18)" }} onClick={(e) => e.stopPropagation()}>
             <div style={{ fontWeight: 900, fontSize: 22, marginBottom: 6 }}>Elegí el destino de la puerta</div>
             <div className="muted" style={{ marginBottom: 18 }}>La puerta usa el mismo circuito de aprobación que un portón.</div>
+            <div style={{ border: "1px solid #f2d08a", background: "#fff8e1", borderRadius: 14, padding: 14, marginBottom: 16 }}>
+              <div style={{ fontWeight: 900, marginBottom: 6 }}>Observación del presupuesto / NP / NV</div>
+              <div className="muted" style={{ marginBottom: 8 }}>Opcional. Este comentario queda guardado en el presupuesto y visible para Comercial y Técnica.</div>
+              <textarea
+                value={confirmBudgetObservation}
+                onChange={(e) => setConfirmBudgetObservation(e.target.value)}
+                placeholder="Escribí una observación para esta confirmación..."
+                style={{ width: "100%", minHeight: 78, padding: "10px 12px", borderRadius: 10, border: "1px solid #ddd", outline: "none", resize: "vertical" }}
+              />
+            </div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 14 }}>
               <div style={{ border: "1px solid #d9e5f7", background: "#f7fbff", borderRadius: 14, padding: 16 }}>
                 <div style={{ fontWeight: 900, fontSize: 18, marginBottom: 8 }}>Acopio</div>

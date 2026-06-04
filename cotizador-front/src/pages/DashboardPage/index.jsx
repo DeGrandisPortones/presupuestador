@@ -27,6 +27,7 @@ import {
 const CATALOG_KIND_OPTIONS = [
   { key: "porton", label: "Portones" },
   { key: "ipanel", label: "Ipanel" },
+  { key: "plegados", label: "Plegados" },
   { key: "otros", label: "Otros" },
   { key: "puerta", label: "Puertas" },
 ];

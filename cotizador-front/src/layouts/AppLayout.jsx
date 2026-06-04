@@ -154,6 +154,9 @@ export default function AppLayout() {
               <NavLink className={({ isActive }) => (isActive ? "navlink active" : "navlink")} to="/cotizador/ipanel">
                 Presupuesto Ipanel
               </NavLink>
+              <NavLink className={({ isActive }) => (isActive ? "navlink active" : "navlink")} to="/cotizador/plegados">
+                Presupuesto Plegados
+              </NavLink>
               <NavLink className={({ isActive }) => (isActive ? "navlink active" : "navlink")} to="/cotizador/puerta">
                 Presupuesto Puertas
               </NavLink>

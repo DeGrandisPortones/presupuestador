@@ -62,7 +62,8 @@ export async function loadCatalogBootstrap(odoo, kind = "porton") {
   const sections = await listSections(k);
   const tagSection = await getTagSectionMap(k);
   const aliasMap = await getProductAliasMap(k);
-  const inheritedAliasMap = k === "porton" ? aliasMap : await getProductAliasMap("porton");
+  const inheritedAliasKind = k === "plegados" ? "ipanel" : "porton";
+  const inheritedAliasMap = k === "porton" ? aliasMap : await getProductAliasMap(inheritedAliasKind);
   const visibilityMap = await getProductVisibilityMap(k);
   const typeVisibility = await getTypeVisibilityMap(k);
 
@@ -72,6 +73,7 @@ export async function loadCatalogBootstrap(odoo, kind = "porton") {
 
   const rawProductCountsByTag = countProductsByTag(productsRaw);
   const ipanelTagIds = tagIdsByNames(rawTags, ["ipanel", "ipanels"]);
+  const plegadosTagIds = tagIdsByNames(rawTags, ["plegado", "plegados"]);
   const configuredTagIds = new Set([...tagSection.keys()].map((id) => Number(id)).filter(Boolean));
 
   const configuredSectionByTagName = new Map();
@@ -96,15 +98,17 @@ export async function loadCatalogBootstrap(odoo, kind = "porton") {
     const tagIds = productTagIds(product);
     if (!tagIds.length) return false;
     const isIpanel = tagIds.some((tagId) => ipanelTagIds.has(tagId)) || productHasTagName(product, tagById, ["ipanel", "ipanels"]);
+    const isPlegados = tagIds.some((tagId) => plegadosTagIds.has(tagId)) || productHasTagName(product, tagById, ["plegado", "plegados"]);
     const configured = belongsToConfiguredSection(product);
 
     if (k === "ipanel") return isIpanel || configured;
+    if (k === "plegados") return isPlegados || isIpanel || configured;
     if (k === "puerta") return configured;
     if (k === "otros") return configured;
 
     // Portones: trae todos los productos con tag, salvo los reservados a Ipanel.
     // El tag Puerta queda en Portones como puerta de escape, no como presupuestador Puertas.
-    return !isIpanel;
+    return !isIpanel && !isPlegados;
   });
 
   const sectionById = new Map(sections.map((section) => [Number(section.id), section]));

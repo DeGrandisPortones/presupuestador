@@ -36,7 +36,7 @@ export function mergeOdooBootstrap(patch, kind = "porton") {
 }
 
 export function hasAnyOdooBootstrap() {
-  const kinds = ["porton", "ipanel", "otros", "puerta"];
+  const kinds = ["porton", "ipanel", "plegados", "otros", "puerta"];
   return kinds.some((kind) => {
     const boot = getOdooBootstrap(kind);
     return !!(boot?.pricelists?.length || boot?.products?.length || boot?.sections?.length);
@@ -49,6 +49,6 @@ export function clearOdooBootstrap(kind = "porton") {
 
 export function clearAllBootstraps() {
   try {
-    for (const kind of ["porton", "ipanel", "otros", "puerta"]) localStorage.removeItem(keyFor(kind));
+    for (const kind of ["porton", "ipanel", "plegados", "otros", "puerta"]) localStorage.removeItem(keyFor(kind));
   } catch (_) {}
 }

@@ -74,6 +74,15 @@ export default function MenuPage() {
           />
         )}
 
+        {canQuote && (
+          <MenuTile
+            title="Presupuestar Plegados"
+            buttonText="Ir al presupuesto"
+            onClick={() => navigate("/cotizador/plegados")}
+            iconSrc="/menu-icons/otros-presupuestos.png"
+          />
+        )}
+
         {showDoors && (
           <MenuTile
             title="Presupuesto Puertas"

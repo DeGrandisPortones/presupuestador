@@ -1,12 +1,12 @@
 import { dbQuery } from "./db.js";
 
 let catalogControlsEnsured = false;
-const KINDS = new Set(["porton", "ipanel", "otros", "puerta"]);
-const KIND_SQL = "'porton', 'ipanel', 'otros', 'puerta'";
+const KINDS = new Set(["porton", "ipanel", "plegados", "otros", "puerta"]);
+const KIND_SQL = "'porton', 'ipanel', 'plegados', 'otros', 'puerta'";
 
 export function normKind(kind) {
   const k = String(kind || "porton").toLowerCase().trim();
-  if (!KINDS.has(k)) throw new Error('kind inválido (usar "porton", "ipanel", "otros" o "puerta")');
+  if (!KINDS.has(k)) throw new Error('kind inválido (usar "porton", "ipanel", "plegados", "otros" o "puerta")');
   return k;
 }
 
@@ -29,6 +29,39 @@ async function dropCatalogKindChecks(tableNames = []) {
       end loop;
     end $$;
   `);
+}
+
+async function seedPlegadosFromIpanelControls() {
+  const existing = await dbQuery(`select count(*)::int as count from public.presupuestador_sections where catalog_kind='plegados'`);
+  if (Number(existing.rows?.[0]?.count || 0) > 0) return;
+
+  const ipanelSections = await dbQuery(`select id, name, position, use_surface_qty from public.presupuestador_sections where catalog_kind='ipanel' order by position asc, name asc`);
+  if (!(ipanelSections.rows || []).length) return;
+
+  const sectionIdMap = new Map();
+  for (const row of ipanelSections.rows || []) {
+    const inserted = await dbQuery(
+      `insert into public.presupuestador_sections (name, position, catalog_kind, use_surface_qty) values ($1, $2, 'plegados', $3) returning id`,
+      [String(row.name || '').trim(), Number(row.position || 100), !!row.use_surface_qty],
+    );
+    const nextId = Number(inserted.rows?.[0]?.id || 0);
+    if (nextId) sectionIdMap.set(Number(row.id), nextId);
+  }
+
+  const ipanelTagSections = await dbQuery(`select tag_id, section_id from public.presupuestador_tag_sections where catalog_kind='ipanel'`);
+  for (const row of ipanelTagSections.rows || []) {
+    const nextSectionId = sectionIdMap.get(Number(row.section_id));
+    if (!nextSectionId) continue;
+    await dbQuery(
+      `insert into public.presupuestador_tag_sections (catalog_kind, tag_id, section_id) values ('plegados', $1, $2) on conflict (catalog_kind, tag_id) do nothing`,
+      [Number(row.tag_id), nextSectionId],
+    );
+  }
+
+  await dbQuery(`insert into public.presupuestador_product_aliases (catalog_kind, product_id, alias) select 'plegados', product_id, alias from public.presupuestador_product_aliases where catalog_kind='ipanel' on conflict (catalog_kind, product_id) do nothing`);
+  await dbQuery(`insert into public.presupuestador_product_visibility (catalog_kind, product_id, disable_for_vendedor, disable_for_distribuidor) select 'plegados', product_id, disable_for_vendedor, disable_for_distribuidor from public.presupuestador_product_visibility where catalog_kind='ipanel' on conflict (catalog_kind, product_id) do nothing`);
+  await dbQuery(`insert into public.presupuestador_type_visibility (catalog_kind, type_key, disable_for_vendedor, disable_for_distribuidor) select 'plegados', type_key, disable_for_vendedor, disable_for_distribuidor from public.presupuestador_type_visibility where catalog_kind='ipanel' on conflict (catalog_kind, type_key) do nothing`);
+  await dbQuery(`insert into public.presupuestador_product_pdf_names (catalog_kind, product_id, pdf_name) select 'plegados', product_id, pdf_name from public.presupuestador_product_pdf_names where catalog_kind='ipanel' on conflict (catalog_kind, product_id) do nothing`);
 }
 
 async function ensureCatalogControls() {
@@ -151,6 +184,7 @@ async function ensureCatalogControls() {
     await dbQuery(`alter table public.${table} add constraint ${constraint} check (catalog_kind in (${KIND_SQL}));`);
   }
 
+  await seedPlegadosFromIpanelControls();
   catalogControlsEnsured = true;
 }
 

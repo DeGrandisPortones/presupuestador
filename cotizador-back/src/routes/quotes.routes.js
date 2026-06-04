@@ -8,6 +8,7 @@ import { commitQuoteProductionWeek } from "../productionPlanning.js";
 const MEASUREMENT_PRODUCT_ID = Number(process.env.ODOO_MEASUREMENT_PRODUCT_ID || 2865);
 const PLACEHOLDER_PRODUCT_ID = Number(process.env.ODOO_PLACEHOLDER_PRODUCT_ID || 2880);
 const IPANEL_ACOPIO_PRODUCT_ID = Number(process.env.ODOO_IPANEL_ACOPIO_PRODUCT_ID || 3557);
+const PLEGADOS_ACOPIO_PRODUCT_ID = Number(process.env.ODOO_PLEGADOS_ACOPIO_PRODUCT_ID || IPANEL_ACOPIO_PRODUCT_ID);
 const PUERTA_ACOPIO_PRODUCT_ID = Number(process.env.ODOO_PUERTA_ACOPIO_PRODUCT_ID || 3558);
 const DEFAULT_PRICELIST_ID = Number(process.env.ODOO_DEFAULT_PRICELIST_ID || 1);
 const IVA_RATE = 0.21;
@@ -67,7 +68,7 @@ function requireSellerOrDistributor(req, res, next) {
 
 function normCatalogKind(kind) {
   const k = String(kind || "porton").toLowerCase().trim();
-  if (!["porton", "ipanel", "otros", "puerta"].includes(k)) throw new Error('catalog_kind invalido (usar "porton", "ipanel", "otros" o "puerta")');
+  if (!["porton", "ipanel", "plegados", "otros", "puerta"].includes(k)) throw new Error('catalog_kind invalido (usar "porton", "ipanel", "plegados", "otros" o "puerta")');
   return k;
 }
 function toScalar(v) { return Array.isArray(v) ? v[0] : v; }
@@ -361,6 +362,7 @@ function normalizePortonTypeKey(value) {
 function getInitialOdooProductIdForQuote(quote) {
   const kind = String(quote?.catalog_kind || "porton").toLowerCase().trim();
   if (kind === "ipanel") return Number(IPANEL_ACOPIO_PRODUCT_ID);
+  if (kind === "plegados") return Number(PLEGADOS_ACOPIO_PRODUCT_ID);
   if (kind === "puerta") return Number(PUERTA_ACOPIO_PRODUCT_ID);
   if (kind !== "porton") return Number(PLACEHOLDER_PRODUCT_ID);
   const rawPortonType = quote?.payload?.porton_type ?? "";
@@ -671,6 +673,15 @@ function appendPaymentMethodToNote(note, paymentMethod) {
   if (!pm) return note;
   return `${note}\nForma de pago: ${pm}`;
 }
+function getBudgetObservation(quote) {
+  const payload = quote?.payload && typeof quote.payload === "object" ? quote.payload : {};
+  return toText(quote?.budget_observation || payload?.budget_observation || payload?.presupuesto_observacion || payload?.quote_observation || "");
+}
+function appendBudgetObservationToNote(note, quote) {
+  const observation = getBudgetObservation(quote);
+  if (!observation) return note;
+  return `${note}\nObservación presupuesto / NP / NV: ${observation}`;
+}
 
 function normalizeBillingTypeKey(value) {
   return String(value || "")
@@ -790,6 +801,7 @@ function getQuoteCatalogKind(quote) {
 function getReferenceFamilyPrefix(quote) {
   const kind = getQuoteCatalogKind(quote);
   if (kind === "ipanel") return "I";
+  if (kind === "plegados") return "PL";
   if (kind === "puerta") return "P";
   if (kind === "otros") return "O";
   return "";
@@ -811,7 +823,7 @@ function getLinkedPortonReferenceCore(quote) {
 }
 function getQuoteReferenceCore(quote) {
   const kind = getQuoteCatalogKind(quote);
-  if (["ipanel", "puerta", "otros"].includes(kind)) {
+  if (["ipanel", "plegados", "puerta", "otros"].includes(kind)) {
     const linkedCore = getLinkedPortonReferenceCore(quote);
     if (linkedCore) return linkedCore;
   }
@@ -904,7 +916,7 @@ async function syncQuoteToOdoo({ odoo, quote, approverUser }) {
     : `PRESUPUESTADOR QUOTE: ${quote.id}\nDestino: ${quote.fulfillment_mode === "acopio" ? "ACOPIO" : "PRODUCCION"}`
       + (quote?.end_customer?.maps_url ? `\nMaps: ${quote.end_customer.maps_url}` : "")
       + (quote.note ? `\n${quote.note}` : "");
-  let note = noteBase + (sellerName ? `\nVendedor: ${sellerName}` : "");
+  let note = appendBudgetObservationToNote(noteBase, quote) + (sellerName ? `\nVendedor: ${sellerName}` : "");
   note = appendPaymentMethodToNote(note, quote?.payload?.payment_method);
 
   const financingVals = await buildFinancingSaleOrderVals(odoo, quote?.payload?.payment_method);
@@ -1010,6 +1022,7 @@ async function syncFinalQuoteToOdoo({ odoo, revisionQuote, originalQuote, approv
     + (absorbedByCompany ? `\nAbsorbido por la empresa: SI` : `\nAbsorbido por la empresa: NO`)
     + `\nImporte final a facturar: ${finalAmountToCharge}`
     + (sellerName ? `\nVendedor: ${sellerName}` : "");
+  note = appendBudgetObservationToNote(note, revisionQuote || originalQuote);
   note = appendPaymentMethodToNote(note, revisionQuote?.payload?.payment_method || originalQuote?.payload?.payment_method);
 
   const financingVals = await buildFinancingSaleOrderVals(odoo, revisionQuote?.payload?.payment_method || originalQuote?.payload?.payment_method);
@@ -1098,6 +1111,7 @@ async function syncDirectProductionFinalToOdoo({ odoo, quote, approverUser }) {
     + `\nPortón sin medición: se envía el detalle completo sin instancia adicional de edición.`
     + (quote.note ? `\n${quote.note}` : "")
     + (sellerName ? `\nVendedor: ${sellerName}` : "");
+  note = appendBudgetObservationToNote(note, quote);
   note = appendPaymentMethodToNote(note, quote?.payload?.payment_method);
 
   const financingVals = await buildFinancingSaleOrderVals(odoo, quote?.payload?.payment_method);
@@ -1245,7 +1259,7 @@ export function buildQuotesRouter(odoo) {
       let linkedPortonQuote = null;
       if (linkedPortonQuoteId) {
         if (!isUuid(linkedPortonQuoteId)) return res.status(400).json({ ok: false, error: "linked_porton_quote_id invalido" });
-        if (!["ipanel", "otros", "puerta"].includes(catalog_kind)) return res.status(400).json({ ok: false, error: "Solo Ipanel, Otros o Puerta pueden vincularse a un porton" });
+        if (!["ipanel", "plegados", "otros", "puerta"].includes(catalog_kind)) return res.status(400).json({ ok: false, error: "Solo Ipanel, Plegados, Otros o Puerta pueden vincularse a un porton" });
         linkedPortonQuote = await getQuoteOwnedBySeller(linkedPortonQuoteId, u.user_id);
         if (!linkedPortonQuote) return res.status(404).json({ ok: false, error: "Presupuesto de porton no encontrado o no sos dueno" });
         if (String(linkedPortonQuote.catalog_kind || "porton").toLowerCase() !== "porton") return res.status(400).json({ ok: false, error: "El presupuesto vinculado debe ser de porton" });
@@ -1428,7 +1442,7 @@ export function buildQuotesRouter(odoo) {
       if (!quote) throw new Error("Quote no encontrado");
       if (String(quote.created_by_user_id) !== String(u.user_id)) throw new Error("No sos dueño");
       const catalog_kind_locked = quote.catalog_kind || "porton";
-      if (body.catalog_kind && normCatalogKind(body.catalog_kind) !== normCatalogKind(catalog_kind_locked)) return res.status(400).json({ ok: false, error: "No podes cambiar el tipo de cotizador (porton/ipanel/otros/puerta)" });
+      if (body.catalog_kind && normCatalogKind(body.catalog_kind) !== normCatalogKind(catalog_kind_locked)) return res.status(400).json({ ok: false, error: "No podes cambiar el tipo de cotizador (porton/ipanel/plegados/otros/puerta)" });
       const catalog_kind = normCatalogKind(body.catalog_kind || catalog_kind_locked);
       if (!["draft", "rejected_commercial", "rejected_technical", "synced_odoo"].includes(quote.status)) throw new Error("Solo se edita en borrador o en acopio ya enviado");
       if (quote.status === "synced_odoo" && quote.fulfillment_mode !== "acopio") throw new Error("Solo se puede editar un presupuesto sincronizado si está en acopio");

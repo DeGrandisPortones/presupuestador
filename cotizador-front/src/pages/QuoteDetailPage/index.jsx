@@ -15,6 +15,7 @@ import MeasurementReadOnlyView from "../../components/MeasurementReadOnlyView.js
 function quoteEditorPath(quote) {
   const kind = String(quote?.payload?.quote_subkind || quote?.catalog_kind || "porton").toLowerCase();
   if (kind === "ipanel") return `/cotizador/ipanel/${quote.id}`;
+  if (kind === "plegados") return `/cotizador/plegados/${quote.id}`;
   if (kind === "otros") return `/cotizador/otros/${quote.id}`;
   if (kind === "puerta") return `/cotizador/puerta/${quote.id}`;
   return `/cotizador/${quote.id}`;
@@ -55,6 +56,11 @@ function displayQuoteNumber(quote, fallbackId = null) {
   if (quote?.quote_number !== null && quote?.quote_number !== undefined && String(quote.quote_number).trim()) return String(quote.quote_number);
   if (quote?.odoo_sale_order_name) return String(quote.odoo_sale_order_name);
   return fallbackId ? String(fallbackId).slice(0, 8) : "—";
+}
+
+function extractBudgetObservation(quote) {
+  const payload = quote?.payload && typeof quote.payload === "object" ? quote.payload : {};
+  return String(quote?.budget_observation || payload?.budget_observation || payload?.presupuesto_observacion || payload?.quote_observation || "").trim();
 }
 
 function normalizeBillingText(value) {
@@ -597,6 +603,7 @@ function buildApprovalContextRows(quote, conditionMode) {
   pushApprovalContextRow(rows, "Condición", conditionModeLabel(conditionMode));
   pushApprovalContextRow(rows, "Destino", fulfillmentModeLabel(quote?.fulfillment_mode));
   pushApprovalContextRow(rows, "Estado medición", measurementStatusLabel(quote?.measurement_status));
+  pushApprovalContextRow(rows, "Observación presupuesto / NP / NV", extractBudgetObservation(quote));
   return rows;
 }
 
@@ -712,6 +719,7 @@ export default function QuoteDetailPage() {
     return arr;
   }, [quote]);
   const approvalContextRows = useMemo(() => buildApprovalContextRows(quote, conditionMode), [quote, conditionMode]);
+  const budgetObservation = useMemo(() => extractBudgetObservation(quote), [quote]);
 
   function handleCommercialApproveClick() {
     if (requiresCommercialBillingData) {
@@ -764,6 +772,15 @@ export default function QuoteDetailPage() {
               {quote.status === "syncing_odoo" ? <span style={pillStyle("#fff7e6", "#ffd9a8")}>Sincronizando a Odoo…</span> : null}
               {quote.status === "pending_approvals" && !isRevision ? <span style={pillStyle("#eef4ff", "#c7dafc")}>En aprobación</span> : null}
             </div>
+            {budgetObservation ? (
+              <>
+                <div className="spacer" />
+                <div className="card" style={{ background: "#fff8e1", border: "1px solid #f2d08a" }}>
+                  <div style={{ fontWeight: 900, marginBottom: 6 }}>Observación del presupuesto / NP / NV</div>
+                  <div style={{ whiteSpace: "pre-wrap", fontWeight: 700 }}>{budgetObservation}</div>
+                </div>
+              </>
+            ) : null}
             {!!rejectionBoxes.length ? (
               <>
                 <div className="spacer" />

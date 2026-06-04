@@ -51,6 +51,16 @@ function createdByLabel(r) {
   const role = r?.created_by_role ? ` (${r.created_by_role})` : "";
   return `${name}${role}`;
 }
+
+function budgetObservation(row) {
+  const payload = row?.payload && typeof row.payload === "object" ? row.payload : {};
+  return String(row?.budget_observation || payload?.budget_observation || payload?.presupuesto_observacion || payload?.quote_observation || "").trim();
+}
+function BudgetObservationCell({ row }) {
+  const text = budgetObservation(row);
+  if (!text) return <span className="muted">—</span>;
+  return <div style={{ fontWeight: 800, background: "#fff8e1", border: "1px solid #f2d08a", borderRadius: 10, padding: "6px 8px", maxWidth: 280, whiteSpace: "pre-wrap" }}>{text}</div>;
+}
 function matchesSearch(values, searchText) {
   const s = String(searchText || "").trim().toLowerCase();
   if (!s) return true;
@@ -127,21 +137,21 @@ export default function AprobacionComercialPage() {
     let out = arr;
     if (filter === "pending") out = arr.filter((x) => x.status === "pending_approvals" && x.commercial_decision === "pending");
     if (filter === "rejected") out = arr.filter((x) => x.status === "draft" && x.technical_decision === "rejected");
-    return out.filter((r) => matchesSearch([createdByLabel(r), r?.end_customer?.name, r?.end_customer?.city, r?.end_customer?.address, rowLabel(r)], searchText));
+    return out.filter((r) => matchesSearch([createdByLabel(r), r?.end_customer?.name, r?.end_customer?.city, r?.end_customer?.address, rowLabel(r), budgetObservation(r)], searchText));
   }, [q.data, filter, searchText]);
 
   const acopioRows = useMemo(() => {
     return (acopioQ.data || [])
       .slice()
       .sort((a, b) => toTimeDesc(b?.acopio_to_produccion_requested_at || b?.created_at) - toTimeDesc(a?.acopio_to_produccion_requested_at || a?.created_at))
-      .filter((r) => matchesSearch([createdByLabel(r), r?.end_customer?.name, r?.end_customer?.city, r?.end_customer?.address, r?.acopio_to_produccion_notes, acopioReqLabel(r)], searchText));
+      .filter((r) => matchesSearch([createdByLabel(r), r?.end_customer?.name, r?.end_customer?.city, r?.end_customer?.address, r?.acopio_to_produccion_notes, acopioReqLabel(r), budgetObservation(r)], searchText));
   }, [acopioQ.data, searchText]);
 
   const acopioListadoRows = useMemo(() => {
     return (acopioListadoQ.data || [])
       .slice()
       .sort((a, b) => toTimeDesc(b?.confirmed_at || b?.created_at) - toTimeDesc(a?.confirmed_at || a?.created_at))
-      .filter((r) => matchesSearch([createdByLabel(r), r?.end_customer?.name, r?.end_customer?.city, r?.end_customer?.address, rowLabel(r), acopioReqLabel(r)], searchText));
+      .filter((r) => matchesSearch([createdByLabel(r), r?.end_customer?.name, r?.end_customer?.city, r?.end_customer?.address, rowLabel(r), acopioReqLabel(r), budgetObservation(r)], searchText));
   }, [acopioListadoQ.data, searchText]);
 
   const doorRows = useMemo(() => {
@@ -229,7 +239,7 @@ export default function AprobacionComercialPage() {
             {!!rows.length && (
               <>
                 <table>
-                  <thead><tr><th>Fecha</th><th>Vendedor/Distribuidor</th><th>Cliente</th><th>Dirección</th><th>Estado</th><th></th></tr></thead>
+                  <thead><tr><th>Fecha</th><th>Vendedor/Distribuidor</th><th>Cliente</th><th>Dirección</th><th>Estado</th><th>Obs. presupuesto</th><th></th></tr></thead>
                   <tbody>
                     {visibleRows.map((r) => {
                       const pdfKey = `quote-${r.id}`;
@@ -240,6 +250,7 @@ export default function AprobacionComercialPage() {
                           <td>{r.end_customer?.name || <span className="muted">(sin nombre)</span>}</td>
                           <td>{r.end_customer?.address || "—"}</td>
                           <td>{rowLabel(r)}</td>
+                          <td><BudgetObservationCell row={r} /></td>
                           <td className="right" style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
                             <PdfIconButton disabled={downloadingPdfKey === pdfKey} onClick={() => handleDownloadQuotePdf(r.id)} />
                             <Button onClick={() => navigate(`/presupuestos/${r.id}`, { state: { from: "/aprobacion/comercial" } })}>Abrir</Button>
@@ -298,7 +309,7 @@ export default function AprobacionComercialPage() {
             {!!acopioRows.length && (
               <>
                 <table>
-                  <thead><tr><th>Fecha</th><th>Vendedor/Distribuidor</th><th>Cliente</th><th>Dirección</th><th>Solicitud</th><th>Decisiones</th><th></th></tr></thead>
+                  <thead><tr><th>Fecha</th><th>Vendedor/Distribuidor</th><th>Cliente</th><th>Dirección</th><th>Solicitud</th><th>Obs. presupuesto</th><th>Decisiones</th><th></th></tr></thead>
                   <tbody>
                     {visibleAcopioRows.map((r) => {
                       const canAct = (r.acopio_to_produccion_commercial_decision || "pending") === "pending";
@@ -310,6 +321,7 @@ export default function AprobacionComercialPage() {
                           <td>{r.end_customer?.name || <span className="muted">(sin nombre)</span>}</td>
                           <td>{r.end_customer?.address || "—"}</td>
                           <td>{r.acopio_to_produccion_notes || <span className="muted">(sin nota)</span>}</td>
+                          <td><BudgetObservationCell row={r} /></td>
                           <td>{acopioReqLabel(r)}</td>
                           <td className="right" style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
                             <PdfIconButton disabled={downloadingPdfKey === pdfKey} onClick={() => handleDownloadQuotePdf(r.id)} />
@@ -340,7 +352,7 @@ export default function AprobacionComercialPage() {
             {!!acopioListadoRows.length && (
               <>
                 <table>
-                  <thead><tr><th>Fecha</th><th>Vendedor/Distribuidor</th><th>Cliente</th><th>Dirección</th><th>Estado</th><th>Solicitud Prod.</th><th></th></tr></thead>
+                  <thead><tr><th>Fecha</th><th>Vendedor/Distribuidor</th><th>Cliente</th><th>Dirección</th><th>Estado</th><th>Obs. presupuesto</th><th>Solicitud Prod.</th><th></th></tr></thead>
                   <tbody>
                     {visibleAcopioListadoRows.map((r) => {
                       const pdfKey = `quote-${r.id}`;
@@ -351,6 +363,7 @@ export default function AprobacionComercialPage() {
                           <td>{r.end_customer?.name || <span className="muted">(sin nombre)</span>}</td>
                           <td>{r.end_customer?.address || "—"}</td>
                           <td>{rowLabel(r)}</td>
+                          <td><BudgetObservationCell row={r} /></td>
                           <td>{r.acopio_to_produccion_status ? acopioReqLabel(r) : "—"}</td>
                           <td className="right" style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
                             <PdfIconButton disabled={downloadingPdfKey === pdfKey} onClick={() => handleDownloadQuotePdf(r.id)} />

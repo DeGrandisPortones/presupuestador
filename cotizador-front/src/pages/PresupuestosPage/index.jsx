@@ -19,6 +19,7 @@ function effectiveQuoteKind(q) {
 function quoteEditorPath(q) {
   const kind = effectiveQuoteKind(q);
   if (kind === "ipanel") return `/cotizador/ipanel/${q.id}`;
+  if (kind === "plegados") return `/cotizador/plegados/${q.id}`;
   if (kind === "otros") return `/cotizador/otros/${q.id}`;
   return `/cotizador/${q.id}`;
 }
@@ -85,6 +86,7 @@ function labelDoorStatus(door) {
 function quoteTypeLabel(q) {
   const kind = effectiveQuoteKind(q);
   if (kind === "ipanel") return "Ipanel";
+  if (kind === "plegados") return "Plegados";
   if (kind === "otros") return "Otros";
   return "Portón";
 }
@@ -178,6 +180,7 @@ function RejectedStatusButton({ label, onClick }) {
 function TypeBadge({ label }) {
   const isDoor = label === "Puerta";
   const isIpanel = label === "Ipanel";
+  const isPlegados = label === "Plegados";
   const isOtros = label === "Otros";
   let background = "#eef2ff";
   let color = "#3730a3";
@@ -187,6 +190,9 @@ function TypeBadge({ label }) {
   } else if (isIpanel) {
     background = "#ecfeff";
     color = "#155e75";
+  } else if (isPlegados) {
+    background = "#fff7ed";
+    color = "#9a3412";
   } else if (isOtros) {
     background = "#ecfdf5";
     color = "#166534";

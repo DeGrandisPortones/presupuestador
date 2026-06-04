@@ -9,7 +9,7 @@ const TECHNICAL_MEASUREMENT_RULES_KEY = "technical_measurement_rules";
 const TECHNICAL_MEASUREMENT_FIELDS_KEY = "technical_measurement_fields";
 const PRODUCTION_PLANNING_SETTINGS_KEY = "production_planning";
 const DEFAULT_SURFACE_FINAL_FORMULA = "surface_automatica_m2";
-const CATALOG_KINDS = new Set(["porton", "ipanel", "otros", "puerta", "puerta"]);
+const CATALOG_KINDS = new Set(["porton", "ipanel", "plegados", "otros", "puerta"]);
 
 let ensured = false;
 
@@ -430,6 +430,7 @@ export async function getTechnicalMeasurementRules(kind = "porton") {
   const raw = await getSetting(TECHNICAL_MEASUREMENT_RULES_KEY, {});
   const catalogRules = normalizeCatalogRulesMap(raw);
   if (catalogRules[k]) return catalogRules[k];
+  if (k === "plegados" && catalogRules.ipanel) return catalogRules.ipanel;
   if (k === "porton") return normalizeTechnicalMeasurementRules(raw);
   return defaultTechnicalMeasurementRules();
 }

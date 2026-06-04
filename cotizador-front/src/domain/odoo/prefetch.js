@@ -3,7 +3,7 @@ import { getCatalogBootstrap } from "../../api/catalog.js";
 import { getOdooBootstrap, mergeOdooBootstrap, setOdooBootstrap } from "./bootstrap.js";
 import { useAuthStore } from "../auth/store.js";
 
-const KINDS = ["porton", "ipanel", "otros"];
+const KINDS = ["porton", "ipanel", "plegados", "otros"];
 
 function hasUsefulBootstrap(data) {
   return !!(data?.pricelists?.length || data?.products?.length || data?.sections?.length);

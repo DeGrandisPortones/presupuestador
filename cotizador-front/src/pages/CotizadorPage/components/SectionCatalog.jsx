@@ -10,7 +10,7 @@ import {
 } from "../../../api/admin.js";
 import Button from "../../../ui/Button";
 
-const CATALOG_KINDS = new Set(["porton", "ipanel", "otros"]);
+const CATALOG_KINDS = new Set(["porton", "ipanel", "plegados", "otros"]);
 const APTOS_PARA_REVESTIR_TYPE = "para_revestir_con_al_pvc_otros";
 
 function normalizeCatalogKind(kind) {
@@ -705,7 +705,9 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
       ? "Características del portón"
       : catalogKind === "ipanel"
         ? "Características del Ipanel"
-        : "Características / productos";
+        : catalogKind === "plegados"
+          ? "Características de Plegados"
+          : "Características / productos";
 
   if (!boot) {
     return (

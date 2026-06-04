@@ -33,7 +33,7 @@ async function ensureQuoteCatalogKindAllowsPuerta() {
 
       alter table public.presupuestador_quotes
         add constraint presupuestador_quotes_catalog_kind_check
-        check (catalog_kind in ('porton', 'ipanel', 'otros', 'puerta'));
+        check (catalog_kind in ('porton', 'ipanel', 'plegados', 'otros', 'puerta'));
     end $$;
   `);
 }
