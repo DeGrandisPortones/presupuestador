@@ -1003,7 +1003,7 @@ export default function PortonDimensions({ kind = "porton" }) {
     if (changed) setDimensions(patch);
   }, [isPorton, preview.anchoPasoMm, preview.altoPasoMm, preview.anchoHojaMm, preview.altoHojaMm, setDimensions]);
 
-  if (!isPorton && !isIpanel) return null;
+  if (!isPorton && !isIpanel && !isPlegados) return null;
   const title = isPlegados ? "Medidas del plegado" : (isPorton ? "Medidas del porton" : "Medidas del Ipanel");
   const parantesHelper = parantesFieldsReadOnly
     ? (hasDoorParantesConfig ? `Solo lectura. ${detectedDoorLabel}: primer parante a ${DOOR_FIXED_PARANTE_DISTANCE_MM} mm del lateral ${detectedDoorSide}.` : "Solo lectura. Se calcula automaticamente segun reglas tecnicas, orientacion y medidas cargadas.")
