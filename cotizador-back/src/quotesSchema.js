@@ -79,6 +79,7 @@ export async function ensureQuotesMeasurementColumns() {
   await dbQuery(`alter table public.presupuestador_quotes add column if not exists deposit_amount numeric(16,2) null;`);
 
   await dbQuery(`create sequence if not exists public.presupuestador_quote_number_seq start with 1000 increment by 1;`);
+  await dbQuery(`create sequence if not exists public.presupuestador_odoo_reference_seq start with 4239 increment by 1;`);
   await dbQuery(`alter table public.presupuestador_quotes add column if not exists quote_number bigint null;`);
   await dbQuery(`alter table public.presupuestador_quotes alter column quote_number set default nextval('public.presupuestador_quote_number_seq');`);
   await dbQuery(`update public.presupuestador_quotes set quote_number = nextval('public.presupuestador_quote_number_seq') where quote_number is null;`);

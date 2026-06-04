@@ -831,6 +831,14 @@ function extractReferenceCore(value) {
   const cleaned = raw.replace(/^[A-Za-z]+/, "").trim();
   return cleaned || raw;
 }
+function extractOdooReferenceCore(value, { allowBareNumber = false } = {}) {
+  const raw = toText(value);
+  if (!raw) return "";
+  const hasPrefix = /^[A-Za-z]+/.test(raw);
+  if (!hasPrefix && !allowBareNumber) return "";
+  const core = extractReferenceCore(raw);
+  return /^\d+$/.test(core) ? core : "";
+}
 function getQuoteCatalogKind(quote) {
   return String(quote?.catalog_kind || quote?.payload?.catalog_kind || "porton").toLowerCase().trim();
 }
@@ -842,36 +850,111 @@ function getReferenceFamilyPrefix(quote) {
   if (kind === "otros") return "O";
   return "";
 }
-function getLinkedPortonReferenceCore(quote) {
-  const payload = quote?.payload && typeof quote.payload === "object" ? quote.payload : {};
+function isLinkedPortonChildKind(kind) {
+  return ["ipanel", "plegados", "puerta", "otros"].includes(String(kind || "").toLowerCase().trim());
+}
+function getOdooReferenceCoreFromQuoteRow(quote) {
   const candidates = [
-    payload.linked_porton_odoo_sale_order_name,
-    payload.linked_porton_final_sale_order_name,
-    payload.linked_porton_quote_number,
-    payload.linked_porton_reference,
-    payload.linked_porton_number,
+    quote?.odoo_sale_order_name,
+    quote?.final_sale_order_name,
+    quote?.payload?.linked_porton_odoo_sale_order_name,
+    quote?.payload?.linked_porton_final_sale_order_name,
   ];
   for (const candidate of candidates) {
-    const core = extractReferenceCore(candidate);
+    const core = extractOdooReferenceCore(candidate);
     if (core) return core;
   }
   return "";
 }
-function getQuoteReferenceCore(quote) {
+function hasLinkedPortonPayload(quote) {
+  const payload = quote?.payload && typeof quote.payload === "object" ? quote.payload : {};
+  return !!(
+    toText(payload.linked_porton_quote_id)
+    || toText(payload.porton_quote_id)
+    || toText(payload.linked_porton_reference)
+    || toText(payload.linked_porton_odoo_sale_order_name)
+    || toText(payload.linked_porton_final_sale_order_name)
+    || toText(payload.linked_porton_reference_core)
+  );
+}
+async function getLinkedPortonReferenceCore(quote) {
   const kind = getQuoteCatalogKind(quote);
-  if (["ipanel", "plegados", "puerta", "otros"].includes(kind)) {
-    const linkedCore = getLinkedPortonReferenceCore(quote);
-    if (linkedCore) return linkedCore;
+  if (!isLinkedPortonChildKind(kind)) return "";
+  const payload = quote?.payload && typeof quote.payload === "object" ? quote.payload : {};
+
+  const directCandidates = [
+    payload.linked_porton_odoo_sale_order_name,
+    payload.linked_porton_final_sale_order_name,
+    payload.linked_porton_reference,
+  ];
+  for (const candidate of directCandidates) {
+    const core = extractOdooReferenceCore(candidate);
+    if (core) return core;
   }
+
+  const explicitCore = extractOdooReferenceCore(payload.linked_porton_reference_core, { allowBareNumber: true });
+  if (explicitCore) return explicitCore;
+
+  const linkedQuoteId = toText(payload.linked_porton_quote_id || payload.porton_quote_id || "");
+  if (isUuid(linkedQuoteId)) {
+    const r = await dbQuery(
+      `select odoo_sale_order_name, final_sale_order_name, payload from public.presupuestador_quotes where id=$1 limit 1`,
+      [linkedQuoteId],
+    );
+    const linkedQuote = r.rows?.[0] || null;
+    const core = getOdooReferenceCoreFromQuoteRow(linkedQuote);
+    if (core) return core;
+  }
+
+  return "";
+}
+function getQuoteReferenceCore(quote) {
   return extractReferenceCore(quote?.odoo_sale_order_name || quote?.final_sale_order_name || quote?.quote_number || "");
 }
-function buildQuoteOdooReference(quote, stage = "np") {
+let odooReferenceSequenceEnsured = false;
+
+async function ensureOdooReferenceSequence() {
+  if (odooReferenceSequenceEnsured) return;
+  await dbQuery(`create sequence if not exists public.presupuestador_odoo_reference_seq start with 4239 increment by 1;`);
+  odooReferenceSequenceEnsured = true;
+}
+
+async function nextOdooReferenceNumber() {
+  await ensureOdooReferenceSequence();
+  const r = await dbQuery(`select nextval('public.presupuestador_odoo_reference_seq') as value`);
+  const value = Number(r.rows?.[0]?.value || 0);
+  if (!Number.isFinite(value) || value <= 0) throw new Error("No se pudo obtener el próximo número Odoo");
+  return value;
+}
+
+function getExistingInitialOdooReferenceNumber(quote) {
+  return extractOdooReferenceCore(quote?.odoo_sale_order_name || "");
+}
+
+async function buildQuoteOdooReference(quote, stage = "np") {
   const forced = getHardcodedOdooOverride(quote, stage);
   if (forced?.reference) return forced.reference;
-  const core = getQuoteReferenceCore(quote) || String(quote?.id || "").slice(0, 8);
   const familyPrefix = getReferenceFamilyPrefix(quote);
   const stagePrefix = String(stage || "np").toLowerCase() === "nv" ? "NV" : "NP";
-  return `${familyPrefix}${stagePrefix}${core}`;
+
+  // Si es Ipanel/Puerta/Otros/Plegados vinculado a un porton, no consume un numero nuevo:
+  // reutiliza el numero Odoo del porton y solo cambia la sigla: NP4239 -> INP/PNP/ONP/PLNP4239
+  // o NV4239 -> INV/PNV/ONV/PLNV4239.
+  const linkedPortonNumber = await getLinkedPortonReferenceCore(quote);
+  if (linkedPortonNumber) return `${familyPrefix}${stagePrefix}${linkedPortonNumber}`;
+  if (hasLinkedPortonPayload(quote) && isLinkedPortonChildKind(getQuoteCatalogKind(quote))) {
+    throw new Error("El presupuesto vinculado al portón no tiene NP/NV de Odoo generada todavía. Primero debe quedar aprobado el portón vinculado.");
+  }
+
+  // Si el presupuesto ya genero una NP inicial en acopio, la NV final debe conservar
+  // el mismo numero y solo cambiar el prefijo: NP4240 -> NV4240, INP4241 -> INV4241, etc.
+  if (stagePrefix === "NV") {
+    const existingInitialNumber = getExistingInitialOdooReferenceNumber(quote);
+    if (existingInitialNumber) return `${familyPrefix}${stagePrefix}${existingInitialNumber}`;
+  }
+
+  const referenceNumber = await nextOdooReferenceNumber();
+  return `${familyPrefix}${stagePrefix}${referenceNumber}`;
 }
 
 const LINKED_PORTON_PAYLOAD_KEYS = Object.freeze([
@@ -900,11 +983,14 @@ function getLinkedPortonQuoteIdFromBody(body = {}) {
 function mergeLinkedPortonPayload(payload = {}, linkedPorton = null) {
   const next = payload && typeof payload === "object" ? { ...payload } : {};
   if (!linkedPorton?.id) return next;
+  const linkedReferenceCore = getOdooReferenceCoreFromQuoteRow(linkedPorton);
+  const linkedOdooReference = linkedPorton.odoo_sale_order_name || linkedPorton.final_sale_order_name || "";
   next.linked_porton_quote_id = String(linkedPorton.id);
   next.linked_porton_quote_number = linkedPorton.quote_number || next.linked_porton_quote_number || "";
   next.linked_porton_odoo_sale_order_name = linkedPorton.odoo_sale_order_name || next.linked_porton_odoo_sale_order_name || "";
   next.linked_porton_final_sale_order_name = linkedPorton.final_sale_order_name || next.linked_porton_final_sale_order_name || "";
-  next.linked_porton_reference = linkedPorton.odoo_sale_order_name || linkedPorton.final_sale_order_name || linkedPorton.quote_number || next.linked_porton_reference || "";
+  next.linked_porton_reference_core = linkedReferenceCore || next.linked_porton_reference_core || "";
+  next.linked_porton_reference = linkedOdooReference || next.linked_porton_reference || "";
   return next;
 }
 
@@ -972,7 +1058,7 @@ async function syncQuoteToOdoo({ odoo, quote, approverUser }) {
   if (!orderId) throw new Error("No se pudo crear sale.order en Odoo");
   await applySellerToSaleOrder(odoo, orderId, sellerName);
 
-  const orderReference = buildQuoteOdooReference(quote, "np");
+  const orderReference = await buildQuoteOdooReference(quote, "np");
   const order = orderReference
     ? (await renameOrderToReference(odoo, orderId, orderReference))
     : (await odoo.executeKw("sale.order", "read", [[orderId]], { fields: ["id", "name", "amount_total", "partner_id", "state", "pricelist_id"] }))?.[0];
@@ -1070,7 +1156,7 @@ async function syncFinalQuoteToOdoo({ odoo, revisionQuote, originalQuote, approv
     }
     finalAmountToCharge = forcedFinalAmount;
   }
-  const referenceNv = buildQuoteOdooReference(originalQuote, "nv");
+  const referenceNv = await buildQuoteOdooReference(originalQuote, "nv");
   let note = `PRESUPUESTADOR FINAL: COPY ${revisionQuote.id} (ORIG ${originalQuote.id})`
     + `\nReferencia: ${referenceNv}`
     + `\nReferencia seña: ${originalQuote.odoo_sale_order_name || originalQuote.odoo_sale_order_id || "-"}`
@@ -1208,7 +1294,7 @@ async function syncDirectProductionFinalToOdoo({ odoo, quote, approverUser }) {
   const orderId = toIntId(createdOrderId);
   if (!orderId) throw new Error("No se pudo crear sale.order final directa en Odoo");
   await applySellerToSaleOrder(odoo, orderId, sellerName);
-  const referenceNv = buildQuoteOdooReference(quote, "nv");
+  const referenceNv = await buildQuoteOdooReference(quote, "nv");
   const order = await renameOrderToReference(odoo, orderId, referenceNv);
   if (!order?.id) throw new Error("No se pudo leer sale.order directa en Odoo");
   assertHardcodedOdooReferenceApplied(order, forcedDirectNv);
