@@ -649,7 +649,7 @@ async function buildFinancingSaleOrderVals(odoo, paymentMethod) {
   return vals;
 }
 
-async function submitLinkedDoorsForQuote({ quote, isDistributor = false }) {
+async function submitLinkedDoorsForQuote({ quote }) {
   if (!quote?.id) return;
   const r = await dbQuery(`select id, record from public.presupuestador_doors where linked_quote_id=$1`, [quote.id]);
   for (const row of (r.rows || [])) {
@@ -663,12 +663,12 @@ async function submitLinkedDoorsForQuote({ quote, isDistributor = false }) {
           set status='pending_approvals',
               commercial_decision=$2,
               technical_decision='pending',
-              commercial_notes=case when $2='approved' then 'AUTO: distribuidor' else null end,
+              commercial_notes=null,
               technical_notes=null,
               record=$3::jsonb,
               updated_at=now()
         where id=$1`,
-      [Number(row.id), isDistributor ? "approved" : "pending", JSON.stringify(nextRecord)]
+      [Number(row.id), "pending", JSON.stringify(nextRecord)]
     );
   }
 }
@@ -1343,7 +1343,7 @@ export function buildQuotesRouter(odoo) {
         sql = `select q.*, u.username as created_by_username, u.full_name as created_by_full_name
                from public.presupuestador_quotes q
                left join public.presupuestador_users u on u.id = q.created_by_user_id
-               where ${onlyOriginal} and q.created_by_role = 'vendedor'
+               where ${onlyOriginal}
                  and ((status = 'pending_approvals' and commercial_decision in ('pending','approved')) or (status = 'draft' and technical_decision = 'rejected'))
                order by q.created_at desc nulls last, q.id desc limit 200`;
       } else if (scope === "technical_inbox") {
@@ -1413,7 +1413,7 @@ export function buildQuotesRouter(odoo) {
       const quote = r.rows?.[0];
       if (!quote) throw new Error("Quote no encontrado");
       const isOwner = String(quote.created_by_user_id) === String(u.user_id);
-      const canCommercial = u.is_enc_comercial && quote.created_by_role === "vendedor";
+      const canCommercial = !!u.is_enc_comercial;
       const canTech = u.is_rev_tecnica;
       if (!isOwner && !canCommercial && !canTech) throw new Error("No autorizado");
       res.json({ ok: true, quote });
@@ -1530,7 +1530,6 @@ export function buildQuotesRouter(odoo) {
       const fm = quoteCatalogKind === "otros" ? "produccion" : String(fulfillment_mode || quote.fulfillment_mode || "acopio").trim();
       if (!["produccion", "acopio"].includes(fm)) return res.status(400).json({ ok: false, error: "fulfillment_mode invalido (usar 'acopio' o 'produccion')" });
 
-      const isDistributor = quote.created_by_role === "distribuidor";
       const measurementFlow = getMeasurementFlowForQuote({
         catalog_kind: quote.catalog_kind || "porton",
         fulfillment_mode: fm,
@@ -1552,7 +1551,7 @@ export function buildQuotesRouter(odoo) {
              commercial_at=null,
              technical_by_user_id=null,
              technical_at=null,
-             commercial_notes = case when $3='approved' and created_by_role='distribuidor' then 'AUTO: distribuidor' else null end,
+             commercial_notes=null,
              technical_notes=null,
              rejection_notes=null
          where id=$1
@@ -1560,7 +1559,7 @@ export function buildQuotesRouter(odoo) {
         [
           id,
           fm,
-          isDistributor ? "approved" : "pending",
+          "pending",
           "pending",
           measurementFlow.requires_measurement,
           measurementFlow.measurement_status,
@@ -1569,7 +1568,7 @@ export function buildQuotesRouter(odoo) {
         ]
       );
       const confirmed = upd.rows?.[0] || quote;
-      await submitLinkedDoorsForQuote({ quote: confirmed, isDistributor });
+      await submitLinkedDoorsForQuote({ quote: confirmed });
       try {
         if (fm === "acopio") {
           const exists = await getFinalCopyByParentId(id);
@@ -1636,7 +1635,6 @@ export function buildQuotesRouter(odoo) {
       const r = await dbQuery(`select * from public.presupuestador_quotes where id=$1`, [id]);
       const quote = r.rows?.[0];
       if (!quote) throw new Error("Quote no encontrado");
-      if (quote.created_by_role !== "vendedor") throw new Error("Comercial solo revisa vendedores");
       if (quote.status === "synced_odoo" || quote.status === "syncing_odoo") return res.json({ ok: true, quote });
       if (quote.status !== "pending_approvals") return res.status(400).json({ ok: false, error: "No esta en revision (pending_approvals)" });
       if (quote.commercial_decision !== "pending") return res.json({ ok: true, quote });

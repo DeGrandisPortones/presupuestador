@@ -21,7 +21,7 @@ function text(value) {
 function canUserReadQuote(user, quote) {
   if (!user || !quote) return false;
   const isOwner = String(quote.created_by_user_id || "") === String(user.user_id || "");
-  const canCommercial = !!user.is_enc_comercial && quote.created_by_role === "vendedor";
+  const canCommercial = !!user.is_enc_comercial;
   const canTechnical = !!user.is_rev_tecnica;
   const canMedidor = !!user.is_medidor;
   const canSuperuser = !!user.is_superuser;

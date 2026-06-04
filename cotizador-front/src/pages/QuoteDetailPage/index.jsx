@@ -714,7 +714,7 @@ export default function QuoteDetailPage() {
   const linkedDoorsQ = useQuery({ queryKey: ["doors", "by-quote", quoteId], queryFn: () => listDoorsByQuote(quoteId), enabled: !!quoteId });
   const quote = q.data;
   const isRevision = (quote?.quote_kind || "original") === "copy";
-  const canCommercial = !!user?.is_enc_comercial && quote?.created_by_role === "vendedor" && !isRevision;
+  const canCommercial = !!user?.is_enc_comercial && !isRevision;
   const canTech = !!user?.is_rev_tecnica && !isRevision;
   const canCommercialAct = canCommercial && quote?.status === "pending_approvals" && quote?.commercial_decision === "pending";
   const canTechAct = canTech && quote?.status === "pending_approvals" && quote?.technical_decision === "pending";
