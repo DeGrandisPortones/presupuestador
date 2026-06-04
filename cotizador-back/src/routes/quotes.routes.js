@@ -14,6 +14,16 @@ const DEFAULT_PRICELIST_ID = Number(process.env.ODOO_DEFAULT_PRICELIST_ID || 1);
 const IVA_RATE = 0.21;
 const TACA_TACA_PLAN_NAME = String(process.env.ODOO_TACA_TACA_PLAN_NAME || "Taca Taca").trim();
 
+// Casos puntuales migrados: fuerzan nombre y monto de la orden en Odoo.
+// Se limitan por quote_id y etapa para no afectar el flujo general ni la secuencia normal.
+const HARDCODED_ODOO_QUOTES = Object.freeze({
+  "4ecc5ed8-f41d-41dd-93d2-7e90c718debf": { stage: "nv", reference: "NV4238", amount: 3486887.45, fulfillment_mode: "produccion", label: "Rodrigo Fernandez" },
+  "27c8625d-6b44-4293-8d8d-8d580ebc7a91": { stage: "nv", reference: "NV4237", amount: 3220305.39, fulfillment_mode: "produccion", label: "Juan Molina" },
+  "55f11cf2-1205-4bd2-9471-ca7d1109b4ff": { stage: "np", reference: "NP4236", amount: 3371576.90, fulfillment_mode: "acopio", label: "Daniel Caon" },
+  "035c6c9b-a07d-474e-9c31-744c379b6fe7": { stage: "nv", reference: "NV4235", amount: 4223523.26, fulfillment_mode: "produccion", label: "German Ortiz" },
+  "3e3ec6a3-af1a-4c86-8471-39dbcf372533": { stage: "nv", reference: "NV4231", amount: 1662817.53, fulfillment_mode: "produccion", label: "Pastore" },
+});
+
 const PORTON_TYPE_TO_ODOO_PRODUCT_ID = Object.freeze({
   // Portones estándar / base
   apto_para_revestir: 3233,
@@ -76,6 +86,25 @@ function toIntId(v) { const n = Number(toScalar(v)); return Number.isFinite(n) ?
 function toText(v) { const x = toScalar(v); return x === null || x === undefined ? "" : String(x).trim(); }
 function isUuid(v) { return /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(String(v || "").trim()); }
 function round2(n) { return Math.round(Number(n || 0) * 100) / 100; }
+function getHardcodedOdooOverride(quote, stage = null) {
+  const id = String(quote?.id || quote?.parent_quote_id || "").toLowerCase().trim();
+  const forced = HARDCODED_ODOO_QUOTES[id] || null;
+  if (!forced) return null;
+  const wantedStage = stage ? String(stage).toLowerCase().trim() : "";
+  if (wantedStage && forced.stage !== wantedStage) return null;
+  return forced;
+}
+function formatHardcodedOdooNote(forced) {
+  if (!forced) return "";
+  return `
+Hardcode migración: ${forced.reference} · monto ${round2(forced.amount)}`;
+}
+function assertHardcodedOdooReferenceApplied(order, forced) {
+  if (!forced?.reference) return;
+  if (String(order?.name || "") !== forced.reference) {
+    throw new Error(`No se pudo aplicar el número Odoo forzado ${forced.reference}. Revisar si ya existe en Odoo o si Odoo bloqueó el renombrado.`);
+  }
+}
 function resolveQuotePricelistId(roleOrQuote, requestedPricelistId, fallbackPricelistId = null) {
   const role = typeof roleOrQuote === "object"
     ? String(roleOrQuote?.created_by_role || "vendedor").trim().toLowerCase()
@@ -326,6 +355,8 @@ function getMeasurementFlowForQuote({ catalog_kind, fulfillment_mode, lines }) {
   };
 }
 function shouldDeferSyncUntilMeasurement(quote) {
+  const forced = getHardcodedOdooOverride(quote);
+  if (forced?.stage === "nv") return false;
   return String(quote?.catalog_kind || "porton").toLowerCase().trim() === "porton"
     && String(quote?.fulfillment_mode || "").trim() === "produccion"
     && (
@@ -835,6 +866,8 @@ function getQuoteReferenceCore(quote) {
   return extractReferenceCore(quote?.odoo_sale_order_name || quote?.final_sale_order_name || quote?.quote_number || "");
 }
 function buildQuoteOdooReference(quote, stage = "np") {
+  const forced = getHardcodedOdooOverride(quote, stage);
+  if (forced?.reference) return forced.reference;
   const core = getQuoteReferenceCore(quote) || String(quote?.id || "").slice(0, 8);
   const familyPrefix = getReferenceFamilyPrefix(quote);
   const stagePrefix = String(stage || "np").toLowerCase() === "nv" ? "NV" : "NP";
@@ -894,6 +927,8 @@ async function syncQuoteToOdoo({ odoo, quote, approverUser }) {
 
   const sellerName = await resolveSellerDisplayNameForOdoo(quote, approverUser);
   let total = calcQuoteTotalWithIva({ lines: quote.lines, payload: quote.payload });
+  const forcedNp = getHardcodedOdooOverride(quote, "np");
+  if (forcedNp?.amount) total = round2(forcedNp.amount);
   let orderLines = [];
 
   if (shouldUseDetailedInitialOrderLines(quote)) {
@@ -922,6 +957,7 @@ async function syncQuoteToOdoo({ odoo, quote, approverUser }) {
       + (quote?.end_customer?.maps_url ? `\nMaps: ${quote.end_customer.maps_url}` : "")
       + (quote.note ? `\n${quote.note}` : "");
   let note = appendBudgetObservationToNote(noteBase, quote) + (sellerName ? `\nVendedor: ${sellerName}` : "");
+  if (forcedNp) note += formatHardcodedOdooNote(forcedNp);
   note = appendPaymentMethodToNote(note, quote?.payload?.payment_method);
 
   const financingVals = await buildFinancingSaleOrderVals(odoo, quote?.payload?.payment_method);
@@ -940,6 +976,7 @@ async function syncQuoteToOdoo({ odoo, quote, approverUser }) {
   const order = orderReference
     ? (await renameOrderToReference(odoo, orderId, orderReference))
     : (await odoo.executeKw("sale.order", "read", [[orderId]], { fields: ["id", "name", "amount_total", "partner_id", "state", "pricelist_id"] }))?.[0];
+  assertHardcodedOdooReferenceApplied(order, forcedNp);
   return { order, deposit_amount: round2(total) };
 }
 
@@ -1014,7 +1051,25 @@ async function syncFinalQuoteToOdoo({ odoo, revisionQuote, originalQuote, approv
     }]);
   }
 
-  const finalAmountToCharge = round2(Math.max(0, detailedTotal - advanceToDiscount));
+  let finalAmountToCharge = round2(Math.max(0, detailedTotal - advanceToDiscount));
+  const forcedNv = getHardcodedOdooOverride(originalQuote, "nv");
+  if (forcedNv?.amount) {
+    const forcedFinalAmount = round2(forcedNv.amount);
+    const adjustment = round2(forcedFinalAmount - finalAmountToCharge);
+    if (adjustment !== 0) {
+      const ph = byId.get(Number(PLACEHOLDER_PRODUCT_ID));
+      const uomId = toIntId(ph?.uom_id);
+      if (!uomId) throw new Error(`Producto ajuste hardcode sin uom_id: ${PLACEHOLDER_PRODUCT_ID}`);
+      orderLines.push([0, 0, {
+        product_id: Number(PLACEHOLDER_PRODUCT_ID),
+        product_uom_qty: 1,
+        product_uom: uomId,
+        name: `Ajuste monto ${forcedNv.reference}`,
+        price_unit: adjustment,
+      }]);
+    }
+    finalAmountToCharge = forcedFinalAmount;
+  }
   const referenceNv = buildQuoteOdooReference(originalQuote, "nv");
   let note = `PRESUPUESTADOR FINAL: COPY ${revisionQuote.id} (ORIG ${originalQuote.id})`
     + `\nReferencia: ${referenceNv}`
@@ -1027,6 +1082,7 @@ async function syncFinalQuoteToOdoo({ odoo, revisionQuote, originalQuote, approv
     + (absorbedByCompany ? `\nAbsorbido por la empresa: SI` : `\nAbsorbido por la empresa: NO`)
     + `\nImporte final a facturar: ${finalAmountToCharge}`
     + (sellerName ? `\nVendedor: ${sellerName}` : "");
+  if (forcedNv) note += formatHardcodedOdooNote(forcedNv);
   note = appendBudgetObservationToNote(note, revisionQuote || originalQuote);
   note = appendPaymentMethodToNote(note, revisionQuote?.payload?.payment_method || originalQuote?.payload?.payment_method);
 
@@ -1045,6 +1101,7 @@ async function syncFinalQuoteToOdoo({ odoo, revisionQuote, originalQuote, approv
   await applySellerToSaleOrder(odoo, orderId, sellerName);
   const order = await renameOrderToReference(odoo, orderId, referenceNv);
   if (!order?.id) throw new Error("No se pudo leer sale.order final en Odoo");
+  assertHardcodedOdooReferenceApplied(order, forcedNv);
 
   return {
     order,
@@ -1085,8 +1142,10 @@ async function syncDirectProductionFinalToOdoo({ odoo, quote, approverUser }) {
   const lines = Array.isArray(quote.lines) ? quote.lines : [];
   if (!lines.length) throw new Error("El presupuesto no tiene items");
 
+  const forcedDirectNv = getHardcodedOdooOverride(quote, "nv");
   const extraProductIds = includeInitialProductLine && initialProduct?.productId ? [Number(initialProduct.productId)] : [];
-  const productIds = [...new Set(lines.map((l) => Number(l.product_id)).filter(Boolean).concat(extraProductIds))];
+  const adjustmentProductIds = forcedDirectNv?.amount ? [Number(PLACEHOLDER_PRODUCT_ID)] : [];
+  const productIds = [...new Set(lines.map((l) => Number(l.product_id)).filter(Boolean).concat(extraProductIds, adjustmentProductIds))];
   const products = await odoo.executeKw("product.product", "read", [productIds], { fields: ["id", "name", "uom_id"] });
   const byId = new Map((products || []).map((p) => [Number(p.id), p]));
 
@@ -1111,12 +1170,31 @@ async function syncDirectProductionFinalToOdoo({ odoo, quote, approverUser }) {
     orderLines.push([0, 0, { product_id: productId, product_uom_qty: qty, product_uom: uomId, name: p.name, price_unit: priceUnit }]);
   }
 
+  if (forcedDirectNv?.amount) {
+    const forcedTotal = round2(forcedDirectNv.amount);
+    const adjustment = round2(forcedTotal - detailedTotal);
+    if (adjustment !== 0) {
+      const ph = byId.get(Number(PLACEHOLDER_PRODUCT_ID));
+      const uomId = toIntId(ph?.uom_id);
+      if (!uomId) throw new Error(`Producto ajuste hardcode sin uom_id: ${PLACEHOLDER_PRODUCT_ID}`);
+      orderLines.push([0, 0, {
+        product_id: Number(PLACEHOLDER_PRODUCT_ID),
+        product_uom_qty: 1,
+        product_uom: uomId,
+        name: `Ajuste monto ${forcedDirectNv.reference}`,
+        price_unit: adjustment,
+      }]);
+    }
+    detailedTotal = forcedTotal;
+  }
+
   let note = `PRESUPUESTADOR FINAL DIRECTO: ${quote.id}`
     + `\nDestino: PRODUCCION`
     + `\nPortón sin medición: se envía el detalle completo sin instancia adicional de edición.`
     + (quote.note ? `\n${quote.note}` : "")
     + (sellerName ? `\nVendedor: ${sellerName}` : "");
   note = appendBudgetObservationToNote(note, quote);
+  if (forcedDirectNv) note += formatHardcodedOdooNote(forcedDirectNv);
   note = appendPaymentMethodToNote(note, quote?.payload?.payment_method);
 
   const financingVals = await buildFinancingSaleOrderVals(odoo, quote?.payload?.payment_method);
@@ -1133,6 +1211,7 @@ async function syncDirectProductionFinalToOdoo({ odoo, quote, approverUser }) {
   const referenceNv = buildQuoteOdooReference(quote, "nv");
   const order = await renameOrderToReference(odoo, orderId, referenceNv);
   if (!order?.id) throw new Error("No se pudo leer sale.order directa en Odoo");
+  assertHardcodedOdooReferenceApplied(order, forcedDirectNv);
 
   return {
     order,
@@ -1580,7 +1659,8 @@ export function buildQuotesRouter(odoo) {
   });
 
   async function handleReadyQuoteSync({ qSync, approverUser }) {
-    const directFinal = qSync.fulfillment_mode === "produccion" && !quoteNeedsMeasurement(qSync);
+    const forced = getHardcodedOdooOverride(qSync);
+    const directFinal = forced?.stage === "nv" || (qSync.fulfillment_mode === "produccion" && !quoteNeedsMeasurement(qSync));
     if (directFinal) {
       const { order } = await syncDirectProductionFinalToOdoo({ odoo, quote: qSync, approverUser });
       const upd = await dbQuery(
