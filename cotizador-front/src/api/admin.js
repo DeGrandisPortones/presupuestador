@@ -71,8 +71,14 @@ export async function adminSaveDoorQuoteSettings(payload) {
   return data.settings || { formula: "precio_ipanel + precio_venta_marco" };
 }
 
+function normalizeCatalogKindParam(kind = "porton") {
+  if (typeof kind === "string") return kind.trim() || "porton";
+  if (kind && typeof kind === "object" && typeof kind.kind === "string") return kind.kind.trim() || "porton";
+  return "porton";
+}
+
 export async function adminGetTechnicalMeasurementRules(kind = "porton") {
-  const normalizedKind = kind || "porton";
+  const normalizedKind = normalizeCatalogKindParam(kind);
   const { data } = await http.get(`/api/admin/technical-measurement-rules?kind=${encodeURIComponent(normalizedKind)}`);
   if (!data?.ok) throw new Error(data?.error || "No se pudieron cargar las reglas técnicas");
   const rules = data.rules || { rules: [] };

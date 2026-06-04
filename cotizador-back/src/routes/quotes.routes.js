@@ -1558,6 +1558,48 @@ export function buildQuotesRouter(odoo) {
                left join public.presupuestador_users u on u.id = q.created_by_user_id
                where ${onlyOriginal} and q.fulfillment_mode = 'acopio'
                order by q.confirmed_at desc nulls last, q.id desc limit 200`;
+      } else if (scope === "production_sent") {
+        if (!u.is_enc_comercial && !u.is_rev_tecnica) return res.status(403).json({ ok: false, error: "No autorizado" });
+        sql = `select q.*,
+                      u.username as created_by_username,
+                      u.full_name as created_by_full_name,
+                      fc.final_copy_id,
+                      fc.final_copy_status,
+                      fc.final_copy_sale_order_name,
+                      fc.final_copy_quote_status,
+                      fc.final_copy_synced_at,
+                      coalesce(q.final_sale_order_name, fc.final_copy_sale_order_name, q.odoo_sale_order_name) as production_sale_order_name,
+                      coalesce(q.measurement_review_at, fc.final_copy_synced_at, q.final_synced_at, q.production_delivery_committed_at, q.confirmed_at) as production_sent_at
+                 from public.presupuestador_quotes q
+                 left join public.presupuestador_users u on u.id = q.created_by_user_id
+                 left join lateral (
+                   select c.id as final_copy_id,
+                          c.final_status as final_copy_status,
+                          c.final_sale_order_name as final_copy_sale_order_name,
+                          c.status as final_copy_quote_status,
+                          c.final_synced_at as final_copy_synced_at,
+                          c.final_sale_order_id as final_copy_sale_order_id
+                     from public.presupuestador_quotes c
+                    where c.quote_kind = 'copy'
+                      and c.parent_quote_id = q.id
+                    order by c.final_synced_at desc nulls last, c.created_at desc nulls last, c.id desc
+                    limit 1
+                 ) fc on true
+                where ${onlyOriginal}
+                  and coalesce(q.catalog_kind, 'porton') = 'porton'
+                  and (
+                    (q.measurement_status = 'approved' and (
+                      q.final_status = 'synced_odoo'
+                      or coalesce(q.final_sale_order_id, 0) <> 0
+                      or q.final_sale_order_name is not null
+                      or fc.final_copy_status = 'synced_odoo'
+                      or coalesce(fc.final_copy_sale_order_id, 0) <> 0
+                    ))
+                    or fc.final_copy_status = 'synced_odoo'
+                    or coalesce(fc.final_copy_sale_order_id, 0) <> 0
+                  )
+                order by coalesce(q.measurement_review_at, fc.final_copy_synced_at, q.final_synced_at, q.production_delivery_committed_at, q.confirmed_at) desc nulls last, q.id desc
+                limit 500`;
       } else {
         return res.status(400).json({ ok: false, error: "scope invalido" });
       }

@@ -90,6 +90,16 @@ function PlegadoInfoCell({ row }) {
     </div>
   );
 }
+function productionReference(row) {
+  return String(row?.production_sale_order_name || row?.final_sale_order_name || row?.final_copy_sale_order_name || row?.odoo_sale_order_name || "").trim();
+}
+function productionSentAt(row) {
+  return row?.production_sent_at || row?.measurement_review_at || row?.final_copy_synced_at || row?.final_synced_at || row?.production_delivery_committed_at || row?.confirmed_at || row?.created_at;
+}
+function productionStatusLabel(row) {
+  const ref = productionReference(row);
+  return ref ? `Enviado a producción · ${ref}` : "Enviado a producción";
+}
 function matchesSearch(values, searchText) {
   const s = String(searchText || "").trim().toLowerCase();
   if (!s) return true;
@@ -120,6 +130,7 @@ export default function AprobacionComercialPage() {
   const [pageAprobaciones, setPageAprobaciones] = useState(1);
   const [pageAcopio, setPageAcopio] = useState(1);
   const [pageAcopioListado, setPageAcopioListado] = useState(1);
+  const [pageProduccion, setPageProduccion] = useState(1);
   const [pagePuertas, setPagePuertas] = useState(1);
   const [pageMediciones, setPageMediciones] = useState(1);
   const [downloadingPdfKey, setDownloadingPdfKey] = useState("");
@@ -127,6 +138,7 @@ export default function AprobacionComercialPage() {
   const q = useQuery({ queryKey: ["quotes", "commercial_inbox"], queryFn: () => listQuotes({ scope: "commercial_inbox" }), enabled: !!user?.is_enc_comercial });
   const acopioQ = useQuery({ queryKey: ["quotes", "commercial_acopio"], queryFn: () => listQuotes({ scope: "commercial_acopio" }), enabled: tab === "acopio" && !!user?.is_enc_comercial });
   const acopioListadoQ = useQuery({ queryKey: ["quotes", "commercial_acopio_all"], queryFn: () => listQuotes({ scope: "commercial_acopio_all" }), enabled: tab === "acopio_listado" && !!user?.is_enc_comercial });
+  const produccionQ = useQuery({ queryKey: ["quotes", "production_sent", "commercial"], queryFn: () => listQuotes({ scope: "production_sent" }), enabled: tab === "produccion" && !!user?.is_enc_comercial });
   const doorsQ = useQuery({ queryKey: ["doors", "commercial_inbox"], queryFn: () => listDoors({ scope: "commercial_inbox" }), enabled: tab === "puertas" && !!user?.is_enc_comercial });
   const medicionesQ = useQuery({
     queryKey: ["measurements", "commercial_review"],
@@ -183,6 +195,13 @@ export default function AprobacionComercialPage() {
       .filter((r) => matchesSearch([createdByLabel(r), r?.end_customer?.name, r?.end_customer?.city, r?.end_customer?.address, rowLabel(r), acopioReqLabel(r), budgetObservation(r), plegadoSurface(r), plegadoDescription(r)], searchText));
   }, [acopioListadoQ.data, searchText]);
 
+  const produccionRows = useMemo(() => {
+    return (produccionQ.data || [])
+      .slice()
+      .sort((a, b) => toTimeDesc(productionSentAt(b)) - toTimeDesc(productionSentAt(a)))
+      .filter((r) => matchesSearch([createdByLabel(r), r?.end_customer?.name, r?.end_customer?.city, r?.end_customer?.address, productionStatusLabel(r), productionReference(r), budgetObservation(r)], searchText));
+  }, [produccionQ.data, searchText]);
+
   const doorRows = useMemo(() => {
     return (doorsQ.data || [])
       .slice()
@@ -214,12 +233,14 @@ export default function AprobacionComercialPage() {
   useEffect(() => { setPageAprobaciones(1); }, [filter, searchText]);
   useEffect(() => { setPageAcopio(1); }, [searchText]);
   useEffect(() => { setPageAcopioListado(1); }, [searchText]);
+  useEffect(() => { setPageProduccion(1); }, [searchText]);
   useEffect(() => { setPagePuertas(1); }, [searchText]);
   useEffect(() => { setPageMediciones(1); }, [searchText]);
 
   const visibleRows = useMemo(() => rows.slice((pageAprobaciones - 1) * PAGE_SIZE, pageAprobaciones * PAGE_SIZE), [rows, pageAprobaciones]);
   const visibleAcopioRows = useMemo(() => acopioRows.slice((pageAcopio - 1) * PAGE_SIZE, pageAcopio * PAGE_SIZE), [acopioRows, pageAcopio]);
   const visibleAcopioListadoRows = useMemo(() => acopioListadoRows.slice((pageAcopioListado - 1) * PAGE_SIZE, pageAcopioListado * PAGE_SIZE), [acopioListadoRows, pageAcopioListado]);
+  const visibleProduccionRows = useMemo(() => produccionRows.slice((pageProduccion - 1) * PAGE_SIZE, pageProduccion * PAGE_SIZE), [produccionRows, pageProduccion]);
   const visibleDoorRows = useMemo(() => doorRows.slice((pagePuertas - 1) * PAGE_SIZE, pagePuertas * PAGE_SIZE), [doorRows, pagePuertas]);
   const visibleMedicionesRows = useMemo(() => medicionesRows.slice((pageMediciones - 1) * PAGE_SIZE, pageMediciones * PAGE_SIZE), [medicionesRows, pageMediciones]);
 
@@ -239,6 +260,7 @@ export default function AprobacionComercialPage() {
           <Button variant={tab === "mediciones" ? "primary" : "ghost"} onClick={() => setTab("mediciones")}>Mediciones</Button>
           <Button variant={tab === "acopio" ? "primary" : "ghost"} onClick={() => setTab("acopio")}>Acopio → Producción</Button>
           <Button variant={tab === "acopio_listado" ? "primary" : "ghost"} onClick={() => setTab("acopio_listado")}>Portones en Acopio</Button>
+          <Button variant={tab === "produccion" ? "primary" : "ghost"} onClick={() => setTab("produccion")}>Portones enviados a Producción</Button>
           <Button variant={tab === "puertas" ? "primary" : "ghost"} onClick={() => setTab("puertas")}>Puertas</Button>
         </div>
 
@@ -407,6 +429,42 @@ export default function AprobacionComercialPage() {
                   </tbody>
                 </table>
                 <PaginationControls page={pageAcopioListado} totalItems={acopioListadoRows.length} pageSize={PAGE_SIZE} onPageChange={setPageAcopioListado} />
+              </>
+            )}
+          </>
+        )}
+
+        {tab === "produccion" && (
+          <>
+            {produccionQ.isLoading && <div className="muted">Cargando...</div>}
+            {produccionQ.isError && <div style={{ color: "#d93025", fontSize: 13 }}>{produccionQ.error.message}</div>}
+            {!produccionQ.isLoading && !produccionRows.length && <div className="muted">Sin portones enviados a producción</div>}
+            {!!produccionRows.length && (
+              <>
+                <table>
+                  <thead><tr><th>Fecha envío</th><th>Vendedor/Distribuidor</th><th>Cliente</th><th>Dirección</th><th>NV</th><th>Semana producción</th><th>Obs. presupuesto</th><th></th></tr></thead>
+                  <tbody>
+                    {visibleProduccionRows.map((r) => {
+                      const pdfKey = `quote-${r.id}`;
+                      return (
+                        <tr key={r.id}>
+                          <td>{fmtDate(productionSentAt(r))}</td>
+                          <td>{createdByLabel(r)}</td>
+                          <td>{r.end_customer?.name || <span className="muted">(sin nombre)</span>}</td>
+                          <td>{r.end_customer?.address || "—"}</td>
+                          <td>{productionReference(r) || "—"}</td>
+                          <td>{r.production_delivery_year && r.production_delivery_week ? `${r.production_delivery_year} · Semana ${r.production_delivery_week}` : "—"}</td>
+                          <td><BudgetObservationCell row={r} /></td>
+                          <td className="right" style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+                            <PdfIconButton disabled={downloadingPdfKey === pdfKey} onClick={() => handleDownloadQuotePdf(r.id)} />
+                            <Button variant="ghost" onClick={() => navigate(`/presupuestos/${r.id}`, { state: { from: "/aprobacion/comercial" } })}>Abrir</Button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+                <PaginationControls page={pageProduccion} totalItems={produccionRows.length} pageSize={PAGE_SIZE} onPageChange={setPageProduccion} />
               </>
             )}
           </>

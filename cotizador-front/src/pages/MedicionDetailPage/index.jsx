@@ -714,8 +714,8 @@ export default function MedicionDetailPage() {
     enabled: !!quoteId,
   });
   const dynamicRulesQ = useQuery({
-    queryKey: ["technicalMeasurementRulesForMeasurement"],
-    queryFn: adminGetTechnicalMeasurementRules,
+    queryKey: ["technicalMeasurementRulesForMeasurement", "porton"],
+    queryFn: () => adminGetTechnicalMeasurementRules("porton"),
     enabled: !!quoteId,
   });
   const catalogQ = useQuery({

@@ -642,7 +642,12 @@ export function buildMeasurementsRouter(odoo = null) {
       if (!quoteAllowsMeasurementWorkflow(quote)) {
         return res.status(400).json({ ok: false, error: "Este presupuesto no requiere medición" });
       }
-      if (!["submitted", "approved"].includes(String(quote.measurement_status || "").toLowerCase()) && act !== "return_to_seller") {
+      const currentMeasurementStatus = String(quote.measurement_status || "").toLowerCase().trim();
+      const isTechnicalOnlyFinalApproval =
+        act === "approve" &&
+        currentMeasurementStatus === "pending" &&
+        isTecnicaOnlyQuote(quote);
+      if (!["submitted", "approved"].includes(currentMeasurementStatus) && act !== "return_to_seller" && !isTechnicalOnlyFinalApproval) {
         return res.status(409).json({ ok: false, error: "La medición no está lista para revisar" });
       }
 
