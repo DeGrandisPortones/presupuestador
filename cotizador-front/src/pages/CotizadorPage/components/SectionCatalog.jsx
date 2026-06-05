@@ -155,6 +155,38 @@ function collectProductIdsFromLine(line = {}) {
     .filter((value) => Number.isFinite(value) && value > 0);
 }
 
+function buildCatalogSelectionKey(lines = []) {
+  return (Array.isArray(lines) ? lines : [])
+    .map((line) => [
+      Number(line?.product_id || 0) || 0,
+      Number(line?.id || 0) || 0,
+      Number(line?.odoo_id || 0) || 0,
+      Number(line?.odoo_template_id || 0) || 0,
+      Number(line?.odoo_variant_id || 0) || 0,
+      Number(line?.odoo_external_id || 0) || 0,
+    ].join(","))
+    .filter((part) => part !== "0,0,0,0,0,0")
+    .sort()
+    .join("|");
+}
+
+function parseCatalogSelectionKey(key) {
+  const text = String(key || "").trim();
+  if (!text) return [];
+  return text.split("|").filter(Boolean).map((part, index) => {
+    const [product_id, id, odoo_id, odoo_template_id, odoo_variant_id, odoo_external_id] = part.split(",").map((value) => Number(value || 0) || 0);
+    return {
+      product_id,
+      id,
+      odoo_id,
+      odoo_template_id,
+      odoo_variant_id,
+      odoo_external_id,
+      line_key: `selection-${index}-${product_id}`,
+    };
+  });
+}
+
 function findProductByAnyId(products = [], targetId) {
   const id = Number(targetId || 0);
   if (!id) return null;
@@ -340,7 +372,8 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
 
   const addLine = useQuoteStore((s) => s.addLine);
   const forceRemoveLine = useQuoteStore((s) => s.forceRemoveLine);
-  const lines = useQuoteStore((s) => s.lines);
+  const catalogSelectionKey = useQuoteStore((s) => buildCatalogSelectionKey(s.lines));
+  const lines = useMemo(() => parseCatalogSelectionKey(catalogSelectionKey), [catalogSelectionKey]);
   const portonType = useQuoteStore((s) => s.portonType);
   const setPortonType = useQuoteStore((s) => s.setPortonType);
 

@@ -798,7 +798,7 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
   }, [persistedQuoteId, savedQuoteAdjustmentPercent, financingPercent, conditionMode]);
   const totals = useMemo(() => calcTotals(lines, marginPercent, ivaRate, quoteAdjustmentPercent, conditionMode), [lines, marginPercent, ivaRate, quoteAdjustmentPercent, conditionMode]);
   const linesKey = useMemo(
-    () => lines.map((l) => `${l.product_id}:${resolveLinePricingProductId(l)}:${l.odoo_template_id || ""}:${l.qty}`).join("|"),
+    () => lines.map((l) => `${l.product_id}:${resolveLinePricingProductId(l)}:${l.odoo_template_id || ""}:${isShippingLine(l) ? "shipping-qty" : l.qty}`).join("|"),
     [lines],
   );
 
