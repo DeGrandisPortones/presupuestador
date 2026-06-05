@@ -375,13 +375,28 @@ function shouldDeferSyncUntilMeasurement(quote) {
       || hasMeasurementLine(quote?.lines)
     );
 }
+function getPayloadQuoteAdjustmentPercent(payload) {
+  const candidates = [
+    payload?.quote_adjustment_percent_snapshot,
+    payload?.financing_percent_snapshot,
+    payload?.financing_percent,
+    payload?.payment_adjustment_percent,
+  ];
+  for (const value of candidates) {
+    if (value === null || value === undefined || String(value).trim() === "") continue;
+    const n = Number(String(value).replace(",", "."));
+    if (Number.isFinite(n)) return n;
+  }
+  return 0;
+}
 function calcQuoteSubtotal({ lines, payload }) {
   const arr = Array.isArray(lines) ? lines : [];
   const m = Number(payload?.margin_percent_ui || 0) || 0;
+  const adjustment = getPayloadQuoteAdjustmentPercent(payload || {});
   return round2(arr.reduce((acc, l) => {
     const qty = Number(l?.qty || 0) || 0;
     const base = Number(l?.basePrice ?? l?.base_price ?? l?.price ?? 0) || 0;
-    const unit = base * (1 + m / 100);
+    const unit = base * (1 + m / 100) * (1 + adjustment / 100);
     return acc + (qty * unit);
   }, 0));
 }
@@ -420,7 +435,8 @@ function calcDetailedUnitWithIva(line, payload) {
   if (typeof line?.unit_price === "number") return round2(line.unit_price);
   const base = Number(line?.basePrice ?? line?.base_price ?? line?.price ?? 0) || 0;
   const margin = Number(payload?.margin_percent_ui || 0) || 0;
-  return round2(base * (1 + margin / 100) * getOdooConditionPriceFactor(payload || {}));
+  const adjustment = getPayloadQuoteAdjustmentPercent(payload || {});
+  return round2(base * (1 + margin / 100) * (1 + adjustment / 100) * getOdooConditionPriceFactor(payload || {}));
 }
 function normalizePortonTypeKey(value) {
   return String(value || "")

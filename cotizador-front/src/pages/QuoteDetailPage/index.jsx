@@ -580,6 +580,22 @@ function formatDateForApproval(value) {
   return d.toLocaleDateString("es-AR");
 }
 
+
+function getSavedQuoteAdjustmentPercentForApproval(quote) {
+  const payload = quote?.payload && typeof quote.payload === "object" ? quote.payload : {};
+  const candidates = [
+    payload.quote_adjustment_percent_snapshot,
+    payload.financing_percent_snapshot,
+    payload.financing_percent,
+    payload.payment_adjustment_percent,
+  ];
+  for (const value of candidates) {
+    if (value === null || value === undefined || String(value).trim() === "") continue;
+    const n = Number(String(value).replace(",", "."));
+    if (Number.isFinite(n)) return n;
+  }
+  return null;
+}
 function getQuoteMarginPercentForApproval(quote) {
   const payload = quote?.payload && typeof quote.payload === "object" ? quote.payload : {};
   const candidates = [
@@ -880,13 +896,14 @@ export default function QuoteDetailPage() {
   const canTechAct = canTech && quote?.status === "pending_approvals" && quote?.technical_decision === "pending";
   const conditionMode = String(quote?.payload?.condition_mode || "cond1").trim();
   const paymentMethodForApproval = String(quote?.payload?.payment_method || "").trim();
+  const savedApprovalFinancingPercent = getSavedQuoteAdjustmentPercentForApproval(quote);
   const financingApprovalQ = useQuery({
     queryKey: ["financing-preview-approval", paymentMethodForApproval],
     queryFn: () => getFinancingPreview(paymentMethodForApproval),
-    enabled: !!paymentMethodForApproval,
+    enabled: !!paymentMethodForApproval && savedApprovalFinancingPercent === null,
     staleTime: 60 * 1000,
   });
-  const approvalFinancingPercent = Number(financingApprovalQ.data?.percent || 0) || 0;
+  const approvalFinancingPercent = savedApprovalFinancingPercent !== null ? savedApprovalFinancingPercent : (Number(financingApprovalQ.data?.percent || 0) || 0);
   const requiresCommercialBillingData = quote?.created_by_role === "vendedor" && conditionMode === "cond1";
   const billingOptionsQ = useQuery({ queryKey: ["billing-options"], queryFn: () => getBillingOptions(), enabled: billingModalOpen && canCommercialAct && requiresCommercialBillingData, staleTime: 1000 * 60 * 30 });
 

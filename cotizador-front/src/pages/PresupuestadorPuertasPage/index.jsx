@@ -13,7 +13,7 @@ import PuertaCatalog from "./components/PuertaCatalog.jsx";
 import { useAuthStore } from "../../domain/auth/store.js";
 import { useQuoteStore } from "../../domain/quote/store.js";
 import { IVA_RATE_DEFAULT } from "../../domain/quote/defaults.js";
-import { calcTotals } from "../../domain/quote/pricing.js";
+import { calcTotals, resolveQuoteAdjustmentPercent, resolveQuoteIvaRate } from "../../domain/quote/pricing.js";
 import { getPrices, getPricelists, getFinancingPreview } from "../../api/odoo.js";
 import { createQuote, getQuote, updateQuote, confirmQuote, listQuotes } from "../../api/quotes.js";
 import { downloadPresupuestoPdf, downloadProformaPdf } from "../../api/pdf.js";
@@ -116,6 +116,26 @@ function buildPdfPayloadForDownload(payload, financingPercent, extras = {}) {
   return { ...(payload || {}), ...extras, lines: nextLines, payload: { ...(payload?.payload || {}), ...(extras.payload || {}) } };
 }
 
+function hasUsableLineBasePrice(line = {}) {
+  const value = line?.basePrice ?? line?.base_price ?? line?.price;
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0;
+}
+function lineNeedsPriceRefresh(line = {}) {
+  if (!line || line.previously_billed_line) return false;
+  return !hasUsableLineBasePrice(line);
+}
+function getSavedQuoteAdjustmentPercent(quote) {
+  const payload = quote?.payload && typeof quote.payload === "object" ? quote.payload : {};
+  const candidates = [payload.quote_adjustment_percent_snapshot, payload.financing_percent_snapshot, payload.financing_percent, payload.payment_adjustment_percent];
+  for (const value of candidates) {
+    if (value === null || value === undefined || String(value).trim() === "") continue;
+    const n = Number(String(value).replace(",", "."));
+    if (Number.isFinite(n)) return n;
+  }
+  return null;
+}
+
 export default function PresupuestadorPuertasPage() {
   const navigate = useNavigate();
   const params = useParams();
@@ -182,18 +202,30 @@ export default function PresupuestadorPuertasPage() {
 
   const financingQ = useQuery({ queryKey: ["financing-preview", paymentMethod], queryFn: () => getFinancingPreview(paymentMethod), enabled: !!cleanText(paymentMethod), staleTime: 60 * 1000 });
   const financingPercent = Number(financingQ.data?.percent || 0) || 0;
-  const totals = useMemo(() => calcTotals(lines, marginPercent, ivaRate, financingPercent, conditionMode), [lines, marginPercent, ivaRate, financingPercent, conditionMode]);
+  const savedQuoteAdjustmentPercent = getSavedQuoteAdjustmentPercent(quoteQ.data);
+  const persistedQuoteId = quoteQ.data?.id || quoteId || idParam;
+  const quoteAdjustmentPercent = useMemo(() => {
+    if (persistedQuoteId && savedQuoteAdjustmentPercent !== null) return savedQuoteAdjustmentPercent;
+    return resolveQuoteAdjustmentPercent(financingPercent, conditionMode);
+  }, [persistedQuoteId, savedQuoteAdjustmentPercent, financingPercent, conditionMode]);
+  const totals = useMemo(() => calcTotals(lines, marginPercent, ivaRate, quoteAdjustmentPercent, conditionMode), [lines, marginPercent, ivaRate, quoteAdjustmentPercent, conditionMode]);
   const linesKey = useMemo(() => lines.map((l) => `${l.product_id}:${l.qty}`).join("|"), [lines]);
 
   useEffect(() => {
     async function run() {
       if (!pricelistId || !lines.length) return;
-      const payload = { pricelist_id: pricelistId, partner_id: partnerId, lines: lines.filter((line) => !line.previously_billed_line).map((l) => ({ product_id: l.product_id, qty: l.qty })) };
+      const isPersistedQuote = !!(quoteQ.data?.id || quoteId || idParam);
+      const linesToPrice = isPersistedQuote
+        ? lines.filter(lineNeedsPriceRefresh)
+        : lines.filter((line) => !line.previously_billed_line);
+      if (!linesToPrice.length) return;
+      const payload = { pricelist_id: pricelistId, partner_id: partnerId, lines: linesToPrice.filter((line) => !line.previously_billed_line).map((l) => ({ product_id: l.product_id, qty: l.qty })) };
+      if (!payload.lines.length) return;
       const data = await getPrices(payload);
       applyBasePrices(data);
     }
     run().catch(console.error);
-  }, [pricelistId, partnerId, linesKey, lines.length, applyBasePrices]);
+  }, [pricelistId, partnerId, linesKey, lines.length, applyBasePrices, quoteQ.data?.id, quoteId, idParam]);
 
   function applyPortonData(portonId) {
     const selected = portonQuotes.find((q) => String(q.id) === String(portonId));
@@ -237,6 +269,10 @@ export default function PresupuestadorPuertasPage() {
         linked_porton_quote_id: linkedPortonId || null,
         linked_porton_reference: linkedPorton ? quoteDisplayReference(linkedPorton) : "",
         door_order_reference: doorRef || buildDoorOrderReference({ linkedQuote: linkedPorton, savedQuote }),
+        quote_adjustment_percent_snapshot: quoteAdjustmentPercent,
+        financing_percent_snapshot: quoteAdjustmentPercent,
+        iva_rate_snapshot: resolveQuoteIvaRate(ivaRate, conditionMode),
+        pricing_snapshot_at: (base.payload || {}).pricing_snapshot_at || new Date().toISOString(),
       },
     };
   }

@@ -44,6 +44,20 @@ function toText(v) {
 function round2(n) {
   return Math.round(Number(n || 0) * 100) / 100;
 }
+function getPayloadQuoteAdjustmentPercent(payload) {
+  const candidates = [
+    payload?.quote_adjustment_percent_snapshot,
+    payload?.financing_percent_snapshot,
+    payload?.financing_percent,
+    payload?.payment_adjustment_percent,
+  ];
+  for (const value of candidates) {
+    if (value === null || value === undefined || String(value).trim() === "") continue;
+    const n = Number(String(value).replace(",", "."));
+    if (Number.isFinite(n)) return n;
+  }
+  return 0;
+}
 function round4(n) {
   return Math.round(Number(n || 0) * 10000) / 10000;
 }
@@ -478,7 +492,7 @@ function calcDetailedUnitWithIva(line, payload) {
   if (typeof line?.unit_price === "number") return round2(line.unit_price);
   const base = Number(line?.basePrice ?? line?.base_price ?? line?.price ?? 0) || 0;
   const margin = Number(payload?.margin_percent_ui || 0) || 0;
-  return round2(base * (1 + margin / 100) * getOdooConditionPriceFactor(payload || {}));
+  return round2(base * (1 + margin / 100) * (1 + getPayloadQuoteAdjustmentPercent(payload || {}) / 100) * getOdooConditionPriceFactor(payload || {}));
 }
 function compareValues(currentRaw, operator, compareRaw) {
   const currentText = normalizeValue(currentRaw);

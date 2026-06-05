@@ -19,7 +19,7 @@ import toast from "react-hot-toast";
 
 import { useQuoteStore } from "../../domain/quote/store";
 import { IVA_RATE_DEFAULT } from "../../domain/quote/defaults";
-import { calcTotals, resolveQuoteAdjustmentPercent } from "../../domain/quote/pricing";
+import { calcTotals, resolveQuoteAdjustmentPercent, resolveQuoteIvaRate } from "../../domain/quote/pricing";
 import { validateArgentinaPhone, validateEmailAddress, validateGoogleMapsUrl } from "../../utils/contactValidation.js";
 
 import Button from "../../ui/Button.jsx";
@@ -189,6 +189,31 @@ function buildPriceRefreshLines(lines = []) {
       qty: line?.qty,
     }))
     .filter((line) => Number(line.product_id || 0) > 0);
+}
+
+function hasUsableLineBasePrice(line = {}) {
+  const value = line?.basePrice ?? line?.base_price ?? line?.price;
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0;
+}
+function lineNeedsPriceRefresh(line = {}) {
+  if (!line || line.previously_billed_line) return false;
+  return !hasUsableLineBasePrice(line);
+}
+function getSavedQuoteAdjustmentPercent(quote) {
+  const payload = quote?.payload && typeof quote.payload === "object" ? quote.payload : {};
+  const candidates = [
+    payload.quote_adjustment_percent_snapshot,
+    payload.financing_percent_snapshot,
+    payload.financing_percent,
+    payload.payment_adjustment_percent,
+  ];
+  for (const value of candidates) {
+    if (value === null || value === undefined || String(value).trim() === "") continue;
+    const n = Number(String(value).replace(",", "."));
+    if (Number.isFinite(n)) return n;
+  }
+  return null;
 }
 function mergeUpdatedBasePrices(lines = [], pricesResponse = {}) {
   const prices = Array.isArray(pricesResponse?.prices) ? pricesResponse.prices : [];
@@ -755,10 +780,12 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
 
   const financingQ = useQuery({ queryKey: ["financing-preview", paymentMethod], queryFn: () => getFinancingPreview(paymentMethod), enabled: !!String(paymentMethod || "").trim(), staleTime: 60 * 1000 });
   const financingPercent = Number(financingQ.data?.percent || 0) || 0;
-  const quoteAdjustmentPercent = useMemo(
-    () => resolveQuoteAdjustmentPercent(financingPercent, conditionMode),
-    [financingPercent, conditionMode],
-  );
+  const savedQuoteAdjustmentPercent = getSavedQuoteAdjustmentPercent(quoteQ.data);
+  const persistedQuoteId = quoteQ.data?.id || quoteId || idParam;
+  const quoteAdjustmentPercent = useMemo(() => {
+    if (persistedQuoteId && savedQuoteAdjustmentPercent !== null) return savedQuoteAdjustmentPercent;
+    return resolveQuoteAdjustmentPercent(financingPercent, conditionMode);
+  }, [persistedQuoteId, savedQuoteAdjustmentPercent, financingPercent, conditionMode]);
   const totals = useMemo(() => calcTotals(lines, marginPercent, ivaRate, quoteAdjustmentPercent, conditionMode), [lines, marginPercent, ivaRate, quoteAdjustmentPercent, conditionMode]);
   const linesKey = useMemo(
     () => lines.map((l) => `${l.product_id}:${resolveLinePricingProductId(l)}:${l.odoo_template_id || ""}:${l.qty}`).join("|"),
@@ -771,10 +798,15 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
   useEffect(() => {
     async function run() {
       if (!pricelistId || !lines.length) return;
+      const isPersistedQuote = !!(quoteQ.data?.id || quoteId || idParam);
+      const linesToPrice = isPersistedQuote
+        ? lines.filter(lineNeedsPriceRefresh)
+        : lines.filter((line) => !line?.previously_billed_line);
+      if (!linesToPrice.length) return;
       const payload = {
         pricelist_id: pricelistId,
         partner_id: partnerId,
-        lines: lines
+        lines: linesToPrice
           .filter((line) => !line.previously_billed_line)
           .map((l) => ({
             product_id: resolveLinePricingProductId(l),
@@ -783,11 +815,12 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
             qty: l.qty,
           })),
       };
+      if (!payload.lines.length) return;
       const data = await getPrices(payload);
       applyBasePrices(data);
     }
     run().catch(console.error);
-  }, [pricelistId, partnerId, linesKey, lines.length, applyBasePrices]);
+  }, [pricelistId, partnerId, linesKey, lines.length, applyBasePrices, quoteQ.data?.id, quoteId, idParam]);
 
   function resolveCreatedByRole() {
     if (user?.is_superuser) return "vendedor";
@@ -817,6 +850,14 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
         payloadExtra = applyBudgetObservationToPayload(payloadExtra, existingBudgetObservation);
       }
     }
+    const nowIso = new Date().toISOString();
+    payloadExtra = {
+      ...(payloadExtra || {}),
+      quote_adjustment_percent_snapshot: quoteAdjustmentPercent,
+      financing_percent_snapshot: quoteAdjustmentPercent,
+      iva_rate_snapshot: totals.ivaRate,
+      pricing_snapshot_at: (payloadExtra || {}).pricing_snapshot_at || nowIso,
+    };
     return withCreatorRole({
       ...base,
       catalog_kind: catalogKind,
@@ -964,6 +1005,7 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
       useQuoteStore.setState({ lines: refreshedLines });
 
       const issuedAt = new Date().toISOString();
+      const currentAdjustmentPercent = resolveQuoteAdjustmentPercent(financingPercent, conditionMode);
       const payload = getDraftPayload();
       payload.pricelist_id = refreshPricelistId;
       payload.refresh_emission_date = true;
@@ -973,6 +1015,10 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
         quote_issued_date: todayIsoDate(),
         price_refreshed_at: issuedAt,
         refreshed_pricelist_id: refreshPricelistId,
+        quote_adjustment_percent_snapshot: currentAdjustmentPercent,
+        financing_percent_snapshot: currentAdjustmentPercent,
+        iva_rate_snapshot: resolveQuoteIvaRate(ivaRate, conditionMode),
+        pricing_snapshot_at: issuedAt,
       };
       validateDraft(payload);
       return await updateQuote(id, payload);
