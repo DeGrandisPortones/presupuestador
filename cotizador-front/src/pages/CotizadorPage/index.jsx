@@ -180,6 +180,23 @@ function resolveLinePricingProductId(line) {
 }
 const SHIPPING_PRODUCT_IDS = new Set([2842]);
 const STABLE_EDITABLE_QTY_PRODUCT_IDS = new Set([2842, 2927]);
+
+function dflexCotizadorDebugEnabled() {
+  try {
+    return typeof window !== "undefined" && window.localStorage?.getItem("DFLEX_DEBUG_COTIZADOR") === "1";
+  } catch (_err) {
+    return false;
+  }
+}
+function dflexCotizadorDebug(action, payload = {}) {
+  if (!dflexCotizadorDebugEnabled()) return;
+  try {
+    console.groupCollapsed(`[DFLEX COTIZADOR PAGE] ${action}`);
+    console.log(payload);
+    if (payload?.includeStack) console.trace(`[DFLEX COTIZADOR PAGE] ${action} stack`);
+    console.groupEnd();
+  } catch (_err) {}
+}
 function isStableEditableQtyLine(line = {}) {
   const ids = [line?.product_id, line?.odoo_id, line?.odoo_template_id, line?.odoo_variant_id, line?.odoo_external_id];
   return ids.some((value) => STABLE_EDITABLE_QTY_PRODUCT_IDS.has(Number(value || 0)));
@@ -831,7 +848,9 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
           })),
       };
       if (!payload.lines.length) return;
+      dflexCotizadorDebug("getPrices:auto", { payload, linesKey, lines: summarizeLinesForDebug(lines), includeStack: true });
       const data = await getPrices(payload);
+      dflexCotizadorDebug("getPrices:auto:response", { data, includeStack: false });
       applyBasePrices(data);
     }
     run().catch(console.error);

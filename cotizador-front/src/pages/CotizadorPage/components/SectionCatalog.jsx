@@ -12,6 +12,30 @@ import Button from "../../../ui/Button";
 
 const CATALOG_KINDS = new Set(["porton", "ipanel", "plegados", "otros"]);
 const APTOS_PARA_REVESTIR_TYPE = "para_revestir_con_al_pvc_otros";
+
+function dflexCatalogDebugEnabled() {
+  try {
+    return typeof window !== "undefined" && window.localStorage?.getItem("DFLEX_DEBUG_COTIZADOR") === "1";
+  } catch (_err) {
+    return false;
+  }
+}
+function dflexCatalogDebug(action, payload = {}) {
+  if (!dflexCatalogDebugEnabled()) return;
+  try {
+    console.groupCollapsed(`[DFLEX CATALOGO] ${action}`);
+    console.log(payload);
+    if (payload?.includeStack) console.trace(`[DFLEX CATALOGO] ${action} stack`);
+    console.groupEnd();
+  } catch (_err) {}
+}
+function dflexSelectionMapSnapshot(map) {
+  try {
+    return Array.from((map || new Map()).entries()).map(([sectionId, ids]) => ({ sectionId, productIds: Array.from(ids || []) }));
+  } catch (_err) {
+    return [];
+  }
+}
 const EXTERIOR_HELP_TEXT = "Siempre observando desde afuera de la vivienda/obra (Exterior).";
 const OPEN_SECTION_MEMORY = new Map();
 
@@ -733,6 +757,15 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
 
     for (const productId of possibleTargetProductIds) {
       if (!desiredProductIds.has(productId) && currentLineProductIds.has(productId)) {
+        dflexCatalogDebug("autoBudget:forceRemoveLine", {
+          productId,
+          desiredProductIds: Array.from(desiredProductIds),
+          possibleTargetProductIds: Array.from(possibleTargetProductIds),
+          currentLineProductIds: Array.from(currentLineProductIds),
+          selectedProductIdsForAutomation: Array.from(selectedProductIdsForAutomation || []),
+          isAptoParaRevestir,
+          includeStack: true,
+        });
         forceRemoveLine(productId);
       }
     }
@@ -753,13 +786,28 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
 
     const firstVisibleSectionId = Number(visibleSections[0]?.id || 0) || null;
     if (firstVisibleSectionId) {
+      dflexCatalogDebug("openSection:fallbackToFirst", {
+        catalogKind,
+        openSectionId,
+        visibleSectionIds: visibleSections.map((section) => Number(section.id)),
+        selectedProductIdsBySection: dflexSelectionMapSnapshot(selectedProductIdsBySection),
+        includeStack: true,
+      });
       setOpenSectionId(firstVisibleSectionId);
     }
-  }, [visibleSections, openSectionId, catalogKind, setOpenSectionId]);
+  }, [visibleSections, openSectionId, catalogKind, setOpenSectionId, selectedProductIdsBySection]);
 
   function selectProductForSection(sectionId, product) {
     const currentSelected = selectedProductIdsBySection.get(Number(sectionId)) || new Set();
     const targetProductId = Number(product?.id);
+    dflexCatalogDebug("selectProductForSection:start", {
+      sectionId: Number(sectionId),
+      targetProductId,
+      productName: getProductLabel(product),
+      currentSelected: Array.from(currentSelected),
+      selectedProductIdsBySection: dflexSelectionMapSnapshot(selectedProductIdsBySection),
+      includeStack: true,
+    });
 
     const sectionProductIds = new Set(
       (productsBySection.get(Number(sectionId)) || [])

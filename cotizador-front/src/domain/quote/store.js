@@ -36,6 +36,37 @@ function isIntegerQtyProductId(productId) {
 function isShippingProductId(productId) {
   return SHIPPING_PRODUCT_IDS.has(Number(productId));
 }
+
+function dflexQuoteDebugEnabled() {
+  try {
+    return typeof window !== "undefined" && window.localStorage?.getItem("DFLEX_DEBUG_COTIZADOR") === "1";
+  } catch (_err) {
+    return false;
+  }
+}
+function dflexLineSnapshot(lines = []) {
+  return (Array.isArray(lines) ? lines : []).map((line) => ({
+    product_id: Number(line?.product_id || 0) || 0,
+    name: line?.name || line?.raw_name || "",
+    qty: line?.qty,
+    basePrice: line?.basePrice,
+    surface_quantity: !!line?.surface_quantity,
+    free_quantity: !!line?.free_quantity,
+    quantity_editable: !!line?.quantity_editable,
+    manual_price: !!line?.manual_price,
+    auto_system_item: !!line?.auto_system_item,
+    previously_billed_line: !!line?.previously_billed_line,
+  }));
+}
+function dflexQuoteDebug(action, payload = {}) {
+  if (!dflexQuoteDebugEnabled()) return;
+  try {
+    console.groupCollapsed(`[DFLEX COTIZADOR] ${action}`);
+    console.log(payload);
+    if (payload?.includeStack) console.trace(`[DFLEX COTIZADOR] ${action} stack`);
+    console.groupEnd();
+  } catch (_err) {}
+}
 function isFreeQuantityLine(line) {
   return isShippingProductId(line?.product_id) || !!line?.free_quantity || !!line?.quantity_editable || String(line?.quantity_mode || "").toLowerCase() === "free";
 }
@@ -334,10 +365,14 @@ export const useQuoteStore = create((set, get) => ({
   },
   setPortonType(v) {
     const nextPortonType = String(v || "");
-    set((s) => ({
-      portonType: nextPortonType,
-      lines: applyDerivedLines(s.lines, nextPortonType, s.dimensions),
-    }));
+    set((s) => {
+      const nextLines = applyDerivedLines(s.lines, nextPortonType, s.dimensions);
+      dflexQuoteDebug("setPortonType", { nextPortonType, before: dflexLineSnapshot(s.lines), after: dflexLineSnapshot(nextLines), includeStack: true });
+      return {
+        portonType: nextPortonType,
+        lines: nextLines,
+      };
+    });
   },
   setNote(v) {
     set({ note: String(v || "") });
@@ -409,16 +444,23 @@ export const useQuoteStore = create((set, get) => ({
   removeLine(product_id) {
     const id = Number(product_id);
     const current = get().lines.find((line) => Number(line?.product_id) === id);
-    if (isProtectedLine(current)) return;
-    set((s) => ({
-      lines: s.lines.filter((l) => !(Number(l.product_id) === id && !l.previously_billed_line)),
-    }));
+    if (isProtectedLine(current)) {
+      dflexQuoteDebug("removeLine:blockedProtected", { product_id: id, current, before: dflexLineSnapshot(get().lines), includeStack: true });
+      return;
+    }
+    set((s) => {
+      const nextLines = s.lines.filter((l) => !(Number(l.product_id) === id && !l.previously_billed_line));
+      dflexQuoteDebug("removeLine", { product_id: id, before: dflexLineSnapshot(s.lines), after: dflexLineSnapshot(nextLines), includeStack: true });
+      return { lines: nextLines };
+    });
   },
   forceRemoveLine(product_id) {
     const id = Number(product_id);
-    set((s) => ({
-      lines: s.lines.filter((l) => !(Number(l.product_id) === id && !l.previously_billed_line)),
-    }));
+    set((s) => {
+      const nextLines = s.lines.filter((l) => !(Number(l.product_id) === id && !l.previously_billed_line));
+      dflexQuoteDebug("forceRemoveLine", { product_id: id, before: dflexLineSnapshot(s.lines), after: dflexLineSnapshot(nextLines), includeStack: true });
+      return { lines: nextLines };
+    });
   },
   setLineBasePrice(product_id, price) {
     const id = Number(product_id);
@@ -435,7 +477,10 @@ export const useQuoteStore = create((set, get) => ({
   setQty(product_id, qty) {
     const id = Number(product_id);
     const current = get().lines.find((line) => Number(line?.product_id) === id);
-    if (isProtectedLine(current)) return;
+    if (isProtectedLine(current)) {
+      dflexQuoteDebug("setQty:blockedProtected", { product_id: id, qty, current, before: dflexLineSnapshot(get().lines), includeStack: true });
+      return;
+    }
 
     const q = normalizeEditableQty({
       productId: id,
@@ -444,11 +489,12 @@ export const useQuoteStore = create((set, get) => ({
       freeQuantity: isFreeQuantityLine(current),
     });
 
-    set((s) => ({
-      lines: s.lines
-        .map((l) => (l.product_id === id ? { ...l, qty: q } : l))
-        .filter((l) => l.qty > 0 || l.previously_billed_line || isIntegerQtyProductId(l.product_id)),
-    }));
+    set((s) => {
+      const mappedLines = s.lines.map((l) => (l.product_id === id ? { ...l, qty: q } : l));
+      const nextLines = mappedLines.filter((l) => l.qty > 0 || l.previously_billed_line || isIntegerQtyProductId(l.product_id));
+      dflexQuoteDebug("setQty", { product_id: id, raw_qty: qty, normalized_qty: q, before: dflexLineSnapshot(s.lines), after: dflexLineSnapshot(nextLines), removed: dflexLineSnapshot(s.lines).filter((oldLine) => !nextLines.some((nextLine) => Number(nextLine.product_id) === Number(oldLine.product_id))), includeStack: true });
+      return { lines: nextLines };
+    });
   },
   applyBasePrices(pricesResponse) {
     const arr = Array.isArray(pricesResponse?.prices) ? pricesResponse.prices : [];
@@ -463,8 +509,8 @@ export const useQuoteStore = create((set, get) => ({
       ]),
     );
 
-    set((s) => ({
-      lines: s.lines.map((l) => {
+    set((s) => {
+      const nextLines = s.lines.map((l) => {
         const next = map.get(l.product_id);
         if (!next || l.previously_billed_line || l.manual_price) return l;
 
@@ -475,8 +521,10 @@ export const useQuoteStore = create((set, get) => ({
           raw_name: l.raw_name,
           name: l.name || next.name || l.raw_name,
         };
-      }),
-    }));
+      });
+      dflexQuoteDebug("applyBasePrices", { received: arr, before: dflexLineSnapshot(s.lines), after: dflexLineSnapshot(nextLines), includeStack: true });
+      return { lines: nextLines };
+    });
   },
   buildPayloadForBack() {
     const s = get();
