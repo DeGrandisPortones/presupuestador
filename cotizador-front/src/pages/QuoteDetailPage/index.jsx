@@ -600,6 +600,32 @@ function formatPercentForApproval(value) {
   return `${n.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%`;
 }
 
+function round2ForApproval(value) {
+  return Math.round(Number(value || 0) * 100) / 100;
+}
+
+function getQuoteBaseSubtotalForApproval(quote) {
+  const lines = Array.isArray(quote?.lines) ? quote.lines : [];
+  return round2ForApproval(lines.reduce((acc, line) => {
+    const qty = Number(line?.qty || 0) || 0;
+    const basePrice = Number(line?.basePrice ?? line?.base_price ?? line?.price ?? 0) || 0;
+    return acc + qty * basePrice;
+  }, 0));
+}
+
+function getQuoteCoefficientAmountForApproval(quote) {
+  const baseSubtotal = getQuoteBaseSubtotalForApproval(quote);
+  const marginPercent = getQuoteMarginPercentForApproval(quote);
+  return round2ForApproval(baseSubtotal * marginPercent / 100);
+}
+
+function formatSignedARSForApproval(value) {
+  const n = round2ForApproval(value);
+  if (n > 0) return `+ ${formatARS(n)}`;
+  if (n < 0) return `- ${formatARS(Math.abs(n))}`;
+  return formatARS(0);
+}
+
 function getQuoteCommercialTotalsForApproval(quote, conditionMode, financingPercent = 0) {
   const lines = Array.isArray(quote?.lines) ? quote.lines : [];
   const normalizedLines = lines.map((line) => ({
@@ -647,6 +673,7 @@ function buildApprovalCommercialRows(quote, conditionMode, financingPercent = 0)
   pushApprovalContextRow(rows, "Condición", conditionModeLabel(conditionMode));
   pushApprovalContextRow(rows, "Destino", fulfillmentModeLabel(quote?.fulfillment_mode));
   pushApprovalContextRow(rows, "Coeficiente aplicado", formatPercentForApproval(getQuoteMarginPercentForApproval(quote)));
+  pushApprovalContextRow(rows, "Monto coeficiente", formatSignedARSForApproval(getQuoteCoefficientAmountForApproval(quote)));
   pushApprovalContextRow(rows, "Neto", formatARS(totals.subtotal));
   pushApprovalContextRow(rows, "IVA aplicado", formatIvaRateForApproval(totals.ivaRate));
   pushApprovalContextRow(rows, "Monto IVA", formatARS(totals.iva));
@@ -753,6 +780,37 @@ function ApprovalContextCard({ commercialRows, technicalRows }) {
           <ApprovalRowsGrid rows={technicalRows} />
         </>
       ) : null}
+    </div>
+  );
+}
+
+function ApprovalTotalsBottomCard({ quote, conditionMode, financingPercent = 0 }) {
+  if (!quote) return null;
+  const totals = getQuoteCommercialTotalsForApproval(quote, conditionMode, financingPercent);
+  const baseSubtotal = getQuoteBaseSubtotalForApproval(quote);
+  const coefficientAmount = getQuoteCoefficientAmountForApproval(quote);
+  const marginPercent = getQuoteMarginPercentForApproval(quote);
+  const rows = [
+    { label: "Base sin coeficiente", value: formatARS(baseSubtotal) },
+    { label: "Coeficiente aplicado", value: formatPercentForApproval(marginPercent) },
+    { label: "Monto coeficiente", value: formatSignedARSForApproval(coefficientAmount) },
+    { label: "Neto", value: formatARS(totals.subtotal) },
+    { label: `IVA (${formatIvaRateForApproval(totals.ivaRate)})`, value: formatARS(totals.iva) },
+    { label: "Total del presupuesto", value: formatARS(totals.total), strong: true },
+  ];
+
+  return (
+    <div className="card" style={{ background: "#fafafa", marginTop: 12 }}>
+      <div style={{ fontWeight: 900, marginBottom: 8 }}>Resumen del presupuesto</div>
+      <div className="muted" style={{ marginBottom: 10 }}>Importes calculados igual que en el presupuestador y el PDF enviado al cliente.</div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 10 }}>
+        {rows.map((item) => (
+          <div key={item.label} style={{ border: "1px solid #e5e5e5", borderRadius: 10, padding: "8px 10px", background: "#fff" }}>
+            <div className="muted" style={{ fontSize: 12 }}>{item.label}</div>
+            <div style={{ fontWeight: item.strong ? 900 : 800, marginTop: 4 }}>{item.value}</div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -984,6 +1042,7 @@ export default function QuoteDetailPage() {
             <h3 style={{ marginTop: 0 }}>Ítems</h3>
             {!lines.length ? <div className="muted">Sin ítems</div> : null}
             {!!lines.length ? <table><thead><tr><th>Producto</th><th className="right">Cant.</th><th className="right">Precio calculado</th><th className="right">Total ítem</th></tr></thead><tbody>{approvalLineRows.map((l) => <tr key={l._approvalKey}><td><div style={{ fontWeight: 700 }}>{l.name || `Producto ${l.product_id}`}</div><div className="muted">ID: {l.product_id} {l.code ? `| ${l.code}` : ""}</div></td><td className="right">{l._approvalQty}</td><td className="right">{formatARS(l._approvalFinalUnit)}</td><td className="right" style={{ fontWeight: 800 }}>{formatARS(l._approvalTotal)}</td></tr>)}</tbody></table> : null}
+            {!!lines.length ? <ApprovalTotalsBottomCard quote={quote} conditionMode={conditionMode} financingPercent={approvalFinancingPercent} /> : null}
             {(canCommercial || canTech) ? <><div className="spacer" /><div className="card" style={{ background: "#fafafa" }}><div style={{ fontWeight: 900 }}>Acciones de revisión</div><div className="muted">Solo si está en <b>pending_approvals</b> y tu decisión está en <b>pending</b>.</div><div className="spacer" /><div className="muted">Observaciones del revisor</div><textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Motivo si rechaza / notas si aprueba…" style={{ width: "100%", minHeight: 60, padding: "8px 10px", borderRadius: 8, border: "1px solid #ddd", outline: "none", resize: "vertical" }} /><div className="spacer" /><div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>{canCommercial ? <><Button disabled={!canCommercialAct || commercialM.isPending} onClick={handleCommercialApproveClick}>{commercialM.isPending ? "Procesando..." : "Aprobar Comercial"}</Button><Button variant="danger" disabled={!canCommercialAct || commercialM.isPending} onClick={() => commercialM.mutate({ action: "reject", billingCustomer: null })}>Rechazar Comercial</Button></> : null}{canTech ? <><Button disabled={!canTechAct || techM.isPending} onClick={() => techM.mutate({ action: "approve" })}>{techM.isPending ? "Procesando..." : "Aprobar Técnica"}</Button><Button variant="danger" disabled={!canTechAct || techM.isPending} onClick={() => techM.mutate({ action: "reject" })}>Rechazar Técnica</Button></> : null}</div>{commercialM.isError ? <div style={{ color: "#d93025", fontSize: 13, marginTop: 10 }}>{commercialM.error.message}</div> : null}{techM.isError ? <div style={{ color: "#d93025", fontSize: 13, marginTop: 10 }}>{techM.error.message}</div> : null}</div></> : null}
           </>
         ) : null}
