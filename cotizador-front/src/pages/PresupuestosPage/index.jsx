@@ -99,11 +99,11 @@ function matchesRowSearch(item, searchText) {
   if (!s) return true;
   if (item.rowKind === "door") {
     const d = item.raw;
-    const haystack = [doorTypeLabel(), d?.door_code, d?.record?.end_customer?.name, d?.record?.end_customer?.city, d?.record?.end_customer?.address, d?.record?.end_customer?.phone, d?.record?.obra_cliente, d?.linked_quote_odoo_name, d?.record?.asociado_porton, d?.record?.ipanel_quote_id, d?.record?.ipanel_quote_label, labelDoorStatus(d)].filter(Boolean).join(" ").toLowerCase();
+    const haystack = [doorTypeLabel(), d?.door_code, doorOdooReference(d), d?.record?.end_customer?.name, d?.record?.end_customer?.city, d?.record?.end_customer?.address, d?.record?.end_customer?.phone, d?.record?.obra_cliente, d?.linked_quote_odoo_name, d?.record?.asociado_porton, d?.record?.ipanel_quote_id, d?.record?.ipanel_quote_label, labelDoorStatus(d)].filter(Boolean).join(" ").toLowerCase();
     return haystack.includes(s);
   }
   const q = item.raw;
-  const haystack = [quoteTypeLabel(q), q?.end_customer?.name, q?.end_customer?.city, q?.end_customer?.address, q?.end_customer?.phone, labelQuoteStatus(q), labelMeasurementStatus(q), q?.fulfillment_mode === "acopio" ? "acopio" : "produccion"].filter(Boolean).join(" ").toLowerCase();
+  const haystack = [quoteTypeLabel(q), quoteOdooReference(q), q?.end_customer?.name, q?.end_customer?.city, q?.end_customer?.address, q?.end_customer?.phone, labelQuoteStatus(q), labelMeasurementStatus(q), q?.fulfillment_mode === "acopio" ? "acopio" : "produccion"].filter(Boolean).join(" ").toLowerCase();
   return haystack.includes(s);
 }
 function toTimeDesc(value) { if (!value) return 0; const d = new Date(value); if (Number.isNaN(d.getTime())) return 0; return d.getTime(); }
@@ -115,6 +115,36 @@ function isDoorPending(d) { return d?.status === "pending_approvals" && (d?.comm
 function isDoorRejected(d) { return d?.status === "draft" && (d?.commercial_decision === "rejected" || d?.technical_decision === "rejected"); }
 function fmtDate(value) { if (!value) return "—"; const raw = String(value); const d = /^\d{4}-\d{2}-\d{2}$/.test(raw) ? new Date(`${raw}T00:00:00`) : new Date(raw); if (Number.isNaN(d.getTime())) return "—"; return d.toLocaleDateString("es-AR"); }
 function fmtDateTime(value) { if (!value) return "—"; const raw = String(value); const d = /^\d{4}-\d{2}-\d{2}$/.test(raw) ? new Date(`${raw}T00:00:00`) : new Date(raw); if (Number.isNaN(d.getTime())) return "—"; const date = d.toLocaleDateString("es-AR"); const time = d.toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" }); return `${date} ${time}`; }
+
+function uniqueNonEmpty(values = []) {
+  const out = [];
+  for (const value of values) {
+    const text = String(value || "").trim();
+    if (text && !out.includes(text)) out.push(text);
+  }
+  return out;
+}
+function quoteOdooReference(q) {
+  return uniqueNonEmpty([
+    q?.production_sale_order_name,
+    q?.final_sale_order_name,
+    q?.final_copy_sale_order_name,
+    q?.odoo_sale_order_name,
+  ]).join(" / ");
+}
+function doorOdooReference(d) {
+  return uniqueNonEmpty([
+    d?.odoo_sale_order_name,
+    d?.odoo_purchase_order_name,
+    d?.record?.odoo_sale_order_name,
+    d?.record?.odoo_purchase_order_name,
+  ]).join(" / ");
+}
+function OdooReferenceCell({ value }) {
+  const text = String(value || "").trim();
+  if (!text) return <span className="muted">—</span>;
+  return <span style={{ fontWeight: 900, background: "#e7f7ed", border: "1px solid #bfe6c8", borderRadius: 999, padding: "3px 8px", whiteSpace: "nowrap" }}>{text}</span>;
+}
 
 function getRejectionInfoFromQuote(q) {
   const commercialRejected = String(q?.commercial_decision || "").toLowerCase() === "rejected";
@@ -237,6 +267,7 @@ export default function PresupuestosPage() {
       destinationLabel: q?.fulfillment_mode === "acopio" ? "Acopio" : "Producción",
       measurementDate: fmtDate(q?.measurement_scheduled_for),
       measurementStatus: labelMeasurementStatus(q),
+      odooReference: quoteOdooReference(q),
     }));
     const doorRows = (doorsQ.data || []).map((d) => ({
       rowKind: "door",
@@ -250,6 +281,7 @@ export default function PresupuestosPage() {
       destinationLabel: "Puerta",
       measurementDate: "—",
       measurementStatus: "—",
+      odooReference: doorOdooReference(d),
     }));
     const merged = [...quoteRows, ...doorRows];
     merged.sort((a, b) => toTimeDesc(b.createdAt) - toTimeDesc(a.createdAt));
@@ -319,6 +351,7 @@ export default function PresupuestosPage() {
                   <th>Cliente</th>
                   <th>Localidad</th>
                   <th>Estado</th>
+                  <th>NP/NV Odoo</th>
                   <th>Destino</th>
                   {filter === "mediciones" ? <th>Fecha medición</th> : null}
                   {filter === "mediciones" ? <th>Estado medición</th> : null}
@@ -343,6 +376,7 @@ export default function PresupuestosPage() {
                             />
                           ) : item.statusLabel}
                         </td>
+                        <td><OdooReferenceCell value={item.odooReference} /></td>
                         <td>{item.destinationLabel}</td>
                         {filter === "mediciones" ? <td>—</td> : null}
                         {filter === "mediciones" ? <td>—</td> : null}
@@ -379,6 +413,7 @@ export default function PresupuestosPage() {
                           />
                         ) : item.statusLabel}
                       </td>
+                      <td><OdooReferenceCell value={item.odooReference} /></td>
                       <td>{item.destinationLabel}</td>
                       {filter === "mediciones" ? <td>{item.measurementDate}</td> : null}
                       {filter === "mediciones" ? <td>{item.measurementStatus}</td> : null}

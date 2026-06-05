@@ -90,8 +90,38 @@ function PlegadoInfoCell({ row }) {
     </div>
   );
 }
+
+function uniqueNonEmpty(values = []) {
+  const out = [];
+  for (const value of values) {
+    const text = String(value || "").trim();
+    if (text && !out.includes(text)) out.push(text);
+  }
+  return out;
+}
+function quoteOdooReference(row) {
+  return uniqueNonEmpty([
+    row?.production_sale_order_name,
+    row?.final_sale_order_name,
+    row?.final_copy_sale_order_name,
+    row?.odoo_sale_order_name,
+  ]).join(" / ");
+}
+function doorOdooReference(d) {
+  return uniqueNonEmpty([
+    d?.odoo_sale_order_name,
+    d?.odoo_purchase_order_name,
+    d?.record?.odoo_sale_order_name,
+    d?.record?.odoo_purchase_order_name,
+  ]).join(" / ");
+}
+function OdooReferenceCell({ value }) {
+  const text = String(value || "").trim();
+  if (!text) return <span className="muted">—</span>;
+  return <span style={{ fontWeight: 900, background: "#e7f7ed", border: "1px solid #bfe6c8", borderRadius: 999, padding: "3px 8px", whiteSpace: "nowrap" }}>{text}</span>;
+}
 function productionReference(row) {
-  return String(row?.production_sale_order_name || row?.final_sale_order_name || row?.final_copy_sale_order_name || row?.odoo_sale_order_name || "").trim();
+  return quoteOdooReference(row);
 }
 function productionSentAt(row) {
   return row?.production_sent_at || row?.measurement_review_at || row?.final_copy_synced_at || row?.final_synced_at || row?.production_delivery_committed_at || row?.confirmed_at || row?.created_at;
@@ -178,21 +208,21 @@ export default function AprobacionComercialPage() {
     let out = arr;
     if (filter === "pending") out = arr.filter((x) => x.status === "pending_approvals" && x.commercial_decision === "pending");
     if (filter === "rejected") out = arr.filter((x) => x.status === "draft" && x.technical_decision === "rejected");
-    return out.filter((r) => matchesSearch([createdByLabel(r), r?.end_customer?.name, r?.end_customer?.city, r?.end_customer?.address, rowLabel(r), budgetObservation(r), plegadoSurface(r), plegadoDescription(r)], searchText));
+    return out.filter((r) => matchesSearch([createdByLabel(r), r?.end_customer?.name, r?.end_customer?.city, r?.end_customer?.address, rowLabel(r), quoteOdooReference(r), budgetObservation(r), plegadoSurface(r), plegadoDescription(r)], searchText));
   }, [q.data, filter, searchText]);
 
   const acopioRows = useMemo(() => {
     return (acopioQ.data || [])
       .slice()
       .sort((a, b) => toTimeDesc(b?.acopio_to_produccion_requested_at || b?.created_at) - toTimeDesc(a?.acopio_to_produccion_requested_at || a?.created_at))
-      .filter((r) => matchesSearch([createdByLabel(r), r?.end_customer?.name, r?.end_customer?.city, r?.end_customer?.address, r?.acopio_to_produccion_notes, acopioReqLabel(r), budgetObservation(r), plegadoSurface(r), plegadoDescription(r)], searchText));
+      .filter((r) => matchesSearch([createdByLabel(r), r?.end_customer?.name, r?.end_customer?.city, r?.end_customer?.address, r?.acopio_to_produccion_notes, acopioReqLabel(r), quoteOdooReference(r), budgetObservation(r), plegadoSurface(r), plegadoDescription(r)], searchText));
   }, [acopioQ.data, searchText]);
 
   const acopioListadoRows = useMemo(() => {
     return (acopioListadoQ.data || [])
       .slice()
       .sort((a, b) => toTimeDesc(b?.confirmed_at || b?.created_at) - toTimeDesc(a?.confirmed_at || a?.created_at))
-      .filter((r) => matchesSearch([createdByLabel(r), r?.end_customer?.name, r?.end_customer?.city, r?.end_customer?.address, rowLabel(r), acopioReqLabel(r), budgetObservation(r), plegadoSurface(r), plegadoDescription(r)], searchText));
+      .filter((r) => matchesSearch([createdByLabel(r), r?.end_customer?.name, r?.end_customer?.city, r?.end_customer?.address, rowLabel(r), acopioReqLabel(r), quoteOdooReference(r), budgetObservation(r), plegadoSurface(r), plegadoDescription(r)], searchText));
   }, [acopioListadoQ.data, searchText]);
 
   const produccionRows = useMemo(() => {
@@ -206,7 +236,7 @@ export default function AprobacionComercialPage() {
     return (doorsQ.data || [])
       .slice()
       .sort((a, b) => toTimeDesc(b?.created_at) - toTimeDesc(a?.created_at))
-      .filter((d) => matchesSearch([d?.door_code, d?.record?.end_customer?.name, d?.record?.obra_cliente, d?.linked_quote_odoo_name, d?.record?.asociado_porton, d?.status], searchText));
+      .filter((d) => matchesSearch([d?.door_code, d?.record?.end_customer?.name, d?.record?.obra_cliente, d?.linked_quote_odoo_name, doorOdooReference(d), d?.record?.asociado_porton, d?.status], searchText));
   }, [doorsQ.data, searchText]);
 
   const medicionesRows = useMemo(() => {
@@ -221,6 +251,7 @@ export default function AprobacionComercialPage() {
             r?.end_customer?.city,
             r?.end_customer?.address,
             measurementRowLabel(r),
+            quoteOdooReference(r),
             ...(Array.isArray(r?.measurement_commercial_diff_json)
               ? r.measurement_commercial_diff_json.map((item) => item?.label || item?.key)
               : []),
@@ -290,7 +321,7 @@ export default function AprobacionComercialPage() {
             {!!rows.length && (
               <>
                 <table>
-                  <thead><tr><th>Fecha</th><th>Vendedor/Distribuidor</th><th>Cliente</th><th>Dirección</th><th>Estado</th><th>Datos plegado</th><th>Obs. presupuesto</th><th></th></tr></thead>
+                  <thead><tr><th>Fecha</th><th>Vendedor/Distribuidor</th><th>Cliente</th><th>Dirección</th><th>Estado</th><th>NP/NV Odoo</th><th>Datos plegado</th><th>Obs. presupuesto</th><th></th></tr></thead>
                   <tbody>
                     {visibleRows.map((r) => {
                       const pdfKey = `quote-${r.id}`;
@@ -301,6 +332,7 @@ export default function AprobacionComercialPage() {
                           <td>{r.end_customer?.name || <span className="muted">(sin nombre)</span>}</td>
                           <td>{r.end_customer?.address || "—"}</td>
                           <td>{rowLabel(r)}</td>
+                          <td><OdooReferenceCell value={quoteOdooReference(r)} /></td>
                           <td><PlegadoInfoCell row={r} /></td>
                           <td><BudgetObservationCell row={r} /></td>
                           <td className="right" style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
@@ -326,7 +358,7 @@ export default function AprobacionComercialPage() {
             {!!medicionesRows.length && (
               <>
                 <table>
-                  <thead><tr><th>Fecha</th><th>Vendedor/Distribuidor</th><th>Cliente</th><th>Dirección</th><th>Estado</th><th>Campos modificados</th><th></th></tr></thead>
+                  <thead><tr><th>Fecha</th><th>Vendedor/Distribuidor</th><th>Cliente</th><th>Dirección</th><th>Estado</th><th>NP/NV Odoo</th><th>Campos modificados</th><th></th></tr></thead>
                   <tbody>
                     {visibleMedicionesRows.map((r) => (
                       <tr key={r.id}>
@@ -335,6 +367,7 @@ export default function AprobacionComercialPage() {
                         <td>{r.end_customer?.name || <span className="muted">(sin nombre)</span>}</td>
                         <td>{r.end_customer?.address || "—"}</td>
                         <td>{measurementRowLabel(r)}</td>
+                        <td><OdooReferenceCell value={quoteOdooReference(r)} /></td>
                         <td>
                           {Array.isArray(r?.measurement_commercial_diff_json) && r.measurement_commercial_diff_json.length
                             ? r.measurement_commercial_diff_json.map((item) => item?.label || item?.key).filter(Boolean).join(", ")
@@ -361,7 +394,7 @@ export default function AprobacionComercialPage() {
             {!!acopioRows.length && (
               <>
                 <table>
-                  <thead><tr><th>Fecha</th><th>Vendedor/Distribuidor</th><th>Cliente</th><th>Dirección</th><th>Solicitud</th><th>Datos plegado</th><th>Obs. presupuesto</th><th>Decisiones</th><th></th></tr></thead>
+                  <thead><tr><th>Fecha</th><th>Vendedor/Distribuidor</th><th>Cliente</th><th>Dirección</th><th>Solicitud</th><th>NP/NV Odoo</th><th>Datos plegado</th><th>Obs. presupuesto</th><th>Decisiones</th><th></th></tr></thead>
                   <tbody>
                     {visibleAcopioRows.map((r) => {
                       const canAct = (r.acopio_to_produccion_commercial_decision || "pending") === "pending";
@@ -373,6 +406,7 @@ export default function AprobacionComercialPage() {
                           <td>{r.end_customer?.name || <span className="muted">(sin nombre)</span>}</td>
                           <td>{r.end_customer?.address || "—"}</td>
                           <td>{r.acopio_to_produccion_notes || <span className="muted">(sin nota)</span>}</td>
+                          <td><OdooReferenceCell value={quoteOdooReference(r)} /></td>
                           <td><PlegadoInfoCell row={r} /></td>
                           <td><BudgetObservationCell row={r} /></td>
                           <td>{acopioReqLabel(r)}</td>
@@ -405,7 +439,7 @@ export default function AprobacionComercialPage() {
             {!!acopioListadoRows.length && (
               <>
                 <table>
-                  <thead><tr><th>Fecha</th><th>Vendedor/Distribuidor</th><th>Cliente</th><th>Dirección</th><th>Estado</th><th>Datos plegado</th><th>Obs. presupuesto</th><th>Solicitud Prod.</th><th></th></tr></thead>
+                  <thead><tr><th>Fecha</th><th>Vendedor/Distribuidor</th><th>Cliente</th><th>Dirección</th><th>Estado</th><th>NP/NV Odoo</th><th>Datos plegado</th><th>Obs. presupuesto</th><th>Solicitud Prod.</th><th></th></tr></thead>
                   <tbody>
                     {visibleAcopioListadoRows.map((r) => {
                       const pdfKey = `quote-${r.id}`;
@@ -416,6 +450,7 @@ export default function AprobacionComercialPage() {
                           <td>{r.end_customer?.name || <span className="muted">(sin nombre)</span>}</td>
                           <td>{r.end_customer?.address || "—"}</td>
                           <td>{rowLabel(r)}</td>
+                          <td><OdooReferenceCell value={quoteOdooReference(r)} /></td>
                           <td><PlegadoInfoCell row={r} /></td>
                           <td><BudgetObservationCell row={r} /></td>
                           <td>{r.acopio_to_produccion_status ? acopioReqLabel(r) : "—"}</td>
@@ -442,7 +477,7 @@ export default function AprobacionComercialPage() {
             {!!produccionRows.length && (
               <>
                 <table>
-                  <thead><tr><th>Fecha envío</th><th>Vendedor/Distribuidor</th><th>Cliente</th><th>Dirección</th><th>NV</th><th>Semana producción</th><th>Obs. presupuesto</th><th></th></tr></thead>
+                  <thead><tr><th>Fecha envío</th><th>Vendedor/Distribuidor</th><th>Cliente</th><th>Dirección</th><th>NP/NV Odoo</th><th>Semana producción</th><th>Obs. presupuesto</th><th></th></tr></thead>
                   <tbody>
                     {visibleProduccionRows.map((r) => {
                       const pdfKey = `quote-${r.id}`;
@@ -478,7 +513,7 @@ export default function AprobacionComercialPage() {
             {!!doorRows.length && (
               <>
                 <table>
-                  <thead><tr><th>Código</th><th>Cliente</th><th>Portón vinculado</th><th>Venta</th><th>Compra</th><th></th></tr></thead>
+                  <thead><tr><th>Código</th><th>Cliente</th><th>Portón vinculado</th><th>Odoo</th><th>Venta</th><th>Compra</th><th></th></tr></thead>
                   <tbody>
                     {visibleDoorRows.map((d) => {
                       const pdfKey = `door-${d.id}`;
@@ -487,6 +522,7 @@ export default function AprobacionComercialPage() {
                           <td>{d.door_code}</td>
                           <td>{d.record?.end_customer?.name || d.record?.obra_cliente || "—"}</td>
                           <td>{d.linked_quote_odoo_name || d.record?.asociado_porton || "—"}</td>
+                          <td><OdooReferenceCell value={doorOdooReference(d)} /></td>
                           <td>{d.sale_amount ? `$ ${Number(d.sale_amount).toLocaleString("es-AR")}` : "—"}</td>
                           <td>{d.purchase_amount ? `$ ${Number(d.purchase_amount).toLocaleString("es-AR")}` : "—"}</td>
                           <td className="right" style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
