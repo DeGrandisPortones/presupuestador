@@ -62,6 +62,35 @@ function normalizeCatalogKind(kind) {
   return CATALOG_KINDS.has(normalized) ? normalized : "porton";
 }
 
+function openSectionStorageKey(kind) {
+  return `presupuestador.sectionCatalog.openSection.${String(kind || "porton").trim().toLowerCase()}`;
+}
+
+function readStoredOpenSectionId(kind) {
+  if (typeof window === "undefined" || !window.sessionStorage) return null;
+  try {
+    const raw = window.sessionStorage.getItem(openSectionStorageKey(kind));
+    const value = Number(raw || 0);
+    return Number.isFinite(value) && value > 0 ? value : null;
+  } catch (_err) {
+    return null;
+  }
+}
+
+function writeStoredOpenSectionId(kind, sectionId) {
+  if (typeof window === "undefined" || !window.sessionStorage) return;
+  try {
+    const value = Number(sectionId || 0);
+    if (Number.isFinite(value) && value > 0) {
+      window.sessionStorage.setItem(openSectionStorageKey(kind), String(value));
+    } else {
+      window.sessionStorage.removeItem(openSectionStorageKey(kind));
+    }
+  } catch (_err) {
+    // No bloquear la UI si el navegador no permite sessionStorage.
+  }
+}
+
 function norm(value) {
   return String(value || "")
     .normalize("NFD")
@@ -380,7 +409,14 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
   const user = useAuthStore((s) => s.user);
 
   const [boot, setBoot] = useState(() => getOdooBootstrap(catalogKind));
-  const [openSectionId, setOpenSectionId] = useState(null);
+  const [openSectionId, setOpenSectionIdState] = useState(() => readStoredOpenSectionId(catalogKind));
+  const setOpenSectionId = useCallback((nextValue) => {
+    setOpenSectionIdState((prevValue) => {
+      const resolved = typeof nextValue === "function" ? nextValue(prevValue) : nextValue;
+      writeStoredOpenSectionId(catalogKind, resolved);
+      return resolved;
+    });
+  }, [catalogKind]);
   const [refreshing, setRefreshing] = useState(false);
   const [autoloadAttempted, setAutoloadAttempted] = useState(false);
   const [catalogHelpOpen, setCatalogHelpOpen] = useState(false);
@@ -508,7 +544,7 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
   useEffect(() => {
     setBoot(getOdooBootstrap(catalogKind));
     setAutoloadAttempted(false);
-    setOpenSectionId(null);
+    setOpenSectionIdState(readStoredOpenSectionId(catalogKind));
     sectionRefs.current.clear();
     pendingAutoScrollSectionIdRef.current = null;
   }, [catalogKind]);

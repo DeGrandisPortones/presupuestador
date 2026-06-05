@@ -47,6 +47,7 @@ export default function LineRow({ line, finalUnit, total, formatARS }) {
   const isUnitOnlyLine = !isProtectedLine && !isFreeQuantityLine && !isIntegerQtyLine;
   const canEditQty = isFreeQuantityLine || isIntegerQtyLine;
   const canEditPrice = !!user?.is_distribuidor && isShippingLine(line) && !line.previously_billed_line;
+  const isShippingEditableLine = isShippingLine(line);
   const [qtyText, setQtyText] = useState(() => formatQtyInput(line.qty));
   const [priceText, setPriceText] = useState(() => formatQtyInput(line.basePrice));
 
@@ -88,7 +89,7 @@ export default function LineRow({ line, finalUnit, total, formatARS }) {
     if (!canEditQty) return;
     if (!isAllowedQtyText(raw, isIntegerQtyLine)) return;
     setQtyText(raw);
-    commitQty(raw);
+    if (!isShippingEditableLine) commitQty(raw);
   }
 
   function commitPrice(raw, { force = false } = {}) {
@@ -108,7 +109,6 @@ export default function LineRow({ line, finalUnit, total, formatARS }) {
     if (!canEditPrice) return;
     if (!isAllowedQtyText(raw, false)) return;
     setPriceText(raw);
-    commitPrice(raw);
   }
 
   return (
@@ -138,6 +138,7 @@ export default function LineRow({ line, finalUnit, total, formatARS }) {
           disabled={!canEditQty}
           onChange={handleQtyChange}
           onBlur={(e) => commitQty(e.target.value, { force: true })}
+          onKeyDown={(e) => { if (e.key === "Enter") { e.currentTarget.blur(); } }}
           style={{
             width: 90,
             padding: "6px 8px",
@@ -157,6 +158,7 @@ export default function LineRow({ line, finalUnit, total, formatARS }) {
             value={priceText}
             onChange={handlePriceChange}
             onBlur={(e) => commitPrice(e.target.value, { force: true })}
+            onKeyDown={(e) => { if (e.key === "Enter") { e.currentTarget.blur(); } }}
             style={{
               width: 120,
               padding: "6px 8px",
