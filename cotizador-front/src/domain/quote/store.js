@@ -13,6 +13,9 @@ const EMPTY_CUSTOMER = {
 
 const INTEGER_QTY_PRODUCT_IDS = new Set([3582, 3251]);
 const SHIPPING_PRODUCT_IDS = new Set([2842]);
+// Productos que el distribuidor puede valorizar para su presupuesto al cliente,
+// pero que De Grandis no debe cobrar: en proforma/Odoo van siempre a $0.
+const DISTRIBUTOR_OWN_SUPPLY_PRODUCT_IDS = new Set([2842, 3956, 3957, 3961, 3962, 3963, 3966, 4037, 3991, 3992, 3993, 3994, 3995, 3996, 3485, 3486, 3490, 3491, 3492, 3495, 3566, 3520, 3521, 3522, 3523, 3524, 3525]);
 
 function normMarginInput(v) {
   return String(v ?? "").replace(",", ".").trim();
@@ -35,6 +38,9 @@ function isIntegerQtyProductId(productId) {
 }
 function isShippingProductId(productId) {
   return SHIPPING_PRODUCT_IDS.has(Number(productId));
+}
+function isDistributorOwnSupplyProductId(productId) {
+  return DISTRIBUTOR_OWN_SUPPLY_PRODUCT_IDS.has(Number(productId));
 }
 
 function dflexQuoteDebugEnabled() {
@@ -261,7 +267,7 @@ export const useQuoteStore = create((set, get) => ({
           surface_quantity: !!l.surface_quantity,
           free_quantity: freeQuantity,
           quantity_editable: freeQuantity,
-          price_editable: isShippingProductId(l.product_id) || !!l.price_editable,
+          price_editable: isDistributorOwnSupplyProductId(l.product_id) || !!l.price_editable,
           manual_price: !!l.manual_price,
           previously_billed_line: !!l.previously_billed_line,
           locked_line: !!l.locked_line,
@@ -434,7 +440,7 @@ export const useQuoteStore = create((set, get) => ({
             surface_quantity: isSurfaceQuantity,
             free_quantity: isFreeQuantity,
             quantity_editable: isFreeQuantity,
-            price_editable: isShippingProductId(id),
+            price_editable: isDistributorOwnSupplyProductId(id),
             line_key: `${id}-${Date.now()}`,
           },
         ],
@@ -464,7 +470,7 @@ export const useQuoteStore = create((set, get) => ({
   },
   setLineBasePrice(product_id, price) {
     const id = Number(product_id);
-    if (!isShippingProductId(id)) return;
+    if (!isDistributorOwnSupplyProductId(id)) return;
     const current = get().lines.find((line) => Number(line?.product_id) === id);
     if (!current || current.previously_billed_line) return;
     const n = Number(String(price ?? "").replace(",", "."));
@@ -568,7 +574,7 @@ export const useQuoteStore = create((set, get) => ({
           surface_quantity: !!l.surface_quantity,
           free_quantity: freeQuantity,
           quantity_editable: freeQuantity,
-          price_editable: isShippingProductId(l.product_id) || !!l.price_editable,
+          price_editable: isDistributorOwnSupplyProductId(l.product_id) || !!l.price_editable,
           manual_price: !!l.manual_price,
           previously_billed_line: !!l.previously_billed_line,
           locked_line: !!l.locked_line,

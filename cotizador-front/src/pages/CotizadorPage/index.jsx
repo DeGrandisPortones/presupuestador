@@ -179,6 +179,9 @@ function resolveLinePricingProductId(line) {
   return 0;
 }
 const SHIPPING_PRODUCT_IDS = new Set([2842]);
+// Productos que el distribuidor puede cotizar al cliente, pero que en proforma/Odoo
+// se informan a $0 porque los provee/cobra directamente el distribuidor.
+const DISTRIBUTOR_OWN_SUPPLY_PRODUCT_IDS = new Set([2842, 3956, 3957, 3961, 3962, 3963, 3966, 4037, 3991, 3992, 3993, 3994, 3995, 3996, 3485, 3486, 3490, 3491, 3492, 3495, 3566, 3520, 3521, 3522, 3523, 3524, 3525]);
 const STABLE_EDITABLE_QTY_PRODUCT_IDS = new Set([2842, 2927]);
 
 function dflexCotizadorDebugEnabled() {
@@ -201,12 +204,18 @@ function isStableEditableQtyLine(line = {}) {
   const ids = [line?.product_id, line?.odoo_id, line?.odoo_template_id, line?.odoo_variant_id, line?.odoo_external_id];
   return ids.some((value) => STABLE_EDITABLE_QTY_PRODUCT_IDS.has(Number(value || 0)));
 }
-function isShippingLine(line = {}) {
+function lineMatchesProductSet(line = {}, productSet) {
   const ids = [line?.product_id, line?.odoo_id, line?.odoo_template_id, line?.odoo_variant_id, line?.odoo_external_id];
-  return ids.some((value) => SHIPPING_PRODUCT_IDS.has(Number(value || 0)));
+  return ids.some((value) => productSet.has(Number(value || 0)));
 }
-function zeroShippingLinePriceForDistributor(line = {}) {
-  if (!isShippingLine(line)) return line;
+function isShippingLine(line = {}) {
+  return lineMatchesProductSet(line, SHIPPING_PRODUCT_IDS);
+}
+function isDistributorOwnSupplyLine(line = {}) {
+  return lineMatchesProductSet(line, DISTRIBUTOR_OWN_SUPPLY_PRODUCT_IDS);
+}
+function zeroDistributorOwnSupplyLinePrice(line = {}) {
+  if (!isDistributorOwnSupplyLine(line)) return line;
   return { ...line, basePrice: 0, base_price: 0, price: 0, price_unit: 0, unit_price: 0, distributor_proforma_zero_price: true };
 }
 
@@ -394,7 +403,7 @@ function buildPdfPayloadForDownload(payload, financingPercent, extras = {}, opti
         const rawBase = Number(line?.basePrice ?? line?.base_price ?? line?.price ?? 0) || 0;
         const financedBase = Math.round(rawBase * factor * 100) / 100;
         const nextLine = { ...line, basePrice: financedBase, base_price: financedBase, price: financedBase };
-        return options?.zeroShippingForDistributor ? zeroShippingLinePriceForDistributor(nextLine) : nextLine;
+        return options?.zeroShippingForDistributor ? zeroDistributorOwnSupplyLinePrice(nextLine) : nextLine;
       })
     : [];
   const nextPayload = { ...(payload || {}), ...extras, lines: nextLines, payload: { ...(payload?.payload || {}), ...(extras.payload || {}) } };

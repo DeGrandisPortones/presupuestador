@@ -11,12 +11,19 @@ import { getProductPdfNameMap, normKind } from "../catalogDb.js";
 
 const IVA_RATE = 0.21;
 const SHIPPING_PRODUCT_IDS = new Set([2842]);
+const DISTRIBUTOR_OWN_SUPPLY_PRODUCT_IDS = new Set([2842, 3956, 3957, 3961, 3962, 3963, 3966, 4037, 3991, 3992, 3993, 3994, 3995, 3996, 3485, 3486, 3490, 3491, 3492, 3495, 3566, 3520, 3521, 3522, 3523, 3524, 3525]);
 function isDistributorPayload(payload = {}) {
   return String(payload?.created_by_role || payload?.payload?.created_by_role || "").trim().toLowerCase() === "distribuidor";
 }
-function isShippingLine(line = {}) {
+function lineMatchesProductSet(line = {}, productSet) {
   const ids = [line?.product_id, line?.odoo_id, line?.odoo_template_id, line?.odoo_variant_id, line?.odoo_external_id];
-  return ids.some((value) => SHIPPING_PRODUCT_IDS.has(Number(value || 0)));
+  return ids.some((value) => productSet.has(Number(value || 0)));
+}
+function isShippingLine(line = {}) {
+  return lineMatchesProductSet(line, SHIPPING_PRODUCT_IDS);
+}
+function isDistributorOwnSupplyLine(line = {}) {
+  return lineMatchesProductSet(line, DISTRIBUTOR_OWN_SUPPLY_PRODUCT_IDS);
 }
 
 function isUuid(v) {
@@ -272,7 +279,7 @@ async function buildLines(payload, { useBasePrice, odoo, displayNetPrices = fals
     .map((l) => {
       const qty = n2(l?.qty);
       const rawBasePrice = n2(l?.base_price ?? l?.basePrice ?? l?.base_price_unit ?? l?.price_unit ?? l?.priceUnit ?? l?.price ?? 0);
-      const basePrice = useBasePrice && isDistributorPayload(payload) && isShippingLine(l) ? 0 : rawBasePrice;
+      const basePrice = useBasePrice && isDistributorPayload(payload) && isDistributorOwnSupplyLine(l) ? 0 : rawBasePrice;
       const unitNet = useBasePrice ? basePrice : basePrice * coefFactor;
       const unit = displayNetPrices ? unitNet : unitNet * (1 + effectiveTaxRate);
       const totalNet = unitNet * qty;

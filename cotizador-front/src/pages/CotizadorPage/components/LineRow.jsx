@@ -6,6 +6,9 @@ import { useAuthStore } from "../../../domain/auth/store.js";
 const SYSTEM_PRODUCT_IDS = new Set([3008, 3009]);
 const INTEGER_QTY_PRODUCT_IDS = new Set([3582, 3251]);
 const SHIPPING_PRODUCT_IDS = new Set([2842]);
+// Revestimientos propios del distribuidor: se cobran en el presupuesto al cliente,
+// pero no en proforma/Odoo. La cantidad sigue siendo por superficie.
+const DISTRIBUTOR_OWN_SUPPLY_PRODUCT_IDS = new Set([2842, 3956, 3957, 3961, 3962, 3963, 3966, 4037, 3991, 3992, 3993, 3994, 3995, 3996, 3485, 3486, 3490, 3491, 3492, 3495, 3566, 3520, 3521, 3522, 3523, 3524, 3525]);
 const STABLE_EDITABLE_QTY_PRODUCT_IDS = new Set([2842, 2927]);
 
 function isStableEditableQtyLine(line) {
@@ -13,8 +16,15 @@ function isStableEditableQtyLine(line) {
   return ids.some((value) => STABLE_EDITABLE_QTY_PRODUCT_IDS.has(Number(value || 0)));
 }
 
+function lineMatchesProductSet(line, productSet) {
+  const ids = [line?.product_id, line?.odoo_id, line?.odoo_template_id, line?.odoo_variant_id, line?.odoo_external_id];
+  return ids.some((value) => productSet.has(Number(value || 0)));
+}
 function isShippingLine(line) {
-  return SHIPPING_PRODUCT_IDS.has(Number(line?.product_id));
+  return lineMatchesProductSet(line, SHIPPING_PRODUCT_IDS);
+}
+function isDistributorOwnSupplyLine(line) {
+  return lineMatchesProductSet(line, DISTRIBUTOR_OWN_SUPPLY_PRODUCT_IDS);
 }
 
 function isFreeQtyLine(line) {
@@ -52,7 +62,7 @@ export default function LineRow({ line, finalUnit, total, formatARS }) {
   const isIntegerQtyLine = !isProtectedLine && !isFreeQuantityLine && INTEGER_QTY_PRODUCT_IDS.has(Number(line.product_id));
   const isUnitOnlyLine = !isProtectedLine && !isFreeQuantityLine && !isIntegerQtyLine;
   const canEditQty = isFreeQuantityLine || isIntegerQtyLine;
-  const canEditPrice = !!user?.is_distribuidor && isShippingLine(line) && !line.previously_billed_line;
+  const canEditPrice = !!user?.is_distribuidor && isDistributorOwnSupplyLine(line) && !line.previously_billed_line;
   const isStableEditableLine = isStableEditableQtyLine(line);
   const [qtyText, setQtyText] = useState(() => formatQtyInput(line.qty));
   const [priceText, setPriceText] = useState(() => formatQtyInput(line.basePrice));
@@ -131,7 +141,7 @@ export default function LineRow({ line, finalUnit, total, formatARS }) {
           {isUnitOnlyLine ? " · Unidad fija" : ""}
           {isIntegerQtyLine ? " · Cantidad entera" : ""}
           {isFreeQuantityLine ? " · Cantidad editable" : ""}
-          {isShippingLine(line) && canEditPrice ? " · Precio editable distribuidor" : ""}
+          {isDistributorOwnSupplyLine(line) && canEditPrice ? " · Precio editable distribuidor" : ""}
           {line.previously_billed_line ? " · Facturado previamente" : ""}
         </div>
       </td>

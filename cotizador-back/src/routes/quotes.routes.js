@@ -14,6 +14,7 @@ const DEFAULT_PRICELIST_ID = Number(process.env.ODOO_DEFAULT_PRICELIST_ID || 1);
 const IVA_RATE = 0.21;
 const TACA_TACA_PLAN_NAME = String(process.env.ODOO_TACA_TACA_PLAN_NAME || "Taca Taca").trim();
 const SHIPPING_PRODUCT_IDS = new Set([2842]);
+const DISTRIBUTOR_OWN_SUPPLY_PRODUCT_IDS = new Set([2842, 3956, 3957, 3961, 3962, 3963, 3966, 4037, 3991, 3992, 3993, 3994, 3995, 3996, 3485, 3486, 3490, 3491, 3492, 3495, 3566, 3520, 3521, 3522, 3523, 3524, 3525]);
 
 // Casos puntuales migrados: fuerzan nombre y monto de la orden en Odoo.
 // Se limitan por quote_id y etapa para no afectar el flujo general ni la secuencia normal.
@@ -84,15 +85,21 @@ function normCatalogKind(kind) {
 }
 function toScalar(v) { return Array.isArray(v) ? v[0] : v; }
 function toIntId(v) { const n = Number(toScalar(v)); return Number.isFinite(n) ? n : null; }
-function isShippingLine(line = {}) {
+function lineMatchesProductSet(line = {}, productSet) {
   const ids = [line?.product_id, line?.odoo_id, line?.odoo_template_id, line?.odoo_variant_id, line?.odoo_external_id];
-  return ids.some((value) => SHIPPING_PRODUCT_IDS.has(Number(value || 0)));
+  return ids.some((value) => productSet.has(Number(value || 0)));
+}
+function isShippingLine(line = {}) {
+  return lineMatchesProductSet(line, SHIPPING_PRODUCT_IDS);
+}
+function isDistributorOwnSupplyLine(line = {}) {
+  return lineMatchesProductSet(line, DISTRIBUTOR_OWN_SUPPLY_PRODUCT_IDS);
 }
 function isDistributorQuote(quote = {}) {
   return String(quote?.created_by_role || quote?.payload?.created_by_role || "").trim().toLowerCase() === "distribuidor";
 }
 function shouldZeroShippingForOdoo(quote = {}, line = {}) {
-  return isDistributorQuote(quote) && isShippingLine(line);
+  return isDistributorQuote(quote) && isDistributorOwnSupplyLine(line);
 }
 function toText(v) { const x = toScalar(v); return x === null || x === undefined ? "" : String(x).trim(); }
 function isUuid(v) { return /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(String(v || "").trim()); }
