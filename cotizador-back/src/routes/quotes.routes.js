@@ -13,6 +13,7 @@ const PUERTA_ACOPIO_PRODUCT_ID = Number(process.env.ODOO_PUERTA_ACOPIO_PRODUCT_I
 const DEFAULT_PRICELIST_ID = Number(process.env.ODOO_DEFAULT_PRICELIST_ID || 1);
 const IVA_RATE = 0.21;
 const TACA_TACA_PLAN_NAME = String(process.env.ODOO_TACA_TACA_PLAN_NAME || "Taca Taca").trim();
+const SHIPPING_PRODUCT_IDS = new Set([2842]);
 
 // Casos puntuales migrados: fuerzan nombre y monto de la orden en Odoo.
 // Se limitan por quote_id y etapa para no afectar el flujo general ni la secuencia normal.
@@ -83,6 +84,16 @@ function normCatalogKind(kind) {
 }
 function toScalar(v) { return Array.isArray(v) ? v[0] : v; }
 function toIntId(v) { const n = Number(toScalar(v)); return Number.isFinite(n) ? n : null; }
+function isShippingLine(line = {}) {
+  const ids = [line?.product_id, line?.odoo_id, line?.odoo_template_id, line?.odoo_variant_id, line?.odoo_external_id];
+  return ids.some((value) => SHIPPING_PRODUCT_IDS.has(Number(value || 0)));
+}
+function isDistributorQuote(quote = {}) {
+  return String(quote?.created_by_role || quote?.payload?.created_by_role || "").trim().toLowerCase() === "distribuidor";
+}
+function shouldZeroShippingForOdoo(quote = {}, line = {}) {
+  return isDistributorQuote(quote) && isShippingLine(line);
+}
 function toText(v) { const x = toScalar(v); return x === null || x === undefined ? "" : String(x).trim(); }
 function isUuid(v) { return /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(String(v || "").trim()); }
 function round2(n) { return Math.round(Number(n || 0) * 100) / 100; }
@@ -389,13 +400,14 @@ function getPayloadQuoteAdjustmentPercent(payload) {
   }
   return 0;
 }
-function calcQuoteSubtotal({ lines, payload }) {
+function calcQuoteSubtotal({ lines, payload, quote = null }) {
   const arr = Array.isArray(lines) ? lines : [];
   const m = Number(payload?.margin_percent_ui || 0) || 0;
   const adjustment = getPayloadQuoteAdjustmentPercent(payload || {});
   return round2(arr.reduce((acc, l) => {
     const qty = Number(l?.qty || 0) || 0;
-    const base = Number(l?.basePrice ?? l?.base_price ?? l?.price ?? 0) || 0;
+    const rawBase = Number(l?.basePrice ?? l?.base_price ?? l?.price ?? 0) || 0;
+    const base = shouldZeroShippingForOdoo(quote, l) ? 0 : rawBase;
     const unit = base * (1 + m / 100) * (1 + adjustment / 100);
     return acc + (qty * unit);
   }, 0));
@@ -424,13 +436,14 @@ function appendSaleConditionToNote(note, quoteOrPayload) {
   return `${note}
 Condición vendida: ${getOdooConditionLabel(payload)}`;
 }
-function calcQuoteTotalWithIva({ lines, payload }) {
+function calcQuoteTotalWithIva({ lines, payload, quote = null }) {
   // Nombre legacy: este total es el que se envía a Odoo.
-  const subtotal = calcQuoteSubtotal({ lines, payload });
+  const subtotal = calcQuoteSubtotal({ lines, payload, quote });
   return round2(subtotal * getOdooConditionPriceFactor(payload || {}));
 }
-function calcDetailedUnitWithIva(line, payload) {
+function calcDetailedUnitWithIva(line, payload, quote = null) {
   // Nombre legacy: este precio unitario es el que se envía a Odoo.
+  if (shouldZeroShippingForOdoo(quote, line)) return 0;
   if (typeof line?.price_unit === "number") return round2(line.price_unit);
   if (typeof line?.unit_price === "number") return round2(line.unit_price);
   const base = Number(line?.basePrice ?? line?.base_price ?? line?.price ?? 0) || 0;
@@ -467,7 +480,7 @@ function shouldUseDetailedInitialOrderLines(quote) {
   // Otros nunca debe generar NP; siempre sale como NV/ONV en producción.
   return false;
 }
-async function buildDetailedOrderLinesForOdoo({ odoo, lines, payload }) {
+async function buildDetailedOrderLinesForOdoo({ odoo, lines, payload, quote = null }) {
   const arr = Array.isArray(lines) ? lines : [];
   if (!arr.length) throw new Error("El presupuesto no tiene items");
 
@@ -486,7 +499,7 @@ async function buildDetailedOrderLinesForOdoo({ odoo, lines, payload }) {
     if (!p) throw new Error(`Producto no encontrado: ${productId}`);
     const uomId = toIntId(p?.uom_id);
     if (!uomId) throw new Error(`Producto sin uom_id: ${productId}`);
-    const priceUnit = calcDetailedUnitWithIva(l, payload || {});
+    const priceUnit = calcDetailedUnitWithIva(l, payload || {}, quote);
     detailedTotal = round2(detailedTotal + (qty * priceUnit));
     orderLines.push([0, 0, {
       product_id: productId,
@@ -1065,7 +1078,7 @@ async function syncQuoteToOdoo({ odoo, quote, approverUser }) {
   if (!partnerId) throw new Error("partner_id invalido para Odoo");
 
   const sellerName = await resolveSellerDisplayNameForOdoo(quote, approverUser);
-  let total = calcQuoteTotalWithIva({ lines: quote.lines, payload: quote.payload });
+  let total = calcQuoteTotalWithIva({ lines: quote.lines, payload: quote.payload, quote });
   const forcedNp = getHardcodedOdooOverride(quote, "np");
   if (forcedNp?.amount) total = round2(forcedNp.amount);
   let orderLines = [];
@@ -1075,6 +1088,7 @@ async function syncQuoteToOdoo({ odoo, quote, approverUser }) {
       odoo,
       lines: quote.lines,
       payload: quote.payload,
+      quote,
     });
     orderLines = detailed.orderLines;
     total = detailed.detailedTotal;
@@ -1154,7 +1168,7 @@ async function syncFinalQuoteToOdoo({ odoo, revisionQuote, originalQuote, approv
     if (!p) throw new Error(`Producto no encontrado: ${productId}`);
     const uomId = toIntId(p?.uom_id);
     if (!uomId) throw new Error(`Producto sin uom_id: ${productId}`);
-    const priceUnit = calcDetailedUnitWithIva(l, revisionQuote.payload || originalQuote.payload || {});
+    const priceUnit = calcDetailedUnitWithIva(l, revisionQuote.payload || originalQuote.payload || {}, originalQuote);
     detailedTotal = round2(detailedTotal + (qty * priceUnit));
     orderLines.push([0, 0, { product_id: productId, product_uom_qty: qty, product_uom: uomId, name: p.name, price_unit: priceUnit }]);
   }
@@ -1306,7 +1320,7 @@ async function syncDirectProductionFinalToOdoo({ odoo, quote, approverUser }) {
     if (!p) throw new Error(`Producto no encontrado: ${productId}`);
     const uomId = toIntId(p?.uom_id);
     if (!uomId) throw new Error(`Producto sin uom_id: ${productId}`);
-    const priceUnit = calcDetailedUnitWithIva(l, quote.payload || {});
+    const priceUnit = calcDetailedUnitWithIva(l, quote.payload || {}, quote);
     detailedTotal = round2(detailedTotal + (qty * priceUnit));
     orderLines.push([0, 0, { product_id: productId, product_uom_qty: qty, product_uom: uomId, name: p.name, price_unit: priceUnit }]);
   }

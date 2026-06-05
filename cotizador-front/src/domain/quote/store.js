@@ -12,6 +12,7 @@ const EMPTY_CUSTOMER = {
 };
 
 const INTEGER_QTY_PRODUCT_IDS = new Set([3582, 3251]);
+const SHIPPING_PRODUCT_IDS = new Set([2842]);
 
 function normMarginInput(v) {
   return String(v ?? "").replace(",", ".").trim();
@@ -32,8 +33,11 @@ function parseDimensionNumber(v) {
 function isIntegerQtyProductId(productId) {
   return INTEGER_QTY_PRODUCT_IDS.has(Number(productId));
 }
+function isShippingProductId(productId) {
+  return SHIPPING_PRODUCT_IDS.has(Number(productId));
+}
 function isFreeQuantityLine(line) {
-  return !!line?.free_quantity || !!line?.quantity_editable || String(line?.quantity_mode || "").toLowerCase() === "free";
+  return isShippingProductId(line?.product_id) || !!line?.free_quantity || !!line?.quantity_editable || String(line?.quantity_mode || "").toLowerCase() === "free";
 }
 function isProtectedLine(line) {
   return !!line?.auto_system_item || !!line?.surface_quantity || !!line?.previously_billed_line;
@@ -205,7 +209,7 @@ export const useQuoteStore = create((set, get) => ({
         const rawName = cleanText(l.raw_name || l.rawName || l.raw || l.original_name || "");
         const visibleName =
           cleanText(l.name || l.display_name || l.alias || rawName) || `Producto ${l.product_id || idx}`;
-        const freeQuantity = !!l.free_quantity || !!l.quantity_editable || String(l.quantity_mode || "").toLowerCase() === "free";
+        const freeQuantity = isShippingProductId(l.product_id) || !!l.free_quantity || !!l.quantity_editable || String(l.quantity_mode || "").toLowerCase() === "free";
         return {
           product_id: Number(l.product_id ?? idx + 1),
           odoo_external_id: resolveOdooExternalId(l),
@@ -226,6 +230,8 @@ export const useQuoteStore = create((set, get) => ({
           surface_quantity: !!l.surface_quantity,
           free_quantity: freeQuantity,
           quantity_editable: freeQuantity,
+          price_editable: isShippingProductId(l.product_id) || !!l.price_editable,
+          manual_price: !!l.manual_price,
           previously_billed_line: !!l.previously_billed_line,
           locked_line: !!l.locked_line,
           line_key: String(l.line_key || l.product_id || idx),
@@ -350,7 +356,7 @@ export const useQuoteStore = create((set, get) => ({
       const existing = s.lines.find((l) => l.product_id === id && !l.previously_billed_line);
       const isSurfaceQuantity = !!p.uses_surface_quantity;
       const isIntegerQty = isIntegerQtyProductId(id);
-      const isFreeQuantity = !!p.free_quantity || !!p.quantity_editable || String(p.quantity_mode || "").toLowerCase() === "free";
+      const isFreeQuantity = isShippingProductId(id) || !!p.free_quantity || !!p.quantity_editable || String(p.quantity_mode || "").toLowerCase() === "free";
       const surfaceQty = getSurfaceQuantity(s.dimensions);
 
       if (existing) {
@@ -393,6 +399,7 @@ export const useQuoteStore = create((set, get) => ({
             surface_quantity: isSurfaceQuantity,
             free_quantity: isFreeQuantity,
             quantity_editable: isFreeQuantity,
+            price_editable: isShippingProductId(id),
             line_key: `${id}-${Date.now()}`,
           },
         ],
@@ -411,6 +418,18 @@ export const useQuoteStore = create((set, get) => ({
     const id = Number(product_id);
     set((s) => ({
       lines: s.lines.filter((l) => !(Number(l.product_id) === id && !l.previously_billed_line)),
+    }));
+  },
+  setLineBasePrice(product_id, price) {
+    const id = Number(product_id);
+    if (!isShippingProductId(id)) return;
+    const current = get().lines.find((line) => Number(line?.product_id) === id);
+    if (!current || current.previously_billed_line) return;
+    const n = Number(String(price ?? "").replace(",", "."));
+    if (!Number.isFinite(n) || n < 0) return;
+    const nextPrice = round2(n);
+    set((s) => ({
+      lines: s.lines.map((l) => Number(l.product_id) === id ? { ...l, basePrice: nextPrice, manual_price: true, price_editable: true } : l),
     }));
   },
   setQty(product_id, qty) {
@@ -447,7 +466,7 @@ export const useQuoteStore = create((set, get) => ({
     set((s) => ({
       lines: s.lines.map((l) => {
         const next = map.get(l.product_id);
-        if (!next || l.previously_billed_line) return l;
+        if (!next || l.previously_billed_line || l.manual_price) return l;
 
         return {
           ...l,
@@ -488,6 +507,8 @@ export const useQuoteStore = create((set, get) => ({
           surface_quantity: !!l.surface_quantity,
           free_quantity: freeQuantity,
           quantity_editable: freeQuantity,
+          price_editable: isShippingProductId(l.product_id) || !!l.price_editable,
+          manual_price: !!l.manual_price,
           previously_billed_line: !!l.previously_billed_line,
           locked_line: !!l.locked_line,
           line_key: l.line_key || null,

@@ -28,6 +28,7 @@ const MEASUREMENT_PRODUCT_IDS = parseMeasurementProductIds(
     "2865,2961",
 );
 const IVA_RATE = 0.21;
+const SHIPPING_PRODUCT_IDS = new Set([2842]);
 
 function toScalar(v) {
   return Array.isArray(v) ? v[0] : v;
@@ -36,6 +37,16 @@ function toIntId(v) {
   const x = toScalar(v);
   const n = Number(x);
   return Number.isFinite(n) ? n : null;
+}
+function isShippingLine(line = {}) {
+  const ids = [line?.product_id, line?.odoo_id, line?.odoo_template_id, line?.odoo_variant_id, line?.odoo_external_id];
+  return ids.some((value) => SHIPPING_PRODUCT_IDS.has(Number(value || 0)));
+}
+function isDistributorQuote(quote = {}) {
+  return String(quote?.created_by_role || quote?.payload?.created_by_role || "").trim().toLowerCase() === "distribuidor";
+}
+function shouldZeroShippingForOdoo(quote = {}, line = {}) {
+  return isDistributorQuote(quote) && isShippingLine(line);
 }
 function toText(v) {
   const x = toScalar(v);
@@ -281,7 +292,7 @@ async function buildPreproduccionPayload({ originalQuote, sourceQuote, revisionQ
     qty: Number(line?.qty || 0) || 0,
     name: toText(line?.name),
     raw_name: toText(line?.raw_name),
-    price_unit: typeof line?.price_unit === "number" ? line.price_unit : calcDetailedUnitWithIva(line, revisionPayload || sourcePayload || originalPayload || {}),
+    price_unit: typeof line?.price_unit === "number" ? line.price_unit : calcDetailedUnitWithIva(line, revisionPayload || sourcePayload || originalPayload || {}, sourceQuote || originalQuote),
   }));
 
   const sectionValues = await buildSectionValues({
@@ -486,8 +497,9 @@ function getOdooConditionLabel(payload) {
   }
   return "Condición 1";
 }
-function calcDetailedUnitWithIva(line, payload) {
+function calcDetailedUnitWithIva(line, payload, quote = null) {
   // Nombre legacy: este precio unitario es el que se envía a Odoo.
+  if (shouldZeroShippingForOdoo(quote, line)) return 0;
   if (typeof line?.price_unit === "number") return round2(line.price_unit);
   if (typeof line?.unit_price === "number") return round2(line.unit_price);
   const base = Number(line?.basePrice ?? line?.base_price ?? line?.price ?? 0) || 0;
@@ -721,13 +733,13 @@ function mergeByProductId(lines) {
   }
   return [...map.values()];
 }
-function totalLinesAmount(lines, payload) {
+function totalLinesAmount(lines, payload, quote = null) {
   return round2(
     (Array.isArray(lines) ? lines : []).reduce((acc, line) => {
       const qty = Number(line?.qty || 1) || 1;
       const price = typeof line?.price_unit === "number"
         ? round2(line.price_unit)
-        : calcDetailedUnitWithIva(line, payload || {});
+        : calcDetailedUnitWithIva(line, payload || {}, quote);
       return acc + qty * price;
     }, 0),
   );
@@ -832,14 +844,14 @@ async function resolveBaseSourceQuote(originalQuote) {
     return originalQuote;
   }
 }
-function computeSurfacePricingMetrics({ sourceLines, finalLines, pricingPayload, sourceAreaM2, finalAreaM2, toleranceAreaM2 }) {
+function computeSurfacePricingMetrics({ sourceLines, finalLines, pricingPayload, sourceAreaM2, finalAreaM2, toleranceAreaM2, quote = null }) {
   const safeSourceArea = round4(Math.max(0, Number(sourceAreaM2 || 0) || 0));
   const safeFinalArea = round4(Math.max(0, Number(finalAreaM2 || 0) || 0));
   const safeToleranceArea = round4(Math.max(0, Number(toleranceAreaM2 || 0) || 0));
   const surfaceSourceLines = (Array.isArray(sourceLines) ? sourceLines : []).filter(isSurfaceQtyLine);
   const surfaceFinalLines = (Array.isArray(finalLines) ? finalLines : []).filter(isSurfaceQtyLine);
-  const sourceSurfaceAmount = totalLinesAmount(surfaceSourceLines, pricingPayload);
-  const finalSurfaceAmount = totalLinesAmount(surfaceFinalLines, pricingPayload);
+  const sourceSurfaceAmount = totalLinesAmount(surfaceSourceLines, pricingPayload, quote);
+  const finalSurfaceAmount = totalLinesAmount(surfaceFinalLines, pricingPayload, quote);
   const surfaceIncrementAmount = round2(Math.max(0, finalSurfaceAmount - sourceSurfaceAmount));
   const surfaceDiffM2 = round4(Math.max(0, safeFinalArea - safeSourceArea));
   const surfaceChargeableDiffM2 = round4(Math.max(0, surfaceDiffM2 - safeToleranceArea));
@@ -991,7 +1003,7 @@ async function syncFinalQuoteToOdoo({ odoo, revisionQuote, originalQuote, source
     if (!uomId) throw new Error(`Producto sin uom_id: ${productId}`);
     const priceUnit = typeof l?.price_unit === "number"
       ? round2(l.price_unit)
-      : calcDetailedUnitWithIva(l, revisionQuote.payload || sourceQuote?.payload || originalQuote.payload || {});
+      : calcDetailedUnitWithIva(l, revisionQuote.payload || sourceQuote?.payload || originalQuote.payload || {}, sourceQuote || originalQuote);
     totalToCharge = round2(totalToCharge + qty * priceUnit);
     orderLines.push([
       0,
@@ -1315,7 +1327,7 @@ async function buildMeasurementFinalizationBase({ odoo, originalQuote, measureme
 
   const pricingPayload = sourceQuote?.payload || originalQuote?.payload || {};
   const positiveLines = mergeByProductId([...baseLines, ...pricedExtraLines]);
-  const positiveTotal = totalLinesAmount(positiveLines, pricingPayload);
+  const positiveTotal = totalLinesAmount(positiveLines, pricingPayload, sourceQuote || originalQuote);
   const toleranceAreaM2 = await getCommercialFinalToleranceAreaM2();
   const surfaceMetrics = computeSurfacePricingMetrics({
     sourceLines: sourceBaseLines,
@@ -1324,6 +1336,7 @@ async function buildMeasurementFinalizationBase({ odoo, originalQuote, measureme
     sourceAreaM2,
     finalAreaM2,
     toleranceAreaM2,
+    quote: sourceQuote || originalQuote,
   });
 
   const discountLine = buildDiscountPreviewLine({
@@ -1332,8 +1345,8 @@ async function buildMeasurementFinalizationBase({ odoo, originalQuote, measureme
     positiveTotal,
   });
   const finalLines = discountLine ? [...positiveLines, discountLine] : positiveLines;
-  const finalAmountToCharge = totalLinesAmount(finalLines, pricingPayload);
-  const extraAmount = round2(Math.max(0, totalLinesAmount(pricedExtraLines, pricingPayload)));
+  const finalAmountToCharge = totalLinesAmount(finalLines, pricingPayload, sourceQuote || originalQuote);
+  const extraAmount = round2(Math.max(0, totalLinesAmount(pricedExtraLines, pricingPayload, sourceQuote || originalQuote)));
 
   return {
     source_quote_id: sourceQuote?.id || originalQuote?.id || null,

@@ -178,6 +178,15 @@ function resolveLinePricingProductId(line) {
   }
   return 0;
 }
+const SHIPPING_PRODUCT_IDS = new Set([2842]);
+function isShippingLine(line = {}) {
+  const ids = [line?.product_id, line?.odoo_id, line?.odoo_template_id, line?.odoo_variant_id, line?.odoo_external_id];
+  return ids.some((value) => SHIPPING_PRODUCT_IDS.has(Number(value || 0)));
+}
+function zeroShippingLinePriceForDistributor(line = {}) {
+  if (!isShippingLine(line)) return line;
+  return { ...line, basePrice: 0, base_price: 0, price: 0, price_unit: 0, unit_price: 0, distributor_proforma_zero_price: true };
+}
 
 function buildPriceRefreshLines(lines = []) {
   return (Array.isArray(lines) ? lines : [])
@@ -232,7 +241,7 @@ function mergeUpdatedBasePrices(lines = [], pricesResponse = {}) {
     const sourceId = Number(line?.product_id || 0);
     const odooId = Number(resolveLinePricingProductId(line) || 0);
     const next = bySourceProductId.get(sourceId) || byOdooProductId.get(odooId);
-    if (!next) return line;
+    if (!next || line?.manual_price) return line;
     const nextPrice = Number(next.price ?? line.basePrice ?? 0);
     return {
       ...line,
@@ -362,7 +371,8 @@ function buildPdfPayloadForDownload(payload, financingPercent, extras = {}, opti
     ? payload.lines.map((line) => {
         const rawBase = Number(line?.basePrice ?? line?.base_price ?? line?.price ?? 0) || 0;
         const financedBase = Math.round(rawBase * factor * 100) / 100;
-        return { ...line, basePrice: financedBase, base_price: financedBase, price: financedBase };
+        const nextLine = { ...line, basePrice: financedBase, base_price: financedBase, price: financedBase };
+        return options?.zeroShippingForDistributor ? zeroShippingLinePriceForDistributor(nextLine) : nextLine;
       })
     : [];
   const nextPayload = { ...(payload || {}), ...extras, lines: nextLines, payload: { ...(payload?.payload || {}), ...(extras.payload || {}) } };
@@ -1069,7 +1079,7 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
         payload,
         0,
         latestProductionPlanning ? { production_planning: latestProductionPlanning } : {},
-        { stripMarginPercent: true },
+        { stripMarginPercent: true, zeroShippingForDistributor: true },
       );
       console.log("[PDF FRONT] payload completo proforma", pdfPayload);
       console.log("[PDF FRONT] lineas proforma", summarizeLinesForDebug(pdfPayload?.lines || []));

@@ -1,12 +1,18 @@
 import { useEffect, useState } from "react";
 import Button from "../../../ui/Button";
 import { useQuoteStore } from "../../../domain/quote/store";
+import { useAuthStore } from "../../../domain/auth/store.js";
 
 const SYSTEM_PRODUCT_IDS = new Set([3008, 3009]);
 const INTEGER_QTY_PRODUCT_IDS = new Set([3582, 3251]);
+const SHIPPING_PRODUCT_IDS = new Set([2842]);
+
+function isShippingLine(line) {
+  return SHIPPING_PRODUCT_IDS.has(Number(line?.product_id));
+}
 
 function isFreeQtyLine(line) {
-  return !!line?.free_quantity || !!line?.quantity_editable || String(line?.quantity_mode || "").toLowerCase() === "free";
+  return isShippingLine(line) || !!line?.free_quantity || !!line?.quantity_editable || String(line?.quantity_mode || "").toLowerCase() === "free";
 }
 
 function formatQtyInput(value) {
@@ -31,7 +37,8 @@ function parseQtyText(raw) {
 }
 
 export default function LineRow({ line, finalUnit, total, formatARS }) {
-  const { setQty, removeLine } = useQuoteStore();
+  const { setQty, setLineBasePrice, removeLine } = useQuoteStore();
+  const user = useAuthStore((state) => state.user);
   const visibleName = String(line.name || line.raw_name || `Producto ${line.product_id}`).trim();
   const visibleOdooId = Number(line.odoo_id || line.product_id || 0) || Number(line.product_id || 0);
   const isProtectedLine = !!line.auto_system_item || !!line.surface_quantity || !!line.previously_billed_line || SYSTEM_PRODUCT_IDS.has(Number(line.product_id));
@@ -39,11 +46,17 @@ export default function LineRow({ line, finalUnit, total, formatARS }) {
   const isIntegerQtyLine = !isProtectedLine && !isFreeQuantityLine && INTEGER_QTY_PRODUCT_IDS.has(Number(line.product_id));
   const isUnitOnlyLine = !isProtectedLine && !isFreeQuantityLine && !isIntegerQtyLine;
   const canEditQty = isFreeQuantityLine || isIntegerQtyLine;
+  const canEditPrice = !!user?.is_distribuidor && isShippingLine(line) && !line.previously_billed_line;
   const [qtyText, setQtyText] = useState(() => formatQtyInput(line.qty));
+  const [priceText, setPriceText] = useState(() => formatQtyInput(line.basePrice));
 
   useEffect(() => {
     setQtyText(formatQtyInput(line.qty));
   }, [line.qty]);
+
+  useEffect(() => {
+    setPriceText(formatQtyInput(line.basePrice));
+  }, [line.basePrice]);
 
   function commitQty(raw, { force = false } = {}) {
     if (!canEditQty) return;
@@ -78,6 +91,26 @@ export default function LineRow({ line, finalUnit, total, formatARS }) {
     commitQty(raw);
   }
 
+  function commitPrice(raw, { force = false } = {}) {
+    if (!canEditPrice) return;
+    const parsed = parseQtyText(raw);
+    if (parsed === null) {
+      if (force) setPriceText(formatQtyInput(line.basePrice));
+      return;
+    }
+    const next = Math.round(Math.max(0, parsed) * 100) / 100;
+    setLineBasePrice(line.product_id, next);
+    setPriceText(String(next));
+  }
+
+  function handlePriceChange(e) {
+    const raw = e.target.value;
+    if (!canEditPrice) return;
+    if (!isAllowedQtyText(raw, false)) return;
+    setPriceText(raw);
+    commitPrice(raw);
+  }
+
   return (
     <tr>
       <td style={{ maxWidth: 420 }}>
@@ -92,6 +125,7 @@ export default function LineRow({ line, finalUnit, total, formatARS }) {
           {isUnitOnlyLine ? " · Unidad fija" : ""}
           {isIntegerQtyLine ? " · Cantidad entera" : ""}
           {isFreeQuantityLine ? " · Cantidad editable" : ""}
+          {isShippingLine(line) && canEditPrice ? " · Precio editable distribuidor" : ""}
           {line.previously_billed_line ? " · Facturado previamente" : ""}
         </div>
       </td>
@@ -115,7 +149,24 @@ export default function LineRow({ line, finalUnit, total, formatARS }) {
         />
       </td>
 
-      <td className="right">{formatARS(line.basePrice)}</td>
+      <td className="right">
+        {canEditPrice ? (
+          <input
+            type="text"
+            inputMode="decimal"
+            value={priceText}
+            onChange={handlePriceChange}
+            onBlur={(e) => commitPrice(e.target.value, { force: true })}
+            style={{
+              width: 120,
+              padding: "6px 8px",
+              borderRadius: 8,
+              border: "1px solid #ddd",
+              textAlign: "right",
+            }}
+          />
+        ) : formatARS(line.basePrice)}
+      </td>
       <td className="right">{formatARS(finalUnit)}</td>
       <td className="right" style={{ fontWeight: 700 }}>{formatARS(total)}</td>
 
