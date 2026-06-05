@@ -490,9 +490,22 @@ export const useQuoteStore = create((set, get) => ({
     });
 
     set((s) => {
-      const mappedLines = s.lines.map((l) => (l.product_id === id ? { ...l, qty: q } : l));
-      const nextLines = mappedLines.filter((l) => l.qty > 0 || l.previously_billed_line || isIntegerQtyProductId(l.product_id));
-      dflexQuoteDebug("setQty", { product_id: id, raw_qty: qty, normalized_qty: q, before: dflexLineSnapshot(s.lines), after: dflexLineSnapshot(nextLines), removed: dflexLineSnapshot(s.lines).filter((oldLine) => !nextLines.some((nextLine) => Number(nextLine.product_id) === Number(oldLine.product_id))), includeStack: true });
+      // Importante: cambiar la cantidad de una línea editable no debe limpiar otras
+      // líneas ni recalcular la selección del catálogo. Antes se filtraban todas las
+      // líneas con qty <= 0; si alguna línea de una sección previa quedaba
+      // momentáneamente en 0, se eliminaba y el flujo volvía a la sección inicial.
+      // La eliminación de productos debe hacerse sólo con el botón de borrar o al
+      // cambiar explícitamente una selección de sección.
+      const nextLines = s.lines.map((l) => (Number(l.product_id) === id ? { ...l, qty: q } : l));
+      dflexQuoteDebug("setQty", {
+        product_id: id,
+        raw_qty: qty,
+        normalized_qty: q,
+        before: dflexLineSnapshot(s.lines),
+        after: dflexLineSnapshot(nextLines),
+        removed: [],
+        includeStack: true,
+      });
       return { lines: nextLines };
     });
   },
