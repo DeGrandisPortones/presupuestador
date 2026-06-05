@@ -6,6 +6,12 @@ import { useAuthStore } from "../../../domain/auth/store.js";
 const SYSTEM_PRODUCT_IDS = new Set([3008, 3009]);
 const INTEGER_QTY_PRODUCT_IDS = new Set([3582, 3251]);
 const SHIPPING_PRODUCT_IDS = new Set([2842]);
+const STABLE_EDITABLE_QTY_PRODUCT_IDS = new Set([2842, 2927]);
+
+function isStableEditableQtyLine(line) {
+  const ids = [line?.product_id, line?.odoo_id, line?.odoo_template_id, line?.odoo_variant_id, line?.odoo_external_id];
+  return ids.some((value) => STABLE_EDITABLE_QTY_PRODUCT_IDS.has(Number(value || 0)));
+}
 
 function isShippingLine(line) {
   return SHIPPING_PRODUCT_IDS.has(Number(line?.product_id));
@@ -47,7 +53,7 @@ export default function LineRow({ line, finalUnit, total, formatARS }) {
   const isUnitOnlyLine = !isProtectedLine && !isFreeQuantityLine && !isIntegerQtyLine;
   const canEditQty = isFreeQuantityLine || isIntegerQtyLine;
   const canEditPrice = !!user?.is_distribuidor && isShippingLine(line) && !line.previously_billed_line;
-  const isShippingEditableLine = isShippingLine(line);
+  const isStableEditableLine = isStableEditableQtyLine(line);
   const [qtyText, setQtyText] = useState(() => formatQtyInput(line.qty));
   const [priceText, setPriceText] = useState(() => formatQtyInput(line.basePrice));
 
@@ -89,7 +95,7 @@ export default function LineRow({ line, finalUnit, total, formatARS }) {
     if (!canEditQty) return;
     if (!isAllowedQtyText(raw, isIntegerQtyLine)) return;
     setQtyText(raw);
-    if (!isShippingEditableLine) commitQty(raw);
+    if (!isStableEditableLine) commitQty(raw);
   }
 
   function commitPrice(raw, { force = false } = {}) {

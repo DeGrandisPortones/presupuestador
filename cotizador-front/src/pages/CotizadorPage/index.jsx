@@ -179,6 +179,11 @@ function resolveLinePricingProductId(line) {
   return 0;
 }
 const SHIPPING_PRODUCT_IDS = new Set([2842]);
+const STABLE_EDITABLE_QTY_PRODUCT_IDS = new Set([2842, 2927]);
+function isStableEditableQtyLine(line = {}) {
+  const ids = [line?.product_id, line?.odoo_id, line?.odoo_template_id, line?.odoo_variant_id, line?.odoo_external_id];
+  return ids.some((value) => STABLE_EDITABLE_QTY_PRODUCT_IDS.has(Number(value || 0)));
+}
 function isShippingLine(line = {}) {
   const ids = [line?.product_id, line?.odoo_id, line?.odoo_template_id, line?.odoo_variant_id, line?.odoo_external_id];
   return ids.some((value) => SHIPPING_PRODUCT_IDS.has(Number(value || 0)));
@@ -798,7 +803,7 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
   }, [persistedQuoteId, savedQuoteAdjustmentPercent, financingPercent, conditionMode]);
   const totals = useMemo(() => calcTotals(lines, marginPercent, ivaRate, quoteAdjustmentPercent, conditionMode), [lines, marginPercent, ivaRate, quoteAdjustmentPercent, conditionMode]);
   const linesKey = useMemo(
-    () => lines.map((l) => `${l.product_id}:${resolveLinePricingProductId(l)}:${l.odoo_template_id || ""}:${isShippingLine(l) ? "shipping-qty" : l.qty}`).join("|"),
+    () => lines.map((l) => `${l.product_id}:${resolveLinePricingProductId(l)}:${l.odoo_template_id || ""}:${isStableEditableQtyLine(l) ? "stable-qty" : l.qty}`).join("|"),
     [lines],
   );
 
