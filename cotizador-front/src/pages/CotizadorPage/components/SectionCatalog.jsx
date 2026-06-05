@@ -13,6 +13,9 @@ import Button from "../../../ui/Button";
 const CATALOG_KINDS = new Set(["porton", "ipanel", "plegados", "otros"]);
 const APTOS_PARA_REVESTIR_TYPE = "para_revestir_con_al_pvc_otros";
 const EXTERIOR_HELP_TEXT = "Siempre observando desde afuera de la vivienda/obra (Exterior).";
+const KEEP_TERMINAL_SECTION_EVENT = "presupuestador:keepTerminalSection";
+const KEEP_TERMINAL_PRODUCT_STORAGE_KEY = "presupuestador.sectionCatalog.keepTerminalProductId";
+
 
 function ExteriorHelpButton({ open, onToggle }) {
   return (
@@ -86,6 +89,26 @@ function writeStoredOpenSectionId(kind, sectionId) {
     } else {
       window.sessionStorage.removeItem(openSectionStorageKey(kind));
     }
+  } catch (_err) {
+    // No bloquear la UI si el navegador no permite sessionStorage.
+  }
+}
+
+function readKeepTerminalProductId() {
+  if (typeof window === "undefined" || !window.sessionStorage) return 0;
+  try {
+    const raw = window.sessionStorage.getItem(KEEP_TERMINAL_PRODUCT_STORAGE_KEY);
+    const value = Number(raw || 0);
+    return Number.isFinite(value) && value > 0 ? value : 0;
+  } catch (_err) {
+    return 0;
+  }
+}
+
+function clearKeepTerminalProductId() {
+  if (typeof window === "undefined" || !window.sessionStorage) return;
+  try {
+    window.sessionStorage.removeItem(KEEP_TERMINAL_PRODUCT_STORAGE_KEY);
   } catch (_err) {
     // No bloquear la UI si el navegador no permite sessionStorage.
   }
@@ -646,6 +669,26 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
     [orderedVisibleSectionIds, sectionMap],
   );
 
+  const resolveTerminalSectionIdForProduct = useCallback((productId) => {
+    const id = Number(productId || 0);
+    for (const section of visibleSections) {
+      const sectionId = Number(section?.id || 0);
+      const sectionProducts = productsBySection.get(sectionId) || [];
+      if (sectionProducts.some((product) => collectProductIdsFromProduct(product).includes(id))) {
+        return sectionId;
+      }
+    }
+    const lastVisible = visibleSections[visibleSections.length - 1];
+    return Number(lastVisible?.id || 0) || null;
+  }, [visibleSections, productsBySection]);
+
+  const forceOpenTerminalSectionForProduct = useCallback((productId) => {
+    const sectionId = resolveTerminalSectionIdForProduct(productId);
+    if (!sectionId) return;
+    setOpenSectionId(sectionId);
+    pendingAutoScrollSectionIdRef.current = null;
+  }, [resolveTerminalSectionIdForProduct, setOpenSectionId]);
+
   const terminalStepCompleted = useMemo(() => {
     if (!visibleSections.length) return false;
     const lastSection = visibleSections[visibleSections.length - 1];
@@ -731,7 +774,31 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
   }, [catalogKind, products, autoBudgetProductRules, selectedProductIdsForAutomation, isAptoParaRevestir, lines, addLine, forceRemoveLine]);
 
   useEffect(() => {
+    function handleKeepTerminalSection(event) {
+      const productId = Number(event?.detail?.productId || readKeepTerminalProductId() || 0);
+      if (!productId) return;
+      forceOpenTerminalSectionForProduct(productId);
+      window.setTimeout(() => forceOpenTerminalSectionForProduct(productId), 0);
+      window.setTimeout(() => {
+        forceOpenTerminalSectionForProduct(productId);
+        clearKeepTerminalProductId();
+      }, 180);
+    }
+
+    if (typeof window === "undefined") return undefined;
+    window.addEventListener(KEEP_TERMINAL_SECTION_EVENT, handleKeepTerminalSection);
+    return () => window.removeEventListener(KEEP_TERMINAL_SECTION_EVENT, handleKeepTerminalSection);
+  }, [forceOpenTerminalSectionForProduct]);
+
+  useEffect(() => {
     if (!visibleSections.length) return;
+
+    const pendingTerminalProductId = readKeepTerminalProductId();
+    if (pendingTerminalProductId) {
+      forceOpenTerminalSectionForProduct(pendingTerminalProductId);
+      return;
+    }
+
     const firstVisibleSectionId = Number(visibleSections[0]?.id || 0) || null;
     const visibleIds = new Set(visibleSections.map((section) => Number(section.id)));
     const currentOpenSectionId = Number(openSectionId || 0) || null;
@@ -739,7 +806,7 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
     if (firstVisibleSectionId) {
       setOpenSectionId(firstVisibleSectionId);
     }
-  }, [visibleSections, openSectionId]);
+  }, [visibleSections, openSectionId, forceOpenTerminalSectionForProduct]);
 
   function selectProductForSection(sectionId, product) {
     const currentSelected = selectedProductIdsBySection.get(Number(sectionId)) || new Set();

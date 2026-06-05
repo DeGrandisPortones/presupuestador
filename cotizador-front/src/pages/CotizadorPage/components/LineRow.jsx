@@ -6,6 +6,9 @@ import { useAuthStore } from "../../../domain/auth/store.js";
 const SYSTEM_PRODUCT_IDS = new Set([3008, 3009]);
 const INTEGER_QTY_PRODUCT_IDS = new Set([3582, 3251]);
 const SHIPPING_PRODUCT_IDS = new Set([2842]);
+const KEEP_TERMINAL_SECTION_EVENT = "presupuestador:keepTerminalSection";
+const KEEP_TERMINAL_PRODUCT_STORAGE_KEY = "presupuestador.sectionCatalog.keepTerminalProductId";
+
 
 function isShippingLine(line) {
   return SHIPPING_PRODUCT_IDS.has(Number(line?.product_id));
@@ -34,6 +37,22 @@ function parseQtyText(raw) {
   if (value.endsWith(".")) return null;
   const n = Number(value);
   return Number.isFinite(n) ? n : null;
+}
+
+function requestKeepTerminalSection(productId) {
+  if (typeof window === "undefined") return;
+  const id = Number(productId || 0);
+  if (!id) return;
+  try {
+    window.sessionStorage?.setItem(KEEP_TERMINAL_PRODUCT_STORAGE_KEY, String(id));
+  } catch (_err) {
+    // No bloquear la edición si sessionStorage no está disponible.
+  }
+  try {
+    window.dispatchEvent(new CustomEvent(KEEP_TERMINAL_SECTION_EVENT, { detail: { productId: id } }));
+  } catch (_err) {
+    // No bloquear la edición si CustomEvent falla.
+  }
 }
 
 export default function LineRow({ line, finalUnit, total, formatARS }) {
@@ -69,14 +88,18 @@ export default function LineRow({ line, finalUnit, total, formatARS }) {
 
     if (isIntegerQtyLine) {
       const next = Math.trunc(Math.max(0, parsed));
+      if (isShippingLine(line)) requestKeepTerminalSection(line.product_id);
       setQty(line.product_id, next);
+      if (isShippingLine(line)) window.setTimeout(() => requestKeepTerminalSection(line.product_id), 0);
       setQtyText(String(next));
       return;
     }
 
     const next = Math.round(Math.max(0, parsed) * 100) / 100;
     if (next > 0) {
+      if (isShippingLine(line)) requestKeepTerminalSection(line.product_id);
       setQty(line.product_id, next);
+      if (isShippingLine(line)) window.setTimeout(() => requestKeepTerminalSection(line.product_id), 0);
       setQtyText(String(next));
       return;
     }
@@ -100,7 +123,9 @@ export default function LineRow({ line, finalUnit, total, formatARS }) {
       return;
     }
     const next = Math.round(Math.max(0, parsed) * 100) / 100;
+    if (isShippingLine(line)) requestKeepTerminalSection(line.product_id);
     setLineBasePrice(line.product_id, next);
+    if (isShippingLine(line)) window.setTimeout(() => requestKeepTerminalSection(line.product_id), 0);
     setPriceText(String(next));
   }
 
