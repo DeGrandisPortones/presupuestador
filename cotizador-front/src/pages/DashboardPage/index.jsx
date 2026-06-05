@@ -144,7 +144,7 @@ function buildQuoteSearchText(quote = {}) {
   ].filter(Boolean).join(" "));
 }
 
-function buildRulePayloadFromState({ initialSectionId, dependencyRules, productsBySectionId }) {
+function buildRulePayloadFromState({ initialSectionId, finalSectionId, dependencyRules, productsBySectionId }) {
   const normalizedDependencyRules = (Array.isArray(dependencyRules) ? dependencyRules : [])
     .map((rule, index) => {
       const parentSectionId = Number(rule.parent_section_id || 0) || null;
@@ -170,6 +170,7 @@ function buildRulePayloadFromState({ initialSectionId, dependencyRules, products
 
   return {
     initial_section_id: Number(initialSectionId || 0) || null,
+    final_section_id: Number(finalSectionId || 0) || null,
     section_dependency_rules: normalizedDependencyRules,
   };
 }
@@ -206,6 +207,7 @@ export default function DashboardPage() {
   const [toleranceAreaM2, setToleranceAreaM2] = useState("0");
   const [savingTolerance, setSavingTolerance] = useState(false);
   const [initialSectionId, setInitialSectionId] = useState("");
+  const [finalSectionId, setFinalSectionId] = useState("");
   const [dependencyRules, setDependencyRules] = useState([]);
   const [systemRules, setSystemRules] = useState([]);
   const [savingInitialSection, setSavingInitialSection] = useState(false);
@@ -252,6 +254,7 @@ export default function DashboardPage() {
   useEffect(() => {
     const rules = technicalRulesQ.data || {};
     setInitialSectionId(Number(rules.initial_section_id || 0) || "");
+    setFinalSectionId(Number(rules.final_section_id || 0) || "");
 
     const rawDependencies = Array.isArray(rules.section_dependency_rules)
       ? rules.section_dependency_rules
@@ -389,9 +392,10 @@ export default function DashboardPage() {
     try {
       await adminSaveTechnicalMeasurementRules(catalogKind, {
         initial_section_id: Number(initialSectionId || 0) || null,
+        final_section_id: Number(finalSectionId || 0) || null,
       });
       invalidateTechnicalRules();
-      alert("Sección inicial guardada.");
+      alert("Secciones inicial/final guardadas.");
     } finally {
       setSavingInitialSection(false);
     }
@@ -402,7 +406,7 @@ export default function DashboardPage() {
     try {
       await adminSaveTechnicalMeasurementRules(
         catalogKind,
-        buildRulePayloadFromState({ initialSectionId, dependencyRules, productsBySectionId }),
+        buildRulePayloadFromState({ initialSectionId, finalSectionId, dependencyRules, productsBySectionId }),
       );
       invalidateTechnicalRules();
       alert("Dependencias guardadas.");
@@ -534,6 +538,8 @@ export default function DashboardPage() {
               productsBySectionId={productsBySectionId}
               initialSectionId={initialSectionId}
               setInitialSectionId={setInitialSectionId}
+              finalSectionId={finalSectionId}
+              setFinalSectionId={setFinalSectionId}
               dependencyRules={dependencyRules}
               setDependencyRules={setDependencyRules}
               savingInitialSection={savingInitialSection}
@@ -811,7 +817,7 @@ function AliasRow({ catalogKind, product, invalidateCatalog }) {
   );
 }
 
-function DependenciesTab({ catalogKind, sections, productsBySectionId, initialSectionId, setInitialSectionId, dependencyRules, setDependencyRules, savingInitialSection, onSaveInitialSection, savingDependencies, onSaveDependencies }) {
+function DependenciesTab({ catalogKind, sections, productsBySectionId, initialSectionId, setInitialSectionId, finalSectionId, setFinalSectionId, dependencyRules, setDependencyRules, savingInitialSection, onSaveInitialSection, savingDependencies, onSaveDependencies }) {
   function updateRule(index, patch) {
     setDependencyRules((prev) => prev.map((rule, idx) => (idx === index ? { ...rule, ...patch } : rule)));
   }
@@ -831,7 +837,17 @@ function DependenciesTab({ catalogKind, sections, productsBySectionId, initialSe
             {sections.map((section) => <option key={section.id} value={section.id}>{section.name}</option>)}
           </select>
         </div>
-        <Button variant="primary" onClick={onSaveInitialSection} disabled={savingInitialSection}>{savingInitialSection ? "Guardando..." : "Guardar sección inicial"}</Button>
+        <div style={{ minWidth: 260 }}>
+          <div className="muted">Sección final</div>
+          <select value={finalSectionId || ""} onChange={(event) => setFinalSectionId(event.target.value)} style={{ padding: 10, borderRadius: 10, border: "1px solid #ddd", minWidth: 260 }}>
+            <option value="">Sin sección final</option>
+            {sections.map((section) => <option key={section.id} value={section.id}>{section.name}</option>)}
+          </select>
+          <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>
+            Si se edita una cantidad/precio al final del flujo, el cotizador queda abierto en esta sección.
+          </div>
+        </div>
+        <Button variant="primary" onClick={onSaveInitialSection} disabled={savingInitialSection}>{savingInitialSection ? "Guardando..." : "Guardar secciones"}</Button>
       </div>
       <div className="spacer" />
       <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>

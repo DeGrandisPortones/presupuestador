@@ -518,6 +518,7 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
   });
 
   const initialSectionId = Number(rulesQ.data?.initial_section_id || 0) || null;
+  const finalSectionId = Number(rulesQ.data?.final_section_id || 0) || null;
   const surfaceParameters = useMemo(() => getRulesSurfaceParameters(rulesQ.data || {}), [rulesQ.data]);
   const autoBudgetProductRules = useMemo(() => normalizeAutoBudgetRules(surfaceParameters), [surfaceParameters]);
 
@@ -670,6 +671,12 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
   );
 
   const resolveTerminalSectionIdForProduct = useCallback((productId) => {
+    const configuredFinalSectionId = Number(finalSectionId || 0) || null;
+    const visibleIds = new Set(visibleSections.map((section) => Number(section?.id || 0)).filter(Boolean));
+    if (configuredFinalSectionId && visibleIds.has(configuredFinalSectionId)) {
+      return configuredFinalSectionId;
+    }
+
     const id = Number(productId || 0);
     for (const section of visibleSections) {
       const sectionId = Number(section?.id || 0);
@@ -680,7 +687,7 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
     }
     const lastVisible = visibleSections[visibleSections.length - 1];
     return Number(lastVisible?.id || 0) || null;
-  }, [visibleSections, productsBySection]);
+  }, [finalSectionId, visibleSections, productsBySection]);
 
   const forceOpenTerminalSectionForProduct = useCallback((productId) => {
     const sectionId = resolveTerminalSectionIdForProduct(productId);
@@ -779,10 +786,11 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
       if (!productId) return;
       forceOpenTerminalSectionForProduct(productId);
       window.setTimeout(() => forceOpenTerminalSectionForProduct(productId), 0);
+      window.setTimeout(() => forceOpenTerminalSectionForProduct(productId), 180);
       window.setTimeout(() => {
         forceOpenTerminalSectionForProduct(productId);
         clearKeepTerminalProductId();
-      }, 180);
+      }, 1200);
     }
 
     if (typeof window === "undefined") return undefined;
