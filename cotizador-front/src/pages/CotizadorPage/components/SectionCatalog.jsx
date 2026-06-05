@@ -634,33 +634,55 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
     return map;
   }, [products, sectionList]);
 
-  const selectedProductIdsGlobal = useMemo(
-    () => new Set((Array.isArray(lines) ? lines : []).map((line) => Number(line?.product_id)).filter(Boolean)),
-    [lines],
-  );
+  const selectedProductIdsGlobalKey = useMemo(() => {
+    const ids = (Array.isArray(lines) ? lines : [])
+      .map((line) => Number(line?.product_id || 0))
+      .filter((id) => Number.isFinite(id) && id > 0);
+    return [...new Set(ids)].sort((a, b) => a - b).join("|");
+  }, [lines]);
 
-  const selectedProductIdsForAutomation = useMemo(() => {
+  const selectedProductIdsGlobal = useMemo(() => {
+    if (!selectedProductIdsGlobalKey) return new Set();
+    return new Set(
+      selectedProductIdsGlobalKey
+        .split("|")
+        .map((id) => Number(id))
+        .filter((id) => Number.isFinite(id) && id > 0),
+    );
+  }, [selectedProductIdsGlobalKey]);
+
+  const selectedProductIdsForAutomationKey = useMemo(() => {
     const ids = [];
     for (const line of Array.isArray(lines) ? lines : []) ids.push(...collectProductIdsFromLine(line));
-    return new Set(ids);
+    return [...new Set(ids.filter((id) => Number.isFinite(Number(id)) && Number(id) > 0).map((id) => Number(id)))]
+      .sort((a, b) => a - b)
+      .join("|");
   }, [lines]);
+
+  const selectedProductIdsForAutomation = useMemo(() => {
+    if (!selectedProductIdsForAutomationKey) return new Set();
+    return new Set(
+      selectedProductIdsForAutomationKey
+        .split("|")
+        .map((id) => Number(id))
+        .filter((id) => Number.isFinite(id) && id > 0),
+    );
+  }, [selectedProductIdsForAutomationKey]);
 
   const selectedProductIdsBySection = useMemo(() => {
     const map = new Map();
     for (const section of sectionList) map.set(Number(section.id), new Set());
 
-    const currentLines = Array.isArray(lines) ? lines : [];
     for (const [sectionId, sectionProducts] of productsBySection.entries()) {
-      const productIdsInSection = new Set(sectionProducts.map((product) => Number(product.id)));
-      for (const line of currentLines) {
-        const productId = Number(line?.product_id);
-        if (productIdsInSection.has(productId)) {
-          map.get(sectionId)?.add(productId);
+      for (const product of sectionProducts) {
+        const productId = Number(product?.id || 0);
+        if (productId && selectedProductIdsGlobal.has(productId)) {
+          map.get(Number(sectionId))?.add(productId);
         }
       }
     }
     return map;
-  }, [lines, productsBySection, sectionList]);
+  }, [selectedProductIdsGlobalKey, selectedProductIdsGlobal, productsBySection, sectionList]);
 
   const orderedVisibleSectionIds = useMemo(() => {
     return computeOrderedSectionIds({
@@ -691,7 +713,7 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
     if (normalizedType === APTOS_PARA_REVESTIR_TYPE || normalizedType.includes("para_revestir") || normalizedType.includes("apto")) return true;
     const aptoProductId = Number(surfaceParameters?.no_cladding_product_id || 0);
     return !!(aptoProductId && selectedProductIdsForAutomation.has(aptoProductId));
-  }, [portonType, selectedProductIdsForAutomation, surfaceParameters]);
+  }, [portonType, selectedProductIdsForAutomationKey, selectedProductIdsForAutomation, surfaceParameters]);
 
   useEffect(() => {
     if (catalogKind !== "porton") return;
@@ -713,7 +735,7 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
     if (derivedType !== String(portonType || "")) {
       setPortonType(derivedType);
     }
-  }, [catalogKind, systemRules, selectedProductIdsGlobal, portonType, setPortonType]);
+  }, [catalogKind, systemRules, selectedProductIdsGlobalKey, selectedProductIdsGlobal, portonType, setPortonType]);
 
   useEffect(() => {
     if (catalogKind !== "porton" || !products.length || !autoBudgetProductRules.length) return;
@@ -732,7 +754,7 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
       if (!productId) continue;
       desiredProductIds.add(productId);
 
-      const isAlreadySelected = (Array.isArray(lines) ? lines : []).some((line) => Number(line?.product_id) === productId);
+      const isAlreadySelected = selectedProductIdsGlobal.has(productId);
       if (!isAlreadySelected) {
         addLine({
           ...product,
@@ -749,11 +771,7 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
       if (product?.id) possibleTargetProductIds.add(Number(product.id));
     }
 
-    const currentLineProductIds = new Set(
-      (Array.isArray(lines) ? lines : [])
-        .map((line) => Number(line?.product_id || 0))
-        .filter((id) => Number.isFinite(id) && id > 0),
-    );
+    const currentLineProductIds = selectedProductIdsGlobal;
 
     for (const productId of possibleTargetProductIds) {
       if (!desiredProductIds.has(productId) && currentLineProductIds.has(productId)) {
@@ -769,7 +787,7 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
         forceRemoveLine(productId);
       }
     }
-  }, [catalogKind, products, autoBudgetProductRules, selectedProductIdsForAutomation, isAptoParaRevestir, lines, addLine, forceRemoveLine]);
+  }, [catalogKind, products, autoBudgetProductRules, selectedProductIdsForAutomationKey, selectedProductIdsForAutomation, selectedProductIdsGlobalKey, selectedProductIdsGlobal, isAptoParaRevestir, addLine, forceRemoveLine]);
 
   useEffect(() => {
     if (!visibleSections.length) return;
