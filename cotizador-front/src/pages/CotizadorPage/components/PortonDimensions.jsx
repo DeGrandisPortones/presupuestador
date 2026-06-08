@@ -973,7 +973,7 @@ function IpanelDivisionsSketchModal({
                   const cy = y + height / 2;
                   return (
                     <g key={`band-${band.type}-${band.index}`}>
-                      <rect x={x} y={y} width={Math.max(0, width)} height={Math.max(0, height)} fill={band.index % 2 === 0 ? "#ecfeff" : "#f8fafc"} />
+                      <rect x={x} y={y} width={Math.max(0, width)} height={Math.max(0, height)} fill={band.index % 2 === 0 ? "#dff3f6" : "#eef2f7"} />
                       <text x={cx} y={cy} textAnchor="middle" dominantBaseline="middle" fontSize="12" fontWeight="700" fill="#0f172a">
                         {formatNumberForInput(band.rawSizeMm)} mm
                       </text>
@@ -984,14 +984,29 @@ function IpanelDivisionsSketchModal({
                 const rectY = isVertical ? 20 : 20 + startPx;
                 const rectWidth = isVertical ? sizePx : panelWidthPx;
                 const rectHeight = isVertical ? panelHeightPx : sizePx;
-                const lineX1 = isVertical ? rectX + rectWidth / 2 : rectX;
-                const lineY1 = isVertical ? rectY : rectY + rectHeight / 2;
-                const lineX2 = isVertical ? rectX + rectWidth / 2 : rectX + rectWidth;
-                const lineY2 = isVertical ? rectY + rectHeight : rectY + rectHeight / 2;
+                const stripeW = Math.max(2, rectWidth);
+                const stripeH = Math.max(2, rectHeight);
+                const red = "#ef2323";
+                const borderThickness = Math.max(2, Math.min(4, (isVertical ? stripeW : stripeH) * 0.18));
+                const centerX1 = isVertical ? rectX + stripeW / 2 : rectX;
+                const centerY1 = isVertical ? rectY : rectY + stripeH / 2;
+                const centerX2 = isVertical ? rectX + stripeW / 2 : rectX + stripeW;
+                const centerY2 = isVertical ? rectY + stripeH : rectY + stripeH / 2;
                 return (
                   <g key={`band-${band.type}-${band.index}`}>
-                    <rect x={rectX} y={rectY} width={Math.max(2, rectWidth)} height={Math.max(2, rectHeight)} fill="#e2e8f0" opacity="0.55" />
-                    <line x1={lineX1} y1={lineY1} x2={lineX2} y2={lineY2} stroke="#334155" strokeWidth="1.8" strokeDasharray="5 5" />
+                    <rect x={rectX} y={rectY} width={stripeW} height={stripeH} fill="#ffffff" stroke={red} strokeWidth="1.4" />
+                    {isVertical ? (
+                      <>
+                        <line x1={rectX + borderThickness / 2} y1={rectY} x2={rectX + borderThickness / 2} y2={rectY + stripeH} stroke={red} strokeWidth={borderThickness} />
+                        <line x1={rectX + stripeW - borderThickness / 2} y1={rectY} x2={rectX + stripeW - borderThickness / 2} y2={rectY + stripeH} stroke={red} strokeWidth={borderThickness} />
+                      </>
+                    ) : (
+                      <>
+                        <line x1={rectX} y1={rectY + borderThickness / 2} x2={rectX + stripeW} y2={rectY + borderThickness / 2} stroke={red} strokeWidth={borderThickness} />
+                        <line x1={rectX} y1={rectY + stripeH - borderThickness / 2} x2={rectX + stripeW} y2={rectY + stripeH - borderThickness / 2} stroke={red} strokeWidth={borderThickness} />
+                      </>
+                    )}
+                    <line x1={centerX1} y1={centerY1} x2={centerX2} y2={centerY2} stroke="#334155" strokeWidth="1.3" strokeDasharray="4 4" />
                   </g>
                 );
               })}
@@ -1000,7 +1015,7 @@ function IpanelDivisionsSketchModal({
           <div style={{ border: "1px solid #e5e7eb", borderRadius: 16, padding: 14, background: "#fff" }}>
             <div style={{ fontWeight: 900, marginBottom: 8 }}>Detalle</div>
             <div className="muted" style={{ marginBottom: 8 }}>
-              Las medidas cargadas corresponden al tamaño útil de cada sección. Las líneas de separación interiores ocupan {formatMm(dividerMm)} cada una y se muestran punteadas.
+              Las medidas cargadas corresponden al tamaño útil de cada sección. Cada división incluye un listón de {formatMm(dividerMm)} entre paneles, representado como una franja con bordes marcados y línea punteada.
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 10 }}>
               <ComputedCard label="Ancho" value={panelWidthMm > 0 ? formatMm(panelWidthMm) : "-"} />
