@@ -4,6 +4,7 @@ import { getOdooBootstrap, setOdooBootstrap } from "../../../domain/odoo/bootstr
 import { useQuoteStore } from "../../../domain/quote/store";
 import { useAuthStore } from "../../../domain/auth/store.js";
 import { getCatalogBootstrap } from "../../../api/catalog.js";
+import { getPrices } from "../../../api/odoo.js";
 import {
   adminGetTechnicalMeasurementRules,
   adminRefreshCatalog,
@@ -17,6 +18,7 @@ const IPANEL_LAMAS_RANGE_MIN_WIDTH_M = 1.13;
 const IPANEL_LAMAS_RANGE_MAX_WIDTH_M = 2;
 const IPANEL_LAMAS_RANGE_MIN_HEIGHT_M = 2.45;
 const IPANEL_LAMAS_RANGE_MAX_HEIGHT_M = 3;
+const CATALOG_PRICING_VERSION = 2;
 
 function dflexCatalogDebugEnabled() {
   try {
@@ -225,6 +227,103 @@ function collectProductIdsFromProduct(product = {}) {
     .map((value) => Number(value || 0))
     .filter((value) => Number.isFinite(value) && value > 0);
 }
+
+function resolveProductPricingId(product = {}) {
+  const candidates = [
+    product?.odoo_variant_id,
+    product?.odoo_external_id,
+    product?.odoo_product_id,
+    product?.odoo_id,
+    product?.odoo_template_id,
+    product?.product_id,
+    product?.id,
+  ];
+  for (const value of candidates) {
+    const n = Number(value || 0);
+    if (Number.isFinite(n) && n > 0) return Math.trunc(n);
+  }
+  return 0;
+}
+function normalizePriceContext(pricelistId, partnerId) {
+  const pl = Number(pricelistId || 0);
+  const partner = Number(partnerId || 0);
+  return {
+    pricelist_id: Number.isFinite(pl) && pl > 0 ? Math.trunc(pl) : null,
+    partner_id: Number.isFinite(partner) && partner > 0 ? Math.trunc(partner) : null,
+  };
+}
+function pricingContextMatches(boot, pricelistId, partnerId) {
+  const expected = normalizePriceContext(pricelistId, partnerId);
+  const actual = normalizePriceContext(boot?.pricing_context?.pricelist_id, boot?.pricing_context?.partner_id);
+  return Number(boot?.pricing_context?.version || 0) === CATALOG_PRICING_VERSION
+    && !!expected.pricelist_id
+    && actual.pricelist_id === expected.pricelist_id
+    && (actual.partner_id || null) === (expected.partner_id || null);
+}
+async function buildPricedCatalogBootstrap(data, { pricelistId, partnerId }) {
+  const products = Array.isArray(data?.products) ? data.products : [];
+  const context = normalizePriceContext(pricelistId, partnerId);
+  if (!context.pricelist_id || !products.length) {
+    return { ...(data || {}), pricing_context: context };
+  }
+
+  const lines = products
+    .map((product) => {
+      const productId = resolveProductPricingId(product);
+      const sourceProductId = Number(product?.id || 0);
+      if (!productId || !sourceProductId) return null;
+      return {
+        product_id: productId,
+        source_product_id: sourceProductId,
+        odoo_template_id: Number(product?.odoo_template_id || 0) || null,
+        qty: 1,
+      };
+    })
+    .filter(Boolean);
+
+  if (!lines.length) return { ...(data || {}), pricing_context: context };
+
+  const pricesBySourceId = new Map();
+  const chunkSize = 80;
+  for (let index = 0; index < lines.length; index += chunkSize) {
+    const chunk = lines.slice(index, index + chunkSize);
+    const response = await getPrices({
+      pricelist_id: context.pricelist_id,
+      partner_id: context.partner_id,
+      lines: chunk,
+    });
+    if (Number(response?.pricelist_id || 0) !== Number(context.pricelist_id || 0)) {
+      throw new Error("Odoo devolvió precios de otra lista. Reintentá actualizar el catálogo.");
+    }
+    for (const item of Array.isArray(response?.prices) ? response.prices : []) {
+      const sourceId = Number(item?.product_id || 0);
+      if (!sourceId) continue;
+      pricesBySourceId.set(sourceId, item);
+    }
+  }
+
+  const pricedProducts = products.map((product) => {
+    const sourceId = Number(product?.id || 0);
+    const priceInfo = pricesBySourceId.get(sourceId);
+    if (!priceInfo) return product;
+    const price = Number(priceInfo.price ?? 0);
+    return {
+      ...product,
+      price: Number.isFinite(price) ? price : product?.price,
+      basePrice: Number.isFinite(price) ? price : product?.basePrice,
+      base_price: Number.isFinite(price) ? price : product?.base_price,
+      code: priceInfo.code ?? product?.code ?? null,
+      odoo_template_id: Number(priceInfo.odoo_template_id || product?.odoo_template_id || 0) || product?.odoo_template_id || null,
+    };
+  });
+
+  return {
+    ...(data || {}),
+    products: pricedProducts,
+    pricing_context: { ...context, version: CATALOG_PRICING_VERSION },
+  };
+}
+
 
 function collectProductIdsFromLine(line = {}) {
   return [
@@ -457,6 +556,8 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
 
   const addLine = useQuoteStore((s) => s.addLine);
   const forceRemoveLine = useQuoteStore((s) => s.forceRemoveLine);
+  const pricelistId = useQuoteStore((s) => s.pricelistId);
+  const partnerId = useQuoteStore((s) => s.partnerId);
   const catalogSelectionKey = useQuoteStore((s) => buildCatalogSelectionKey(s.lines));
   const lines = useMemo(() => parseCatalogSelectionKey(catalogSelectionKey), [catalogSelectionKey]);
   const dimensions = useQuoteStore((s) => s.dimensions);
@@ -465,7 +566,7 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
 
   const user = useAuthStore((s) => s.user);
 
-  const [boot, setBoot] = useState(() => getOdooBootstrap(catalogKind));
+  const [boot, setBoot] = useState(null);
   const [openSectionId, setOpenSectionIdState] = useState(() => readStoredOpenSectionId(catalogKind));
   const setOpenSectionId = useCallback((nextValue) => {
     setOpenSectionIdState((prevValue) => {
@@ -483,6 +584,9 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
 
   const sections = Array.isArray(boot?.sections) ? boot.sections : [];
   const products = Array.isArray(boot?.products) ? boot.products : [];
+  const catalogPricingReady = !!user
+    && !!Number(pricelistId || 0)
+    && (!user?.is_distribuidor || !user?.odoo_partner_id || !!partnerId);
   const shouldHideIpanelPlegado4036 = catalogKind === "ipanel" && isIpanelLamasMeasureRange(dimensions);
 
   const scrollToSection = useCallback((sectionId) => {
@@ -586,38 +690,49 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
   }, [catalogKind, rulesQ.data]);
 
   const refreshCatalog = useCallback(async () => {
+    if (!catalogPricingReady) return;
     setRefreshing(true);
     try {
       await adminRefreshCatalog();
       const data = await getCatalogBootstrap(catalogKind);
-      setOdooBootstrap(data, catalogKind);
-      setBoot(data);
-      syncQuoteLinesFromCatalogProducts(data?.products || []);
+      const pricedData = await buildPricedCatalogBootstrap(data, { pricelistId, partnerId });
+      setOdooBootstrap(pricedData, catalogKind);
+      setBoot(pricedData);
+      syncQuoteLinesFromCatalogProducts(pricedData?.products || []);
     } finally {
       setRefreshing(false);
       setAutoloadAttempted(true);
     }
-  }, [catalogKind]);
+  }, [catalogKind, catalogPricingReady, pricelistId, partnerId]);
 
   useEffect(() => {
-    setBoot(getOdooBootstrap(catalogKind));
+    const cached = getOdooBootstrap(catalogKind);
+    setBoot(catalogPricingReady && pricingContextMatches(cached, pricelistId, partnerId) ? cached : null);
     setAutoloadAttempted(false);
     setOpenSectionIdState(readStoredOpenSectionId(catalogKind));
     sectionRefs.current.clear();
     pendingAutoScrollSectionIdRef.current = null;
-  }, [catalogKind]);
+  }, [catalogKind, catalogPricingReady, pricelistId, partnerId]);
 
   useEffect(() => {
-    if (autoloadAttempted) return;
+    if (autoloadAttempted || !catalogPricingReady) return;
+    const cached = getOdooBootstrap(catalogKind);
+    if (pricingContextMatches(cached, pricelistId, partnerId)) {
+      setBoot(cached);
+      syncQuoteLinesFromCatalogProducts(cached?.products || []);
+      setAutoloadAttempted(true);
+      return;
+    }
     let cancelled = false;
     (async () => {
       try {
         setRefreshing(true);
         const data = await getCatalogBootstrap(catalogKind);
+        const pricedData = await buildPricedCatalogBootstrap(data, { pricelistId, partnerId });
         if (cancelled) return;
-        setOdooBootstrap(data, catalogKind);
-        setBoot(data);
-        syncQuoteLinesFromCatalogProducts(data?.products || []);
+        setOdooBootstrap(pricedData, catalogKind);
+        setBoot(pricedData);
+        syncQuoteLinesFromCatalogProducts(pricedData?.products || []);
       } finally {
         if (!cancelled) {
           setRefreshing(false);
@@ -628,7 +743,7 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
     return () => {
       cancelled = true;
     };
-  }, [autoloadAttempted, catalogKind]);
+  }, [autoloadAttempted, catalogKind, catalogPricingReady, pricelistId, partnerId]);
 
   useEffect(() => {
     syncQuoteLinesFromCatalogProducts(products);
@@ -944,7 +1059,7 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
         <div className="dg-row dg-row--between dg-row--center">
           <h3 className="dg-h3">{title}</h3>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <Button variant="ghost" disabled={refreshing} onClick={refreshCatalog}>
+            <Button variant="ghost" disabled={refreshing || !catalogPricingReady} onClick={refreshCatalog}>
               {refreshing ? "Cargando…" : "Actualizar catálogo"}
             </Button>
             {catalogKind === "porton" ? (
@@ -955,9 +1070,11 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
         {catalogKind === "porton" && catalogHelpOpen ? <ExteriorHelpBox /> : null}
         <div className="spacer" />
         <div className="muted">
-          {refreshing
-            ? "Cargando catálogo automáticamente…"
-            : "No se pudo cargar el catálogo automáticamente. Podés reintentar con el botón de actualizar."}
+          {!catalogPricingReady
+            ? "Esperando lista de precios del usuario antes de cargar el catálogo…"
+            : refreshing
+              ? "Cargando catálogo con la lista de precios del usuario…"
+              : "No se pudo cargar el catálogo con la lista de precios del usuario. Podés reintentar con el botón de actualizar."}
         </div>
       </div>
     );
@@ -968,7 +1085,7 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
       <div className="dg-row dg-row--between dg-row--center">
         <h3 className="dg-h3">{title}</h3>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <Button variant="ghost" disabled={refreshing} onClick={refreshCatalog}>
+          <Button variant="ghost" disabled={refreshing || !catalogPricingReady} onClick={refreshCatalog}>
             {refreshing ? "Actualizando…" : "Actualizar catálogo"}
           </Button>
           {catalogKind === "porton" ? (

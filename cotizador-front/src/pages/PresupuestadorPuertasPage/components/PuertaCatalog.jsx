@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { getCatalogBootstrap, refreshCatalogBootstrap } from "../../../api/catalog.js";
+import { getPrices } from "../../../api/odoo.js";
 import { useQuoteStore } from "../../../domain/quote/store.js";
 import { useAuthStore } from "../../../domain/auth/store.js";
 import Button from "../../../ui/Button.jsx";
@@ -21,16 +22,91 @@ function isDisabledForUser(product, user) {
   return false;
 }
 
+function toPositiveInt(value) {
+  const n = Number(value || 0);
+  return Number.isFinite(n) && n > 0 ? Math.trunc(n) : 0;
+}
+function resolveProductPricingId(product = {}) {
+  return toPositiveInt(
+    product?.odoo_variant_id ||
+    product?.odoo_external_id ||
+    product?.odoo_product_id ||
+    product?.odoo_id ||
+    product?.odoo_template_id ||
+    product?.product_id ||
+    product?.id
+  );
+}
+async function buildPricedDoorCatalog(data, { pricelistId, partnerId }) {
+  const products = Array.isArray(data?.products) ? data.products : [];
+  const pl = toPositiveInt(pricelistId);
+  const partner = toPositiveInt(partnerId) || null;
+  if (!pl || !products.length) return { ...(data || {}), products: [] };
+
+  const lines = products
+    .map((product) => {
+      const productId = resolveProductPricingId(product);
+      const sourceProductId = toPositiveInt(product?.id);
+      if (!productId || !sourceProductId) return null;
+      return {
+        product_id: productId,
+        source_product_id: sourceProductId,
+        odoo_template_id: toPositiveInt(product?.odoo_template_id) || null,
+        qty: 1,
+      };
+    })
+    .filter(Boolean);
+
+  if (!lines.length) return { ...(data || {}), products: [] };
+
+  const pricesBySourceId = new Map();
+  const chunkSize = 80;
+  for (let index = 0; index < lines.length; index += chunkSize) {
+    const chunk = lines.slice(index, index + chunkSize);
+    const response = await getPrices({ pricelist_id: pl, partner_id: partner, lines: chunk });
+    if (Number(response?.pricelist_id || 0) !== Number(pl || 0)) {
+      throw new Error("Odoo devolvió precios de otra lista. Reintentá actualizar el catálogo.");
+    }
+    for (const item of Array.isArray(response?.prices) ? response.prices : []) {
+      const sourceId = toPositiveInt(item?.product_id);
+      if (sourceId) pricesBySourceId.set(sourceId, item);
+    }
+  }
+
+  const pricedProducts = products.map((product) => {
+    const sourceId = toPositiveInt(product?.id);
+    const priceInfo = pricesBySourceId.get(sourceId);
+    if (!priceInfo) return { ...product, price: 0, basePrice: 0, base_price: 0 };
+    const price = Number(priceInfo.price ?? 0);
+    const safePrice = Number.isFinite(price) ? price : 0;
+    return {
+      ...product,
+      price: safePrice,
+      basePrice: safePrice,
+      base_price: safePrice,
+      code: priceInfo.code ?? product?.code ?? null,
+      odoo_template_id: toPositiveInt(priceInfo.odoo_template_id || product?.odoo_template_id) || product?.odoo_template_id || null,
+    };
+  });
+
+  return { ...(data || {}), products: pricedProducts, pricing_context: { pricelist_id: pl, partner_id: partner } };
+}
+
 export default function PuertaCatalog() {
   const user = useAuthStore((s) => s.user);
   const addLine = useQuoteStore((s) => s.addLine);
   const forceRemoveLine = useQuoteStore((s) => s.forceRemoveLine);
   const lines = useQuoteStore((s) => s.lines);
+  const pricelistId = useQuoteStore((s) => s.pricelistId);
+  const partnerId = useQuoteStore((s) => s.partnerId);
   const [openSectionId, setOpenSectionId] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [pricedBoot, setPricedBoot] = useState(null);
+  const [pricingError, setPricingError] = useState("");
 
   const q = useQuery({ queryKey: ["catalog-bootstrap", "puerta"], queryFn: () => getCatalogBootstrap("puerta"), staleTime: 60 * 1000 });
-  const boot = q.data || null;
+  const rawBoot = q.data || null;
+  const boot = pricedBoot || null;
   const sections = useMemo(() => [...(boot?.sections || [])].sort((a, b) => Number(a.position || 0) - Number(b.position || 0) || String(a.name || "").localeCompare(String(b.name || ""), "es")), [boot]);
   const products = Array.isArray(boot?.products) ? boot.products : [];
 
@@ -61,6 +137,22 @@ export default function PuertaCatalog() {
   }, [lines, productsBySection, sections]);
 
   useEffect(() => {
+    setPricedBoot(null);
+    setPricingError("");
+    if (!rawBoot || !toPositiveInt(pricelistId)) return undefined;
+    let cancelled = false;
+    (async () => {
+      try {
+        const priced = await buildPricedDoorCatalog(rawBoot, { pricelistId, partnerId });
+        if (!cancelled) setPricedBoot(priced);
+      } catch (e) {
+        if (!cancelled) setPricingError(e?.message || "No se pudieron calcular los precios de la lista.");
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [rawBoot, pricelistId, partnerId]);
+
+  useEffect(() => {
     if (!sections.length) return;
     if (openSectionId && sections.some((s) => Number(s.id) === Number(openSectionId))) return;
     setOpenSectionId(Number(sections[0].id));
@@ -68,9 +160,17 @@ export default function PuertaCatalog() {
 
   const refreshCatalog = useCallback(async () => {
     setRefreshing(true);
-    try { await refreshCatalogBootstrap("puerta"); await q.refetch(); }
+    try {
+      await refreshCatalogBootstrap("puerta");
+      const result = await q.refetch();
+      const nextRaw = result?.data || null;
+      if (nextRaw && toPositiveInt(pricelistId)) {
+        const priced = await buildPricedDoorCatalog(nextRaw, { pricelistId, partnerId });
+        setPricedBoot(priced);
+      }
+    }
     finally { setRefreshing(false); }
-  }, [q]);
+  }, [q, pricelistId, partnerId]);
 
   function selectProductForSection(section, product) {
     const sectionId = Number(section.id);
@@ -87,6 +187,8 @@ export default function PuertaCatalog() {
 
   if (q.isLoading) return <div className="muted">Cargando catálogo de puertas...</div>;
   if (q.isError) return <div style={{ color: "#d93025" }}>{q.error.message}</div>;
+  if (pricingError) return <div style={{ color: "#d93025" }}>{pricingError}</div>;
+  if (!boot) return <div className="muted">Calculando precios de la lista asignada antes de mostrar el catálogo...</div>;
 
   return (
     <div>

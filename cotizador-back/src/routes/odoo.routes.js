@@ -237,7 +237,12 @@ export function buildOdooRouter(odoo) {
       if (!lines.length) throw new Error("Faltan lines[]");
 
       const partnerId = body.partner_id ? Number(body.partner_id) : false;
-      let pricelistId = req.user?.is_distribuidor ? (body.pricelist_id ? Number(body.pricelist_id) : null) : DEFAULT_PRICELIST_ID;
+      // Usar siempre la lista enviada por el frontend cuando ya fue resuelta.
+      // Antes, para usuarios no distribuidores se forzaba DEFAULT_PRICELIST_ID,
+      // entonces el primer cálculo podía salir con Predeterminado y recién después
+      // se corregía visualmente.
+      let pricelistId = body.pricelist_id ? Number(body.pricelist_id) : null;
+      if (!pricelistId && !req.user?.is_distribuidor) pricelistId = DEFAULT_PRICELIST_ID;
 
       if (!pricelistId) {
         const name = (process.env.ODOO_BASE_PRICELIST_NAME || process.env.ODOO_CUSTOMER_PRICELIST_NAME || "Predeterminado").trim();
