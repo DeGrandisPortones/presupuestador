@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useParams, useLocation } from "react-router-dom";
 import { useAuthStore } from "../../domain/auth/store.js";
 
-import { getPricelists, getPrices, getFinancingPreview } from "../../api/odoo";
+import { getEffectivePricelists, getPrices, getFinancingPreview } from "../../api/odoo";
 import {
   createQuote,
   getProductionPlanningEstimate,
@@ -746,7 +746,7 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
   }, [idParam, reset, user?.default_maps_url, setEndCustomer, initialLinkedPortonId]);
 
   const quoteQ = useQuery({ queryKey: ["quote", idParam], queryFn: () => getQuote(idParam), enabled: !!idParam });
-  const pricelistsQ = useQuery({ queryKey: ["pricelists"], queryFn: getPricelists });
+  const pricelistsQ = useQuery({ queryKey: ["effective-pricelist", user?.user_id || user?.id || "current"], queryFn: getEffectivePricelists, enabled: !!user, staleTime: 60 * 1000 });
   const expectedPricelist = useMemo(
     () => resolveExpectedPricelist({
       user,

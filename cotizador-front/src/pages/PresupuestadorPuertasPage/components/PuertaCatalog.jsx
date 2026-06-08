@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { getCatalogBootstrap, refreshCatalogBootstrap } from "../../../api/catalog.js";
-import { getPrices } from "../../../api/odoo.js";
 import { useQuoteStore } from "../../../domain/quote/store.js";
 import { useAuthStore } from "../../../domain/auth/store.js";
 import Button from "../../../ui/Button.jsx";
@@ -26,70 +25,34 @@ function toPositiveInt(value) {
   const n = Number(value || 0);
   return Number.isFinite(n) && n > 0 ? Math.trunc(n) : 0;
 }
-function resolveProductPricingId(product = {}) {
-  return toPositiveInt(
-    product?.odoo_variant_id ||
-    product?.odoo_external_id ||
-    product?.odoo_product_id ||
-    product?.odoo_id ||
-    product?.odoo_template_id ||
-    product?.product_id ||
-    product?.id
-  );
-}
-async function buildPricedDoorCatalog(data, { pricelistId, partnerId }) {
-  const products = Array.isArray(data?.products) ? data.products : [];
+function prepareDoorCatalogForPricelistContext(data, { pricelistId, partnerId }) {
   const pl = toPositiveInt(pricelistId);
   const partner = toPositiveInt(partnerId) || null;
-  if (!pl || !products.length) return { ...(data || {}), products: [] };
+  const products = Array.isArray(data?.products) ? data.products : [];
 
-  const lines = products
-    .map((product) => {
-      const productId = resolveProductPricingId(product);
-      const sourceProductId = toPositiveInt(product?.id);
-      if (!productId || !sourceProductId) return null;
-      return {
-        product_id: productId,
-        source_product_id: sourceProductId,
-        odoo_template_id: toPositiveInt(product?.odoo_template_id) || null,
-        qty: 1,
-      };
-    })
-    .filter(Boolean);
+  // No precalculamos todos los precios de Puertas porque eso puede superar el
+  // timeout. El catálogo se muestra sólo cuando ya hay lista efectiva, pero cada
+  // producto elegido pide su precio puntual con esa lista.
+  const safeProducts = products.map((product) => ({
+    ...product,
+    price: 0,
+    basePrice: 0,
+    base_price: 0,
+    list_price: 0,
+    listPrice: 0,
+    price_predeterminado: 0,
+    price_list: 0,
+    price_pending: true,
+    price_unresolved: true,
+    price_pricelist_id: pl || null,
+    price_partner_id: partner,
+  }));
 
-  if (!lines.length) return { ...(data || {}), products: [] };
-
-  const pricesBySourceId = new Map();
-  const chunkSize = 80;
-  for (let index = 0; index < lines.length; index += chunkSize) {
-    const chunk = lines.slice(index, index + chunkSize);
-    const response = await getPrices({ pricelist_id: pl, partner_id: partner, lines: chunk });
-    if (Number(response?.pricelist_id || 0) !== Number(pl || 0)) {
-      throw new Error("Odoo devolvió precios de otra lista. Reintentá actualizar el catálogo.");
-    }
-    for (const item of Array.isArray(response?.prices) ? response.prices : []) {
-      const sourceId = toPositiveInt(item?.product_id);
-      if (sourceId) pricesBySourceId.set(sourceId, item);
-    }
-  }
-
-  const pricedProducts = products.map((product) => {
-    const sourceId = toPositiveInt(product?.id);
-    const priceInfo = pricesBySourceId.get(sourceId);
-    if (!priceInfo) return { ...product, price: 0, basePrice: 0, base_price: 0 };
-    const price = Number(priceInfo.price ?? 0);
-    const safePrice = Number.isFinite(price) ? price : 0;
-    return {
-      ...product,
-      price: safePrice,
-      basePrice: safePrice,
-      base_price: safePrice,
-      code: priceInfo.code ?? product?.code ?? null,
-      odoo_template_id: toPositiveInt(priceInfo.odoo_template_id || product?.odoo_template_id) || product?.odoo_template_id || null,
-    };
-  });
-
-  return { ...(data || {}), products: pricedProducts, pricing_context: { pricelist_id: pl, partner_id: partner } };
+  return {
+    ...(data || {}),
+    products: safeProducts,
+    pricing_context: { pricelist_id: pl || null, partner_id: partner, mode: "selected-lines" },
+  };
 }
 
 export default function PuertaCatalog() {
@@ -137,19 +100,13 @@ export default function PuertaCatalog() {
   }, [lines, productsBySection, sections]);
 
   useEffect(() => {
-    setPricedBoot(null);
     setPricingError("");
-    if (!rawBoot || !toPositiveInt(pricelistId)) return undefined;
-    let cancelled = false;
-    (async () => {
-      try {
-        const priced = await buildPricedDoorCatalog(rawBoot, { pricelistId, partnerId });
-        if (!cancelled) setPricedBoot(priced);
-      } catch (e) {
-        if (!cancelled) setPricingError(e?.message || "No se pudieron calcular los precios de la lista.");
-      }
-    })();
-    return () => { cancelled = true; };
+    if (!rawBoot || !toPositiveInt(pricelistId)) {
+      setPricedBoot(null);
+      return undefined;
+    }
+    setPricedBoot(prepareDoorCatalogForPricelistContext(rawBoot, { pricelistId, partnerId }));
+    return undefined;
   }, [rawBoot, pricelistId, partnerId]);
 
   useEffect(() => {
@@ -165,8 +122,7 @@ export default function PuertaCatalog() {
       const result = await q.refetch();
       const nextRaw = result?.data || null;
       if (nextRaw && toPositiveInt(pricelistId)) {
-        const priced = await buildPricedDoorCatalog(nextRaw, { pricelistId, partnerId });
-        setPricedBoot(priced);
+        setPricedBoot(prepareDoorCatalogForPricelistContext(nextRaw, { pricelistId, partnerId }));
       }
     }
     finally { setRefreshing(false); }
@@ -188,7 +144,7 @@ export default function PuertaCatalog() {
   if (q.isLoading) return <div className="muted">Cargando catálogo de puertas...</div>;
   if (q.isError) return <div style={{ color: "#d93025" }}>{q.error.message}</div>;
   if (pricingError) return <div style={{ color: "#d93025" }}>{pricingError}</div>;
-  if (!boot) return <div className="muted">Calculando precios de la lista asignada antes de mostrar el catálogo...</div>;
+  if (!boot) return <div className="muted">Esperando lista de precios del usuario antes de mostrar el catálogo...</div>;
 
   return (
     <div>

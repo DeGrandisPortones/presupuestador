@@ -60,6 +60,9 @@ function dflexLineSnapshot(lines = []) {
     free_quantity: !!line?.free_quantity,
     quantity_editable: !!line?.quantity_editable,
     manual_price: !!line?.manual_price,
+    price_pending: !!line?.price_pending,
+    price_resolved: !!line?.price_resolved,
+    price_pricelist_id: line?.price_pricelist_id ?? null,
     auto_system_item: !!line?.auto_system_item,
     previously_billed_line: !!line?.previously_billed_line,
   }));
@@ -269,6 +272,9 @@ export const useQuoteStore = create((set, get) => ({
           quantity_editable: freeQuantity,
           price_editable: isDistributorOwnSupplyProductId(l.product_id) || !!l.price_editable,
           manual_price: !!l.manual_price,
+          price_pending: false,
+          price_resolved: true,
+          price_pricelist_id: q.pricelist_id ?? l.price_pricelist_id ?? null,
           previously_billed_line: !!l.previously_billed_line,
           locked_line: !!l.locked_line,
           line_key: String(l.line_key || l.product_id || idx),
@@ -398,6 +404,8 @@ export const useQuoteStore = create((set, get) => ({
       const isSurfaceQuantity = !!p.uses_surface_quantity;
       const isIntegerQty = isIntegerQtyProductId(id);
       const isFreeQuantity = isShippingProductId(id) || !!p.free_quantity || !!p.quantity_editable || String(p.quantity_mode || "").toLowerCase() === "free";
+      const productPricePending = !!p.price_pending || !!p.price_unresolved;
+      const skipOdooPricing = isDistributorOwnSupplyProductId(id) || !!p.manual_price;
       const surfaceQty = getSurfaceQuantity(s.dimensions);
 
       if (existing) {
@@ -426,8 +434,9 @@ export const useQuoteStore = create((set, get) => ({
             raw_name: getClientFacingName(p),
             code: p.code || null,
             qty: isSurfaceQuantity ? surfaceQty : (isFreeQuantity ? 1 : (isIntegerQty ? 0 : 1)),
-            basePrice:
-              Number(
+            basePrice: productPricePending && !skipOdooPricing
+              ? 0
+              : (Number(
                 p.price ??
                   p.basePrice ??
                   p.base_price ??
@@ -436,7 +445,10 @@ export const useQuoteStore = create((set, get) => ({
                   p.price_predeterminado ??
                   p.price_list ??
                   0,
-              ) || 0,
+              ) || 0),
+            price_pending: productPricePending && !skipOdooPricing,
+            price_resolved: !(productPricePending && !skipOdooPricing),
+            price_pricelist_id: p.price_pricelist_id ?? null,
             surface_quantity: isSurfaceQuantity,
             free_quantity: isFreeQuantity,
             quantity_editable: isFreeQuantity,
@@ -536,6 +548,10 @@ export const useQuoteStore = create((set, get) => ({
         return {
           ...l,
           basePrice: typeof next.price === "number" ? next.price : l.basePrice,
+          price_pending: false,
+          price_resolved: true,
+          price_pricelist_id: pricesResponse?.pricelist_id ?? l.price_pricelist_id ?? null,
+          price_partner_id: pricesResponse?.partner_id ?? l.price_partner_id ?? null,
           code: next.code ?? l.code,
           raw_name: l.raw_name,
           name: l.name || next.name || l.raw_name,
@@ -576,6 +592,9 @@ export const useQuoteStore = create((set, get) => ({
           quantity_editable: freeQuantity,
           price_editable: isDistributorOwnSupplyProductId(l.product_id) || !!l.price_editable,
           manual_price: !!l.manual_price,
+          price_pending: false,
+          price_resolved: true,
+          price_pricelist_id: l.price_pricelist_id ?? s.pricelistId ?? null,
           previously_billed_line: !!l.previously_billed_line,
           locked_line: !!l.locked_line,
           line_key: l.line_key || null,

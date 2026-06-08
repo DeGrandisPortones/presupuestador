@@ -4,7 +4,6 @@ import { getOdooBootstrap, setOdooBootstrap } from "../../../domain/odoo/bootstr
 import { useQuoteStore } from "../../../domain/quote/store";
 import { useAuthStore } from "../../../domain/auth/store.js";
 import { getCatalogBootstrap } from "../../../api/catalog.js";
-import { getPrices } from "../../../api/odoo.js";
 import {
   adminGetTechnicalMeasurementRules,
   adminRefreshCatalog,
@@ -18,7 +17,7 @@ const IPANEL_LAMAS_RANGE_MIN_WIDTH_M = 1.13;
 const IPANEL_LAMAS_RANGE_MAX_WIDTH_M = 2;
 const IPANEL_LAMAS_RANGE_MIN_HEIGHT_M = 2.45;
 const IPANEL_LAMAS_RANGE_MAX_HEIGHT_M = 3;
-const CATALOG_PRICING_VERSION = 2;
+const CATALOG_PRICING_VERSION = 3;
 
 function dflexCatalogDebugEnabled() {
   try {
@@ -260,67 +259,34 @@ function pricingContextMatches(boot, pricelistId, partnerId) {
     && actual.pricelist_id === expected.pricelist_id
     && (actual.partner_id || null) === (expected.partner_id || null);
 }
-async function buildPricedCatalogBootstrap(data, { pricelistId, partnerId }) {
+function prepareCatalogForPricelistContext(data, { pricelistId, partnerId }) {
   const products = Array.isArray(data?.products) ? data.products : [];
   const context = normalizePriceContext(pricelistId, partnerId);
-  if (!context.pricelist_id || !products.length) {
-    return { ...(data || {}), pricing_context: context };
-  }
 
-  const lines = products
-    .map((product) => {
-      const productId = resolveProductPricingId(product);
-      const sourceProductId = Number(product?.id || 0);
-      if (!productId || !sourceProductId) return null;
-      return {
-        product_id: productId,
-        source_product_id: sourceProductId,
-        odoo_template_id: Number(product?.odoo_template_id || 0) || null,
-        qty: 1,
-      };
-    })
-    .filter(Boolean);
-
-  if (!lines.length) return { ...(data || {}), pricing_context: context };
-
-  const pricesBySourceId = new Map();
-  const chunkSize = 80;
-  for (let index = 0; index < lines.length; index += chunkSize) {
-    const chunk = lines.slice(index, index + chunkSize);
-    const response = await getPrices({
-      pricelist_id: context.pricelist_id,
-      partner_id: context.partner_id,
-      lines: chunk,
-    });
-    if (Number(response?.pricelist_id || 0) !== Number(context.pricelist_id || 0)) {
-      throw new Error("Odoo devolvió precios de otra lista. Reintentá actualizar el catálogo.");
-    }
-    for (const item of Array.isArray(response?.prices) ? response.prices : []) {
-      const sourceId = Number(item?.product_id || 0);
-      if (!sourceId) continue;
-      pricesBySourceId.set(sourceId, item);
-    }
-  }
-
-  const pricedProducts = products.map((product) => {
-    const sourceId = Number(product?.id || 0);
-    const priceInfo = pricesBySourceId.get(sourceId);
-    if (!priceInfo) return product;
-    const price = Number(priceInfo.price ?? 0);
-    return {
-      ...product,
-      price: Number.isFinite(price) ? price : product?.price,
-      basePrice: Number.isFinite(price) ? price : product?.basePrice,
-      base_price: Number.isFinite(price) ? price : product?.base_price,
-      code: priceInfo.code ?? product?.code ?? null,
-      odoo_template_id: Number(priceInfo.odoo_template_id || product?.odoo_template_id || 0) || product?.odoo_template_id || null,
-    };
-  });
+  // No precalculamos todo el catálogo contra Odoo: en catálogos grandes esa llamada
+  // puede superar el timeout del navegador. En cambio, marcamos el catálogo como
+  // perteneciente a la lista correcta y dejamos los productos sin precio inicial.
+  // El precio real se pide sólo para los productos seleccionados, usando el
+  // pricelist_id correcto. Así nunca se muestra primero la lista predeterminada.
+  const safeProducts = products.map((product) => ({
+    ...product,
+    price: 0,
+    basePrice: 0,
+    base_price: 0,
+    list_price: 0,
+    listPrice: 0,
+    price_predeterminado: 0,
+    price_list: 0,
+    price_pending: true,
+    price_unresolved: true,
+    price_pricelist_id: context.pricelist_id,
+    price_partner_id: context.partner_id,
+  }));
 
   return {
     ...(data || {}),
-    products: pricedProducts,
-    pricing_context: { ...context, version: CATALOG_PRICING_VERSION },
+    products: safeProducts,
+    pricing_context: { ...context, version: CATALOG_PRICING_VERSION, mode: "selected-lines" },
   };
 }
 
@@ -695,7 +661,7 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
     try {
       await adminRefreshCatalog();
       const data = await getCatalogBootstrap(catalogKind);
-      const pricedData = await buildPricedCatalogBootstrap(data, { pricelistId, partnerId });
+      const pricedData = prepareCatalogForPricelistContext(data, { pricelistId, partnerId });
       setOdooBootstrap(pricedData, catalogKind);
       setBoot(pricedData);
       syncQuoteLinesFromCatalogProducts(pricedData?.products || []);
@@ -728,7 +694,7 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
       try {
         setRefreshing(true);
         const data = await getCatalogBootstrap(catalogKind);
-        const pricedData = await buildPricedCatalogBootstrap(data, { pricelistId, partnerId });
+        const pricedData = prepareCatalogForPricelistContext(data, { pricelistId, partnerId });
         if (cancelled) return;
         setOdooBootstrap(pricedData, catalogKind);
         setBoot(pricedData);

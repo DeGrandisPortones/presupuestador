@@ -10,6 +10,17 @@ export async function getPricelists() {
   return data.pricelists || [];
 }
 
+export async function getEffectivePricelist() {
+  const { data } = await http.get("/api/odoo/effective-pricelist");
+  if (!data?.ok) throw new Error(data?.error || "No se pudo resolver la lista de precios del usuario");
+  return data.pricelist || null;
+}
+
+export async function getEffectivePricelists() {
+  const pricelist = await getEffectivePricelist();
+  return pricelist?.id ? [pricelist] : [];
+}
+
 export async function searchProducts({ query = "", limit = 10 }) {
   const boot = getOdooBootstrap();
   const q = (query || "").toString().trim().toLowerCase();

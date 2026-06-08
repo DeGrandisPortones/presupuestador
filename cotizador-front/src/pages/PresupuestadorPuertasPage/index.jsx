@@ -14,7 +14,7 @@ import { useAuthStore } from "../../domain/auth/store.js";
 import { useQuoteStore } from "../../domain/quote/store.js";
 import { IVA_RATE_DEFAULT } from "../../domain/quote/defaults.js";
 import { calcTotals, resolveQuoteAdjustmentPercent, resolveQuoteIvaRate } from "../../domain/quote/pricing.js";
-import { getPrices, getPricelists, getFinancingPreview } from "../../api/odoo.js";
+import { getPrices, getEffectivePricelists, getFinancingPreview } from "../../api/odoo.js";
 import { createQuote, getQuote, updateQuote, confirmQuote, listQuotes } from "../../api/quotes.js";
 import { downloadPresupuestoPdf, downloadProformaPdf } from "../../api/pdf.js";
 import { validateArgentinaPhone, validateEmailAddress, validateGoogleMapsUrl } from "../../utils/contactValidation.js";
@@ -219,7 +219,7 @@ export default function PresupuestadorPuertasPage() {
   }, [idParam, reset, user?.default_maps_url, setEndCustomer]);
 
   const quoteQ = useQuery({ queryKey: ["quote", idParam], queryFn: () => getQuote(idParam), enabled: !!idParam });
-  const pricelistsQ = useQuery({ queryKey: ["pricelists"], queryFn: getPricelists });
+  const pricelistsQ = useQuery({ queryKey: ["effective-pricelist", user?.user_id || user?.id || "current"], queryFn: getEffectivePricelists, enabled: !!user, staleTime: 60 * 1000 });
   const expectedPricelist = useMemo(
     () => resolveExpectedPricelist({
       user,

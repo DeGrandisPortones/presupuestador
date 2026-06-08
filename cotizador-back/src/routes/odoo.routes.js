@@ -11,6 +11,44 @@ function toPositiveInt(value) {
   const n = Number(value || 0);
   return Number.isFinite(n) && n > 0 ? Math.trunc(n) : 0;
 }
+function getAssignedPricelistIdFromUser(user) {
+  return toPositiveInt(user?.odoo_pricelist_id || user?.pricelist_id || user?.assigned_pricelist_id || null);
+}
+async function resolveEffectivePricelistIdForUser(odoo, user, explicitPricelistId = null) {
+  const explicit = toPositiveInt(explicitPricelistId);
+  if (explicit) return explicit;
+
+  const assigned = getAssignedPricelistIdFromUser(user);
+  if (assigned) return assigned;
+
+  const configuredDefault = toPositiveInt(process.env.ODOO_DEFAULT_PRICELIST_ID);
+  if (configuredDefault) return configuredDefault;
+
+  const name = (process.env.ODOO_BASE_PRICELIST_NAME || process.env.ODOO_CUSTOMER_PRICELIST_NAME || "Predeterminado").trim();
+  const byName = await findPricelistIdByName(odoo, name);
+  if (byName) return byName;
+
+  throw new Error(`No existe la lista de precios "${name}"`);
+}
+async function readPricelistById(odoo, pricelistId) {
+  const id = toPositiveInt(pricelistId);
+  if (!id) return null;
+  const rows = await odoo.executeKw(
+    "product.pricelist",
+    "read",
+    [[id]],
+    { fields: ["id", "name", "currency_id", "active"] }
+  );
+  const p = Array.isArray(rows) ? rows[0] || null : null;
+  if (!p) return null;
+  return {
+    id: p.id,
+    name: p.name,
+    active: p.active,
+    currency_id: Array.isArray(p.currency_id) ? p.currency_id[0] : p.currency_id,
+    currency_name: Array.isArray(p.currency_id) ? p.currency_id[1] : null,
+  };
+}
 
 export function buildOdooRouter(odoo) {
   const router = express.Router();
@@ -85,6 +123,17 @@ export function buildOdooRouter(odoo) {
 
       console.log("[ODOO DEBUG PRODUCT]", debug);
       res.json(debug);
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  router.get("/effective-pricelist", requireAuth, async (req, res, next) => {
+    try {
+      const pricelistId = await resolveEffectivePricelistIdForUser(odoo, req.user, null);
+      const pricelist = await readPricelistById(odoo, pricelistId);
+      if (!pricelist?.id) throw new Error(`No se pudo leer la lista de precios ${pricelistId}`);
+      res.json({ ok: true, pricelist, pricelists: [pricelist] });
     } catch (e) {
       next(e);
     }
@@ -237,18 +286,10 @@ export function buildOdooRouter(odoo) {
       if (!lines.length) throw new Error("Faltan lines[]");
 
       const partnerId = body.partner_id ? Number(body.partner_id) : false;
-      // Usar siempre la lista enviada por el frontend cuando ya fue resuelta.
-      // Antes, para usuarios no distribuidores se forzaba DEFAULT_PRICELIST_ID,
-      // entonces el primer cálculo podía salir con Predeterminado y recién después
-      // se corregía visualmente.
-      let pricelistId = body.pricelist_id ? Number(body.pricelist_id) : null;
-      if (!pricelistId && !req.user?.is_distribuidor) pricelistId = DEFAULT_PRICELIST_ID;
-
-      if (!pricelistId) {
-        const name = (process.env.ODOO_BASE_PRICELIST_NAME || process.env.ODOO_CUSTOMER_PRICELIST_NAME || "Predeterminado").trim();
-        pricelistId = await findPricelistIdByName(odoo, name);
-        if (!pricelistId) throw new Error(`No existe la lista de precios "${name}"`);
-      }
+      // El backend resuelve la lista efectiva: primero la lista enviada por una
+      // cotización guardada/flujo actual; si no viene, la lista asignada al usuario;
+      // y sólo si el usuario no tiene lista asignada cae a la predeterminada.
+      const pricelistId = await resolveEffectivePricelistIdForUser(odoo, req.user, body.pricelist_id);
 
       const out = [];
       for (const l of lines) {
