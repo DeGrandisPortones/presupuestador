@@ -10,6 +10,7 @@ const HEIGHT_MIN_M = 2;
 const HEIGHT_MAX_M = 3;
 const IPANEL_WIDTH_MAX_M = 1.13;
 const IPANEL_HEIGHT_MAX_M = 2.45;
+const IPANEL_LAMAS_22_PRODUCT_IDS = new Set([4061, 3590]);
 const PARANTES_SPECIAL_PRODUCT_ID = 3006;
 const APTOS_PARA_REVESTIR_TYPE = "para_revestir_con_al_pvc_otros";
 const DEFAULT_PARANTES_TUBE_DISCOUNT_MM = 40;
@@ -38,6 +39,26 @@ function toNumber(v) { const n = parseOptionalNumber(v); return Number.isFinite(
 function normalizeDecimal(v) { return String(v ?? "").replace(/[^0-9.,]/g, ""); }
 function normalizeDecimalWithDot(v) { return normalizeDecimal(v).replace(",", "."); }
 function normalizeIntegerInput(v) { return String(v ?? "").replace(/\D+/g, ""); }
+function normalizeIpanelDivisionsInput(v) {
+  const raw = normalizeIntegerInput(v);
+  if (!raw) return "";
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return "";
+  return String(Math.min(18, Math.max(0, Math.trunc(n))));
+}
+function clampIpanelDivisions(v) {
+  const raw = normalizeIntegerInput(v);
+  if (!raw) return "";
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return "";
+  return String(Math.min(18, Math.max(2, Math.trunc(n))));
+}
+function isIpanelDivisionsOutOfBounds(v) {
+  const raw = String(v ?? "").trim();
+  if (!raw) return false;
+  const n = Number(raw);
+  return !Number.isFinite(n) || n < 2 || n > 18 || !Number.isInteger(n);
+}
 function norm(v) {
   return String(v || "")
     .normalize("NFD")
@@ -117,7 +138,7 @@ function normalizeDecimalMmInput(v) { return String(v ?? "").replace(/[^0-9.,]/g
 
 const LINE_ID_KEYS_FOR_PARANTES = [
   "product_id", "id", "presupuestador_id", "presupuestador_product_id", "productId", "productID",
-  "catalog_product_id", "catalogProductId", "odoo_external_id", "odoo_id", "odoo_template_id", "odoo_variant_id",
+  "catalog_product_id", "catalogProductId", "odoo_product_id", "odoo_external_id", "odoo_id", "odoo_template_id", "odoo_variant_id",
 ];
 function collectLineProductIdsForParantes(line) {
   const ids = [];
@@ -844,6 +865,10 @@ export default function PortonDimensions({ kind = "porton" }) {
     const a = width * height;
     return Number.isFinite(a) ? a : 0;
   }, [width, height]);
+  const selectedProductIdsForIpanel = useMemo(() => getBudgetProductIdSetFromLines(lines), [lines]);
+  const hasIpanelLamas22Panel = isIpanel && [...IPANEL_LAMAS_22_PRODUCT_IDS].some((id) => selectedProductIdsForIpanel.has(id));
+  const ipanelDivisionsValue = String(dimensions?.ipanel_divisiones ?? dimensions?.cantidad_divisiones_ipanel ?? "");
+  const ipanelDivisionsHasError = hasIpanelLamas22Panel && isIpanelDivisionsOutOfBounds(ipanelDivisionsValue);
   const params = useMemo(() => getRulesParams(rulesQ.data), [rulesQ.data]);
   const preview = useMemo(() => buildCalculatedPreview({ widthM: width, heightM: height, lines, params, portonType, dimensions }), [width, height, lines, params, portonType, dimensions]);
   const aptoParaRevestir = isAptoDerivedType(portonType);
@@ -1045,6 +1070,25 @@ export default function PortonDimensions({ kind = "porton" }) {
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 12, alignItems: "start" }}>
         <FieldBox label="Ancho (m)" helper={widthHelper} helperColor={widthOutOfBounds ? "#b91c1c" : undefined}><Input type="text" inputMode="decimal" value={widthRaw} onChange={(v) => setDimensions({ width: normalizeDecimal(v) })} onBlur={(e) => setDimensions({ width: normalizeDecimal(e?.target?.value) })} placeholder={isIpanel ? "Ej: 1.13" : "Ej: 3.2"} style={inputStateStyle(widthOutOfBounds)} /></FieldBox>
         <FieldBox label="Alto (m)" helper={heightHelper} helperColor={heightOutOfBounds ? "#b91c1c" : undefined}><Input type="text" inputMode="decimal" value={heightRaw} onChange={(v) => setDimensions({ height: normalizeDecimal(v) })} onBlur={(e) => setDimensions({ height: normalizeDecimal(e?.target?.value) })} placeholder={heightPlaceholder} style={inputStateStyle(heightOutOfBounds)} /></FieldBox>
+        {hasIpanelLamas22Panel ? (
+          <FieldBox label="Cantidad de divisiones" helper="Entero positivo entre 2 y 18." helperColor={ipanelDivisionsHasError ? "#b91c1c" : undefined}>
+            <Input
+              type="text"
+              inputMode="numeric"
+              value={ipanelDivisionsValue}
+              onChange={(v) => {
+                const next = normalizeIpanelDivisionsInput(v);
+                setDimensions({ ipanel_divisiones: next, cantidad_divisiones_ipanel: next });
+              }}
+              onBlur={(e) => {
+                const next = clampIpanelDivisions(e?.target?.value);
+                setDimensions({ ipanel_divisiones: next, cantidad_divisiones_ipanel: next });
+              }}
+              placeholder="Ej: 4"
+              style={inputStateStyle(ipanelDivisionsHasError)}
+            />
+          </FieldBox>
+        ) : null}
         {isPlegados ? (<>
           <FieldBox label="Superficie del plegado"><div style={{ fontWeight: 800, fontSize: 16, minHeight: 40, display: "flex", alignItems: "center", padding: "9px 12px", borderRadius: 10, border: "1px solid #d1d5db", background: "#f3f4f6", color: "#334155" }}>{area ? `${area.toFixed(2)} m2` : "-"}</div></FieldBox>
           <FieldBox label="Descripción del plegado" helper="Información técnica o detalle que verá Comercial y Técnica."><textarea value={String(dimensions?.plegado_descripcion ?? dimensions?.descripcion_plegado ?? dimensions?.description ?? "")} onChange={(e) => setDimensions({ plegado_descripcion: e.target.value, descripcion_plegado: e.target.value })} rows={3} style={{ width: "100%", borderRadius: 10, border: "1px solid #ddd", padding: "10px 12px", resize: "vertical", fontFamily: "inherit" }} placeholder="Describí el plegado, material, observaciones o cualquier dato técnico necesario..." /></FieldBox>

@@ -12,6 +12,11 @@ import Button from "../../../ui/Button";
 
 const CATALOG_KINDS = new Set(["porton", "ipanel", "plegados", "otros"]);
 const APTOS_PARA_REVESTIR_TYPE = "para_revestir_con_al_pvc_otros";
+const IPANEL_BLOCKED_PLEGADO_PRODUCT_IDS = new Set([4036, 3565]);
+const IPANEL_LAMAS_RANGE_MIN_WIDTH_M = 1.13;
+const IPANEL_LAMAS_RANGE_MAX_WIDTH_M = 2;
+const IPANEL_LAMAS_RANGE_MIN_HEIGHT_M = 2.45;
+const IPANEL_LAMAS_RANGE_MAX_HEIGHT_M = 3;
 
 function dflexCatalogDebugEnabled() {
   try {
@@ -86,6 +91,23 @@ function ExteriorHelpBox() {
 function normalizeCatalogKind(kind) {
   const normalized = String(kind || "porton").toLowerCase().trim();
   return CATALOG_KINDS.has(normalized) ? normalized : "porton";
+}
+function parseDimensionNumber(value) {
+  const raw = String(value ?? "").trim().replace(",", ".");
+  if (!raw) return 0;
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : 0;
+}
+function isIpanelLamasMeasureRange(dimensions = {}) {
+  const width = parseDimensionNumber(dimensions?.width);
+  const height = parseDimensionNumber(dimensions?.height);
+  return width >= IPANEL_LAMAS_RANGE_MIN_WIDTH_M
+    && width <= IPANEL_LAMAS_RANGE_MAX_WIDTH_M
+    && height >= IPANEL_LAMAS_RANGE_MIN_HEIGHT_M
+    && height <= IPANEL_LAMAS_RANGE_MAX_HEIGHT_M;
+}
+function productMatchesIdSet(product = {}, idSet) {
+  return collectProductIdsFromProduct(product).some((id) => idSet.has(Number(id)));
 }
 
 function openSectionStorageKey(kind) {
@@ -195,6 +217,7 @@ function collectProductIdsFromProduct(product = {}) {
     product?.id,
     product?.product_id,
     product?.odoo_id,
+    product?.odoo_product_id,
     product?.odoo_template_id,
     product?.odoo_variant_id,
     product?.odoo_external_id,
@@ -208,6 +231,7 @@ function collectProductIdsFromLine(line = {}) {
     line?.product_id,
     line?.id,
     line?.odoo_id,
+    line?.odoo_product_id,
     line?.odoo_template_id,
     line?.odoo_variant_id,
     line?.odoo_external_id,
@@ -435,6 +459,7 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
   const forceRemoveLine = useQuoteStore((s) => s.forceRemoveLine);
   const catalogSelectionKey = useQuoteStore((s) => buildCatalogSelectionKey(s.lines));
   const lines = useMemo(() => parseCatalogSelectionKey(catalogSelectionKey), [catalogSelectionKey]);
+  const dimensions = useQuoteStore((s) => s.dimensions);
   const portonType = useQuoteStore((s) => s.portonType);
   const setPortonType = useQuoteStore((s) => s.setPortonType);
 
@@ -458,6 +483,7 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
 
   const sections = Array.isArray(boot?.sections) ? boot.sections : [];
   const products = Array.isArray(boot?.products) ? boot.products : [];
+  const shouldHideIpanelPlegado4036 = catalogKind === "ipanel" && isIpanelLamasMeasureRange(dimensions);
 
   const scrollToSection = useCallback((sectionId) => {
     const id = Number(sectionId || 0);
@@ -790,6 +816,13 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
   }, [catalogKind, products, autoBudgetProductRules, selectedProductIdsForAutomationKey, selectedProductIdsForAutomation, selectedProductIdsGlobalKey, selectedProductIdsGlobal, isAptoParaRevestir, addLine, forceRemoveLine]);
 
   useEffect(() => {
+    if (!shouldHideIpanelPlegado4036) return;
+    if (!selectedProductIdsGlobal.has(4036) && !selectedProductIdsGlobal.has(3565)) return;
+    forceRemoveLine(4036);
+    forceRemoveLine(3565);
+  }, [shouldHideIpanelPlegado4036, selectedProductIdsGlobalKey, selectedProductIdsGlobal, forceRemoveLine]);
+
+  useEffect(() => {
     if (!visibleSections.length) return;
 
     const visibleIds = new Set(visibleSections.map((section) => Number(section.id)));
@@ -957,7 +990,10 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
           {visibleSections.map((section) => {
             const sectionId = Number(section.id);
             const isOpen = openSectionId === sectionId;
-            const sectionProducts = productsBySection.get(sectionId) || [];
+            const rawSectionProducts = productsBySection.get(sectionId) || [];
+            const sectionProducts = shouldHideIpanelPlegado4036
+              ? rawSectionProducts.filter((product) => !productMatchesIdSet(product, IPANEL_BLOCKED_PLEGADO_PRODUCT_IDS))
+              : rawSectionProducts;
             const selectedInSection = selectedProductIdsBySection.get(sectionId) || new Set();
             return (
               <div

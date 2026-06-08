@@ -48,9 +48,9 @@ const IPANEL_WIDTH_MAX_M = 1.13;
 const IPANEL_HEIGHT_MAX_M = 2.45;
 const IPANEL_LAMAS_WIDTH_MAX_M = 2;
 const IPANEL_LAMAS_HEIGHT_MAX_M = 3;
-const IPANEL_LAMAS_PRODUCT_ID = 3974;
-const IPANEL_LAMAS_ODOO_ID = 3503;
-const IPANEL_NON_LAMAS_PLEGADO_PRODUCT_IDS = [4036, 3973];
+const IPANEL_LAMAS_PRODUCT_ID = 4061;
+const IPANEL_LAMAS_ODOO_ID = 3590;
+const IPANEL_NON_LAMAS_PLEGADO_PRODUCT_IDS = [4036, 3565];
 const PREVIOUSLY_BILLED_PRODUCT_ID = -900001;
 function normalizeCatalogKind(kind) { return String(kind || "porton").toLowerCase().trim(); }
 
@@ -153,19 +153,8 @@ function patchIpanelLamasOnlyUi(enabled) {
     const cards = Array.from(item.querySelectorAll(".dg-product-card"));
     for (const card of cards) {
       const text = String(card.textContent || "");
-      const normalized = normalizeUiText(text);
-      const isLamas = /ID Presupuestador:\s*3974\b/i.test(text) || /ID Odoo:\s*3503\b/i.test(text) || normalized.includes("revestimiento en lamas");
-      card.style.display = enabled && !isLamas ? "none" : "";
-    }
-
-    const meta = item.querySelector(".dg-acc-meta");
-    if (meta) {
-      if (enabled) {
-        const selectedPart = String(meta.textContent || "Sin selección").split("·")[0].trim() || "Sin selección";
-        meta.textContent = `${selectedPart} · 1`;
-      } else {
-        meta.textContent = meta.textContent;
-      }
+      const isBlockedPlegado = /ID Presupuestador:\s*4036\b/i.test(text) || /ID Odoo:\s*3565\b/i.test(text);
+      card.style.display = enabled && isBlockedPlegado ? "none" : "";
     }
   }
 }
@@ -467,9 +456,17 @@ function validateDimensionsRequired(payload, kind = "porton") {
     if (width > IPANEL_LAMAS_WIDTH_MAX_M) throw new Error(`El ancho del ${itemLabel} no puede superar 2.00 m. Entre 1.13 m y 2.00 m sólo se puede producir en lamas.`);
     if (height > IPANEL_LAMAS_HEIGHT_MAX_M) throw new Error(`El alto del ${itemLabel} no puede superar 3.00 m. Entre 2.45 m y 3.00 m sólo se puede producir en lamas.`);
 
+    if (hasIpanelLamasProduct(payload)) {
+      const divisionsRaw = dims?.ipanel_divisiones ?? dims?.cantidad_divisiones_ipanel;
+      const divisions = Number(String(divisionsRaw ?? "").trim());
+      if (!Number.isInteger(divisions) || divisions < 2 || divisions > 18) {
+        throw new Error("Completá la cantidad de divisiones del Ipanel con un número entero entre 2 y 18.");
+      }
+    }
+
     if (isIpanelExtendedLamasDimensions(dims)) {
       if (!hasIpanelLamasProduct(payload)) {
-        throw new Error("Las medidas ingresadas sólo son posibles en Revestimiento en lamas. En Tipo de plegado elegí Revestimiento en lamas.");
+        throw new Error("Las medidas ingresadas sólo son posibles en Panel en Lamas 22mm. Seleccioná ese ítem para continuar.");
       }
       return;
     }
@@ -801,10 +798,7 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
         useQuoteStore.setState({ lines: nextLines });
       }
 
-      if (!ipanelLamasAlertShownRef.current) {
-        window.alert("Las medidas ingresadas sólo es posible producirlas en lamas. En Tipo de plegado sólo quedará disponible Revestimiento en lamas.");
-        ipanelLamasAlertShownRef.current = true;
-      }
+      ipanelLamasAlertShownRef.current = true;
     } else {
       ipanelLamasAlertShownRef.current = false;
     }
