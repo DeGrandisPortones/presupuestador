@@ -3,17 +3,32 @@ import { dbQuery } from "../db.js";
 import { signToken, requireAuth } from "../auth.js";
 import { ensureUsersAdminColumns } from "../usersDb.js";
 
+function userCanUseAssignedPricelist({ is_superuser, is_distribuidor, is_vendedor } = {}) {
+  // La lista asignada de Odoo se expone al frontend solamente para distribuidores puros.
+  // Vendedores y superusuarios deben cotizar con Predeterminada.
+  return !!is_distribuidor && !is_vendedor && !is_superuser;
+}
+
 function withEffectiveRoles(user) {
   const isSuperuser = !!user?.is_superuser;
+  const isDistribuidor = isSuperuser || !!user?.is_distribuidor;
+  const isVendedor = isSuperuser || !!user?.is_vendedor;
+  const canUseAssignedPricelist = userCanUseAssignedPricelist({
+    is_superuser: isSuperuser,
+    is_distribuidor: isDistribuidor,
+    is_vendedor: isVendedor,
+  });
+
   return {
     ...user,
     is_superuser: isSuperuser,
-    is_distribuidor: isSuperuser || !!user?.is_distribuidor,
-    is_vendedor: isSuperuser || !!user?.is_vendedor,
+    is_distribuidor: isDistribuidor,
+    is_vendedor: isVendedor,
     is_enc_comercial: isSuperuser || !!user?.is_enc_comercial,
     is_rev_tecnica: isSuperuser || !!user?.is_rev_tecnica,
     is_medidor: isSuperuser || !!user?.is_medidor,
     is_logistica: isSuperuser || !!user?.is_logistica,
+    odoo_pricelist_id: canUseAssignedPricelist ? (user?.odoo_pricelist_id ?? null) : null,
   };
 }
 
