@@ -15,6 +15,8 @@ const IVA_RATE = 0.21;
 const TACA_TACA_PLAN_NAME = String(process.env.ODOO_TACA_TACA_PLAN_NAME || "Taca Taca").trim();
 const SHIPPING_PRODUCT_IDS = new Set([2842]);
 const DISTRIBUTOR_OWN_SUPPLY_PRODUCT_IDS = new Set([2842, 3956, 3957, 3961, 3962, 3963, 3966, 4037, 3991, 3992, 3993, 3994, 3995, 3996, 3485, 3486, 3490, 3491, 3492, 3495, 3566, 3520, 3521, 3522, 3523, 3524, 3525]);
+const IPANEL_LAMAS_22_PRODUCT_IDS = new Set([4061, 3590]);
+const IPANEL_DIVIDER_LINE_MM = 10;
 
 // Casos puntuales migrados: fuerzan nombre y monto de la orden en Odoo.
 // Se limitan por quote_id y etapa para no afectar el flujo general ni la secuencia normal.
@@ -320,6 +322,75 @@ function validateBusinessRequired(payload, catalog_kind) {
   if (String(p.condition_mode || "") === "cond2" && !paymentAllowsCondition2ForQuote(p.payment_method)) return "Condicion 2 solo para Efectivo o Cheques 30";
   if (String(p.condition_mode || "") === "special" && !String(p.condition_text || "").trim()) return "Falta payload.condition_text (condicion especial)";
   if (String(catalog_kind || "porton").toLowerCase().trim() === "porton" && !String(p.porton_type || "").trim()) return "Falta payload.porton_type";
+  return null;
+}
+function normalizeIpanelLamasOrientation(value) {
+  const raw = String(value || "")
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase()
+    .trim();
+  if (raw.includes("vert")) return "vertical";
+  if (raw.includes("horiz")) return "horizontal";
+  return "horizontal";
+}
+function toPositiveNumber(value) {
+  const n = Number(String(value ?? "").replace(",", "."));
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+function sanitizeIpanelSectionSizes(value, count = 0) {
+  const list = Array.isArray(value) ? value : [];
+  const safeCount = Math.max(0, Math.trunc(Number(count) || 0));
+  return list.slice(0, safeCount).map((item) => String(item ?? "").replace(/[^0-9.,]/g, ""));
+}
+function validateIpanelLamasLogicalMeasuresForQuote(quote = {}) {
+  const kind = String(quote?.catalog_kind || quote?.payload?.quote_subkind || quote?.payload?.catalog_kind || "").toLowerCase().trim();
+  if (kind !== "ipanel") return null;
+  const hasLamas22 = (Array.isArray(quote?.lines) ? quote.lines : []).some((line) => lineMatchesProductSet(line, IPANEL_LAMAS_22_PRODUCT_IDS));
+  if (!hasLamas22) return null;
+
+  const payload = quote?.payload && typeof quote.payload === "object" ? quote.payload : {};
+  const dimensions = payload?.dimensions && typeof payload.dimensions === "object" ? payload.dimensions : {};
+  const orientation = normalizeIpanelLamasOrientation(
+    dimensions?.ipanel_lamas_orientacion
+    ?? dimensions?.orientacion_ipanel_lamas
+    ?? dimensions?.ipanel_orientacion_lamas
+    ?? dimensions?.ipanel_lamas_orientation
+    ?? "horizontal"
+  );
+  const maxDivisions = orientation === "vertical" ? 7 : 18;
+  const divisionsRaw = dimensions?.ipanel_divisiones ?? dimensions?.cantidad_divisiones_ipanel;
+  const divisions = Number(String(divisionsRaw ?? "").trim());
+  if (!Number.isInteger(divisions) || divisions < 2 || divisions > maxDivisions) {
+    return `Completá la cantidad de divisiones del Ipanel con un número entero entre 2 y ${maxDivisions}.`;
+  }
+
+  const sectionValues = sanitizeIpanelSectionSizes(
+    dimensions?.ipanel_divisiones_medidas_mm ?? dimensions?.medidas_divisiones_ipanel_mm ?? dimensions?.ipanel_section_sizes_mm ?? [],
+    divisions,
+  );
+  if (sectionValues.length !== divisions || sectionValues.some((item) => !String(item || "").trim())) {
+    return `Completá las medidas de las ${divisions} secciones del Ipanel.`;
+  }
+  const parsed = sectionValues.map((item) => Number(String(item).replace(",", ".")));
+  if (parsed.some((item) => !Number.isFinite(item) || item <= 0)) {
+    return "Las medidas de las divisiones del Ipanel deben ser números positivos en mm.";
+  }
+
+  const widthM = toPositiveNumber(dimensions?.width);
+  const heightM = toPositiveNumber(dimensions?.height);
+  const axisDimensionMm = (orientation === "vertical" ? widthM : heightM) * 1000;
+  if (!(axisDimensionMm > 0)) return "Completá las medidas del Ipanel antes de confirmar.";
+
+  const distribution = String(dimensions?.ipanel_distribucion_divisiones || dimensions?.ipanel_divisiones_distribucion || "").trim().toLowerCase();
+  const dividersIncluded = dimensions?.ipanel_divisiones_incluyen_liston === true
+    || String(dimensions?.ipanel_divisiones_incluyen_liston || "").trim().toLowerCase() === "true"
+    || distribution === "clasica";
+  const dividersTotalMm = dividersIncluded ? 0 : Math.max(0, divisions - 1) * IPANEL_DIVIDER_LINE_MM;
+  const totalUsedMm = parsed.reduce((acc, item) => acc + item, 0) + dividersTotalMm;
+  const diff = Math.round((axisDimensionMm - totalUsedMm) * 100) / 100;
+  if (diff > 0.5) return `Las divisiones del Ipanel no completan la medida disponible. Faltan ${diff} mm.`;
+  if (diff < -0.5) return `Las divisiones del Ipanel superan la medida disponible. Sobran ${Math.abs(diff)} mm.`;
   return null;
 }
 function hasMeasurementLine(lines) {
@@ -1804,6 +1875,8 @@ export function buildQuotesRouter(odoo) {
       if (custErr) return res.status(400).json({ ok: false, error: custErr });
       const bizErr = validateBusinessRequired(quote.payload || {}, quote.catalog_kind || "porton");
       if (bizErr) return res.status(400).json({ ok: false, error: bizErr });
+      const ipanelMeasuresErr = validateIpanelLamasLogicalMeasuresForQuote(quote);
+      if (ipanelMeasuresErr) return res.status(400).json({ ok: false, error: ipanelMeasuresErr });
       if (vendedorNeedsEndCustomerName(quote) && !getEndCustomerName(quote)) return res.status(400).json({ ok: false, error: "Falta end_customer.name (vendedor)" });
       if (quote.status === "synced_odoo" && quote.fulfillment_mode === "acopio") {
         return res.status(409).json({ ok: false, error: "Este presupuesto ya está en Acopio. Guardá los cambios y usá 'Solicitar paso a Producción'." });
@@ -2225,6 +2298,8 @@ export function buildQuotesRouter(odoo) {
       if (custErr) return res.status(400).json({ ok: false, error: custErr });
       const bizErr = validateBusinessRequired(q.payload || {}, q.catalog_kind || "porton");
       if (bizErr) return res.status(400).json({ ok: false, error: bizErr });
+      const ipanelMeasuresErr = validateIpanelLamasLogicalMeasuresForQuote(q);
+      if (ipanelMeasuresErr) return res.status(400).json({ ok: false, error: ipanelMeasuresErr });
       const parentId = String(q.parent_quote_id || "").trim();
       if (!parentId) return res.status(400).json({ ok: false, error: "La copia no tiene parent_quote_id" });
       const pr = await dbQuery(`select * from public.presupuestador_quotes where id=$1 limit 1`, [parentId]);
