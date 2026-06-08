@@ -209,6 +209,29 @@ function getAssignedPricelistIdFromUser(user) {
   const n = Number(user?.odoo_pricelist_id || 0);
   return Number.isFinite(n) && n > 0 ? Math.trunc(n) : null;
 }
+function getFirstPricelistId(pricelists) {
+  const first = Array.isArray(pricelists) ? pricelists[0] : null;
+  const n = Number(first?.id || 0);
+  return Number.isFinite(n) && n > 0 ? Math.trunc(n) : null;
+}
+function resolveExpectedPricelist({ user, pricelists, currentQuotePricelistId = null }) {
+  const quoteId = Number(currentQuotePricelistId || 0);
+  if (Number.isFinite(quoteId) && quoteId > 0) {
+    const found = (Array.isArray(pricelists) ? pricelists : []).find((pl) => Number(pl?.id) === quoteId);
+    return found || { id: quoteId, name: `Lista guardada ${quoteId}` };
+  }
+  const assignedId = getAssignedPricelistIdFromUser(user);
+  if (assignedId) {
+    const found = (Array.isArray(pricelists) ? pricelists : []).find((pl) => Number(pl?.id) === assignedId);
+    return found || { id: assignedId, name: `Lista asignada ${assignedId}` };
+  }
+  return (Array.isArray(pricelists) ? pricelists : [])[0] || null;
+}
+function isSamePricelistId(currentId, expectedId) {
+  const current = Number(currentId || 0);
+  const expected = Number(expectedId || 0);
+  return Number.isFinite(current) && current > 0 && Number.isFinite(expected) && expected > 0 && current === expected;
+}
 function resolveLinePricingProductId(line) {
   const candidates = [
     line?.odoo_variant_id,
@@ -722,23 +745,45 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
     }
   }, [idParam, reset, user?.default_maps_url, setEndCustomer, initialLinkedPortonId]);
 
+  const quoteQ = useQuery({ queryKey: ["quote", idParam], queryFn: () => getQuote(idParam), enabled: !!idParam });
   const pricelistsQ = useQuery({ queryKey: ["pricelists"], queryFn: getPricelists });
+  const expectedPricelist = useMemo(
+    () => resolveExpectedPricelist({
+      user,
+      pricelists: pricelistsQ.data,
+      currentQuotePricelistId: quoteQ.data?.pricelist_id,
+    }),
+    [user, user?.odoo_pricelist_id, pricelistsQ.data, quoteQ.data?.pricelist_id],
+  );
+  const expectedPricelistId = Number(expectedPricelist?.id || 0) || null;
+  const pricingContextReady = !!user
+    && !quoteQ.isLoading
+    && !pricelistsQ.isLoading
+    && !!expectedPricelistId
+    && isSamePricelistId(pricelistId, expectedPricelistId)
+    && (!user?.is_distribuidor || !user?.odoo_partner_id || !!partnerId);
+  const pricingContextMessage = !user
+    ? "Cargando usuario para resolver lista de precios..."
+    : quoteQ.isLoading
+      ? "Cargando presupuesto guardado..."
+      : pricelistsQ.isLoading
+        ? "Cargando listas de precios..."
+        : !expectedPricelistId
+          ? "No se pudo resolver la lista de precios del usuario."
+          : !isSamePricelistId(pricelistId, expectedPricelistId)
+            ? "Aplicando lista de precios correcta antes de cotizar..."
+            : (user?.is_distribuidor && user?.odoo_partner_id && !partnerId)
+              ? "Aplicando cliente Odoo del distribuidor antes de cotizar..."
+              : "";
   useEffect(() => {
-    if (pricelistId || !pricelistsQ.data?.length) return;
-    const assignedPricelistId = getAssignedPricelistIdFromUser(user);
-    if (user?.is_distribuidor && assignedPricelistId) {
-      const assigned = pricelistsQ.data.find((pl) => Number(pl?.id) === assignedPricelistId);
-      setPricelist(assigned || { id: assignedPricelistId, name: `Lista asignada ${assignedPricelistId}` });
-      return;
-    }
-    setPricelist(pricelistsQ.data[0]);
-  }, [pricelistId, pricelistsQ.data, setPricelist, user?.is_distribuidor, user?.odoo_pricelist_id]);
+    if (!user || !expectedPricelistId || !expectedPricelist) return;
+    if (isSamePricelistId(pricelistId, expectedPricelistId)) return;
+    setPricelist(expectedPricelist);
+  }, [user, expectedPricelist, expectedPricelistId, pricelistId, setPricelist]);
   useEffect(() => {
     if (!user?.is_distribuidor || !user?.odoo_partner_id || partnerId) return;
     setPartnerId(user.odoo_partner_id);
   }, [partnerId, setPartnerId, user?.is_distribuidor, user?.odoo_partner_id]);
-
-  const quoteQ = useQuery({ queryKey: ["quote", idParam], queryFn: () => getQuote(idParam), enabled: !!idParam });
   const portonQuotesQ = useQuery({
     queryKey: ["quotes", "mine", "portones-for-link", user?.user_id || user?.id || "current"],
     queryFn: () => listQuotes({ scope: "mine" }),
@@ -907,7 +952,7 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
 
   useEffect(() => {
     async function run() {
-      if (!pricelistId || !lines.length) return;
+      if (!pricingContextReady || !pricelistId || !lines.length) return;
       const isPersistedQuote = !!(quoteQ.data?.id || quoteId || idParam);
       const linesToPrice = isPersistedQuote
         ? lines.filter(lineNeedsPriceRefresh)
@@ -932,7 +977,7 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
       applyBasePrices(data);
     }
     run().catch(console.error);
-  }, [pricelistId, partnerId, linesKey, lines.length, applyBasePrices, quoteQ.data?.id, quoteId, idParam]);
+  }, [pricingContextReady, pricelistId, partnerId, linesKey, lines.length, applyBasePrices, quoteQ.data?.id, quoteId, idParam]);
 
   function resolveCreatedByRole() {
     if (user?.is_superuser) return "vendedor";
@@ -998,7 +1043,11 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
     validateDimensionsRequired(payload, catalogKind);
     validateCustomerContact(c, { requirePhone: true, requireMaps: false, requireCity: false });
   }
+  function validatePricingContextReady() {
+    if (!pricingContextReady) throw new Error(pricingContextMessage || "Esperá a que se aplique la lista de precios correcta antes de continuar.");
+  }
   function validateConfirm(payload) {
+    validatePricingContextReady();
     const c = payload?.end_customer || {};
     const p = payload?.payload || {};
     const errs = [];
@@ -1017,6 +1066,7 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
   function validatePdfDownload(payload) { validateDraft(payload); }
 
   async function persistDraftForPdf() {
+    validatePricingContextReady();
     const payload = getDraftPayload();
     validateDraft(payload);
     if (!quoteId) {
@@ -1038,6 +1088,7 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
   }
   function handleConfirmIntent() {
     if (isReturnedMeasurementQuote) return;
+    try { validatePricingContextReady(); } catch (e) { toast.error(e?.message || "Esperá a que se aplique la lista de precios correcta."); return; }
     if (!isRevisionQuote && user?.is_distribuidor && normalizedCatalogKind === "porton") {
       const currentMapsUrl = normalizeUrl(buildPayloadForBack()?.end_customer?.maps_url);
       const defaultMapsUrl = normalizeUrl(user?.default_maps_url);
@@ -1084,6 +1135,10 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
 
     if (!hasAutosaveCustomerMinimum(payload)) {
       setAutosaveState({ status: "waiting-minimum", message: "Borrador local. Completá nombre, apellido y teléfono para autoguardar en Mis presupuestos.", savedAt: new Date().toISOString() });
+      return null;
+    }
+    if (!pricingContextReady) {
+      setAutosaveState({ status: "waiting-pricing", message: pricingContextMessage || "Borrador local. Esperando lista de precios correcta para autoguardar en Mis presupuestos.", savedAt: new Date().toISOString() });
       return null;
     }
     if (!canRemoteAutosaveQuote({ status, fulfillmentMode: payload.fulfillment_mode })) return null;
@@ -1170,7 +1225,7 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
 
   function resolveRefreshPricelist() {
     const assignedPricelistId = getAssignedPricelistIdFromUser(user);
-    if (user?.is_distribuidor && assignedPricelistId) {
+    if (assignedPricelistId) {
       const assigned = (pricelistsQ.data || []).find((pl) => Number(pl?.id) === assignedPricelistId);
       return assigned || { id: assignedPricelistId, name: `Lista asignada ${assignedPricelistId}` };
     }
@@ -1303,17 +1358,24 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
           </div>
         </div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
-          <Button variant="secondary" onClick={onDownloadPresupuesto}>PDF presupuesto</Button>
-          {user?.is_distribuidor ? <Button variant="secondary" onClick={onDownloadProforma}>PDF proforma</Button> : null}
-          <Button onClick={() => saveM.mutate()} disabled={saveM.isPending}>{saveM.isPending ? "Guardando..." : "Guardar"}</Button>
+          <Button variant="secondary" onClick={onDownloadPresupuesto} disabled={!pricingContextReady}>PDF presupuesto</Button>
+          {user?.is_distribuidor ? <Button variant="secondary" onClick={onDownloadProforma} disabled={!pricingContextReady}>PDF proforma</Button> : null}
+          <Button onClick={() => saveM.mutate()} disabled={saveM.isPending || !pricingContextReady}>{saveM.isPending ? "Guardando..." : "Guardar"}</Button>
           {isReturnedMeasurementQuote ? (
             <>
               <Button variant="ghost" onClick={() => resetReturnedM.mutate()} disabled={resetReturnedM.isPending || confirmReturnedM.isPending}>{resetReturnedM.isPending ? "Restableciendo..." : "Restablecer al original"}</Button>
-              <Button variant="primary" onClick={() => confirmReturnedM.mutate()} disabled={confirmReturnedM.isPending || resetReturnedM.isPending}>{confirmReturnedM.isPending ? "Enviando..." : "Confirmar y volver a Técnica"}</Button>
+              <Button variant="primary" onClick={() => confirmReturnedM.mutate()} disabled={confirmReturnedM.isPending || resetReturnedM.isPending || !pricingContextReady}>{confirmReturnedM.isPending ? "Enviando..." : "Confirmar y volver a Técnica"}</Button>
             </>
-          ) : (!isAcopioRevision ? (<Button variant="primary" onClick={() => { if (isRevisionQuote) { confirmM.mutate({}); return; } handleConfirmIntent(); }} disabled={!canConfirm || confirmM.isPending}>{confirmM.isPending ? "Confirmando..." : (isRevisionQuote ? "Enviar cotización final" : "Confirmar presupuesto")}</Button>) : null)}
+          ) : (!isAcopioRevision ? (<Button variant="primary" onClick={() => { if (isRevisionQuote) { confirmM.mutate({}); return; } handleConfirmIntent(); }} disabled={!canConfirm || confirmM.isPending || !pricingContextReady}>{confirmM.isPending ? "Confirmando..." : (isRevisionQuote ? "Enviar cotización final" : "Confirmar presupuesto")}</Button>) : null)}
         </div>
       </div>
+
+      {!pricingContextReady ? (
+        <><div className="spacer" /><div className="card" style={{ background: "#fff8e1", border: "1px solid #f2d08a" }}>
+          <div style={{ fontWeight: 900, marginBottom: 6 }}>Preparando lista de precios</div>
+          <div className="muted">{pricingContextMessage || "Esperá unos segundos antes de seleccionar productos o confirmar. Esto evita presupuestar con una lista incorrecta."}</div>
+        </div></>
+      ) : null}
 
       {isReturnedMeasurementQuote ? (
         <><div className="spacer" /><div className="card" style={{ background: "#fff8f3", border: "1px solid #f2d3bf" }}>
@@ -1402,8 +1464,8 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
               />
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 14 }}>
-              <div style={{ border: "1px solid #d9e5f7", background: "#f7fbff", borderRadius: 14, padding: 16 }}><div style={{ fontWeight: 900, fontSize: 18, marginBottom: 8 }}>Acopio</div><div className="muted" style={{ marginBottom: 14 }}>El portón queda en espera. Se podrá seguir gestionando desde <b>Acopio → Producción</b> y mantiene una instancia de edición.</div><Button onClick={() => confirmM.mutate({ fulfillmentMode: "acopio", budgetObservation: confirmBudgetObservation })} disabled={confirmM.isPending}>{confirmM.isPending ? "Confirmando..." : "Confirmar en Acopio"}</Button></div>
-              <div style={{ border: "1px solid #f2d3bf", background: "#fff8f3", borderRadius: 14, padding: 16 }}><div style={{ fontWeight: 900, fontSize: 18, marginBottom: 8 }}>Producción</div><div className="muted" style={{ marginBottom: 14 }}>El portón entra directo en circuito productivo. Ya no podrá editarse desde <b>Presupuestos</b>.</div><Button variant="primary" onClick={() => confirmM.mutate({ fulfillmentMode: "produccion", budgetObservation: confirmBudgetObservation })} disabled={confirmM.isPending}>{confirmM.isPending ? "Confirmando..." : "Confirmar en Producción"}</Button></div>
+              <div style={{ border: "1px solid #d9e5f7", background: "#f7fbff", borderRadius: 14, padding: 16 }}><div style={{ fontWeight: 900, fontSize: 18, marginBottom: 8 }}>Acopio</div><div className="muted" style={{ marginBottom: 14 }}>El portón queda en espera. Se podrá seguir gestionando desde <b>Acopio → Producción</b> y mantiene una instancia de edición.</div><Button onClick={() => confirmM.mutate({ fulfillmentMode: "acopio", budgetObservation: confirmBudgetObservation })} disabled={confirmM.isPending || !pricingContextReady}>{confirmM.isPending ? "Confirmando..." : "Confirmar en Acopio"}</Button></div>
+              <div style={{ border: "1px solid #f2d3bf", background: "#fff8f3", borderRadius: 14, padding: 16 }}><div style={{ fontWeight: 900, fontSize: 18, marginBottom: 8 }}>Producción</div><div className="muted" style={{ marginBottom: 14 }}>El portón entra directo en circuito productivo. Ya no podrá editarse desde <b>Presupuestos</b>.</div><Button variant="primary" onClick={() => confirmM.mutate({ fulfillmentMode: "produccion", budgetObservation: confirmBudgetObservation })} disabled={confirmM.isPending || !pricingContextReady}>{confirmM.isPending ? "Confirmando..." : "Confirmar en Producción"}</Button></div>
             </div>
             <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 16 }}><Button variant="ghost" onClick={() => setConfirmChoiceOpen(false)} disabled={confirmM.isPending}>Cancelar</Button></div>
           </div>
@@ -1425,7 +1487,14 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
       <div className="spacer" />
       <div className="row quote-row">
         <div className="card" style={{ flex: 1, minWidth: 340 }}>
-          <SectionCatalog kind={catalogKind} onDownloadPresupuesto={onDownloadPresupuesto} />
+          {pricingContextReady ? (
+            <SectionCatalog kind={catalogKind} onDownloadPresupuesto={onDownloadPresupuesto} />
+          ) : (
+            <div style={{ border: "1px dashed #f2d08a", background: "#fffdf2", borderRadius: 14, padding: 16 }}>
+              <div style={{ fontWeight: 900, marginBottom: 6 }}>Catálogo bloqueado momentáneamente</div>
+              <div className="muted">{pricingContextMessage || "La app está resolviendo la lista de precios correcta."}</div>
+            </div>
+          )}
         </div>
         <div className="card" style={{ flex: 2, minWidth: 560 }}>
           <LinesTable financingPercent={quoteAdjustmentPercent} />

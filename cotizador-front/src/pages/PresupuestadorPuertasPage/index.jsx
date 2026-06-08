@@ -145,6 +145,28 @@ function getSavedQuoteAdjustmentPercent(quote) {
   }
   return null;
 }
+function getAssignedPricelistIdFromUser(user) {
+  const n = Number(user?.odoo_pricelist_id || 0);
+  return Number.isFinite(n) && n > 0 ? Math.trunc(n) : null;
+}
+function resolveExpectedPricelist({ user, pricelists, currentQuotePricelistId = null }) {
+  const quoteId = Number(currentQuotePricelistId || 0);
+  if (Number.isFinite(quoteId) && quoteId > 0) {
+    const found = (Array.isArray(pricelists) ? pricelists : []).find((pl) => Number(pl?.id) === quoteId);
+    return found || { id: quoteId, name: `Lista guardada ${quoteId}` };
+  }
+  const assignedId = getAssignedPricelistIdFromUser(user);
+  if (assignedId) {
+    const found = (Array.isArray(pricelists) ? pricelists : []).find((pl) => Number(pl?.id) === assignedId);
+    return found || { id: assignedId, name: `Lista asignada ${assignedId}` };
+  }
+  return (Array.isArray(pricelists) ? pricelists : [])[0] || null;
+}
+function isSamePricelistId(currentId, expectedId) {
+  const current = Number(currentId || 0);
+  const expected = Number(expectedId || 0);
+  return Number.isFinite(current) && current > 0 && Number.isFinite(expected) && expected > 0 && current === expected;
+}
 
 export default function PresupuestadorPuertasPage() {
   const navigate = useNavigate();
@@ -170,6 +192,7 @@ export default function PresupuestadorPuertasPage() {
     loadFromQuote,
     setEndCustomer,
     setPricelist,
+    setPartnerId,
     buildPayloadForBack,
     setQuoteMeta,
     applyBasePrices,
@@ -195,10 +218,45 @@ export default function PresupuestadorPuertasPage() {
     }
   }, [idParam, reset, user?.default_maps_url, setEndCustomer]);
 
-  const pricelistsQ = useQuery({ queryKey: ["pricelists"], queryFn: getPricelists });
-  useEffect(() => { if (!pricelistId && pricelistsQ.data?.length) setPricelist(pricelistsQ.data[0]); }, [pricelistId, pricelistsQ.data, setPricelist]);
-
   const quoteQ = useQuery({ queryKey: ["quote", idParam], queryFn: () => getQuote(idParam), enabled: !!idParam });
+  const pricelistsQ = useQuery({ queryKey: ["pricelists"], queryFn: getPricelists });
+  const expectedPricelist = useMemo(
+    () => resolveExpectedPricelist({
+      user,
+      pricelists: pricelistsQ.data,
+      currentQuotePricelistId: quoteQ.data?.pricelist_id,
+    }),
+    [user, user?.odoo_pricelist_id, pricelistsQ.data, quoteQ.data?.pricelist_id],
+  );
+  const expectedPricelistId = Number(expectedPricelist?.id || 0) || null;
+  const pricingContextReady = !!user
+    && !quoteQ.isLoading
+    && !pricelistsQ.isLoading
+    && !!expectedPricelistId
+    && isSamePricelistId(pricelistId, expectedPricelistId)
+    && (!user?.is_distribuidor || !user?.odoo_partner_id || !!partnerId);
+  const pricingContextMessage = !user
+    ? "Cargando usuario para resolver lista de precios..."
+    : quoteQ.isLoading
+      ? "Cargando presupuesto guardado..."
+      : pricelistsQ.isLoading
+        ? "Cargando listas de precios..."
+        : !expectedPricelistId
+          ? "No se pudo resolver la lista de precios del usuario."
+          : !isSamePricelistId(pricelistId, expectedPricelistId)
+            ? "Aplicando lista de precios correcta antes de cotizar..."
+            : (user?.is_distribuidor && user?.odoo_partner_id && !partnerId)
+              ? "Aplicando cliente Odoo del distribuidor antes de cotizar..."
+              : "";
+  useEffect(() => {
+    if (!user || !expectedPricelistId || !expectedPricelist) return;
+    if (isSamePricelistId(pricelistId, expectedPricelistId)) return;
+    setPricelist(expectedPricelist);
+  }, [user, expectedPricelist, expectedPricelistId, pricelistId, setPricelist]);
+  useEffect(() => {
+    if (!user?.is_distribuidor || !user?.odoo_partner_id || partnerId) return;
+    setPartnerId(user.odoo_partner_id);
+  }, [partnerId, setPartnerId, user?.is_distribuidor, user?.odoo_partner_id]);
   useEffect(() => {
     if (!quoteQ.data) return;
     if (String(quoteQ.data.catalog_kind || "").toLowerCase() !== "puerta") {
@@ -231,7 +289,7 @@ export default function PresupuestadorPuertasPage() {
 
   useEffect(() => {
     async function run() {
-      if (!pricelistId || !lines.length) return;
+      if (!pricingContextReady || !pricelistId || !lines.length) return;
       const isPersistedQuote = !!(quoteQ.data?.id || quoteId || idParam);
       const linesToPrice = isPersistedQuote
         ? lines.filter(lineNeedsPriceRefresh)
@@ -243,7 +301,7 @@ export default function PresupuestadorPuertasPage() {
       applyBasePrices(data);
     }
     run().catch(console.error);
-  }, [pricelistId, partnerId, linesKey, lines.length, applyBasePrices, quoteQ.data?.id, quoteId, idParam]);
+  }, [pricingContextReady, pricelistId, partnerId, linesKey, lines.length, applyBasePrices, quoteQ.data?.id, quoteId, idParam]);
 
   function applyPortonData(portonId) {
     const selected = portonQuotes.find((q) => String(q.id) === String(portonId));
@@ -331,6 +389,10 @@ export default function PresupuestadorPuertasPage() {
       setAutosaveState({ status: "waiting-minimum", message: "Borrador local. Completá nombre, apellido y teléfono para autoguardar en Mis presupuestos.", savedAt: new Date().toISOString() });
       return null;
     }
+    if (!pricingContextReady) {
+      setAutosaveState({ status: "waiting-pricing", message: pricingContextMessage || "Borrador local. Esperando lista de precios correcta para autoguardar en Mis presupuestos.", savedAt: new Date().toISOString() });
+      return null;
+    }
     if (!canRemoteAutosaveQuote({ status, fulfillmentMode: payload.fulfillment_mode })) return null;
     if (confirmChoiceOpen) return null;
 
@@ -401,7 +463,11 @@ export default function PresupuestadorPuertasPage() {
     if (!Array.isArray(payload?.lines) || payload.lines.filter((line) => !line.previously_billed_line).length === 0) throw new Error("Agregá al menos un producto.");
     validateCustomerContact(c, { requirePhone: true, requireMaps: false, requireCity: false });
   }
+  function validatePricingContextReady() {
+    if (!pricingContextReady) throw new Error(pricingContextMessage || "Esperá a que se aplique la lista de precios correcta antes de continuar.");
+  }
   function validateConfirm(payload) {
+    validatePricingContextReady();
     validateDraft(payload);
     const c = payload?.end_customer || {};
     const p = payload?.payload || {};
@@ -479,6 +545,7 @@ export default function PresupuestadorPuertasPage() {
 
   async function onDownloadPdf(mode = "presupuesto") {
     try {
+      validatePricingContextReady();
       const saved = await saveDoorQuote({ forConfirm: false });
       const payload = buildDoorPayload({ savedQuote: saved, forceDoorRef: buildDoorOrderReference({ linkedQuote: linkedPorton, savedQuote: saved }) });
       const pdfPayload = buildPdfPayloadForDownload(payload, financingPercent, {
@@ -509,16 +576,22 @@ export default function PresupuestadorPuertasPage() {
           </div>
         </div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
-          <Button variant="secondary" onClick={() => onDownloadPdf("presupuesto")}>PDF presupuesto</Button>
-          {user?.is_distribuidor ? <Button variant="secondary" onClick={() => onDownloadPdf("proforma")}>PDF proforma</Button> : null}
-          <Button onClick={() => saveM.mutate()} disabled={saveM.isPending}>{saveM.isPending ? "Guardando..." : "Guardar"}</Button>
-          <Button variant="primary" onClick={() => { setConfirmBudgetObservation(readBudgetObservationFromPayload(buildDoorPayload())); setConfirmChoiceOpen(true); }} disabled={!canConfirm || confirmM.isPending}>{confirmM.isPending ? "Confirmando..." : "Confirmar presupuesto"}</Button>
+          <Button variant="secondary" onClick={() => onDownloadPdf("presupuesto")} disabled={!pricingContextReady}>PDF presupuesto</Button>
+          {user?.is_distribuidor ? <Button variant="secondary" onClick={() => onDownloadPdf("proforma")} disabled={!pricingContextReady}>PDF proforma</Button> : null}
+          <Button onClick={() => saveM.mutate()} disabled={saveM.isPending || !pricingContextReady}>{saveM.isPending ? "Guardando..." : "Guardar"}</Button>
+          <Button variant="primary" onClick={() => { setConfirmBudgetObservation(readBudgetObservationFromPayload(buildDoorPayload())); setConfirmChoiceOpen(true); }} disabled={!canConfirm || confirmM.isPending || !pricingContextReady}>{confirmM.isPending ? "Confirmando..." : "Confirmar presupuesto"}</Button>
           <Button variant="ghost" onClick={() => navigate("/menu")}>Volver</Button>
         </div>
       </div>
 
       {quoteQ.isLoading ? <><div className="spacer" /><div className="card"><div className="muted">Cargando puerta...</div></div></> : null}
       {quoteQ.isError ? <><div className="spacer" /><div className="card"><div style={{ color: "#d93025" }}>{quoteQ.error.message}</div></div></> : null}
+      {!pricingContextReady ? (
+        <><div className="spacer" /><div className="card" style={{ background: "#fff8e1", border: "1px solid #f2d08a" }}>
+          <div style={{ fontWeight: 900, marginBottom: 6 }}>Preparando lista de precios</div>
+          <div className="muted">{pricingContextMessage || "Esperá unos segundos antes de seleccionar productos o confirmar. Esto evita presupuestar con una lista incorrecta."}</div>
+        </div></>
+      ) : null}
 
       {confirmChoiceOpen ? (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0, 0, 0, 0.45)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20, zIndex: 1000 }} onClick={() => { if (!confirmM.isPending) setConfirmChoiceOpen(false); }}>
@@ -539,12 +612,12 @@ export default function PresupuestadorPuertasPage() {
               <div style={{ border: "1px solid #d9e5f7", background: "#f7fbff", borderRadius: 14, padding: 16 }}>
                 <div style={{ fontWeight: 900, fontSize: 18, marginBottom: 8 }}>Acopio</div>
                 <div className="muted" style={{ marginBottom: 14 }}>La puerta queda en espera y genera Nota de Pedido PNP al aprobarse.</div>
-                <Button onClick={() => confirmDoorWithOptionalPortonWarning("acopio")} disabled={confirmM.isPending}>Confirmar en Acopio</Button>
+                <Button onClick={() => confirmDoorWithOptionalPortonWarning("acopio")} disabled={confirmM.isPending || !pricingContextReady}>Confirmar en Acopio</Button>
               </div>
               <div style={{ border: "1px solid #f2d3bf", background: "#fff8f3", borderRadius: 14, padding: 16 }}>
                 <div style={{ fontWeight: 900, fontSize: 18, marginBottom: 8 }}>Producción</div>
                 <div className="muted" style={{ marginBottom: 14 }}>La puerta entra al circuito productivo y genera Nota de Pedido PNP al aprobarse.</div>
-                <Button variant="primary" onClick={() => confirmDoorWithOptionalPortonWarning("produccion")} disabled={confirmM.isPending}>Confirmar en Producción</Button>
+                <Button variant="primary" onClick={() => confirmDoorWithOptionalPortonWarning("produccion")} disabled={confirmM.isPending || !pricingContextReady}>Confirmar en Producción</Button>
               </div>
             </div>
             <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 16 }}><Button variant="ghost" onClick={() => setConfirmChoiceOpen(false)} disabled={confirmM.isPending}>Cancelar</Button></div>
@@ -591,7 +664,16 @@ export default function PresupuestadorPuertasPage() {
 
       <div className="spacer" />
       <div className="row quote-row">
-        <div className="card" style={{ flex: 1, minWidth: 340 }}><PuertaCatalog /></div>
+        <div className="card" style={{ flex: 1, minWidth: 340 }}>
+          {pricingContextReady ? (
+            <PuertaCatalog />
+          ) : (
+            <div style={{ border: "1px dashed #f2d08a", background: "#fffdf2", borderRadius: 14, padding: 16 }}>
+              <div style={{ fontWeight: 900, marginBottom: 6 }}>Catálogo bloqueado momentáneamente</div>
+              <div className="muted">{pricingContextMessage || "La app está resolviendo la lista de precios correcta."}</div>
+            </div>
+          )}
+        </div>
         <div className="card" style={{ flex: 2, minWidth: 560 }}>
           <LinesTable />
           <div className="spacer" />
