@@ -1176,30 +1176,56 @@ export default function PortonDimensions({ kind = "porton" }) {
       patch.ipanel_orientacion_lamas = "horizontal";
       patch.ipanel_lamas_orientation = "horizontal";
     }
-    const clamped = clampIpanelDivisions(ipanelDivisionsValue, ipanelDivisionsMax);
-    if (ipanelDivisionsValue && clamped && String(clamped) !== String(ipanelDivisionsValue)) {
-      patch.ipanel_divisiones = clamped;
-      patch.cantidad_divisiones_ipanel = clamped;
-    }
-    if (ipanelDivisionsCount >= 2) {
-      const currentSizes = sanitizeIpanelSectionSizes(
-        dimensions?.ipanel_divisiones_medidas_mm ?? dimensions?.medidas_divisiones_ipanel_mm ?? dimensions?.ipanel_section_sizes_mm ?? [],
-        ipanelDivisionsCount,
-      );
-      let nextSizes = currentSizes.slice(0, ipanelDivisionsCount);
-      if (nextSizes.length < ipanelDivisionsCount) {
-        const defaults = buildUniformIpanelSectionSizes({ count: ipanelDivisionsCount, axisDimensionMm: ipanelAxisDimensionMm, dividerMm: IPANEL_DIVIDER_LINE_MM });
-        nextSizes = Array.from({ length: ipanelDivisionsCount }, (_, index) => nextSizes[index] || defaults[index] || "");
+    const shouldDefaultClassic = !ipanelDistributionMode || ipanelDistributionMode === "clasica" || dimensions?.ipanel_divisiones_incluyen_liston === true;
+    if (shouldDefaultClassic && ipanelAxisDimensionMm > 0) {
+      const classicSizes = buildClassicIpanelSectionSizes(ipanelAxisDimensionMm, 353);
+      const classicCount = classicSizes.length;
+      if (classicCount >= 2) {
+        if (String(ipanelDivisionsValue || "") !== String(classicCount)) {
+          patch.ipanel_divisiones = String(classicCount);
+          patch.cantidad_divisiones_ipanel = String(classicCount);
+        }
+        const currentClassicSizes = sanitizeIpanelSectionSizes(
+          dimensions?.ipanel_divisiones_medidas_mm ?? dimensions?.medidas_divisiones_ipanel_mm ?? dimensions?.ipanel_section_sizes_mm ?? [],
+          classicCount,
+        );
+        if (JSON.stringify(currentClassicSizes) !== JSON.stringify(classicSizes)) {
+          patch.ipanel_divisiones_medidas_mm = classicSizes;
+          patch.medidas_divisiones_ipanel_mm = classicSizes;
+          patch.ipanel_section_sizes_mm = classicSizes;
+        }
+        if (ipanelDistributionMode !== "clasica") {
+          patch.ipanel_distribucion_divisiones = "clasica";
+          patch.ipanel_divisiones_distribucion = "clasica";
+        }
+        if (dimensions?.ipanel_divisiones_incluyen_liston !== true) patch.ipanel_divisiones_incluyen_liston = true;
       }
-      if (!nextSizes.some((item) => String(item || "").trim())) {
-        nextSizes = buildUniformIpanelSectionSizes({ count: ipanelDivisionsCount, axisDimensionMm: ipanelAxisDimensionMm, dividerMm: IPANEL_DIVIDER_LINE_MM });
+    } else {
+      const clamped = clampIpanelDivisions(ipanelDivisionsValue, ipanelDivisionsMax);
+      if (ipanelDivisionsValue && clamped && String(clamped) !== String(ipanelDivisionsValue)) {
+        patch.ipanel_divisiones = clamped;
+        patch.cantidad_divisiones_ipanel = clamped;
       }
-      const currentSerialized = JSON.stringify(currentSizes);
-      const nextSerialized = JSON.stringify(nextSizes);
-      if (currentSerialized !== nextSerialized) {
-        patch.ipanel_divisiones_medidas_mm = nextSizes;
-        patch.medidas_divisiones_ipanel_mm = nextSizes;
-        patch.ipanel_section_sizes_mm = nextSizes;
+      if (ipanelDivisionsCount >= 2) {
+        const currentSizes = sanitizeIpanelSectionSizes(
+          dimensions?.ipanel_divisiones_medidas_mm ?? dimensions?.medidas_divisiones_ipanel_mm ?? dimensions?.ipanel_section_sizes_mm ?? [],
+          ipanelDivisionsCount,
+        );
+        let nextSizes = currentSizes.slice(0, ipanelDivisionsCount);
+        if (nextSizes.length < ipanelDivisionsCount) {
+          const defaults = buildUniformIpanelSectionSizes({ count: ipanelDivisionsCount, axisDimensionMm: ipanelAxisDimensionMm, dividerMm: IPANEL_DIVIDER_LINE_MM });
+          nextSizes = Array.from({ length: ipanelDivisionsCount }, (_, index) => nextSizes[index] || defaults[index] || "");
+        }
+        if (!nextSizes.some((item) => String(item || "").trim())) {
+          nextSizes = buildUniformIpanelSectionSizes({ count: ipanelDivisionsCount, axisDimensionMm: ipanelAxisDimensionMm, dividerMm: IPANEL_DIVIDER_LINE_MM });
+        }
+        const currentSerialized = JSON.stringify(currentSizes);
+        const nextSerialized = JSON.stringify(nextSizes);
+        if (currentSerialized !== nextSerialized) {
+          patch.ipanel_divisiones_medidas_mm = nextSizes;
+          patch.medidas_divisiones_ipanel_mm = nextSizes;
+          patch.ipanel_section_sizes_mm = nextSizes;
+        }
       }
     }
     if (!String(dimensions?.ipanel_divisor_mm ?? dimensions?.linea_division_ipanel_mm ?? "").trim()) {
@@ -1207,7 +1233,7 @@ export default function PortonDimensions({ kind = "porton" }) {
       patch.linea_division_ipanel_mm = String(IPANEL_DIVIDER_LINE_MM);
     }
     if (Object.keys(patch).length) setDimensions(patch);
-  }, [hasIpanelLamas22Panel, ipanelDivisionsValue, ipanelDivisionsCount, ipanelDivisionsMax, ipanelAxisDimensionMm, dimensions?.ipanel_lamas_orientacion, dimensions?.orientacion_ipanel_lamas, dimensions?.ipanel_orientacion_lamas, dimensions?.ipanel_lamas_orientation, dimensions?.ipanel_divisiones_medidas_mm, dimensions?.medidas_divisiones_ipanel_mm, dimensions?.ipanel_section_sizes_mm, dimensions?.ipanel_divisor_mm, dimensions?.linea_division_ipanel_mm, setDimensions]);
+  }, [hasIpanelLamas22Panel, ipanelDivisionsValue, ipanelDivisionsCount, ipanelDivisionsMax, ipanelAxisDimensionMm, ipanelDistributionMode, dimensions?.ipanel_divisiones_incluyen_liston, dimensions?.ipanel_lamas_orientacion, dimensions?.orientacion_ipanel_lamas, dimensions?.ipanel_orientacion_lamas, dimensions?.ipanel_lamas_orientation, dimensions?.ipanel_divisiones_medidas_mm, dimensions?.medidas_divisiones_ipanel_mm, dimensions?.ipanel_section_sizes_mm, dimensions?.ipanel_divisor_mm, dimensions?.linea_division_ipanel_mm, setDimensions]);
 
   const params = useMemo(() => getRulesParams(rulesQ.data), [rulesQ.data]);
   const preview = useMemo(() => buildCalculatedPreview({ widthM: width, heightM: height, lines, params, portonType, dimensions }), [width, height, lines, params, portonType, dimensions]);
@@ -1480,11 +1506,11 @@ export default function PortonDimensions({ kind = "porton" }) {
               value={ipanelDivisionsValue}
               onChange={(v) => {
                 const next = normalizeIpanelDivisionsInput(v, ipanelDivisionsMax);
-                setDimensions({ ipanel_divisiones: next, cantidad_divisiones_ipanel: next });
+                setDimensions({ ipanel_divisiones: next, cantidad_divisiones_ipanel: next, ipanel_distribucion_divisiones: "repartido", ipanel_divisiones_distribucion: "repartido", ipanel_divisiones_incluyen_liston: false });
               }}
               onBlur={(e) => {
                 const next = clampIpanelDivisions(e?.target?.value, ipanelDivisionsMax);
-                setDimensions({ ipanel_divisiones: next, cantidad_divisiones_ipanel: next });
+                setDimensions({ ipanel_divisiones: next, cantidad_divisiones_ipanel: next, ipanel_distribucion_divisiones: "repartido", ipanel_divisiones_distribucion: "repartido", ipanel_divisiones_incluyen_liston: false });
               }}
               placeholder="Ej: 4"
               style={inputStateStyle(ipanelDivisionsHasError)}
