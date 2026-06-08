@@ -390,11 +390,11 @@ function patchIpanelDimensionValidationUi(dimensions) {
   for (const node of helperNodes) {
     const text = String(node.textContent || "").trim();
     if (/^Maximo\s+1\.13\s*m/i.test(text)) {
-      node.textContent = mustUseLamas ? "Máximo 2.00 m sólo en Revestimiento en lamas" : "Máximo 1.13 m (113 cm). En lamas hasta 2.00 m";
+      node.textContent = mustUseLamas ? "Panel simple max 1.13 m. Lamas y varillado max 2.00 m" : "Panel simple max 1.13 m. Lamas y varillado max 2.00 m";
       if (widthOk) node.style.color = "#6b7280";
     }
     if (/^Maximo\s+2\.45\s*m/i.test(text)) {
-      node.textContent = mustUseLamas ? "Máximo 3.00 m sólo en Revestimiento en lamas" : "Máximo 2.45 m (245 cm). En lamas hasta 3.00 m";
+      node.textContent = mustUseLamas ? "Panel simple max 2.45 m. Lamas y varillado max 3.00 m" : "Panel simple max 2.45 m. Lamas y varillado max 3.00 m";
       if (heightOk) node.style.color = "#6b7280";
     }
   }

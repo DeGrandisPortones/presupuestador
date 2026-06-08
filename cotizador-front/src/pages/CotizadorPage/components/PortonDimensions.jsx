@@ -1055,9 +1055,6 @@ function IpanelDivisionsSketchModal({
           </div>
           <div style={{ border: "1px solid #e5e7eb", borderRadius: 16, padding: 14, background: "#fff" }}>
             <div style={{ fontWeight: 900, marginBottom: 8 }}>Detalle</div>
-            <div className="muted" style={{ marginBottom: 8 }}>
-              Las medidas cargadas corresponden al tamaño útil de cada sección. Las cotas ahora se muestran por fuera del esquema y alternadas para evitar superposiciones. Cada división incluye un listón de {formatMm(dividerMm)} entre paneles, representado como una franja con bordes marcados y línea punteada.
-            </div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 10 }}>
               <ComputedCard label="Ancho" value={panelWidthMm > 0 ? formatMm(panelWidthMm) : "-"} />
               <ComputedCard label="Alto" value={panelHeightMm > 0 ? formatMm(panelHeightMm) : "-"} />
@@ -1396,7 +1393,7 @@ export default function PortonDimensions({ kind = "porton" }) {
         <FieldBox label="Ancho (m)" helper={widthHelper} helperColor={widthOutOfBounds ? "#b91c1c" : undefined}><Input type="text" inputMode="decimal" value={widthRaw} onChange={(v) => setDimensions({ width: normalizeDecimal(v) })} onBlur={(e) => setDimensions({ width: normalizeDecimal(e?.target?.value) })} placeholder={isIpanel ? "Ej: 1.13" : "Ej: 3.2"} style={inputStateStyle(widthOutOfBounds)} /></FieldBox>
         <FieldBox label="Alto (m)" helper={heightHelper} helperColor={heightOutOfBounds ? "#b91c1c" : undefined}><Input type="text" inputMode="decimal" value={heightRaw} onChange={(v) => setDimensions({ height: normalizeDecimal(v) })} onBlur={(e) => setDimensions({ height: normalizeDecimal(e?.target?.value) })} placeholder={heightPlaceholder} style={inputStateStyle(heightOutOfBounds)} /></FieldBox>
         {hasIpanelLamas22Panel ? (<>
-          <FieldBox label="Orientación de lamas" helper="Define el máximo permitido de divisiones.">
+          <FieldBox label="Orientación de lamas">
             <select
               value={ipanelLamasOrientation}
               onChange={(e) => {
