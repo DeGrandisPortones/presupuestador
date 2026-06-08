@@ -39,25 +39,37 @@ function toNumber(v) { const n = parseOptionalNumber(v); return Number.isFinite(
 function normalizeDecimal(v) { return String(v ?? "").replace(/[^0-9.,]/g, ""); }
 function normalizeDecimalWithDot(v) { return normalizeDecimal(v).replace(",", "."); }
 function normalizeIntegerInput(v) { return String(v ?? "").replace(/\D+/g, ""); }
-function normalizeIpanelDivisionsInput(v) {
+function normalizeIpanelDivisionsInput(v, max = 18) {
   const raw = normalizeIntegerInput(v);
   if (!raw) return "";
   const n = Number(raw);
   if (!Number.isFinite(n)) return "";
-  return String(Math.min(18, Math.max(0, Math.trunc(n))));
+  const safeMax = Math.max(2, Math.trunc(Number(max) || 18));
+  return String(Math.min(safeMax, Math.max(0, Math.trunc(n))));
 }
-function clampIpanelDivisions(v) {
+function clampIpanelDivisions(v, max = 18) {
   const raw = normalizeIntegerInput(v);
   if (!raw) return "";
   const n = Number(raw);
   if (!Number.isFinite(n)) return "";
-  return String(Math.min(18, Math.max(2, Math.trunc(n))));
+  const safeMax = Math.max(2, Math.trunc(Number(max) || 18));
+  return String(Math.min(safeMax, Math.max(2, Math.trunc(n))));
 }
-function isIpanelDivisionsOutOfBounds(v) {
+function normalizeIpanelLamasOrientation(value) {
+  const raw = norm(value);
+  if (raw.includes("vert")) return "vertical";
+  if (raw.includes("horiz")) return "horizontal";
+  return "horizontal";
+}
+function getIpanelDivisionsMaxByOrientation(value) {
+  return normalizeIpanelLamasOrientation(value) === "vertical" ? 7 : 18;
+}
+function isIpanelDivisionsOutOfBounds(v, max = 18) {
   const raw = String(v ?? "").trim();
   if (!raw) return false;
   const n = Number(raw);
-  return !Number.isFinite(n) || n < 2 || n > 18 || !Number.isInteger(n);
+  const safeMax = Math.max(2, Math.trunc(Number(max) || 18));
+  return !Number.isFinite(n) || n < 2 || n > safeMax || !Number.isInteger(n);
 }
 function norm(v) {
   return String(v || "")
@@ -867,8 +879,41 @@ export default function PortonDimensions({ kind = "porton" }) {
   }, [width, height]);
   const selectedProductIdsForIpanel = useMemo(() => getBudgetProductIdSetFromLines(lines), [lines]);
   const hasIpanelLamas22Panel = isIpanel && [...IPANEL_LAMAS_22_PRODUCT_IDS].some((id) => selectedProductIdsForIpanel.has(id));
+  const ipanelLamasOrientation = normalizeIpanelLamasOrientation(
+    dimensions?.ipanel_lamas_orientacion ??
+    dimensions?.orientacion_ipanel_lamas ??
+    dimensions?.ipanel_orientacion_lamas ??
+    dimensions?.ipanel_lamas_orientation ??
+    "horizontal"
+  );
+  const ipanelDivisionsMax = getIpanelDivisionsMaxByOrientation(ipanelLamasOrientation);
   const ipanelDivisionsValue = String(dimensions?.ipanel_divisiones ?? dimensions?.cantidad_divisiones_ipanel ?? "");
-  const ipanelDivisionsHasError = hasIpanelLamas22Panel && isIpanelDivisionsOutOfBounds(ipanelDivisionsValue);
+  const ipanelDivisionsHasError = hasIpanelLamas22Panel && isIpanelDivisionsOutOfBounds(ipanelDivisionsValue, ipanelDivisionsMax);
+
+  useEffect(() => {
+    if (!hasIpanelLamas22Panel) return;
+    const currentOrientation = String(
+      dimensions?.ipanel_lamas_orientacion ??
+      dimensions?.orientacion_ipanel_lamas ??
+      dimensions?.ipanel_orientacion_lamas ??
+      dimensions?.ipanel_lamas_orientation ??
+      ""
+    ).trim();
+    const patch = {};
+    if (!currentOrientation) {
+      patch.ipanel_lamas_orientacion = "horizontal";
+      patch.orientacion_ipanel_lamas = "horizontal";
+      patch.ipanel_orientacion_lamas = "horizontal";
+      patch.ipanel_lamas_orientation = "horizontal";
+    }
+    const clamped = clampIpanelDivisions(ipanelDivisionsValue, ipanelDivisionsMax);
+    if (ipanelDivisionsValue && clamped && String(clamped) !== String(ipanelDivisionsValue)) {
+      patch.ipanel_divisiones = clamped;
+      patch.cantidad_divisiones_ipanel = clamped;
+    }
+    if (Object.keys(patch).length) setDimensions(patch);
+  }, [hasIpanelLamas22Panel, ipanelDivisionsValue, ipanelDivisionsMax, dimensions?.ipanel_lamas_orientacion, dimensions?.orientacion_ipanel_lamas, dimensions?.ipanel_orientacion_lamas, dimensions?.ipanel_lamas_orientation, setDimensions]);
+
   const params = useMemo(() => getRulesParams(rulesQ.data), [rulesQ.data]);
   const preview = useMemo(() => buildCalculatedPreview({ widthM: width, heightM: height, lines, params, portonType, dimensions }), [width, height, lines, params, portonType, dimensions]);
   const aptoParaRevestir = isAptoDerivedType(portonType);
@@ -1070,25 +1115,46 @@ export default function PortonDimensions({ kind = "porton" }) {
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 12, alignItems: "start" }}>
         <FieldBox label="Ancho (m)" helper={widthHelper} helperColor={widthOutOfBounds ? "#b91c1c" : undefined}><Input type="text" inputMode="decimal" value={widthRaw} onChange={(v) => setDimensions({ width: normalizeDecimal(v) })} onBlur={(e) => setDimensions({ width: normalizeDecimal(e?.target?.value) })} placeholder={isIpanel ? "Ej: 1.13" : "Ej: 3.2"} style={inputStateStyle(widthOutOfBounds)} /></FieldBox>
         <FieldBox label="Alto (m)" helper={heightHelper} helperColor={heightOutOfBounds ? "#b91c1c" : undefined}><Input type="text" inputMode="decimal" value={heightRaw} onChange={(v) => setDimensions({ height: normalizeDecimal(v) })} onBlur={(e) => setDimensions({ height: normalizeDecimal(e?.target?.value) })} placeholder={heightPlaceholder} style={inputStateStyle(heightOutOfBounds)} /></FieldBox>
-        {hasIpanelLamas22Panel ? (
-          <FieldBox label="Cantidad de divisiones" helper="Entero positivo entre 2 y 18." helperColor={ipanelDivisionsHasError ? "#b91c1c" : undefined}>
+        {hasIpanelLamas22Panel ? (<>
+          <FieldBox label="Orientación de lamas" helper="Define el máximo permitido de divisiones.">
+            <select
+              value={ipanelLamasOrientation}
+              onChange={(e) => {
+                const nextOrientation = normalizeIpanelLamasOrientation(e.target.value);
+                const nextMax = getIpanelDivisionsMaxByOrientation(nextOrientation);
+                const nextDivisions = clampIpanelDivisions(ipanelDivisionsValue, nextMax);
+                setDimensions({
+                  ipanel_lamas_orientacion: nextOrientation,
+                  orientacion_ipanel_lamas: nextOrientation,
+                  ipanel_orientacion_lamas: nextOrientation,
+                  ipanel_lamas_orientation: nextOrientation,
+                  ...(nextDivisions ? { ipanel_divisiones: nextDivisions, cantidad_divisiones_ipanel: nextDivisions } : {}),
+                });
+              }}
+              style={{ width: "100%", padding: "10px 12px", borderRadius: 8, border: "1px solid #ddd", background: "#fff" }}
+            >
+              <option value="horizontal">Horizontal</option>
+              <option value="vertical">Vertical</option>
+            </select>
+          </FieldBox>
+          <FieldBox label="Cantidad de divisiones" helper={`Entero positivo entre 2 y ${ipanelDivisionsMax}.`} helperColor={ipanelDivisionsHasError ? "#b91c1c" : undefined}>
             <Input
               type="text"
               inputMode="numeric"
               value={ipanelDivisionsValue}
               onChange={(v) => {
-                const next = normalizeIpanelDivisionsInput(v);
+                const next = normalizeIpanelDivisionsInput(v, ipanelDivisionsMax);
                 setDimensions({ ipanel_divisiones: next, cantidad_divisiones_ipanel: next });
               }}
               onBlur={(e) => {
-                const next = clampIpanelDivisions(e?.target?.value);
+                const next = clampIpanelDivisions(e?.target?.value, ipanelDivisionsMax);
                 setDimensions({ ipanel_divisiones: next, cantidad_divisiones_ipanel: next });
               }}
               placeholder="Ej: 4"
               style={inputStateStyle(ipanelDivisionsHasError)}
             />
           </FieldBox>
-        ) : null}
+        </>) : null}
         {isPlegados ? (<>
           <FieldBox label="Superficie del plegado"><div style={{ fontWeight: 800, fontSize: 16, minHeight: 40, display: "flex", alignItems: "center", padding: "9px 12px", borderRadius: 10, border: "1px solid #d1d5db", background: "#f3f4f6", color: "#334155" }}>{area ? `${area.toFixed(2)} m2` : "-"}</div></FieldBox>
           <FieldBox label="Descripción del plegado" helper="Información técnica o detalle que verá Comercial y Técnica."><textarea value={String(dimensions?.plegado_descripcion ?? dimensions?.descripcion_plegado ?? dimensions?.description ?? "")} onChange={(e) => setDimensions({ plegado_descripcion: e.target.value, descripcion_plegado: e.target.value })} rows={3} style={{ width: "100%", borderRadius: 10, border: "1px solid #ddd", padding: "10px 12px", resize: "vertical", fontFamily: "inherit" }} placeholder="Describí el plegado, material, observaciones o cualquier dato técnico necesario..." /></FieldBox>

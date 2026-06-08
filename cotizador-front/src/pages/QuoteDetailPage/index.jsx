@@ -91,6 +91,59 @@ function isPlegadosQuote(quote) {
   return String(quote?.payload?.quote_subkind || quote?.catalog_kind || "").toLowerCase().trim() === "plegados";
 }
 
+function isIpanelQuote(quote) {
+  return String(quote?.payload?.quote_subkind || quote?.catalog_kind || "").toLowerCase().trim() === "ipanel";
+}
+
+function quoteHasAnyProductId(quote, ids = []) {
+  const allowed = new Set((Array.isArray(ids) ? ids : []).map((id) => Number(id)).filter((id) => Number.isFinite(id) && id > 0));
+  if (!allowed.size) return false;
+  return (Array.isArray(quote?.lines) ? quote.lines : []).some((line) => {
+    const values = [
+      line?.product_id,
+      line?.odoo_external_id,
+      line?.odoo_id,
+      line?.odoo_template_id,
+      line?.odoo_variant_id,
+    ];
+    return values.some((value) => allowed.has(Number(value || 0)));
+  });
+}
+
+function extractIpanelDivisions(quote) {
+  const payload = quote?.payload && typeof quote.payload === "object" ? quote.payload : {};
+  const dimensions = payload?.dimensions && typeof payload.dimensions === "object" ? payload.dimensions : {};
+  const raw =
+    dimensions?.ipanel_divisiones ??
+    dimensions?.cantidad_divisiones_ipanel ??
+    payload?.ipanel_divisiones ??
+    payload?.cantidad_divisiones_ipanel ??
+    quote?.ipanel_divisiones ??
+    quote?.cantidad_divisiones_ipanel ??
+    "";
+  const n = Number(String(raw ?? "").replace(",", "."));
+  if (!Number.isInteger(n) || n < 2 || n > 18) return "";
+  return String(n);
+}
+
+function extractIpanelLamasOrientation(quote) {
+  const payload = quote?.payload && typeof quote.payload === "object" ? quote.payload : {};
+  const dimensions = payload?.dimensions && typeof payload.dimensions === "object" ? payload.dimensions : {};
+  const raw = String(
+    dimensions?.ipanel_lamas_orientacion ??
+    dimensions?.orientacion_ipanel_lamas ??
+    dimensions?.ipanel_orientacion_lamas ??
+    dimensions?.ipanel_lamas_orientation ??
+    payload?.ipanel_lamas_orientacion ??
+    payload?.orientacion_ipanel_lamas ??
+    ""
+  ).trim();
+  const normalized = raw.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+  if (normalized.includes("vert")) return "Vertical";
+  if (normalized.includes("horiz")) return "Horizontal";
+  return "Horizontal";
+}
+
 function normalizeBillingText(value) {
   return String(value || "").trim();
 }
@@ -733,6 +786,8 @@ function buildApprovalContextRows(quote, conditionMode) {
   ].filter(Boolean);
   const rows = [];
   const isPlegados = isPlegadosQuote(quote);
+  const isIpanel = isIpanelQuote(quote);
+  const hasIpanelLamas22 = isIpanel && quoteHasAnyProductId(quote, [4061, 3590]);
   const sistemaEntry = firstTechnicalEntry(sources, ["tipologia_sistema", "tipologia", "tipología", "sistema", "system", "system_type", "tipo_sistema", "porton_type", "tipo_porton", "levadizo"]);
   const cantidadParantesEntry = firstTechnicalEntry(sources, ["cantidad_parantes", "parantes_cantidad", "cant_parantes", "parantes_cant"]);
   const orientacionParantesEntry = firstTechnicalEntry(sources, ["orientacion_parantes", "orientación_parantes", "parantes_orientacion", "parantes_orientación"]);
@@ -744,6 +799,10 @@ function buildApprovalContextRows(quote, conditionMode) {
   pushApprovalContextRow(rows, "Kg/m² efectivo", preview.effectiveKgM2 > 0 ? `${preview.effectiveKgM2.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} kg/m²` : "");
   pushApprovalContextRow(rows, isPlegados ? "Superficie del plegado" : "Superficie", preview.areaM2 > 0 ? `${preview.areaM2.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} m²` : "");
   if (isPlegados) pushApprovalContextRow(rows, "Descripción del plegado", extractPlegadoDescription(quote));
+  if (hasIpanelLamas22) {
+    pushApprovalContextRow(rows, "Orientación de lamas", extractIpanelLamasOrientation(quote));
+    pushApprovalContextRow(rows, "Cantidad de divisiones", extractIpanelDivisions(quote));
+  }
   pushApprovalContextRow(rows, "Medidas de paso", formatSavedMedidasPasoForApproval(dimensions) || (preview.altoPasoMm > 0 && preview.anchoPasoMm > 0 ? `${formatMetersFromMmForApproval(preview.anchoPasoMm)} x ${formatMetersFromMmForApproval(preview.altoPasoMm)}` : ""));
   pushApprovalContextRow(rows, "Peso estimado", preview.estimatedWeightKg > 0 ? `${preview.estimatedWeightKg.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} kg` : "");
   pushApprovalContextRow(rows, "Piernas estimadas", preview.legsLabel || formatTechnicalValue(firstTechnicalEntry(sources, ["piernas_tipo", "tipo_piernas", "piernas", "leg_type", "legs_type"])?.value));

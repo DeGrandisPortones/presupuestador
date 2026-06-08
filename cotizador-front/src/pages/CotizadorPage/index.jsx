@@ -135,6 +135,15 @@ function lineMatchesAnyProductId(line, productIds = []) {
 function hasIpanelLamasProduct(payload) {
   return (Array.isArray(payload?.lines) ? payload.lines : []).some((line) => lineMatchesAnyProductId(line, [IPANEL_LAMAS_PRODUCT_ID, IPANEL_LAMAS_ODOO_ID]));
 }
+function normalizeIpanelLamasOrientation(value) {
+  const raw = normalizeUiText(value);
+  if (raw.includes("vert")) return "vertical";
+  if (raw.includes("horiz")) return "horizontal";
+  return "horizontal";
+}
+function getIpanelDivisionsMaxByOrientation(value) {
+  return normalizeIpanelLamasOrientation(value) === "vertical" ? 7 : 18;
+}
 function isIpanelExtendedLamasDimensions(dimensions = {}) {
   const width = parseNum(dimensions?.width);
   const height = parseNum(dimensions?.height);
@@ -457,10 +466,18 @@ function validateDimensionsRequired(payload, kind = "porton") {
     if (height > IPANEL_LAMAS_HEIGHT_MAX_M) throw new Error(`El alto del ${itemLabel} no puede superar 3.00 m. Entre 2.45 m y 3.00 m sólo se puede producir en lamas.`);
 
     if (hasIpanelLamasProduct(payload)) {
+      const orientation = normalizeIpanelLamasOrientation(
+        dims?.ipanel_lamas_orientacion ??
+        dims?.orientacion_ipanel_lamas ??
+        dims?.ipanel_orientacion_lamas ??
+        dims?.ipanel_lamas_orientation ??
+        "horizontal"
+      );
+      const maxDivisions = getIpanelDivisionsMaxByOrientation(orientation);
       const divisionsRaw = dims?.ipanel_divisiones ?? dims?.cantidad_divisiones_ipanel;
       const divisions = Number(String(divisionsRaw ?? "").trim());
-      if (!Number.isInteger(divisions) || divisions < 2 || divisions > 18) {
-        throw new Error("Completá la cantidad de divisiones del Ipanel con un número entero entre 2 y 18.");
+      if (!Number.isInteger(divisions) || divisions < 2 || divisions > maxDivisions) {
+        throw new Error(`Completá la cantidad de divisiones del Ipanel con un número entero entre 2 y ${maxDivisions} para orientación ${orientation === "vertical" ? "vertical" : "horizontal"}.`);
       }
     }
 
