@@ -144,6 +144,21 @@ function extractIpanelLamasOrientation(quote) {
   return "Horizontal";
 }
 
+function extractIpanelDivisionScheme(quote) {
+  const payload = quote?.payload && typeof quote.payload === "object" ? quote.payload : {};
+  const dimensions = payload?.dimensions && typeof payload.dimensions === "object" ? payload.dimensions : {};
+  const values = Array.isArray(dimensions?.ipanel_divisiones_medidas_mm)
+    ? dimensions.ipanel_divisiones_medidas_mm
+    : (Array.isArray(dimensions?.medidas_divisiones_ipanel_mm)
+      ? dimensions.medidas_divisiones_ipanel_mm
+      : (Array.isArray(dimensions?.ipanel_section_sizes_mm) ? dimensions.ipanel_section_sizes_mm : []));
+  const sanitized = values
+    .map((item) => Number(String(item ?? "").replace(",", ".")))
+    .filter((item) => Number.isFinite(item) && item > 0);
+  if (!sanitized.length) return "";
+  return sanitized.map((item, index) => `S${index + 1}: ${item.toLocaleString("es-AR", { maximumFractionDigits: 2 })} mm`).join(" · ");
+}
+
 function normalizeBillingText(value) {
   return String(value || "").trim();
 }
@@ -802,6 +817,7 @@ function buildApprovalContextRows(quote, conditionMode) {
   if (hasIpanelLamas22) {
     pushApprovalContextRow(rows, "Orientación de lamas", extractIpanelLamasOrientation(quote));
     pushApprovalContextRow(rows, "Cantidad de divisiones", extractIpanelDivisions(quote));
+    pushApprovalContextRow(rows, "Medidas divisiones Ipanel", extractIpanelDivisionScheme(quote));
   }
   pushApprovalContextRow(rows, "Medidas de paso", formatSavedMedidasPasoForApproval(dimensions) || (preview.altoPasoMm > 0 && preview.anchoPasoMm > 0 ? `${formatMetersFromMmForApproval(preview.anchoPasoMm)} x ${formatMetersFromMmForApproval(preview.altoPasoMm)}` : ""));
   pushApprovalContextRow(rows, "Peso estimado", preview.estimatedWeightKg > 0 ? `${preview.estimatedWeightKg.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} kg` : "");

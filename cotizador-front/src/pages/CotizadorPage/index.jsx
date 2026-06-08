@@ -144,6 +144,43 @@ function normalizeIpanelLamasOrientation(value) {
 function getIpanelDivisionsMaxByOrientation(value) {
   return normalizeIpanelLamasOrientation(value) === "vertical" ? 7 : 18;
 }
+function sanitizeIpanelSectionSizes(value, count = 0) {
+  const safeCount = Math.max(0, Math.trunc(Number(count) || 0));
+  const list = Array.isArray(value) ? value : [];
+  return list.slice(0, safeCount).map((item) => String(item ?? "").replace(/[^0-9.,]/g, ""));
+}
+function getIpanelAxisDimensionMm(dimensions = {}, orientation = "horizontal") {
+  const width = parseNum(dimensions?.width);
+  const height = parseNum(dimensions?.height);
+  const axisMeters = normalizeIpanelLamasOrientation(orientation) === "vertical" ? width : height;
+  return axisMeters > 0 ? axisMeters * 1000 : 0;
+}
+function validateIpanelSectionSizes(dimensions = {}, orientation = "horizontal", count = 0) {
+  const safeCount = Math.max(0, Math.trunc(Number(count) || 0));
+  if (safeCount < 2) return;
+  const values = sanitizeIpanelSectionSizes(
+    dimensions?.ipanel_divisiones_medidas_mm ?? dimensions?.medidas_divisiones_ipanel_mm ?? dimensions?.ipanel_section_sizes_mm ?? [],
+    safeCount,
+  );
+  if (values.length !== safeCount || values.some((item) => !String(item || "").trim())) {
+    throw new Error(`Completá las medidas de las ${safeCount} secciones del Ipanel.`);
+  }
+  const parsed = values.map((item) => Number(String(item).replace(",", ".")));
+  if (parsed.some((item) => !Number.isFinite(item) || item <= 0)) {
+    throw new Error("Las medidas de las divisiones del Ipanel deben ser números positivos en mm.");
+  }
+  const axisDimensionMm = getIpanelAxisDimensionMm(dimensions, orientation);
+  const dividersTotalMm = Math.max(0, safeCount - 1) * 10;
+  const sectionsTotalMm = parsed.reduce((acc, item) => acc + item, 0);
+  const totalUsedMm = sectionsTotalMm + dividersTotalMm;
+  if (!(axisDimensionMm > 0)) return;
+  if (totalUsedMm - axisDimensionMm > 0.5) {
+    throw new Error(`Las divisiones del Ipanel superan la medida disponible. Sobran ${Math.round((totalUsedMm - axisDimensionMm) * 100) / 100} mm.`);
+  }
+  if (axisDimensionMm - totalUsedMm > 0.5) {
+    throw new Error(`Las divisiones del Ipanel no completan la medida disponible. Faltan ${Math.round((axisDimensionMm - totalUsedMm) * 100) / 100} mm.`);
+  }
+}
 function isIpanelExtendedLamasDimensions(dimensions = {}) {
   const width = parseNum(dimensions?.width);
   const height = parseNum(dimensions?.height);
@@ -479,6 +516,7 @@ function validateDimensionsRequired(payload, kind = "porton") {
       if (!Number.isInteger(divisions) || divisions < 2 || divisions > maxDivisions) {
         throw new Error(`Completá la cantidad de divisiones del Ipanel con un número entero entre 2 y ${maxDivisions} para orientación ${orientation === "vertical" ? "vertical" : "horizontal"}.`);
       }
+      validateIpanelSectionSizes(dims, orientation, divisions);
     }
 
     if (isIpanelExtendedLamasDimensions(dims)) {

@@ -11,6 +11,7 @@ const HEIGHT_MAX_M = 3;
 const IPANEL_WIDTH_MAX_M = 1.13;
 const IPANEL_HEIGHT_MAX_M = 2.45;
 const IPANEL_LAMAS_22_PRODUCT_IDS = new Set([4061, 3590]);
+const IPANEL_DIVIDER_LINE_MM = 10;
 const PARANTES_SPECIAL_PRODUCT_ID = 3006;
 const APTOS_PARA_REVESTIR_TYPE = "para_revestir_con_al_pvc_otros";
 const DEFAULT_PARANTES_TUBE_DISCOUNT_MM = 40;
@@ -71,6 +72,61 @@ function isIpanelDivisionsOutOfBounds(v, max = 18) {
   const safeMax = Math.max(2, Math.trunc(Number(max) || 18));
   return !Number.isFinite(n) || n < 2 || n > safeMax || !Number.isInteger(n);
 }
+function sanitizeIpanelSectionSizes(value, count = 0) {
+  const list = Array.isArray(value) ? value : [];
+  const safeCount = Math.max(0, Math.trunc(Number(count) || 0));
+  return list.slice(0, safeCount).map((item) => normalizeDecimalMmInput(item));
+}
+function roundMm(value) {
+  const n = Number(value || 0);
+  if (!Number.isFinite(n)) return 0;
+  return Math.round(n * 100) / 100;
+}
+function getIpanelAxisDimensionMm({ orientation, widthM, heightM }) {
+  const isVertical = normalizeIpanelLamasOrientation(orientation) === "vertical";
+  const axisMeters = isVertical ? Number(widthM || 0) : Number(heightM || 0);
+  const axisMm = axisMeters > 0 ? axisMeters * 1000 : 0;
+  return roundMm(Math.max(0, axisMm));
+}
+function buildUniformIpanelSectionSizes({ count, axisDimensionMm, dividerMm = IPANEL_DIVIDER_LINE_MM }) {
+  const safeCount = Math.max(0, Math.trunc(Number(count) || 0));
+  if (!safeCount) return [];
+  const safeDivider = Math.max(0, Number(dividerMm || 0));
+  const freeSpan = roundMm(Math.max(0, Number(axisDimensionMm || 0) - Math.max(0, safeCount - 1) * safeDivider));
+  if (!freeSpan) return Array.from({ length: safeCount }, () => "");
+  const base = roundMm(freeSpan / safeCount);
+  const values = [];
+  let used = 0;
+  for (let index = 0; index < safeCount; index += 1) {
+    const remaining = roundMm(freeSpan - used);
+    const next = index === safeCount - 1 ? remaining : Math.min(base, remaining);
+    values.push(formatNumberForInput(next));
+    used = roundMm(used + next);
+  }
+  return values;
+}
+function computeIpanelSectionMetrics({ values, count, axisDimensionMm, dividerMm = IPANEL_DIVIDER_LINE_MM }) {
+  const safeCount = Math.max(0, Math.trunc(Number(count) || 0));
+  const safeDivider = Math.max(0, Number(dividerMm || 0));
+  const safeValues = sanitizeIpanelSectionSizes(values, safeCount);
+  const parsed = safeValues.map((item) => parseMmNumber(item) || 0);
+  const sectionsTotalMm = roundMm(parsed.reduce((acc, item) => acc + item, 0));
+  const dividersTotalMm = roundMm(Math.max(0, safeCount - 1) * safeDivider);
+  const totalUsedMm = roundMm(sectionsTotalMm + dividersTotalMm);
+  const availableMm = roundMm(Math.max(0, Number(axisDimensionMm || 0)));
+  const remainingMm = roundMm(availableMm - totalUsedMm);
+  return {
+    parsed,
+    sectionsTotalMm,
+    dividersTotalMm,
+    totalUsedMm,
+    availableMm,
+    remainingMm,
+    exceeds: remainingMm < -0.01,
+    matchesExactly: Math.abs(remainingMm) <= 0.5,
+  };
+}
+
 function norm(v) {
   return String(v || "")
     .normalize("NFD")
@@ -848,6 +904,117 @@ function ParantesSketchModal({
   );
 }
 
+function IpanelDivisionsSketchModal({
+  open,
+  onClose,
+  orientation = "horizontal",
+  widthMm = 0,
+  heightMm = 0,
+  dividerMm = IPANEL_DIVIDER_LINE_MM,
+  sectionSizes = [],
+}) {
+  if (!open) return null;
+  const normalizedOrientation = normalizeIpanelLamasOrientation(orientation);
+  const isVertical = normalizedOrientation === "vertical";
+  const safeSectionSizes = Array.isArray(sectionSizes) ? sectionSizes : [];
+  const count = safeSectionSizes.length;
+  const panelWidthMm = Math.max(1, Number(widthMm || 0));
+  const panelHeightMm = Math.max(1, Number(heightMm || 0));
+  const maxCanvasWidth = 420;
+  const maxCanvasHeight = 460;
+  const scale = Math.min(maxCanvasWidth / panelWidthMm, maxCanvasHeight / panelHeightMm, 1);
+  const panelWidthPx = Math.max(170, Math.round(panelWidthMm * scale));
+  const panelHeightPx = Math.max(220, Math.round(panelHeightMm * scale));
+  const axisDimensionMm = isVertical ? panelWidthMm : panelHeightMm;
+  const mainAxisPx = isVertical ? panelWidthPx : panelHeightPx;
+  const safeDividerPx = Math.max(2, (axisDimensionMm > 0 ? dividerMm / axisDimensionMm : 0) * mainAxisPx);
+  const sectionsTotalMm = safeSectionSizes.reduce((acc, item) => acc + Math.max(0, Number(item || 0)), 0);
+  const totalUsedMm = sectionsTotalMm + Math.max(0, count - 1) * dividerMm;
+  const correctionScale = totalUsedMm > 0 ? axisDimensionMm / totalUsedMm : 1;
+  const clampedCorrectionScale = Number.isFinite(correctionScale) && correctionScale > 0 ? correctionScale : 1;
+  const bands = [];
+  let cursorMm = 0;
+  for (let index = 0; index < count; index += 1) {
+    const rawSectionMm = Math.max(0, Number(safeSectionSizes[index] || 0));
+    const sectionMm = rawSectionMm * clampedCorrectionScale;
+    bands.push({ type: "section", index, startMm: cursorMm, sizeMm: sectionMm, rawSizeMm: rawSectionMm });
+    cursorMm += sectionMm;
+    if (index < count - 1) {
+      const dividerSize = dividerMm * clampedCorrectionScale;
+      bands.push({ type: "divider", index, startMm: cursorMm, sizeMm: dividerSize, rawSizeMm: dividerMm });
+      cursorMm += dividerSize;
+    }
+  }
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.45)", zIndex: 60, display: "flex", alignItems: "center", justifyContent: "center", padding: 18 }}>
+      <div style={{ width: "min(960px, 100%)", maxHeight: "88vh", overflow: "auto", background: "#fff", borderRadius: 18, border: "1px solid #e5e7eb", boxShadow: "0 18px 50px rgba(15,23,42,.18)", padding: 18 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start", marginBottom: 14, flexWrap: "wrap" }}>
+          <div>
+            <div style={{ fontWeight: 900, fontSize: 18 }}>Esquema del Ipanel</div>
+            <div className="muted" style={{ marginTop: 4 }}>
+              Orientación de lamas {isVertical ? "vertical" : "horizontal"} · {count || 0} secciones · línea entre secciones {formatMm(dividerMm)}
+            </div>
+          </div>
+          <button type="button" onClick={onClose} style={{ border: "1px solid #ddd", borderRadius: 10, background: "#fff", padding: "9px 12px", fontWeight: 800, cursor: "pointer" }}>Cerrar</button>
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "minmax(260px, 420px) minmax(240px, 1fr)", gap: 18, alignItems: "start" }}>
+          <div style={{ border: "1px solid #e5e7eb", borderRadius: 16, padding: 14, background: "#f8fafc" }}>
+            <svg width="100%" viewBox={`0 0 ${panelWidthPx + 40} ${panelHeightPx + 40}`} role="img" aria-label="Esquema del Ipanel con divisiones">
+              <rect x="20" y="20" width={panelWidthPx} height={panelHeightPx} rx="14" fill="#ffffff" stroke="#0f172a" strokeWidth="2.2" />
+              {bands.map((band) => {
+                const startPx = (axisDimensionMm > 0 ? band.startMm / axisDimensionMm : 0) * mainAxisPx;
+                const sizePx = (axisDimensionMm > 0 ? band.sizeMm / axisDimensionMm : 0) * mainAxisPx;
+                if (band.type === "section") {
+                  const x = isVertical ? 20 + startPx : 20;
+                  const y = isVertical ? 20 : 20 + startPx;
+                  const width = isVertical ? sizePx : panelWidthPx;
+                  const height = isVertical ? panelHeightPx : sizePx;
+                  const cx = x + width / 2;
+                  const cy = y + height / 2;
+                  return (
+                    <g key={`band-${band.type}-${band.index}`}>
+                      <rect x={x} y={y} width={Math.max(0, width)} height={Math.max(0, height)} fill={band.index % 2 === 0 ? "#ecfeff" : "#f8fafc"} />
+                      <text x={cx} y={cy} textAnchor="middle" dominantBaseline="middle" fontSize="12" fontWeight="700" fill="#0f172a">
+                        {formatNumberForInput(band.rawSizeMm)} mm
+                      </text>
+                    </g>
+                  );
+                }
+                const rectX = isVertical ? 20 + startPx : 20;
+                const rectY = isVertical ? 20 : 20 + startPx;
+                const rectWidth = isVertical ? sizePx : panelWidthPx;
+                const rectHeight = isVertical ? panelHeightPx : sizePx;
+                const lineX1 = isVertical ? rectX + rectWidth / 2 : rectX;
+                const lineY1 = isVertical ? rectY : rectY + rectHeight / 2;
+                const lineX2 = isVertical ? rectX + rectWidth / 2 : rectX + rectWidth;
+                const lineY2 = isVertical ? rectY + rectHeight : rectY + rectHeight / 2;
+                return (
+                  <g key={`band-${band.type}-${band.index}`}>
+                    <rect x={rectX} y={rectY} width={Math.max(2, rectWidth)} height={Math.max(2, rectHeight)} fill="#e2e8f0" opacity="0.55" />
+                    <line x1={lineX1} y1={lineY1} x2={lineX2} y2={lineY2} stroke="#334155" strokeWidth="1.8" strokeDasharray="5 5" />
+                  </g>
+                );
+              })}
+            </svg>
+          </div>
+          <div style={{ border: "1px solid #e5e7eb", borderRadius: 16, padding: 14, background: "#fff" }}>
+            <div style={{ fontWeight: 900, marginBottom: 8 }}>Detalle</div>
+            <div className="muted" style={{ marginBottom: 8 }}>
+              Las medidas cargadas corresponden al tamaño útil de cada sección. Las líneas de separación interiores ocupan {formatMm(dividerMm)} cada una y se muestran punteadas.
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 10 }}>
+              <ComputedCard label="Ancho" value={panelWidthMm > 0 ? formatMm(panelWidthMm) : "-"} />
+              <ComputedCard label="Alto" value={panelHeightMm > 0 ? formatMm(panelHeightMm) : "-"} />
+              <ComputedCard label="Secciones" value={String(count || 0)} />
+              <ComputedCard label="Orientación" value={isVertical ? "Vertical" : "Horizontal"} />
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function PortonDimensions({ kind = "porton" }) {
   const normalizedKind = normalizeKind(kind);
   const isPorton = normalizedKind === "porton";
@@ -858,6 +1025,7 @@ export default function PortonDimensions({ kind = "porton" }) {
   const portonType = useQuoteStore((s) => s.portonType);
   const lines = useQuoteStore((s) => s.lines);
   const [parantesSketchOpen, setParantesSketchOpen] = useState(false);
+  const [ipanelSketchOpen, setIpanelSketchOpen] = useState(false);
   const rulesQ = useQuery({ queryKey: ["technical-rules-dimensions-preview"], queryFn: () => adminGetTechnicalMeasurementRules("porton"), staleTime: 0, refetchOnMount: "always", refetchOnWindowFocus: true, enabled: isPorton });
 
   const widthRaw = String(dimensions?.width ?? "");
@@ -888,6 +1056,16 @@ export default function PortonDimensions({ kind = "porton" }) {
   );
   const ipanelDivisionsMax = getIpanelDivisionsMaxByOrientation(ipanelLamasOrientation);
   const ipanelDivisionsValue = String(dimensions?.ipanel_divisiones ?? dimensions?.cantidad_divisiones_ipanel ?? "");
+  const ipanelDivisionsCount = Math.max(0, Math.trunc(Number(ipanelDivisionsValue || 0)));
+  const ipanelAxisDimensionMm = useMemo(() => getIpanelAxisDimensionMm({ orientation: ipanelLamasOrientation, widthM: width, heightM: height }), [ipanelLamasOrientation, width, height]);
+  const rawIpanelSectionSizes = useMemo(
+    () => sanitizeIpanelSectionSizes(dimensions?.ipanel_divisiones_medidas_mm ?? dimensions?.medidas_divisiones_ipanel_mm ?? dimensions?.ipanel_section_sizes_mm ?? [], ipanelDivisionsCount),
+    [dimensions?.ipanel_divisiones_medidas_mm, dimensions?.medidas_divisiones_ipanel_mm, dimensions?.ipanel_section_sizes_mm, ipanelDivisionsCount],
+  );
+  const ipanelSectionMetrics = useMemo(
+    () => computeIpanelSectionMetrics({ values: rawIpanelSectionSizes, count: ipanelDivisionsCount, axisDimensionMm: ipanelAxisDimensionMm, dividerMm: IPANEL_DIVIDER_LINE_MM }),
+    [rawIpanelSectionSizes, ipanelDivisionsCount, ipanelAxisDimensionMm],
+  );
   const ipanelDivisionsHasError = hasIpanelLamas22Panel && isIpanelDivisionsOutOfBounds(ipanelDivisionsValue, ipanelDivisionsMax);
 
   useEffect(() => {
@@ -911,8 +1089,33 @@ export default function PortonDimensions({ kind = "porton" }) {
       patch.ipanel_divisiones = clamped;
       patch.cantidad_divisiones_ipanel = clamped;
     }
+    if (ipanelDivisionsCount >= 2) {
+      const currentSizes = sanitizeIpanelSectionSizes(
+        dimensions?.ipanel_divisiones_medidas_mm ?? dimensions?.medidas_divisiones_ipanel_mm ?? dimensions?.ipanel_section_sizes_mm ?? [],
+        ipanelDivisionsCount,
+      );
+      let nextSizes = currentSizes.slice(0, ipanelDivisionsCount);
+      if (nextSizes.length < ipanelDivisionsCount) {
+        const defaults = buildUniformIpanelSectionSizes({ count: ipanelDivisionsCount, axisDimensionMm: ipanelAxisDimensionMm, dividerMm: IPANEL_DIVIDER_LINE_MM });
+        nextSizes = Array.from({ length: ipanelDivisionsCount }, (_, index) => nextSizes[index] || defaults[index] || "");
+      }
+      if (!nextSizes.some((item) => String(item || "").trim())) {
+        nextSizes = buildUniformIpanelSectionSizes({ count: ipanelDivisionsCount, axisDimensionMm: ipanelAxisDimensionMm, dividerMm: IPANEL_DIVIDER_LINE_MM });
+      }
+      const currentSerialized = JSON.stringify(currentSizes);
+      const nextSerialized = JSON.stringify(nextSizes);
+      if (currentSerialized !== nextSerialized) {
+        patch.ipanel_divisiones_medidas_mm = nextSizes;
+        patch.medidas_divisiones_ipanel_mm = nextSizes;
+        patch.ipanel_section_sizes_mm = nextSizes;
+      }
+    }
+    if (!String(dimensions?.ipanel_divisor_mm ?? dimensions?.linea_division_ipanel_mm ?? "").trim()) {
+      patch.ipanel_divisor_mm = String(IPANEL_DIVIDER_LINE_MM);
+      patch.linea_division_ipanel_mm = String(IPANEL_DIVIDER_LINE_MM);
+    }
     if (Object.keys(patch).length) setDimensions(patch);
-  }, [hasIpanelLamas22Panel, ipanelDivisionsValue, ipanelDivisionsMax, dimensions?.ipanel_lamas_orientacion, dimensions?.orientacion_ipanel_lamas, dimensions?.ipanel_orientacion_lamas, dimensions?.ipanel_lamas_orientation, setDimensions]);
+  }, [hasIpanelLamas22Panel, ipanelDivisionsValue, ipanelDivisionsCount, ipanelDivisionsMax, ipanelAxisDimensionMm, dimensions?.ipanel_lamas_orientacion, dimensions?.orientacion_ipanel_lamas, dimensions?.ipanel_orientacion_lamas, dimensions?.ipanel_lamas_orientation, dimensions?.ipanel_divisiones_medidas_mm, dimensions?.medidas_divisiones_ipanel_mm, dimensions?.ipanel_section_sizes_mm, dimensions?.ipanel_divisor_mm, dimensions?.linea_division_ipanel_mm, setDimensions]);
 
   const params = useMemo(() => getRulesParams(rulesQ.data), [rulesQ.data]);
   const preview = useMemo(() => buildCalculatedPreview({ widthM: width, heightM: height, lines, params, portonType, dimensions }), [width, height, lines, params, portonType, dimensions]);
@@ -1096,6 +1299,27 @@ export default function PortonDimensions({ kind = "porton" }) {
     const nextDistances = padDistanceList(rawParantesDistances, nextRestantesCount);
     setDimensions({ cantidad_parantes: String(nextCount), ...buildParantesPayload({ distances: nextDistances, tubeDiscountMm }) });
   }
+  function setIpanelSectionSizeAt(index, value) {
+    const safeCount = Math.max(0, ipanelDivisionsCount);
+    if (!safeCount) return;
+    const next = Array.from({ length: safeCount }, (_, currentIndex) => rawIpanelSectionSizes[currentIndex] || "");
+    next[index] = normalizeDecimalMmInput(value);
+    setDimensions({
+      ipanel_divisiones_medidas_mm: next,
+      medidas_divisiones_ipanel_mm: next,
+      ipanel_section_sizes_mm: next,
+    });
+  }
+  function redistributeIpanelSections() {
+    if (ipanelDivisionsCount < 2) return;
+    const next = buildUniformIpanelSectionSizes({ count: ipanelDivisionsCount, axisDimensionMm: ipanelAxisDimensionMm, dividerMm: IPANEL_DIVIDER_LINE_MM });
+    setDimensions({
+      ipanel_divisiones_medidas_mm: next,
+      medidas_divisiones_ipanel_mm: next,
+      ipanel_section_sizes_mm: next,
+    });
+  }
+
   function setAptoFixedFirstParante(checked) {
     const nextChecked = !!checked;
     const patch = {
@@ -1169,6 +1393,58 @@ export default function PortonDimensions({ kind = "porton" }) {
         </>) : null}
       </div>
 
+      {hasIpanelLamas22Panel && ipanelDivisionsCount >= 2 ? (<>
+        <div className="spacer" />
+        <div style={{ border: "1px solid #dbeafe", background: "#f8fbff", borderRadius: 14, padding: 12 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
+            <div>
+              <div style={{ fontWeight: 900, marginBottom: 4 }}>Esquema del Ipanel</div>
+              <div className="muted">
+                {ipanelLamasOrientation === "vertical" ? "Las divisiones se reparten sobre el ancho del panel." : "Las divisiones se reparten sobre el alto del panel."} Cada línea de separación interior ocupa {formatMm(IPANEL_DIVIDER_LINE_MM)} y se muestra punteada.
+              </div>
+            </div>
+            <button type="button" onClick={() => setIpanelSketchOpen(true)} style={{ border: "1px solid #c7d2fe", borderRadius: 10, background: "#eef2ff", padding: "9px 12px", fontWeight: 800, cursor: "pointer" }}>Ver esquema</button>
+          </div>
+          <div className="spacer" />
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 10 }}>
+            <ComputedCard label="Base para repartir" value={ipanelAxisDimensionMm > 0 ? formatMm(ipanelAxisDimensionMm) : "-"} />
+            <ComputedCard label="Espesor total de líneas" value={ipanelSectionMetrics.dividersTotalMm > 0 ? formatMm(ipanelSectionMetrics.dividersTotalMm) : "-"} />
+            <ComputedCard label="Medidas útiles cargadas" value={ipanelSectionMetrics.sectionsTotalMm > 0 ? formatMm(ipanelSectionMetrics.sectionsTotalMm) : "-"} />
+            <ComputedCard label="Estado" value={ipanelSectionMetrics.exceeds ? `Excede ${formatMm(Math.abs(ipanelSectionMetrics.remainingMm))}` : (ipanelSectionMetrics.matchesExactly ? "Reparto completo" : `Restan ${formatMm(ipanelSectionMetrics.remainingMm)}`)} />
+          </div>
+          <div className="spacer" />
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 10 }}>
+            {Array.from({ length: ipanelDivisionsCount }, (_, index) => (
+              <FieldBox
+                key={`ipanel-section-${index}`}
+                label={`Sección ${index + 1}`}
+                helper={ipanelLamasOrientation === "vertical" ? "Medida útil en mm sobre el ancho." : "Medida útil en mm sobre el alto."}
+              >
+                <Input
+                  type="text"
+                  inputMode="decimal"
+                  value={String(rawIpanelSectionSizes[index] ?? "")}
+                  onChange={(value) => setIpanelSectionSizeAt(index, value)}
+                  onBlur={(e) => setIpanelSectionSizeAt(index, e?.target?.value)}
+                  placeholder={index === 0 ? "Ej: 600" : "Ej: 580"}
+                  style={{ width: "100%" }}
+                />
+              </FieldBox>
+            ))}
+          </div>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 6 }}>
+            <button type="button" onClick={redistributeIpanelSections} style={{ border: "1px solid #ddd", borderRadius: 10, background: "#fff", padding: "9px 12px", fontWeight: 800, cursor: "pointer" }}>Repartir en partes iguales</button>
+          </div>
+          <div style={{ marginTop: 10, padding: "10px 12px", borderRadius: 10, background: ipanelSectionMetrics.exceeds ? "#fee2e2" : "#eff6ff", color: ipanelSectionMetrics.exceeds ? "#991b1b" : "#1d4ed8", fontWeight: 700 }}>
+            {ipanelSectionMetrics.exceeds
+              ? `Las medidas de las secciones superan la dimensión total disponible. Reducí ${formatMm(Math.abs(ipanelSectionMetrics.remainingMm))} para continuar.`
+              : ipanelSectionMetrics.matchesExactly
+                ? "Las divisiones ocupan exactamente toda la dimensión del panel."
+                : `Todavía quedan ${formatMm(ipanelSectionMetrics.remainingMm)} sin repartir. Podés asignarlo manualmente o usar el reparto automático.`}
+          </div>
+        </div>
+      </>) : null}
+
       {showSpecialParantesDistances ? (<>
         <div className="spacer" />
         <div style={{ border: "1px solid #e0e7ff", background: "#f8fbff", borderRadius: 14, padding: 12 }}>
@@ -1216,6 +1492,16 @@ export default function PortonDimensions({ kind = "porton" }) {
         </div>
         <div className="muted" style={{ marginTop: 8 }}>Estas medidas se guardan dentro del presupuesto para usarlas despues en medicion, calculo de peso y comparacion de superficie.</div>
       </>) : null}
+
+      <IpanelDivisionsSketchModal
+        open={ipanelSketchOpen}
+        onClose={() => setIpanelSketchOpen(false)}
+        orientation={ipanelLamasOrientation}
+        widthMm={Math.max(0, roundMm(width * 1000))}
+        heightMm={Math.max(0, roundMm(height * 1000))}
+        dividerMm={IPANEL_DIVIDER_LINE_MM}
+        sectionSizes={ipanelSectionMetrics.parsed}
+      />
 
       <ParantesSketchModal
         open={parantesSketchOpen}
