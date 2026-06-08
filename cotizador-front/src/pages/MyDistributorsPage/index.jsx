@@ -72,16 +72,28 @@ function MapsCell({ distributor, value, onChange, onSave, saving }) {
   const current = String(value || "").trim();
   const changed = current !== original;
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "minmax(180px, 1fr) auto", gap: 8, alignItems: "center", width: "100%" }}>
-      <input
-        value={value || ""}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder="https://maps.app.goo.gl/..."
-        style={{ width: "100%", minWidth: 0, padding: 8, borderRadius: 10, border: "1px solid #ddd" }}
-      />
-      <Button variant="secondary" disabled={saving || !changed} onClick={() => onSave(current)}>
-        {saving ? "Guardando..." : "Guardar"}
-      </Button>
+    <div style={{ display: "grid", gap: 8, width: "100%" }}>
+      <div style={{ display: "grid", gridTemplateColumns: "minmax(180px, 1fr) auto", gap: 8, alignItems: "center", width: "100%" }}>
+        <input
+          value={value || ""}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder="https://maps.app.goo.gl/..."
+          style={{ width: "100%", minWidth: 0, padding: 8, borderRadius: 10, border: "1px solid #ddd" }}
+        />
+        <Button variant="secondary" disabled={saving || !changed} onClick={() => onSave(current)}>
+          {saving ? "Guardando..." : "Guardar"}
+        </Button>
+      </div>
+      <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+        {original ? (
+          <a href={original} target="_blank" rel="noreferrer" style={{ fontSize: 12, fontWeight: 800 }}>
+            Abrir Maps
+          </a>
+        ) : null}
+        <span className="muted" style={{ fontSize: 12 }}>
+          El vendedor puede cargar la URL que se usara como ubicacion por defecto del distribuidor.
+        </span>
+      </div>
     </div>
   );
 }
@@ -191,7 +203,7 @@ export default function MyDistributorsPage() {
           <div className="muted">
             {canSeeAll
               ? "Listado completo de distribuidores, con vendedor asignado y credenciales de acceso."
-              : "Listado de distribuidores asignados a tu usuario, con sus credenciales de acceso."}
+              : "Listado de distribuidores asignados a tu usuario, con credenciales y URL de Google Maps editable."}
           </div>
         </div>
         <Button variant="secondary" onClick={() => { q.refetch(); pricelistsQ.refetch(); }} disabled={q.isFetching || pricelistsQ.isFetching}>
