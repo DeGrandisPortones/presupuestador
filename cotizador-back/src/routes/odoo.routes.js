@@ -3,51 +3,146 @@ import { requireAuth } from "../auth.js";
 
 const TACA_TACA_PLAN_NAME = String(process.env.ODOO_TACA_TACA_PLAN_NAME || "Taca Taca").trim();
 const DEFAULT_PRICELIST_ID = Number(process.env.ODOO_DEFAULT_PRICELIST_ID || 1);
+const DEFAULT_PRICELIST_NAMES = [
+  process.env.ODOO_BASE_PRICELIST_NAME,
+  process.env.ODOO_CUSTOMER_PRICELIST_NAME,
+  "Predeterminada",
+  "Predeterminado",
+]
+  .map((value) => String(value || "").trim())
+  .filter(Boolean);
 
 function cleanText(value) {
   return String(value || "").trim();
 }
+
 function toPositiveInt(value) {
   const n = Number(value || 0);
   return Number.isFinite(n) && n > 0 ? Math.trunc(n) : 0;
 }
+
+function userCanUseAssignedPricelist(user = {}) {
+  // Vendedores, superusuarios y usuarios mixtos vendedor/distribuidor siempre cotizan con Predeterminada.
+  return user?.is_distribuidor === true && user?.is_vendedor !== true && user?.is_superuser !== true;
+}
+
 function getAssignedPricelistIdFromUser(user) {
+  if (!userCanUseAssignedPricelist(user)) return 0;
   return toPositiveInt(user?.odoo_pricelist_id || user?.pricelist_id || user?.assigned_pricelist_id || null);
 }
-async function resolveEffectivePricelistIdForUser(odoo, user, explicitPricelistId = null) {
-  const explicit = toPositiveInt(explicitPricelistId);
-  if (explicit) return explicit;
 
-  const assigned = getAssignedPricelistIdFromUser(user);
-  if (assigned) return assigned;
-
-  const configuredDefault = toPositiveInt(process.env.ODOO_DEFAULT_PRICELIST_ID);
-  if (configuredDefault) return configuredDefault;
-
-  const name = (process.env.ODOO_BASE_PRICELIST_NAME || process.env.ODOO_CUSTOMER_PRICELIST_NAME || "Predeterminado").trim();
-  const byName = await findPricelistIdByName(odoo, name);
-  if (byName) return byName;
-
-  throw new Error(`No existe la lista de precios "${name}"`);
-}
 async function readPricelistById(odoo, pricelistId) {
   const id = toPositiveInt(pricelistId);
   if (!id) return null;
-  const rows = await odoo.executeKw(
-    "product.pricelist",
-    "read",
-    [[id]],
-    { fields: ["id", "name", "currency_id", "active"] }
-  );
-  const p = Array.isArray(rows) ? rows[0] || null : null;
-  if (!p) return null;
-  return {
-    id: p.id,
-    name: p.name,
-    active: p.active,
-    currency_id: Array.isArray(p.currency_id) ? p.currency_id[0] : p.currency_id,
-    currency_name: Array.isArray(p.currency_id) ? p.currency_id[1] : null,
-  };
+  try {
+    const rows = await odoo.executeKw(
+      "product.pricelist",
+      "read",
+      [[id]],
+      { fields: ["id", "name", "currency_id", "active"] }
+    );
+    const p = Array.isArray(rows) ? rows[0] || null : null;
+    if (!p?.id) return null;
+    return {
+      id: p.id,
+      name: p.name,
+      active: p.active,
+      currency_id: Array.isArray(p.currency_id) ? p.currency_id[0] : p.currency_id,
+      currency_name: Array.isArray(p.currency_id) ? p.currency_id[1] : null,
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function readFirstActivePricelist(odoo) {
+  try {
+    const rows = await odoo.executeKw(
+      "product.pricelist",
+      "search_read",
+      [["|", ["active", "=", true], ["active", "=", false]]],
+      { fields: ["id", "name", "currency_id", "active"], limit: 1, order: "id asc" }
+    );
+    const p = Array.isArray(rows) ? rows[0] || null : null;
+    if (!p?.id) return null;
+    return {
+      id: p.id,
+      name: p.name,
+      active: p.active,
+      currency_id: Array.isArray(p.currency_id) ? p.currency_id[0] : p.currency_id,
+      currency_name: Array.isArray(p.currency_id) ? p.currency_id[1] : null,
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function findPricelistByName(odoo, name) {
+  const label = String(name || "").trim();
+  if (!label) return null;
+
+  const attempts = [
+    [["name", "=", label]],
+    [["name", "ilike", label]],
+  ];
+
+  for (const domain of attempts) {
+    try {
+      const rows = await odoo.executeKw(
+        "product.pricelist",
+        "search_read",
+        [domain],
+        { fields: ["id", "name", "currency_id", "active"], limit: 1, order: "id asc" }
+      );
+      const p = Array.isArray(rows) ? rows[0] || null : null;
+      if (p?.id) {
+        return {
+          id: p.id,
+          name: p.name,
+          active: p.active,
+          currency_id: Array.isArray(p.currency_id) ? p.currency_id[0] : p.currency_id,
+          currency_name: Array.isArray(p.currency_id) ? p.currency_id[1] : null,
+        };
+      }
+    } catch {
+      // seguir con el siguiente intento
+    }
+  }
+
+  return null;
+}
+
+async function resolveBasePricelistForSeller(odoo) {
+  for (const name of DEFAULT_PRICELIST_NAMES) {
+    const found = await findPricelistByName(odoo, name);
+    if (found?.id) return found;
+  }
+
+  const configured = await readPricelistById(odoo, process.env.ODOO_DEFAULT_PRICELIST_ID || DEFAULT_PRICELIST_ID);
+  if (configured?.id) return configured;
+
+  const first = await readFirstActivePricelist(odoo);
+  if (first?.id) return first;
+
+  throw new Error(`No se pudo resolver una lista de precios Predeterminada legible para vendedores.`);
+}
+
+async function resolveEffectivePricelistForUser(odoo, user, explicitPricelistId = null) {
+  if (userCanUseAssignedPricelist(user)) {
+    const explicit = toPositiveInt(explicitPricelistId);
+    if (explicit) {
+      const explicitPricelist = await readPricelistById(odoo, explicit);
+      if (explicitPricelist?.id) return explicitPricelist;
+    }
+
+    const assigned = getAssignedPricelistIdFromUser(user);
+    if (assigned) {
+      const assignedPricelist = await readPricelistById(odoo, assigned);
+      if (assignedPricelist?.id) return assignedPricelist;
+    }
+  }
+
+  return await resolveBasePricelistForSeller(odoo);
 }
 
 export function buildOdooRouter(odoo) {
@@ -130,9 +225,8 @@ export function buildOdooRouter(odoo) {
 
   router.get("/effective-pricelist", requireAuth, async (req, res, next) => {
     try {
-      const pricelistId = await resolveEffectivePricelistIdForUser(odoo, req.user, null);
-      const pricelist = await readPricelistById(odoo, pricelistId);
-      if (!pricelist?.id) throw new Error(`No se pudo leer la lista de precios ${pricelistId}`);
+      const pricelist = await resolveEffectivePricelistForUser(odoo, req.user, null);
+      if (!pricelist?.id) throw new Error("No se pudo resolver la lista de precios efectiva");
       res.json({ ok: true, pricelist, pricelists: [pricelist] });
     } catch (e) {
       next(e);
@@ -286,10 +380,9 @@ export function buildOdooRouter(odoo) {
       if (!lines.length) throw new Error("Faltan lines[]");
 
       const partnerId = body.partner_id ? Number(body.partner_id) : false;
-      // El backend resuelve la lista efectiva: primero la lista enviada por una
-      // cotización guardada/flujo actual; si no viene, la lista asignada al usuario;
-      // y sólo si el usuario no tiene lista asignada cae a la predeterminada.
-      const pricelistId = await resolveEffectivePricelistIdForUser(odoo, req.user, body.pricelist_id);
+      const pricelist = await resolveEffectivePricelistForUser(odoo, req.user, body.pricelist_id);
+      const pricelistId = toPositiveInt(pricelist?.id);
+      if (!pricelistId) throw new Error("No se pudo resolver la lista de precios para calcular precios");
 
       const out = [];
       for (const l of lines) {
@@ -318,7 +411,6 @@ export function buildOdooRouter(odoo) {
         const resolvedName = cleanText(productInfo.name) || `Producto ${productId}`;
 
         out.push({
-          // product_id queda como ID interno/presupuestador para que el frontend actualice la linea correcta.
           product_id: sourceProductId || productId,
           odoo_product_id: productId,
           qty,
@@ -450,12 +542,6 @@ async function resolveTacaTacaRate(odoo, { planId, cardType, installments }) {
   }
 }
 
-async function findPricelistIdByName(odoo, name) {
-  const ids = await odoo.executeKw("product.pricelist", "search", [[[[ "name", "=", name ]]]], { limit: 1 });
-  return ids?.[0] || null;
-}
-
-
 async function readProductProductForPricing(odoo, productId) {
   const id = toPositiveInt(productId);
   if (!id) return { data: null, error: null };
@@ -535,7 +621,7 @@ async function readProductTemplatePrice(odoo, templateId) {
     const [template] = await odoo.executeKw("product.template", "read", [[id]], { fields: ["list_price"] });
     const price = Number(template?.list_price || 0) || 0;
     return price > 0 ? price : 0;
-  } catch (_) {
+  } catch {
     return 0;
   }
 }
@@ -548,7 +634,7 @@ async function getPricelistItemFields(odoo) {
       attributes: ["type"],
     });
     pricelistItemFieldsCache = fields || {};
-  } catch (_) {
+  } catch {
     pricelistItemFieldsCache = null;
   }
   return pricelistItemFieldsCache;
@@ -605,6 +691,17 @@ function normalizePricelistItemPrice(value) {
   return Number.isFinite(n) && n > 0 ? n : 0;
 }
 
+async function getPriceFromProductVariantOnly(odoo, productId) {
+  const id = toPositiveInt(productId);
+  if (!id) return 0;
+  try {
+    const [product] = await odoo.executeKw("product.product", "read", [[id]], { fields: ["list_price"] });
+    return normalizePricelistItemPrice(product?.list_price);
+  } catch {
+    return 0;
+  }
+}
+
 async function readBasePriceForPricelistFormula({ odoo, productId, templateId }) {
   const variantPrice = await getPriceFromProductVariantOnly(odoo, productId);
   if (variantPrice > 0) return variantPrice;
@@ -616,17 +713,6 @@ async function readBasePriceForPricelistFormula({ odoo, productId, templateId })
     if (templatePrice > 0) return templatePrice;
   }
   return 0;
-}
-
-async function getPriceFromProductVariantOnly(odoo, productId) {
-  const id = toPositiveInt(productId);
-  if (!id) return 0;
-  try {
-    const [product] = await odoo.executeKw("product.product", "read", [[id]], { fields: ["list_price"] });
-    return normalizePricelistItemPrice(product?.list_price);
-  } catch (_) {
-    return 0;
-  }
 }
 
 async function computePricelistItemPrice({ odoo, item, productId, templateId }) {
@@ -648,7 +734,6 @@ async function computePricelistItemPrice({ odoo, item, productId, templateId }) 
   }
 
   if (computePrice === "formula") {
-    // En Odoo, price_discount suele guardarse como decimal. Ej.: -0.10 o 0.10.
     const discount = Number(item?.price_discount || 0) || 0;
     const surcharge = Number(item?.price_surcharge || 0) || 0;
     const minMargin = Number(item?.price_min_margin || 0) || 0;
@@ -670,7 +755,7 @@ async function searchPricelistItems(odoo, domain, fields) {
       order: "min_quantity desc, id desc",
     });
     return Array.isArray(rows) ? rows : [];
-  } catch (_) {
+  } catch {
     return [];
   }
 }
@@ -716,8 +801,6 @@ async function getPriceFromPricelistItems({ odoo, pricelistId, productId, templa
     domains.push([...baseDomain, ["product_tmpl_id", "=", tId]]);
     if (tId !== pId) domains.push([...baseDomain, ["product_tmpl_id", "=", pId]]);
   }
-
-  // Fallback para reglas globales de la lista. No tiene prioridad sobre producto/plantilla.
   if (hasPricelistItemField(fieldsMeta, "applied_on")) {
     domains.push([...baseDomain, ["applied_on", "=", "3_global"]]);
   }
@@ -777,7 +860,7 @@ async function tryPricelistMethod(odoo, method, args, pricelistId, productId) {
   try {
     const result = await odoo.executeKw("product.pricelist", method, args);
     return normalizeOdooPriceValue(result, pricelistId, productId);
-  } catch (_) {
+  } catch {
     return 0;
   }
 }
@@ -812,8 +895,6 @@ async function getPriceFromPricelist({ odoo, pricelistId, productId, qty, partne
   const explicitTemplateId = toPositiveInt(templateId);
   let variantTemplateId = null;
 
-  // Primero usamos las reglas de product.pricelist.item, que son las que muestra Odoo
-  // en la pantalla de cada lista. Esto evita caer siempre al precio predeterminado.
   const itemPrice = await getPriceFromPricelistItems({
     odoo,
     pricelistId,
@@ -823,7 +904,6 @@ async function getPriceFromPricelist({ odoo, pricelistId, productId, qty, partne
   });
   if (itemPrice > 0) return itemPrice;
 
-  // Luego intentamos los métodos nativos de la lista, por si Odoo tiene reglas heredadas/globales.
   const pricelistPrice = await getPriceFromOdooPricelist({ odoo, pricelistId, productId: requestedProductId, qty, partnerId });
   if (pricelistPrice > 0) return pricelistPrice;
 
@@ -832,12 +912,8 @@ async function getPriceFromPricelist({ odoo, pricelistId, productId, qty, partne
     const variantPrice = Number(product?.list_price || 0) || 0;
     if (variantPrice > 0) return variantPrice;
     variantTemplateId = Array.isArray(product?.product_tmpl_id) ? Number(product.product_tmpl_id[0]) : Number(product?.product_tmpl_id || 0) || null;
-  } catch (_) {}
+  } catch {}
 
-  // En Odoo la URL /odoo/products/<id> suele apuntar al product.template.
-  // Para productos configurados desde el dashboard, a veces se guarda ese ID de plantilla
-  // y no el ID real de variante. Si la variante leida devuelve 0, probamos la plantilla explicita
-  // y tambien la plantilla con el mismo ID solicitado antes de rendirnos.
   const templateCandidates = [explicitTemplateId, requestedProductId, variantTemplateId]
     .map((id) => toPositiveInt(id))
     .filter((id, index, arr) => id > 0 && arr.indexOf(id) === index);

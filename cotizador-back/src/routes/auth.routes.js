@@ -1,34 +1,19 @@
 import express from "express";
 import { dbQuery } from "../db.js";
-import { signToken, requireAuth } from "../auth.js";
+import { signToken, requireAuth, sanitizeUserForPricing } from "../auth.js";
 import { ensureUsersAdminColumns } from "../usersDb.js";
-
-function userCanUseAssignedPricelist({ is_superuser, is_distribuidor, is_vendedor } = {}) {
-  // La lista asignada de Odoo se expone al frontend solamente para distribuidores puros.
-  // Vendedores y superusuarios deben cotizar con Predeterminada.
-  return !!is_distribuidor && !is_vendedor && !is_superuser;
-}
 
 function withEffectiveRoles(user) {
   const isSuperuser = !!user?.is_superuser;
-  const isDistribuidor = isSuperuser || !!user?.is_distribuidor;
-  const isVendedor = isSuperuser || !!user?.is_vendedor;
-  const canUseAssignedPricelist = userCanUseAssignedPricelist({
-    is_superuser: isSuperuser,
-    is_distribuidor: isDistribuidor,
-    is_vendedor: isVendedor,
-  });
-
   return {
     ...user,
     is_superuser: isSuperuser,
-    is_distribuidor: isDistribuidor,
-    is_vendedor: isVendedor,
+    is_distribuidor: isSuperuser || !!user?.is_distribuidor,
+    is_vendedor: isSuperuser || !!user?.is_vendedor,
     is_enc_comercial: isSuperuser || !!user?.is_enc_comercial,
     is_rev_tecnica: isSuperuser || !!user?.is_rev_tecnica,
     is_medidor: isSuperuser || !!user?.is_medidor,
     is_logistica: isSuperuser || !!user?.is_logistica,
-    odoo_pricelist_id: canUseAssignedPricelist ? (user?.odoo_pricelist_id ?? null) : null,
   };
 }
 
@@ -64,7 +49,7 @@ export function buildAuthRouter() {
       if (!rawUser) return res.status(401).json({ ok: false, error: "Credenciales inválidas" });
       if (rawUser.is_active === false) return res.status(403).json({ ok: false, error: "Usuario inhabilitado" });
 
-      const user = withEffectiveRoles(rawUser);
+      const user = sanitizeUserForPricing(withEffectiveRoles(rawUser));
       const token = signToken(user);
       res.json({ ok: true, token, user });
     } catch (e) {
@@ -73,7 +58,7 @@ export function buildAuthRouter() {
   });
 
   router.get("/me", requireAuth, async (req, res) => {
-    res.json({ ok: true, user: req.user });
+    res.json({ ok: true, user: sanitizeUserForPricing(req.user) });
   });
 
   return router;
