@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useParams } from "react-router-dom";
 import toast from "react-hot-toast";
@@ -18,6 +18,16 @@ import { getPrices, getPricelists, getFinancingPreview } from "../../api/odoo.js
 import { createQuote, getQuote, updateQuote, confirmQuote, listQuotes } from "../../api/quotes.js";
 import { downloadPresupuestoPdf, downloadProformaPdf } from "../../api/pdf.js";
 import { validateArgentinaPhone, validateEmailAddress, validateGoogleMapsUrl } from "../../utils/contactValidation.js";
+import {
+  buildQuoteAutosaveKey,
+  canRemoteAutosaveQuote,
+  clearAutosaveDraft,
+  formatAutosaveTime,
+  hasAutosaveCustomerMinimum,
+  readAutosaveDraft,
+  serializeAutosavePayload,
+  writeAutosaveDraft,
+} from "../../domain/quote/autosave.js";
 
 function parseNum(v) {
   const n = Number(String(v ?? "").replace(",", "."));
@@ -150,6 +160,9 @@ export default function PresupuestadorPuertasPage() {
     partnerId,
     paymentMethod,
     conditionMode,
+    fulfillmentMode,
+    endCustomer,
+    note,
     lines,
     dimensions,
     marginPercent,
@@ -164,6 +177,11 @@ export default function PresupuestadorPuertasPage() {
 
   const [confirmChoiceOpen, setConfirmChoiceOpen] = useState(false);
   const [confirmBudgetObservation, setConfirmBudgetObservation] = useState("");
+  const [autosaveState, setAutosaveState] = useState({ status: "idle", message: "", savedAt: "" });
+  const autosaveTimerRef = useRef(null);
+  const autosaveInFlightRef = useRef(false);
+  const autosaveLastRemoteSignatureRef = useRef("");
+  const autosaveRestoredLocalRef = useRef(false);
   const [linkedPortonId, setLinkedPortonId] = useState("");
   const [portonSearch, setPortonSearch] = useState("");
   const [ivaRate] = useState(IVA_RATE_DEFAULT);
@@ -276,6 +294,102 @@ export default function PresupuestadorPuertasPage() {
       },
     };
   }
+
+  const autosaveDraftKey = useMemo(() => buildQuoteAutosaveKey({ user, catalogKind: "puerta", quoteId: quoteId || idParam || "new" }), [user, quoteId, idParam]);
+  const autosaveNewDraftKey = useMemo(() => buildQuoteAutosaveKey({ user, catalogKind: "puerta", quoteId: "new" }), [user]);
+  const autosaveWatchSignature = useMemo(() => {
+    try { return serializeAutosavePayload(buildDoorPayload()); } catch (_err) { return ""; }
+  }, [quoteId, idParam, pricelistId, partnerId, paymentMethod, conditionMode, fulfillmentMode, endCustomer, note, linkedPortonId, lines, dimensions, marginPercent, quoteAdjustmentPercent]);
+
+  useEffect(() => {
+    if (idParam || quoteQ.data || autosaveRestoredLocalRef.current) return;
+    const local = readAutosaveDraft(autosaveNewDraftKey);
+    autosaveRestoredLocalRef.current = true;
+    if (!local?.payload) return;
+    loadFromQuote({
+      id: null,
+      status: "draft",
+      catalog_kind: "puerta",
+      fulfillment_mode: local.payload.fulfillment_mode || "acopio",
+      pricelist_id: local.payload.pricelist_id || null,
+      end_customer: local.payload.end_customer || {},
+      lines: Array.isArray(local.payload.lines) ? local.payload.lines : [],
+      payload: local.payload.payload || {},
+      note: local.payload.note || null,
+    });
+    setLinkedPortonId(String(local.extra?.linkedPortonId || local.payload?.payload?.linked_porton_quote_id || "").trim());
+    setAutosaveState({ status: "local-restored", message: "Borrador recuperado de este navegador.", savedAt: local.saved_at || "" });
+    toast.success("Recuperé un borrador local sin guardar.");
+  }, [idParam, quoteQ.data, autosaveNewDraftKey, loadFromQuote]);
+
+  async function runDoorAutosaveNow(reason = "auto") {
+    let payload;
+    try { payload = buildDoorPayload(); } catch (_err) { return null; }
+    writeAutosaveDraft(autosaveDraftKey, payload, { linkedPortonId, reason });
+
+    if (!hasAutosaveCustomerMinimum(payload)) {
+      setAutosaveState({ status: "waiting-minimum", message: "Borrador local. Completá nombre, apellido y teléfono para autoguardar en Mis presupuestos.", savedAt: new Date().toISOString() });
+      return null;
+    }
+    if (!canRemoteAutosaveQuote({ status, fulfillmentMode: payload.fulfillment_mode })) return null;
+    if (confirmChoiceOpen) return null;
+
+    const signature = serializeAutosavePayload(payload);
+    if (autosaveLastRemoteSignatureRef.current === signature || autosaveInFlightRef.current) return null;
+
+    autosaveInFlightRef.current = true;
+    setAutosaveState({ status: "saving", message: "Autoguardando...", savedAt: "" });
+    try {
+      const existingId = quoteId || idParam;
+      const saved = existingId ? await updateQuote(existingId, payload) : await createQuote(payload);
+      setQuoteMeta({ quoteId: saved.id, status: saved.status, rejectionNotes: saved.rejection_notes });
+      autosaveLastRemoteSignatureRef.current = signature;
+      const savedAt = new Date().toISOString();
+      clearAutosaveDraft(autosaveNewDraftKey);
+      writeAutosaveDraft(buildQuoteAutosaveKey({ user, catalogKind: "puerta", quoteId: saved.id }), { ...payload, id: saved.id }, { linkedPortonId, reason: "remote-saved" });
+      qc.invalidateQueries({ queryKey: ["quotes", "mine"] });
+      setAutosaveState({ status: "saved", message: `Autoguardado ${formatAutosaveTime(savedAt)}`, savedAt });
+      if (!existingId && saved?.id) navigate(`/cotizador/puerta/${saved.id}`, { replace: true });
+      return saved;
+    } catch (e) {
+      const savedAt = new Date().toISOString();
+      setAutosaveState({ status: "error", message: `No se pudo autoguardar. Borrador local guardado. ${e?.message || ""}`.trim(), savedAt });
+      return null;
+    } finally {
+      autosaveInFlightRef.current = false;
+    }
+  }
+
+  useEffect(() => {
+    if (!autosaveWatchSignature || !user) return undefined;
+    let payload = null;
+    try { payload = buildDoorPayload(); } catch (_err) { return undefined; }
+    writeAutosaveDraft(autosaveDraftKey, payload, { linkedPortonId, reason: "local-change" });
+
+    if (autosaveTimerRef.current) window.clearTimeout(autosaveTimerRef.current);
+    autosaveTimerRef.current = window.setTimeout(() => { runDoorAutosaveNow("debounced"); }, 3000);
+    return () => {
+      if (autosaveTimerRef.current) window.clearTimeout(autosaveTimerRef.current);
+      autosaveTimerRef.current = null;
+    };
+  }, [autosaveWatchSignature, autosaveDraftKey, linkedPortonId, user]);
+
+  useEffect(() => {
+    function flushAutosave() {
+      if (autosaveTimerRef.current) {
+        window.clearTimeout(autosaveTimerRef.current);
+        autosaveTimerRef.current = null;
+      }
+      runDoorAutosaveNow("page-hide");
+    }
+    function onVisibilityChange() { if (document.visibilityState === "hidden") flushAutosave(); }
+    window.addEventListener("pagehide", flushAutosave);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => {
+      window.removeEventListener("pagehide", flushAutosave);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
+  }, [autosaveWatchSignature, autosaveDraftKey, linkedPortonId, quoteId, idParam, status, confirmChoiceOpen]);
 
   function validateDraft(payload) {
     const c = payload?.end_customer || {};
@@ -391,6 +505,7 @@ export default function PresupuestadorPuertasPage() {
           <div>
             <h2 style={{ margin: 0 }}>{visibleQuoteNumber ? `Presupuesto Puerta #${visibleQuoteNumber}` : "Presupuestador Puertas"}</h2>
             <div className="muted">Cotizador de puertas con catálogo propio y flujo de aprobación Comercial + Técnica.</div>
+            {autosaveState.message ? <div className="muted" style={{ fontSize: 12, marginTop: 3 }}>{autosaveState.message}</div> : null}
           </div>
         </div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>

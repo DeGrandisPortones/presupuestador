@@ -21,6 +21,16 @@ import { useQuoteStore } from "../../domain/quote/store";
 import { IVA_RATE_DEFAULT } from "../../domain/quote/defaults";
 import { calcTotals, resolveQuoteAdjustmentPercent, resolveQuoteIvaRate } from "../../domain/quote/pricing";
 import { validateArgentinaPhone, validateEmailAddress, validateGoogleMapsUrl } from "../../utils/contactValidation.js";
+import {
+  buildQuoteAutosaveKey,
+  canRemoteAutosaveQuote,
+  clearAutosaveDraft,
+  formatAutosaveTime,
+  hasAutosaveCustomerMinimum,
+  readAutosaveDraft,
+  serializeAutosavePayload,
+  writeAutosaveDraft,
+} from "../../domain/quote/autosave.js";
 
 import Button from "../../ui/Button.jsx";
 
@@ -618,6 +628,10 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
     partnerId,
     paymentMethod,
     conditionMode,
+    conditionText,
+    fulfillmentMode,
+    endCustomer,
+    note,
     portonType,
     lines,
     dimensions,
@@ -637,6 +651,11 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
   const [ivaRate] = useState(IVA_RATE_DEFAULT);
   const [confirmChoiceOpen, setConfirmChoiceOpen] = useState(false);
   const [confirmBudgetObservation, setConfirmBudgetObservation] = useState("");
+  const [autosaveState, setAutosaveState] = useState({ status: "idle", message: "", savedAt: "" });
+  const autosaveTimerRef = useRef(null);
+  const autosaveInFlightRef = useRef(false);
+  const autosaveLastRemoteSignatureRef = useRef("");
+  const autosaveRestoredLocalRef = useRef(false);
   const ipanelLamasAlertShownRef = useRef(false);
   const [linkedPortonId, setLinkedPortonId] = useState("");
   const [portonSearch, setPortonSearch] = useState("");
@@ -981,6 +1000,102 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
     setConfirmChoiceOpen(true);
   }
 
+  const autosaveDraftKey = useMemo(() => buildQuoteAutosaveKey({ user, catalogKind: normalizedCatalogKind, quoteId: quoteId || idParam || "new" }), [user, normalizedCatalogKind, quoteId, idParam]);
+  const autosaveNewDraftKey = useMemo(() => buildQuoteAutosaveKey({ user, catalogKind: normalizedCatalogKind, quoteId: "new" }), [user, normalizedCatalogKind]);
+  const autosaveWatchSignature = useMemo(() => {
+    try { return serializeAutosavePayload(getDraftPayload()); } catch (_err) { return ""; }
+  }, [catalogKind, normalizedCatalogKind, quoteId, idParam, pricelistId, partnerId, marginPercent, paymentMethod, conditionMode, conditionText, fulfillmentMode, endCustomer, note, portonType, dimensions, lines, linkedPortonId, quoteAdjustmentPercent, totals.ivaRate]);
+
+  useEffect(() => {
+    if (idParam || quoteQ.data || autosaveRestoredLocalRef.current) return;
+    const local = readAutosaveDraft(autosaveNewDraftKey);
+    autosaveRestoredLocalRef.current = true;
+    if (!local?.payload) return;
+    loadFromQuote({
+      id: null,
+      status: "draft",
+      catalog_kind: normalizedCatalogKind,
+      fulfillment_mode: local.payload.fulfillment_mode || "produccion",
+      pricelist_id: local.payload.pricelist_id || null,
+      end_customer: local.payload.end_customer || {},
+      lines: Array.isArray(local.payload.lines) ? local.payload.lines : [],
+      payload: local.payload.payload || {},
+      note: local.payload.note || null,
+    });
+    setLinkedPortonId(String(local.extra?.linkedPortonId || local.payload?.payload?.linked_porton_quote_id || "").trim());
+    setAutosaveState({ status: "local-restored", message: "Borrador recuperado de este navegador.", savedAt: local.saved_at || "" });
+    toast.success("Recuperé un borrador local sin guardar.");
+  }, [idParam, quoteQ.data, autosaveNewDraftKey, loadFromQuote, normalizedCatalogKind]);
+
+  async function runAutosaveNow(reason = "auto") {
+    let payload;
+    try { payload = getDraftPayload(); } catch (_err) { return null; }
+    writeAutosaveDraft(autosaveDraftKey, payload, { linkedPortonId, reason });
+
+    if (!hasAutosaveCustomerMinimum(payload)) {
+      setAutosaveState({ status: "waiting-minimum", message: "Borrador local. Completá nombre, apellido y teléfono para autoguardar en Mis presupuestos.", savedAt: new Date().toISOString() });
+      return null;
+    }
+    if (!canRemoteAutosaveQuote({ status, fulfillmentMode: payload.fulfillment_mode })) return null;
+    if (isRevisionQuote || isReturnedMeasurementQuote || isAcopioRevision || confirmChoiceOpen) return null;
+
+    const signature = serializeAutosavePayload(payload);
+    if (autosaveLastRemoteSignatureRef.current === signature || autosaveInFlightRef.current) return null;
+
+    autosaveInFlightRef.current = true;
+    setAutosaveState({ status: "saving", message: "Autoguardando...", savedAt: "" });
+    try {
+      const existingId = quoteId || idParam;
+      const saved = existingId ? await updateQuote(existingId, payload) : await createQuote(payload);
+      setQuoteMeta({ quoteId: saved.id, status: saved.status, rejectionNotes: saved.rejection_notes });
+      autosaveLastRemoteSignatureRef.current = signature;
+      const savedAt = new Date().toISOString();
+      clearAutosaveDraft(autosaveNewDraftKey);
+      writeAutosaveDraft(buildQuoteAutosaveKey({ user, catalogKind: normalizedCatalogKind, quoteId: saved.id }), { ...payload, id: saved.id }, { linkedPortonId, reason: "remote-saved" });
+      qc.invalidateQueries({ queryKey: ["quotes", "mine"] });
+      setAutosaveState({ status: "saved", message: `Autoguardado ${formatAutosaveTime(savedAt)}`, savedAt });
+      if (!existingId && saved?.id) navigate(editorRouteForKind(catalogKind, saved.id, location.search || ""), { replace: true });
+      return saved;
+    } catch (e) {
+      const savedAt = new Date().toISOString();
+      setAutosaveState({ status: "error", message: `No se pudo autoguardar. Borrador local guardado. ${e?.message || ""}`.trim(), savedAt });
+      return null;
+    } finally {
+      autosaveInFlightRef.current = false;
+    }
+  }
+
+  useEffect(() => {
+    if (!autosaveWatchSignature || !user) return undefined;
+    let payload = null;
+    try { payload = getDraftPayload(); } catch (_err) { return undefined; }
+    writeAutosaveDraft(autosaveDraftKey, payload, { linkedPortonId, reason: "local-change" });
+
+    if (autosaveTimerRef.current) window.clearTimeout(autosaveTimerRef.current);
+    autosaveTimerRef.current = window.setTimeout(() => { runAutosaveNow("debounced"); }, 3000);
+    return () => {
+      if (autosaveTimerRef.current) window.clearTimeout(autosaveTimerRef.current);
+      autosaveTimerRef.current = null;
+    };
+  }, [autosaveWatchSignature, autosaveDraftKey, linkedPortonId, user]);
+
+  useEffect(() => {
+    function flushAutosave() {
+      if (autosaveTimerRef.current) {
+        window.clearTimeout(autosaveTimerRef.current);
+        autosaveTimerRef.current = null;
+      }
+      runAutosaveNow("page-hide");
+    }
+    function onVisibilityChange() { if (document.visibilityState === "hidden") flushAutosave(); }
+    window.addEventListener("pagehide", flushAutosave);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => {
+      window.removeEventListener("pagehide", flushAutosave);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
+  }, [autosaveWatchSignature, autosaveDraftKey, linkedPortonId, quoteId, idParam, status, confirmChoiceOpen]);
+
   const saveM = useMutation({ mutationFn: async () => { const payload = getDraftPayload(); validateDraft(payload); if (quoteId) return await updateQuote(quoteId, payload); return await createQuote(payload); }, onSuccess: (q) => { setQuoteMeta({ quoteId: q.id, status: q.status, rejectionNotes: q.rejection_notes }); qc.invalidateQueries({ queryKey: ["quotes", "mine"] }); if (maybeContinueDoorWorkflow(q)) { toast.success("Presupuesto de puerta guardado. Volviendo al panel."); return; } navigate(editorRouteForKind(catalogKind, q.id)); toast.success("Guardado."); }, onError: (e) => toast.error(e?.message || "No se pudo guardar") });
 
   const confirmM = useMutation({
@@ -1134,6 +1249,7 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
           <div>
             <h2 style={{ margin: 0 }}>{visibleQuoteNumber ? `${isRevisionQuote ? "Ajuste" : "Presupuesto"} #${visibleQuoteNumber}` : "Nuevo presupuesto"}</h2>
             <div className="muted">Estado: <b>{visibleStatusLabel}</b>{isRevisionQuote && quoteQ.data?.parent_quote_id ? <> · Ref. original: <b>{visibleParentQuoteNumber || "—"}</b></> : null}</div>
+            {autosaveState.message ? <div className="muted" style={{ fontSize: 12, marginTop: 3 }}>{autosaveState.message}</div> : null}
           </div>
         </div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
