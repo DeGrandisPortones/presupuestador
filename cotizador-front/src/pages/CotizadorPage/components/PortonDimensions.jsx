@@ -925,6 +925,11 @@ function IpanelDivisionsSketchModal({
   const scale = Math.min(maxCanvasWidth / panelWidthMm, maxCanvasHeight / panelHeightMm, 1);
   const panelWidthPx = Math.max(170, Math.round(panelWidthMm * scale));
   const panelHeightPx = Math.max(220, Math.round(panelHeightMm * scale));
+  const panelX = 20;
+  const panelY = 20;
+  const sectionGuideOffsetPx = 28;
+  const sectionGuideTickPx = 8;
+  const sectionGuideLabelGapPx = 8;
   const axisDimensionMm = isVertical ? panelWidthMm : panelHeightMm;
   const mainAxisPx = isVertical ? panelWidthPx : panelHeightPx;
   const safeDividerPx = Math.max(2, (axisDimensionMm > 0 ? dividerMm / axisDimensionMm : 0) * mainAxisPx);
@@ -959,29 +964,49 @@ function IpanelDivisionsSketchModal({
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "minmax(260px, 420px) minmax(240px, 1fr)", gap: 18, alignItems: "start" }}>
           <div style={{ border: "1px solid #e5e7eb", borderRadius: 16, padding: 14, background: "#f8fafc" }}>
-            <svg width="100%" viewBox={`0 0 ${panelWidthPx + 40} ${panelHeightPx + 40}`} role="img" aria-label="Esquema del Ipanel con divisiones">
-              <rect x="20" y="20" width={panelWidthPx} height={panelHeightPx} rx="14" fill="#ffffff" stroke="#0f172a" strokeWidth="2.2" />
+            <svg width="100%" viewBox={`0 0 ${panelWidthPx + (isVertical ? 40 : 170)} ${panelHeightPx + (isVertical ? 110 : 40)}`} role="img" aria-label="Esquema del Ipanel con divisiones">
+              <rect x={panelX} y={panelY} width={panelWidthPx} height={panelHeightPx} rx="14" fill="#ffffff" stroke="#0f172a" strokeWidth="2.2" />
               {bands.map((band) => {
                 const startPx = (axisDimensionMm > 0 ? band.startMm / axisDimensionMm : 0) * mainAxisPx;
                 const sizePx = (axisDimensionMm > 0 ? band.sizeMm / axisDimensionMm : 0) * mainAxisPx;
                 if (band.type === "section") {
-                  const x = isVertical ? 20 + startPx : 20;
-                  const y = isVertical ? 20 : 20 + startPx;
+                  const x = isVertical ? panelX + startPx : panelX;
+                  const y = isVertical ? panelY : panelY + startPx;
                   const width = isVertical ? sizePx : panelWidthPx;
                   const height = isVertical ? panelHeightPx : sizePx;
                   const cx = x + width / 2;
                   const cy = y + height / 2;
+                  const guideColor = "#2563eb";
                   return (
                     <g key={`band-${band.type}-${band.index}`}>
                       <rect x={x} y={y} width={Math.max(0, width)} height={Math.max(0, height)} fill={band.index % 2 === 0 ? "#dff3f6" : "#eef2f7"} />
                       <text x={cx} y={cy} textAnchor="middle" dominantBaseline="middle" fontSize="12" fontWeight="700" fill="#0f172a">
                         {formatNumberForInput(band.rawSizeMm)} mm
                       </text>
+                      {isVertical ? (
+                        <g>
+                          <line x1={x} y1={panelY + panelHeightPx + sectionGuideOffsetPx} x2={x + width} y2={panelY + panelHeightPx + sectionGuideOffsetPx} stroke={guideColor} strokeWidth="1.8" />
+                          <line x1={x} y1={panelY + panelHeightPx + sectionGuideOffsetPx - sectionGuideTickPx} x2={x} y2={panelY + panelHeightPx + sectionGuideOffsetPx + sectionGuideTickPx} stroke={guideColor} strokeWidth="1.8" />
+                          <line x1={x + width} y1={panelY + panelHeightPx + sectionGuideOffsetPx - sectionGuideTickPx} x2={x + width} y2={panelY + panelHeightPx + sectionGuideOffsetPx + sectionGuideTickPx} stroke={guideColor} strokeWidth="1.8" />
+                          <text x={x + width / 2} y={panelY + panelHeightPx + sectionGuideOffsetPx + 22} textAnchor="middle" fontSize="11" fontWeight="700" fill={guideColor}>
+                            {formatNumberForInput(band.rawSizeMm)} mm
+                          </text>
+                        </g>
+                      ) : (
+                        <g>
+                          <line x1={panelX + panelWidthPx + sectionGuideOffsetPx} y1={y} x2={panelX + panelWidthPx + sectionGuideOffsetPx} y2={y + height} stroke={guideColor} strokeWidth="1.8" />
+                          <line x1={panelX + panelWidthPx + sectionGuideOffsetPx - sectionGuideTickPx} y1={y} x2={panelX + panelWidthPx + sectionGuideOffsetPx + sectionGuideTickPx} y2={y} stroke={guideColor} strokeWidth="1.8" />
+                          <line x1={panelX + panelWidthPx + sectionGuideOffsetPx - sectionGuideTickPx} y1={y + height} x2={panelX + panelWidthPx + sectionGuideOffsetPx + sectionGuideTickPx} y2={y + height} stroke={guideColor} strokeWidth="1.8" />
+                          <text x={panelX + panelWidthPx + sectionGuideOffsetPx + sectionGuideLabelGapPx} y={y + height / 2} textAnchor="start" dominantBaseline="middle" fontSize="11" fontWeight="700" fill={guideColor}>
+                            {formatNumberForInput(band.rawSizeMm)} mm
+                          </text>
+                        </g>
+                      )}
                     </g>
                   );
                 }
-                const rectX = isVertical ? 20 + startPx : 20;
-                const rectY = isVertical ? 20 : 20 + startPx;
+                const rectX = isVertical ? panelX + startPx : panelX;
+                const rectY = isVertical ? panelY : panelY + startPx;
                 const rectWidth = isVertical ? sizePx : panelWidthPx;
                 const rectHeight = isVertical ? panelHeightPx : sizePx;
                 const stripeW = Math.max(2, rectWidth);
@@ -1015,7 +1040,7 @@ function IpanelDivisionsSketchModal({
           <div style={{ border: "1px solid #e5e7eb", borderRadius: 16, padding: 14, background: "#fff" }}>
             <div style={{ fontWeight: 900, marginBottom: 8 }}>Detalle</div>
             <div className="muted" style={{ marginBottom: 8 }}>
-              Las medidas cargadas corresponden al tamaño útil de cada sección. Cada división incluye un listón de {formatMm(dividerMm)} entre paneles, representado como una franja con bordes marcados y línea punteada.
+              Las medidas cargadas corresponden al tamaño útil de cada sección. Ahora cada panel también muestra su cota referenciada con un segmento al costado del esquema. Cada división incluye un listón de {formatMm(dividerMm)} entre paneles, representado como una franja con bordes marcados y línea punteada.
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 10 }}>
               <ComputedCard label="Ancho" value={panelWidthMm > 0 ? formatMm(panelWidthMm) : "-"} />
