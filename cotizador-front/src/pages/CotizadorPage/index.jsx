@@ -170,7 +170,8 @@ function validateIpanelSectionSizes(dimensions = {}, orientation = "horizontal",
     throw new Error("Las medidas de las divisiones del Ipanel deben ser números positivos en mm.");
   }
   const axisDimensionMm = getIpanelAxisDimensionMm(dimensions, orientation);
-  const dividersTotalMm = Math.max(0, safeCount - 1) * 10;
+  const dividersIncluded = dimensions?.ipanel_divisiones_incluyen_liston === true || String(dimensions?.ipanel_divisiones_incluyen_liston || "").trim().toLowerCase() === "true" || String(dimensions?.ipanel_distribucion_divisiones || dimensions?.ipanel_divisiones_distribucion || "").trim().toLowerCase() === "clasica";
+  const dividersTotalMm = dividersIncluded ? 0 : Math.max(0, safeCount - 1) * 10;
   const sectionsTotalMm = parsed.reduce((acc, item) => acc + item, 0);
   const totalUsedMm = sectionsTotalMm + dividersTotalMm;
   if (!(axisDimensionMm > 0)) return;

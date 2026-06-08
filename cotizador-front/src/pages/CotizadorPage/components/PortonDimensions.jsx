@@ -105,13 +105,14 @@ function buildUniformIpanelSectionSizes({ count, axisDimensionMm, dividerMm = IP
   }
   return values;
 }
-function computeIpanelSectionMetrics({ values, count, axisDimensionMm, dividerMm = IPANEL_DIVIDER_LINE_MM }) {
+function computeIpanelSectionMetrics({ values, count, axisDimensionMm, dividerMm = IPANEL_DIVIDER_LINE_MM, dividersIncludedInSectionSizes = false }) {
   const safeCount = Math.max(0, Math.trunc(Number(count) || 0));
   const safeDivider = Math.max(0, Number(dividerMm || 0));
   const safeValues = sanitizeIpanelSectionSizes(values, safeCount);
   const parsed = safeValues.map((item) => parseMmNumber(item) || 0);
   const sectionsTotalMm = roundMm(parsed.reduce((acc, item) => acc + item, 0));
-  const dividersTotalMm = roundMm(Math.max(0, safeCount - 1) * safeDivider);
+  const nominalDividersTotalMm = roundMm(Math.max(0, safeCount - 1) * safeDivider);
+  const dividersTotalMm = dividersIncludedInSectionSizes ? 0 : nominalDividersTotalMm;
   const totalUsedMm = roundMm(sectionsTotalMm + dividersTotalMm);
   const availableMm = roundMm(Math.max(0, Number(axisDimensionMm || 0)));
   const remainingMm = roundMm(availableMm - totalUsedMm);
@@ -119,12 +120,27 @@ function computeIpanelSectionMetrics({ values, count, axisDimensionMm, dividerMm
     parsed,
     sectionsTotalMm,
     dividersTotalMm,
+    nominalDividersTotalMm,
     totalUsedMm,
     availableMm,
     remainingMm,
     exceeds: remainingMm < -0.01,
     matchesExactly: Math.abs(remainingMm) <= 0.5,
   };
+}
+function buildClassicIpanelSectionSizes(axisDimensionMm, classicStepMm = 353) {
+  const axis = Math.max(0, roundMm(axisDimensionMm));
+  const step = Math.max(1, Number(classicStepMm || 353));
+  if (!axis) return [];
+  const fullCount = Math.max(0, Math.floor(axis / step));
+  const remainder = roundMm(axis - fullCount * step);
+  const edge = remainder > 0.01 ? roundMm(remainder / 2) : 0;
+  const values = [];
+  if (edge > 0) values.push(formatNumberForInput(edge));
+  for (let index = 0; index < fullCount; index += 1) values.push(formatNumberForInput(step));
+  if (edge > 0) values.push(formatNumberForInput(edge));
+  if (values.length >= 2) return values;
+  return [formatNumberForInput(roundMm(axis / 2)), formatNumberForInput(roundMm(axis / 2))];
 }
 
 function norm(v) {
@@ -912,6 +928,7 @@ function IpanelDivisionsSketchModal({
   heightMm = 0,
   dividerMm = IPANEL_DIVIDER_LINE_MM,
   sectionSizes = [],
+  dividersIncludedInSectionSizes = false,
 }) {
   if (!open) return null;
   const normalizedOrientation = normalizeIpanelLamasOrientation(orientation);
@@ -948,7 +965,7 @@ function IpanelDivisionsSketchModal({
     const sectionMm = rawSectionMm * clampedCorrectionScale;
     bands.push({ type: "section", index, startMm: cursorMm, sizeMm: sectionMm, rawSizeMm: rawSectionMm });
     cursorMm += sectionMm;
-    if (index < count - 1) {
+    if (!dividersIncludedInSectionSizes && index < count - 1) {
       const dividerSize = dividerMm * clampedCorrectionScale;
       bands.push({ type: "divider", index, startMm: cursorMm, sizeMm: dividerSize, rawSizeMm: dividerMm });
       cursorMm += dividerSize;
@@ -1018,6 +1035,25 @@ function IpanelDivisionsSketchModal({
                           })()}
                         </g>
                       )}
+                      {dividersIncludedInSectionSizes && band.index < count - 1 ? (() => {
+                        const red = "#ef2323";
+                        if (isVertical) {
+                          const boundaryX = x + width;
+                          return (
+                            <>
+                              <line x1={boundaryX} y1={panelY} x2={boundaryX} y2={panelY + panelHeightPx} stroke={red} strokeWidth="2.2" />
+                              <line x1={boundaryX} y1={panelY} x2={boundaryX} y2={panelY + panelHeightPx} stroke="#334155" strokeWidth="1.1" strokeDasharray="4 4" />
+                            </>
+                          );
+                        }
+                        const boundaryY = y + height;
+                        return (
+                          <>
+                            <line x1={panelX} y1={boundaryY} x2={panelX + panelWidthPx} y2={boundaryY} stroke={red} strokeWidth="2.2" />
+                            <line x1={panelX} y1={boundaryY} x2={panelX + panelWidthPx} y2={boundaryY} stroke="#334155" strokeWidth="1.1" strokeDasharray="4 4" />
+                          </>
+                        );
+                      })() : null}
                     </g>
                   );
                 }
@@ -1110,14 +1146,17 @@ export default function PortonDimensions({ kind = "porton" }) {
   const ipanelDivisionsMax = getIpanelDivisionsMaxByOrientation(ipanelLamasOrientation);
   const ipanelDivisionsValue = String(dimensions?.ipanel_divisiones ?? dimensions?.cantidad_divisiones_ipanel ?? "");
   const ipanelDivisionsCount = Math.max(0, Math.trunc(Number(ipanelDivisionsValue || 0)));
+  const ipanelDividersIncludedInSectionSizes = dimensions?.ipanel_divisiones_incluyen_liston === true || String(dimensions?.ipanel_divisiones_incluyen_liston || "").trim().toLowerCase() === "true";
+  const ipanelDistributionMode = String(dimensions?.ipanel_distribucion_divisiones || dimensions?.ipanel_divisiones_distribucion || "").trim().toLowerCase();
+  const isIpanelClassicDistribution = ipanelDividersIncludedInSectionSizes || ipanelDistributionMode === "clasica";
   const ipanelAxisDimensionMm = useMemo(() => getIpanelAxisDimensionMm({ orientation: ipanelLamasOrientation, widthM: width, heightM: height }), [ipanelLamasOrientation, width, height]);
   const rawIpanelSectionSizes = useMemo(
     () => sanitizeIpanelSectionSizes(dimensions?.ipanel_divisiones_medidas_mm ?? dimensions?.medidas_divisiones_ipanel_mm ?? dimensions?.ipanel_section_sizes_mm ?? [], ipanelDivisionsCount),
     [dimensions?.ipanel_divisiones_medidas_mm, dimensions?.medidas_divisiones_ipanel_mm, dimensions?.ipanel_section_sizes_mm, ipanelDivisionsCount],
   );
   const ipanelSectionMetrics = useMemo(
-    () => computeIpanelSectionMetrics({ values: rawIpanelSectionSizes, count: ipanelDivisionsCount, axisDimensionMm: ipanelAxisDimensionMm, dividerMm: IPANEL_DIVIDER_LINE_MM }),
-    [rawIpanelSectionSizes, ipanelDivisionsCount, ipanelAxisDimensionMm],
+    () => computeIpanelSectionMetrics({ values: rawIpanelSectionSizes, count: ipanelDivisionsCount, axisDimensionMm: ipanelAxisDimensionMm, dividerMm: IPANEL_DIVIDER_LINE_MM, dividersIncludedInSectionSizes: isIpanelClassicDistribution }),
+    [rawIpanelSectionSizes, ipanelDivisionsCount, ipanelAxisDimensionMm, isIpanelClassicDistribution],
   );
   const ipanelDivisionsHasError = hasIpanelLamas22Panel && isIpanelDivisionsOutOfBounds(ipanelDivisionsValue, ipanelDivisionsMax);
 
@@ -1361,6 +1400,9 @@ export default function PortonDimensions({ kind = "porton" }) {
       ipanel_divisiones_medidas_mm: next,
       medidas_divisiones_ipanel_mm: next,
       ipanel_section_sizes_mm: next,
+      ipanel_distribucion_divisiones: "manual",
+      ipanel_divisiones_distribucion: "manual",
+      ipanel_divisiones_incluyen_liston: false,
     });
   }
   function redistributeIpanelSections() {
@@ -1370,6 +1412,23 @@ export default function PortonDimensions({ kind = "porton" }) {
       ipanel_divisiones_medidas_mm: next,
       medidas_divisiones_ipanel_mm: next,
       ipanel_section_sizes_mm: next,
+      ipanel_distribucion_divisiones: "repartido",
+      ipanel_divisiones_distribucion: "repartido",
+      ipanel_divisiones_incluyen_liston: false,
+    });
+  }
+  function applyClassicIpanelDistribution() {
+    const next = buildClassicIpanelSectionSizes(ipanelAxisDimensionMm, 353);
+    if (!next.length) return;
+    setDimensions({
+      ipanel_divisiones: String(next.length),
+      cantidad_divisiones_ipanel: String(next.length),
+      ipanel_divisiones_medidas_mm: next,
+      medidas_divisiones_ipanel_mm: next,
+      ipanel_section_sizes_mm: next,
+      ipanel_distribucion_divisiones: "clasica",
+      ipanel_divisiones_distribucion: "clasica",
+      ipanel_divisiones_incluyen_liston: true,
     });
   }
 
@@ -1461,7 +1520,7 @@ export default function PortonDimensions({ kind = "porton" }) {
           <div className="spacer" />
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 10 }}>
             <ComputedCard label="Base para repartir" value={ipanelAxisDimensionMm > 0 ? formatMm(ipanelAxisDimensionMm) : "-"} />
-            <ComputedCard label="Espesor total de líneas" value={ipanelSectionMetrics.dividersTotalMm > 0 ? formatMm(ipanelSectionMetrics.dividersTotalMm) : "-"} />
+            <ComputedCard label="Espesor total de líneas" value={ipanelSectionMetrics.nominalDividersTotalMm > 0 ? formatMm(ipanelSectionMetrics.nominalDividersTotalMm) : "-"} />
             <ComputedCard label="Medidas útiles cargadas" value={ipanelSectionMetrics.sectionsTotalMm > 0 ? formatMm(ipanelSectionMetrics.sectionsTotalMm) : "-"} />
             <ComputedCard label="Estado" value={ipanelSectionMetrics.exceeds ? `Excede ${formatMm(Math.abs(ipanelSectionMetrics.remainingMm))}` : (ipanelSectionMetrics.matchesExactly ? "Reparto completo" : `Restan ${formatMm(ipanelSectionMetrics.remainingMm)}`)} />
           </div>
@@ -1487,6 +1546,7 @@ export default function PortonDimensions({ kind = "porton" }) {
           </div>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 6 }}>
             <button type="button" onClick={redistributeIpanelSections} style={{ border: "1px solid #ddd", borderRadius: 10, background: "#fff", padding: "9px 12px", fontWeight: 800, cursor: "pointer" }}>Repartir en partes iguales</button>
+            <button type="button" onClick={applyClassicIpanelDistribution} style={{ border: "1px solid #0f766e", borderRadius: 10, background: "#ecfdf5", color: "#0f766e", padding: "9px 12px", fontWeight: 800, cursor: "pointer" }}>Distribución clásica</button>
           </div>
           <div style={{ marginTop: 10, padding: "10px 12px", borderRadius: 10, background: ipanelSectionMetrics.exceeds ? "#fee2e2" : "#eff6ff", color: ipanelSectionMetrics.exceeds ? "#991b1b" : "#1d4ed8", fontWeight: 700 }}>
             {ipanelSectionMetrics.exceeds
@@ -1554,6 +1614,7 @@ export default function PortonDimensions({ kind = "porton" }) {
         heightMm={Math.max(0, roundMm(height * 1000))}
         dividerMm={IPANEL_DIVIDER_LINE_MM}
         sectionSizes={ipanelSectionMetrics.parsed}
+        dividersIncludedInSectionSizes={isIpanelClassicDistribution}
       />
 
       <ParantesSketchModal
