@@ -1237,7 +1237,7 @@ export default function PortonDimensions({ kind = "porton" }) {
 
   const params = useMemo(() => getRulesParams(rulesQ.data), [rulesQ.data]);
   const preview = useMemo(() => buildCalculatedPreview({ widthM: width, heightM: height, lines, params, portonType, dimensions }), [width, height, lines, params, portonType, dimensions]);
-  const aptoParaRevestir = isAptoDerivedType(portonType);
+  const aptoParaRevestir = isAptoDerivedType(portonType) || detectNoCladdingByProducts(lines, params);
   const isNonAptoPorton = isPorton && !aptoParaRevestir;
   const detectedDoorSide = useMemo(() => isPorton ? resolveDoorSideForParantes(lines, params) : "", [isPorton, lines, params]);
   const detectedDoorLabel = detectedDoorSide === "izquierdo" ? "Puerta Izquierda" : (detectedDoorSide === "derecho" ? "Puerta Derecha" : "");
@@ -1258,6 +1258,13 @@ export default function PortonDimensions({ kind = "porton" }) {
     [effectiveParantesOrientation, preview?.altoHojaMm, preview?.anchoHojaMm, preview?.altoPasoMm, preview?.anchoPasoMm],
   );
   const rawParantesDistances = dimensions?.distancias_parantes_mm ?? dimensions?.distancias_parantes ?? [];
+  const hasStoredParantesConfig = isPorton && (
+    String(dimensions?.cantidad_parantes ?? "").trim() ||
+    String(dimensions?.orientacion_parantes ?? "").trim() ||
+    String(dimensions?.distribucion_parantes ?? "").trim() ||
+    String(dimensions?.observaciones_parantes ?? "").trim() ||
+    (Array.isArray(rawParantesDistances) && rawParantesDistances.some((item) => String(item ?? "").trim()))
+  );
   const distributeUniformly = dimensions?.distribuir_parantes_uniformemente === true || String(dimensions?.distribuir_parantes_uniformemente || "").trim().toLowerCase() === "true";
   const showSpecialParantesDistances = isPorton && aptoParaRevestir && distribution === "especial";
   const showAptoFixedFirstParanteOption = showSpecialParantesDistances;
@@ -1354,15 +1361,20 @@ export default function PortonDimensions({ kind = "porton" }) {
     if (!isPorton) return;
     const patch = {};
     const currentOrientationRaw = String(dimensions?.orientacion_parantes || "").trim();
-    if (isNonAptoPorton && nonAptoConfiguredOrientation && orientation !== nonAptoConfiguredOrientation) patch.orientacion_parantes = nonAptoConfiguredOrientation;
-    else if (!currentOrientationRaw) patch.orientacion_parantes = "verticales";
-    if (isNonAptoPorton && distribution !== "repartido") patch.distribucion_parantes = "repartido";
-    else if (!String(dimensions?.distribucion_parantes || "").trim()) patch.distribucion_parantes = "repartido";
-    const nextCount = String(autoParantesCount);
+    const currentDistributionRaw = String(dimensions?.distribucion_parantes || "").trim();
     const currentCount = String(dimensions?.cantidad_parantes ?? "").trim();
-    if ((isNonAptoPorton || !currentCount) && currentCount !== nextCount) patch.cantidad_parantes = nextCount;
+    const shouldAutoManageNonAptoParantes = isNonAptoPorton && !hasStoredParantesConfig;
+
+    if (shouldAutoManageNonAptoParantes && nonAptoConfiguredOrientation && orientation !== nonAptoConfiguredOrientation) patch.orientacion_parantes = nonAptoConfiguredOrientation;
+    else if (!currentOrientationRaw) patch.orientacion_parantes = "verticales";
+
+    if (shouldAutoManageNonAptoParantes && distribution !== "repartido") patch.distribucion_parantes = "repartido";
+    else if (!currentDistributionRaw) patch.distribucion_parantes = "repartido";
+
+    const nextCount = String(autoParantesCount);
+    if ((shouldAutoManageNonAptoParantes || !currentCount) && currentCount !== nextCount) patch.cantidad_parantes = nextCount;
     if (Object.keys(patch).length) setDimensions(patch);
-  }, [isPorton, isNonAptoPorton, nonAptoConfiguredOrientation, orientation, distribution, autoParantesCount, dimensions?.orientacion_parantes, dimensions?.distribucion_parantes, dimensions?.cantidad_parantes, setDimensions]);
+  }, [isPorton, isNonAptoPorton, hasStoredParantesConfig, nonAptoConfiguredOrientation, orientation, distribution, autoParantesCount, dimensions?.orientacion_parantes, dimensions?.distribucion_parantes, dimensions?.cantidad_parantes, setDimensions]);
 
   useEffect(() => {
     if (!isPorton) return;
