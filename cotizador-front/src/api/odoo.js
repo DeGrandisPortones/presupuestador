@@ -2,7 +2,7 @@ import { http } from "./http.js";
 import { getOdooBootstrap } from "../domain/odoo/bootstrap.js";
 import { getFinancingPreviewFromSettings } from "./financingSettings.js";
 
-const PRICE_CACHE_VERSION = "v1";
+const PRICE_CACHE_VERSION = "v2_price_lists_fast";
 const PRICE_CACHE_TTL_MS = 12 * 60 * 60 * 1000;
 const priceCachePromises = new Map();
 let lastEffectivePricelist = null;
@@ -29,6 +29,7 @@ function buildPriceIndex(prices = []) {
       item?.odoo_variant_id,
       item?.odoo_external_id,
       item?.odoo_template_id,
+      item?.product_tmpl_id,
     ]
       .map((value) => toPositiveInt(value))
       .filter(Boolean);
@@ -44,6 +45,7 @@ function normalizePriceCachePayload(payload) {
   return {
     ok: true,
     version: PRICE_CACHE_VERSION,
+    source: payload.source || "price-lists-products",
     pricelist: payload.pricelist || null,
     pricelist_id: toPositiveInt(payload.pricelist_id),
     partner_id: payload.partner_id ?? null,
@@ -51,6 +53,52 @@ function normalizePriceCachePayload(payload) {
     index: buildPriceIndex(prices),
     fetched_at: payload.fetched_at || new Date().toISOString(),
     saved_at: Date.now(),
+  };
+}
+
+function normalizePriceListProductRow(row = {}, pricelist = null) {
+  const productVariantId = toPositiveInt(row.product_id || row.odoo_product_id || row.odoo_variant_id || row.odoo_external_id);
+  const productTemplateId = toPositiveInt(row.product_tmpl_id || row.odoo_template_id || row.template_id);
+  const productId = productVariantId || productTemplateId;
+  const price = Number(row.fixed_price ?? row.price ?? row.list_price ?? 0) || 0;
+  const name = String(row.product_name || row.name || row.display_name || row.raw_name || (productId ? `Producto ${productId}` : "Producto")).trim();
+
+  return {
+    product_id: productId,
+    odoo_product_id: productVariantId || productId,
+    odoo_variant_id: productVariantId || null,
+    odoo_template_id: productTemplateId || null,
+    product_tmpl_id: productTemplateId || null,
+    qty: 1,
+    price,
+    name,
+    raw_name: name,
+    code: row.default_code || row.code || null,
+    pricelist_id: toPositiveInt(row.pricelist_id || pricelist?.id) || null,
+    item_id: row.item_id || null,
+    item_model: row.item_model || null,
+    compute_price: row.compute_price || null,
+    from_price_lists_endpoint: true,
+  };
+}
+
+function normalizePriceListsProductsResponse(data, pricelistId) {
+  if (!data?.ok) return null;
+  const pricelist = data.pricelist || { id: toPositiveInt(pricelistId), name: `Lista ${toPositiveInt(pricelistId)}` };
+  const resolvedPricelistId = toPositiveInt(pricelist?.id || pricelistId);
+  const prices = (Array.isArray(data.products) ? data.products : [])
+    .map((row) => normalizePriceListProductRow(row, pricelist))
+    .filter((row) => toPositiveInt(row.product_id) || toPositiveInt(row.odoo_template_id));
+
+  return {
+    ok: true,
+    source: "price-lists-products",
+    pricelist,
+    pricelist_id: resolvedPricelistId,
+    partner_id: null,
+    count: prices.length,
+    fetched_at: new Date().toISOString(),
+    prices,
   };
 }
 
@@ -95,6 +143,7 @@ function findCachedPriceForLine(line, cache) {
     line?.odoo_external_id,
     line?.odoo_id,
     line?.odoo_template_id,
+    line?.product_tmpl_id,
   ]
     .map((value) => toPositiveInt(value))
     .filter(Boolean);
@@ -108,7 +157,7 @@ function findCachedPriceForLine(line, cache) {
 
 function mapCachedLinePrice(line, cached) {
   const qty = Number(line?.qty || 1) || 1;
-  const productId = toPositiveInt(line?.product_id) || toPositiveInt(cached?.product_id) || toPositiveInt(cached?.odoo_product_id);
+  const productId = toPositiveInt(line?.product_id) || toPositiveInt(cached?.product_id) || toPositiveInt(cached?.odoo_product_id) || toPositiveInt(cached?.odoo_template_id);
   const name = cached?.name || cached?.raw_name || line?.name || (productId ? `Producto ${productId}` : "Producto");
 
   return {
@@ -135,11 +184,14 @@ async function fetchPriceCacheForPricelist(pricelistId, { force = false } = {}) 
 
   if (priceCachePromises.has(id)) return priceCachePromises.get(id);
 
+  // Mismo criterio que el actualizador rapido de listas: un solo GET para toda la lista.
+  // Evita calcular producto por producto contra Odoo desde el cotizador.
   const promise = http
-    .get(`/api/odoo-price-cache/prices?pricelist_id=${encodeURIComponent(String(id))}`)
+    .get(`/api/price-lists/${encodeURIComponent(String(id))}/products`)
     .then(({ data }) => {
-      if (!data?.ok) throw new Error(data?.error || "No se pudieron precargar los precios");
-      return writePriceCache(data);
+      const payload = normalizePriceListsProductsResponse(data, id);
+      if (!payload?.ok) throw new Error(data?.error || "No se pudieron precargar los precios");
+      return writePriceCache(payload);
     })
     .finally(() => {
       priceCachePromises.delete(id);
@@ -236,6 +288,7 @@ export async function getPrices({ pricelist_id, partner_id = null, lines }) {
           return {
             ok: true,
             from_cache: true,
+            source: "price-lists-products",
             pricelist_id: requestedPricelistId,
             partner_id: partner_id ?? null,
             prices,
