@@ -12,6 +12,7 @@ import morgan from "morgan";
 
 import { createOdooClient } from "./odoo.js";
 import { buildOdooRouter } from "./routes/odoo.routes.js";
+import { buildOdooPriceCacheRouter } from "./routes/odooPriceCache.routes.js";
 import { buildAuthRouter } from "./routes/auth.routes.js";
 import { buildCatalogRouter } from "./routes/catalog.routes.js";
 import { buildAdminRouter } from "./routes/admin.routes.js";
@@ -53,6 +54,7 @@ const odoo = createOdooClient({
 
 app.use("/api/auth", buildAuthRouter());
 app.use("/api/odoo", buildOdooRouter(odoo));
+app.use("/api/odoo-price-cache", buildOdooPriceCacheRouter(odoo));
 app.use("/api/financing-settings", buildFinancingSettingsRouter(odoo));
 app.use("/api/production-planning", buildProductionPlanningRouter());
 app.use("/api/quotes", buildQuotesRouter(odoo));
