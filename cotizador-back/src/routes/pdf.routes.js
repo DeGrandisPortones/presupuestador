@@ -12,6 +12,8 @@ import { getProductPdfNameMap, normKind } from "../catalogDb.js";
 const IVA_RATE = 0.21;
 const SHIPPING_PRODUCT_IDS = new Set([2842]);
 const DISTRIBUTOR_OWN_SUPPLY_PRODUCT_IDS = new Set([2842, 3956, 3957, 3961, 3962, 3963, 3966, 4037, 3991, 3992, 3993, 3994, 3995, 3996, 3485, 3486, 3490, 3491, 3492, 3495, 3566, 3520, 3521, 3522, 3523, 3524, 3525]);
+const IPANEL_DIVIDER_LINE_MM = 10;
+
 function isDistributorPayload(payload = {}) {
   return String(payload?.created_by_role || payload?.payload?.created_by_role || "").trim().toLowerCase() === "distribuidor";
 }
@@ -25,7 +27,6 @@ function isShippingLine(line = {}) {
 function isDistributorOwnSupplyLine(line = {}) {
   return lineMatchesProductSet(line, DISTRIBUTOR_OWN_SUPPLY_PRODUCT_IDS);
 }
-
 function isUuid(v) {
   const s = String(v || "").trim();
   return /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(s);
@@ -53,6 +54,13 @@ function pick(obj, pathValue, fallback = "") {
 }
 function getCatalogKindFromPayload(payload) {
   return safeStr(payload?.catalog_kind || payload?.payload?.catalog_kind || "porton").toLowerCase();
+}
+function getPayloadObject(payload) {
+  return payload?.payload && typeof payload.payload === "object" ? payload.payload : {};
+}
+function getDimensions(payload) {
+  const p = getPayloadObject(payload);
+  return p?.dimensions && typeof p.dimensions === "object" ? p.dimensions : {};
 }
 function getLogoPath(payload = null) {
   const __filename = fileURLToPath(import.meta.url);
@@ -387,6 +395,138 @@ function drawInfoBand(doc, { y, margin, innerW, items, fillColor = "#FFFFFF" }) 
   return y + h + 4;
 }
 
+function parsePositiveNumber(value) {
+  const n = Number(String(value ?? "").replace(",", "."));
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+function formatMeters(value) {
+  const n = parsePositiveNumber(value);
+  if (!n) return "-";
+  return `${String(Math.round(n * 100) / 100).replace(/\.0+$/, "")} m`;
+}
+function formatMmValue(value) {
+  const n = parsePositiveNumber(value);
+  if (!n) return "-";
+  return `${String(Math.round(n * 100) / 100).replace(/\.0+$/, "")} mm`;
+}
+function normalizeIpanelLamasOrientation(value) {
+  const raw = String(value || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+  if (raw.includes("vert")) return "vertical";
+  return "horizontal";
+}
+function ipanelOrientationLabel(value) {
+  return normalizeIpanelLamasOrientation(value) === "vertical" ? "Vertical" : "Horizontal";
+}
+function getIpanelDimensionsForPdf(payload) {
+  const dims = getDimensions(payload);
+  const orientation = normalizeIpanelLamasOrientation(
+    dims?.ipanel_lamas_orientacion ??
+      dims?.orientacion_ipanel_lamas ??
+      dims?.ipanel_orientacion_lamas ??
+      dims?.ipanel_lamas_orientation ??
+      "horizontal",
+  );
+  const divisionsRaw = dims?.ipanel_divisiones ?? dims?.cantidad_divisiones_ipanel ?? "";
+  const divisions = Math.max(0, Math.trunc(Number(divisionsRaw || 0)));
+  const sectionSizes = (Array.isArray(dims?.ipanel_divisiones_medidas_mm)
+    ? dims.ipanel_divisiones_medidas_mm
+    : Array.isArray(dims?.medidas_divisiones_ipanel_mm)
+      ? dims.medidas_divisiones_ipanel_mm
+      : Array.isArray(dims?.ipanel_section_sizes_mm)
+        ? dims.ipanel_section_sizes_mm
+        : [])
+    .slice(0, divisions || undefined)
+    .map((item) => parsePositiveNumber(item))
+    .filter((item) => item > 0);
+  const widthM = parsePositiveNumber(dims?.width);
+  const heightM = parsePositiveNumber(dims?.height);
+  const dividersIncluded = dims?.ipanel_divisiones_incluyen_liston === true || String(dims?.ipanel_divisiones_incluyen_liston || "").trim().toLowerCase() === "true" || String(dims?.ipanel_distribucion_divisiones || dims?.ipanel_divisiones_distribucion || "").trim().toLowerCase() === "clasica";
+  return { widthM, heightM, orientation, divisions, sectionSizes, dividersIncluded };
+}
+function buildIpanelInfoLines(payload) {
+  if (getCatalogKindFromPayload(payload) !== "ipanel") return [];
+  const info = getIpanelDimensionsForPdf(payload);
+  const rows = [];
+  if (info.widthM || info.heightM) rows.push(`Medidas Ipanel: ancho ${formatMeters(info.widthM)} x alto ${formatMeters(info.heightM)}`);
+  rows.push(`Orientación de lamas: ${ipanelOrientationLabel(info.orientation)}`);
+  if (info.divisions) rows.push(`Divisiones: ${info.divisions}`);
+  if (info.sectionSizes.length) rows.push(`Medidas secciones: ${info.sectionSizes.map(formatMmValue).join(" / ")}`);
+  return rows;
+}
+function drawIpanelScheme(doc, { x, y, width, info }) {
+  if (!info.widthM || !info.heightM || !info.sectionSizes.length) return y;
+  const maxW = Math.min(300, width - 200);
+  const maxH = 160;
+  const panelRatio = info.widthM / info.heightM;
+  let panelW = maxW;
+  let panelH = panelW / panelRatio;
+  if (panelH > maxH) {
+    panelH = maxH;
+    panelW = panelH * panelRatio;
+  }
+  panelW = Math.max(160, Math.min(maxW, panelW));
+  panelH = Math.max(90, Math.min(maxH, panelH));
+  const panelX = x + 20;
+  const panelY = y + 48;
+  const sideX = panelX + panelW + 30;
+  const isVertical = info.orientation === "vertical";
+  const axisMm = isVertical ? info.widthM * 1000 : info.heightM * 1000;
+  const axisPx = isVertical ? panelW : panelH;
+  const dividerMm = info.dividersIncluded ? 0 : IPANEL_DIVIDER_LINE_MM;
+  const totalMm = info.sectionSizes.reduce((acc, n) => acc + n, 0) + Math.max(0, info.sectionSizes.length - 1) * dividerMm;
+  const scaleCorrection = totalMm > 0 ? axisMm / totalMm : 1;
+
+  doc.font("Helvetica-Bold").fontSize(11).fillColor("#111827").text("Esquema del Ipanel", x + 8, y + 12, { width: width - 16 });
+  doc.font("Helvetica").fontSize(9).fillColor("#374151").text(`Ancho ${formatMeters(info.widthM)} · Alto ${formatMeters(info.heightM)} · Lamas ${ipanelOrientationLabel(info.orientation).toLowerCase()}`, x + 8, y + 28, { width: width - 16 });
+  doc.save().roundedRect(panelX, panelY, panelW, panelH, 8).fillAndStroke("#FFFFFF", "#111827").restore();
+
+  let cursorMm = 0;
+  for (let index = 0; index < info.sectionSizes.length; index += 1) {
+    const sectionMm = info.sectionSizes[index] * scaleCorrection;
+    const startPx = axisMm > 0 ? (cursorMm / axisMm) * axisPx : 0;
+    const sizePx = axisMm > 0 ? (sectionMm / axisMm) * axisPx : 0;
+    const fill = index % 2 === 0 ? "#DFF3F6" : "#EEF2F7";
+    if (isVertical) {
+      doc.save().rect(panelX + startPx, panelY, Math.max(1, sizePx), panelH).fill(fill).restore();
+      if (index > 0) doc.save().strokeColor("#EF2323").lineWidth(1.4).moveTo(panelX + startPx, panelY).lineTo(panelX + startPx, panelY + panelH).stroke().restore();
+    } else {
+      doc.save().rect(panelX, panelY + startPx, panelW, Math.max(1, sizePx)).fill(fill).restore();
+      if (index > 0) doc.save().strokeColor("#EF2323").lineWidth(1.4).moveTo(panelX, panelY + startPx).lineTo(panelX + panelW, panelY + startPx).stroke().restore();
+    }
+    cursorMm += sectionMm + dividerMm * scaleCorrection;
+  }
+  doc.save().roundedRect(panelX, panelY, panelW, panelH, 8).strokeColor("#111827").lineWidth(1.8).stroke().restore();
+
+  const detailRows = [
+    ["Orientación", ipanelOrientationLabel(info.orientation)],
+    ["Divisiones", String(info.divisions || info.sectionSizes.length)],
+    ["Secciones", info.sectionSizes.map(formatMmValue).join(" / ")],
+  ];
+  let detailY = panelY;
+  for (const [label, value] of detailRows) {
+    doc.font("Helvetica-Bold").fontSize(8).fillColor("#6B7280").text(label.toUpperCase(), sideX, detailY, { width: width - (sideX - x) - 12 });
+    doc.font("Helvetica").fontSize(9.5).fillColor("#111827").text(value || "-", sideX, detailY + 12, { width: width - (sideX - x) - 12, lineGap: 1 });
+    detailY = doc.y + 8;
+  }
+  return y + Math.max(220, panelH + 82);
+}
+function drawIpanelPdfBlock(doc, { y, margin, innerW, pageBottom }) {
+  const info = getIpanelDimensionsForPdf(this.payload || {});
+  if (getCatalogKindFromPayload(this.payload || {}) !== "ipanel") return y;
+  const hasAnything = info.widthM || info.heightM || info.sectionSizes.length || info.divisions;
+  if (!hasAnything) return y;
+  const blockH = info.sectionSizes.length && info.widthM && info.heightM ? 235 : 70;
+  if (y + blockH > pageBottom()) {
+    doc.addPage();
+    y = margin + 20;
+  }
+  doc.save().strokeColor("#D1D5DB").rect(margin, y, innerW, blockH).stroke().restore();
+  if (info.sectionSizes.length && info.widthM && info.heightM) return drawIpanelScheme(doc, { x: margin, y, width: innerW, info });
+  doc.font("Helvetica-Bold").fontSize(11).fillColor("#111827").text("Medidas del Ipanel", margin + 8, y + 10, { width: innerW - 16 });
+  doc.font("Helvetica").fontSize(9.5).fillColor("#111827").text(buildIpanelInfoLines(this.payload || {}).join(" · "), margin + 8, y + 28, { width: innerW - 16, lineGap: 2 });
+  return y + blockH + 8;
+}
+
 const TERMS_AND_CONDITIONS = [
   "1. Formas de Pago: Aceptamos pagos en efectivo (pesos o dólares billete), transferencia bancaria, cheques o tarjeta de crédito (consultar por planes vigentes). Para confirmar el pedido se requiere una seña del 70% del valor total. El saldo restante deberá abonarse en su totalidad antes de la entrega del producto.",
   "2. Plazos de Entrega: El plazo estimado de entrega es de 40 días para portones en lamas, contados a partir de la confirmación de las medidas y características del pedido por parte del cliente y/o encargado. Para modelos especiales como portones coplanares o varillados, el plazo será de 60 días. Estos plazos aplican a partir de la confirmación técnica y el pago de la seña correspondiente.",
@@ -441,6 +581,7 @@ async function renderPdf({ title, payload, useBasePrice, odoo, includeTerms = fa
 
   const technicalInfoLines = [];
   technicalInfoLines.push(...extraCalculatedLines);
+  technicalInfoLines.push(...buildIpanelInfoLines(payload));
   if (obs) technicalInfoLines.push(`Obs: ${obs}`);
 
   const beforeInfoY = y;
@@ -512,6 +653,9 @@ async function renderPdf({ title, payload, useBasePrice, odoo, includeTerms = fa
       .text(`$ ${formatMoney(amount)}`, summaryX + 8, tableY + 8, { width: summaryW - 16, align: "right" });
     tableY += h;
   }
+
+  tableY += 12;
+  tableY = drawIpanelPdfBlock.call({ payload }, doc, { y: tableY, margin, innerW, pageBottom });
 
   if (includeTerms) drawTermsAndConditionsPage(doc, { title, payload, margin, innerW, dateStr, validStr });
 
