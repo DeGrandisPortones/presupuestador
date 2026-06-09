@@ -9,6 +9,7 @@ import { useAuthStore } from "../../domain/auth/store.js";
 import { listMeasurements } from "../../api/measurements.js";
 
 const PAGE_SIZE = 25;
+const COMPACT_LAYOUT_MAX_PX = 760;
 
 function fmtDate(iso) {
   if (!iso) return "—";
@@ -57,9 +58,128 @@ function matchesSearch(r, searchText) {
   return haystack.includes(s);
 }
 
+function shouldUseCompactMeasurementsLayout() {
+  if (typeof window === "undefined") return false;
+  const viewportWidth = Number(window.innerWidth || 0);
+  const visualViewportWidth = Number(window.visualViewport?.width || 0);
+  const screenWidth = Number(window.screen?.width || 0);
+  return [viewportWidth, visualViewportWidth, screenWidth].some(
+    (value) => Number.isFinite(value) && value > 0 && value <= COMPACT_LAYOUT_MAX_PX,
+  );
+}
+
+function useCompactMeasurementsLayout() {
+  const [compact, setCompact] = useState(() => shouldUseCompactMeasurementsLayout());
+
+  useEffect(() => {
+    function update() {
+      setCompact(shouldUseCompactMeasurementsLayout());
+    }
+    update();
+    window.addEventListener("resize", update);
+    window.addEventListener("orientationchange", update);
+    window.visualViewport?.addEventListener?.("resize", update);
+    return () => {
+      window.removeEventListener("resize", update);
+      window.removeEventListener("orientationchange", update);
+      window.visualViewport?.removeEventListener?.("resize", update);
+    };
+  }, []);
+
+  return compact;
+}
+
+function StatusPill({ value }) {
+  return (
+    <span
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        borderRadius: 999,
+        background: "#eef6ff",
+        border: "1px solid #cfe7ff",
+        color: "#075985",
+        padding: "4px 8px",
+        fontSize: 12,
+        fontWeight: 800,
+        whiteSpace: "nowrap",
+      }}
+    >
+      {value || "—"}
+    </span>
+  );
+}
+
+function MobileField({ label, value, children, strong = false }) {
+  return (
+    <div style={{ minWidth: 0 }}>
+      <div className="muted" style={{ fontSize: 11, marginBottom: 3 }}>{label}</div>
+      <div style={{ fontWeight: strong ? 900 : 700, overflowWrap: "anywhere", lineHeight: 1.2 }}>
+        {children || value || "—"}
+      </div>
+    </div>
+  );
+}
+
+function MeasurementCard({ row, onOpen }) {
+  const phone = row?.end_customer?.phone || "";
+  const whatsappUrl = buildWhatsappUrl(phone);
+  const status = String(row?.measurement_status || "").toLowerCase();
+  const approved = status === "approved";
+
+  return (
+    <div
+      style={{
+        border: "1px solid #e5e7eb",
+        borderRadius: 14,
+        background: "#fff",
+        padding: 12,
+        boxShadow: "0 1px 2px rgba(15,23,42,0.06)",
+      }}
+    >
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "flex-start" }}>
+        <div style={{ minWidth: 0 }}>
+          <div style={{ fontWeight: 900, fontSize: 16, lineHeight: 1.15, overflowWrap: "anywhere" }}>
+            {row?.end_customer?.name || "(sin nombre)"}
+          </div>
+          <div className="muted" style={{ marginTop: 4 }}>{localityLabel(row)}</div>
+        </div>
+        <StatusPill value={labelMeasurementStatus(row?.measurement_status)} />
+      </div>
+
+      <div className="spacer" />
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+        <MobileField label="Fecha visita" value={fmtDate(row?.measurement_scheduled_for)} />
+        <MobileField label="Alta" value={fmtDate(row?.created_at)} />
+      </div>
+
+      <div className="spacer" />
+      <MobileField label="Dirección" value={row?.end_customer?.address || "—"} />
+
+      <div className="spacer" />
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+        <MobileField label="Teléfono">
+          {whatsappUrl ? <a href={whatsappUrl} target="_blank" rel="noreferrer">{phone}</a> : (phone || "—")}
+        </MobileField>
+        <MobileField label="Maps">
+          {row?.end_customer?.maps_url ? (
+            <a href={row.end_customer.maps_url} target="_blank" rel="noreferrer">📍 Abrir</a>
+          ) : "—"}
+        </MobileField>
+      </div>
+
+      <div className="spacer" />
+      <div style={{ display: "flex", justifyContent: "flex-end" }}>
+        <Button onClick={() => onOpen(row)}>{approved ? "Ver medición" : "Formulario"}</Button>
+      </div>
+    </div>
+  );
+}
+
 export default function MedicionesPage() {
   const user = useAuthStore((s) => s.user);
   const navigate = useNavigate();
+  const compactLayout = useCompactMeasurementsLayout();
 
   const [status, setStatus] = useState("pending");
   const [searchText, setSearchText] = useState("");
@@ -97,6 +217,16 @@ export default function MedicionesPage() {
     const start = (page - 1) * PAGE_SIZE;
     return rows.slice(start, start + PAGE_SIZE);
   }, [rows, page]);
+
+  function openMeasurement(row) {
+    const approved = String(row?.measurement_status || "").toLowerCase() === "approved";
+    navigate(approved ? `/mediciones/${row.id}?readonly=1` : `/mediciones/${row.id}`, {
+      state: {
+        from: "/mediciones",
+        readOnlyMeasurement: approved,
+      },
+    });
+  }
 
   if (!user?.is_medidor) {
     return (
@@ -139,65 +269,60 @@ export default function MedicionesPage() {
 
         {!!rows.length && (
           <>
-            <table>
-              <thead>
-                <tr>
-                  <th>Fecha visita</th>
-                  <th>Alta</th>
-                  <th>Cliente</th>
-                  <th>Localidad</th>
-                  <th>Dirección</th>
-                  <th>Teléfono</th>
-                  <th>Maps</th>
-                  <th>Estado</th>
-                  <th></th>
-                </tr>
-              </thead>
-              <tbody>
-                {visibleRows.map((r) => (
-                  <tr key={r.id}>
-                    <td>{fmtDate(r.measurement_scheduled_for)}</td>
-                    <td>{fmtDate(r.created_at)}</td>
-                    <td style={{ fontWeight: 800 }}>{r.end_customer?.name || "(sin nombre)"}</td>
-                    <td>{localityLabel(r)}</td>
-                    <td>{r.end_customer?.address || "—"}</td>
-                    <td>
-                      {(() => {
-                        const ph = r.end_customer?.phone || "";
-                        const w = buildWhatsappUrl(ph);
-                        return w ? <a href={w} target="_blank" rel="noreferrer">{ph}</a> : (ph || "—");
-                      })()}
-                    </td>
-                    <td>
-                      {r.end_customer?.maps_url ? (
-                        <a href={r.end_customer.maps_url} target="_blank" rel="noreferrer">📍 Abrir</a>
-                      ) : "—"}
-                    </td>
-                    <td>{labelMeasurementStatus(r.measurement_status)}</td>
-                    <td className="right">
-                      <Button
-                        onClick={() =>
-                          navigate(
-                            String(r?.measurement_status || "").toLowerCase() === "approved"
-                              ? `/mediciones/${r.id}?readonly=1`
-                              : `/mediciones/${r.id}`,
-                            {
-                              state: {
-                                from: "/mediciones",
-                                readOnlyMeasurement:
-                                  String(r?.measurement_status || "").toLowerCase() === "approved",
-                              },
-                            },
-                          )
-                        }
-                      >
-                        {String(r?.measurement_status || "").toLowerCase() === "approved" ? "Ver medición" : "Formulario"}
-                      </Button>
-                    </td>
-                  </tr>
+            {compactLayout ? (
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                {visibleRows.map((row) => (
+                  <MeasurementCard key={row.id} row={row} onOpen={openMeasurement} />
                 ))}
-              </tbody>
-            </table>
+              </div>
+            ) : (
+              <div style={{ overflowX: "auto", width: "100%" }}>
+                <table style={{ minWidth: 920 }}>
+                  <thead>
+                    <tr>
+                      <th>Fecha visita</th>
+                      <th>Alta</th>
+                      <th>Cliente</th>
+                      <th>Localidad</th>
+                      <th>Dirección</th>
+                      <th>Teléfono</th>
+                      <th>Maps</th>
+                      <th>Estado</th>
+                      <th></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {visibleRows.map((r) => (
+                      <tr key={r.id}>
+                        <td>{fmtDate(r.measurement_scheduled_for)}</td>
+                        <td>{fmtDate(r.created_at)}</td>
+                        <td style={{ fontWeight: 800 }}>{r.end_customer?.name || "(sin nombre)"}</td>
+                        <td>{localityLabel(r)}</td>
+                        <td>{r.end_customer?.address || "—"}</td>
+                        <td>
+                          {(() => {
+                            const ph = r.end_customer?.phone || "";
+                            const w = buildWhatsappUrl(ph);
+                            return w ? <a href={w} target="_blank" rel="noreferrer">{ph}</a> : (ph || "—");
+                          })()}
+                        </td>
+                        <td>
+                          {r.end_customer?.maps_url ? (
+                            <a href={r.end_customer.maps_url} target="_blank" rel="noreferrer">📍 Abrir</a>
+                          ) : "—"}
+                        </td>
+                        <td>{labelMeasurementStatus(r.measurement_status)}</td>
+                        <td className="right">
+                          <Button onClick={() => openMeasurement(r)}>
+                            {String(r?.measurement_status || "").toLowerCase() === "approved" ? "Ver medición" : "Formulario"}
+                          </Button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
 
             <PaginationControls page={page} totalItems={rows.length} pageSize={PAGE_SIZE} onPageChange={setPage} />
           </>
