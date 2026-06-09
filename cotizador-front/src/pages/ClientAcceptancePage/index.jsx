@@ -5,6 +5,7 @@ import {
   getPublicMeasurementAcceptance,
   submitPublicMeasurementAcceptance,
 } from "../../api/measurements.js";
+import { getCatalogBootstrap } from "../../api/catalog.js";
 import Button from "../../ui/Button.jsx";
 import Input from "../../ui/Input.jsx";
 
@@ -357,20 +358,94 @@ function isCommercialBudgetLine(line = {}) {
   const haystack = `${line?.raw_name || ""} ${line?.name || ""}`.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
   return ["recargo", "financiacion", "financiación", "forma de pago", "iva", "coeficiente", "descuento", "$", "monto"].some((word) => haystack.includes(word));
 }
-function budgetLineDisplayName(line = {}) {
-  return text(line?.raw_name || line?.name || line?.display_name || line?.alias || `Producto ${line?.product_id || ""}`);
+function budgetLineDisplayName(line = {}, catalogProduct = null) {
+  return text(
+    line?.raw_name ||
+      line?.name ||
+      line?.display_name ||
+      line?.alias ||
+      catalogProduct?.alias ||
+      catalogProduct?.display_name ||
+      catalogProduct?.name ||
+      `Producto ${line?.product_id || ""}`,
+  );
 }
-function buildBudgetDetailLines(lines = []) {
-  return (Array.isArray(lines) ? lines : [])
-    .filter((line) => Number(line?.qty || 0) > 0)
-    .filter((line) => !isCommercialBudgetLine(line))
-    .map((line, idx) => ({
-      key: `${line?.product_id || "line"}-${idx}`,
-      name: budgetLineDisplayName(line),
-      qty: Number(line?.qty || 1) || 1,
-      code: text(line?.code),
-    }))
-    .filter((line) => line.name);
+function buildCatalogSectionHelpers(catalog = {}) {
+  const sections = Array.isArray(catalog?.sections) ? catalog.sections : [];
+  const products = Array.isArray(catalog?.products) ? catalog.products : [];
+  const sectionNameById = new Map();
+  const productById = new Map();
+  for (const section of sections) {
+    const id = Number(section?.id || 0);
+    const name = text(section?.name || section?.display_name || section?.label);
+    if (id && name) sectionNameById.set(id, name);
+  }
+  for (const product of products) {
+    const id = Number(product?.id || product?.product_id || 0);
+    if (id) productById.set(id, product);
+  }
+  return { sectionNameById, productById };
+}
+function lineExplicitSectionNames(line = {}) {
+  const direct = [
+    line?.section_name,
+    line?.sectionName,
+    line?.budget_section_name,
+    line?.budgetSectionName,
+    line?.category_name,
+    line?.category,
+  ]
+    .map(text)
+    .filter(Boolean);
+  return Array.from(new Set(direct));
+}
+function sectionNamesForBudgetLine(line = {}, catalogProduct = null, sectionNameById = new Map()) {
+  const names = lineExplicitSectionNames(line);
+  const sectionIds = [
+    ...(Array.isArray(line?.section_ids) ? line.section_ids : []),
+    ...(Array.isArray(catalogProduct?.section_ids) ? catalogProduct.section_ids : []),
+  ];
+  for (const rawId of sectionIds) {
+    const sectionName = sectionNameById.get(Number(rawId || 0));
+    if (sectionName) names.push(sectionName);
+  }
+  const unique = Array.from(new Set(names.map(text).filter(Boolean)));
+  return unique.length ? unique : ["Detalle del presupuesto"];
+}
+function buildBudgetDetailLines(lines = [], catalog = {}) {
+  const { sectionNameById, productById } = buildCatalogSectionHelpers(catalog);
+  const grouped = new Map();
+  const sourceLines = Array.isArray(lines) ? lines : [];
+  for (let idx = 0; idx < sourceLines.length; idx += 1) {
+    const line = sourceLines[idx];
+    if (Number(line?.qty || 0) <= 0) continue;
+    if (isCommercialBudgetLine(line)) continue;
+    const catalogProduct = productById.get(Number(line?.product_id || 0)) || null;
+    const name = budgetLineDisplayName(line, catalogProduct);
+    if (!name) continue;
+    const qty = Number(line?.qty || 1) || 1;
+    const code = text(line?.code || catalogProduct?.code);
+    for (const sectionName of sectionNamesForBudgetLine(line, catalogProduct, sectionNameById)) {
+      const key = `${sectionName}::${name}::${code}`;
+      const existing = grouped.get(key);
+      if (existing) {
+        existing.qty += qty;
+        continue;
+      }
+      grouped.set(key, {
+        key: `${line?.product_id || "line"}-${idx}-${sectionName}`,
+        sectionName,
+        name,
+        qty,
+        code,
+      });
+    }
+  }
+  return Array.from(grouped.values()).sort((a, b) => {
+    const sectionCmp = String(a.sectionName || "").localeCompare(String(b.sectionName || ""), "es");
+    if (sectionCmp) return sectionCmp;
+    return String(a.name || "").localeCompare(String(b.name || ""), "es");
+  });
 }
 function MeasurementSchemeVisual({ form }) {
   const altos = normalizeTriple(form?.esquema?.alto || []);
@@ -416,6 +491,13 @@ export default function ClientAcceptancePage() {
   const quote = acceptanceQ.data?.quote || null;
   const accepted = acceptanceQ.data?.acceptance || null;
   const form = quote?.measurement_form || {};
+  const catalogKind = String(quote?.payload?.quote_subkind || quote?.catalog_kind || "porton").toLowerCase();
+  const catalogQ = useQuery({
+    queryKey: ["catalogBootstrapForClientAcceptance", catalogKind],
+    queryFn: () => getCatalogBootstrap(catalogKind),
+    enabled: !!quote,
+    staleTime: 60 * 1000,
+  });
   const technicalSummary = useMemo(() => computeAutomaticSummary({
     quote,
     form,
@@ -426,8 +508,8 @@ export default function ClientAcceptancePage() {
     [quote, form, technicalSummary],
   );
   const budgetDetailLines = useMemo(
-    () => buildBudgetDetailLines(quote?.lines || []),
-    [quote?.lines],
+    () => buildBudgetDetailLines(quote?.lines || [], catalogQ.data || {}),
+    [quote?.lines, catalogQ.data],
   );
 
   if (acceptanceQ.isLoading) {
@@ -494,6 +576,9 @@ export default function ClientAcceptancePage() {
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
             {budgetDetailLines.map((line) => (
               <div key={line.key} style={{ border: "1px solid #eee", borderRadius: 10, padding: 10 }}>
+                <div className="muted" style={{ fontSize: 12, marginBottom: 4 }}>
+                  {line.sectionName || "Detalle del presupuesto"}
+                </div>
                 <b>{line.name}</b>
                 <div className="muted">
                   Cantidad: {line.qty}{line.code ? ` · Código: ${line.code}` : ""}
