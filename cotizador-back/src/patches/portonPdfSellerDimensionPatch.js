@@ -1,7 +1,19 @@
 import PDFDocument from "pdfkit";
 
 const SELLER_DIMENSION_RE = /^Ancho:\s*[^-]+\s*-\s*Alto:/i;
+const PORTON_TECHNICAL_INFO_RE = /(?:^|\s-\s)(?:Ancho:|Medidas de paso:|Peso calculado:|Piernas:)/i;
 const INFO_SEPARATOR = "   -   ";
+
+function stripObservationParts(value) {
+  const text = String(value || "");
+  if (!PORTON_TECHNICAL_INFO_RE.test(text) || !text.includes("Obs:")) return text;
+
+  return text
+    .split(INFO_SEPARATOR)
+    .map((part) => String(part || "").trim())
+    .filter((part) => part && !/^Obs\s*:/i.test(part))
+    .join(INFO_SEPARATOR);
+}
 
 function isSellerDimensionInfoText(value) {
   const text = String(value || "");
@@ -9,7 +21,8 @@ function isSellerDimensionInfoText(value) {
 }
 
 function splitSellerDimensionInfo(text) {
-  const parts = String(text || "").split(INFO_SEPARATOR);
+  const cleanText = stripObservationParts(text);
+  const parts = String(cleanText || "").split(INFO_SEPARATOR);
   return {
     main: parts.shift() || "",
     rest: parts.join(INFO_SEPARATOR),
@@ -24,11 +37,13 @@ export function applyPortonPdfSellerDimensionPatch() {
   const originalHeightOfString = proto.heightOfString;
 
   proto.heightOfString = function patchedHeightOfString(text, options = {}) {
-    if (!isSellerDimensionInfoText(text)) {
-      return originalHeightOfString.call(this, text, options);
+    const cleanText = stripObservationParts(text);
+
+    if (!isSellerDimensionInfoText(cleanText)) {
+      return originalHeightOfString.call(this, cleanText, options);
     }
 
-    const { main, rest } = splitSellerDimensionInfo(text);
+    const { main, rest } = splitSellerDimensionInfo(cleanText);
     const width = options?.width;
     const mainHeight = originalHeightOfString.call(this, main, { ...options, width, lineGap: 0 });
     const restHeight = rest ? originalHeightOfString.call(this, rest, { ...options, width, lineGap: 2 }) : 0;
@@ -36,11 +51,13 @@ export function applyPortonPdfSellerDimensionPatch() {
   };
 
   proto.text = function patchedText(text, x, y, options = {}) {
-    if (!isSellerDimensionInfoText(text) || typeof x !== "number" || typeof y !== "number") {
-      return originalText.call(this, text, x, y, options);
+    const cleanText = stripObservationParts(text);
+
+    if (!isSellerDimensionInfoText(cleanText) || typeof x !== "number" || typeof y !== "number") {
+      return originalText.call(this, cleanText, x, y, options);
     }
 
-    const { main, rest } = splitSellerDimensionInfo(text);
+    const { main, rest } = splitSellerDimensionInfo(cleanText);
     const width = options?.width;
     const mainFontSize = 13;
     const restFontSize = 10;
