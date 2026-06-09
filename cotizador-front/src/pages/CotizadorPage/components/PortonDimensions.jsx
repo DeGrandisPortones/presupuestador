@@ -1462,6 +1462,12 @@ export default function PortonDimensions({ kind = "porton" }) {
   const height = useMemo(() => toNumber(heightRaw), [heightRaw]);
   const widthValue = useMemo(() => parseOptionalNumber(normalizeDecimalWithDot(widthRaw)), [widthRaw]);
   const heightValue = useMemo(() => parseOptionalNumber(normalizeDecimalWithDot(heightRaw)), [heightRaw]);
+  const selectedProductIdsForIpanel = useMemo(() => getBudgetProductIdSetFromLines(lines), [lines]);
+  const hasIpanelLamas22Panel = isIpanel && [...IPANEL_LAMAS_22_PRODUCT_IDS].some((id) => selectedProductIdsForIpanel.has(id));
+  const hasIpanelVarilladoPanel = isIpanel && hasIpanelVarilladoProduct(lines);
+  const hasIpanelExtendedAllowedPanel = hasIpanelLamas22Panel || hasIpanelVarilladoPanel;
+  const ipanelWidthMaxForSelection = hasIpanelExtendedAllowedPanel ? IPANEL_LAMAS_WIDTH_MAX_M : IPANEL_WIDTH_MAX_M;
+  const ipanelHeightMaxForSelection = hasIpanelExtendedAllowedPanel ? IPANEL_LAMAS_HEIGHT_MAX_M : IPANEL_HEIGHT_MAX_M;
   const widthOutOfBounds = widthValue !== null && (isPorton ? (widthValue < WIDTH_MIN_M || widthValue > WIDTH_MAX_M) : (isIpanel ? widthValue > ipanelWidthMaxForSelection : false));
   const heightOutOfBounds = heightValue !== null && (isPorton ? (heightValue < HEIGHT_MIN_M || heightValue > HEIGHT_MAX_M) : (isIpanel ? heightValue > ipanelHeightMaxForSelection : false));
   const hasSizeError = (isPorton || isIpanel) && (widthOutOfBounds || heightOutOfBounds);
@@ -1473,12 +1479,6 @@ export default function PortonDimensions({ kind = "porton" }) {
     const a = width * height;
     return Number.isFinite(a) ? a : 0;
   }, [width, height]);
-  const selectedProductIdsForIpanel = useMemo(() => getBudgetProductIdSetFromLines(lines), [lines]);
-  const hasIpanelLamas22Panel = isIpanel && [...IPANEL_LAMAS_22_PRODUCT_IDS].some((id) => selectedProductIdsForIpanel.has(id));
-  const hasIpanelVarilladoPanel = isIpanel && hasIpanelVarilladoProduct(lines);
-  const hasIpanelExtendedAllowedPanel = hasIpanelLamas22Panel || hasIpanelVarilladoPanel;
-  const ipanelWidthMaxForSelection = hasIpanelExtendedAllowedPanel ? IPANEL_LAMAS_WIDTH_MAX_M : IPANEL_WIDTH_MAX_M;
-  const ipanelHeightMaxForSelection = hasIpanelExtendedAllowedPanel ? IPANEL_LAMAS_HEIGHT_MAX_M : IPANEL_HEIGHT_MAX_M;
   const ipanelLamasOrientation = normalizeIpanelLamasOrientation(
     dimensions?.ipanel_lamas_orientacion ??
     dimensions?.orientacion_ipanel_lamas ??
