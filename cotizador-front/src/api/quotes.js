@@ -5,6 +5,19 @@ function withTechnicalSnapshot(payload) {
   return attachTechnicalSnapshot(payload);
 }
 
+function withoutPaymentAdjustmentSnapshot(quote) {
+  if (!quote || typeof quote !== "object") return quote;
+  const payload = quote?.payload && typeof quote.payload === "object" ? { ...quote.payload } : quote?.payload;
+  if (!payload || typeof payload !== "object") return quote;
+
+  delete payload.quote_adjustment_percent_snapshot;
+  delete payload.financing_percent_snapshot;
+  delete payload.financing_percent;
+  delete payload.payment_adjustment_percent;
+
+  return { ...quote, payload };
+}
+
 export async function listQuotes({ scope = "mine" } = {}) {
   const params = new URLSearchParams();
   params.set("scope", scope);
@@ -12,7 +25,11 @@ export async function listQuotes({ scope = "mine" } = {}) {
   if (!data?.ok) throw new Error(data?.error || "No se pudieron cargar presupuestos");
   return data.quotes || [];
 }
-export async function getQuote(id) { const { data } = await http.get(`/api/quotes/${id}`); if (!data?.ok) throw new Error(data?.error || "No se pudo cargar el presupuesto"); return data.quote; }
+export async function getQuote(id) {
+  const { data } = await http.get(`/api/quotes/${id}`);
+  if (!data?.ok) throw new Error(data?.error || "No se pudo cargar el presupuesto");
+  return withoutPaymentAdjustmentSnapshot(data.quote);
+}
 export async function createQuote(payload) { const body = withTechnicalSnapshot(payload); const { data } = await http.post(`/api/quotes`, body); if (!data?.ok) throw new Error(data?.error || "No se pudo crear el presupuesto"); return data.quote; }
 export async function updateQuote(id, payload) { const body = withTechnicalSnapshot(payload); const { data } = await http.put(`/api/quotes/${id}`, body); if (!data?.ok) throw new Error(data?.error || "No se pudo actualizar el presupuesto"); return data.quote; }
 export async function submitQuote(id, payload = {}) { const body = withTechnicalSnapshot(payload && typeof payload === "object" ? payload : {}); const { data } = await http.post(`/api/quotes/${id}/submit`, body); if (!data?.ok) throw new Error(data?.error || "No se pudo enviar a aprobación"); return data.quote; }
