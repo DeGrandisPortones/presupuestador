@@ -44,7 +44,7 @@ const WIDTH_MIN_M = 2.3;
 const WIDTH_MAX_M = 7;
 const HEIGHT_MIN_M = 2;
 const HEIGHT_MAX_M = 3;
-const IPANEL_WIDTH_MAX_M = 1.13;
+const IPANEL_WIDTH_MAX_M = 1.16;
 const IPANEL_HEIGHT_MAX_M = 2.45;
 const IPANEL_LAMAS_WIDTH_MAX_M = 2;
 const IPANEL_LAMAS_HEIGHT_MAX_M = 3;
@@ -414,7 +414,7 @@ function patchIpanelDimensionValidationUi(dimensions) {
   for (const node of helperNodes) {
     const text = String(node.textContent || "").trim();
     if (/^Maximo\s+1\.13\s*m/i.test(text)) {
-      node.textContent = mustUseLamas ? "Panel simple max 1.13 m. Lamas y varillado max 2.00 m" : "Panel simple max 1.13 m. Lamas y varillado max 2.00 m";
+      node.textContent = mustUseLamas ? "Panel simple max 1.16 m. Lamas y varillado max 2.00 m" : "Panel simple max 1.16 m. Lamas y varillado max 2.00 m";
       if (widthOk) node.style.color = "#6b7280";
     }
     if (/^Maximo\s+2\.45\s*m/i.test(text)) {
@@ -523,7 +523,7 @@ function validateDimensionsRequired(payload, kind = "porton") {
   }
 
   if (normalizedKind === "ipanel") {
-    if (width > IPANEL_LAMAS_WIDTH_MAX_M) throw new Error(`El ancho del ${itemLabel} no puede superar 2.00 m. Entre 1.13 m y 2.00 m sólo se puede producir en lamas.`);
+    if (width > IPANEL_LAMAS_WIDTH_MAX_M) throw new Error(`El ancho del ${itemLabel} no puede superar 2.00 m. Entre 1.16 m y 2.00 m sólo se puede producir en lamas.`);
     if (height > IPANEL_LAMAS_HEIGHT_MAX_M) throw new Error(`El alto del ${itemLabel} no puede superar 3.00 m. Entre 2.45 m y 3.00 m sólo se puede producir en lamas.`);
 
     if (hasIpanelLamasProduct(payload)) {
@@ -550,7 +550,7 @@ function validateDimensionsRequired(payload, kind = "porton") {
       return;
     }
 
-    if (width > IPANEL_WIDTH_MAX_M) throw new Error(`El ancho del ${itemLabel} no puede superar 1.13 m (113 cm), salvo en Revestimiento en lamas hasta 2.00 m.`);
+    if (width > IPANEL_WIDTH_MAX_M) throw new Error(`El ancho del ${itemLabel} no puede superar 1.16 m (116 cm), salvo en Revestimiento en lamas hasta 2.00 m.`);
     if (height > IPANEL_HEIGHT_MAX_M) throw new Error(`El alto del ${itemLabel} no puede superar 2.45 m (245 cm), salvo en Revestimiento en lamas hasta 3.00 m.`);
   }
 }

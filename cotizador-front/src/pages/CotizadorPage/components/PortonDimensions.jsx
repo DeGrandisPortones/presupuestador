@@ -8,7 +8,7 @@ const WIDTH_MIN_M = 2.4;
 const WIDTH_MAX_M = 7;
 const HEIGHT_MIN_M = 2;
 const HEIGHT_MAX_M = 3;
-const IPANEL_WIDTH_MAX_M = 1.13;
+const IPANEL_WIDTH_MAX_M = 1.16;
 const IPANEL_HEIGHT_MAX_M = 2.45;
 const IPANEL_LAMAS_22_PRODUCT_IDS = new Set([4061, 3590]);
 const IPANEL_DIVIDER_LINE_MM = 10;
@@ -1126,9 +1126,9 @@ export default function PortonDimensions({ kind = "porton" }) {
   const widthOutOfBounds = widthValue !== null && (isPorton ? (widthValue < WIDTH_MIN_M || widthValue > WIDTH_MAX_M) : (isIpanel ? widthValue > IPANEL_WIDTH_MAX_M : false));
   const heightOutOfBounds = heightValue !== null && (isPorton ? (heightValue < HEIGHT_MIN_M || heightValue > HEIGHT_MAX_M) : (isIpanel ? heightValue > IPANEL_HEIGHT_MAX_M : false));
   const hasSizeError = (isPorton || isIpanel) && (widthOutOfBounds || heightOutOfBounds);
-  const widthHelper = isPorton ? "Minimo 2.4 m - Maximo 7 m" : (isIpanel ? "Maximo 1.13 m (113 cm)" : "");
+  const widthHelper = isPorton ? "Minimo 2.4 m - Maximo 7 m" : (isIpanel ? "Maximo 1.16 m (116 cm)" : "");
   const heightHelper = isPorton ? "Minimo 2 m - Maximo 3 m" : (isIpanel ? "Maximo 2.45 m (245 cm)" : "");
-  const widthPlaceholder = isIpanel ? "Ej: 1.13" : "Ej: 3.2";
+  const widthPlaceholder = isIpanel ? "Ej: 1.16" : "Ej: 3.2";
   const heightPlaceholder = isIpanel ? "Ej: 2.45" : "Ej: 2.1";
   const area = useMemo(() => {
     const a = width * height;
@@ -1487,7 +1487,7 @@ export default function PortonDimensions({ kind = "porton" }) {
       <div style={{ fontWeight: 800, marginBottom: 8 }}>{title}</div>
       {hasSizeError ? <div style={{ marginBottom: 12, padding: "10px 12px", borderRadius: 10, background: "#fee2e2", color: "#991b1b", fontWeight: 700 }}>Se encuentra fuera de los limites de tamano.</div> : null}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 12, alignItems: "start" }}>
-        <FieldBox label="Ancho (m)" helper={widthHelper} helperColor={widthOutOfBounds ? "#b91c1c" : undefined}><Input type="text" inputMode="decimal" value={widthRaw} onChange={(v) => setDimensions({ width: normalizeDecimal(v) })} onBlur={(e) => setDimensions({ width: normalizeDecimal(e?.target?.value) })} placeholder={isIpanel ? "Ej: 1.13" : "Ej: 3.2"} style={inputStateStyle(widthOutOfBounds)} /></FieldBox>
+        <FieldBox label="Ancho (m)" helper={widthHelper} helperColor={widthOutOfBounds ? "#b91c1c" : undefined}><Input type="text" inputMode="decimal" value={widthRaw} onChange={(v) => setDimensions({ width: normalizeDecimal(v) })} onBlur={(e) => setDimensions({ width: normalizeDecimal(e?.target?.value) })} placeholder={isIpanel ? "Ej: 1.16" : "Ej: 3.2"} style={inputStateStyle(widthOutOfBounds)} /></FieldBox>
         <FieldBox label="Alto (m)" helper={heightHelper} helperColor={heightOutOfBounds ? "#b91c1c" : undefined}><Input type="text" inputMode="decimal" value={heightRaw} onChange={(v) => setDimensions({ height: normalizeDecimal(v) })} onBlur={(e) => setDimensions({ height: normalizeDecimal(e?.target?.value) })} placeholder={heightPlaceholder} style={inputStateStyle(heightOutOfBounds)} /></FieldBox>
         {hasIpanelLamas22Panel ? (<>
           <FieldBox label="Orientación de lamas">
