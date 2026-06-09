@@ -1118,6 +1118,8 @@ function IpanelLamasSetupModal({
   initialClassicMode = false,
   onSave,
 }) {
+  const [widthMeters, setWidthMeters] = useState("");
+  const [heightMeters, setHeightMeters] = useState("");
   const [orientation, setOrientation] = useState("horizontal");
   const [divisions, setDivisions] = useState("");
   const [sectionSizes, setSectionSizes] = useState([]);
@@ -1128,18 +1130,27 @@ function IpanelLamasSetupModal({
     if (!open) return;
     const normalizedOrientation = normalizeIpanelLamasOrientation(initialOrientation || "horizontal");
     const count = Math.max(0, Math.trunc(Number(initialDivisions || 0)));
+    setWidthMeters(formatNumberForInput(widthM));
+    setHeightMeters(formatNumberForInput(heightM));
     setOrientation(normalizedOrientation);
     setDivisions(count >= 2 ? String(count) : "");
     setSectionSizes(count >= 2 ? sanitizeIpanelSectionSizes(initialSectionSizes, count) : []);
     setClassicMode(!!initialClassicMode);
     setError("");
-  }, [open, initialOrientation, initialDivisions, initialSectionSizes, initialClassicMode]);
+  }, [open, widthM, heightM, initialOrientation, initialDivisions, initialSectionSizes, initialClassicMode]);
+
+  const modalWidthValue = parseOptionalNumber(normalizeDecimalWithDot(widthMeters));
+  const modalHeightValue = parseOptionalNumber(normalizeDecimalWithDot(heightMeters));
+  const widthInvalid = modalWidthValue === null || !(modalWidthValue > 0) || modalWidthValue > IPANEL_LAMAS_WIDTH_MAX_M;
+  const heightInvalid = modalHeightValue === null || !(modalHeightValue > 0) || modalHeightValue > IPANEL_LAMAS_HEIGHT_MAX_M;
+  const modalWidthM = Number(modalWidthValue || 0);
+  const modalHeightM = Number(modalHeightValue || 0);
 
   const maxDivisions = getIpanelDivisionsMaxByOrientation(orientation);
   const divisionsCount = Math.max(0, Math.trunc(Number(divisions || 0)));
   const axisDimensionMm = useMemo(
-    () => getIpanelAxisDimensionMm({ orientation, widthM, heightM }),
-    [orientation, widthM, heightM],
+    () => getIpanelAxisDimensionMm({ orientation, widthM: modalWidthM, heightM: modalHeightM }),
+    [orientation, modalWidthM, modalHeightM],
   );
   const safeSectionSizes = useMemo(
     () => sanitizeIpanelSectionSizes(sectionSizes, divisionsCount),
@@ -1162,7 +1173,7 @@ function IpanelLamasSetupModal({
       const n = parseMmNumber(item);
       return Number.isFinite(n) && n > 0;
     });
-  const canSave = !divisionsOutOfBounds && hasAllSectionSizes && metrics.matchesExactly;
+  const canSave = !widthInvalid && !heightInvalid && !divisionsOutOfBounds && hasAllSectionSizes && metrics.matchesExactly;
 
   function setSectionSizeAt(index, value) {
     setSectionSizes((current) => {
@@ -1176,7 +1187,7 @@ function IpanelLamasSetupModal({
     const classicSizes = buildClassicIpanelSectionSizes(axisDimensionMm, 353);
     const classicCount = classicSizes.length;
     if (classicCount < 2) {
-      setError("Cargá primero ancho y alto del Ipanel para calcular las divisiones.");
+      setError("Cargá primero ancho y alto del Ipanel en este popup para calcular las divisiones.");
       return;
     }
     setDivisions(String(classicCount));
@@ -1193,7 +1204,7 @@ function IpanelLamasSetupModal({
       dividerMm: IPANEL_DIVIDER_LINE_MM,
     });
     if (!axisDimensionMm || !uniformSizes.length) {
-      setError("Cargá primero ancho y alto del Ipanel para calcular las divisiones.");
+      setError("Cargá primero ancho y alto del Ipanel en este popup para calcular las divisiones.");
       return;
     }
     setDivisions(String(count));
@@ -1203,6 +1214,10 @@ function IpanelLamasSetupModal({
   }
 
   function handleSave() {
+    if (widthInvalid || heightInvalid) {
+      setError(`Completá ancho y alto del Ipanel. Panel en lamas permite hasta ${IPANEL_LAMAS_WIDTH_MAX_M.toFixed(2)} m de ancho y ${IPANEL_LAMAS_HEIGHT_MAX_M.toFixed(2)} m de alto.`);
+      return;
+    }
     if (divisionsOutOfBounds) {
       setError(`La cantidad de divisiones debe ser un entero entre 2 y ${maxDivisions}.`);
       return;
@@ -1218,6 +1233,8 @@ function IpanelLamasSetupModal({
       return;
     }
     onSave?.({
+      width: normalizeDecimal(widthMeters),
+      height: normalizeDecimal(heightMeters),
       ipanel_lamas_orientacion: orientation,
       orientacion_ipanel_lamas: orientation,
       ipanel_orientacion_lamas: orientation,
@@ -1270,10 +1287,40 @@ function IpanelLamasSetupModal({
           Datos obligatorios del Panel en Lamas 22mm
         </div>
         <div className="muted" style={{ marginBottom: 14 }}>
-          Completá estos datos para continuar con el presupuesto. Después podés modificarlos desde la sección Medidas del Ipanel.
+          Completá las medidas y los datos de lamas para continuar con el presupuesto. Después podés modificarlos desde la sección Medidas del Ipanel.
         </div>
 
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 12, alignItems: "start" }}>
+          <FieldBox label="Ancho del Ipanel (m)" helper={`Panel en lamas max ${IPANEL_LAMAS_WIDTH_MAX_M.toFixed(2)} m.`} helperColor={widthInvalid ? "#b91c1c" : undefined}>
+            <Input
+              type="text"
+              inputMode="decimal"
+              value={widthMeters}
+              onChange={(value) => {
+                setWidthMeters(normalizeDecimal(value));
+                setClassicMode(false);
+                setError("");
+              }}
+              onBlur={(e) => setWidthMeters(normalizeDecimal(e?.target?.value))}
+              placeholder="Ej: 1.16"
+              style={inputStateStyle(widthInvalid)}
+            />
+          </FieldBox>
+          <FieldBox label="Alto del Ipanel (m)" helper={`Panel en lamas max ${IPANEL_LAMAS_HEIGHT_MAX_M.toFixed(2)} m.`} helperColor={heightInvalid ? "#b91c1c" : undefined}>
+            <Input
+              type="text"
+              inputMode="decimal"
+              value={heightMeters}
+              onChange={(value) => {
+                setHeightMeters(normalizeDecimal(value));
+                setClassicMode(false);
+                setError("");
+              }}
+              onBlur={(e) => setHeightMeters(normalizeDecimal(e?.target?.value))}
+              placeholder="Ej: 2.45"
+              style={inputStateStyle(heightInvalid)}
+            />
+          </FieldBox>
           <FieldBox label="Orientación de lamas">
             <select
               value={orientation}
