@@ -215,6 +215,163 @@ function StaticField({ label, value }) {
 function Row({ children }) {
   return <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>{children}</div>;
 }
+
+function normalizeTechnicalKey(value) {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .replace(/_+/g, "_");
+}
+function isFilledTechnicalValue(value) {
+  if (value === null || value === undefined) return false;
+  if (typeof value === "string") return value.trim() !== "";
+  if (typeof value === "number") return Number.isFinite(value);
+  if (typeof value === "boolean") return true;
+  if (Array.isArray(value)) return value.length > 0;
+  if (typeof value === "object") return Object.keys(value).length > 0;
+  return true;
+}
+function formatTechnicalScalar(value) {
+  if (value === null || value === undefined) return "";
+  if (typeof value === "boolean") return value ? "Sí" : "No";
+  if (typeof value === "number") return Number.isFinite(value) ? value.toLocaleString("es-AR") : "";
+  return String(value || "").trim();
+}
+function formatTechnicalObject(value) {
+  if (!value || typeof value !== "object") return "";
+  for (const key of ["name", "label", "display_name", "displayName", "title", "value", "description", "alias"]) {
+    const direct = value?.[key];
+    if (isFilledTechnicalValue(direct)) return formatTechnicalScalar(direct);
+  }
+  return "";
+}
+function formatTechnicalValue(value) {
+  if (Array.isArray(value)) return value.map(formatTechnicalValue).filter(Boolean).slice(0, 8).join(" · ");
+  if (value && typeof value === "object") return formatTechnicalObject(value);
+  return formatTechnicalScalar(value);
+}
+function findFirstTechnicalEntry(source, keyCandidates, maxDepth = 6) {
+  const wanted = new Set((keyCandidates || []).map(normalizeTechnicalKey).filter(Boolean));
+  const seen = new WeakSet();
+  function walk(value, depth) {
+    if (!value || typeof value !== "object" || depth > maxDepth) return null;
+    if (seen.has(value)) return null;
+    seen.add(value);
+    if (Array.isArray(value)) {
+      for (const item of value) {
+        const found = walk(item, depth + 1);
+        if (found) return found;
+      }
+      return null;
+    }
+    for (const [key, raw] of Object.entries(value)) {
+      if (wanted.has(normalizeTechnicalKey(key)) && isFilledTechnicalValue(raw)) return { key, value: raw };
+    }
+    for (const raw of Object.values(value)) {
+      const found = walk(raw, depth + 1);
+      if (found) return found;
+    }
+    return null;
+  }
+  return walk(source, 0);
+}
+function firstTechnicalEntry(sources, keyCandidates) {
+  for (const source of sources || []) {
+    const found = findFirstTechnicalEntry(source, keyCandidates);
+    if (found) return found;
+  }
+  return null;
+}
+function pushTechnicalDetailRow(rows, label, value) {
+  const formatted = formatTechnicalValue(value);
+  if (!formatted) return;
+  if (rows.some((row) => row.label === label)) return;
+  rows.push({ label, value: formatted });
+}
+function pushTechnicalDetailEntry(rows, label, entry) {
+  if (!entry) return;
+  pushTechnicalDetailRow(rows, label, entry.value);
+}
+function formatMeters(valueM) {
+  const n = toNumberLike(valueM);
+  if (!Number.isFinite(n) || n <= 0) return "";
+  return `${n.toLocaleString("es-AR", { maximumFractionDigits: 3 })} m`;
+}
+function buildBudgetTechnicalDetailRows(quote, form, technicalSummary = {}) {
+  const payload = quote?.payload && typeof quote.payload === "object" ? quote.payload : {};
+  const dimensions = payload?.dimensions && typeof payload.dimensions === "object" ? payload.dimensions : {};
+  const measurementForm = form && typeof form === "object" ? form : {};
+  const sources = [
+    quote,
+    payload,
+    dimensions,
+    payload?.technical_summary,
+    payload?.technical,
+    payload?.datos_tecnicos,
+    payload?.production_planning,
+    payload?.surface_context,
+    payload?.automatic_context,
+    measurementForm,
+    measurementForm?.computed,
+    measurementForm?.surface_context,
+    measurementForm?.automatic_context,
+  ].filter(Boolean);
+  const rows = [];
+  pushTechnicalDetailRow(rows, "Ancho", formatMeters(dimensions?.width ?? dimensions?.ancho ?? payload?.width ?? payload?.ancho));
+  pushTechnicalDetailRow(rows, "Alto", formatMeters(dimensions?.height ?? dimensions?.alto ?? payload?.height ?? payload?.alto));
+  pushTechnicalDetailEntry(rows, "Tipología / sistema", firstTechnicalEntry(sources, ["tipologia_sistema", "tipologia", "tipología", "sistema", "system", "system_type", "tipo_sistema", "porton_type", "tipo_porton", "levadizo"]));
+  pushTechnicalDetailEntry(rows, "Color", firstTechnicalEntry(sources, ["color", "color_porton", "color_portón", "color_chapa", "color_revestimiento", "color_pintura", "pintura_color", "ral", "color_ral"]));
+  pushTechnicalDetailEntry(rows, "Tipo de revestimiento", firstTechnicalEntry(sources, ["tipo_revestimiento", "revestimiento", "revestimiento_tipo", "material_revestimiento", "cladding", "cladding_type", "apto_revestimiento", "apto_para_revestir"]));
+  pushTechnicalDetailEntry(rows, "Terminación", firstTechnicalEntry(sources, ["terminacion", "terminación", "terminacion_porton", "terminación_portón", "acabado", "finish", "acabado_porton"]));
+  pushTechnicalDetailEntry(rows, "Tipo de colocación", firstTechnicalEntry(sources, ["tipo_colocacion", "tipo_colocación", "colocacion", "colocación", "tipo_instalacion", "tipo_instalación", "installation_mode", "modo_instalacion", "modo_instalación"]));
+  pushTechnicalDetailEntry(rows, "Lado del motor", firstTechnicalEntry(sources, ["lado_motor", "motor_lado", "lado_del_motor"]));
+  pushTechnicalDetailEntry(rows, "Lado del soporte", firstTechnicalEntry(sources, ["lado_soporte", "soporte_lado", "lado_del_soporte"]));
+  pushTechnicalDetailEntry(rows, "Kg/m² efectivo", firstTechnicalEntry(sources, ["kg_m2", "kg_m2_entry", "peso_m2", "custom_kg_m2"]));
+  pushTechnicalDetailRow(rows, "Medidas de paso", technicalSummary.alto_paso_mm && technicalSummary.ancho_paso_mm ? `${formatMm(technicalSummary.ancho_paso_mm)} x ${formatMm(technicalSummary.alto_paso_mm)}` : "");
+  pushTechnicalDetailRow(rows, "Peso aproximado", formatKg(technicalSummary.peso_estimado_kg));
+  pushTechnicalDetailRow(rows, "Tipo de piernas", formatPiernas(technicalSummary.piernas_tipo));
+  pushTechnicalDetailRow(rows, "Ancho de pierna", formatMm(technicalSummary.ancho_pierna_mm));
+  pushTechnicalDetailEntry(rows, "Orientación de parantes", firstTechnicalEntry(sources, ["orientacion_parantes", "orientación_parantes", "parantes_orientacion", "parantes_orientación"]));
+  pushTechnicalDetailEntry(rows, "Cantidad de parantes", firstTechnicalEntry(sources, ["cantidad_parantes", "parantes_cantidad", "cant_parantes", "parantes_cant"]));
+  pushTechnicalDetailEntry(rows, "Distribución de parantes", firstTechnicalEntry(sources, ["distribucion_parantes", "distribución_parantes", "parantes_distribucion", "parantes_distribución"]));
+  return rows;
+}
+function DetailGrid({ rows }) {
+  if (!Array.isArray(rows) || !rows.length) return <div className="muted">Sin datos técnicos adicionales.</div>;
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 10 }}>
+      {rows.map((item) => (
+        <div key={item.label} style={{ border: "1px solid #e5e5e5", borderRadius: 10, padding: "8px 10px", background: "#fff" }}>
+          <div className="muted" style={{ fontSize: 12 }}>{item.label}</div>
+          <div style={{ fontWeight: 800, marginTop: 4 }}>{item.value}</div>
+        </div>
+      ))}
+    </div>
+  );
+}
+function isCommercialBudgetLine(line = {}) {
+  const haystack = `${line?.raw_name || ""} ${line?.name || ""}`.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+  return ["recargo", "financiacion", "financiación", "forma de pago", "iva", "coeficiente", "descuento", "$", "monto"].some((word) => haystack.includes(word));
+}
+function budgetLineDisplayName(line = {}) {
+  return text(line?.raw_name || line?.name || line?.display_name || line?.alias || `Producto ${line?.product_id || ""}`);
+}
+function buildBudgetDetailLines(lines = []) {
+  return (Array.isArray(lines) ? lines : [])
+    .filter((line) => Number(line?.qty || 0) > 0)
+    .filter((line) => !isCommercialBudgetLine(line))
+    .map((line, idx) => ({
+      key: `${line?.product_id || "line"}-${idx}`,
+      name: budgetLineDisplayName(line),
+      qty: Number(line?.qty || 1) || 1,
+      code: text(line?.code),
+    }))
+    .filter((line) => line.name);
+}
 function MeasurementSchemeVisual({ form }) {
   const altos = normalizeTriple(form?.esquema?.alto || []);
   const anchos = normalizeTriple(form?.esquema?.ancho || []);
@@ -264,6 +421,14 @@ export default function ClientAcceptancePage() {
     form,
     surfaceParameters: quote?.technical_rules?.surface_parameters || {},
   }), [quote, form]);
+  const budgetTechnicalRows = useMemo(
+    () => buildBudgetTechnicalDetailRows(quote, form, technicalSummary),
+    [quote, form, technicalSummary],
+  );
+  const budgetDetailLines = useMemo(
+    () => buildBudgetDetailLines(quote?.lines || []),
+    [quote?.lines],
+  );
 
   if (acceptanceQ.isLoading) {
     return <div className="container"><div className="card"><div className="muted">Cargando datos técnicos del portón...</div></div></div>;
@@ -275,7 +440,6 @@ export default function ClientAcceptancePage() {
     return <div className="container"><div className="card"><div className="muted">No se encontraron datos para esta aceptación.</div></div></div>;
   }
 
-  const soldLines = Array.isArray(quote?.lines) ? quote.lines : [];
   const canAccept = !accepted?.accepted_at;
   const submitError = acceptM.error?.message || "";
 
@@ -318,13 +482,22 @@ export default function ClientAcceptancePage() {
         </Row>
       </Card>
 
-      <Card title="Productos del portón">
-        {!soldLines.length ? <div className="muted">Sin productos informados.</div> : (
+      <Card title="Resumen técnico del presupuesto">
+        <DetailGrid rows={budgetTechnicalRows} />
+      </Card>
+
+      <Card title="Detalle del presupuesto">
+        <div className="muted" style={{ marginBottom: 10 }}>
+          Detalle informativo sin montos, precios, forma de pago ni condiciones comerciales.
+        </div>
+        {!budgetDetailLines.length ? <div className="muted">Sin productos informados.</div> : (
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            {soldLines.map((line, idx) => (
-              <div key={`${line?.product_id || "line"}-${idx}`} style={{ border: "1px solid #eee", borderRadius: 10, padding: 10 }}>
-                <b>{text(line?.raw_name || line?.name || `Producto ${line?.product_id || idx + 1}`)}</b>
-                <div className="muted">Cantidad: {Number(line?.qty || 1) || 1}</div>
+            {budgetDetailLines.map((line) => (
+              <div key={line.key} style={{ border: "1px solid #eee", borderRadius: 10, padding: 10 }}>
+                <b>{line.name}</b>
+                <div className="muted">
+                  Cantidad: {line.qty}{line.code ? ` · Código: ${line.code}` : ""}
+                </div>
               </div>
             ))}
           </div>
