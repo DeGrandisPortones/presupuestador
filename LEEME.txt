@@ -1,0 +1,11 @@
+Reemplazar archivo completo:
+
+cotizador-front/src/pages/MedicionDetailPage/index.jsx
+
+Cambios:
+- El medidor ve un resumen técnico y detalle técnico del presupuesto.
+- Incluye detalle no comercial como color, revestimiento, terminaciones y otros ítems técnicos disponibles.
+- Oculta datos comerciales: monto, precios, forma de pago, condición, IVA, coeficiente, recargos, etc.
+- No toca las secciones/productos que el medidor puede cambiar.
+- Si cambia Tipo de colocación, vuelve al vendedor.
+- Se mantienen devoluciones por sección 18 y observaciones.

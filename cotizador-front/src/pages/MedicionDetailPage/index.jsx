@@ -457,6 +457,60 @@ function buildBudgetSummaryItems(budgetContext, form) {
     })
     .sort((a, b) => Number(a.sectionId || 0) - Number(b.sectionId || 0));
 }
+function normalizeBudgetDetailKey(value) {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim()
+    .replace(/\s+/g, " ");
+}
+function isCommercialBudgetDetailLabel(value) {
+  const key = normalizeBudgetDetailKey(value);
+  if (!key) return true;
+  const blocked = [
+    "forma de pago",
+    "pago",
+    "tarjeta",
+    "cuotas",
+    "condicion",
+    "coeficiente",
+    "iva",
+    "subtotal",
+    "neto",
+    "total",
+    "monto",
+    "importe",
+    "precio",
+    "recargo",
+    "descuento",
+    "financiacion",
+    "financiacion",
+    "facturacion",
+    "factura",
+    "lista de precios",
+    "lista precio",
+  ];
+  return blocked.some((item) => key.includes(item));
+}
+function isInternalDuplicatedPlacementLabel(value) {
+  const key = normalizeBudgetDetailKey(value);
+  // Estas secciones son internas/excluyentes y ya no deben aparecer juntas en el resumen del medidor.
+  // La selección editable real queda abajo, en "Productos que puede cambiar el medidor".
+  return key.includes("lado del soporte") || key.includes("lado soporte") || key.includes("lado del motor") || key.includes("lado motor");
+}
+function buildTechnicalBudgetDetailItems(summaryItems = []) {
+  return (Array.isArray(summaryItems) ? summaryItems : [])
+    .filter((item) => text(item?.sectionName) && text(item?.value))
+    .filter((item) => !isCommercialBudgetDetailLabel(item.sectionName))
+    .filter((item) => !isInternalDuplicatedPlacementLabel(item.sectionName))
+    .map((item) => ({
+      label: item.sectionName,
+      value: item.value,
+      key: item.key || `budget-detail-${item.sectionId || item.sectionName}`,
+    }));
+}
 function productDisplayLabel(product) {
   const alias = String(product?.alias || "").trim();
   const display = String(product?.display_name || product?.name || "").trim();
@@ -864,6 +918,10 @@ export default function MedicionDetailPage() {
     return evaluateDynamicRules({ form, quote, user, rules: dynamicRulesQ.data?.rules || [] });
   }, [form, quote, user, dynamicRulesQ.data]);
   const budgetSummaryItems = useMemo(() => buildBudgetSummaryItems(budgetContext, form), [budgetContext, form]);
+  const technicalBudgetDetailItems = useMemo(
+    () => buildTechnicalBudgetDetailItems(budgetSummaryItems),
+    [budgetSummaryItems],
+  );
 
   const editableConfiguredFields = useMemo(() => {
     return allFields.filter((field) => {
@@ -1317,16 +1375,35 @@ export default function MedicionDetailPage() {
           </Row>
         </Section>
 
-        <Section title="Resumen técnico">
+        <Section title="Resumen técnico y detalle del presupuesto">
+          {technicalBudgetDetailItems.length ? (
+            <>
+              <div className="muted" style={{ marginBottom: 8 }}>Detalle técnico del presupuesto</div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 10 }}>
+                {technicalBudgetDetailItems.map((item) => (
+                  <div key={item.key} style={{ border: "1px solid #e5e5e5", borderRadius: 10, padding: "8px 10px", background: "#fff" }}>
+                    <div className="muted" style={{ fontSize: 12 }}>{item.label}</div>
+                    <div style={{ fontWeight: 800, marginTop: 4 }}>{item.value}</div>
+                  </div>
+                ))}
+              </div>
+            </>
+          ) : null}
+
+          {technicalBudgetDetailItems.length && technicalSummaryItems.length ? <div className="spacer" /> : null}
+
           {technicalSummaryItems.length ? (
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 10 }}>
-              {technicalSummaryItems.map((item) => (
-                <div key={item.label} style={{ border: "1px solid #e5e5e5", borderRadius: 10, padding: "8px 10px", background: "#fff" }}>
-                  <div className="muted" style={{ fontSize: 12 }}>{item.label}</div>
-                  <div style={{ fontWeight: 800, marginTop: 4 }}>{item.value}</div>
-                </div>
-              ))}
-            </div>
+            <>
+              <div className="muted" style={{ marginBottom: 8 }}>Cálculo técnico</div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 10 }}>
+                {technicalSummaryItems.map((item) => (
+                  <div key={item.label} style={{ border: "1px solid #e5e5e5", borderRadius: 10, padding: "8px 10px", background: "#fff" }}>
+                    <div className="muted" style={{ fontSize: 12 }}>{item.label}</div>
+                    <div style={{ fontWeight: 800, marginTop: 4 }}>{item.value}</div>
+                  </div>
+                ))}
+              </div>
+            </>
           ) : (
             <div className="muted">Sin datos técnicos calculados.</div>
           )}
