@@ -1104,6 +1104,283 @@ function IpanelDivisionsSketchModal({
   );
 }
 
+function isTruthyFlag(value) {
+  return value === true || String(value || "").trim().toLowerCase() === "true";
+}
+
+function IpanelLamasSetupModal({
+  open,
+  widthM = 0,
+  heightM = 0,
+  initialOrientation = "horizontal",
+  initialDivisions = "",
+  initialSectionSizes = [],
+  initialClassicMode = false,
+  onSave,
+}) {
+  const [orientation, setOrientation] = useState("horizontal");
+  const [divisions, setDivisions] = useState("");
+  const [sectionSizes, setSectionSizes] = useState([]);
+  const [classicMode, setClassicMode] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    if (!open) return;
+    const normalizedOrientation = normalizeIpanelLamasOrientation(initialOrientation || "horizontal");
+    const count = Math.max(0, Math.trunc(Number(initialDivisions || 0)));
+    setOrientation(normalizedOrientation);
+    setDivisions(count >= 2 ? String(count) : "");
+    setSectionSizes(count >= 2 ? sanitizeIpanelSectionSizes(initialSectionSizes, count) : []);
+    setClassicMode(!!initialClassicMode);
+    setError("");
+  }, [open, initialOrientation, initialDivisions, initialSectionSizes, initialClassicMode]);
+
+  const maxDivisions = getIpanelDivisionsMaxByOrientation(orientation);
+  const divisionsCount = Math.max(0, Math.trunc(Number(divisions || 0)));
+  const axisDimensionMm = useMemo(
+    () => getIpanelAxisDimensionMm({ orientation, widthM, heightM }),
+    [orientation, widthM, heightM],
+  );
+  const safeSectionSizes = useMemo(
+    () => sanitizeIpanelSectionSizes(sectionSizes, divisionsCount),
+    [sectionSizes, divisionsCount],
+  );
+  const metrics = useMemo(
+    () => computeIpanelSectionMetrics({
+      values: safeSectionSizes,
+      count: divisionsCount,
+      axisDimensionMm,
+      dividerMm: IPANEL_DIVIDER_LINE_MM,
+      dividersIncludedInSectionSizes: classicMode,
+    }),
+    [safeSectionSizes, divisionsCount, axisDimensionMm, classicMode],
+  );
+  const divisionsOutOfBounds = isIpanelDivisionsOutOfBounds(divisions, maxDivisions);
+  const hasAllSectionSizes = divisionsCount >= 2
+    && safeSectionSizes.length === divisionsCount
+    && safeSectionSizes.every((item) => {
+      const n = parseMmNumber(item);
+      return Number.isFinite(n) && n > 0;
+    });
+  const canSave = !divisionsOutOfBounds && hasAllSectionSizes && metrics.matchesExactly;
+
+  function setSectionSizeAt(index, value) {
+    setSectionSizes((current) => {
+      const next = Array.from({ length: divisionsCount }, (_, idx) => String(current?.[idx] ?? ""));
+      next[index] = normalizeDecimalMmInput(value);
+      return next;
+    });
+  }
+
+  function applyClassicDistribution() {
+    const classicSizes = buildClassicIpanelSectionSizes(axisDimensionMm, 353);
+    const classicCount = classicSizes.length;
+    if (classicCount < 2) {
+      setError("Cargá primero ancho y alto del Ipanel para calcular las divisiones.");
+      return;
+    }
+    setDivisions(String(classicCount));
+    setSectionSizes(classicSizes);
+    setClassicMode(true);
+    setError("");
+  }
+
+  function applyUniformDistribution() {
+    const count = Math.max(2, Math.min(maxDivisions, Math.trunc(Number(divisions || 0) || 2)));
+    const uniformSizes = buildUniformIpanelSectionSizes({
+      count,
+      axisDimensionMm,
+      dividerMm: IPANEL_DIVIDER_LINE_MM,
+    });
+    if (!axisDimensionMm || !uniformSizes.length) {
+      setError("Cargá primero ancho y alto del Ipanel para calcular las divisiones.");
+      return;
+    }
+    setDivisions(String(count));
+    setSectionSizes(uniformSizes);
+    setClassicMode(false);
+    setError("");
+  }
+
+  function handleSave() {
+    if (divisionsOutOfBounds) {
+      setError(`La cantidad de divisiones debe ser un entero entre 2 y ${maxDivisions}.`);
+      return;
+    }
+    if (!hasAllSectionSizes) {
+      setError("Completá la medida en mm de todas las secciones.");
+      return;
+    }
+    if (!metrics.matchesExactly) {
+      setError(metrics.exceeds
+        ? `Las divisiones exceden la medida disponible por ${formatMm(Math.abs(metrics.remainingMm))}.`
+        : `Las divisiones no completan la medida disponible. Restan ${formatMm(metrics.remainingMm)}.`);
+      return;
+    }
+    onSave?.({
+      ipanel_lamas_orientacion: orientation,
+      orientacion_ipanel_lamas: orientation,
+      ipanel_orientacion_lamas: orientation,
+      ipanel_lamas_orientation: orientation,
+      ipanel_divisiones: String(divisionsCount),
+      cantidad_divisiones_ipanel: String(divisionsCount),
+      ipanel_divisiones_medidas_mm: safeSectionSizes,
+      medidas_divisiones_ipanel_mm: safeSectionSizes,
+      ipanel_section_sizes_mm: safeSectionSizes,
+      ipanel_distribucion_divisiones: classicMode ? "clasica" : "repartido",
+      ipanel_divisiones_distribucion: classicMode ? "clasica" : "repartido",
+      ipanel_divisiones_incluyen_liston: classicMode,
+      ipanel_divisor_mm: String(IPANEL_DIVIDER_LINE_MM),
+      linea_division_ipanel_mm: String(IPANEL_DIVIDER_LINE_MM),
+      ipanel_lamas_popup_completed: true,
+      ipanel_lamas_setup_completed: true,
+    });
+  }
+
+  if (!open) return null;
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "rgba(15, 23, 42, 0.55)",
+        zIndex: 10000,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: 16,
+      }}
+    >
+      <div
+        style={{
+          width: "min(860px, 96vw)",
+          maxHeight: "92vh",
+          overflow: "auto",
+          background: "#fff",
+          borderRadius: 18,
+          padding: 18,
+          boxShadow: "0 22px 70px rgba(15,23,42,0.35)",
+          border: "1px solid #e5e7eb",
+        }}
+      >
+        <div style={{ fontWeight: 900, fontSize: 20, marginBottom: 6 }}>
+          Datos obligatorios del Panel en Lamas 22mm
+        </div>
+        <div className="muted" style={{ marginBottom: 14 }}>
+          Completá estos datos para continuar con el presupuesto. Después podés modificarlos desde la sección Medidas del Ipanel.
+        </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 12, alignItems: "start" }}>
+          <FieldBox label="Orientación de lamas">
+            <select
+              value={orientation}
+              onChange={(e) => {
+                const nextOrientation = normalizeIpanelLamasOrientation(e.target.value);
+                const nextMax = getIpanelDivisionsMaxByOrientation(nextOrientation);
+                const nextDivisions = clampIpanelDivisions(divisions, nextMax);
+                setOrientation(nextOrientation);
+                if (nextDivisions && nextDivisions !== divisions) {
+                  setDivisions(nextDivisions);
+                  setSectionSizes((current) => sanitizeIpanelSectionSizes(current, Number(nextDivisions || 0)));
+                }
+                setError("");
+              }}
+              style={{ width: "100%", padding: "10px 12px", borderRadius: 8, border: "1px solid #ddd", background: "#fff" }}
+            >
+              <option value="horizontal">Horizontal</option>
+              <option value="vertical">Vertical</option>
+            </select>
+          </FieldBox>
+          <FieldBox label="Cantidad de divisiones" helper={`Entero entre 2 y ${maxDivisions}.`} helperColor={divisionsOutOfBounds ? "#b91c1c" : undefined}>
+            <Input
+              type="text"
+              inputMode="numeric"
+              value={divisions}
+              onChange={(value) => {
+                const next = normalizeIpanelDivisionsInput(value, maxDivisions);
+                setDivisions(next);
+                setSectionSizes((current) => sanitizeIpanelSectionSizes(current, Number(next || 0)));
+                setClassicMode(false);
+                setError("");
+              }}
+              onBlur={(e) => {
+                const next = clampIpanelDivisions(e?.target?.value, maxDivisions);
+                setDivisions(next);
+                setSectionSizes((current) => sanitizeIpanelSectionSizes(current, Number(next || 0)));
+              }}
+              placeholder="Ej: 4"
+              style={inputStateStyle(divisionsOutOfBounds)}
+            />
+          </FieldBox>
+        </div>
+
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", margin: "8px 0 14px" }}>
+          <button type="button" onClick={applyClassicDistribution} style={{ border: "1px solid #c7d2fe", borderRadius: 10, background: "#eef2ff", padding: "9px 12px", fontWeight: 800, cursor: "pointer" }}>
+            Usar distribución clásica automática
+          </button>
+          <button type="button" onClick={applyUniformDistribution} style={{ border: "1px solid #d1d5db", borderRadius: 10, background: "#fff", padding: "9px 12px", fontWeight: 800, cursor: "pointer" }}>
+            Repartir uniforme
+          </button>
+        </div>
+
+        {divisionsCount >= 2 ? (
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 10 }}>
+            {Array.from({ length: divisionsCount }, (_, index) => (
+              <FieldBox key={`setup-ipanel-section-${index}`} label={`Sección ${index + 1}`} helper={orientation === "vertical" ? "Medida útil en mm sobre el ancho." : "Medida útil en mm sobre el alto."}>
+                <Input
+                  type="text"
+                  inputMode="decimal"
+                  value={String(sectionSizes[index] ?? "")}
+                  onChange={(value) => {
+                    setSectionSizeAt(index, value);
+                    setClassicMode(false);
+                    setError("");
+                  }}
+                  onBlur={(e) => setSectionSizeAt(index, e?.target?.value)}
+                  placeholder={index === 0 ? "Ej: 600" : "Ej: 580"}
+                  style={{ width: "100%" }}
+                />
+              </FieldBox>
+            ))}
+          </div>
+        ) : null}
+
+        <div className="spacer" />
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 10 }}>
+          <ComputedCard label="Base para repartir" value={axisDimensionMm > 0 ? formatMm(axisDimensionMm) : "-"} />
+          <ComputedCard label="Espesor total de líneas" value={metrics.nominalDividersTotalMm > 0 ? formatMm(metrics.nominalDividersTotalMm) : "-"} />
+          <ComputedCard label="Medidas útiles cargadas" value={metrics.sectionsTotalMm > 0 ? formatMm(metrics.sectionsTotalMm) : "-"} />
+          <ComputedCard label="Estado" value={metrics.exceeds ? `Excede ${formatMm(Math.abs(metrics.remainingMm))}` : (metrics.matchesExactly ? "Reparto completo" : `Restan ${formatMm(metrics.remainingMm)}`)} />
+        </div>
+
+        {error ? <div style={{ color: "#b91c1c", fontWeight: 800, marginTop: 12 }}>{error}</div> : null}
+
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 18 }}>
+          <button
+            type="button"
+            onClick={handleSave}
+            disabled={!canSave}
+            style={{
+              border: "1px solid #00a99d",
+              borderRadius: 10,
+              background: canSave ? "#00a99d" : "#9ca3af",
+              color: "#fff",
+              padding: "10px 14px",
+              fontWeight: 900,
+              cursor: canSave ? "pointer" : "not-allowed",
+            }}
+          >
+            Guardar datos y continuar
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function PortonDimensions({ kind = "porton" }) {
   const normalizedKind = normalizeKind(kind);
   const isPorton = normalizedKind === "porton";
@@ -1115,6 +1392,7 @@ export default function PortonDimensions({ kind = "porton" }) {
   const lines = useQuoteStore((s) => s.lines);
   const [parantesSketchOpen, setParantesSketchOpen] = useState(false);
   const [ipanelSketchOpen, setIpanelSketchOpen] = useState(false);
+  const [ipanelLamasSetupOpen, setIpanelLamasSetupOpen] = useState(false);
   const rulesQ = useQuery({ queryKey: ["technical-rules-dimensions-preview"], queryFn: () => adminGetTechnicalMeasurementRules("porton"), staleTime: 0, refetchOnMount: "always", refetchOnWindowFocus: true, enabled: isPorton });
 
   const widthRaw = String(dimensions?.width ?? "");
@@ -1159,6 +1437,15 @@ export default function PortonDimensions({ kind = "porton" }) {
     [rawIpanelSectionSizes, ipanelDivisionsCount, ipanelAxisDimensionMm, isIpanelClassicDistribution],
   );
   const ipanelDivisionsHasError = hasIpanelLamas22Panel && isIpanelDivisionsOutOfBounds(ipanelDivisionsValue, ipanelDivisionsMax);
+  const ipanelLamasSetupCompleted = isTruthyFlag(dimensions?.ipanel_lamas_popup_completed) || isTruthyFlag(dimensions?.ipanel_lamas_setup_completed);
+
+  useEffect(() => {
+    if (!hasIpanelLamas22Panel) {
+      setIpanelLamasSetupOpen(false);
+      return;
+    }
+    if (!ipanelLamasSetupCompleted) setIpanelLamasSetupOpen(true);
+  }, [hasIpanelLamas22Panel, ipanelLamasSetupCompleted]);
 
   useEffect(() => {
     if (!hasIpanelLamas22Panel) return;
@@ -1470,6 +1757,11 @@ export default function PortonDimensions({ kind = "porton" }) {
     });
   }
 
+  function saveIpanelLamasSetup(patch) {
+    setDimensions(patch);
+    setIpanelLamasSetupOpen(false);
+  }
+
   function setAptoFixedFirstParante(checked) {
     const nextChecked = !!checked;
     const patch = {
@@ -1483,7 +1775,18 @@ export default function PortonDimensions({ kind = "porton" }) {
   }
 
   return (
-    <div style={{ border: `1px solid ${hasSizeError ? "#fca5a5" : "transparent"}`, borderRadius: 14, padding: 4, background: hasSizeError ? "#fff7f7" : "transparent" }}>
+    <>
+      <IpanelLamasSetupModal
+        open={ipanelLamasSetupOpen}
+        widthM={width}
+        heightM={height}
+        initialOrientation={ipanelLamasOrientation}
+        initialDivisions={ipanelDivisionsValue}
+        initialSectionSizes={rawIpanelSectionSizes}
+        initialClassicMode={isIpanelClassicDistribution}
+        onSave={saveIpanelLamasSetup}
+      />
+      <div style={{ border: `1px solid ${hasSizeError ? "#fca5a5" : "transparent"}`, borderRadius: 14, padding: 4, background: hasSizeError ? "#fff7f7" : "transparent" }}>
       <div style={{ fontWeight: 800, marginBottom: 8 }}>{title}</div>
       {hasSizeError ? <div style={{ marginBottom: 12, padding: "10px 12px", borderRadius: 10, background: "#fee2e2", color: "#991b1b", fontWeight: 700 }}>Se encuentra fuera de los limites de tamano.</div> : null}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 12, alignItems: "start" }}>
@@ -1671,6 +1974,7 @@ export default function PortonDimensions({ kind = "porton" }) {
         fixedReferenceDistanceMm={effectiveFixedReferenceDistanceMm}
         doorLabel={detectedDoorLabel}
       />
-    </div>
+      </div>
+    </>
   );
 }

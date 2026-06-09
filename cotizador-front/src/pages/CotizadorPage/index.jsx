@@ -527,6 +527,13 @@ function validateDimensionsRequired(payload, kind = "porton") {
     if (height > IPANEL_LAMAS_HEIGHT_MAX_M) throw new Error(`El alto del ${itemLabel} no puede superar 3.00 m. Entre 2.45 m y 3.00 m sólo se puede producir en lamas.`);
 
     if (hasIpanelLamasProduct(payload)) {
+      const lamasSetupCompleted = dims?.ipanel_lamas_popup_completed === true
+        || dims?.ipanel_lamas_setup_completed === true
+        || String(dims?.ipanel_lamas_popup_completed || "").trim().toLowerCase() === "true"
+        || String(dims?.ipanel_lamas_setup_completed || "").trim().toLowerCase() === "true";
+      if (!lamasSetupCompleted) {
+        throw new Error("Completá los datos obligatorios del Panel en Lamas 22mm para continuar.");
+      }
       const orientation = normalizeIpanelLamasOrientation(
         dims?.ipanel_lamas_orientacion ??
         dims?.orientacion_ipanel_lamas ??
