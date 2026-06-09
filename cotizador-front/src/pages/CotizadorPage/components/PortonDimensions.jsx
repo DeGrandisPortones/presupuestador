@@ -1126,7 +1126,7 @@ export default function PortonDimensions({ kind = "porton" }) {
   const widthOutOfBounds = widthValue !== null && (isPorton ? (widthValue < WIDTH_MIN_M || widthValue > WIDTH_MAX_M) : (isIpanel ? widthValue > IPANEL_WIDTH_MAX_M : false));
   const heightOutOfBounds = heightValue !== null && (isPorton ? (heightValue < HEIGHT_MIN_M || heightValue > HEIGHT_MAX_M) : (isIpanel ? heightValue > IPANEL_HEIGHT_MAX_M : false));
   const hasSizeError = (isPorton || isIpanel) && (widthOutOfBounds || heightOutOfBounds);
-  const widthHelper = isPorton ? "Minimo 2.4 m - Maximo 7 m" : (isIpanel ? "Maximo 1.16 m (116 cm)" : "");
+  const widthHelper = isPorton ? "Minimo 2.4 m - Maximo 7 m" : (isIpanel ? "Panel simple max 1.16 m. Lamas y varillado max 2.00 m" : "");
   const heightHelper = isPorton ? "Minimo 2 m - Maximo 3 m" : (isIpanel ? "Maximo 2.45 m (245 cm)" : "");
   const widthPlaceholder = isIpanel ? "Ej: 1.16" : "Ej: 3.2";
   const heightPlaceholder = isIpanel ? "Ej: 2.45" : "Ej: 2.1";

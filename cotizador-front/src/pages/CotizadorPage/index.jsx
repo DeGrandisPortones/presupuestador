@@ -413,7 +413,7 @@ function patchIpanelDimensionValidationUi(dimensions) {
   const helperNodes = Array.from(root.querySelectorAll("*"));
   for (const node of helperNodes) {
     const text = String(node.textContent || "").trim();
-    if (/^Maximo\s+1\.13\s*m/i.test(text)) {
+    if (/^(?:Maximo\s+1\.(?:13|16)\s*m|Panel\s+simple\s+max\s+1\.(?:13|16)\s*m)/i.test(text)) {
       node.textContent = mustUseLamas ? "Panel simple max 1.16 m. Lamas y varillado max 2.00 m" : "Panel simple max 1.16 m. Lamas y varillado max 2.00 m";
       if (widthOk) node.style.color = "#6b7280";
     }
