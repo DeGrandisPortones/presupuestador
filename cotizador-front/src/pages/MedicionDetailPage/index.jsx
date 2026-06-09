@@ -320,6 +320,59 @@ function getCurrentPositionAsync() {
 function normalizeNameKey(value) {
   return String(value || "").trim().toLowerCase().replace(/\s+/g, " ");
 }
+function normalizeSensitiveNameKey(value) {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim()
+    .replace(/\s+/g, " ");
+}
+function isPlacementSectionName(value) {
+  const key = normalizeSensitiveNameKey(value);
+  return key === "tipo de colocacion" || key === "colocacion" || key.includes("tipo de colocacion");
+}
+function getBudgetSectionNameById(budgetContext, sectionId) {
+  const byId = budgetContext?.budget_sections?.by_id || {};
+  return String(byId?.[Number(sectionId)]?.name || "").trim();
+}
+function isPlacementMeasurementField(field, budgetContext) {
+  if (!field) return false;
+  const sectionId = Number(field?.budget_section_id || 0);
+  const candidates = [
+    field?.budget_section_name,
+    field?.section_name,
+    field?.label,
+    field?.name,
+    field?.title,
+    field?.key,
+    getBudgetSectionNameById(budgetContext, sectionId),
+  ];
+  return candidates.some(isPlacementSectionName);
+}
+function configuredMeasurementProductChanged(form, baselineForm, field) {
+  const key = String(field?.key || "").trim();
+  if (!key) return false;
+  const current = Number(getByPath(form, `__selected_binding_product.${key}.product_id`) || 0);
+  const base = Number(
+    getByPath(baselineForm, `__selected_binding_product.${key}.product_id`) ||
+      getByPath(form, `__budget_binding_products.${key}.0.product_id`) ||
+      0,
+  );
+  return !!(current && base && current !== base);
+}
+function fallbackMeasurementProductChanged(form, baselineForm, sectionId) {
+  const id = Number(sectionId || 0);
+  if (!id) return false;
+  const current = Number(getByPath(form, `__fallback_selected_section_products.${id}.product_id`) || 0);
+  const base = Number(
+    getByPath(baselineForm, `__fallback_selected_section_products.${id}.product_id`) ||
+      getByPath(form, `__fallback_budget_binding_products.${id}.0.product_id`) ||
+      0,
+  );
+  return !!(current && base && current !== base);
+}
 function buildBudgetSectionsContext(quote, catalog) {
   const sections = Array.isArray(catalog?.sections) ? catalog.sections.slice() : [];
   const products = Array.isArray(catalog?.products) ? catalog.products : [];
@@ -580,6 +633,63 @@ function formatPiernas(value) {
     especiales: "especiales",
   };
   return map[key] || "";
+}
+function formatOrientation(value) {
+  return normalizeOrientation(value) === "horizontal" ? "Horizontal" : "Verticales";
+}
+function formatDistribution(value) {
+  return normalizeDistribution(value) === "especial" ? "Especial" : "Repartido";
+}
+function formatInstallationMode(value) {
+  const key = String(value || "").trim().toLowerCase();
+  if (key === "detras_vano") return "Detrás del vano";
+  if (key === "dentro_vano") return "Dentro del vano";
+  if (key === "sin_instalacion") return "Sin instalación";
+  return "";
+}
+function formatBudgetDimensionMeters(value) {
+  const n = toNumberLike(value);
+  return Number.isFinite(n) && n > 0 ? `${n.toLocaleString("es-AR", { maximumFractionDigits: 3 })} m` : "";
+}
+function pushTechnicalSummaryItem(rows, label, value) {
+  const formatted = text(value);
+  if (!formatted) return;
+  rows.push({ label, value: formatted });
+}
+function buildMeasurementTechnicalSummaryItems({ quote, form, technicalSummary = {}, measuredFinalDimensions = {} }) {
+  const dimensions = quote?.payload?.dimensions || {};
+  const rows = [];
+  const budgetWidth = formatBudgetDimensionMeters(dimensions?.width);
+  const budgetHeight = formatBudgetDimensionMeters(dimensions?.height);
+  const finalHeight = form?.alto_final_mm || measuredFinalDimensions?.alto_final_mm || technicalSummary?.alto_calculado_mm;
+  const finalWidth = form?.ancho_final_mm || measuredFinalDimensions?.ancho_final_mm || technicalSummary?.ancho_calculado_mm;
+
+  pushTechnicalSummaryItem(
+    rows,
+    "Medidas presupuestadas",
+    budgetWidth && budgetHeight ? `${budgetWidth} x ${budgetHeight}` : "",
+  );
+  pushTechnicalSummaryItem(
+    rows,
+    "Medidas finales del portón",
+    finalHeight && finalWidth ? `${formatMm(finalHeight)} x ${formatMm(finalWidth)}` : "",
+  );
+  pushTechnicalSummaryItem(
+    rows,
+    "Medidas de paso",
+    technicalSummary?.alto_paso_mm && technicalSummary?.ancho_paso_mm
+      ? `${formatMm(technicalSummary.alto_paso_mm)} x ${formatMm(technicalSummary.ancho_paso_mm)}`
+      : "",
+  );
+  pushTechnicalSummaryItem(rows, "Peso aproximado", formatKg(technicalSummary?.peso_estimado_kg));
+  pushTechnicalSummaryItem(rows, "Tipo de piernas", formatPiernas(technicalSummary?.piernas_tipo));
+  pushTechnicalSummaryItem(rows, "Ancho de pierna", formatMm(technicalSummary?.ancho_pierna_mm));
+  pushTechnicalSummaryItem(rows, "Tipo de instalación", formatInstallationMode(technicalSummary?.installation_mode));
+  pushTechnicalSummaryItem(rows, "Cantidad de parantes", text(form?.cantidad_parantes));
+  pushTechnicalSummaryItem(rows, "Orientación de parantes", formatOrientation(form?.orientacion_parantes));
+  pushTechnicalSummaryItem(rows, "Distribución de parantes", formatDistribution(form?.distribucion_parantes));
+  pushTechnicalSummaryItem(rows, "Obs. parantes", text(form?.observaciones_parantes));
+  return rows;
 }
 function formatProductionDeliveryDisplay(planning) {
   if (!planning || typeof planning !== "object") return "";
@@ -865,8 +975,21 @@ export default function MedicionDetailPage() {
     return !!(currentFallback && baseFallback && currentFallback !== baseFallback);
   }, [form, baselineForm, editableConfiguredFields]);
 
+  const placementChanged = useMemo(() => {
+    if (!form) return false;
+    const configuredPlacementFields = editableConfiguredFields.filter((field) => isPlacementMeasurementField(field, budgetContext));
+    for (const field of configuredPlacementFields) {
+      if (configuredMeasurementProductChanged(form, baselineForm, field)) return true;
+    }
+    for (const section of fallbackSections) {
+      if (!isPlacementSectionName(section?.name)) continue;
+      if (fallbackMeasurementProductChanged(form, baselineForm, section?.id)) return true;
+    }
+    return false;
+  }, [form, baselineForm, editableConfiguredFields, fallbackSections, budgetContext]);
+
   const hasObservationsForSeller = !!text(form?.observaciones_medicion);
-  const mustGoToSeller = item18Changed || hasObservationsForSeller;
+  const mustGoToSeller = item18Changed || placementChanged || hasObservationsForSeller;
 
   const technicalRules = dynamicRulesQ.data || {};
   const technicalSummary = useMemo(
@@ -876,6 +999,10 @@ export default function MedicionDetailPage() {
   const measuredFinalDimensions = useMemo(
     () => getFinalDimensionsFromScheme(form),
     [form?.esquema?.alto, form?.esquema?.ancho],
+  );
+  const technicalSummaryItems = useMemo(
+    () => buildMeasurementTechnicalSummaryItems({ quote, form, technicalSummary, measuredFinalDimensions }),
+    [quote, form, technicalSummary, measuredFinalDimensions],
   );
 
   useEffect(() => {
@@ -996,6 +1123,9 @@ export default function MedicionDetailPage() {
         if (item18Changed) {
           returnToSeller = true;
           returnReason = DEFAULT_RETURN_REASON_ITEM_18;
+        } else if (placementChanged) {
+          returnToSeller = true;
+          returnReason = "El cambio en Tipo de colocación debe revisarlo el vendedor para ajustar la nota de pedido, la nota de venta y el presupuesto si corresponde.";
         } else if (hasObservationsForSeller) {
           returnToSeller = true;
           returnReason = `${DEFAULT_RETURN_REASON_OBSERVATIONS}\n\nObservación del medidor: ${text(
@@ -1187,26 +1317,19 @@ export default function MedicionDetailPage() {
           </Row>
         </Section>
 
-        <Section title="Resumen del presupuesto">
-          <Row>
-            <Field label="Nota de pedido / referencia">
-              <StaticValue value={form.nota_venta || quote?.odoo_sale_order_name || quote?.quote_number} />
-            </Field>
-            <Field label="Semana presupuestada">
-              <StaticValue value={planningLabel || "Sin semana calculada"} />
-            </Field>
-            <Field label="Modo">
-              <StaticValue value={text(quote?.fulfillment_mode || "").toLowerCase() === "acopio" ? "Acopio" : "Producción"} />
-            </Field>
-          </Row>
-          <div className="spacer" />
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            {budgetSummaryItems.map((item) => (
-              <div key={item.key} style={{ border: "1px solid #eee", borderRadius: 10, padding: 10 }}>
-                <b>{item.sectionName}:</b> {item.value || "—"}
-              </div>
-            ))}
-          </div>
+        <Section title="Resumen técnico">
+          {technicalSummaryItems.length ? (
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 10 }}>
+              {technicalSummaryItems.map((item) => (
+                <div key={item.label} style={{ border: "1px solid #e5e5e5", borderRadius: 10, padding: "8px 10px", background: "#fff" }}>
+                  <div className="muted" style={{ fontSize: 12 }}>{item.label}</div>
+                  <div style={{ fontWeight: 800, marginTop: 4 }}>{item.value}</div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="muted">Sin datos técnicos calculados.</div>
+          )}
         </Section>
 
         <Section title="Esquema de medidas">
@@ -1508,6 +1631,23 @@ export default function MedicionDetailPage() {
               }}
             >
               Atención: cambiaste un producto de la sección 18. Este cambio puede ocasionar costos adicionales y debe enviarse al vendedor.
+            </div>
+          ) : null}
+
+          {placementChanged ? (
+            <div
+              style={{
+                marginTop: 14,
+                border: "2px solid #b91c1c",
+                background: "#fee2e2",
+                color: "#7f1d1d",
+                borderRadius: 12,
+                padding: 14,
+                fontWeight: 800,
+                boxShadow: "0 0 0 2px rgba(185,28,28,0.08) inset",
+              }}
+            >
+              Atención: cambiaste Tipo de colocación. Este cambio debe revisarlo el vendedor para ajustar la nota de pedido, la nota de venta y el presupuesto si corresponde.
             </div>
           ) : null}
         </Section>
