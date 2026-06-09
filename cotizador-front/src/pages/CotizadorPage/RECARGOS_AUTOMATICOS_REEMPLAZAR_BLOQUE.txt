@@ -1,0 +1,31 @@
+Archivo: cotizador-front/src/pages/CotizadorPage/index.jsx
+
+Buscar este bloque:
+
+  const financingQ = useQuery({ queryKey: ["financing-preview", paymentMethod], queryFn: () => getFinancingPreview(paymentMethod), enabled: !!String(paymentMethod || "").trim(), staleTime: 60 * 1000 });
+  const financingPercent = Number(financingQ.data?.percent || 0) || 0;
+  const savedQuoteAdjustmentPercent = getSavedQuoteAdjustmentPercent(quoteQ.data);
+  const persistedQuoteId = quoteQ.data?.id || quoteId || idParam;
+  const quoteAdjustmentPercent = useMemo(() => {
+    if (persistedQuoteId && savedQuoteAdjustmentPercent !== null) return savedQuoteAdjustmentPercent;
+    return resolveQuoteAdjustmentPercent(financingPercent, conditionMode);
+  }, [persistedQuoteId, savedQuoteAdjustmentPercent, financingPercent, conditionMode]);
+
+Reemplazarlo completo por este bloque:
+
+  const financingQ = useQuery({ queryKey: ["financing-preview", paymentMethod], queryFn: () => getFinancingPreview(paymentMethod), enabled: !!String(paymentMethod || "").trim(), staleTime: 60 * 1000 });
+  const financingPercent = Number(financingQ.data?.percent || 0) || 0;
+  const savedQuoteAdjustmentPercent = getSavedQuoteAdjustmentPercent(quoteQ.data);
+  const persistedQuoteId = quoteQ.data?.id || quoteId || idParam;
+  const savedQuotePaymentMethod = String(quoteQ.data?.payload?.payment_method || "").trim();
+  const currentPaymentMethod = String(paymentMethod || "").trim();
+  const paymentMethodChangedFromSavedQuote = !!persistedQuoteId && currentPaymentMethod !== savedQuotePaymentMethod;
+  const quoteAdjustmentPercent = useMemo(() => {
+    if (persistedQuoteId && savedQuoteAdjustmentPercent !== null && !paymentMethodChangedFromSavedQuote) return savedQuoteAdjustmentPercent;
+    return resolveQuoteAdjustmentPercent(financingPercent, conditionMode);
+  }, [persistedQuoteId, savedQuoteAdjustmentPercent, paymentMethodChangedFromSavedQuote, financingPercent, conditionMode]);
+
+Que corrige:
+- Si abrís un presupuesto guardado, conserva el recargo guardado mientras no cambies la forma de pago.
+- Si cambiás la forma de pago/tarjeta/cuotas, ignora el snapshot viejo y recalcula el recargo al instante.
+- No afecta coeficiente ni condición 2.
