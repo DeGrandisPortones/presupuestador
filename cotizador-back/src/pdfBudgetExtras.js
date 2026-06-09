@@ -151,6 +151,18 @@ function formatPiernas(value) {
   const map = { angostas: "angostas", comunes: "comunes", anchas: "anchas", superanchas: "superanchas", especiales: "especiales" };
   return map[key] || "";
 }
+function normalizeSellerDimensionMm(value) {
+  const n = toNumberLike(value);
+  if (!Number.isFinite(n) || n <= 0) return 0;
+  return Math.round(n > 100 ? n : n * 1000);
+}
+function buildSellerDimensionsLine(quote) {
+  const dims = quote?.payload?.dimensions || {};
+  const widthMm = normalizeSellerDimensionMm(dims?.width);
+  const heightMm = normalizeSellerDimensionMm(dims?.height);
+  if (!widthMm && !heightMm) return "";
+  return `Ancho: ${widthMm || "-"} mm - Alto: ${heightMm || "-"} mm`;
+}
 async function resolveQuoteSource(payload) {
   const maybeId = safeStr(payload?.quote_id || payload?.quoteId || payload?.id);
   if (maybeId && isUuid(maybeId)) {
@@ -174,13 +186,15 @@ export async function buildBudgetExtraSummaryLines(payload) {
   const calculated = computeSurfaceAutomaticContext({ quote, form: quote?.measurement_form || {}, surfaceParameters });
 
   const lines = [];
+  const sellerDimensionsLine = buildSellerDimensionsLine(quote);
   const alto = formatMm(calculated?.alto_paso_mm || calculated?.alto_calculado_mm);
   const ancho = formatMm(calculated?.ancho_paso_mm || calculated?.ancho_calculado_mm);
   const peso = formatKg(calculated?.peso_estimado_kg);
   const piernas = formatPiernas(calculated?.piernas_tipo);
 
-  if (alto && ancho) lines.push(`Medidas de paso: ${alto} x ${ancho}`);
-  else if (alto || ancho) lines.push(`Medidas de paso: ${alto || "—"} x ${ancho || "—"}`);
+  if (sellerDimensionsLine) lines.push(sellerDimensionsLine);
+  if (alto && ancho) lines.push(`Medidas de paso: ${ancho} x ${alto}`);
+  else if (alto || ancho) lines.push(`Medidas de paso: ${ancho || "-"} x ${alto || "-"}`);
   if (peso) lines.push(`Peso calculado: ${peso}`);
   if (piernas) lines.push(`Piernas: ${piernas}`);
 

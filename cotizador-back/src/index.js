@@ -27,8 +27,10 @@ import { buildFinancingSettingsRouter } from "./routes/financingSettings.routes.
 import { buildSellerDistributorsRouter } from "./routes/sellerDistributors.routes.js";
 import { buildPriceListsRouter } from "./routes/priceLists.routes.js";
 import { applyQuotesNpApprovalSyncPatch } from "./patches/quotesNpApprovalSyncPatch.js";
+import { applyPortonPdfSellerDimensionPatch } from "./patches/portonPdfSellerDimensionPatch.js";
 
 applyQuotesNpApprovalSyncPatch();
+applyPortonPdfSellerDimensionPatch();
 const { buildQuotesRouter } = await import("./routes/quotes.routes.js");
 
 const app = express();
