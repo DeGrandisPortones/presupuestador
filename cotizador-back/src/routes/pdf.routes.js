@@ -448,9 +448,6 @@ function buildIpanelInfoLines(payload) {
   const info = getIpanelDimensionsForPdf(payload);
   const rows = [];
   if (info.widthM || info.heightM) rows.push(`Medidas Ipanel: ancho ${formatMeters(info.widthM)} x alto ${formatMeters(info.heightM)}`);
-  rows.push(`Orientación de lamas: ${ipanelOrientationLabel(info.orientation)}`);
-  if (info.divisions) rows.push(`Divisiones: ${info.divisions}`);
-  if (info.sectionSizes.length) rows.push(`Medidas secciones: ${info.sectionSizes.map(formatMmValue).join(" / ")}`);
   return rows;
 }
 function drawIpanelScheme(doc, { x, y, width, info }) {
