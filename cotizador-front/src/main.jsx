@@ -5,6 +5,7 @@ import { Toaster } from "react-hot-toast";
 import App from "./App.jsx";
 import "./styles.css";
 import "./header-fix.css";
+import "./doorHandHelp.js";
 
 const queryClient = new QueryClient({
   defaultOptions: {
