@@ -245,6 +245,18 @@ function getBudgetProductIdsFromLines(lines) {
   return [...new Set(ids.map((id) => Number(id)).filter((id) => Number.isFinite(id) && id > 0))];
 }
 function getBudgetProductIdSetFromLines(lines) { return new Set(getBudgetProductIdsFromLines(lines)); }
+function lineTextMatchesIpanelVarillado(line = {}) {
+  const text = [line?.name, line?.raw_name, line?.display_name, line?.alias, line?.code]
+    .filter(Boolean)
+    .join(" ")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+  return text.includes("varillado") || text.includes("varill");
+}
+function hasIpanelVarilladoProduct(lines) {
+  return (Array.isArray(lines) ? lines : []).some((line) => lineTextMatchesIpanelVarillado(line));
+}
 function detectNoCladdingByProducts(lines, params) {
   const ids = getBudgetProductIdSetFromLines(lines);
   const noCladdingId = Number(params?.no_cladding_product_id || 0);
@@ -1450,8 +1462,8 @@ export default function PortonDimensions({ kind = "porton" }) {
   const height = useMemo(() => toNumber(heightRaw), [heightRaw]);
   const widthValue = useMemo(() => parseOptionalNumber(normalizeDecimalWithDot(widthRaw)), [widthRaw]);
   const heightValue = useMemo(() => parseOptionalNumber(normalizeDecimalWithDot(heightRaw)), [heightRaw]);
-  const widthOutOfBounds = widthValue !== null && (isPorton ? (widthValue < WIDTH_MIN_M || widthValue > WIDTH_MAX_M) : (isIpanel ? widthValue > IPANEL_WIDTH_MAX_M : false));
-  const heightOutOfBounds = heightValue !== null && (isPorton ? (heightValue < HEIGHT_MIN_M || heightValue > HEIGHT_MAX_M) : (isIpanel ? heightValue > IPANEL_HEIGHT_MAX_M : false));
+  const widthOutOfBounds = widthValue !== null && (isPorton ? (widthValue < WIDTH_MIN_M || widthValue > WIDTH_MAX_M) : (isIpanel ? widthValue > ipanelWidthMaxForSelection : false));
+  const heightOutOfBounds = heightValue !== null && (isPorton ? (heightValue < HEIGHT_MIN_M || heightValue > HEIGHT_MAX_M) : (isIpanel ? heightValue > ipanelHeightMaxForSelection : false));
   const hasSizeError = (isPorton || isIpanel) && (widthOutOfBounds || heightOutOfBounds);
   const widthHelper = isPorton ? "Minimo 2.4 m - Maximo 7 m" : (isIpanel ? "Panel simple max 1.16 m. Lamas y varillado max 2.00 m" : "");
   const heightHelper = isPorton ? "Minimo 2 m - Maximo 3 m" : (isIpanel ? "Maximo 2.45 m (245 cm)" : "");
@@ -1463,6 +1475,10 @@ export default function PortonDimensions({ kind = "porton" }) {
   }, [width, height]);
   const selectedProductIdsForIpanel = useMemo(() => getBudgetProductIdSetFromLines(lines), [lines]);
   const hasIpanelLamas22Panel = isIpanel && [...IPANEL_LAMAS_22_PRODUCT_IDS].some((id) => selectedProductIdsForIpanel.has(id));
+  const hasIpanelVarilladoPanel = isIpanel && hasIpanelVarilladoProduct(lines);
+  const hasIpanelExtendedAllowedPanel = hasIpanelLamas22Panel || hasIpanelVarilladoPanel;
+  const ipanelWidthMaxForSelection = hasIpanelExtendedAllowedPanel ? IPANEL_LAMAS_WIDTH_MAX_M : IPANEL_WIDTH_MAX_M;
+  const ipanelHeightMaxForSelection = hasIpanelExtendedAllowedPanel ? IPANEL_LAMAS_HEIGHT_MAX_M : IPANEL_HEIGHT_MAX_M;
   const ipanelLamasOrientation = normalizeIpanelLamasOrientation(
     dimensions?.ipanel_lamas_orientacion ??
     dimensions?.orientacion_ipanel_lamas ??

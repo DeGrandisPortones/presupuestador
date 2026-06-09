@@ -135,6 +135,22 @@ function lineMatchesAnyProductId(line, productIds = []) {
 function hasIpanelLamasProduct(payload) {
   return (Array.isArray(payload?.lines) ? payload.lines : []).some((line) => lineMatchesAnyProductId(line, [IPANEL_LAMAS_PRODUCT_ID, IPANEL_LAMAS_ODOO_ID]));
 }
+function lineTextMatchesIpanelVarillado(line = {}) {
+  const text = normalizeUiText([
+    line?.name,
+    line?.raw_name,
+    line?.display_name,
+    line?.alias,
+    line?.code,
+  ].filter(Boolean).join(" "));
+  return text.includes("varillado") || text.includes("varill");
+}
+function hasIpanelVarilladoProduct(payload) {
+  return (Array.isArray(payload?.lines) ? payload.lines : []).some((line) => lineTextMatchesIpanelVarillado(line));
+}
+function hasIpanelPlainPanelProduct(payload) {
+  return (Array.isArray(payload?.lines) ? payload.lines : []).some((line) => lineMatchesAnyProductId(line, IPANEL_NON_LAMAS_PLEGADO_PRODUCT_IDS));
+}
 function normalizeIpanelLamasOrientation(value) {
   const raw = normalizeUiText(value);
   if (raw.includes("vert")) return "vertical";
@@ -523,8 +539,8 @@ function validateDimensionsRequired(payload, kind = "porton") {
   }
 
   if (normalizedKind === "ipanel") {
-    if (width > IPANEL_LAMAS_WIDTH_MAX_M) throw new Error(`El ancho del ${itemLabel} no puede superar 2.00 m. Entre 1.16 m y 2.00 m sólo se puede producir en lamas.`);
-    if (height > IPANEL_LAMAS_HEIGHT_MAX_M) throw new Error(`El alto del ${itemLabel} no puede superar 3.00 m. Entre 2.45 m y 3.00 m sólo se puede producir en lamas.`);
+    if (width > IPANEL_LAMAS_WIDTH_MAX_M) throw new Error(`El ancho del ${itemLabel} no puede superar 2.00 m. Entre 1.16 m y 2.00 m sólo se puede producir en lamas o varillado.`);
+    if (height > IPANEL_LAMAS_HEIGHT_MAX_M) throw new Error(`El alto del ${itemLabel} no puede superar 3.00 m. Entre 2.45 m y 3.00 m sólo se puede producir en lamas o varillado.`);
 
     if (hasIpanelLamasProduct(payload)) {
       const lamasSetupCompleted = dims?.ipanel_lamas_popup_completed === true
@@ -551,14 +567,14 @@ function validateDimensionsRequired(payload, kind = "porton") {
     }
 
     if (isIpanelExtendedLamasDimensions(dims)) {
-      if (!hasIpanelLamasProduct(payload)) {
-        throw new Error("Las medidas ingresadas sólo son posibles en Panel en Lamas 22mm. Seleccioná ese ítem para continuar.");
+      if (hasIpanelPlainPanelProduct(payload)) {
+        throw new Error("El Panel liso sólo puede usarse hasta 1.16 m de ancho y 2.45 m de alto. Para medidas mayores usá lamas o varillado.");
       }
       return;
     }
 
-    if (width > IPANEL_WIDTH_MAX_M) throw new Error(`El ancho del ${itemLabel} no puede superar 1.16 m (116 cm), salvo en Revestimiento en lamas hasta 2.00 m.`);
-    if (height > IPANEL_HEIGHT_MAX_M) throw new Error(`El alto del ${itemLabel} no puede superar 2.45 m (245 cm), salvo en Revestimiento en lamas hasta 3.00 m.`);
+    if (width > IPANEL_WIDTH_MAX_M) throw new Error(`El ancho del ${itemLabel} no puede superar 1.16 m (116 cm), salvo en Revestimiento en lamas o varillado hasta 2.00 m.`);
+    if (height > IPANEL_HEIGHT_MAX_M) throw new Error(`El alto del ${itemLabel} no puede superar 2.45 m (245 cm), salvo en Revestimiento en lamas o varillado hasta 3.00 m.`);
   }
 }
 function formatVisibleStatus(rawStatus, hasPersistedQuote) {
