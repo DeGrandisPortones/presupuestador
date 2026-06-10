@@ -1,4 +1,4 @@
-Cambio Envio 2842
+Fix Envio 2842 en proforma de distribuidores
 
 Archivos incluidos:
 - cotizador-front/src/pages/CotizadorPage/components/LineRow.jsx
@@ -6,9 +6,13 @@ Archivos incluidos:
 - cotizador-back/src/routes/quotes.routes.js
 
 Comportamiento:
-- El item Envio 2842 mantiene la cantidad editable.
-- El precio ya no es editable para distribuidores.
-- El precio se toma de la lista asignada.
-- El Envio 2842 deja de tratarse como producto propio del distribuidor a $0 para Odoo/proforma desde el flujo de presupuesto.
+- Envio 2842 sigue apareciendo en el presupuesto como item normal.
+- Envio 2842 solo mantiene editable la cantidad.
+- El precio del Envio 2842 no lo edita el usuario: queda el precio base tomado de la lista asignada.
+- En PDF presupuesto aplica los calculos normales segun forma de pago, condicion, coeficiente, etc.
+- En PDF proforma para distribuidores aparece con precio base de lista, no a $0.
+- Para vendedores no cambia el comportamiento.
 
-Nota: si tambien tienen copia local de pdf.routes.js con la lista DISTRIBUTOR_OWN_SUPPLY_PRODUCT_IDS incluyendo 2842, quitar 2842 ahi tambien para que el PDF de proforma backend no lo vuelva a poner en cero.
+Nota tecnica:
+- La proforma del distribuidor ahora envia el Envio 2842 como linea PDF regular para evitar la regla legacy del backend que ponia a $0 los productos propios del distribuidor.
+- La persistencia y Odoo siguen usando el producto real 2842.
