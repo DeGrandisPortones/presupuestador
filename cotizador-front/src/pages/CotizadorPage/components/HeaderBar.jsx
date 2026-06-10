@@ -6,6 +6,7 @@ import Button from "../../../ui/Button.jsx";
 import { useQuoteStore } from "../../../domain/quote/store.js";
 import { PAYMENT_METHODS } from "../../../domain/quote/portonConstants.js";
 import { getFinancingPaymentMethods } from "../../../api/financingSettings.js";
+import { searchExistingCustomers } from "../../../api/quotes.js";
 
 const MULTIPLE_PAYMENT_METHOD = "Pago Multiple";
 const CARD_CATEGORY = "Tarjetas";
@@ -147,6 +148,110 @@ function paymentCategoryFromMethod(paymentMethod, categoryOverride = "") {
   return raw;
 }
 
+
+function splitExistingCustomerName(customer = {}) {
+  const first = String(customer?.first_name || "").trim();
+  const last = String(customer?.last_name || "").trim();
+  if (first || last) return { first_name: first, last_name: last };
+  const fullName = String(customer?.name || "").trim();
+  if (!fullName) return { first_name: "", last_name: "" };
+  const parts = fullName.split(/\s+/).filter(Boolean);
+  return { first_name: parts[0] || "", last_name: parts.slice(1).join(" ") };
+}
+
+function normalizeExistingCustomer(customer = {}) {
+  const split = splitExistingCustomerName(customer);
+  return {
+    name: String(customer?.name || [split.first_name, split.last_name].filter(Boolean).join(" ")).trim(),
+    first_name: split.first_name,
+    last_name: split.last_name,
+    phone: String(customer?.phone || "").trim(),
+    email: String(customer?.email || "").trim(),
+    address: String(customer?.address || customer?.street || "").trim(),
+    maps_url: String(customer?.maps_url || "").trim(),
+    city: String(customer?.city || "").trim(),
+  };
+}
+
+function customerResultLabel(item = {}) {
+  const c = item?.customer || {};
+  const name = String(c?.name || [c?.first_name, c?.last_name].filter(Boolean).join(" ") || "Cliente sin nombre").trim();
+  const parts = [
+    c?.phone ? `Tel: ${c.phone}` : "",
+    c?.city || "",
+    c?.address || "",
+  ].filter(Boolean);
+  return { name, detail: parts.join(" · ") };
+}
+
+function ExistingCustomerModal({ open, onClose, onApply }) {
+  const [query, setQuery] = useState("");
+  const cleanQuery = query.trim();
+  const canSearch = cleanQuery.length >= 2;
+  const customersQ = useQuery({
+    queryKey: ["existing-customers", cleanQuery],
+    queryFn: () => searchExistingCustomers({ query: cleanQuery, limit: 25 }),
+    enabled: open && canSearch,
+    staleTime: 30 * 1000,
+  });
+
+  useEffect(() => {
+    if (!open) setQuery("");
+  }, [open]);
+
+  if (!open) return null;
+
+  const results = Array.isArray(customersQ.data) ? customersQ.data : [];
+  const apply = (item) => {
+    const customer = normalizeExistingCustomer(item?.customer || {});
+    onApply(customer);
+  };
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20, zIndex: 1200 }} onClick={onClose}>
+      <div className="card" style={{ width: "100%", maxWidth: 900, maxHeight: "90vh", overflow: "auto", background: "#fff", border: "1px solid #ddd", boxShadow: "0 20px 60px rgba(0,0,0,0.18)" }} onClick={(e) => e.stopPropagation()}>
+        <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start", flexWrap: "wrap" }}>
+          <div>
+            <div style={{ fontWeight: 900, fontSize: 24, marginBottom: 4 }}>Datos cliente existente</div>
+            <div className="muted">Buscá por nombre, apellido, teléfono, email, localidad, dirección, presupuesto o referencia Odoo.</div>
+          </div>
+          <Button variant="ghost" onClick={onClose}>Cerrar</Button>
+        </div>
+
+        <div className="spacer" />
+        <Input value={query} onChange={setQuery} placeholder="Ej: Juan, 351..., NV4248, NP4248, localidad..." style={{ width: "100%" }} autoFocus />
+        {!canSearch ? <div className="muted" style={{ marginTop: 8 }}>Escribí al menos 2 caracteres para buscar.</div> : null}
+        {customersQ.isFetching ? <div className="muted" style={{ marginTop: 8 }}>Buscando clientes guardados…</div> : null}
+        {customersQ.isError ? <div style={{ color: "#d93025", fontSize: 13, marginTop: 8 }}>{customersQ.error?.message || "No se pudo buscar clientes."}</div> : null}
+        {canSearch && !customersQ.isFetching && !customersQ.isError && !results.length ? <div className="muted" style={{ marginTop: 8 }}>No encontré clientes guardados con esa búsqueda.</div> : null}
+
+        {!!results.length ? (
+          <div style={{ display: "grid", gap: 8, marginTop: 12 }}>
+            {results.map((item) => {
+              const label = customerResultLabel(item);
+              return (
+                <button
+                  key={item.key || item.quote_id}
+                  type="button"
+                  onClick={() => apply(item)}
+                  style={{ textAlign: "left", border: "1px solid #e5e7eb", background: "#fff", borderRadius: 12, padding: 12, cursor: "pointer" }}
+                >
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+                    <div style={{ fontWeight: 900 }}>{label.name}</div>
+                    <div className="muted" style={{ fontSize: 12 }}>{item.reference || "Presupuesto"}</div>
+                  </div>
+                  {label.detail ? <div className="muted" style={{ marginTop: 4 }}>{label.detail}</div> : null}
+                  {item.created_by_full_name || item.created_by_username ? <div className="muted" style={{ marginTop: 4, fontSize: 12 }}>Vendedor: {item.created_by_full_name || item.created_by_username}</div> : null}
+                </button>
+              );
+            })}
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
 function MultiplePaymentModal({ open, onClose, paymentMethods, initialPaymentMethod, onApply }) {
   const [rows, setRows] = useState(() => {
     const parsed = parseExistingMultiple(initialPaymentMethod);
@@ -268,6 +373,7 @@ export default function HeaderBar({ showMargin }) {
     setEndCustomer,
   } = useQuoteStore();
   const [multipleOpen, setMultipleOpen] = useState(false);
+  const [customerLookupOpen, setCustomerLookupOpen] = useState(false);
   const [paymentCategoryOverride, setPaymentCategoryOverride] = useState("");
 
   const paymentMethodsQ = useQuery({
@@ -354,6 +460,12 @@ export default function HeaderBar({ showMargin }) {
     setConditionMode("cond1");
   };
 
+  const applyExistingCustomer = (customer) => {
+    setEndCustomer(customer);
+    setCustomerLookupOpen(false);
+    toast.success("Datos del cliente cargados.");
+  };
+
   return (
     <div className="card">
       <MultiplePaymentModal
@@ -362,6 +474,11 @@ export default function HeaderBar({ showMargin }) {
         paymentMethods={paymentMethods}
         initialPaymentMethod={paymentMethod}
         onApply={applyMultiplePayment}
+      />
+      <ExistingCustomerModal
+        open={customerLookupOpen}
+        onClose={() => setCustomerLookupOpen(false)}
+        onApply={applyExistingCustomer}
       />
       <div className="row" style={{ alignItems: "center" }}>
         {showMargin ? (
@@ -379,6 +496,11 @@ export default function HeaderBar({ showMargin }) {
             />
           </div>
         ) : null}
+
+        <div style={{ minWidth: 210 }}>
+          <div className="muted">Cliente guardado</div>
+          <Button variant="secondary" onClick={() => setCustomerLookupOpen(true)}>Datos cliente existente</Button>
+        </div>
 
         <div style={{ flex: 1, minWidth: 220 }}>
           <div className="muted">Cliente final (nombre)</div>

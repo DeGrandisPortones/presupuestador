@@ -58,3 +58,12 @@ export async function getQuoteViewer({ reference = "", quoteId = "" } = {}) {
   if (!data?.ok) throw new Error(data?.error || "No se pudo cargar el historial del portón");
   return data;
 }
+
+export async function searchExistingCustomers({ query = "", limit = 25 } = {}) {
+  const params = new URLSearchParams();
+  params.set("query", String(query || ""));
+  params.set("limit", String(limit || 25));
+  const { data } = await http.get(`/api/quotes/customer-lookup?${params.toString()}`);
+  if (!data?.ok) throw new Error(data?.error || "No se pudieron buscar clientes guardados");
+  return data.customers || [];
+}
