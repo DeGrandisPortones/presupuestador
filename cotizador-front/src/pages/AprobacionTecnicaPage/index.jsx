@@ -76,8 +76,50 @@ function budgetObservation(row) {
 }
 function BudgetObservationCell({ row }) {
   const text = budgetObservation(row);
+  const [open, setOpen] = useState(false);
   if (!text) return <span className="muted">—</span>;
-  return <div style={{ fontWeight: 800, background: "#fff8e1", border: "1px solid #f2d08a", borderRadius: 10, padding: "6px 8px", maxWidth: 280, whiteSpace: "pre-wrap" }}>{text}</div>;
+  return (
+    <>
+      <Button variant="ghost" onClick={() => setOpen(true)}>Ver observación</Button>
+      {open ? (
+        <div
+          role="dialog"
+          aria-modal="true"
+          onClick={() => setOpen(false)}
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.45)",
+            zIndex: 10000,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 20,
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: "#fff",
+              borderRadius: 14,
+              border: "1px solid #ddd",
+              boxShadow: "0 20px 50px rgba(0,0,0,0.25)",
+              width: "min(720px, 96vw)",
+              maxHeight: "80vh",
+              overflow: "auto",
+              padding: 18,
+            }}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, marginBottom: 12 }}>
+              <h3 style={{ margin: 0 }}>Observación presupuesto</h3>
+              <Button variant="ghost" onClick={() => setOpen(false)}>Cerrar</Button>
+            </div>
+            <div style={{ whiteSpace: "pre-wrap", lineHeight: 1.45, fontWeight: 700 }}>{text}</div>
+          </div>
+        </div>
+      ) : null}
+    </>
+  );
 }
 
 function isPlegadosRow(row) {
