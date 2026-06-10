@@ -166,6 +166,30 @@ export async function ensureQuotesMeasurementColumns() {
        set requires_measurement = true,
            measurement_mode = 'tecnica_only',
            measurement_subtype = 'sin_medicion',
+           measurement_status = 'approved',
+           measurement_review_at = coalesce(measurement_review_at, final_synced_at, confirmed_at, updated_at, created_at, now()),
+           final_status = 'synced_odoo',
+           final_technical_decision = 'approved',
+           final_logistics_decision = 'approved',
+           final_sale_order_id = coalesce(final_sale_order_id, odoo_sale_order_id),
+           final_sale_order_name = coalesce(final_sale_order_name, odoo_sale_order_name),
+           final_synced_at = coalesce(final_synced_at, confirmed_at, updated_at, created_at, now())
+     where catalog_kind = 'ipanel'
+       and fulfillment_mode = 'produccion'
+       and quote_kind = 'original'
+       and status = 'synced_odoo'
+       and coalesce(final_status, '') not in ('synced_odoo', 'syncing_odoo')
+       and (
+         coalesce(odoo_sale_order_id, 0) <> 0
+         or odoo_sale_order_name is not null
+       )
+  `);
+
+  await dbQuery(`
+    update public.presupuestador_quotes
+       set requires_measurement = true,
+           measurement_mode = 'tecnica_only',
+           measurement_subtype = 'sin_medicion',
            measurement_status = case
              when measurement_status = 'approved' then measurement_status
              else 'pending'
