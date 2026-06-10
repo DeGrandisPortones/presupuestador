@@ -1620,7 +1620,13 @@ export default function PortonDimensions({ kind = "porton" }) {
   const distributeUniformly = dimensions?.distribuir_parantes_uniformemente === true || String(dimensions?.distribuir_parantes_uniformemente || "").trim().toLowerCase() === "true";
   const showSpecialParantesDistances = isPorton && aptoParaRevestir && distribution === "especial";
   const aptoHasDoorFixedReference = isPorton && aptoParaRevestir && hasDoorParantesConfig;
-  const aptoSimulaHorizontalReferencia = aptoHasDoorFixedReference;
+  const aptoManualFixedReferenceEnabled = showSpecialParantesDistances && !hasDoorParantesConfig && (
+    dimensions?.parantes_primer_parante_distancia_fija === true ||
+    String(dimensions?.parantes_primer_parante_distancia_fija || "").trim().toLowerCase() === "true" ||
+    dimensions?.parantes_simular_referencia_horizontal === true ||
+    String(dimensions?.parantes_simular_referencia_horizontal || "").trim().toLowerCase() === "true"
+  );
+  const aptoSimulaHorizontalReferencia = aptoHasDoorFixedReference || aptoManualFixedReferenceEnabled;
   const aptoReferenciaLado = String(dimensions?.parantes_referencia_lado || detectedDoorSide || "izquierdo").trim().toLowerCase() === "derecho" ? "derecho" : "izquierdo";
   const aptoReferenciaDistancia = String(dimensions?.parantes_referencia_distancia_mm ?? dimensions?.parantes_primer_parante_distancia_mm ?? String(DOOR_FIXED_PARANTE_DISTANCE_MM));
   const aptoReferenciaDistanciaMm = Math.max(0, parseMmNumber(aptoReferenciaDistancia) || DOOR_FIXED_PARANTE_DISTANCE_MM);
@@ -1845,11 +1851,13 @@ export default function PortonDimensions({ kind = "porton" }) {
 
   function setAptoFixedFirstParante(checked) {
     const nextChecked = !!checked;
+    const currentDistance = normalizeDecimalMmInput(aptoReferenciaDistancia || String(DOOR_FIXED_PARANTE_DISTANCE_MM)) || String(DOOR_FIXED_PARANTE_DISTANCE_MM);
     const patch = {
       parantes_primer_parante_distancia_fija: nextChecked,
       parantes_simular_referencia_horizontal: nextChecked,
       parantes_referencia_lado: nextChecked ? (dimensions?.parantes_referencia_lado || "izquierdo") : "",
-      parantes_referencia_distancia_mm: nextChecked ? normalizeDecimalMmInput(aptoReferenciaDistancia || String(DOOR_FIXED_PARANTE_DISTANCE_MM)) : "",
+      parantes_referencia_distancia_mm: nextChecked ? currentDistance : "",
+      parantes_primer_parante_distancia_mm: nextChecked ? currentDistance : "",
     };
     if (nextChecked && parantesCount <= 0) patch.cantidad_parantes = "1";
     setDimensions(patch);
@@ -1985,13 +1993,19 @@ export default function PortonDimensions({ kind = "porton" }) {
         <div style={{ border: "1px solid #e0e7ff", background: "#f8fbff", borderRadius: 14, padding: 12 }}>
           <FieldBox label="Observaciones de distribucion especial"><textarea value={String(dimensions?.observaciones_parantes ?? "")} onChange={(e) => setDimensions({ observaciones_parantes: e.target.value })} rows={3} style={{ width: "100%", borderRadius: 10, border: "1px solid #ddd", padding: "10px 12px", resize: "vertical", fontFamily: "inherit" }} placeholder="Indica como debe ser la distribucion especial de los parantes." /></FieldBox>
           <div className="spacer" />
-          {aptoSimulaHorizontalReferencia ? <>
+          {aptoHasDoorFixedReference ? <>
             <div style={{ fontWeight: 800, color: "#0f172a" }}>Parante vertical de puerta fijo</div>
             <div style={{ marginTop: 10, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 10 }}>
               <FieldBox label="Lado del parante fijo" helper="Se usa como referencia para distribuir el resto."><select value={aptoReferenciaLado} onChange={(e) => setDimensions({ parantes_referencia_lado: e.target.value })} style={{ width: "100%", padding: "10px 12px", borderRadius: 8, border: "1px solid #ddd", background: "#fff" }}><option value="izquierdo">Izquierdo</option><option value="derecho">Derecho</option></select></FieldBox>
               <FieldBox label="Distancia del parante fijo" helper="Numero en mm desde el lado elegido. En especial se puede editar."><Input type="text" inputMode="decimal" value={aptoReferenciaDistancia} onChange={(v) => setDimensions({ parantes_referencia_distancia_mm: normalizeDecimalMmInput(v), parantes_primer_parante_distancia_mm: normalizeDecimalMmInput(v) })} onBlur={(e) => { const next = normalizeDecimalMmInput(e?.target?.value) || String(DOOR_FIXED_PARANTE_DISTANCE_MM); setDimensions({ parantes_referencia_distancia_mm: next, parantes_primer_parante_distancia_mm: next }); }} placeholder="Ej: 825" style={{ width: "100%" }} /></FieldBox>
             </div>
-          </> : null}
+          </> : <>
+            <label style={{ display: "flex", gap: 8, alignItems: "center", fontWeight: 700 }}><input type="checkbox" checked={aptoManualFixedReferenceEnabled} onChange={(e) => setAptoFixedFirstParante(e.target.checked)} />Fijar un parante inicial</label>
+            {aptoManualFixedReferenceEnabled ? <div style={{ marginTop: 10, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 10 }}>
+              <FieldBox label="Lado del parante fijo" helper="Elegí el lateral desde donde se mide el primer parante."><select value={aptoReferenciaLado} onChange={(e) => setDimensions({ parantes_referencia_lado: e.target.value })} style={{ width: "100%", padding: "10px 12px", borderRadius: 8, border: "1px solid #ddd", background: "#fff" }}><option value="izquierdo">Izquierdo</option><option value="derecho">Derecho</option></select></FieldBox>
+              <FieldBox label="Distancia del parante fijo" helper="Numero en mm desde el lado elegido. Luego se distribuye el resto."><Input type="text" inputMode="decimal" value={aptoReferenciaDistancia} onChange={(v) => setDimensions({ parantes_referencia_distancia_mm: normalizeDecimalMmInput(v), parantes_primer_parante_distancia_mm: normalizeDecimalMmInput(v) })} onBlur={(e) => { const next = normalizeDecimalMmInput(e?.target?.value) || String(DOOR_FIXED_PARANTE_DISTANCE_MM); setDimensions({ parantes_referencia_distancia_mm: next, parantes_primer_parante_distancia_mm: next }); }} placeholder="Ej: 825" style={{ width: "100%" }} /></FieldBox>
+            </div> : null}
+          </>}
           <div className="spacer" />
           <label style={{ display: "flex", gap: 8, alignItems: "center", fontWeight: 700 }}><input type="checkbox" checked={distributeUniformly} onChange={(e) => setDimensions({ distribuir_parantes_uniformemente: e.target.checked })} />Distribuir uniformemente</label>
           <div className="spacer" />
