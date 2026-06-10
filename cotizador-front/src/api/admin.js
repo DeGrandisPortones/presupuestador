@@ -1,6 +1,18 @@
 import { http } from "./http.js";
 import { storeTechnicalRulesForKind } from "../domain/quote/technicalSnapshot.js";
 
+function normalizeAdminQuoteParams(paramsOrKind = "porton", maybeLimit = 200) {
+  if (paramsOrKind && typeof paramsOrKind === "object") {
+    return {
+      kind: paramsOrKind.kind || "",
+      bucket: paramsOrKind.bucket || "all",
+      q: paramsOrKind.q || "",
+      limit: paramsOrKind.limit || 200,
+    };
+  }
+  return { kind: paramsOrKind || "porton", bucket: "all", q: "", limit: maybeLimit || 200 };
+}
+
 export async function adminGetCatalog(kind = "porton") {
   const { data } = await http.get(`/api/admin/catalog?kind=${encodeURIComponent(kind)}`);
   if (!data?.ok) throw new Error(data?.error || "No se pudo cargar el catálogo");
@@ -163,10 +175,22 @@ export async function adminRefreshCatalog() {
   return data.catalog;
 }
 
-export async function adminGetQuotes(kind = "porton", limit = 200) {
-  const { data } = await http.get(`/api/admin/quotes?kind=${encodeURIComponent(kind)}&limit=${encodeURIComponent(String(limit))}`);
+export async function adminGetQuotes(paramsOrKind = "porton", limit = 200) {
+  const params = normalizeAdminQuoteParams(paramsOrKind, limit);
+  const qs = new URLSearchParams();
+  if (params.kind) qs.set("kind", params.kind);
+  if (params.bucket) qs.set("bucket", params.bucket);
+  if (params.q) qs.set("q", params.q);
+  if (params.limit) qs.set("limit", String(params.limit));
+  const { data } = await http.get(`/api/admin/quotes?${qs.toString()}`);
   if (!data?.ok) throw new Error(data?.error || "No se pudieron cargar las cotizaciones");
   return data.quotes || [];
+}
+
+export async function adminDeleteQuote(id) {
+  const { data } = await http.delete(`/api/admin/quotes/${encodeURIComponent(String(id))}`);
+  if (!data?.ok) throw new Error(data?.error || "No se pudo eliminar el presupuesto");
+  return true;
 }
 
 export async function adminListUsers({ role = "all", q = "", active = "all" } = {}) {

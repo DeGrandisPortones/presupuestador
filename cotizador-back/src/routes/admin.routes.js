@@ -34,6 +34,108 @@ function getOdooName(product = {}) {
 function getPresupuestadorName(product = {}) {
   return String(product?.display_name || product?.alias || product?.internal_alias || product?.name || "").trim();
 }
+function cleanAdminText(value) {
+  return String(value || "").trim();
+}
+function normalizeAdminQuoteBucket(value) {
+  const bucket = cleanAdminText(value || "all").toLowerCase();
+  return ["all", "budgets", "portones", "ipanels", "puertas", "plegados", "otros"].includes(bucket) ? bucket : "all";
+}
+function safeAdminQuoteLimit(value) {
+  const n = Number(value || 200);
+  return Math.min(Math.max(Number.isFinite(n) ? Math.trunc(n) : 200, 1), 1000);
+}
+function adminQuoteHasGeneratedOdoo(row = {}) {
+  return !!(
+    row.odoo_sale_order_id ||
+    cleanAdminText(row.odoo_sale_order_name) ||
+    row.final_sale_order_id ||
+    cleanAdminText(row.final_sale_order_name) ||
+    cleanAdminText(row.final_copy_sale_order_name) ||
+    row.final_copy_sale_order_id ||
+    ["syncing_odoo", "synced_odoo"].includes(cleanAdminText(row.status)) ||
+    ["syncing_odoo", "synced_odoo"].includes(cleanAdminText(row.final_status)) ||
+    ["syncing_odoo", "synced_odoo"].includes(cleanAdminText(row.final_copy_status))
+  );
+}
+function decorateAdminQuote(row = {}) {
+  const hasGeneratedOdoo = adminQuoteHasGeneratedOdoo(row);
+  return {
+    ...row,
+    production_sale_order_name: row.production_sale_order_name || row.final_sale_order_name || row.final_copy_sale_order_name || row.odoo_sale_order_name || null,
+    can_delete: !hasGeneratedOdoo,
+    has_generated_odoo: hasGeneratedOdoo,
+  };
+}
+function adminQuoteBucketWhere(bucket) {
+  if (bucket === "budgets") return `and not (
+    coalesce(q.odoo_sale_order_id, 0) <> 0
+    or nullif(q.odoo_sale_order_name, '') is not null
+    or coalesce(q.final_sale_order_id, 0) <> 0
+    or nullif(q.final_sale_order_name, '') is not null
+    or coalesce(fc.final_copy_sale_order_id, 0) <> 0
+    or nullif(fc.final_copy_sale_order_name, '') is not null
+    or coalesce(q.status, '') in ('syncing_odoo', 'synced_odoo')
+    or coalesce(q.final_status, '') in ('syncing_odoo', 'synced_odoo')
+    or coalesce(fc.final_copy_status, '') in ('syncing_odoo', 'synced_odoo')
+  )`;
+  if (bucket === "portones") return `and coalesce(q.catalog_kind, 'porton') = 'porton' and (
+    coalesce(q.odoo_sale_order_id, 0) <> 0
+    or nullif(q.odoo_sale_order_name, '') is not null
+    or coalesce(q.final_sale_order_id, 0) <> 0
+    or nullif(q.final_sale_order_name, '') is not null
+    or coalesce(fc.final_copy_sale_order_id, 0) <> 0
+    or nullif(fc.final_copy_sale_order_name, '') is not null
+    or coalesce(q.status, '') in ('syncing_odoo', 'synced_odoo')
+    or coalesce(q.final_status, '') in ('syncing_odoo', 'synced_odoo')
+    or coalesce(fc.final_copy_status, '') in ('syncing_odoo', 'synced_odoo')
+  )`;
+  if (bucket === "ipanels") return `and coalesce(q.catalog_kind, 'porton') = 'ipanel' and (
+    coalesce(q.odoo_sale_order_id, 0) <> 0
+    or nullif(q.odoo_sale_order_name, '') is not null
+    or coalesce(q.final_sale_order_id, 0) <> 0
+    or nullif(q.final_sale_order_name, '') is not null
+    or coalesce(fc.final_copy_sale_order_id, 0) <> 0
+    or nullif(fc.final_copy_sale_order_name, '') is not null
+    or coalesce(q.status, '') in ('syncing_odoo', 'synced_odoo')
+    or coalesce(q.final_status, '') in ('syncing_odoo', 'synced_odoo')
+    or coalesce(fc.final_copy_status, '') in ('syncing_odoo', 'synced_odoo')
+  )`;
+  if (bucket === "puertas") return `and coalesce(q.catalog_kind, 'porton') = 'puerta' and (
+    coalesce(q.odoo_sale_order_id, 0) <> 0
+    or nullif(q.odoo_sale_order_name, '') is not null
+    or coalesce(q.final_sale_order_id, 0) <> 0
+    or nullif(q.final_sale_order_name, '') is not null
+    or coalesce(fc.final_copy_sale_order_id, 0) <> 0
+    or nullif(fc.final_copy_sale_order_name, '') is not null
+    or coalesce(q.status, '') in ('syncing_odoo', 'synced_odoo')
+    or coalesce(q.final_status, '') in ('syncing_odoo', 'synced_odoo')
+    or coalesce(fc.final_copy_status, '') in ('syncing_odoo', 'synced_odoo')
+  )`;
+  if (bucket === "plegados") return `and coalesce(q.catalog_kind, 'porton') = 'plegados' and (
+    coalesce(q.odoo_sale_order_id, 0) <> 0
+    or nullif(q.odoo_sale_order_name, '') is not null
+    or coalesce(q.final_sale_order_id, 0) <> 0
+    or nullif(q.final_sale_order_name, '') is not null
+    or coalesce(fc.final_copy_sale_order_id, 0) <> 0
+    or nullif(fc.final_copy_sale_order_name, '') is not null
+    or coalesce(q.status, '') in ('syncing_odoo', 'synced_odoo')
+    or coalesce(q.final_status, '') in ('syncing_odoo', 'synced_odoo')
+    or coalesce(fc.final_copy_status, '') in ('syncing_odoo', 'synced_odoo')
+  )`;
+  if (bucket === "otros") return `and coalesce(q.catalog_kind, 'porton') = 'otros' and (
+    coalesce(q.odoo_sale_order_id, 0) <> 0
+    or nullif(q.odoo_sale_order_name, '') is not null
+    or coalesce(q.final_sale_order_id, 0) <> 0
+    or nullif(q.final_sale_order_name, '') is not null
+    or coalesce(fc.final_copy_sale_order_id, 0) <> 0
+    or nullif(fc.final_copy_sale_order_name, '') is not null
+    or coalesce(q.status, '') in ('syncing_odoo', 'synced_odoo')
+    or coalesce(q.final_status, '') in ('syncing_odoo', 'synced_odoo')
+    or coalesce(fc.final_copy_status, '') in ('syncing_odoo', 'synced_odoo')
+  )`;
+  return "";
+}
 
 export function buildAdminRouter(odoo) {
   const router = express.Router();
@@ -227,14 +329,155 @@ export function buildAdminRouter(odoo) {
       res.json({ ok: true });
     } catch (e) { next(e); }
   });
-  router.get("/quotes", requireAuth, requireEncComercialOrSuperuser, async (req, res, next) => {
+
+  router.get("/quotes", requireAuth, requireSuperuser, async (req, res, next) => {
     try {
-      const limit = Math.min(Number(req.query.limit || 200), 500);
+      const limit = safeAdminQuoteLimit(req.query.limit);
+      const bucket = normalizeAdminQuoteBucket(req.query.bucket);
       const kind = req.query.kind ? normKind(req.query.kind) : null;
-      const q = await dbQuery(`select id, created_at, created_by_role, status, final_status, fulfillment_mode, end_customer, lines, payload, commercial_decision, technical_decision, rejection_notes, catalog_kind, odoo_sale_order_name, final_sale_order_name, final_difference_amount, final_absorbed_by_company from public.presupuestador_quotes ${kind ? "where catalog_kind = $1" : ""} order by created_at desc limit ${kind ? "$2" : "$1"}`, kind ? [kind, limit] : [limit]);
-      res.json({ ok: true, quotes: q.rows || [] });
+      const search = cleanAdminText(req.query.q || req.query.search || "");
+      const params = [];
+      const where = [`coalesce(q.quote_kind, 'original') = 'original'`];
+      if (kind) {
+        params.push(kind);
+        where.push(`coalesce(q.catalog_kind, 'porton') = $${params.length}`);
+      }
+      const bucketWhere = adminQuoteBucketWhere(bucket);
+      if (bucketWhere) where.push(bucketWhere.replace(/^and\s+/i, ""));
+      if (search) {
+        params.push(`%${search.toLowerCase()}%`);
+        const idx = params.length;
+        where.push(`(
+          lower(coalesce(q.quote_number::text, '')) like $${idx}
+          or lower(coalesce(q.odoo_sale_order_name, '')) like $${idx}
+          or lower(coalesce(q.final_sale_order_name, '')) like $${idx}
+          or lower(coalesce(fc.final_copy_sale_order_name, '')) like $${idx}
+          or lower(coalesce(q.end_customer->>'name', '')) like $${idx}
+          or lower(coalesce(q.end_customer->>'first_name', '')) like $${idx}
+          or lower(coalesce(q.end_customer->>'last_name', '')) like $${idx}
+          or lower(coalesce(q.end_customer->>'phone', '')) like $${idx}
+          or lower(coalesce(q.end_customer->>'email', '')) like $${idx}
+          or lower(coalesce(q.end_customer->>'address', '')) like $${idx}
+          or lower(coalesce(q.end_customer->>'city', '')) like $${idx}
+          or lower(coalesce(u.username, '')) like $${idx}
+          or lower(coalesce(u.full_name, '')) like $${idx}
+        )`);
+      }
+      params.push(limit);
+      const limitIdx = params.length;
+      const sql = `select q.id,
+                          q.quote_number,
+                          q.created_at,
+                          q.confirmed_at,
+                          q.created_by_role,
+                          q.status,
+                          q.final_status,
+                          q.fulfillment_mode,
+                          q.end_customer,
+                          q.payload,
+                          q.commercial_decision,
+                          q.technical_decision,
+                          q.rejection_notes,
+                          q.catalog_kind,
+                          q.odoo_sale_order_id,
+                          q.odoo_sale_order_name,
+                          q.final_sale_order_id,
+                          q.final_sale_order_name,
+                          q.final_difference_amount,
+                          q.final_absorbed_by_company,
+                          q.deposit_amount,
+                          u.username as created_by_username,
+                          u.full_name as created_by_full_name,
+                          fc.final_copy_id,
+                          fc.final_copy_status,
+                          fc.final_copy_sale_order_id,
+                          fc.final_copy_sale_order_name,
+                          coalesce(q.final_sale_order_name, fc.final_copy_sale_order_name, q.odoo_sale_order_name) as production_sale_order_name
+                     from public.presupuestador_quotes q
+                     left join public.presupuestador_users u on u.id = q.created_by_user_id
+                     left join lateral (
+                       select c.id as final_copy_id,
+                              c.final_status as final_copy_status,
+                              c.final_sale_order_id as final_copy_sale_order_id,
+                              c.final_sale_order_name as final_copy_sale_order_name
+                         from public.presupuestador_quotes c
+                        where c.quote_kind = 'copy'
+                          and c.parent_quote_id = q.id
+                        order by c.final_synced_at desc nulls last, c.created_at desc nulls last, c.id desc
+                        limit 1
+                     ) fc on true
+                    where ${where.join(" and ")}
+                    order by q.created_at desc nulls last, q.id desc
+                    limit $${limitIdx}`;
+      const q = await dbQuery(sql, params);
+      res.json({ ok: true, quotes: (q.rows || []).map(decorateAdminQuote) });
     } catch (e) { next(e); }
   });
+
+  router.delete("/quotes/:id", requireAuth, requireSuperuser, async (req, res, next) => {
+    try {
+      const id = cleanAdminText(req.params.id);
+      const r = await dbQuery(
+        `select q.*,
+                fc.final_copy_id,
+                fc.final_copy_status,
+                fc.final_copy_sale_order_id,
+                fc.final_copy_sale_order_name
+           from public.presupuestador_quotes q
+           left join lateral (
+             select c.id as final_copy_id,
+                    c.final_status as final_copy_status,
+                    c.final_sale_order_id as final_copy_sale_order_id,
+                    c.final_sale_order_name as final_copy_sale_order_name
+               from public.presupuestador_quotes c
+              where c.quote_kind = 'copy'
+                and c.parent_quote_id = q.id
+              order by c.final_synced_at desc nulls last, c.created_at desc nulls last, c.id desc
+              limit 1
+           ) fc on true
+          where q.id=$1
+          limit 1`,
+        [id]
+      );
+      const quote = r.rows?.[0] || null;
+      if (!quote) return res.status(404).json({ ok: false, error: "Presupuesto no encontrado" });
+      if (adminQuoteHasGeneratedOdoo(quote)) {
+        return res.status(409).json({ ok: false, error: "No se puede eliminar: ya tiene NP/NV o equivalente generado en Odoo." });
+      }
+      const linked = await dbQuery(
+        `select count(*)::int as count
+           from public.presupuestador_quotes child
+          where coalesce(child.quote_kind, 'original') = 'original'
+            and child.id <> $1
+            and (
+              child.payload->>'linked_porton_quote_id' = $1
+              or child.payload->>'porton_quote_id' = $1
+            )`,
+        [id]
+      );
+      if (Number(linked.rows?.[0]?.count || 0) > 0) {
+        return res.status(409).json({ ok: false, error: "No se puede eliminar: tiene presupuestos vinculados. Eliminá primero los vinculados." });
+      }
+      await dbQuery(`delete from public.presupuestador_quotes where quote_kind='copy' and parent_quote_id=$1`, [id]);
+      const del = await dbQuery(
+        `delete from public.presupuestador_quotes
+          where id=$1
+            and not (
+              coalesce(odoo_sale_order_id, 0) <> 0
+              or nullif(odoo_sale_order_name, '') is not null
+              or coalesce(final_sale_order_id, 0) <> 0
+              or nullif(final_sale_order_name, '') is not null
+              or coalesce(status, '') in ('syncing_odoo', 'synced_odoo')
+              or coalesce(final_status, '') in ('syncing_odoo', 'synced_odoo')
+            )
+          returning id`,
+        [id]
+      );
+      if (!del.rows?.[0]?.id) return res.status(409).json({ ok: false, error: "No se pudo eliminar: el presupuesto cambió de estado." });
+      res.json({ ok: true });
+    } catch (e) { next(e); }
+  });
+
   router.get("/users", requireAuth, requireEncComercialOrSuperuser, async (req, res, next) => {
     try {
       const users = await listUsers({ role: req.query.role || "all", q: req.query.q || "", active: req.query.active || "all" });
