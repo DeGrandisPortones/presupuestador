@@ -10,7 +10,16 @@ import { listMeasurements, scheduleMeasurement } from "../../api/measurements.js
 import { useAuthStore } from "../../domain/auth/store.js";
 
 const PAGE_SIZE = 25;
-const VALID_TABS = ["aprobaciones_portones", "aprobaciones_puertas", "aprobaciones_mediciones", "acopio", "acopio_listado", "produccion"];
+const VALID_TABS = [
+  "aprobaciones_portones",
+  "aprobaciones_ipanels",
+  "aprobaciones_puertas",
+  "aprobaciones_mediciones",
+  "acopio",
+  "acopio_listado",
+  "produccion",
+  "produccion_ipanels",
+];
 
 function acopioReqLabel(r) {
   const c = r?.acopio_to_produccion_commercial_decision || "pending";
@@ -41,6 +50,24 @@ function createdByLabel(r) {
   const name = r?.created_by_full_name || r?.created_by_username || (r?.created_by_user_id ? `#${r.created_by_user_id}` : "—");
   const role = r?.created_by_role ? ` (${r.created_by_role})` : "";
   return `${name}${role}`;
+}
+function catalogKind(row) {
+  return String(row?.payload?.quote_subkind || row?.catalog_kind || "porton").toLowerCase().trim();
+}
+function isIpanelRow(row) {
+  return catalogKind(row) === "ipanel";
+}
+function isPortonLikeRow(row) {
+  const kind = catalogKind(row);
+  return kind !== "ipanel" && kind !== "puerta";
+}
+function catalogKindLabel(row) {
+  const kind = catalogKind(row);
+  if (kind === "ipanel") return "Ipanel";
+  if (kind === "puerta") return "Puerta";
+  if (kind === "plegados") return "Plegado";
+  if (kind === "otros") return "Otros";
+  return "Portón";
 }
 
 function budgetObservation(row) {
@@ -159,6 +186,15 @@ function measurementSortWeight(row) {
   if (status === "approved") return 3;
   return 4;
 }
+function applyApprovalFilter(arr, filter) {
+  let out = arr;
+  if (filter === "pending") out = arr.filter((x) => x.status === "pending_approvals" && x.technical_decision === "pending");
+  if (filter === "rejected") out = arr.filter((x) => x.status === "draft" && x.commercial_decision === "rejected");
+  return out;
+}
+function quoteSearchValues(r) {
+  return [createdByLabel(r), catalogKindLabel(r), r?.end_customer?.name, r?.end_customer?.city, r?.end_customer?.address, rowLabel(r), quoteOdooReference(r), budgetObservation(r), plegadoSurface(r), plegadoDescription(r)];
+}
 
 export default function AprobacionTecnicaPage() {
   const navigate = useNavigate();
@@ -171,10 +207,13 @@ export default function AprobacionTecnicaPage() {
   const [measurementStatus, setMeasurementStatus] = useState(initialTab === "aprobaciones_mediciones" ? "all" : "all");
   const [measurementDates, setMeasurementDates] = useState({});
   const [pageAprobaciones, setPageAprobaciones] = useState(1);
+  const [pageIpanels, setPageIpanels] = useState(1);
+  const [pageIpanelDetalles, setPageIpanelDetalles] = useState(1);
   const [pageMediciones, setPageMediciones] = useState(1);
   const [pageAcopio, setPageAcopio] = useState(1);
   const [pageAcopioListado, setPageAcopioListado] = useState(1);
   const [pageProduccion, setPageProduccion] = useState(1);
+  const [pageProduccionIpanels, setPageProduccionIpanels] = useState(1);
   const [pagePuertas, setPagePuertas] = useState(1);
 
   useEffect(() => {
@@ -185,9 +224,9 @@ export default function AprobacionTecnicaPage() {
   const q = useQuery({ queryKey: ["quotes", "technical_inbox"], queryFn: () => listQuotes({ scope: "technical_inbox" }), enabled: !!user?.is_rev_tecnica });
   const acopioQ = useQuery({ queryKey: ["quotes", "technical_acopio"], queryFn: () => listQuotes({ scope: "technical_acopio" }), enabled: tab === "acopio" && !!user?.is_rev_tecnica });
   const acopioListadoQ = useQuery({ queryKey: ["quotes", "technical_acopio_all"], queryFn: () => listQuotes({ scope: "technical_acopio_all" }), enabled: tab === "acopio_listado" && !!user?.is_rev_tecnica });
-  const produccionQ = useQuery({ queryKey: ["quotes", "production_sent", "technical"], queryFn: () => listQuotes({ scope: "production_sent" }), enabled: tab === "produccion" && !!user?.is_rev_tecnica });
+  const produccionQ = useQuery({ queryKey: ["quotes", "production_sent", "technical", tab], queryFn: () => listQuotes({ scope: "production_sent" }), enabled: ["produccion", "produccion_ipanels"].includes(tab) && !!user?.is_rev_tecnica });
   const doorsQ = useQuery({ queryKey: ["doors", "technical_inbox"], queryFn: () => listDoors({ scope: "technical_inbox" }), enabled: tab === "aprobaciones_puertas" && !!user?.is_rev_tecnica });
-  const measQ = useQuery({ queryKey: ["measurements", "tecnica", tab, measurementStatus], queryFn: () => listMeasurements({ status: "all", viewer: "tecnica" }), enabled: tab === "aprobaciones_mediciones" && !!user?.is_rev_tecnica });
+  const measQ = useQuery({ queryKey: ["measurements", "tecnica", tab, measurementStatus], queryFn: () => listMeasurements({ status: "all", viewer: "tecnica" }), enabled: ["aprobaciones_mediciones", "aprobaciones_ipanels"].includes(tab) && !!user?.is_rev_tecnica });
 
   const acopioM = useMutation({ mutationFn: ({ id, action, notes }) => reviewAcopioTechnical(id, { action, notes }), onSuccess: () => acopioQ.refetch() });
   const doorM = useMutation({ mutationFn: ({ id, action, notes }) => reviewDoorTechnical(id, { action, notes }), onSuccess: () => doorsQ.refetch() });
@@ -200,23 +239,24 @@ export default function AprobacionTecnicaPage() {
     if (normalized === "aprobaciones_mediciones") setMeasurementStatus("all");
   }
 
-  useEffect(() => { setPageAprobaciones(1); }, [filter, searchText]);
+  useEffect(() => { setPageAprobaciones(1); setPageIpanels(1); }, [filter, searchText]);
+  useEffect(() => { setPageIpanelDetalles(1); }, [searchText, measQ.data]);
   useEffect(() => { setPageMediciones(1); }, [measurementStatus, searchText]);
   useEffect(() => { setPageAcopio(1); }, [searchText]);
   useEffect(() => { setPageAcopioListado(1); }, [searchText]);
-  useEffect(() => { setPageProduccion(1); }, [searchText]);
+  useEffect(() => { setPageProduccion(1); setPageProduccionIpanels(1); }, [searchText]);
   useEffect(() => { setPagePuertas(1); }, [searchText]);
 
-  const rows = useMemo(() => {
+  const approvalBaseRows = useMemo(() => {
     const arr = (q.data || []).slice().sort((a, b) => toTimeDesc(b?.created_at) - toTimeDesc(a?.created_at));
-    let out = arr;
-    if (filter === "pending") out = arr.filter((x) => x.status === "pending_approvals" && x.technical_decision === "pending");
-    if (filter === "rejected") out = arr.filter((x) => x.status === "draft" && x.commercial_decision === "rejected");
-    return out.filter((r) => matchesSearch([createdByLabel(r), r?.end_customer?.name, r?.end_customer?.city, r?.end_customer?.address, rowLabel(r), quoteOdooReference(r), budgetObservation(r), plegadoSurface(r), plegadoDescription(r)], searchText));
+    return applyApprovalFilter(arr, filter).filter((r) => matchesSearch(quoteSearchValues(r), searchText));
   }, [q.data, filter, searchText]);
 
+  const rows = useMemo(() => approvalBaseRows.filter(isPortonLikeRow), [approvalBaseRows]);
+  const ipanelRows = useMemo(() => approvalBaseRows.filter(isIpanelRow), [approvalBaseRows]);
+
   const measurementRows = useMemo(() => {
-    let arr = (measQ.data || []).slice();
+    let arr = (measQ.data || []).slice().filter((r) => !isIpanelRow(r));
     if (measurementStatus === "por_realizar") arr = arr.filter((x) => ["pending", "needs_fix"].includes(String(x?.measurement_status || "")));
     else if (measurementStatus === "por_controlar") arr = arr.filter((x) => String(x?.measurement_status || "") === "submitted");
     else if (measurementStatus === "approved") arr = arr.filter((x) => String(x?.measurement_status || "") === "approved");
@@ -230,20 +270,35 @@ export default function AprobacionTecnicaPage() {
       });
   }, [measQ.data, measurementStatus, searchText]);
 
+  const ipanelDetailRows = useMemo(() => {
+    return (measQ.data || [])
+      .slice()
+      .filter((r) => isIpanelRow(r))
+      .filter((r) => String(r?.measurement_subtype || "normal").toLowerCase().trim() === "sin_medicion")
+      .filter((r) => matchesSearch([r?.end_customer?.name, r?.end_customer?.city, r?.end_customer?.address, measurementStatusLabel(r?.measurement_status, r), createdByLabel(r), quoteOdooReference(r), budgetObservation(r)], searchText))
+      .sort((a, b) => {
+        const weightDiff = measurementSortWeight(a) - measurementSortWeight(b);
+        if (weightDiff !== 0) return weightDiff;
+        return toTimeDesc(b?.measurement_review_at || b?.created_at) - toTimeDesc(a?.measurement_review_at || a?.created_at);
+      });
+  }, [measQ.data, searchText]);
+
   const acopioRows = useMemo(() => {
-    return (acopioQ.data || []).slice().sort((a, b) => toTimeDesc(b?.acopio_to_produccion_requested_at || b?.created_at) - toTimeDesc(a?.acopio_to_produccion_requested_at || a?.created_at)).filter((r) => matchesSearch([createdByLabel(r), r?.end_customer?.name, r?.end_customer?.city, r?.end_customer?.address, r?.acopio_to_produccion_notes, acopioReqLabel(r), quoteOdooReference(r), budgetObservation(r), plegadoSurface(r), plegadoDescription(r)], searchText));
+    return (acopioQ.data || []).slice().sort((a, b) => toTimeDesc(b?.acopio_to_produccion_requested_at || b?.created_at) - toTimeDesc(a?.acopio_to_produccion_requested_at || a?.created_at)).filter((r) => matchesSearch([createdByLabel(r), catalogKindLabel(r), r?.end_customer?.name, r?.end_customer?.city, r?.end_customer?.address, r?.acopio_to_produccion_notes, acopioReqLabel(r), quoteOdooReference(r), budgetObservation(r), plegadoSurface(r), plegadoDescription(r)], searchText));
   }, [acopioQ.data, searchText]);
 
   const acopioListadoRows = useMemo(() => {
-    return (acopioListadoQ.data || []).slice().sort((a, b) => toTimeDesc(b?.confirmed_at || b?.created_at) - toTimeDesc(a?.confirmed_at || a?.created_at)).filter((r) => matchesSearch([createdByLabel(r), r?.end_customer?.name, r?.end_customer?.city, r?.end_customer?.address, rowLabel(r), acopioReqLabel(r), quoteOdooReference(r), budgetObservation(r), plegadoSurface(r), plegadoDescription(r)], searchText));
+    return (acopioListadoQ.data || []).slice().sort((a, b) => toTimeDesc(b?.confirmed_at || b?.created_at) - toTimeDesc(a?.confirmed_at || a?.created_at)).filter((r) => matchesSearch([createdByLabel(r), catalogKindLabel(r), r?.end_customer?.name, r?.end_customer?.city, r?.end_customer?.address, rowLabel(r), acopioReqLabel(r), quoteOdooReference(r), budgetObservation(r), plegadoSurface(r), plegadoDescription(r)], searchText));
   }, [acopioListadoQ.data, searchText]);
 
-  const produccionRows = useMemo(() => {
+  const productionBaseRows = useMemo(() => {
     return (produccionQ.data || [])
       .slice()
       .sort((a, b) => toTimeDesc(productionSentAt(b)) - toTimeDesc(productionSentAt(a)))
-      .filter((r) => matchesSearch([createdByLabel(r), r?.end_customer?.name, r?.end_customer?.city, r?.end_customer?.address, productionStatusLabel(r), productionReference(r), budgetObservation(r)], searchText));
+      .filter((r) => matchesSearch([createdByLabel(r), catalogKindLabel(r), r?.end_customer?.name, r?.end_customer?.city, r?.end_customer?.address, productionStatusLabel(r), productionReference(r), budgetObservation(r)], searchText));
   }, [produccionQ.data, searchText]);
+  const produccionRows = useMemo(() => productionBaseRows.filter(isPortonLikeRow), [productionBaseRows]);
+  const produccionIpanelRows = useMemo(() => productionBaseRows.filter(isIpanelRow), [productionBaseRows]);
 
   const doorRows = useMemo(() => {
     return (doorsQ.data || []).slice().sort((a, b) => toTimeDesc(b?.created_at) - toTimeDesc(a?.created_at)).filter((d) => matchesSearch([d?.door_code, d?.record?.end_customer?.name, d?.record?.obra_cliente, d?.linked_quote_odoo_name, doorOdooReference(d), d?.record?.asociado_porton, d?.status], searchText));
@@ -255,39 +310,79 @@ export default function AprobacionTecnicaPage() {
   }
 
   useEffect(() => { const total = Math.max(1, Math.ceil(rows.length / PAGE_SIZE)); if (pageAprobaciones > total) setPageAprobaciones(total); }, [rows.length, pageAprobaciones]);
+  useEffect(() => { const total = Math.max(1, Math.ceil(ipanelRows.length / PAGE_SIZE)); if (pageIpanels > total) setPageIpanels(total); }, [ipanelRows.length, pageIpanels]);
+  useEffect(() => { const total = Math.max(1, Math.ceil(ipanelDetailRows.length / PAGE_SIZE)); if (pageIpanelDetalles > total) setPageIpanelDetalles(total); }, [ipanelDetailRows.length, pageIpanelDetalles]);
   useEffect(() => { const total = Math.max(1, Math.ceil(measurementRows.length / PAGE_SIZE)); if (pageMediciones > total) setPageMediciones(total); }, [measurementRows.length, pageMediciones]);
   useEffect(() => { const total = Math.max(1, Math.ceil(acopioRows.length / PAGE_SIZE)); if (pageAcopio > total) setPageAcopio(total); }, [acopioRows.length, pageAcopio]);
   useEffect(() => { const total = Math.max(1, Math.ceil(acopioListadoRows.length / PAGE_SIZE)); if (pageAcopioListado > total) setPageAcopioListado(total); }, [acopioListadoRows.length, pageAcopioListado]);
   useEffect(() => { const total = Math.max(1, Math.ceil(produccionRows.length / PAGE_SIZE)); if (pageProduccion > total) setPageProduccion(total); }, [produccionRows.length, pageProduccion]);
+  useEffect(() => { const total = Math.max(1, Math.ceil(produccionIpanelRows.length / PAGE_SIZE)); if (pageProduccionIpanels > total) setPageProduccionIpanels(total); }, [produccionIpanelRows.length, pageProduccionIpanels]);
   useEffect(() => { const total = Math.max(1, Math.ceil(doorRows.length / PAGE_SIZE)); if (pagePuertas > total) setPagePuertas(total); }, [doorRows.length, pagePuertas]);
 
   if (!user?.is_rev_tecnica) return <div className="container"><div className="card">No autorizado (falta rol Rev. Técnica).</div></div>;
 
   const visibleRows = paged(rows, pageAprobaciones);
+  const visibleIpanels = paged(ipanelRows, pageIpanels);
+  const visibleIpanelDetails = paged(ipanelDetailRows, pageIpanelDetalles);
   const visibleMeasurements = paged(measurementRows, pageMediciones);
   const visibleAcopio = paged(acopioRows, pageAcopio);
   const visibleAcopioListado = paged(acopioListadoRows, pageAcopioListado);
   const visibleProduccion = paged(produccionRows, pageProduccion);
+  const visibleProduccionIpanels = paged(produccionIpanelRows, pageProduccionIpanels);
   const visibleDoors = paged(doorRows, pagePuertas);
   const hideScheduleColumns = measurementStatus === "sin_medicion";
+
+  const renderApprovalRows = (items, totalItems, page, onPageChange, emptyText, showPlegadoInfo = true) => (
+    <>
+      {q.isLoading && <div className="muted">Cargando...</div>}
+      {q.isError && <div style={{ color: "#d93025", fontSize: 13 }}>{q.error.message}</div>}
+      {!q.isLoading && !totalItems && <div className="muted">{emptyText}</div>}
+      {!!totalItems && (
+        <>
+          <table><thead><tr><th>Fecha</th><th>Vendedor/Distribuidor</th><th>Cliente</th><th>Dirección</th><th>Estado</th><th>NP/NV Odoo</th>{showPlegadoInfo ? <th>Datos plegado</th> : null}<th>Obs. presupuesto</th><th></th></tr></thead><tbody>
+            {items.map((r) => <tr key={r.id}><td>{fmtDate(r.created_at)}</td><td>{createdByLabel(r)}</td><td>{r.end_customer?.name || <span className="muted">(sin nombre)</span>}</td><td>{r.end_customer?.address || "—"}</td><td>{rowLabel(r)}</td><td><OdooReferenceCell value={quoteOdooReference(r)} /></td>{showPlegadoInfo ? <td><PlegadoInfoCell row={r} /></td> : null}<td><BudgetObservationCell row={r} /></td><td className="right" style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}><Button onClick={() => navigate(`/presupuestos/${r.id}`, { state: { from: "/aprobacion/tecnica" } })}>Abrir</Button></td></tr>)}
+          </tbody></table>
+          <PaginationControls page={page} totalItems={totalItems} pageSize={PAGE_SIZE} onPageChange={onPageChange} />
+        </>
+      )}
+    </>
+  );
+
+  const renderProductionRows = (items, totalItems, page, onPageChange, emptyText) => (
+    <>
+      {produccionQ.isLoading && <div className="muted">Cargando...</div>}
+      {produccionQ.isError && <div style={{ color: "#d93025", fontSize: 13 }}>{produccionQ.error.message}</div>}
+      {!produccionQ.isLoading && !totalItems && <div className="muted">{emptyText}</div>}
+      {!!totalItems && (
+        <>
+          <table><thead><tr><th>Fecha envío</th><th>Vendedor/Distribuidor</th><th>Cliente</th><th>Dirección</th><th>NP/NV Odoo</th><th>Semana producción</th><th>Obs. presupuesto</th><th></th></tr></thead><tbody>
+            {items.map((r) => <tr key={r.id}><td>{fmtDate(productionSentAt(r))}</td><td>{createdByLabel(r)}</td><td>{r.end_customer?.name || <span className="muted">(sin nombre)</span>}</td><td>{r.end_customer?.address || "—"}</td><td>{productionReference(r) || "—"}</td><td>{r.production_delivery_year && r.production_delivery_week ? `${r.production_delivery_year} · Semana ${r.production_delivery_week}` : "—"}</td><td><BudgetObservationCell row={r} /></td><td className="right" style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}><Button variant="ghost" onClick={() => navigate(`/presupuestos/${r.id}`, { state: { from: "/aprobacion/tecnica" } })}>Abrir</Button></td></tr>)}
+          </tbody></table>
+          <PaginationControls page={page} totalItems={totalItems} pageSize={PAGE_SIZE} onPageChange={onPageChange} />
+        </>
+      )}
+    </>
+  );
 
   return (
     <div className="container">
       <div className="card">
         <h2 style={{ margin: 0 }}>Técnica</h2>
-        <div className="muted">Aprobaciones de portones, puertas, mediciones, detalles técnicos y listado de portones en acopio.</div>
+        <div className="muted">Aprobaciones separadas de portones, Ipanels, puertas, mediciones y acopio.</div>
 
         <div className="spacer" />
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           <Button variant={tab === "aprobaciones_portones" ? "primary" : "ghost"} onClick={() => goToTab("aprobaciones_portones")}>Aprobaciones Portones</Button>
+          <Button variant={tab === "aprobaciones_ipanels" ? "primary" : "ghost"} onClick={() => goToTab("aprobaciones_ipanels")}>Aprobaciones Ipanels</Button>
           <Button variant={tab === "aprobaciones_puertas" ? "primary" : "ghost"} onClick={() => goToTab("aprobaciones_puertas")}>Aprobaciones Puertas</Button>
-          <Button variant={tab === "aprobaciones_mediciones" ? "primary" : "ghost"} onClick={() => goToTab("aprobaciones_mediciones")}>Circuito técnico</Button>
+          <Button variant={tab === "aprobaciones_mediciones" ? "primary" : "ghost"} onClick={() => goToTab("aprobaciones_mediciones")}>Circuito técnico Portones</Button>
           <Button variant={tab === "acopio" ? "primary" : "ghost"} onClick={() => goToTab("acopio")}>Acopio → Producción</Button>
-          <Button variant={tab === "acopio_listado" ? "primary" : "ghost"} onClick={() => goToTab("acopio_listado")}>Portones en Acopio</Button>
+          <Button variant={tab === "acopio_listado" ? "primary" : "ghost"} onClick={() => goToTab("acopio_listado")}>Portones / Ipanels en Acopio</Button>
           <Button variant={tab === "produccion" ? "primary" : "ghost"} onClick={() => goToTab("produccion")}>Portones enviados a Producción</Button>
+          <Button variant={tab === "produccion_ipanels" ? "primary" : "ghost"} onClick={() => goToTab("produccion_ipanels")}>Ipanels enviados a Producción</Button>
         </div>
 
-        {tab === "aprobaciones_portones" && (
+        {["aprobaciones_portones", "aprobaciones_ipanels"].includes(tab) && (
           <>
             <div className="spacer" />
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
@@ -305,7 +400,6 @@ export default function AprobacionTecnicaPage() {
               <Button variant={measurementStatus === "all" ? "primary" : "ghost"} onClick={() => setMeasurementStatus("all")}>Todas</Button>
               <Button variant={measurementStatus === "por_controlar" ? "primary" : "ghost"} onClick={() => setMeasurementStatus("por_controlar")}>Pendientes aprobación final</Button>
               <Button variant={measurementStatus === "por_realizar" ? "primary" : "ghost"} onClick={() => setMeasurementStatus("por_realizar")}>Pendientes por realizar</Button>
-              <Button variant={measurementStatus === "sin_medicion" ? "primary" : "ghost"} onClick={() => setMeasurementStatus("sin_medicion")}>Detalles técnicos</Button>
               <Button variant={measurementStatus === "approved" ? "primary" : "ghost"} onClick={() => setMeasurementStatus("approved")}>Aprobadas</Button>
             </div>
           </>
@@ -318,17 +412,27 @@ export default function AprobacionTecnicaPage() {
       <div className="spacer" />
 
       <div className="card">
-        {tab === "aprobaciones_portones" && (
+        {tab === "aprobaciones_portones" && renderApprovalRows(visibleRows, rows.length, pageAprobaciones, setPageAprobaciones, "Sin portones pendientes")}
+
+        {tab === "aprobaciones_ipanels" && (
           <>
-            {q.isLoading && <div className="muted">Cargando...</div>}
-            {q.isError && <div style={{ color: "#d93025", fontSize: 13 }}>{q.error.message}</div>}
-            {!q.isLoading && !rows.length && <div className="muted">Sin ítems</div>}
-            {!!rows.length && (
+            <h3 style={{ marginTop: 0 }}>Aprobaciones Ipanels</h3>
+            {renderApprovalRows(visibleIpanels, ipanelRows.length, pageIpanels, setPageIpanels, "Sin Ipanels pendientes", false)}
+            <div className="spacer" />
+            <h3 style={{ marginBottom: 8 }}>Detalles técnicos Ipanels sin medición</h3>
+            <div className="muted" style={{ marginBottom: 12 }}>Los Ipanels no pasan por medidor. Se completan y aprueban desde esta sección.</div>
+            {measQ.isLoading && <div className="muted">Cargando detalles técnicos...</div>}
+            {measQ.isError && <div style={{ color: "#d93025", fontSize: 13 }}>{measQ.error.message}</div>}
+            {!measQ.isLoading && !ipanelDetailRows.length && <div className="muted">Sin detalles técnicos de Ipanels</div>}
+            {!!ipanelDetailRows.length && (
               <>
-                <table><thead><tr><th>Fecha</th><th>Vendedor/Distribuidor</th><th>Cliente</th><th>Dirección</th><th>Estado</th><th>NP/NV Odoo</th><th>Datos plegado</th><th>Obs. presupuesto</th><th></th></tr></thead><tbody>
-                  {visibleRows.map((r) => <tr key={r.id}><td>{fmtDate(r.created_at)}</td><td>{createdByLabel(r)}</td><td>{r.end_customer?.name || <span className="muted">(sin nombre)</span>}</td><td>{r.end_customer?.address || "—"}</td><td>{rowLabel(r)}</td><td><OdooReferenceCell value={quoteOdooReference(r)} /></td><td><PlegadoInfoCell row={r} /></td><td><BudgetObservationCell row={r} /></td><td className="right" style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}><Button onClick={() => navigate(`/presupuestos/${r.id}`, { state: { from: "/aprobacion/tecnica" } })}>Abrir</Button></td></tr>)}
+                <table><thead><tr><th>Cliente</th><th>Localidad</th><th>Dirección</th><th>Estado</th><th>NP/NV Odoo</th><th>Obs. presupuesto</th><th></th></tr></thead><tbody>
+                  {visibleIpanelDetails.map((r) => {
+                    const isSubmitted = String(r?.measurement_status || "").toLowerCase().trim() === "submitted";
+                    return <tr key={r.id}><td style={{ fontWeight: 800 }}>{r.end_customer?.name || "(sin nombre)"}</td><td>{localityLabel(r)}</td><td>{r.end_customer?.address || "—"}</td><td>{measurementStatusLabel(r.measurement_status, r)}</td><td><OdooReferenceCell value={quoteOdooReference(r)} /></td><td><BudgetObservationCell row={r} /></td><td className="right" style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}><Button variant={isSubmitted ? "primary" : "ghost"} onClick={() => navigate(`/mediciones/${r.id}`, { state: { from: "/aprobacion/tecnica" } })}>{isSubmitted ? "Aprobar detalle" : "Completar detalle técnico"}</Button></td></tr>;
+                  })}
                 </tbody></table>
-                <PaginationControls page={pageAprobaciones} totalItems={rows.length} pageSize={PAGE_SIZE} onPageChange={setPageAprobaciones} />
+                <PaginationControls page={pageIpanelDetalles} totalItems={ipanelDetailRows.length} pageSize={PAGE_SIZE} onPageChange={setPageIpanelDetalles} />
               </>
             )}
           </>
@@ -355,7 +459,7 @@ export default function AprobacionTecnicaPage() {
                           <td>{localityLabel(r)}</td>
                           <td>{r.end_customer?.address || "—"}</td>
                           <td>{measurementStatusLabel(r.measurement_status, r)}</td>
-                           <td><OdooReferenceCell value={quoteOdooReference(r)} /></td>
+                          <td><OdooReferenceCell value={quoteOdooReference(r)} /></td>
                           {!hideScheduleColumns ? <td>{fmtDate(r.measurement_scheduled_for)}</td> : null}
                           {!hideScheduleColumns ? <td style={{ minWidth: 220 }}><div style={{ display: "flex", gap: 8, alignItems: "center" }}><Input type="date" value={dateValue} onChange={(v) => setMeasurementDates((prev) => ({ ...prev, [r.id]: v }))} style={{ width: "100%" }} /><Button disabled={scheduleM.isPending || !dateValue} onClick={() => scheduleM.mutate({ id: r.id, scheduledFor: dateValue })}>Guardar</Button></div></td> : null}
                           <td className="right" style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}><Button variant={isSubmitted ? "primary" : "ghost"} onClick={() => navigate(`/mediciones/${r.id}`, { state: { from: "/aprobacion/tecnica" } })}>{isSinMedicion ? "Completar detalle técnico" : (isSubmitted ? "Aprobar final" : "Abrir")}</Button></td>
@@ -377,10 +481,10 @@ export default function AprobacionTecnicaPage() {
             {!acopioQ.isLoading && !acopioRows.length && <div className="muted">Sin solicitudes</div>}
             {!!acopioRows.length && (
               <>
-                <table><thead><tr><th>Fecha</th><th>NP/NV Odoo</th><th>Vendedor/Distribuidor</th><th>Cliente</th><th>Dirección</th><th>Solicitud</th><th>Datos plegado</th><th>Obs. presupuesto</th><th>Decisiones</th><th></th></tr></thead><tbody>
+                <table><thead><tr><th>Fecha</th><th>Tipo</th><th>NP/NV Odoo</th><th>Vendedor/Distribuidor</th><th>Cliente</th><th>Dirección</th><th>Solicitud</th><th>Datos plegado</th><th>Obs. presupuesto</th><th>Decisiones</th><th></th></tr></thead><tbody>
                   {visibleAcopio.map((r) => {
                     const canAct = (r.acopio_to_produccion_technical_decision || "pending") === "pending";
-                    return <tr key={r.id}><td>{fmtDate(r.acopio_to_produccion_requested_at || r.created_at)}</td><td><OdooReferenceCell value={quoteOdooReference(r)} /></td><td>{createdByLabel(r)}</td><td>{r.end_customer?.name || <span className="muted">(sin nombre)</span>}</td><td>{r.end_customer?.address || "—"}</td><td>{r.acopio_to_produccion_notes || <span className="muted">(sin nota)</span>}</td><td><PlegadoInfoCell row={r} /></td><td><BudgetObservationCell row={r} /></td><td>{acopioReqLabel(r)}</td><td className="right" style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}><Button variant="ghost" onClick={() => navigate(`/presupuestos/${r.id}`, { state: { from: "/aprobacion/tecnica" } })}>Abrir</Button>{canAct ? <><Button disabled={acopioM.isPending} onClick={() => acopioM.mutate({ id: r.id, action: "approve", notes: null })}>OK</Button><Button variant="ghost" disabled={acopioM.isPending} onClick={() => { const msg = window.prompt("Motivo del rechazo:", ""); if (msg !== null) acopioM.mutate({ id: r.id, action: "reject", notes: msg }); }}>Rechazar</Button></> : <span className="muted">Ya decidiste</span>}</td></tr>;
+                    return <tr key={r.id}><td>{fmtDate(r.acopio_to_produccion_requested_at || r.created_at)}</td><td>{catalogKindLabel(r)}</td><td><OdooReferenceCell value={quoteOdooReference(r)} /></td><td>{createdByLabel(r)}</td><td>{r.end_customer?.name || <span className="muted">(sin nombre)</span>}</td><td>{r.end_customer?.address || "—"}</td><td>{r.acopio_to_produccion_notes || <span className="muted">(sin nota)</span>}</td><td><PlegadoInfoCell row={r} /></td><td><BudgetObservationCell row={r} /></td><td>{acopioReqLabel(r)}</td><td className="right" style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}><Button variant="ghost" onClick={() => navigate(`/presupuestos/${r.id}`, { state: { from: "/aprobacion/tecnica" } })}>Abrir</Button>{canAct ? <><Button disabled={acopioM.isPending} onClick={() => acopioM.mutate({ id: r.id, action: "approve", notes: null })}>OK</Button><Button variant="ghost" disabled={acopioM.isPending} onClick={() => { const msg = window.prompt("Motivo del rechazo:", ""); if (msg !== null) acopioM.mutate({ id: r.id, action: "reject", notes: msg }); }}>Rechazar</Button></> : <span className="muted">Ya decidiste</span>}</td></tr>;
                   })}
                 </tbody></table>
                 <PaginationControls page={pageAcopio} totalItems={acopioRows.length} pageSize={PAGE_SIZE} onPageChange={setPageAcopio} />
@@ -393,11 +497,11 @@ export default function AprobacionTecnicaPage() {
           <>
             {acopioListadoQ.isLoading && <div className="muted">Cargando...</div>}
             {acopioListadoQ.isError && <div style={{ color: "#d93025", fontSize: 13 }}>{acopioListadoQ.error.message}</div>}
-            {!acopioListadoQ.isLoading && !acopioListadoRows.length && <div className="muted">Sin portones en acopio</div>}
+            {!acopioListadoQ.isLoading && !acopioListadoRows.length && <div className="muted">Sin portones/Ipanels en acopio</div>}
             {!!acopioListadoRows.length && (
               <>
-                <table><thead><tr><th>Fecha</th><th>NP/NV Odoo</th><th>Vendedor/Distribuidor</th><th>Cliente</th><th>Dirección</th><th>Estado</th><th>Datos plegado</th><th>Obs. presupuesto</th><th>Solicitud Prod.</th><th></th></tr></thead><tbody>
-                  {visibleAcopioListado.map((r) => <tr key={r.id}><td>{fmtDate(r.confirmed_at || r.created_at)}</td><td><OdooReferenceCell value={quoteOdooReference(r)} /></td><td>{createdByLabel(r)}</td><td>{r.end_customer?.name || <span className="muted">(sin nombre)</span>}</td><td>{r.end_customer?.address || "—"}</td><td>{rowLabel(r)}</td><td><PlegadoInfoCell row={r} /></td><td><BudgetObservationCell row={r} /></td><td>{r.acopio_to_produccion_status ? acopioReqLabel(r) : "—"}</td><td className="right" style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}><Button variant="ghost" onClick={() => navigate(`/presupuestos/${r.id}`, { state: { from: "/aprobacion/tecnica" } })}>Abrir</Button></td></tr>)}
+                <table><thead><tr><th>Fecha</th><th>Tipo</th><th>NP/NV Odoo</th><th>Vendedor/Distribuidor</th><th>Cliente</th><th>Dirección</th><th>Estado</th><th>Datos plegado</th><th>Obs. presupuesto</th><th>Solicitud Prod.</th><th></th></tr></thead><tbody>
+                  {visibleAcopioListado.map((r) => <tr key={r.id}><td>{fmtDate(r.confirmed_at || r.created_at)}</td><td>{catalogKindLabel(r)}</td><td><OdooReferenceCell value={quoteOdooReference(r)} /></td><td>{createdByLabel(r)}</td><td>{r.end_customer?.name || <span className="muted">(sin nombre)</span>}</td><td>{r.end_customer?.address || "—"}</td><td>{rowLabel(r)}</td><td><PlegadoInfoCell row={r} /></td><td><BudgetObservationCell row={r} /></td><td>{r.acopio_to_produccion_status ? acopioReqLabel(r) : "—"}</td><td className="right" style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}><Button variant="ghost" onClick={() => navigate(`/presupuestos/${r.id}`, { state: { from: "/aprobacion/tecnica" } })}>Abrir</Button></td></tr>)}
                 </tbody></table>
                 <PaginationControls page={pageAcopioListado} totalItems={acopioListadoRows.length} pageSize={PAGE_SIZE} onPageChange={setPageAcopioListado} />
               </>
@@ -405,21 +509,8 @@ export default function AprobacionTecnicaPage() {
           </>
         )}
 
-        {tab === "produccion" && (
-          <>
-            {produccionQ.isLoading && <div className="muted">Cargando...</div>}
-            {produccionQ.isError && <div style={{ color: "#d93025", fontSize: 13 }}>{produccionQ.error.message}</div>}
-            {!produccionQ.isLoading && !produccionRows.length && <div className="muted">Sin portones enviados a producción</div>}
-            {!!produccionRows.length && (
-              <>
-                <table><thead><tr><th>Fecha envío</th><th>Vendedor/Distribuidor</th><th>Cliente</th><th>Dirección</th><th>NP/NV Odoo</th><th>Semana producción</th><th>Obs. presupuesto</th><th></th></tr></thead><tbody>
-                  {visibleProduccion.map((r) => <tr key={r.id}><td>{fmtDate(productionSentAt(r))}</td><td>{createdByLabel(r)}</td><td>{r.end_customer?.name || <span className="muted">(sin nombre)</span>}</td><td>{r.end_customer?.address || "—"}</td><td>{productionReference(r) || "—"}</td><td>{r.production_delivery_year && r.production_delivery_week ? `${r.production_delivery_year} · Semana ${r.production_delivery_week}` : "—"}</td><td><BudgetObservationCell row={r} /></td><td className="right" style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}><Button variant="ghost" onClick={() => navigate(`/presupuestos/${r.id}`, { state: { from: "/aprobacion/tecnica" } })}>Abrir</Button></td></tr>)}
-                </tbody></table>
-                <PaginationControls page={pageProduccion} totalItems={produccionRows.length} pageSize={PAGE_SIZE} onPageChange={setPageProduccion} />
-              </>
-            )}
-          </>
-        )}
+        {tab === "produccion" && renderProductionRows(visibleProduccion, produccionRows.length, pageProduccion, setPageProduccion, "Sin portones enviados a producción")}
+        {tab === "produccion_ipanels" && renderProductionRows(visibleProduccionIpanels, produccionIpanelRows.length, pageProduccionIpanels, setPageProduccionIpanels, "Sin Ipanels enviados a producción")}
 
         {tab === "aprobaciones_puertas" && (
           <>

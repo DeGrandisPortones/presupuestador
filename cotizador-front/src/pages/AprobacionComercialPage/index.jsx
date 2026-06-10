@@ -51,6 +51,24 @@ function createdByLabel(r) {
   const role = r?.created_by_role ? ` (${r.created_by_role})` : "";
   return `${name}${role}`;
 }
+function catalogKind(row) {
+  return String(row?.payload?.quote_subkind || row?.catalog_kind || "porton").toLowerCase().trim();
+}
+function isIpanelRow(row) {
+  return catalogKind(row) === "ipanel";
+}
+function isPortonLikeRow(row) {
+  const kind = catalogKind(row);
+  return kind !== "ipanel" && kind !== "puerta";
+}
+function catalogKindLabel(row) {
+  const kind = catalogKind(row);
+  if (kind === "ipanel") return "Ipanel";
+  if (kind === "puerta") return "Puerta";
+  if (kind === "plegados") return "Plegado";
+  if (kind === "otros") return "Otros";
+  return "Portón";
+}
 
 function budgetObservation(row) {
   const payload = row?.payload && typeof row.payload === "object" ? row.payload : {};
@@ -149,18 +167,29 @@ function PdfIconButton({ onClick, disabled = false }) {
     </Button>
   );
 }
+function applyApprovalFilter(arr, filter) {
+  let out = arr;
+  if (filter === "pending") out = arr.filter((x) => x.status === "pending_approvals" && x.commercial_decision === "pending");
+  if (filter === "rejected") out = arr.filter((x) => x.status === "draft" && x.technical_decision === "rejected");
+  return out;
+}
+function quoteSearchValues(r) {
+  return [createdByLabel(r), catalogKindLabel(r), r?.end_customer?.name, r?.end_customer?.city, r?.end_customer?.address, rowLabel(r), quoteOdooReference(r), budgetObservation(r), plegadoSurface(r), plegadoDescription(r)];
+}
 
 export default function AprobacionComercialPage() {
   const navigate = useNavigate();
   const user = useAuthStore((s) => s.user);
 
-  const [tab, setTab] = useState("aprobaciones");
+  const [tab, setTab] = useState("aprobaciones_portones");
   const [filter, setFilter] = useState("all");
   const [searchText, setSearchText] = useState("");
   const [pageAprobaciones, setPageAprobaciones] = useState(1);
+  const [pageIpanels, setPageIpanels] = useState(1);
   const [pageAcopio, setPageAcopio] = useState(1);
   const [pageAcopioListado, setPageAcopioListado] = useState(1);
   const [pageProduccion, setPageProduccion] = useState(1);
+  const [pageProduccionIpanels, setPageProduccionIpanels] = useState(1);
   const [pagePuertas, setPagePuertas] = useState(1);
   const [pageMediciones, setPageMediciones] = useState(1);
   const [downloadingPdfKey, setDownloadingPdfKey] = useState("");
@@ -168,7 +197,7 @@ export default function AprobacionComercialPage() {
   const q = useQuery({ queryKey: ["quotes", "commercial_inbox"], queryFn: () => listQuotes({ scope: "commercial_inbox" }), enabled: !!user?.is_enc_comercial });
   const acopioQ = useQuery({ queryKey: ["quotes", "commercial_acopio"], queryFn: () => listQuotes({ scope: "commercial_acopio" }), enabled: tab === "acopio" && !!user?.is_enc_comercial });
   const acopioListadoQ = useQuery({ queryKey: ["quotes", "commercial_acopio_all"], queryFn: () => listQuotes({ scope: "commercial_acopio_all" }), enabled: tab === "acopio_listado" && !!user?.is_enc_comercial });
-  const produccionQ = useQuery({ queryKey: ["quotes", "production_sent", "commercial"], queryFn: () => listQuotes({ scope: "production_sent" }), enabled: tab === "produccion" && !!user?.is_enc_comercial });
+  const produccionQ = useQuery({ queryKey: ["quotes", "production_sent", "commercial", tab], queryFn: () => listQuotes({ scope: "production_sent" }), enabled: ["produccion", "produccion_ipanels"].includes(tab) && !!user?.is_enc_comercial });
   const doorsQ = useQuery({ queryKey: ["doors", "commercial_inbox"], queryFn: () => listDoors({ scope: "commercial_inbox" }), enabled: tab === "puertas" && !!user?.is_enc_comercial });
   const medicionesQ = useQuery({
     queryKey: ["measurements", "commercial_review"],
@@ -203,34 +232,35 @@ export default function AprobacionComercialPage() {
     }
   }
 
-  const rows = useMemo(() => {
+  const approvalBaseRows = useMemo(() => {
     const arr = (q.data || []).slice().sort((a, b) => toTimeDesc(b?.created_at) - toTimeDesc(a?.created_at));
-    let out = arr;
-    if (filter === "pending") out = arr.filter((x) => x.status === "pending_approvals" && x.commercial_decision === "pending");
-    if (filter === "rejected") out = arr.filter((x) => x.status === "draft" && x.technical_decision === "rejected");
-    return out.filter((r) => matchesSearch([createdByLabel(r), r?.end_customer?.name, r?.end_customer?.city, r?.end_customer?.address, rowLabel(r), quoteOdooReference(r), budgetObservation(r), plegadoSurface(r), plegadoDescription(r)], searchText));
+    return applyApprovalFilter(arr, filter).filter((r) => matchesSearch(quoteSearchValues(r), searchText));
   }, [q.data, filter, searchText]);
+  const rows = useMemo(() => approvalBaseRows.filter(isPortonLikeRow), [approvalBaseRows]);
+  const ipanelRows = useMemo(() => approvalBaseRows.filter(isIpanelRow), [approvalBaseRows]);
 
   const acopioRows = useMemo(() => {
     return (acopioQ.data || [])
       .slice()
       .sort((a, b) => toTimeDesc(b?.acopio_to_produccion_requested_at || b?.created_at) - toTimeDesc(a?.acopio_to_produccion_requested_at || a?.created_at))
-      .filter((r) => matchesSearch([createdByLabel(r), r?.end_customer?.name, r?.end_customer?.city, r?.end_customer?.address, r?.acopio_to_produccion_notes, acopioReqLabel(r), quoteOdooReference(r), budgetObservation(r), plegadoSurface(r), plegadoDescription(r)], searchText));
+      .filter((r) => matchesSearch([createdByLabel(r), catalogKindLabel(r), r?.end_customer?.name, r?.end_customer?.city, r?.end_customer?.address, r?.acopio_to_produccion_notes, acopioReqLabel(r), quoteOdooReference(r), budgetObservation(r), plegadoSurface(r), plegadoDescription(r)], searchText));
   }, [acopioQ.data, searchText]);
 
   const acopioListadoRows = useMemo(() => {
     return (acopioListadoQ.data || [])
       .slice()
       .sort((a, b) => toTimeDesc(b?.confirmed_at || b?.created_at) - toTimeDesc(a?.confirmed_at || a?.created_at))
-      .filter((r) => matchesSearch([createdByLabel(r), r?.end_customer?.name, r?.end_customer?.city, r?.end_customer?.address, rowLabel(r), acopioReqLabel(r), quoteOdooReference(r), budgetObservation(r), plegadoSurface(r), plegadoDescription(r)], searchText));
+      .filter((r) => matchesSearch([createdByLabel(r), catalogKindLabel(r), r?.end_customer?.name, r?.end_customer?.city, r?.end_customer?.address, rowLabel(r), acopioReqLabel(r), quoteOdooReference(r), budgetObservation(r), plegadoSurface(r), plegadoDescription(r)], searchText));
   }, [acopioListadoQ.data, searchText]);
 
-  const produccionRows = useMemo(() => {
+  const productionBaseRows = useMemo(() => {
     return (produccionQ.data || [])
       .slice()
       .sort((a, b) => toTimeDesc(productionSentAt(b)) - toTimeDesc(productionSentAt(a)))
-      .filter((r) => matchesSearch([createdByLabel(r), r?.end_customer?.name, r?.end_customer?.city, r?.end_customer?.address, productionStatusLabel(r), productionReference(r), budgetObservation(r)], searchText));
+      .filter((r) => matchesSearch([createdByLabel(r), catalogKindLabel(r), r?.end_customer?.name, r?.end_customer?.city, r?.end_customer?.address, productionStatusLabel(r), productionReference(r), budgetObservation(r)], searchText));
   }, [produccionQ.data, searchText]);
+  const produccionRows = useMemo(() => productionBaseRows.filter(isPortonLikeRow), [productionBaseRows]);
+  const produccionIpanelRows = useMemo(() => productionBaseRows.filter(isIpanelRow), [productionBaseRows]);
 
   const doorRows = useMemo(() => {
     return (doorsQ.data || [])
@@ -261,17 +291,19 @@ export default function AprobacionComercialPage() {
       );
   }, [medicionesQ.data, searchText]);
 
-  useEffect(() => { setPageAprobaciones(1); }, [filter, searchText]);
+  useEffect(() => { setPageAprobaciones(1); setPageIpanels(1); }, [filter, searchText]);
   useEffect(() => { setPageAcopio(1); }, [searchText]);
   useEffect(() => { setPageAcopioListado(1); }, [searchText]);
-  useEffect(() => { setPageProduccion(1); }, [searchText]);
+  useEffect(() => { setPageProduccion(1); setPageProduccionIpanels(1); }, [searchText]);
   useEffect(() => { setPagePuertas(1); }, [searchText]);
   useEffect(() => { setPageMediciones(1); }, [searchText]);
 
   const visibleRows = useMemo(() => rows.slice((pageAprobaciones - 1) * PAGE_SIZE, pageAprobaciones * PAGE_SIZE), [rows, pageAprobaciones]);
+  const visibleIpanels = useMemo(() => ipanelRows.slice((pageIpanels - 1) * PAGE_SIZE, pageIpanels * PAGE_SIZE), [ipanelRows, pageIpanels]);
   const visibleAcopioRows = useMemo(() => acopioRows.slice((pageAcopio - 1) * PAGE_SIZE, pageAcopio * PAGE_SIZE), [acopioRows, pageAcopio]);
   const visibleAcopioListadoRows = useMemo(() => acopioListadoRows.slice((pageAcopioListado - 1) * PAGE_SIZE, pageAcopioListado * PAGE_SIZE), [acopioListadoRows, pageAcopioListado]);
   const visibleProduccionRows = useMemo(() => produccionRows.slice((pageProduccion - 1) * PAGE_SIZE, pageProduccion * PAGE_SIZE), [produccionRows, pageProduccion]);
+  const visibleProduccionIpanelRows = useMemo(() => produccionIpanelRows.slice((pageProduccionIpanels - 1) * PAGE_SIZE, pageProduccionIpanels * PAGE_SIZE), [produccionIpanelRows, pageProduccionIpanels]);
   const visibleDoorRows = useMemo(() => doorRows.slice((pagePuertas - 1) * PAGE_SIZE, pagePuertas * PAGE_SIZE), [doorRows, pagePuertas]);
   const visibleMedicionesRows = useMemo(() => medicionesRows.slice((pageMediciones - 1) * PAGE_SIZE, pageMediciones * PAGE_SIZE), [medicionesRows, pageMediciones]);
 
@@ -279,23 +311,98 @@ export default function AprobacionComercialPage() {
     return <div className="container"><div className="card">No autorizado (falta rol Enc. Comercial).</div></div>;
   }
 
+  const renderApprovalRows = (items, totalItems, page, onPageChange, emptyText, showPlegadoInfo = true) => (
+    <>
+      {q.isLoading && <div className="muted">Cargando...</div>}
+      {q.isError && <div style={{ color: "#d93025", fontSize: 13 }}>{q.error.message}</div>}
+      {!q.isLoading && !totalItems && <div className="muted">{emptyText}</div>}
+      {!!totalItems && (
+        <>
+          <table>
+            <thead><tr><th>Fecha</th><th>Vendedor/Distribuidor</th><th>Cliente</th><th>Dirección</th><th>Estado</th><th>NP/NV Odoo</th>{showPlegadoInfo ? <th>Datos plegado</th> : null}<th>Obs. presupuesto</th><th></th></tr></thead>
+            <tbody>
+              {items.map((r) => {
+                const pdfKey = `quote-${r.id}`;
+                return (
+                  <tr key={r.id}>
+                    <td>{fmtDate(r.created_at)}</td>
+                    <td>{createdByLabel(r)}</td>
+                    <td>{r.end_customer?.name || <span className="muted">(sin nombre)</span>}</td>
+                    <td>{r.end_customer?.address || "—"}</td>
+                    <td>{rowLabel(r)}</td>
+                    <td><OdooReferenceCell value={quoteOdooReference(r)} /></td>
+                    {showPlegadoInfo ? <td><PlegadoInfoCell row={r} /></td> : null}
+                    <td><BudgetObservationCell row={r} /></td>
+                    <td className="right" style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+                      <PdfIconButton disabled={downloadingPdfKey === pdfKey} onClick={() => handleDownloadQuotePdf(r.id)} />
+                      <Button onClick={() => navigate(`/presupuestos/${r.id}`, { state: { from: "/aprobacion/comercial" } })}>Abrir</Button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+          <PaginationControls page={page} totalItems={totalItems} pageSize={PAGE_SIZE} onPageChange={onPageChange} />
+        </>
+      )}
+    </>
+  );
+
+  const renderProductionRows = (items, totalItems, page, onPageChange, emptyText) => (
+    <>
+      {produccionQ.isLoading && <div className="muted">Cargando...</div>}
+      {produccionQ.isError && <div style={{ color: "#d93025", fontSize: 13 }}>{produccionQ.error.message}</div>}
+      {!produccionQ.isLoading && !totalItems && <div className="muted">{emptyText}</div>}
+      {!!totalItems && (
+        <>
+          <table>
+            <thead><tr><th>Fecha envío</th><th>Vendedor/Distribuidor</th><th>Cliente</th><th>Dirección</th><th>NP/NV Odoo</th><th>Semana producción</th><th>Obs. presupuesto</th><th></th></tr></thead>
+            <tbody>
+              {items.map((r) => {
+                const pdfKey = `quote-${r.id}`;
+                return (
+                  <tr key={r.id}>
+                    <td>{fmtDate(productionSentAt(r))}</td>
+                    <td>{createdByLabel(r)}</td>
+                    <td>{r.end_customer?.name || <span className="muted">(sin nombre)</span>}</td>
+                    <td>{r.end_customer?.address || "—"}</td>
+                    <td>{productionReference(r) || "—"}</td>
+                    <td>{r.production_delivery_year && r.production_delivery_week ? `${r.production_delivery_year} · Semana ${r.production_delivery_week}` : "—"}</td>
+                    <td><BudgetObservationCell row={r} /></td>
+                    <td className="right" style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+                      <PdfIconButton disabled={downloadingPdfKey === pdfKey} onClick={() => handleDownloadQuotePdf(r.id)} />
+                      <Button variant="ghost" onClick={() => navigate(`/presupuestos/${r.id}`, { state: { from: "/aprobacion/comercial" } })}>Abrir</Button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+          <PaginationControls page={page} totalItems={totalItems} pageSize={PAGE_SIZE} onPageChange={onPageChange} />
+        </>
+      )}
+    </>
+  );
+
   return (
     <div className="container">
       <div className="card">
         <h2 style={{ margin: 0 }}>Aprobación Comercial</h2>
-        <div className="muted">Presupuestos, portones en acopio, puertas y mediciones pendientes de tu decisión.</div>
+        <div className="muted">Aprobaciones separadas de portones, Ipanels, puertas, acopio y mediciones pendientes de tu decisión.</div>
 
         <div className="spacer" />
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <Button variant={tab === "aprobaciones" ? "primary" : "ghost"} onClick={() => setTab("aprobaciones")}>Aprobaciones</Button>
+          <Button variant={tab === "aprobaciones_portones" ? "primary" : "ghost"} onClick={() => setTab("aprobaciones_portones")}>Aprobaciones Portones</Button>
+          <Button variant={tab === "aprobaciones_ipanels" ? "primary" : "ghost"} onClick={() => setTab("aprobaciones_ipanels")}>Aprobaciones Ipanels</Button>
           <Button variant={tab === "mediciones" ? "primary" : "ghost"} onClick={() => setTab("mediciones")}>Mediciones</Button>
           <Button variant={tab === "acopio" ? "primary" : "ghost"} onClick={() => setTab("acopio")}>Acopio → Producción</Button>
-          <Button variant={tab === "acopio_listado" ? "primary" : "ghost"} onClick={() => setTab("acopio_listado")}>Portones en Acopio</Button>
+          <Button variant={tab === "acopio_listado" ? "primary" : "ghost"} onClick={() => setTab("acopio_listado")}>Portones / Ipanels en Acopio</Button>
           <Button variant={tab === "produccion" ? "primary" : "ghost"} onClick={() => setTab("produccion")}>Portones enviados a Producción</Button>
+          <Button variant={tab === "produccion_ipanels" ? "primary" : "ghost"} onClick={() => setTab("produccion_ipanels")}>Ipanels enviados a Producción</Button>
           <Button variant={tab === "puertas" ? "primary" : "ghost"} onClick={() => setTab("puertas")}>Puertas</Button>
         </div>
 
-        {tab === "aprobaciones" && (
+        {["aprobaciones_portones", "aprobaciones_ipanels"].includes(tab) && (
           <>
             <div className="spacer" />
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
@@ -313,42 +420,8 @@ export default function AprobacionComercialPage() {
       <div className="spacer" />
 
       <div className="card">
-        {tab === "aprobaciones" && (
-          <>
-            {q.isLoading && <div className="muted">Cargando...</div>}
-            {q.isError && <div style={{ color: "#d93025", fontSize: 13 }}>{q.error.message}</div>}
-            {!q.isLoading && !rows.length && <div className="muted">Sin ítems</div>}
-            {!!rows.length && (
-              <>
-                <table>
-                  <thead><tr><th>Fecha</th><th>Vendedor/Distribuidor</th><th>Cliente</th><th>Dirección</th><th>Estado</th><th>NP/NV Odoo</th><th>Datos plegado</th><th>Obs. presupuesto</th><th></th></tr></thead>
-                  <tbody>
-                    {visibleRows.map((r) => {
-                      const pdfKey = `quote-${r.id}`;
-                      return (
-                        <tr key={r.id}>
-                          <td>{fmtDate(r.created_at)}</td>
-                          <td>{createdByLabel(r)}</td>
-                          <td>{r.end_customer?.name || <span className="muted">(sin nombre)</span>}</td>
-                          <td>{r.end_customer?.address || "—"}</td>
-                          <td>{rowLabel(r)}</td>
-                          <td><OdooReferenceCell value={quoteOdooReference(r)} /></td>
-                          <td><PlegadoInfoCell row={r} /></td>
-                          <td><BudgetObservationCell row={r} /></td>
-                          <td className="right" style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
-                            <PdfIconButton disabled={downloadingPdfKey === pdfKey} onClick={() => handleDownloadQuotePdf(r.id)} />
-                            <Button onClick={() => navigate(`/presupuestos/${r.id}`, { state: { from: "/aprobacion/comercial" } })}>Abrir</Button>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-                <PaginationControls page={pageAprobaciones} totalItems={rows.length} pageSize={PAGE_SIZE} onPageChange={setPageAprobaciones} />
-              </>
-            )}
-          </>
-        )}
+        {tab === "aprobaciones_portones" && renderApprovalRows(visibleRows, rows.length, pageAprobaciones, setPageAprobaciones, "Sin portones pendientes")}
+        {tab === "aprobaciones_ipanels" && renderApprovalRows(visibleIpanels, ipanelRows.length, pageIpanels, setPageIpanels, "Sin Ipanels pendientes", false)}
 
         {tab === "mediciones" && (
           <>
@@ -368,14 +441,8 @@ export default function AprobacionComercialPage() {
                         <td>{r.end_customer?.address || "—"}</td>
                         <td>{measurementRowLabel(r)}</td>
                         <td><OdooReferenceCell value={quoteOdooReference(r)} /></td>
-                        <td>
-                          {Array.isArray(r?.measurement_commercial_diff_json) && r.measurement_commercial_diff_json.length
-                            ? r.measurement_commercial_diff_json.map((item) => item?.label || item?.key).filter(Boolean).join(", ")
-                            : "—"}
-                        </td>
-                        <td className="right">
-                          <Button onClick={() => navigate(`/mediciones/${r.id}`, { state: { from: "/aprobacion/comercial" } })}>Abrir</Button>
-                        </td>
+                        <td>{Array.isArray(r?.measurement_commercial_diff_json) && r.measurement_commercial_diff_json.length ? r.measurement_commercial_diff_json.map((item) => item?.label || item?.key).filter(Boolean).join(", ") : "—"}</td>
+                        <td className="right"><Button onClick={() => navigate(`/mediciones/${r.id}`, { state: { from: "/aprobacion/comercial" } })}>Abrir</Button></td>
                       </tr>
                     ))}
                   </tbody>
@@ -394,7 +461,7 @@ export default function AprobacionComercialPage() {
             {!!acopioRows.length && (
               <>
                 <table>
-                  <thead><tr><th>Fecha</th><th>Vendedor/Distribuidor</th><th>Cliente</th><th>Dirección</th><th>Solicitud</th><th>NP/NV Odoo</th><th>Datos plegado</th><th>Obs. presupuesto</th><th>Decisiones</th><th></th></tr></thead>
+                  <thead><tr><th>Fecha</th><th>Tipo</th><th>Vendedor/Distribuidor</th><th>Cliente</th><th>Dirección</th><th>Solicitud</th><th>NP/NV Odoo</th><th>Datos plegado</th><th>Obs. presupuesto</th><th>Decisiones</th><th></th></tr></thead>
                   <tbody>
                     {visibleAcopioRows.map((r) => {
                       const canAct = (r.acopio_to_produccion_commercial_decision || "pending") === "pending";
@@ -402,6 +469,7 @@ export default function AprobacionComercialPage() {
                       return (
                         <tr key={r.id}>
                           <td>{fmtDate(r.acopio_to_produccion_requested_at || r.created_at)}</td>
+                          <td>{catalogKindLabel(r)}</td>
                           <td>{createdByLabel(r)}</td>
                           <td>{r.end_customer?.name || <span className="muted">(sin nombre)</span>}</td>
                           <td>{r.end_customer?.address || "—"}</td>
@@ -413,12 +481,7 @@ export default function AprobacionComercialPage() {
                           <td className="right" style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
                             <PdfIconButton disabled={downloadingPdfKey === pdfKey} onClick={() => handleDownloadQuotePdf(r.id)} />
                             <Button variant="ghost" onClick={() => navigate(`/presupuestos/${r.id}`, { state: { from: "/aprobacion/comercial" } })}>Abrir</Button>
-                            {canAct ? (
-                              <>
-                                <Button disabled={acopioM.isPending} onClick={() => acopioM.mutate({ id: r.id, action: "approve", notes: null })}>OK</Button>
-                                <Button variant="ghost" disabled={acopioM.isPending} onClick={() => { const msg = window.prompt("Motivo del rechazo:", ""); if (msg !== null) acopioM.mutate({ id: r.id, action: "reject", notes: msg }); }}>Rechazar</Button>
-                              </>
-                            ) : <span className="muted">Ya decidiste</span>}
+                            {canAct ? <><Button disabled={acopioM.isPending} onClick={() => acopioM.mutate({ id: r.id, action: "approve", notes: null })}>OK</Button><Button variant="ghost" disabled={acopioM.isPending} onClick={() => { const msg = window.prompt("Motivo del rechazo:", ""); if (msg !== null) acopioM.mutate({ id: r.id, action: "reject", notes: msg }); }}>Rechazar</Button></> : <span className="muted">Ya decidiste</span>}
                           </td>
                         </tr>
                       );
@@ -435,17 +498,18 @@ export default function AprobacionComercialPage() {
           <>
             {acopioListadoQ.isLoading && <div className="muted">Cargando...</div>}
             {acopioListadoQ.isError && <div style={{ color: "#d93025", fontSize: 13 }}>{acopioListadoQ.error.message}</div>}
-            {!acopioListadoQ.isLoading && !acopioListadoRows.length && <div className="muted">Sin portones en acopio</div>}
+            {!acopioListadoQ.isLoading && !acopioListadoRows.length && <div className="muted">Sin portones/Ipanels en acopio</div>}
             {!!acopioListadoRows.length && (
               <>
                 <table>
-                  <thead><tr><th>Fecha</th><th>Vendedor/Distribuidor</th><th>Cliente</th><th>Dirección</th><th>Estado</th><th>NP/NV Odoo</th><th>Datos plegado</th><th>Obs. presupuesto</th><th>Solicitud Prod.</th><th></th></tr></thead>
+                  <thead><tr><th>Fecha</th><th>Tipo</th><th>Vendedor/Distribuidor</th><th>Cliente</th><th>Dirección</th><th>Estado</th><th>NP/NV Odoo</th><th>Datos plegado</th><th>Obs. presupuesto</th><th>Solicitud Prod.</th><th></th></tr></thead>
                   <tbody>
                     {visibleAcopioListadoRows.map((r) => {
                       const pdfKey = `quote-${r.id}`;
                       return (
                         <tr key={r.id}>
                           <td>{fmtDate(r.confirmed_at || r.created_at)}</td>
+                          <td>{catalogKindLabel(r)}</td>
                           <td>{createdByLabel(r)}</td>
                           <td>{r.end_customer?.name || <span className="muted">(sin nombre)</span>}</td>
                           <td>{r.end_customer?.address || "—"}</td>
@@ -469,41 +533,8 @@ export default function AprobacionComercialPage() {
           </>
         )}
 
-        {tab === "produccion" && (
-          <>
-            {produccionQ.isLoading && <div className="muted">Cargando...</div>}
-            {produccionQ.isError && <div style={{ color: "#d93025", fontSize: 13 }}>{produccionQ.error.message}</div>}
-            {!produccionQ.isLoading && !produccionRows.length && <div className="muted">Sin portones enviados a producción</div>}
-            {!!produccionRows.length && (
-              <>
-                <table>
-                  <thead><tr><th>Fecha envío</th><th>Vendedor/Distribuidor</th><th>Cliente</th><th>Dirección</th><th>NP/NV Odoo</th><th>Semana producción</th><th>Obs. presupuesto</th><th></th></tr></thead>
-                  <tbody>
-                    {visibleProduccionRows.map((r) => {
-                      const pdfKey = `quote-${r.id}`;
-                      return (
-                        <tr key={r.id}>
-                          <td>{fmtDate(productionSentAt(r))}</td>
-                          <td>{createdByLabel(r)}</td>
-                          <td>{r.end_customer?.name || <span className="muted">(sin nombre)</span>}</td>
-                          <td>{r.end_customer?.address || "—"}</td>
-                          <td>{productionReference(r) || "—"}</td>
-                          <td>{r.production_delivery_year && r.production_delivery_week ? `${r.production_delivery_year} · Semana ${r.production_delivery_week}` : "—"}</td>
-                          <td><BudgetObservationCell row={r} /></td>
-                          <td className="right" style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
-                            <PdfIconButton disabled={downloadingPdfKey === pdfKey} onClick={() => handleDownloadQuotePdf(r.id)} />
-                            <Button variant="ghost" onClick={() => navigate(`/presupuestos/${r.id}`, { state: { from: "/aprobacion/comercial" } })}>Abrir</Button>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-                <PaginationControls page={pageProduccion} totalItems={produccionRows.length} pageSize={PAGE_SIZE} onPageChange={setPageProduccion} />
-              </>
-            )}
-          </>
-        )}
+        {tab === "produccion" && renderProductionRows(visibleProduccionRows, produccionRows.length, pageProduccion, setPageProduccion, "Sin portones enviados a producción")}
+        {tab === "produccion_ipanels" && renderProductionRows(visibleProduccionIpanelRows, produccionIpanelRows.length, pageProduccionIpanels, setPageProduccionIpanels, "Sin Ipanels enviados a producción")}
 
         {tab === "puertas" && (
           <>
