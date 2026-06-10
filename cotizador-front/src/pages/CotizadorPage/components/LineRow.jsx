@@ -7,8 +7,8 @@ const SYSTEM_PRODUCT_IDS = new Set([3008, 3009]);
 const INTEGER_QTY_PRODUCT_IDS = new Set([3582, 3251]);
 const SHIPPING_PRODUCT_IDS = new Set([2842]);
 // Revestimientos propios del distribuidor: se cobran en el presupuesto al cliente,
-// pero no en proforma/Odoo. La cantidad sigue siendo por superficie.
-const DISTRIBUTOR_OWN_SUPPLY_PRODUCT_IDS = new Set([2842, 3956, 3957, 3961, 3962, 3963, 3966, 4037, 3991, 3992, 3993, 3994, 3995, 3996, 3485, 3486, 3490, 3491, 3492, 3495, 3566, 3520, 3521, 3522, 3523, 3524, 3525]);
+// pero no en proforma/Odoo. Envio (2842) queda fuera: usa precio de lista y cantidad editable.
+const DISTRIBUTOR_OWN_SUPPLY_PRODUCT_IDS = new Set([3956, 3957, 3961, 3962, 3963, 3966, 4037, 3991, 3992, 3993, 3994, 3995, 3996, 3485, 3486, 3490, 3491, 3492, 3495, 3566, 3520, 3521, 3522, 3523, 3524, 3525]);
 const STABLE_EDITABLE_QTY_PRODUCT_IDS = new Set([2842, 2927]);
 
 function isStableEditableQtyLine(line) {
@@ -140,7 +140,7 @@ export default function LineRow({ line, finalUnit, total, formatARS }) {
           {!line.auto_system_item && line.surface_quantity ? " · Cantidad por superficie" : ""}
           {isUnitOnlyLine ? " · Unidad fija" : ""}
           {isIntegerQtyLine ? " · Cantidad entera" : ""}
-          {isFreeQuantityLine ? " · Cantidad editable" : ""}
+          {isShippingLine(line) ? " · Envío: cantidad editable, precio de lista" : (isFreeQuantityLine ? " · Cantidad editable" : "")}
           {isDistributorOwnSupplyLine(line) && canEditPrice ? " · Precio editable distribuidor" : ""}
           {line.previously_billed_line ? " · Facturado previamente" : ""}
         </div>

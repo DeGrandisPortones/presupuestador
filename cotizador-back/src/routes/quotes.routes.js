@@ -14,7 +14,7 @@ const DEFAULT_PRICELIST_ID = Number(process.env.ODOO_DEFAULT_PRICELIST_ID || 1);
 const IVA_RATE = 0.21;
 const TACA_TACA_PLAN_NAME = String(process.env.ODOO_TACA_TACA_PLAN_NAME || "Taca Taca").trim();
 const SHIPPING_PRODUCT_IDS = new Set([2842]);
-const DISTRIBUTOR_OWN_SUPPLY_PRODUCT_IDS = new Set([2842, 3956, 3957, 3961, 3962, 3963, 3966, 4037, 3991, 3992, 3993, 3994, 3995, 3996, 3485, 3486, 3490, 3491, 3492, 3495, 3566, 3520, 3521, 3522, 3523, 3524, 3525]);
+const DISTRIBUTOR_OWN_SUPPLY_PRODUCT_IDS = new Set([3956, 3957, 3961, 3962, 3963, 3966, 4037, 3991, 3992, 3993, 3994, 3995, 3996, 3485, 3486, 3490, 3491, 3492, 3495, 3566, 3520, 3521, 3522, 3523, 3524, 3525]);
 const IPANEL_LAMAS_22_PRODUCT_IDS = new Set([4061, 3590]);
 const IPANEL_DIVIDER_LINE_MM = 10;
 
@@ -240,6 +240,38 @@ async function resolveSellerDisplayNameForOdoo(quote, fallbackUser = null) {
   return await resolveSellerDisplayNameForQuote(quote, fallbackUser);
 }
 
+function buildCustomerPartnerFiscalVals(customer, { includeName = false } = {}) {
+  const vals = { customer_rank: 1 };
+  const name = toText(customer?.name);
+  const vat = toText(customer?.vat);
+  const email = toText(customer?.email).toLowerCase();
+  const phone = toText(customer?.phone);
+  const street = toText(customer?.street) || toText(customer?.address);
+  const city = toText(customer?.city);
+  const identificationTypeId = toIntId(customer?.identification_type_id);
+  const afipResponsibilityTypeId = toIntId(customer?.afip_responsibility_type_id);
+
+  if (includeName) vals.name = name;
+  if (vat) vals.vat = vat;
+  if (email) vals.email = email;
+  if (phone) vals.phone = phone;
+  if (street) vals.street = street;
+  if (city) vals.city = city;
+  if (identificationTypeId) vals.l10n_latam_identification_type_id = identificationTypeId;
+  if (afipResponsibilityTypeId) vals.l10n_ar_afip_responsibility_type_id = afipResponsibilityTypeId;
+
+  return vals;
+}
+
+async function applyCustomerPartnerFiscalVals(odoo, partnerId, customer) {
+  const id = toIntId(partnerId);
+  if (!id) return null;
+  const vals = buildCustomerPartnerFiscalVals(customer, { includeName: false });
+  if (Object.keys(vals).length <= 1) return id;
+  await odoo.executeKw("res.partner", "write", [[id], vals]);
+  return id;
+}
+
 async function findOrCreateCustomerPartner(odoo, customer) {
   const name = toText(customer?.name);
   if (!name) throw new Error("Falta end_customer.name (vendedor)");
@@ -249,7 +281,7 @@ async function findOrCreateCustomerPartner(odoo, customer) {
     const ids = await odoo.executeKw("res.partner", "search", [[["email", "=", email]]], { limit: 5 });
     for (const candidateId of ids || []) {
       const partner = await readPartnerLite(odoo, candidateId);
-      if (partnerLooksLikeSameCustomer(partner, customer)) return toIntId(candidateId);
+      if (partnerLooksLikeSameCustomer(partner, customer)) return await applyCustomerPartnerFiscalVals(odoo, candidateId, customer);
     }
   }
 
@@ -260,14 +292,14 @@ async function findOrCreateCustomerPartner(odoo, customer) {
       const idsPhone = await odoo.executeKw("res.partner", "search", [[["phone", "=", phone]]], { limit: 5 });
       for (const candidateId of idsPhone || []) {
         const partner = await readPartnerLite(odoo, candidateId);
-        if (partnerLooksLikeSameCustomer(partner, customer)) return toIntId(candidateId);
+        if (partnerLooksLikeSameCustomer(partner, customer)) return await applyCustomerPartnerFiscalVals(odoo, candidateId, customer);
       }
     } catch {}
     try {
       const idsMobile = await odoo.executeKw("res.partner", "search", [[["mobile", "=", phone]]], { limit: 5 });
       for (const candidateId of idsMobile || []) {
         const partner = await readPartnerLite(odoo, candidateId);
-        if (partnerLooksLikeSameCustomer(partner, customer)) return toIntId(candidateId);
+        if (partnerLooksLikeSameCustomer(partner, customer)) return await applyCustomerPartnerFiscalVals(odoo, candidateId, customer);
       }
     } catch {}
   }
@@ -277,21 +309,11 @@ async function findOrCreateCustomerPartner(odoo, customer) {
     const ids2 = await odoo.executeKw("res.partner", "search", [[["name", "=", name]]], { limit: 5 });
     for (const candidateId of ids2 || []) {
       const partner = await readPartnerLite(odoo, candidateId);
-      if (partnerLooksLikeSameCustomer(partner, customer)) return toIntId(candidateId);
+      if (partnerLooksLikeSameCustomer(partner, customer)) return await applyCustomerPartnerFiscalVals(odoo, candidateId, customer);
     }
   }
 
-  const created = await odoo.executeKw("res.partner", "create", [{
-    name,
-    vat: toText(customer?.vat) || false,
-    email: email || false,
-    phone: phone || false,
-    street: toText(customer?.street) || toText(customer?.address) || false,
-    city: toText(customer?.city) || false,
-    l10n_latam_identification_type_id: toIntId(customer?.identification_type_id) || false,
-    l10n_ar_afip_responsibility_type_id: toIntId(customer?.afip_responsibility_type_id) || false,
-    customer_rank: 1,
-  }]);
+  const created = await odoo.executeKw("res.partner", "create", [buildCustomerPartnerFiscalVals(customer, { includeName: true })]);
   const id = toIntId(created);
   if (!id) throw new Error("No se pudo crear partner en Odoo");
   return id;
@@ -1581,95 +1603,6 @@ export function buildQuotesRouter(odoo) {
   });
 
   router.use(requireAuth);
-
-
-  router.get("/customer-lookup", requireSellerOrDistributor, async (req, res, next) => {
-    try {
-      const u = req.user || {};
-      const query = toText(req.query.query);
-      const limit = Math.min(50, Math.max(1, Number(req.query.limit || 25) || 25));
-      if (query.length < 2) return res.json({ ok: true, customers: [] });
-
-      const like = `%${query}%`;
-      const digits = digitsOnly(query);
-      const digitLike = digits ? `%${digits}%` : "";
-      const r = await dbQuery(
-        `select q.id,
-                q.quote_number,
-                q.end_customer,
-                q.odoo_sale_order_name,
-                q.final_sale_order_name,
-                q.created_at,
-                q.confirmed_at,
-                q.catalog_kind,
-                q.fulfillment_mode,
-                q.status,
-                u.username as created_by_username,
-                u.full_name as created_by_full_name
-           from public.presupuestador_quotes q
-           left join public.presupuestador_users u on u.id = q.created_by_user_id
-          where q.created_by_user_id = $1
-            and coalesce(q.end_customer, '{}'::jsonb) <> '{}'::jsonb
-            and (
-              coalesce(q.end_customer->>'name', '') ilike $2
-              or coalesce(q.end_customer->>'first_name', '') ilike $2
-              or coalesce(q.end_customer->>'last_name', '') ilike $2
-              or coalesce(q.end_customer->>'email', '') ilike $2
-              or coalesce(q.end_customer->>'phone', '') ilike $2
-              or coalesce(q.end_customer->>'address', '') ilike $2
-              or coalesce(q.end_customer->>'city', '') ilike $2
-              or coalesce(q.end_customer->>'maps_url', '') ilike $2
-              or coalesce(q.quote_number::text, '') ilike $2
-              or coalesce(q.odoo_sale_order_name, '') ilike $2
-              or coalesce(q.final_sale_order_name, '') ilike $2
-              or ($3 <> '' and regexp_replace(coalesce(q.end_customer->>'phone', ''), '\\D', '', 'g') like $3)
-            )
-          order by coalesce(q.confirmed_at, q.created_at) desc nulls last, q.id desc
-          limit 150`,
-        [Number(u.user_id), like, digitLike]
-      );
-
-      const seen = new Set();
-      const customers = [];
-      for (const row of r.rows || []) {
-        const customer = row.end_customer && typeof row.end_customer === "object" ? row.end_customer : {};
-        const name = toText(customer.name || [customer.first_name, customer.last_name].filter(Boolean).join(" "));
-        const phone = toText(customer.phone);
-        const email = toText(customer.email).toLowerCase();
-        const address = toText(customer.address);
-        const city = toText(customer.city);
-        if (!name && !phone && !email && !address && !city) continue;
-        const key = [normalizeNameForLookup(name), normalizePhoneForLookup(phone), email, normalizeNameForLookup(address), normalizeNameForLookup(city)].join("|");
-        if (seen.has(key)) continue;
-        seen.add(key);
-        const reference = row.final_sale_order_name || row.odoo_sale_order_name || (row.quote_number ? `Presupuesto #${row.quote_number}` : "Presupuesto guardado");
-        customers.push({
-          key,
-          quote_id: row.id,
-          quote_number: row.quote_number,
-          reference,
-          catalog_kind: row.catalog_kind,
-          fulfillment_mode: row.fulfillment_mode,
-          status: row.status,
-          created_by_username: row.created_by_username || "",
-          created_by_full_name: row.created_by_full_name || "",
-          customer: {
-            name,
-            first_name: toText(customer.first_name),
-            last_name: toText(customer.last_name),
-            phone,
-            email,
-            address,
-            maps_url: toText(customer.maps_url),
-            city,
-          },
-        });
-        if (customers.length >= limit) break;
-      }
-
-      res.json({ ok: true, customers });
-    } catch (e) { next(e); }
-  });
 
   router.post("/", requireSellerOrDistributor, async (req, res, next) => {
     try {

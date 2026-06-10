@@ -265,8 +265,8 @@ function resolveLinePricingProductId(line) {
 }
 const SHIPPING_PRODUCT_IDS = new Set([2842]);
 // Productos que el distribuidor puede cotizar al cliente, pero que en proforma/Odoo
-// se informan a $0 porque los provee/cobra directamente el distribuidor.
-const DISTRIBUTOR_OWN_SUPPLY_PRODUCT_IDS = new Set([2842, 3956, 3957, 3961, 3962, 3963, 3966, 4037, 3991, 3992, 3993, 3994, 3995, 3996, 3485, 3486, 3490, 3491, 3492, 3495, 3566, 3520, 3521, 3522, 3523, 3524, 3525]);
+// se informan a $0 porque los provee/cobra directamente el distribuidor. Envio (2842) no va a $0.
+const DISTRIBUTOR_OWN_SUPPLY_PRODUCT_IDS = new Set([3956, 3957, 3961, 3962, 3963, 3966, 4037, 3991, 3992, 3993, 3994, 3995, 3996, 3485, 3486, 3490, 3491, 3492, 3495, 3566, 3520, 3521, 3522, 3523, 3524, 3525]);
 const STABLE_EDITABLE_QTY_PRODUCT_IDS = new Set([2842, 2927]);
 
 function dflexCotizadorDebugEnabled() {
@@ -935,6 +935,24 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
     }, 0);
     return () => window.clearTimeout(timer);
   }, [normalizedCatalogKind, dimensions?.width, dimensions?.height, lines]);
+
+  useEffect(() => {
+    const currentLines = useQuoteStore.getState().lines || [];
+    const needsShippingPatch = currentLines.some((line) => (
+      isShippingLine(line)
+      && (line.manual_price || line.price_editable || line.distributor_proforma_zero_price)
+      && !line.previously_billed_line
+    ));
+    if (!needsShippingPatch) return;
+    useQuoteStore.setState({
+      lines: currentLines.map((line) => {
+        if (!isShippingLine(line) || line.previously_billed_line) return line;
+        const next = { ...line, price_editable: false, manual_price: false };
+        delete next.distributor_proforma_zero_price;
+        return next;
+      }),
+    });
+  }, [lines]);
 
   useEffect(() => {
     if (normalizedCatalogKind !== "otros") return;
