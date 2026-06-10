@@ -7,7 +7,7 @@ import { commitQuoteProductionWeek } from "../productionPlanning.js";
 
 const MEASUREMENT_PRODUCT_ID = Number(process.env.ODOO_MEASUREMENT_PRODUCT_ID || 2865);
 const PLACEHOLDER_PRODUCT_ID = Number(process.env.ODOO_PLACEHOLDER_PRODUCT_ID || 2880);
-const IPANEL_ACOPIO_PRODUCT_ID = Number(process.env.ODOO_IPANEL_ACOPIO_PRODUCT_ID || 3557);
+const IPANEL_ACOPIO_PRODUCT_ID = Number(process.env.ODOO_IPANEL_ACOPIO_PRODUCT_ID || 3607);
 const PLEGADOS_ACOPIO_PRODUCT_ID = Number(process.env.ODOO_PLEGADOS_ACOPIO_PRODUCT_ID || IPANEL_ACOPIO_PRODUCT_ID);
 const PUERTA_ACOPIO_PRODUCT_ID = Number(process.env.ODOO_PUERTA_ACOPIO_PRODUCT_ID || 3558);
 const DEFAULT_PRICELIST_ID = Number(process.env.ODOO_DEFAULT_PRICELIST_ID || 1);
@@ -427,7 +427,24 @@ function getMeasurementFlowForQuote({ catalog_kind, fulfillment_mode, lines }) {
     };
   }
 
-  if (kind === "porton" && mode === "produccion") {
+  if (kind === "ipanel") {
+    if (mode === "produccion") {
+      return {
+        requires_measurement: true,
+        measurement_mode: "tecnica_only",
+        measurement_subtype: "sin_medicion",
+        measurement_status: "pending",
+      };
+    }
+    return {
+      requires_measurement: false,
+      measurement_mode: "medidor",
+      measurement_subtype: "normal",
+      measurement_status: "none",
+    };
+  }
+
+  if (["porton", "puerta"].includes(kind) && mode === "produccion") {
     return {
       requires_measurement: true,
       measurement_mode: hasLine ? "medidor" : "tecnica_only",
@@ -444,7 +461,7 @@ function getMeasurementFlowForQuote({ catalog_kind, fulfillment_mode, lines }) {
   };
 }
 function isDirectProductionTechnicalOnlyQuote(quote) {
-  return String(quote?.catalog_kind || "porton").toLowerCase().trim() === "porton"
+  return ["porton", "puerta"].includes(String(quote?.catalog_kind || "porton").toLowerCase().trim())
     && String(quote?.fulfillment_mode || "").trim() === "produccion"
     && (
       normalizeMeasurementMode(quote?.measurement_mode) === "tecnica_only"
@@ -457,7 +474,7 @@ function shouldDeferSyncUntilMeasurement(quote) {
   // Porton a produccion sin medicion: se crea la NV en la aprobacion inicial,
   // pero queda en circuito tecnico para la aprobacion final/WhatsApp.
   if (isDirectProductionTechnicalOnlyQuote(quote)) return false;
-  return String(quote?.catalog_kind || "porton").toLowerCase().trim() === "porton"
+  return ["porton", "puerta", "ipanel"].includes(String(quote?.catalog_kind || "porton").toLowerCase().trim())
     && String(quote?.fulfillment_mode || "").trim() === "produccion"
     && (
       quote?.requires_measurement === true
@@ -1723,7 +1740,7 @@ export function buildQuotesRouter(odoo) {
                     limit 1
                  ) fc on true
                 where ${onlyOriginal}
-                  and coalesce(q.catalog_kind, 'porton') = 'porton'
+                  and coalesce(q.catalog_kind, 'porton') in ('porton', 'ipanel', 'puerta')
                   and (
                     (q.measurement_status = 'approved' and (
                       q.final_status = 'synced_odoo'

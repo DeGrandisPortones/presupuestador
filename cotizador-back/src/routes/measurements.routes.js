@@ -198,8 +198,10 @@ function quoteRequiresMeasurementWorkflow(quote) {
   );
 }
 function quoteAllowsMeasurementWorkflow(quote) {
+  const kind = String(quote?.catalog_kind || "porton").toLowerCase().trim();
+  const kindAllowsCircuit = ["porton", "puerta"].includes(kind) || (kind === "ipanel" && isTecnicaOnlyQuote(quote));
   return (
-    String(quote?.catalog_kind || "").toLowerCase().trim() === "porton" &&
+    kindAllowsCircuit &&
     isMeasurementReadyQuote(quote) &&
     quoteRequiresMeasurementWorkflow(quote)
   );
@@ -269,6 +271,30 @@ function validateFinalDimensions(form) {
   if (!altoFinal) return "Falta alto_final_mm";
   if (!anchoFinal) return "Falta ancho_final_mm";
   return null;
+}
+function isDoorQuote(quote) {
+  return String(quote?.catalog_kind || "").toLowerCase().trim() === "puerta";
+}
+function normalizeMeasurementAxis(values = []) {
+  return (Array.isArray(values) ? values : []).map((value) => String(value ?? "").trim()).filter(Boolean);
+}
+function validateDoorMeasurementPointCount(quote, form) {
+  if (!isDoorQuote(quote)) return null;
+  const altos = normalizeMeasurementAxis(form?.esquema?.alto || []);
+  const anchos = normalizeMeasurementAxis(form?.esquema?.ancho || []);
+  if (altos.length !== 2 || anchos.length !== 2) {
+    return "Para puertas se deben cargar exactamente 2 medidas de alto y 2 medidas de ancho.";
+  }
+  return null;
+}
+function detectDoorBudgetSectionChangeByMedidor({ quote, form, baselineForm }) {
+  if (!isDoorQuote(quote)) return false;
+  const keys = [
+    "__selected_binding_product",
+    "__fallback_selected_section_products",
+    "__budget_section_override",
+  ];
+  return keys.some((key) => valuesDiffer(form?.[key], baselineForm?.[key]));
 }
 async function buildMeasurementSurfaceGuard({ quote, form }) {
   const tolerance_area_m2 = Number(await getCommercialFinalToleranceAreaM2()) || 0;
@@ -390,7 +416,7 @@ export function buildMeasurementsRouter(odoo = null) {
         return res.status(403).json({ ok: false, error: "No autorizado" });
       }
       const where = [
-        "q.catalog_kind = 'porton'",
+        "coalesce(q.catalog_kind, 'porton') in ('porton', 'puerta', 'ipanel')",
         "(q.status = 'synced_odoo' or (q.status = 'pending_approvals' and q.commercial_decision = 'approved' and q.technical_decision = 'approved') or (q.status = 'draft' and q.measurement_status = 'returned_to_seller'))",
         `(
           exists (select 1 from jsonb_array_elements(coalesce(q.lines, '[]'::jsonb)) elem where (elem->>'product_id') = any($1::text[]))
@@ -542,6 +568,16 @@ export function buildMeasurementsRouter(odoo = null) {
       }
 
       const areaGuard = await buildMeasurementSurfaceGuard({ quote, form });
+      if (submit) {
+        const doorMeasuresErr = validateDoorMeasurementPointCount(quote, form);
+        if (doorMeasuresErr) return res.status(400).json({ ok: false, error: doorMeasuresErr });
+      }
+      if (submit && u?.is_medidor && detectDoorBudgetSectionChangeByMedidor({ quote, form, baselineForm })) {
+        return res.status(400).json({
+          ok: false,
+          error: "En puertas el medidor no puede cambiar secciones/productos. Deja observaciones para devolverlo al vendedor o envia a aprobacion tecnica final.",
+        });
+      }
       const observationReason = buildObservationReturnReason(form);
       const forceSellerReturnByObservations = !!observationReason && !!u?.is_medidor;
       const forceSellerReturnByItem18 = item18Change.changed === true;
@@ -667,6 +703,8 @@ export function buildMeasurementsRouter(odoo = null) {
 
       if (act === "approve") {
         const form = quote?.measurement_form || {};
+        const doorMeasuresErr = validateDoorMeasurementPointCount(quote, form);
+        if (doorMeasuresErr) return res.status(400).json({ ok: false, error: doorMeasuresErr });
         const finalDimsErr = validateFinalDimensions(form);
         if (finalDimsErr) return res.status(400).json({ ok: false, error: finalDimsErr });
         const shareToken = String(quote.measurement_share_token || makeShareToken());

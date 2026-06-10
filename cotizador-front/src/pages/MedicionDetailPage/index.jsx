@@ -90,6 +90,18 @@ function minTripleFinalMm(values = [], fallback = "") {
   if (min > 0) return String(Math.round(min));
   return text(fallback);
 }
+function quoteCatalogKind(quote) {
+  return String(quote?.catalog_kind || quote?.payload?.catalog_kind || "porton").toLowerCase().trim();
+}
+function isDoorQuote(quote) {
+  return quoteCatalogKind(quote) === "puerta";
+}
+function isIpanelQuote(quote) {
+  return quoteCatalogKind(quote) === "ipanel";
+}
+function measurementPointCount(quote) {
+  return isDoorQuote(quote) ? 2 : 3;
+}
 function getFinalDimensionsFromScheme(form = {}, fallback = {}) {
   return {
     alto_final_mm: minTripleFinalMm(form?.esquema?.alto || [], fallback?.alto_final_mm),
@@ -103,10 +115,11 @@ function extractBudgetDimensionMm(quote, key) {
   if (!Number.isFinite(n) || n <= 0) return "";
   return String(Math.round(n * 1000));
 }
-function normalizeTriple(values = [], suggested = "") {
-  const arr = Array.isArray(values) ? values.slice(0, 3).map((v) => text(v)) : [];
-  while (arr.length < 3) arr.push("");
-  if (!arr.some(Boolean) && suggested) arr[1] = suggested;
+function normalizeTriple(values = [], suggested = "", count = 3) {
+  const safeCount = Math.max(1, Number(count || 3) || 3);
+  const arr = Array.isArray(values) ? values.slice(0, safeCount).map((v) => text(v)) : [];
+  while (arr.length < safeCount) arr.push("");
+  if (!arr.some(Boolean) && suggested) arr[Math.min(1, safeCount - 1)] = suggested;
   return arr;
 }
 function cloneContainer(value) {
@@ -224,8 +237,9 @@ function buildInitialForm(quote, current = {}) {
   const dims = quote?.payload?.dimensions || {};
   const suggestedAlto = extractBudgetDimensionMm(quote, "alto");
   const suggestedAncho = extractBudgetDimensionMm(quote, "ancho");
-  const esquemaAlto = normalizeTriple(current?.esquema?.alto || [], suggestedAlto);
-  const esquemaAncho = normalizeTriple(current?.esquema?.ancho || [], suggestedAncho);
+  const pointCount = measurementPointCount(quote);
+  const esquemaAlto = normalizeTriple(current?.esquema?.alto || [], suggestedAlto, pointCount);
+  const esquemaAncho = normalizeTriple(current?.esquema?.ancho || [], suggestedAncho, pointCount);
   return {
     ...current,
     fecha: text(current.fecha) || todayISO(),
@@ -257,11 +271,11 @@ function buildInitialForm(quote, current = {}) {
     observaciones_parantes: text(current.observaciones_parantes) || text(dims?.observaciones_parantes),
   };
 }
-function updateSchemeValue(form, axis, index, value) {
+function updateSchemeValue(form, axis, index, value, count = 3) {
   const next = {
     ...(form.esquema || {}),
-    alto: normalizeTriple(form.esquema?.alto || []),
-    ancho: normalizeTriple(form.esquema?.ancho || []),
+    alto: normalizeTriple(form.esquema?.alto || [], "", count),
+    ancho: normalizeTriple(form.esquema?.ancho || [], "", count),
   };
   next[axis][index] = value;
   const updated = { ...form, esquema: next };
@@ -755,9 +769,11 @@ function formatProductionDeliveryDisplay(planning) {
   if (startLabel || endLabel) return `${weekPart}, entre ${startLabel || "—"} y ${endLabel || "—"}`;
   return weekPart;
 }
-function MeasurementSchemeVisual({ form }) {
-  const altos = normalizeTriple(form?.esquema?.alto || []);
-  const anchos = normalizeTriple(form?.esquema?.ancho || []);
+function MeasurementSchemeVisual({ form, pointCount = 3 }) {
+  const altos = normalizeTriple(form?.esquema?.alto || [], "", pointCount);
+  const anchos = normalizeTriple(form?.esquema?.ancho || [], "", pointCount);
+  const altoRects = SCHEME_RECT_PCTS.alto.slice(0, pointCount);
+  const anchoRects = SCHEME_RECT_PCTS.ancho.slice(0, pointCount);
   return (
     <div
       style={{
@@ -769,11 +785,11 @@ function MeasurementSchemeVisual({ form }) {
       }}
     >
       <div className="muted" style={{ fontSize: 12, marginBottom: 10 }}>
-        Esquema de 3 medidas de alto y 3 de ancho
+        Esquema de {pointCount} medidas de alto y {pointCount} de ancho
       </div>
       <div style={{ position: "relative", width: "100%", maxWidth: 780, margin: "0 auto" }}>
         <img src="/measurement_scheme.png" alt="Esquema de medición" style={{ width: "100%", height: "auto", display: "block" }} />
-        {SCHEME_RECT_PCTS.alto.map((rect, idx) => (
+        {altoRects.map((rect, idx) => (
           <div
             key={`overlay-alto-${idx}`}
             style={{
@@ -787,7 +803,7 @@ function MeasurementSchemeVisual({ form }) {
             {altos[idx] || "—"}
           </div>
         ))}
-        {SCHEME_RECT_PCTS.ancho.map((rect, idx) => (
+        {anchoRects.map((rect, idx) => (
           <div
             key={`overlay-ancho-${idx}`}
             style={{
@@ -924,6 +940,8 @@ export default function MedicionDetailPage() {
   );
 
   const editableConfiguredFields = useMemo(() => {
+    if (isDoorQuote(quote) && isMedidor && !isTechnical) return [];
+    if (isIpanelQuote(quote)) return [];
     return allFields.filter((field) => {
       const sectionId = Number(field?.budget_section_id || 0);
       if (!allowedSectionIds.has(sectionId)) return false;
@@ -936,9 +954,11 @@ export default function MedicionDetailPage() {
         .toLowerCase();
       return String(field?.type || "") === "odoo_product" || bindingType === "selected_measurement_product";
     });
-  }, [allFields, dynamicUi.hidden, allowedSectionIds]);
+  }, [allFields, dynamicUi.hidden, allowedSectionIds, quote, isMedidor, isTechnical]);
 
   const fallbackSections = useMemo(() => {
+    if (isDoorQuote(quote) && isMedidor && !isTechnical) return [];
+    if (isIpanelQuote(quote)) return [];
     const byId = budgetContext?.budget_sections?.by_id || {};
     const configuredIds = new Set(editableConfiguredFields.map((field) => Number(field?.budget_section_id || 0)));
     return Object.values(byId)
@@ -955,7 +975,7 @@ export default function MedicionDetailPage() {
             : false,
         ),
       }));
-  }, [budgetContext, editableConfiguredFields, catalogQ.data, allowedSectionIds]);
+  }, [budgetContext, editableConfiguredFields, catalogQ.data, allowedSectionIds, quote, isMedidor, isTechnical]);
 
   useEffect(() => {
     if (!form) return;
@@ -1287,13 +1307,15 @@ export default function MedicionDetailPage() {
 
   const returnPath =
     (typeof location.state?.from === "string" && location.state.from.trim()) || "/mediciones";
+  const pointCount = measurementPointCount(quote);
+  const kindLabel = isIpanelQuote(quote) ? "Ipanel" : isDoorQuote(quote) ? "puerta" : "porton";
   const editableCount = editableConfiguredFields.length + fallbackSections.length;
   const submitButtonLabel = isTechnical
     ? "Aprobar revisión final"
     : mustGoToSeller
       ? "Enviar al vendedor"
       : "Enviar al técnico";
-  const pageTitle = isTechnical ? "Revisión técnica final" : "Medición";
+  const pageTitle = isTechnical ? `Revisión técnica final ${kindLabel}` : `Medición de ${kindLabel}`;
   const planningLabel = formatProductionDeliveryDisplay(planningQ.data);
   const isMeasurementApproved = String(quote?.measurement_status || "").toLowerCase() === "approved";
   const isReadOnlyMeasurement = !isTechnical && (readOnlyFromState || readOnlyFromQuery || isMeasurementApproved);
@@ -1410,7 +1432,7 @@ export default function MedicionDetailPage() {
         </Section>
 
         <Section title="Esquema de medidas">
-          <MeasurementSchemeVisual form={form} />
+          <MeasurementSchemeVisual form={form} pointCount={pointCount} />
           <Row>
             <Field label="Alto final editable (mm)">
               {isTechnical ? (
@@ -1437,14 +1459,14 @@ export default function MedicionDetailPage() {
           </Row>
           <div className="spacer" />
           <Row>
-            {[0, 1, 2].map((idx) => (
+            {Array.from({ length: pointCount }, (_, idx) => idx).map((idx) => (
               <Field key={`alto-${idx}`} label={`Alto ${idx + 1} (mm)`}>
                 {isReadOnlyMeasurement ? (
                   <StaticValue value={form.esquema?.alto?.[idx] || ""} />
                 ) : (
                   <Input
                     value={form.esquema?.alto?.[idx] || ""}
-                    onChange={(v) => setForm((prev) => updateSchemeValue(prev, "alto", idx, v))}
+                    onChange={(v) => setForm((prev) => updateSchemeValue(prev, "alto", idx, v, pointCount))}
                     style={{ width: "100%" }}
                   />
                 )}
@@ -1453,14 +1475,14 @@ export default function MedicionDetailPage() {
           </Row>
           <div className="spacer" />
           <Row>
-            {[0, 1, 2].map((idx) => (
+            {Array.from({ length: pointCount }, (_, idx) => idx).map((idx) => (
               <Field key={`ancho-${idx}`} label={`Ancho ${idx + 1} (mm)`}>
                 {isReadOnlyMeasurement ? (
                   <StaticValue value={form.esquema?.ancho?.[idx] || ""} />
                 ) : (
                   <Input
                     value={form.esquema?.ancho?.[idx] || ""}
-                    onChange={(v) => setForm((prev) => updateSchemeValue(prev, "ancho", idx, v))}
+                    onChange={(v) => setForm((prev) => updateSchemeValue(prev, "ancho", idx, v, pointCount))}
                     style={{ width: "100%" }}
                   />
                 )}
@@ -1471,7 +1493,7 @@ export default function MedicionDetailPage() {
 
         <Section title="Cálculo técnico automático">
           <Row>
-            <Field label="Medidas finales del portón">
+            <Field label={`Medidas finales del ${kindLabel}`}>
               <StaticValue value={
                 form.alto_final_mm && form.ancho_final_mm
                   ? `${formatMm(form.alto_final_mm)} x ${formatMm(form.ancho_final_mm)}`

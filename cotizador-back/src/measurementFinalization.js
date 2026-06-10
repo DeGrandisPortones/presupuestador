@@ -117,6 +117,14 @@ function referenceNumberFromQuote(originalQuote, revisionQuote) {
   if (digits) return digits;
   return direct || "";
 }
+function getReferenceFamilyPrefix(quote) {
+  const kind = String(quote?.catalog_kind || quote?.payload?.catalog_kind || "porton").toLowerCase().trim();
+  if (kind === "ipanel") return "I";
+  if (kind === "plegados") return "PL";
+  if (kind === "puerta") return "P";
+  if (kind === "otros") return "O";
+  return "";
+}
 function extractNvInteger(value) {
   const digits = onlyDigits(value);
   const n = Number(digits);
@@ -1026,9 +1034,10 @@ async function syncFinalQuoteToOdoo({ odoo, revisionQuote, originalQuote, source
   }
 
   const refNo = referenceNumberFromQuote(originalQuote, revisionQuote);
+  const familyPrefix = getReferenceFamilyPrefix(revisionQuote || sourceQuote || originalQuote || {});
   const referenceNv = refNo
-    ? `NV${refNo}`
-    : `NV${toText(revisionQuote?.quote_number || originalQuote?.quote_number)}`;
+    ? `${familyPrefix}NV${refNo}`
+    : `${familyPrefix}NV${toText(revisionQuote?.quote_number || originalQuote?.quote_number)}`;
 
   const conditionPayload = revisionQuote?.payload?.condition_mode
     ? revisionQuote.payload
@@ -1281,6 +1290,45 @@ function isDirectNvAlreadyCreated(originalQuote) {
 
 async function buildMeasurementFinalizationBase({ odoo, originalQuote, measurementForm }) {
   const sourceQuote = await resolveBaseSourceQuote(originalQuote);
+  if (String(originalQuote?.catalog_kind || sourceQuote?.catalog_kind || "").toLowerCase().trim() === "ipanel") {
+    const pricingPayload = sourceQuote?.payload || originalQuote?.payload || {};
+    const positiveLines = buildBasePositiveLinesFromQuote(sourceQuote || originalQuote);
+    const positiveTotal = totalLinesAmount(positiveLines, pricingPayload, sourceQuote || originalQuote);
+    const discountLine = buildDiscountPreviewLine({
+      originalQuote,
+      absorbedSurfaceAmount: 0,
+      positiveTotal,
+    });
+    const finalLines = discountLine ? [...positiveLines, discountLine] : positiveLines;
+    const finalAmountToCharge = totalLinesAmount(finalLines, pricingPayload, sourceQuote || originalQuote);
+    return {
+      source_quote_id: sourceQuote?.id || originalQuote?.id || null,
+      source_quote: sourceQuote,
+      generated_lines: finalLines,
+      priced_positive_lines: positiveLines,
+      metrics: {
+        detailed_total: positiveTotal,
+        tolerance_percent: 0,
+        tolerance_amount: 0,
+        tolerance_area_m2: 0,
+        source_surface_m2: computeQuoteSurfaceM2(sourceQuote || originalQuote),
+        final_surface_m2: computeQuoteSurfaceM2(sourceQuote || originalQuote),
+        surface_diff_m2: 0,
+        surface_chargeable_diff_m2: 0,
+        surface_absorbed_diff_m2: 0,
+        source_surface_amount: positiveTotal,
+        final_surface_amount: positiveTotal,
+        surface_increment_amount: 0,
+        surface_absorbed_amount: 0,
+        surface_chargeable_amount: 0,
+        extra_amount: 0,
+        difference_amount: finalAmountToCharge,
+        absorbed_by_company: false,
+        final_amount_to_charge: finalAmountToCharge,
+        reference_nv: referenceNumberFromQuote(originalQuote, null),
+      },
+    };
+  }
   const legacyMappings = await getMeasurementProductMappings();
   const technicalRules = await getTechnicalMeasurementRules();
   const technicalFieldsPayload = await getTechnicalMeasurementFieldDefinitions();

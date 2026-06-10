@@ -150,6 +150,34 @@ export async function ensureQuotesMeasurementColumns() {
     [measurementProductIds],
   );
 
+  await dbQuery(`
+    update public.presupuestador_quotes
+       set requires_measurement = false,
+           measurement_mode = 'medidor',
+           measurement_subtype = 'normal',
+           measurement_status = 'none'
+     where catalog_kind = 'ipanel'
+       and fulfillment_mode = 'acopio'
+       and coalesce(measurement_status, 'none') <> 'approved'
+  `);
+
+  await dbQuery(`
+    update public.presupuestador_quotes
+       set requires_measurement = true,
+           measurement_mode = 'tecnica_only',
+           measurement_subtype = 'sin_medicion',
+           measurement_status = case
+             when measurement_status = 'approved' then measurement_status
+             else 'pending'
+           end
+     where catalog_kind = 'ipanel'
+       and fulfillment_mode = 'produccion'
+       and quote_kind = 'original'
+       and coalesce(final_sale_order_id, 0) = 0
+       and coalesce(final_status, '') not in ('synced_odoo', 'syncing_odoo')
+       and status in ('pending_approvals', 'synced_odoo', 'syncing_odoo')
+  `);
+
   await ensureSettingsTable();
   ensured = true;
 }
