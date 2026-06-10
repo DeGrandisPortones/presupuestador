@@ -320,6 +320,16 @@ export async function getBillingOptions() {
   };
 }
 
+export async function findBillingCustomerByVat(vat) {
+  const cleanVat = String(vat || "").replace(/\D+/g, "");
+  if (cleanVat.length !== 11) return null;
+  const params = new URLSearchParams();
+  params.set("vat", cleanVat);
+  const { data } = await http.get(`/api/odoo/billing-customer?${params.toString()}`);
+  if (!data?.ok) throw new Error(data?.error || "No se pudo buscar el cliente en Odoo");
+  return data.customer || null;
+}
+
 export async function getFinancingPreview(paymentMethod) {
   return getFinancingPreviewFromSettings(paymentMethod);
 }

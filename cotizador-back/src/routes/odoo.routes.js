@@ -16,6 +16,30 @@ function cleanText(value) {
   return String(value || "").trim();
 }
 
+
+function digitsOnly(value) {
+  return String(value || "").replace(/\D+/g, "");
+}
+
+function formatCuitWithDashes(value) {
+  const digits = digitsOnly(value);
+  if (digits.length !== 11) return "";
+  return `${digits.slice(0, 2)}-${digits.slice(2, 10)}-${digits.slice(10)}`;
+}
+
+function relationName(value) {
+  return Array.isArray(value) ? cleanText(value[1]) : "";
+}
+
+function uniqueNonEmpty(values = []) {
+  const out = [];
+  for (const value of values) {
+    const text = cleanText(value);
+    if (text && !out.includes(text)) out.push(text);
+  }
+  return out;
+}
+
 function toPositiveInt(value) {
   const n = Number(value || 0);
   return Number.isFinite(n) && n > 0 ? Math.trunc(n) : 0;
@@ -311,6 +335,71 @@ export function buildOdooRouter(odoo) {
           id: item.id,
           name: item.name,
         })),
+      });
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  router.get("/billing-customer", requireAuth, async (req, res, next) => {
+    try {
+      const rawVat = cleanText(req.query.vat || req.query.cuit || req.query.cuil || "");
+      const vatDigits = digitsOnly(rawVat);
+      if (vatDigits.length !== 11) throw new Error("Ingresá un CUIT/CUIL válido de 11 dígitos");
+
+      const candidates = uniqueNonEmpty([vatDigits, rawVat, formatCuitWithDashes(vatDigits)]);
+      const baseFields = ["id", "name", "vat", "email", "phone", "mobile", "street", "street2", "city"];
+      const fiscalFields = [...baseFields, "l10n_latam_identification_type_id", "l10n_ar_afip_responsibility_type_id"];
+      let partner = null;
+
+      for (const candidate of candidates) {
+        const domains = [
+          [["vat", "=", candidate]],
+          [["vat", "ilike", candidate]],
+        ];
+        for (const domain of domains) {
+          try {
+            const rows = await odoo.executeKw("res.partner", "search_read", [domain], {
+              fields: fiscalFields,
+              limit: 1,
+              order: "id desc",
+            });
+            partner = Array.isArray(rows) ? rows[0] || null : null;
+          } catch {
+            const rows = await odoo.executeKw("res.partner", "search_read", [domain], {
+              fields: baseFields,
+              limit: 1,
+              order: "id desc",
+            });
+            partner = Array.isArray(rows) ? rows[0] || null : null;
+          }
+          if (partner?.id) break;
+        }
+        if (partner?.id) break;
+      }
+
+      if (!partner?.id) return res.json({ ok: true, found: false, customer: null });
+
+      const identificationType = partner.l10n_latam_identification_type_id || null;
+      const afipResponsibilityType = partner.l10n_ar_afip_responsibility_type_id || null;
+      const address = uniqueNonEmpty([partner.street, partner.street2]).join(" ");
+
+      res.json({
+        ok: true,
+        found: true,
+        customer: {
+          odoo_partner_id: partner.id,
+          name: cleanText(partner.name),
+          vat: digitsOnly(partner.vat) || cleanText(partner.vat),
+          email: cleanText(partner.email),
+          phone: cleanText(partner.phone || partner.mobile),
+          address,
+          city: cleanText(partner.city),
+          identification_type_id: relId(identificationType) ? String(relId(identificationType)) : "",
+          identification_type_name: relationName(identificationType),
+          afip_responsibility_type_id: relId(afipResponsibilityType) ? String(relId(afipResponsibilityType)) : "",
+          afip_responsibility_type_name: relationName(afipResponsibilityType),
+        },
       });
     } catch (e) {
       next(e);

@@ -7,7 +7,7 @@ import Input from "../../ui/Input.jsx";
 import { getQuote, reviewCommercial, reviewTechnical, createRevisionQuote } from "../../api/quotes.js";
 import { listDoorsByQuote } from "../../api/doors.js";
 import { downloadMedicionPdf } from "../../api/pdf.js";
-import { getBillingOptions, getFinancingPreview } from "../../api/odoo.js";
+import { findBillingCustomerByVat, getBillingOptions, getFinancingPreview } from "../../api/odoo.js";
 import { useAuthStore } from "../../domain/auth/store.js";
 import { formatARS, calcTotals, calcFinalUnitPrice, calcLineTotal } from "../../domain/quote/pricing.js";
 import MeasurementReadOnlyView from "../../components/MeasurementReadOnlyView.jsx";
@@ -213,6 +213,27 @@ function hasBillingCustomerData(customer) {
     customer.identification_type_id,
     customer.afip_responsibility_type_id,
   ].some((value) => String(value || "").trim());
+}
+
+function mergeBillingCustomerFromOdoo(current = {}, incoming = {}) {
+  const normalized = emptyBillingCustomer(incoming);
+  const next = { ...current };
+  for (const key of [
+    "name",
+    "vat",
+    "email",
+    "phone",
+    "address",
+    "city",
+    "identification_type_id",
+    "identification_type_name",
+    "afip_responsibility_type_id",
+    "afip_responsibility_type_name",
+  ]) {
+    const value = normalized[key];
+    if (String(value || "").trim()) next[key] = value;
+  }
+  return next;
 }
 
 function billingSummary(customer) {
@@ -911,6 +932,42 @@ function BillingModal({ value, onChange, onClose, onConfirm, loading, requiresBi
   const afipResponsibilityTypes = Array.isArray(billingOptions?.afip_responsibility_types) ? billingOptions.afip_responsibility_types : [];
   const selectedIdentificationType = normalizeBillingSelectionValue(identificationTypes, value.identification_type_id);
   const selectedAfipResponsibilityType = normalizeBillingSelectionValue(afipResponsibilityTypes, value.afip_responsibility_type_id);
+  const vatDigits = digitsOnly(value?.vat || "");
+  const [odooLookup, setOdooLookup] = useState({ vat: "", status: "idle", message: "" });
+
+  useEffect(() => {
+    if (vatDigits.length !== 11) {
+      setOdooLookup((current) => current.status === "idle" ? current : { vat: "", status: "idle", message: "" });
+      return;
+    }
+    if (odooLookup.vat === vatDigits && ["loading", "found", "not_found"].includes(odooLookup.status)) return;
+
+    let cancelled = false;
+    const timer = window.setTimeout(async () => {
+      setOdooLookup({ vat: vatDigits, status: "loading", message: "Buscando cliente en Odoo…" });
+      try {
+        const customer = await findBillingCustomerByVat(vatDigits);
+        if (cancelled) return;
+        if (customer) {
+          onChange(mergeBillingCustomerFromOdoo({ ...value, vat: vatDigits }, { ...customer, vat: customer.vat || vatDigits }));
+          setOdooLookup({ vat: vatDigits, status: "found", message: "Cliente encontrado en Odoo. Datos fiscales cargados." });
+        } else {
+          setOdooLookup({ vat: vatDigits, status: "not_found", message: "El cliente no existe en Odoo. Completá los datos fiscales manualmente." });
+        }
+      } catch (e) {
+        if (cancelled) return;
+        setOdooLookup({ vat: vatDigits, status: "error", message: e?.message || "No se pudo buscar el cliente en Odoo." });
+      }
+    }, 350);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [vatDigits, odooLookup.status, odooLookup.vat, onChange, value]);
+
+  const lookupColor = odooLookup.status === "found" ? "#0f7b3d" : (odooLookup.status === "not_found" || odooLookup.status === "error" ? "#b91c1c" : "#475569");
+
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20, zIndex: 1000 }} onClick={() => { if (!loading) onClose(); }}>
       <div className="card" style={{ width: "100%", maxWidth: 860, background: "#fff", border: "1px solid #ddd", boxShadow: "0 20px 60px rgba(0,0,0,0.18)" }} onClick={(e) => e.stopPropagation()}>
@@ -919,7 +976,18 @@ function BillingModal({ value, onChange, onClose, onConfirm, loading, requiresBi
         {optionsError ? <div style={{ color: "#d93025", fontSize: 13, marginBottom: 12 }}>{optionsError}</div> : null}
         {optionsLoading ? <div className="muted" style={{ marginBottom: 12 }}>Cargando opciones fiscales desde Odoo…</div> : null}
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 12 }}>
-          <div><div className="muted" style={{ marginBottom: 6 }}>Razón social / nombre fiscal</div><Input value={value.name} onChange={(v) => onChange({ ...value, name: v })} style={{ width: "100%" }} /></div>
+          <div>
+            <div className="muted" style={{ marginBottom: 6 }}>CUIT/CUIL</div>
+            <Input
+              type="text"
+              inputMode="numeric"
+              value={value.vat}
+              onChange={(v) => onChange({ ...value, vat: sanitizeDocumentNumber(v, value.identification_type_name || "CUIT") })}
+              style={{ width: "100%" }}
+              placeholder="11 dígitos"
+            />
+            {odooLookup.message ? <div style={{ marginTop: 6, fontSize: 12, fontWeight: 800, color: lookupColor }}>{odooLookup.message}</div> : <div className="muted" style={{ marginTop: 6, fontSize: 12 }}>Al completar 11 dígitos se busca automáticamente en Odoo.</div>}
+          </div>
           <div>
             <div className="muted" style={{ marginBottom: 6 }}>Tipo de identificación</div>
             <select value={value.identification_type_id} onChange={(e) => { const selected = normalizeBillingSelectionValue(identificationTypes, e.target.value); onChange({ ...value, identification_type_id: String(e.target.value || ""), identification_type_name: selected?.name || "" }); }} style={{ width: "100%", padding: "10px 12px", borderRadius: 8, border: "1px solid #ddd", outline: "none", background: "#fff" }}>
@@ -927,7 +995,7 @@ function BillingModal({ value, onChange, onClose, onConfirm, loading, requiresBi
               {identificationTypes.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
             </select>
           </div>
-          <div><div className="muted" style={{ marginBottom: 6 }}>Número de identificación</div><Input value={value.vat} onChange={(v) => onChange({ ...value, vat: sanitizeDocumentNumber(v, value.identification_type_name) })} style={{ width: "100%" }} /></div>
+          <div><div className="muted" style={{ marginBottom: 6 }}>Razón social / nombre fiscal</div><Input value={value.name} onChange={(v) => onChange({ ...value, name: v })} style={{ width: "100%" }} /></div>
           <div>
             <div className="muted" style={{ marginBottom: 6 }}>Tipo de responsabilidad AFIP</div>
             <select value={value.afip_responsibility_type_id} onChange={(e) => { const selected = normalizeBillingSelectionValue(afipResponsibilityTypes, e.target.value); onChange({ ...value, afip_responsibility_type_id: String(e.target.value || ""), afip_responsibility_type_name: selected?.name || "" }); }} style={{ width: "100%", padding: "10px 12px", borderRadius: 8, border: "1px solid #ddd", outline: "none", background: "#fff" }}>
@@ -950,6 +1018,7 @@ function BillingModal({ value, onChange, onClose, onConfirm, loading, requiresBi
     </div>
   );
 }
+
 
 export default function QuoteDetailPage() {
   const params = useParams();
