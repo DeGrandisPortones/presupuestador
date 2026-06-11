@@ -67,13 +67,62 @@ function formatDebugJson(value) {
 
 function CatalogFlowDebugPanel({ data }) {
   if (!catalogFlowDebugEnabled()) return null;
+  const text = formatDebugJson(data);
+  const copyDebug = async () => {
+    try {
+      await window.navigator?.clipboard?.writeText(text);
+      window.alert("Debug de catálogo copiado al portapapeles.");
+    } catch (_err) {
+      window.prompt("Copiá este debug", text);
+    }
+  };
   return (
-    <div style={{ margin: "12px 0", border: "1px solid #f59e0b", borderRadius: 12, background: "#fffbeb", padding: 12 }}>
-      <div style={{ fontWeight: 900, color: "#92400e", marginBottom: 8 }}>Debug flujo de secciones</div>
-      <pre style={{ margin: 0, whiteSpace: "pre-wrap", fontSize: 12, lineHeight: 1.35, maxHeight: 320, overflow: "auto" }}>
-        {formatDebugJson(data)}
-      </pre>
-    </div>
+    <>
+      <div
+        style={{
+          position: "fixed",
+          top: 84,
+          right: 18,
+          zIndex: 2147483647,
+          border: "2px solid #f59e0b",
+          borderRadius: 14,
+          background: "#fffbeb",
+          color: "#78350f",
+          padding: "10px 12px",
+          boxShadow: "0 12px 36px rgba(15,23,42,.18)",
+          maxWidth: 360,
+          fontSize: 12,
+        }}
+      >
+        <div style={{ fontWeight: 950, fontSize: 15 }}>DEBUG CATÁLOGO ACTIVO</div>
+        <div style={{ marginTop: 4 }}>Si ves este cartel, el ZIP de debug está aplicado.</div>
+        <div style={{ marginTop: 6, fontWeight: 800 }}>
+          Tipo: {data?.catalogKind || "—"} · Inicial: {data?.initialSectionId || "—"} · Visibles: {Array.isArray(data?.visibleSections) ? data.visibleSections.length : "—"}
+        </div>
+        <button
+          type="button"
+          onClick={copyDebug}
+          style={{
+            marginTop: 8,
+            border: "1px solid #f59e0b",
+            borderRadius: 10,
+            background: "#fff7ed",
+            color: "#78350f",
+            padding: "7px 10px",
+            fontWeight: 900,
+            cursor: "pointer",
+          }}
+        >
+          Copiar debug
+        </button>
+      </div>
+      <div style={{ margin: "12px 0", border: "2px solid #f59e0b", borderRadius: 12, background: "#fffbeb", padding: 12 }}>
+        <div style={{ fontWeight: 900, color: "#92400e", marginBottom: 8 }}>Debug flujo de secciones</div>
+        <pre style={{ margin: 0, whiteSpace: "pre-wrap", fontSize: 12, lineHeight: 1.35, maxHeight: 320, overflow: "auto" }}>
+          {text}
+        </pre>
+      </div>
+    </>
   );
 }
 
