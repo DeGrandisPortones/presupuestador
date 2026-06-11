@@ -7,6 +7,7 @@ import { useQuoteStore } from "../../../domain/quote/store.js";
 import { PAYMENT_METHODS } from "../../../domain/quote/portonConstants.js";
 import { getFinancingPaymentMethods } from "../../../api/financingSettings.js";
 import { searchExistingCustomers } from "../../../api/quotes.js";
+import { clearAllAutosaveDrafts } from "../../../domain/quote/autosave.js";
 
 const MULTIPLE_PAYMENT_METHOD = "Pago Multiple";
 const CARD_CATEGORY = "Tarjetas";
@@ -371,6 +372,7 @@ export default function HeaderBar({ showMargin }) {
     setPaymentMethod,
     endCustomer,
     setEndCustomer,
+    reset,
   } = useQuoteStore();
   const [multipleOpen, setMultipleOpen] = useState(false);
   const [customerLookupOpen, setCustomerLookupOpen] = useState(false);
@@ -466,6 +468,19 @@ export default function HeaderBar({ showMargin }) {
     toast.success("Datos del cliente cargados.");
   };
 
+  const handleClearBudget = () => {
+    const ok = window.confirm(
+      "Esto limpia el formulario actual y borra los borradores locales de autoguardado de este navegador. No elimina presupuestos ya guardados en Mis presupuestos. ¿Continuar?",
+    );
+    if (!ok) return;
+    clearAllAutosaveDrafts();
+    reset();
+    setCustomerLookupOpen(false);
+    setMultipleOpen(false);
+    setPaymentCategoryOverride("");
+    toast.success("Presupuesto limpio. Autoguardado local borrado.");
+  };
+
   return (
     <div className="card">
       <MultiplePaymentModal
@@ -500,6 +515,11 @@ export default function HeaderBar({ showMargin }) {
         <div style={{ minWidth: 210 }}>
           <div className="muted">Cliente guardado</div>
           <Button variant="secondary" onClick={() => setCustomerLookupOpen(true)}>Datos cliente existente</Button>
+        </div>
+
+        <div style={{ minWidth: 170 }}>
+          <div className="muted">Borrador</div>
+          <Button variant="ghost" onClick={handleClearBudget}>Limpiar presupuesto</Button>
         </div>
 
         <div style={{ flex: 1, minWidth: 220 }}>
