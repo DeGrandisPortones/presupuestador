@@ -26,6 +26,7 @@ import {
   buildQuoteAutosaveKey,
   canRemoteAutosaveQuote,
   clearAutosaveDraft,
+  clearAllAutosaveDrafts,
   formatAutosaveTime,
   hasAutosaveCustomerMinimum,
   readAutosaveDraft,
@@ -105,6 +106,7 @@ function applyBudgetObservationToPayload(payload, observation) {
 }
 function normalizeUrl(value) { return String(value || "").trim().replace(/\/+$/, "").toLowerCase(); }
 function editorRouteForKind(kind, id, search = "") { const safeId = String(id || "").trim(); const suffix = search || ""; const normalizedKind = normalizeCatalogKind(kind); if (normalizedKind === "ipanel") return `/cotizador/ipanel/${safeId}${suffix}`; if (normalizedKind === "plegados") return `/cotizador/plegados/${safeId}${suffix}`; if (normalizedKind === "otros") return `/cotizador/otros/${safeId}${suffix}`; if (normalizedKind === "puerta") return `/cotizador/puerta/${safeId}${suffix}`; return `/cotizador/${safeId}${suffix}`; }
+function newEditorRouteForKind(kind, search = "") { const suffix = search || ""; const normalizedKind = normalizeCatalogKind(kind); if (normalizedKind === "ipanel") return `/cotizador/ipanel${suffix}`; if (normalizedKind === "plegados") return `/cotizador/plegados${suffix}`; if (normalizedKind === "otros") return `/cotizador/otros${suffix}`; if (normalizedKind === "puerta") return `/cotizador/puerta${suffix}`; return `/cotizador${suffix}`; }
 function parseNum(v) { const n = Number(String(v ?? "").replace(",", ".")); return Number.isFinite(n) ? n : 0; }
 function parseOptionalDimensionForUiPatch(value) {
   const raw = String(value ?? "").trim().replace(",", ".");
@@ -1403,6 +1405,34 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
     } catch (e) { toast.error(e?.response?.data?.error || e.message); }
   };
 
+  function handleClearBudget() {
+    const ok = window.confirm(
+      "Esto limpia el formulario actual y borra los borradores locales de autoguardado de este navegador. No elimina presupuestos ya guardados en Mis presupuestos. ¿Continuar?",
+    );
+    if (!ok) return;
+
+    if (autosaveTimerRef.current) {
+      window.clearTimeout(autosaveTimerRef.current);
+      autosaveTimerRef.current = null;
+    }
+
+    clearAllAutosaveDrafts();
+    autosaveLastRemoteSignatureRef.current = "";
+    autosaveInFlightRef.current = false;
+    autosaveRestoredLocalRef.current = true;
+    reset();
+    setLinkedPortonId(initialLinkedPortonId || "");
+    setPortonSearch("");
+    setConfirmChoiceOpen(false);
+    setConfirmBudgetObservation("");
+    setAutosaveState({ status: "cleared", message: "Presupuesto limpio. Autoguardado local borrado.", savedAt: new Date().toISOString() });
+    toast.success("Presupuesto limpio. Autoguardado local borrado.");
+
+    if (quoteId || idParam) {
+      navigate(newEditorRouteForKind(normalizedCatalogKind, location.search || ""), { replace: true });
+    }
+  }
+
   const canConfirm = isAcopioRevision ? false : (isReturnedMeasurementQuote ? false : (isRevisionQuote ? ["", "draft", "rejected"].includes(finalStatus || "") : ["draft", "rejected_commercial", "rejected_technical"].includes(status)));
   const canRefreshSavedQuote = !!(quoteId || idParam)
     && !isRevisionQuote
@@ -1421,6 +1451,7 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
           </div>
         </div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
+          <Button variant="ghost" onClick={handleClearBudget}>Limpiar presupuesto</Button>
           <Button variant="secondary" onClick={onDownloadPresupuesto} disabled={!pricingContextReady}>PDF presupuesto</Button>
           {user?.is_distribuidor ? <Button variant="secondary" onClick={onDownloadProforma} disabled={!pricingContextReady}>PDF proforma</Button> : null}
           <Button onClick={() => saveM.mutate()} disabled={saveM.isPending || !pricingContextReady}>{saveM.isPending ? "Guardando..." : "Guardar"}</Button>
