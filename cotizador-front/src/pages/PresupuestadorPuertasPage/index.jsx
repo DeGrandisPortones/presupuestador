@@ -548,7 +548,8 @@ export default function PresupuestadorPuertasPage() {
       validatePricingContextReady();
       const saved = await saveDoorQuote({ forConfirm: false });
       const payload = buildDoorPayload({ savedQuote: saved, forceDoorRef: buildDoorOrderReference({ linkedQuote: linkedPorton, savedQuote: saved }) });
-      const pdfPayload = buildPdfPayloadForDownload(payload, financingPercent, {
+      const pdfAdjustmentPercent = mode === "proforma" ? 0 : quoteAdjustmentPercent;
+      const pdfPayload = buildPdfPayloadForDownload(payload, pdfAdjustmentPercent, {
         id: saved.id,
         quote_id: saved.id,
         quote_number: saved.quote_number || "",
@@ -675,7 +676,7 @@ export default function PresupuestadorPuertasPage() {
           )}
         </div>
         <div className="card" style={{ flex: 2, minWidth: 560 }}>
-          <LinesTable />
+          <LinesTable financingPercent={quoteAdjustmentPercent} />
           <div className="spacer" />
           <SummaryBox totals={totals} paymentMethod={paymentMethod} />
         </div>
