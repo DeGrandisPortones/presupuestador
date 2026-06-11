@@ -89,7 +89,6 @@ function normalizeApprovalSection(raw) {
   const value = String(raw || "all").trim().toLowerCase();
   return VALID_APPROVAL_SECTIONS.has(value) ? value : "all";
 }
-function isPlegadosRow(row) { return catalogKind(row) === "plegados"; }
 function isOtrosRow(row) { return catalogKind(row) === "otros"; }
 function isPortonOnlyRow(row) {
   const kind = catalogKind(row);
