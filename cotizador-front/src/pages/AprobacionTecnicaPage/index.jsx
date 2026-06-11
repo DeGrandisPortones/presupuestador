@@ -11,16 +11,33 @@ import { useAuthStore } from "../../domain/auth/store.js";
 import { downloadPlegadoAttachment, formatPlegadoAttachmentMeta, getPlegadoAttachment, openPlegadoAttachment } from "../../utils/plegadoAttachment.js";
 
 const PAGE_SIZE = 25;
-const VALID_TABS = [
-  "aprobaciones_portones",
-  "aprobaciones_ipanels",
-  "aprobaciones_puertas",
-  "aprobaciones_mediciones",
-  "acopio",
-  "acopio_listado",
-  "produccion",
-  "produccion_ipanels",
-];
+const TECHNICAL_TAB_LABELS = {
+  aprobaciones_todos: "Todos",
+  aprobaciones_portones: "Aprobaciones Portones",
+  aprobaciones_ipanels: "Aprobaciones Ipanels",
+  aprobaciones_puertas: "Aprobaciones Puertas",
+  aprobaciones_plegados: "Aprobaciones Plegados",
+  aprobaciones_otros: "Aprobaciones Otros",
+  aprobaciones_mediciones: "Circuito técnico Portones",
+  acopio: "Acopio → Producción",
+  acopio_listado: "Portones / Ipanels en Acopio",
+  produccion: "Portones enviados a Producción",
+  produccion_ipanels: "Ipanels enviados a Producción",
+};
+const TECHNICAL_TABS_BY_SECTION = {
+  all: ["aprobaciones_todos", "aprobaciones_portones", "aprobaciones_ipanels", "aprobaciones_puertas", "aprobaciones_plegados", "aprobaciones_otros", "aprobaciones_mediciones", "acopio", "acopio_listado", "produccion", "produccion_ipanels"],
+  porton: ["aprobaciones_portones", "aprobaciones_mediciones", "acopio", "acopio_listado", "produccion"],
+  ipanel: ["aprobaciones_ipanels", "acopio", "acopio_listado", "produccion_ipanels"],
+  puerta: ["aprobaciones_puertas"],
+  plegados: ["aprobaciones_plegados"],
+  otros: ["aprobaciones_otros"],
+};
+const VALID_TABS = Object.keys(TECHNICAL_TAB_LABELS);
+function normalizeTechnicalTab(raw, section = "all") {
+  const allowed = TECHNICAL_TABS_BY_SECTION[section] || TECHNICAL_TABS_BY_SECTION.all;
+  const value = String(raw || "").trim();
+  return allowed.includes(value) ? value : allowed[0];
+}
 
 function acopioReqLabel(r) {
   const c = r?.acopio_to_produccion_commercial_decision || "pending";
@@ -58,10 +75,36 @@ function catalogKind(row) {
 function isIpanelRow(row) {
   return catalogKind(row) === "ipanel";
 }
-function isPortonLikeRow(row) {
-  const kind = catalogKind(row);
-  return kind !== "ipanel" && kind !== "puerta";
+
+const APPROVAL_SECTION_LABELS = {
+  all: "Todos",
+  porton: "Portones",
+  ipanel: "Ipanels",
+  puerta: "Puertas",
+  plegados: "Plegados",
+  otros: "Otros",
+};
+const VALID_APPROVAL_SECTIONS = new Set(Object.keys(APPROVAL_SECTION_LABELS));
+function normalizeApprovalSection(raw) {
+  const value = String(raw || "all").trim().toLowerCase();
+  return VALID_APPROVAL_SECTIONS.has(value) ? value : "all";
 }
+function isPlegadosRow(row) { return catalogKind(row) === "plegados"; }
+function isOtrosRow(row) { return catalogKind(row) === "otros"; }
+function isPortonOnlyRow(row) {
+  const kind = catalogKind(row);
+  return !["ipanel", "puerta", "plegados", "otros"].includes(kind);
+}
+function isPortonLikeRow(row) { return isPortonOnlyRow(row); }
+function rowMatchesApprovalSection(row, section) {
+  if (section === "all") return true;
+  if (section === "porton") return isPortonOnlyRow(row);
+  if (section === "ipanel") return isIpanelRow(row);
+  if (section === "plegados") return isPlegadosRow(row);
+  if (section === "otros") return isOtrosRow(row);
+  return true;
+}
+
 function catalogKindLabel(row) {
   const kind = catalogKind(row);
   if (kind === "ipanel") return "Ipanel";
@@ -229,9 +272,8 @@ function measurementSubtypeLabel(row) {
 function localityLabel(r) {
   return r?.end_customer?.city || r?.end_customer?.address || "—";
 }
-function normalizeTab(raw) {
-  const tab = String(raw || "").trim();
-  return VALID_TABS.includes(tab) ? tab : "aprobaciones_portones";
+function normalizeTab(raw, section = "all") {
+  return normalizeTechnicalTab(raw, section);
 }
 function matchesSearch(values, searchText) {
   const s = String(searchText || "").trim().toLowerCase();
@@ -267,14 +309,18 @@ export default function AprobacionTecnicaPage() {
   const navigate = useNavigate();
   const user = useAuthStore((s) => s.user);
   const [searchParams, setSearchParams] = useSearchParams();
-  const initialTab = normalizeTab(searchParams.get("tab"));
+  const approvalSection = normalizeApprovalSection(searchParams.get("section"));
+  const initialTab = normalizeTab(searchParams.get("tab"), approvalSection);
   const [tab, setTab] = useState(initialTab);
   const [filter, setFilter] = useState("all");
   const [searchText, setSearchText] = useState("");
   const [measurementStatus, setMeasurementStatus] = useState(initialTab === "aprobaciones_mediciones" ? "all" : "all");
   const [measurementDates, setMeasurementDates] = useState({});
+  const [pageTodos, setPageTodos] = useState(1);
   const [pageAprobaciones, setPageAprobaciones] = useState(1);
   const [pageIpanels, setPageIpanels] = useState(1);
+  const [pagePlegados, setPagePlegados] = useState(1);
+  const [pageOtros, setPageOtros] = useState(1);
   const [pageIpanelDetalles, setPageIpanelDetalles] = useState(1);
   const [pageMediciones, setPageMediciones] = useState(1);
   const [pageAcopio, setPageAcopio] = useState(1);
@@ -284,9 +330,9 @@ export default function AprobacionTecnicaPage() {
   const [pagePuertas, setPagePuertas] = useState(1);
 
   useEffect(() => {
-    const nextTab = normalizeTab(searchParams.get("tab"));
+    const nextTab = normalizeTab(searchParams.get("tab"), approvalSection);
     setTab((prev) => (prev === nextTab ? prev : nextTab));
-  }, [searchParams]);
+  }, [searchParams, approvalSection]);
 
   const q = useQuery({ queryKey: ["quotes", "technical_inbox"], queryFn: () => listQuotes({ scope: "technical_inbox" }), enabled: !!user?.is_rev_tecnica });
   const acopioQ = useQuery({ queryKey: ["quotes", "technical_acopio"], queryFn: () => listQuotes({ scope: "technical_acopio" }), enabled: tab === "acopio" && !!user?.is_rev_tecnica });
@@ -299,14 +345,19 @@ export default function AprobacionTecnicaPage() {
   const doorM = useMutation({ mutationFn: ({ id, action, notes }) => reviewDoorTechnical(id, { action, notes }), onSuccess: () => doorsQ.refetch() });
   const scheduleM = useMutation({ mutationFn: ({ id, scheduledFor }) => scheduleMeasurement(id, { scheduledFor }), onSuccess: () => measQ.refetch() });
 
+  const visibleTabKeys = TECHNICAL_TABS_BY_SECTION[approvalSection] || TECHNICAL_TABS_BY_SECTION.all;
+
   function goToTab(nextTab) {
-    const normalized = normalizeTab(nextTab);
+    const normalized = normalizeTab(nextTab, approvalSection);
     setTab(normalized);
-    setSearchParams({ tab: normalized });
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.set("section", approvalSection);
+    nextParams.set("tab", normalized);
+    setSearchParams(nextParams, { replace: true });
     if (normalized === "aprobaciones_mediciones") setMeasurementStatus("all");
   }
 
-  useEffect(() => { setPageAprobaciones(1); setPageIpanels(1); }, [filter, searchText]);
+  useEffect(() => { setPageTodos(1); setPageAprobaciones(1); setPageIpanels(1); setPagePlegados(1); setPageOtros(1); }, [filter, searchText, approvalSection]);
   useEffect(() => { setPageIpanelDetalles(1); }, [searchText, measQ.data]);
   useEffect(() => { setPageMediciones(1); }, [measurementStatus, searchText]);
   useEffect(() => { setPageAcopio(1); }, [searchText]);
@@ -319,8 +370,11 @@ export default function AprobacionTecnicaPage() {
     return applyApprovalFilter(arr, filter).filter((r) => matchesSearch(quoteSearchValues(r), searchText));
   }, [q.data, filter, searchText]);
 
-  const rows = useMemo(() => approvalBaseRows.filter(isPortonLikeRow), [approvalBaseRows]);
+  const allApprovalRows = approvalBaseRows;
+  const rows = useMemo(() => approvalBaseRows.filter(isPortonOnlyRow), [approvalBaseRows]);
   const ipanelRows = useMemo(() => approvalBaseRows.filter(isIpanelRow), [approvalBaseRows]);
+  const plegadoRows = useMemo(() => approvalBaseRows.filter(isPlegadosRow), [approvalBaseRows]);
+  const otrosRows = useMemo(() => approvalBaseRows.filter(isOtrosRow), [approvalBaseRows]);
 
   const measurementRows = useMemo(() => {
     let arr = (measQ.data || []).slice().filter((r) => !isIpanelRow(r));
@@ -351,19 +405,22 @@ export default function AprobacionTecnicaPage() {
   }, [measQ.data, searchText]);
 
   const acopioRows = useMemo(() => {
-    return (acopioQ.data || []).slice().sort((a, b) => toTimeDesc(b?.acopio_to_produccion_requested_at || b?.created_at) - toTimeDesc(a?.acopio_to_produccion_requested_at || a?.created_at)).filter((r) => matchesSearch([createdByLabel(r), catalogKindLabel(r), r?.end_customer?.name, r?.end_customer?.city, r?.end_customer?.address, r?.acopio_to_produccion_notes, acopioReqLabel(r), quoteOdooReference(r), budgetObservation(r), plegadoSurface(r), plegadoDescription(r), getPlegadoAttachment(r)?.name], searchText));
-  }, [acopioQ.data, searchText]);
+    return (acopioQ.data || []).slice().sort((a, b) => toTimeDesc(b?.acopio_to_produccion_requested_at || b?.created_at) - toTimeDesc(a?.acopio_to_produccion_requested_at || a?.created_at)).filter((r) => rowMatchesApprovalSection(r, approvalSection))
+      .filter((r) => matchesSearch([createdByLabel(r), catalogKindLabel(r), r?.end_customer?.name, r?.end_customer?.city, r?.end_customer?.address, r?.acopio_to_produccion_notes, acopioReqLabel(r), quoteOdooReference(r), budgetObservation(r), plegadoSurface(r), plegadoDescription(r), getPlegadoAttachment(r)?.name], searchText));
+  }, [acopioQ.data, searchText, approvalSection]);
 
   const acopioListadoRows = useMemo(() => {
-    return (acopioListadoQ.data || []).slice().sort((a, b) => toTimeDesc(b?.confirmed_at || b?.created_at) - toTimeDesc(a?.confirmed_at || a?.created_at)).filter((r) => matchesSearch([createdByLabel(r), catalogKindLabel(r), r?.end_customer?.name, r?.end_customer?.city, r?.end_customer?.address, rowLabel(r), acopioReqLabel(r), quoteOdooReference(r), budgetObservation(r), plegadoSurface(r), plegadoDescription(r), getPlegadoAttachment(r)?.name], searchText));
-  }, [acopioListadoQ.data, searchText]);
+    return (acopioListadoQ.data || []).slice().sort((a, b) => toTimeDesc(b?.confirmed_at || b?.created_at) - toTimeDesc(a?.confirmed_at || a?.created_at)).filter((r) => rowMatchesApprovalSection(r, approvalSection))
+      .filter((r) => matchesSearch([createdByLabel(r), catalogKindLabel(r), r?.end_customer?.name, r?.end_customer?.city, r?.end_customer?.address, rowLabel(r), acopioReqLabel(r), quoteOdooReference(r), budgetObservation(r), plegadoSurface(r), plegadoDescription(r), getPlegadoAttachment(r)?.name], searchText));
+  }, [acopioListadoQ.data, searchText, approvalSection]);
 
   const productionBaseRows = useMemo(() => {
     return (produccionQ.data || [])
       .slice()
       .sort((a, b) => toTimeDesc(productionSentAt(b)) - toTimeDesc(productionSentAt(a)))
+      .filter((r) => rowMatchesApprovalSection(r, approvalSection))
       .filter((r) => matchesSearch([createdByLabel(r), catalogKindLabel(r), r?.end_customer?.name, r?.end_customer?.city, r?.end_customer?.address, productionStatusLabel(r), productionReference(r), budgetObservation(r)], searchText));
-  }, [produccionQ.data, searchText]);
+  }, [produccionQ.data, searchText, approvalSection]);
   const produccionRows = useMemo(() => productionBaseRows.filter(isPortonLikeRow), [productionBaseRows]);
   const produccionIpanelRows = useMemo(() => productionBaseRows.filter(isIpanelRow), [productionBaseRows]);
 
@@ -376,8 +433,11 @@ export default function AprobacionTecnicaPage() {
     return arr.slice(start, start + PAGE_SIZE);
   }
 
+  useEffect(() => { const total = Math.max(1, Math.ceil(allApprovalRows.length / PAGE_SIZE)); if (pageTodos > total) setPageTodos(total); }, [allApprovalRows.length, pageTodos]);
   useEffect(() => { const total = Math.max(1, Math.ceil(rows.length / PAGE_SIZE)); if (pageAprobaciones > total) setPageAprobaciones(total); }, [rows.length, pageAprobaciones]);
   useEffect(() => { const total = Math.max(1, Math.ceil(ipanelRows.length / PAGE_SIZE)); if (pageIpanels > total) setPageIpanels(total); }, [ipanelRows.length, pageIpanels]);
+  useEffect(() => { const total = Math.max(1, Math.ceil(plegadoRows.length / PAGE_SIZE)); if (pagePlegados > total) setPagePlegados(total); }, [plegadoRows.length, pagePlegados]);
+  useEffect(() => { const total = Math.max(1, Math.ceil(otrosRows.length / PAGE_SIZE)); if (pageOtros > total) setPageOtros(total); }, [otrosRows.length, pageOtros]);
   useEffect(() => { const total = Math.max(1, Math.ceil(ipanelDetailRows.length / PAGE_SIZE)); if (pageIpanelDetalles > total) setPageIpanelDetalles(total); }, [ipanelDetailRows.length, pageIpanelDetalles]);
   useEffect(() => { const total = Math.max(1, Math.ceil(measurementRows.length / PAGE_SIZE)); if (pageMediciones > total) setPageMediciones(total); }, [measurementRows.length, pageMediciones]);
   useEffect(() => { const total = Math.max(1, Math.ceil(acopioRows.length / PAGE_SIZE)); if (pageAcopio > total) setPageAcopio(total); }, [acopioRows.length, pageAcopio]);
@@ -388,8 +448,11 @@ export default function AprobacionTecnicaPage() {
 
   if (!user?.is_rev_tecnica) return <div className="container"><div className="card">No autorizado (falta rol Rev. Técnica).</div></div>;
 
+  const visibleAllApprovalRows = paged(allApprovalRows, pageTodos);
   const visibleRows = paged(rows, pageAprobaciones);
   const visibleIpanels = paged(ipanelRows, pageIpanels);
+  const visiblePlegados = paged(plegadoRows, pagePlegados);
+  const visibleOtros = paged(otrosRows, pageOtros);
   const visibleIpanelDetails = paged(ipanelDetailRows, pageIpanelDetalles);
   const visibleMeasurements = paged(measurementRows, pageMediciones);
   const visibleAcopio = paged(acopioRows, pageAcopio);
@@ -399,15 +462,15 @@ export default function AprobacionTecnicaPage() {
   const visibleDoors = paged(doorRows, pagePuertas);
   const hideScheduleColumns = measurementStatus === "sin_medicion";
 
-  const renderApprovalRows = (items, totalItems, page, onPageChange, emptyText, showPlegadoInfo = true) => (
+  const renderApprovalRows = (items, totalItems, page, onPageChange, emptyText, showPlegadoInfo = true, showType = false) => (
     <>
       {q.isLoading && <div className="muted">Cargando...</div>}
       {q.isError && <div style={{ color: "#d93025", fontSize: 13 }}>{q.error.message}</div>}
       {!q.isLoading && !totalItems && <div className="muted">{emptyText}</div>}
       {!!totalItems && (
         <>
-          <table><thead><tr><th>Fecha</th><th>Vendedor/Distribuidor</th><th>Cliente</th><th>Dirección</th><th>Estado</th><th>NP/NV Odoo</th>{showPlegadoInfo ? <th>Datos plegado</th> : null}<th>Obs. presupuesto</th><th></th></tr></thead><tbody>
-            {items.map((r) => <tr key={r.id}><td>{fmtDate(r.created_at)}</td><td>{createdByLabel(r)}</td><td>{r.end_customer?.name || <span className="muted">(sin nombre)</span>}</td><td>{r.end_customer?.address || "—"}</td><td>{rowLabel(r)}</td><td><OdooReferenceCell value={quoteOdooReference(r)} /></td>{showPlegadoInfo ? <td><PlegadoInfoCell row={r} /></td> : null}<td><BudgetObservationCell row={r} /></td><td className="right" style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}><Button onClick={() => navigate(`/presupuestos/${r.id}`, { state: { from: "/aprobacion/tecnica" } })}>Abrir</Button></td></tr>)}
+          <table><thead><tr><th>Fecha</th>{showType ? <th>Tipo</th> : null}<th>Vendedor/Distribuidor</th><th>Cliente</th><th>Dirección</th><th>Estado</th><th>NP/NV Odoo</th>{showPlegadoInfo ? <th>Datos plegado</th> : null}<th>Obs. presupuesto</th><th></th></tr></thead><tbody>
+            {items.map((r) => <tr key={r.id}><td>{fmtDate(r.created_at)}</td>{showType ? <td>{catalogKindLabel(r)}</td> : null}<td>{createdByLabel(r)}</td><td>{r.end_customer?.name || <span className="muted">(sin nombre)</span>}</td><td>{r.end_customer?.address || "—"}</td><td>{rowLabel(r)}</td><td><OdooReferenceCell value={quoteOdooReference(r)} /></td>{showPlegadoInfo ? <td><PlegadoInfoCell row={r} /></td> : null}<td><BudgetObservationCell row={r} /></td><td className="right" style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}><Button onClick={() => navigate(`/presupuestos/${r.id}`, { state: { from: "/aprobacion/tecnica" } })}>Abrir</Button></td></tr>)}
           </tbody></table>
           <PaginationControls page={page} totalItems={totalItems} pageSize={PAGE_SIZE} onPageChange={onPageChange} />
         </>
@@ -438,18 +501,17 @@ export default function AprobacionTecnicaPage() {
         <div className="muted">Aprobaciones separadas de portones, Ipanels, puertas, mediciones y acopio.</div>
 
         <div className="spacer" />
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <Button variant={tab === "aprobaciones_portones" ? "primary" : "ghost"} onClick={() => goToTab("aprobaciones_portones")}>Aprobaciones Portones</Button>
-          <Button variant={tab === "aprobaciones_ipanels" ? "primary" : "ghost"} onClick={() => goToTab("aprobaciones_ipanels")}>Aprobaciones Ipanels</Button>
-          <Button variant={tab === "aprobaciones_puertas" ? "primary" : "ghost"} onClick={() => goToTab("aprobaciones_puertas")}>Aprobaciones Puertas</Button>
-          <Button variant={tab === "aprobaciones_mediciones" ? "primary" : "ghost"} onClick={() => goToTab("aprobaciones_mediciones")}>Circuito técnico Portones</Button>
-          <Button variant={tab === "acopio" ? "primary" : "ghost"} onClick={() => goToTab("acopio")}>Acopio → Producción</Button>
-          <Button variant={tab === "acopio_listado" ? "primary" : "ghost"} onClick={() => goToTab("acopio_listado")}>Portones / Ipanels en Acopio</Button>
-          <Button variant={tab === "produccion" ? "primary" : "ghost"} onClick={() => goToTab("produccion")}>Portones enviados a Producción</Button>
-          <Button variant={tab === "produccion_ipanels" ? "primary" : "ghost"} onClick={() => goToTab("produccion_ipanels")}>Ipanels enviados a Producción</Button>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            {visibleTabKeys.map((tabKey) => (
+              <Button key={tabKey} variant={tab === tabKey ? "primary" : "ghost"} onClick={() => goToTab(tabKey)}>{TECHNICAL_TAB_LABELS[tabKey] || tabKey}</Button>
+            ))}
+          </div>
+          <Button variant="ghost" onClick={() => navigate("/aprobacion/tecnica/menu")}>Volver al submenú</Button>
         </div>
+        <div className="muted" style={{ marginTop: 8 }}>Vista: {APPROVAL_SECTION_LABELS[approvalSection] || "Todos"}</div>
 
-        {["aprobaciones_portones", "aprobaciones_ipanels"].includes(tab) && (
+        {["aprobaciones_todos", "aprobaciones_portones", "aprobaciones_ipanels", "aprobaciones_plegados", "aprobaciones_otros"].includes(tab) && (
           <>
             <div className="spacer" />
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
@@ -459,6 +521,9 @@ export default function AprobacionTecnicaPage() {
             </div>
           </>
         )}
+
+        {tab === "aprobaciones_plegados" && renderApprovalRows(visiblePlegados, plegadoRows.length, pagePlegados, setPagePlegados, "Sin plegados pendientes", true)}
+        {tab === "aprobaciones_otros" && renderApprovalRows(visibleOtros, otrosRows.length, pageOtros, setPageOtros, "Sin presupuestos Otros pendientes", false)}
 
         {tab === "aprobaciones_mediciones" && (
           <>
@@ -479,7 +544,8 @@ export default function AprobacionTecnicaPage() {
       <div className="spacer" />
 
       <div className="card">
-        {tab === "aprobaciones_portones" && renderApprovalRows(visibleRows, rows.length, pageAprobaciones, setPageAprobaciones, "Sin portones pendientes")}
+        {tab === "aprobaciones_todos" && renderApprovalRows(visibleAllApprovalRows, allApprovalRows.length, pageTodos, setPageTodos, "Sin aprobaciones", true, true)}
+        {tab === "aprobaciones_portones" && renderApprovalRows(visibleRows, rows.length, pageAprobaciones, setPageAprobaciones, "Sin portones pendientes", false)}
 
         {tab === "aprobaciones_ipanels" && (
           <>
@@ -504,6 +570,9 @@ export default function AprobacionTecnicaPage() {
             )}
           </>
         )}
+
+        {tab === "aprobaciones_plegados" && renderApprovalRows(visiblePlegados, plegadoRows.length, pagePlegados, setPagePlegados, "Sin plegados pendientes", true)}
+        {tab === "aprobaciones_otros" && renderApprovalRows(visibleOtros, otrosRows.length, pageOtros, setPageOtros, "Sin presupuestos Otros pendientes", false)}
 
         {tab === "aprobaciones_mediciones" && (
           <>

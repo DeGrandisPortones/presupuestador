@@ -135,13 +135,11 @@ export default function MenuPage() {
         {showQuoteViewer && <MenuTile title="Visualizador de portones" buttonText="Abrir visualizador" onClick={() => navigate("/superuser/visualizador-porton")} icon="" />}
         {showSellerActivity && <MenuTile title="Actividad vendedores / distribuidores" buttonText="Abrir actividad" onClick={() => navigate("/superuser/actividad-vendedores")} icon="" />}
         {showUsers && <MenuTile title="Gestor de usuarios" buttonText="Abrir gestor" onClick={() => navigate("/usuarios")} iconSrc="/menu-icons/gestor-usuarios.png" />}
-        {showCommercialInbox && <MenuTile title="Aprobacion Comercial" buttonText="Ir a aprobacion" onClick={() => navigate("/aprobacion/comercial")} iconSrc="/menu-icons/aprobacion-comercial.png" />}
+        {showCommercialInbox && <MenuTile title="Aprobacion Comercial" buttonText="Ir a aprobacion" onClick={() => navigate("/aprobacion/comercial/menu")} iconSrc="/menu-icons/aprobacion-comercial.png" />}
 
         {showTechInbox && (
           <>
-            <MenuTile title="Aprobaciones Portones" buttonText="Abrir portones" onClick={() => navigate("/aprobacion/tecnica?tab=aprobaciones_portones")} iconSrc="/menu-icons/aprobacion-portones.png" />
-            <MenuTile title="Aprobaciones Puertas" buttonText="Abrir puertas" onClick={() => navigate("/aprobacion/tecnica?tab=aprobaciones_puertas")} iconSrc="/menu-icons/aprobacion-puertas.png" />
-            <MenuTile title="Aprobaciones Mediciones" buttonText="Abrir aprobaciones" onClick={() => navigate("/aprobacion/tecnica?tab=aprobaciones_mediciones")} iconSrc="/menu-icons/aprobacion-mediciones.png" />
+            <MenuTile title="Aprobaciones Técnicas" buttonText="Abrir menú" onClick={() => navigate("/aprobacion/tecnica/menu")} iconSrc="/menu-icons/aprobacion-portones.png" />
           </>
         )}
       </div>
