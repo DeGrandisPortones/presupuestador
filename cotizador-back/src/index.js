@@ -36,7 +36,7 @@ const { buildQuotesRouter } = await import("./routes/quotes.routes.js");
 const app = express();
 
 app.use(cors({ origin: true }));
-app.use(express.json({ limit: "2mb" }));
+app.use(express.json({ limit: "15mb" }));
 app.use(morgan("dev"));
 
 console.log("[ODOO ENV]", {

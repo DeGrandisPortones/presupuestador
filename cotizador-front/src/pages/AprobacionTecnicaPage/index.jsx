@@ -8,6 +8,7 @@ import { listQuotes, reviewAcopioTechnical } from "../../api/quotes.js";
 import { listDoors, reviewDoorTechnical } from "../../api/doors.js";
 import { listMeasurements, scheduleMeasurement } from "../../api/measurements.js";
 import { useAuthStore } from "../../domain/auth/store.js";
+import { downloadPlegadoAttachment, formatPlegadoAttachmentMeta, getPlegadoAttachment, openPlegadoAttachment } from "../../utils/plegadoAttachment.js";
 
 const PAGE_SIZE = 25;
 const VALID_TABS = [
@@ -140,14 +141,38 @@ function plegadoSurface(row) {
   return Number.isFinite(area) && area > 0 ? `${area.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} m²` : "";
 }
 function PlegadoInfoCell({ row }) {
+  const [open, setOpen] = useState(false);
   if (!isPlegadosRow(row)) return <span className="muted">—</span>;
   const surface = plegadoSurface(row);
   const description = plegadoDescription(row);
+  const attachment = getPlegadoAttachment(row || {});
   return (
-    <div style={{ background: "#f7fbff", border: "1px solid #d9e5f7", borderRadius: 10, padding: "6px 8px", maxWidth: 320 }}>
-      <div style={{ fontWeight: 900 }}>{surface || "Sin superficie"}</div>
-      <div className="muted" style={{ whiteSpace: "pre-wrap", marginTop: 3 }}>{description || "Sin descripción"}</div>
-    </div>
+    <>
+      <div style={{ background: "#f7fbff", border: "1px solid #d9e5f7", borderRadius: 10, padding: "6px 8px", maxWidth: 340 }}>
+        <div style={{ fontWeight: 900 }}>{surface || "Sin superficie"}</div>
+        <div style={{ whiteSpace: "pre-wrap", marginTop: 3, fontWeight: 800, fontSize: 13 }}>{description || "Sin descripción"}</div>
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 6 }}>
+          <Button variant="ghost" onClick={() => setOpen(true)}>Ver datos</Button>
+          {attachment ? <Button variant="ghost" onClick={() => openPlegadoAttachment(attachment)}>Ver plano</Button> : null}
+        </div>
+      </div>
+      {open ? (
+        <div role="dialog" aria-modal="true" onClick={() => setOpen(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 10000, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: 14, border: "1px solid #ddd", boxShadow: "0 20px 50px rgba(0,0,0,0.25)", width: "min(760px, 96vw)", maxHeight: "80vh", overflow: "auto", padding: 18 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, marginBottom: 12 }}>
+              <h3 style={{ margin: 0 }}>Plano y comentarios del plegado</h3>
+              <Button variant="ghost" onClick={() => setOpen(false)}>Cerrar</Button>
+            </div>
+            <div className="muted">Superficie</div>
+            <div style={{ fontWeight: 900, marginBottom: 12 }}>{surface || "—"}</div>
+            <div className="muted">Descripción / comentarios</div>
+            <div style={{ whiteSpace: "pre-wrap", lineHeight: 1.45, fontWeight: 800, fontSize: 15, marginBottom: 12 }}>{description || "Sin descripción"}</div>
+            <div className="muted">Plano</div>
+            {attachment ? <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginTop: 6 }}><span style={{ fontWeight: 800 }}>{formatPlegadoAttachmentMeta(attachment)}</span><Button variant="ghost" onClick={() => openPlegadoAttachment(attachment)}>Ver plano</Button><Button variant="ghost" onClick={() => downloadPlegadoAttachment(attachment)}>Descargar</Button></div> : <div className="muted" style={{ marginTop: 6 }}>Sin plano adjunto.</div>}
+          </div>
+        </div>
+      ) : null}
+    </>
   );
 }
 
@@ -235,7 +260,7 @@ function applyApprovalFilter(arr, filter) {
   return out;
 }
 function quoteSearchValues(r) {
-  return [createdByLabel(r), catalogKindLabel(r), r?.end_customer?.name, r?.end_customer?.city, r?.end_customer?.address, rowLabel(r), quoteOdooReference(r), budgetObservation(r), plegadoSurface(r), plegadoDescription(r)];
+  return [createdByLabel(r), catalogKindLabel(r), r?.end_customer?.name, r?.end_customer?.city, r?.end_customer?.address, rowLabel(r), quoteOdooReference(r), budgetObservation(r), plegadoSurface(r), plegadoDescription(r), getPlegadoAttachment(r)?.name];
 }
 
 export default function AprobacionTecnicaPage() {
@@ -326,11 +351,11 @@ export default function AprobacionTecnicaPage() {
   }, [measQ.data, searchText]);
 
   const acopioRows = useMemo(() => {
-    return (acopioQ.data || []).slice().sort((a, b) => toTimeDesc(b?.acopio_to_produccion_requested_at || b?.created_at) - toTimeDesc(a?.acopio_to_produccion_requested_at || a?.created_at)).filter((r) => matchesSearch([createdByLabel(r), catalogKindLabel(r), r?.end_customer?.name, r?.end_customer?.city, r?.end_customer?.address, r?.acopio_to_produccion_notes, acopioReqLabel(r), quoteOdooReference(r), budgetObservation(r), plegadoSurface(r), plegadoDescription(r)], searchText));
+    return (acopioQ.data || []).slice().sort((a, b) => toTimeDesc(b?.acopio_to_produccion_requested_at || b?.created_at) - toTimeDesc(a?.acopio_to_produccion_requested_at || a?.created_at)).filter((r) => matchesSearch([createdByLabel(r), catalogKindLabel(r), r?.end_customer?.name, r?.end_customer?.city, r?.end_customer?.address, r?.acopio_to_produccion_notes, acopioReqLabel(r), quoteOdooReference(r), budgetObservation(r), plegadoSurface(r), plegadoDescription(r), getPlegadoAttachment(r)?.name], searchText));
   }, [acopioQ.data, searchText]);
 
   const acopioListadoRows = useMemo(() => {
-    return (acopioListadoQ.data || []).slice().sort((a, b) => toTimeDesc(b?.confirmed_at || b?.created_at) - toTimeDesc(a?.confirmed_at || a?.created_at)).filter((r) => matchesSearch([createdByLabel(r), catalogKindLabel(r), r?.end_customer?.name, r?.end_customer?.city, r?.end_customer?.address, rowLabel(r), acopioReqLabel(r), quoteOdooReference(r), budgetObservation(r), plegadoSurface(r), plegadoDescription(r)], searchText));
+    return (acopioListadoQ.data || []).slice().sort((a, b) => toTimeDesc(b?.confirmed_at || b?.created_at) - toTimeDesc(a?.confirmed_at || a?.created_at)).filter((r) => matchesSearch([createdByLabel(r), catalogKindLabel(r), r?.end_customer?.name, r?.end_customer?.city, r?.end_customer?.address, rowLabel(r), acopioReqLabel(r), quoteOdooReference(r), budgetObservation(r), plegadoSurface(r), plegadoDescription(r), getPlegadoAttachment(r)?.name], searchText));
   }, [acopioListadoQ.data, searchText]);
 
   const productionBaseRows = useMemo(() => {

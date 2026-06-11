@@ -334,6 +334,24 @@ function validateEndCustomerRequired(end_customer) {
   if (!String(c.maps_url || "").trim()) return "Falta end_customer.maps_url";
   return null;
 }
+function hasPlegadoAttachmentForPayload(payload) {
+  const p = payload && typeof payload === "object" ? payload : {};
+  const d = p?.dimensions && typeof p.dimensions === "object" ? p.dimensions : {};
+  const candidates = [
+    d?.plegado_plano_attachment,
+    d?.plano_plegado_attachment,
+    d?.plegado_plano,
+    d?.plano_plegado,
+    p?.plegado_plano_attachment,
+    p?.plano_plegado_attachment,
+  ];
+  return candidates.some((item) => {
+    if (!item) return false;
+    if (typeof item === "string") return !!item.trim();
+    if (typeof item === "object") return !!String(item.data_url || item.dataUrl || item.url || item.href || "").trim();
+    return false;
+  });
+}
 function paymentAllowsCondition2ForQuote(paymentMethod) {
   const key = normalizePaymentMethodKey(paymentMethod);
   return key === normalizePaymentMethodKey("Efectivo") || key === normalizePaymentMethodKey("Cheques 30") || key === normalizePaymentMethodKey("Cheque 30");
@@ -343,7 +361,9 @@ function validateBusinessRequired(payload, catalog_kind) {
   if (!String(p.payment_method || "").trim()) return "Falta payload.payment_method";
   if (String(p.condition_mode || "") === "cond2" && !paymentAllowsCondition2ForQuote(p.payment_method)) return "Condicion 2 solo para Efectivo o Cheques 30";
   if (String(p.condition_mode || "") === "special" && !String(p.condition_text || "").trim()) return "Falta payload.condition_text (condicion especial)";
-  if (String(catalog_kind || "porton").toLowerCase().trim() === "porton" && !String(p.porton_type || "").trim()) return "Falta payload.porton_type";
+  const normalizedKind = String(catalog_kind || "porton").toLowerCase().trim();
+  if (normalizedKind === "porton" && !String(p.porton_type || "").trim()) return "Falta payload.porton_type";
+  if (normalizedKind === "plegados" && !hasPlegadoAttachmentForPayload(p)) return "Falta adjuntar el plano del plegado";
   return null;
 }
 function normalizeIpanelLamasOrientation(value) {

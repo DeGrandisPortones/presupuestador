@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useQuoteStore } from "../../../domain/quote/store";
 import { adminGetTechnicalMeasurementRules } from "../../../api/admin.js";
 import Input from "../../../ui/Input";
+import { downloadPlegadoAttachment, fileToPlegadoAttachment, formatPlegadoAttachmentMeta, getPlegadoAttachment, openPlegadoAttachment } from "../../../utils/plegadoAttachment.js";
 
 const WIDTH_MIN_M = 2.4;
 const WIDTH_MAX_M = 7;
@@ -1454,7 +1455,23 @@ export default function PortonDimensions({ kind = "porton" }) {
   const [parantesSketchOpen, setParantesSketchOpen] = useState(false);
   const [ipanelSketchOpen, setIpanelSketchOpen] = useState(false);
   const [ipanelLamasSetupOpen, setIpanelLamasSetupOpen] = useState(false);
+  const [plegadoAttachmentError, setPlegadoAttachmentError] = useState("");
   const rulesQ = useQuery({ queryKey: ["technical-rules-dimensions-preview"], queryFn: () => adminGetTechnicalMeasurementRules("porton"), staleTime: 0, refetchOnMount: "always", refetchOnWindowFocus: true, enabled: isPorton });
+
+  const plegadoAttachment = getPlegadoAttachment({ payload: { dimensions } });
+  async function handlePlegadoAttachmentChange(event) {
+    const file = event?.target?.files?.[0] || null;
+    if (!file) return;
+    try {
+      setPlegadoAttachmentError("");
+      const attachment = await fileToPlegadoAttachment(file);
+      setDimensions({ plegado_plano_attachment: attachment, plano_plegado_attachment: attachment });
+    } catch (error) {
+      setPlegadoAttachmentError(error?.message || "No se pudo adjuntar el plano.");
+    } finally {
+      if (event?.target) event.target.value = "";
+    }
+  }
 
   const widthRaw = String(dimensions?.width ?? "");
   const heightRaw = String(dimensions?.height ?? "");
@@ -1923,7 +1940,25 @@ export default function PortonDimensions({ kind = "porton" }) {
         </>) : null}
         {isPlegados ? (<>
           <FieldBox label="Superficie del plegado"><div style={{ fontWeight: 800, fontSize: 16, minHeight: 40, display: "flex", alignItems: "center", padding: "9px 12px", borderRadius: 10, border: "1px solid #d1d5db", background: "#f3f4f6", color: "#334155" }}>{area ? `${area.toFixed(2)} m2` : "-"}</div></FieldBox>
-          <FieldBox label="Descripción del plegado" helper="Información técnica o detalle que verá Comercial y Técnica."><textarea value={String(dimensions?.plegado_descripcion ?? dimensions?.descripcion_plegado ?? dimensions?.description ?? "")} onChange={(e) => setDimensions({ plegado_descripcion: e.target.value, descripcion_plegado: e.target.value })} rows={3} style={{ width: "100%", borderRadius: 10, border: "1px solid #ddd", padding: "10px 12px", resize: "vertical", fontFamily: "inherit" }} placeholder="Describí el plegado, material, observaciones o cualquier dato técnico necesario..." /></FieldBox>
+          <div style={{ gridColumn: "1 / -1", display: "flex", flexDirection: "column", gap: 6 }}>
+            <div style={{ fontWeight: 900, fontSize: 15, color: "#0f172a" }}>Descripción del plegado</div>
+            <textarea value={String(dimensions?.plegado_descripcion ?? dimensions?.descripcion_plegado ?? dimensions?.description ?? "")} onChange={(e) => setDimensions({ plegado_descripcion: e.target.value, descripcion_plegado: e.target.value })} rows={4} style={{ width: "100%", borderRadius: 10, border: "1px solid #ddd", padding: "11px 12px", resize: "vertical", fontFamily: "inherit", fontWeight: 700, fontSize: 15, lineHeight: 1.45 }} placeholder="Describí el plegado, material, observaciones o cualquier dato técnico necesario..." />
+            <div className="muted">Información técnica o detalle que verá Comercial y Técnica.</div>
+          </div>
+          <div style={{ gridColumn: "1 / -1", border: "1px solid #d9e5f7", background: "#f7fbff", borderRadius: 12, padding: 12 }}>
+            <div style={{ fontWeight: 900, fontSize: 15, marginBottom: 6 }}>Adjuntá el plano</div>
+            <div className="muted" style={{ marginBottom: 10 }}>Obligatorio para plegados. Puede ser PDF o imagen.</div>
+            <input type="file" accept="application/pdf,image/*" onChange={handlePlegadoAttachmentChange} />
+            {plegadoAttachment ? (
+              <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginTop: 10 }}>
+                <span style={{ fontWeight: 800 }}>{formatPlegadoAttachmentMeta(plegadoAttachment)}</span>
+                <button type="button" onClick={() => openPlegadoAttachment(plegadoAttachment)} style={{ border: "1px solid #c7d2fe", borderRadius: 10, background: "#eef2ff", padding: "7px 10px", fontWeight: 800, cursor: "pointer" }}>Ver plano</button>
+                <button type="button" onClick={() => downloadPlegadoAttachment(plegadoAttachment)} style={{ border: "1px solid #d1d5db", borderRadius: 10, background: "#fff", padding: "7px 10px", fontWeight: 800, cursor: "pointer" }}>Descargar</button>
+                <button type="button" onClick={() => setDimensions({ plegado_plano_attachment: null, plano_plegado_attachment: null })} style={{ border: "1px solid #fecaca", borderRadius: 10, background: "#fff1f2", color: "#991b1b", padding: "7px 10px", fontWeight: 800, cursor: "pointer" }}>Quitar</button>
+              </div>
+            ) : <div className="muted" style={{ marginTop: 10 }}>Sin plano adjunto.</div>}
+            {plegadoAttachmentError ? <div style={{ color: "#b91c1c", fontWeight: 800, marginTop: 8 }}>{plegadoAttachmentError}</div> : null}
+          </div>
         </>) : null}
         {isPorton ? (<>
           <FieldBox label="Tipo / Sistema derivado"><Input value={portonType || ""} disabled placeholder="Se completa segun la combinacion de productos" style={disabledComputedInputStyle()} /></FieldBox>

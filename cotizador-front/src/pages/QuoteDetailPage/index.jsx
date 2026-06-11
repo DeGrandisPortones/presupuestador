@@ -10,6 +10,7 @@ import { downloadMedicionPdf } from "../../api/pdf.js";
 import { findBillingCustomerByVat, getBillingOptions, getFinancingPreview } from "../../api/odoo.js";
 import { useAuthStore } from "../../domain/auth/store.js";
 import { formatARS, calcTotals, calcFinalUnitPrice, calcLineTotal } from "../../domain/quote/pricing.js";
+import { downloadPlegadoAttachment, formatPlegadoAttachmentMeta, getPlegadoAttachment, openPlegadoAttachment } from "../../utils/plegadoAttachment.js";
 import MeasurementReadOnlyView from "../../components/MeasurementReadOnlyView.jsx";
 
 function quoteEditorPath(quote) {
@@ -834,7 +835,7 @@ function buildApprovalContextRows(quote, conditionMode) {
   pushApprovalContextEntry(rows, "Tipología / sistema", sistemaEntry);
   pushApprovalContextRow(rows, "Kg/m² efectivo", preview.effectiveKgM2 > 0 ? `${preview.effectiveKgM2.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} kg/m²` : "");
   pushApprovalContextRow(rows, isPlegados ? "Superficie del plegado" : "Superficie", preview.areaM2 > 0 ? `${preview.areaM2.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} m²` : "");
-  if (isPlegados) pushApprovalContextRow(rows, "Descripción del plegado", extractPlegadoDescription(quote));
+  if (isPlegados) pushApprovalContextRow(rows, "Descripción / comentarios del plegado", extractPlegadoDescription(quote));
   if (hasIpanelLamas22) {
     pushApprovalContextRow(rows, "Orientación de lamas", extractIpanelLamasOrientation(quote));
     pushApprovalContextRow(rows, "Cantidad de divisiones", extractIpanelDivisions(quote));
@@ -1083,6 +1084,7 @@ export default function QuoteDetailPage() {
   const budgetObservation = useMemo(() => extractBudgetObservation(quote), [quote]);
   const plegadoDescription = useMemo(() => extractPlegadoDescription(quote), [quote]);
   const plegadoSurface = useMemo(() => formatPlegadoSurface(quote), [quote]);
+  const plegadoAttachment = useMemo(() => getPlegadoAttachment(quote || {}), [quote]);
 
   function handleCommercialApproveClick() {
     if (requiresCommercialBillingData) {
@@ -1151,7 +1153,8 @@ export default function QuoteDetailPage() {
                   <div style={{ fontWeight: 900, marginBottom: 6 }}>Datos del plegado</div>
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 10 }}>
                     <div><div className="muted">Superficie</div><div style={{ fontWeight: 800 }}>{plegadoSurface || "—"}</div></div>
-                    <div style={{ gridColumn: "1 / -1" }}><div className="muted">Descripción</div><div style={{ whiteSpace: "pre-wrap", fontWeight: 700 }}>{plegadoDescription || <span className="muted">(sin descripción)</span>}</div></div>
+                    <div><div className="muted">Plano</div><div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>{plegadoAttachment ? <><span style={{ fontWeight: 800 }}>{formatPlegadoAttachmentMeta(plegadoAttachment)}</span><Button variant="ghost" onClick={() => openPlegadoAttachment(plegadoAttachment)}>Ver plano</Button><Button variant="ghost" onClick={() => downloadPlegadoAttachment(plegadoAttachment)}>Descargar</Button></> : <span className="muted">Sin plano</span>}</div></div>
+                    <div style={{ gridColumn: "1 / -1" }}><div className="muted">Descripción / comentarios</div><div style={{ whiteSpace: "pre-wrap", fontWeight: 800, fontSize: 15 }}>{plegadoDescription || <span className="muted">(sin descripción)</span>}</div></div>
                   </div>
                 </div>
               </>

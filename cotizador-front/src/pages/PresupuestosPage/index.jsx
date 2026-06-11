@@ -9,6 +9,7 @@ import { useAuthStore } from "../../domain/auth/store.js";
 import { listDoors } from "../../api/doors.js";
 import { listQuotes, requestProductionFromAcopio } from "../../api/quotes.js";
 import { downloadListingQuotePdf, downloadListingQuoteProformaPdf } from "../../utils/listingPdf.js";
+import { downloadPlegadoAttachment, formatPlegadoAttachmentMeta, getPlegadoAttachment, openPlegadoAttachment } from "../../utils/plegadoAttachment.js";
 
 const PAGE_SIZE = 25;
 
@@ -103,7 +104,7 @@ function matchesRowSearch(item, searchText) {
     return haystack.includes(s);
   }
   const q = item.raw;
-  const haystack = [quoteTypeLabel(q), quoteOdooReference(q), q?.end_customer?.name, q?.end_customer?.city, q?.end_customer?.address, q?.end_customer?.phone, labelQuoteStatus(q), labelMeasurementStatus(q), q?.fulfillment_mode === "acopio" ? "acopio" : "produccion"].filter(Boolean).join(" ").toLowerCase();
+  const haystack = [quoteTypeLabel(q), quoteOdooReference(q), q?.end_customer?.name, q?.end_customer?.city, q?.end_customer?.address, q?.end_customer?.phone, labelQuoteStatus(q), labelMeasurementStatus(q), q?.fulfillment_mode === "acopio" ? "acopio" : "produccion", plegadoDescription(q), getPlegadoAttachment(q)?.name].filter(Boolean).join(" ").toLowerCase();
   return haystack.includes(s);
 }
 function toTimeDesc(value) { if (!value) return 0; const d = new Date(value); if (Number.isNaN(d.getTime())) return 0; return d.getTime(); }
@@ -207,6 +208,51 @@ function RejectedStatusButton({ label, onClick }) {
 }
 
 
+function plegadoDescription(row) {
+  const payload = row?.payload && typeof row.payload === "object" ? row.payload : {};
+  const dimensions = payload?.dimensions && typeof payload.dimensions === "object" ? payload.dimensions : {};
+  return String(dimensions?.plegado_descripcion || dimensions?.descripcion_plegado || dimensions?.description || payload?.plegado_descripcion || payload?.descripcion_plegado || "").trim();
+}
+function plegadoSurface(row) {
+  const payload = row?.payload && typeof row.payload === "object" ? row.payload : {};
+  const dimensions = payload?.dimensions && typeof payload.dimensions === "object" ? payload.dimensions : {};
+  const direct = Number(String(dimensions?.area_m2 ?? "").replace(",", "."));
+  const width = Number(String(dimensions?.width ?? "").replace(",", "."));
+  const height = Number(String(dimensions?.height ?? "").replace(",", "."));
+  const area = Number.isFinite(direct) && direct > 0 ? direct : (Number.isFinite(width) && Number.isFinite(height) ? width * height : 0);
+  return Number.isFinite(area) && area > 0 ? `${area.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} m²` : "";
+}
+function PlegadoModal({ row, onClose }) {
+  if (!row) return null;
+  const description = plegadoDescription(row);
+  const surface = plegadoSurface(row);
+  const attachment = getPlegadoAttachment(row || {});
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20, zIndex: 1000 }}>
+      <div className="card" onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 760, background: "#fff" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center" }}>
+          <div style={{ fontWeight: 900, fontSize: 20 }}>Plano y comentarios del plegado</div>
+          <Button variant="ghost" onClick={onClose}>Cerrar</Button>
+        </div>
+        <div className="spacer" />
+        <div className="muted">Superficie</div>
+        <div style={{ fontWeight: 900, marginBottom: 12 }}>{surface || "—"}</div>
+        <div className="muted">Descripción / comentarios</div>
+        <div style={{ whiteSpace: "pre-wrap", lineHeight: 1.5, fontWeight: 800, fontSize: 15, background: "#f7fbff", border: "1px solid #d9e5f7", borderRadius: 12, padding: 12 }}>{description || "Sin descripción"}</div>
+        <div className="spacer" />
+        <div className="muted">Plano</div>
+        {attachment ? (
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginTop: 6 }}>
+            <span style={{ fontWeight: 800 }}>{formatPlegadoAttachmentMeta(attachment)}</span>
+            <Button variant="ghost" onClick={() => openPlegadoAttachment(attachment)}>Ver plano</Button>
+            <Button variant="ghost" onClick={() => downloadPlegadoAttachment(attachment)}>Descargar</Button>
+          </div>
+        ) : <div className="muted" style={{ marginTop: 6 }}>Sin plano adjunto.</div>}
+      </div>
+    </div>
+  );
+}
+
 function TypeBadge({ label }) {
   const isDoor = label === "Puerta";
   const isIpanel = label === "Ipanel";
@@ -239,6 +285,7 @@ export default function PresupuestosPage() {
   const [page, setPage] = useState(1);
   const [downloadingPdfKey, setDownloadingPdfKey] = useState("");
   const [rejectionModal, setRejectionModal] = useState(null);
+  const [plegadoModal, setPlegadoModal] = useState(null);
 
   const quotesQ = useQuery({ queryKey: ["quotes", "mine"], queryFn: () => listQuotes({ scope: "mine" }) });
   const doorsQ = useQuery({ queryKey: ["doors", "mine", "presupuestos"], queryFn: () => listDoors({ scope: "mine" }), enabled: !!user?.is_vendedor || !!user?.is_distribuidor });
@@ -432,6 +479,7 @@ export default function PresupuestosPage() {
                         {hasFinal ? <Button variant="ghost" disabled={downloadingPdfKey === finalPdfKey} onClick={() => handleDownloadQuotePdf(r.final_copy_id)}>Ver final</Button> : null}
                         {canDownloadQuoteProforma && hasFinal ? <Button variant="ghost" disabled={downloadingPdfKey === finalProformaPdfKey} onClick={() => handleDownloadQuoteProformaPdf(r.final_copy_id)}>Proforma final</Button> : null}
                         {hasMeasurementDetail ? <Button variant="ghost" disabled={!isMeasurementApproved} title={isMeasurementApproved ? "" : "Disponible cuando Técnica apruebe la medición / detalle técnico"} onClick={() => { if (!isMeasurementApproved) return; navigate(`/mediciones/${r.id}`); }}>{measurementLabel}</Button> : null}
+                        {effectiveQuoteKind(r) === "plegados" ? <Button variant="ghost" onClick={() => setPlegadoModal(r)}>Plano / comentarios</Button> : null}
                         {r.status === "draft" ? <Button onClick={() => navigate(quoteEditorPath(r))}>Editar</Button> : null}
                         {canAddDoor ? <Button variant="ghost" onClick={() => navigate(`/puertas/nuevo/${r.id}`)}>Agregar puerta</Button> : null}
                         {hasFinal && finalDraft ? <Button onClick={() => navigate(quoteEditorPath({ ...r, id: r.final_copy_id }))}>Editar final</Button> : null}
@@ -446,6 +494,7 @@ export default function PresupuestosPage() {
           </>
         )}
       </div>
+      <PlegadoModal row={plegadoModal} onClose={() => setPlegadoModal(null)} />
       {rejectionModal ? (
         <div
           onClick={() => setRejectionModal(null)}
