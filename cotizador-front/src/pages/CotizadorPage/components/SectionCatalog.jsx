@@ -10,7 +10,7 @@ import {
 } from "../../../api/admin.js";
 import Button from "../../../ui/Button";
 
-const CATALOG_KINDS = new Set(["porton", "ipanel", "plegados", "otros"]);
+const CATALOG_KINDS = new Set(["porton", "ipanel", "plegados", "otros", "puerta"]);
 const APTOS_PARA_REVESTIR_TYPE = "para_revestir_con_al_pvc_otros";
 const IPANEL_BLOCKED_PLEGADO_PRODUCT_IDS = new Set([4036, 3565]);
 const IPANEL_LAMAS_RANGE_MIN_WIDTH_M = 1.13;
@@ -1017,7 +1017,9 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
         ? "Características del Ipanel"
         : catalogKind === "plegados"
           ? "Características de Plegados"
-          : "Características / productos";
+          : catalogKind === "puerta"
+            ? "Características de Puertas"
+            : "Características / productos";
 
   if (!boot) {
     return (
