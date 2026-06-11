@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { getCatalogBootstrap, refreshCatalogBootstrap } from "../../../api/catalog.js";
 import { adminGetTechnicalMeasurementRules } from "../../../api/admin.js";
@@ -162,6 +162,9 @@ export default function PuertaCatalog() {
   const [refreshing, setRefreshing] = useState(false);
   const [pricedBoot, setPricedBoot] = useState(null);
   const [pricingError, setPricingError] = useState("");
+  const sectionRefs = useRef(new Map());
+  const pendingAutoScrollSectionIdRef = useRef(null);
+  const autoScrollTimeoutRef = useRef(null);
 
   const q = useQuery({ queryKey: ["catalog-bootstrap", "puerta"], queryFn: () => getCatalogBootstrap("puerta"), staleTime: 60 * 1000 });
   const rulesQ = useQuery({ queryKey: ["technical-rules-for-door-catalog", "puerta"], queryFn: () => adminGetTechnicalMeasurementRules("puerta"), staleTime: 0, refetchOnMount: "always", refetchOnWindowFocus: true });
@@ -218,6 +221,64 @@ export default function PuertaCatalog() {
     return orderedVisibleSectionIds.map((sectionId) => sectionMap.get(toPositiveInt(sectionId))).filter(Boolean);
   }, [sections, orderedVisibleSectionIds]);
 
+  const scrollToSection = useCallback((sectionId) => {
+    const id = Number(sectionId || 0);
+    if (!id || typeof window === "undefined") return;
+
+    const run = () => {
+      const target = sectionRefs.current.get(id);
+      if (!target) return;
+
+      const rect = target.getBoundingClientRect();
+      const top = Math.max(0, window.scrollY + rect.top - 96);
+      window.scrollTo({ top, behavior: "smooth" });
+    };
+
+    if (typeof window.requestAnimationFrame === "function") {
+      window.requestAnimationFrame(run);
+      return;
+    }
+    run();
+  }, []);
+
+  const openSectionAndScroll = useCallback((sectionId) => {
+    const id = Number(sectionId || 0);
+    if (!id) return;
+    pendingAutoScrollSectionIdRef.current = id;
+    setOpenSectionId(id);
+  }, []);
+
+  useEffect(() => {
+    const pendingId = Number(pendingAutoScrollSectionIdRef.current || 0);
+    if (!pendingId || Number(openSectionId || 0) !== pendingId) return undefined;
+
+    if (autoScrollTimeoutRef.current) {
+      window.clearTimeout(autoScrollTimeoutRef.current);
+    }
+
+    autoScrollTimeoutRef.current = window.setTimeout(() => {
+      scrollToSection(pendingId);
+      pendingAutoScrollSectionIdRef.current = null;
+      autoScrollTimeoutRef.current = null;
+    }, 90);
+
+    return () => {
+      if (autoScrollTimeoutRef.current) {
+        window.clearTimeout(autoScrollTimeoutRef.current);
+        autoScrollTimeoutRef.current = null;
+      }
+    };
+  }, [openSectionId, scrollToSection]);
+
+  useEffect(() => {
+    return () => {
+      if (autoScrollTimeoutRef.current) {
+        window.clearTimeout(autoScrollTimeoutRef.current);
+        autoScrollTimeoutRef.current = null;
+      }
+    };
+  }, []);
+
   const debugPayload = useMemo(() => ({
     component: "PuertaCatalog",
     catalogKind: "puerta",
@@ -268,7 +329,7 @@ export default function PuertaCatalog() {
     if (currentSelected.has(targetProductId) && currentSelected.size === 1) {
       const currentIndex = orderedVisibleSectionIds.findIndex((id) => Number(id) === sectionId);
       const nextSectionId = currentIndex >= 0 ? orderedVisibleSectionIds[currentIndex + 1] : null;
-      if (nextSectionId) setOpenSectionId(Number(nextSectionId));
+      if (nextSectionId) openSectionAndScroll(nextSectionId);
       return;
     }
 
@@ -296,7 +357,7 @@ export default function PuertaCatalog() {
     });
     const nextIndex = nextOrderedIds.findIndex((id) => Number(id) === sectionId);
     const nextSectionId = nextIndex >= 0 ? nextOrderedIds[nextIndex + 1] : null;
-    if (nextSectionId) setOpenSectionId(Number(nextSectionId));
+    if (nextSectionId) openSectionAndScroll(nextSectionId);
   }
 
   if (q.isLoading) return <div className="muted">Cargando catálogo de puertas...</div>;
@@ -336,7 +397,14 @@ export default function PuertaCatalog() {
             const sectionProducts = productsBySection.get(sectionId) || [];
             const selectedInSection = selectedProductIdsBySection.get(sectionId) || new Set();
             return (
-              <div key={sectionId} className={isOpen ? "dg-acc-item is-open" : "dg-acc-item"}>
+              <div
+                key={sectionId}
+                ref={(el) => {
+                  if (el) sectionRefs.current.set(sectionId, el);
+                  else sectionRefs.current.delete(sectionId);
+                }}
+                className={isOpen ? "dg-acc-item is-open" : "dg-acc-item"}
+              >
                 <button type="button" className="dg-acc-header" onClick={() => setOpenSectionId(isOpen ? null : sectionId)}>
                   <div className="dg-acc-title">{section.name}</div>
                   <div className="dg-acc-meta">{selectedInSection.size ? `${selectedInSection.size} seleccionado` : "Sin selección"} · {sectionProducts.length}</div>
