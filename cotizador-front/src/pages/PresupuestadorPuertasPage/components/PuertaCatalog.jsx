@@ -6,6 +6,28 @@ import { useQuoteStore } from "../../../domain/quote/store.js";
 import { useAuthStore } from "../../../domain/auth/store.js";
 import Button from "../../../ui/Button.jsx";
 
+const DOOR_SECTION_GREEN_IDS = new Set([84, 86, 88, 89, 90, 92, 94]);
+const DOOR_SECTION_BLUE_IDS = new Set([96, 97, 98, 99, 100, 101, 102]);
+
+function getDoorSectionTone(sectionId) {
+  const id = Number(sectionId || 0);
+  if (DOOR_SECTION_GREEN_IDS.has(id)) {
+    return {
+      background: "#ecfdf3",
+      borderColor: "#bbf7d0",
+      boxShadow: "inset 4px 0 0 #22c55e",
+    };
+  }
+  if (DOOR_SECTION_BLUE_IDS.has(id)) {
+    return {
+      background: "#eff6ff",
+      borderColor: "#bfdbfe",
+      boxShadow: "inset 4px 0 0 #38bdf8",
+    };
+  }
+  return undefined;
+}
+
 function getClientFacingProductName(product) {
   return product?.client_display_name || product?.raw_name || product?.original_name || product?.name || "";
 }
@@ -396,6 +418,7 @@ export default function PuertaCatalog() {
             const isOpen = openSectionId === sectionId;
             const sectionProducts = productsBySection.get(sectionId) || [];
             const selectedInSection = selectedProductIdsBySection.get(sectionId) || new Set();
+            const sectionToneStyle = getDoorSectionTone(sectionId);
             return (
               <div
                 key={sectionId}
@@ -404,8 +427,9 @@ export default function PuertaCatalog() {
                   else sectionRefs.current.delete(sectionId);
                 }}
                 className={isOpen ? "dg-acc-item is-open" : "dg-acc-item"}
+                style={sectionToneStyle ? { borderColor: sectionToneStyle.borderColor } : undefined}
               >
-                <button type="button" className="dg-acc-header" onClick={() => setOpenSectionId(isOpen ? null : sectionId)}>
+                <button type="button" className="dg-acc-header" style={sectionToneStyle} onClick={() => setOpenSectionId(isOpen ? null : sectionId)}>
                   <div className="dg-acc-title">{section.name}</div>
                   <div className="dg-acc-meta">{selectedInSection.size ? `${selectedInSection.size} seleccionado` : "Sin selección"} · {sectionProducts.length}</div>
                   <div className="dg-acc-chevron">{isOpen ? "▾" : "▸"}</div>
