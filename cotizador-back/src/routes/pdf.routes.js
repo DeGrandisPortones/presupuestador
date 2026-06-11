@@ -13,12 +13,36 @@ const IVA_RATE = 0.21;
 const SHIPPING_PRODUCT_IDS = new Set([2842]);
 const DISTRIBUTOR_OWN_SUPPLY_PRODUCT_IDS = new Set([2842, 3956, 3957, 3961, 3962, 3963, 3966, 4037, 3991, 3992, 3993, 3994, 3995, 3996, 3485, 3486, 3490, 3491, 3492, 3495, 3566, 3520, 3521, 3522, 3523, 3524, 3525]);
 const IPANEL_DIVIDER_LINE_MM = 10;
+const DOOR_PANEL_DIVIDER_LINE_MM = 10;
+const DOOR_PANEL_CONFIGS = [
+  {
+    key: "exterior",
+    title: "Panel Exterior",
+    prefix: "puerta_panel_exterior_lamas",
+    productIds: new Set([4108, 3637]),
+  },
+  {
+    key: "interior",
+    title: "Panel Interior",
+    prefix: "puerta_panel_interior_lamas",
+    productIds: new Set([4061, 3590]),
+  },
+];
+
+const TERMS_AND_CONDITIONS = [
+  "1. Formas de Pago: Aceptamos pagos en efectivo (pesos o dólares billete), transferencia bancaria, cheques o tarjeta de crédito (consultar por planes vigentes). Para confirmar el pedido se requiere una seña del 70% del valor total. El saldo restante deberá abonarse en su totalidad antes de la entrega del producto.",
+  "2. Plazos de Entrega: El plazo estimado de entrega es de 40 días para portones en lamas, contados a partir de la confirmación de las medidas y características del pedido por parte del cliente y/o encargado. Para modelos especiales como portones coplanares o varillados, el plazo será de 60 días. Estos plazos aplican a partir de la confirmación técnica y el pago de la seña correspondiente.",
+  "3. Garantía: Nuestros productos cuentan con una garantía de 60 meses contra defectos de fabricación. Esta garantía no cubre daños causados por uso inadecuado o negligencia del cliente.",
+  "4. Responsabilidad del Cliente: El cliente es responsable de proporcionar información completa y precisa al momento de realizar el pedido. Cualquier error u omisión en los datos brindados será responsabilidad exclusiva del cliente, pudiendo afectar la correcta producción y entrega del portón. Asimismo, el cliente deberá garantizar que el lugar de instalación se encuentre limpio, ordenado y con libre acceso. No deben existir escombros, montículos de arena u otros obstáculos que dificulten el ingreso del personal o la manipulación del producto. En caso de ser necesario se deberá contar con personas disponibles al momento de la entrega para colaborar con la descarga del portón, desde el área de logística se dispondrá esta información.",
+  "5. Derechos de Propiedad: Todos los derechos de propiedad intelectual y derechos de autor de los productos y diseños son propiedad de DE GRANDIS PORTONES. Está prohibida la reproducción o distribución no autorizada.",
+  "6. Ajustes y Variaciones: En caso de existir diferencias entre el presupuesto confirmado y las características finales del pedido (como medidas, diseño, materiales, entre otros), que generen costos adicionales, nos reservamos el derecho de facturar dichos montos sin previo aviso. El cliente deberá abonar estos importes adicionales antes de que se inicie la producción del portón.",
+];
 
 function isDistributorPayload(payload = {}) {
   return String(payload?.created_by_role || payload?.payload?.created_by_role || "").trim().toLowerCase() === "distribuidor";
 }
 function lineMatchesProductSet(line = {}, productSet) {
-  const ids = [line?.product_id, line?.odoo_id, line?.odoo_template_id, line?.odoo_variant_id, line?.odoo_external_id];
+  const ids = [line?.product_id, line?.id, line?.odoo_id, line?.odoo_template_id, line?.odoo_variant_id, line?.odoo_external_id, line?.odoo_product_id];
   return ids.some((value) => productSet.has(Number(value || 0)));
 }
 function isShippingLine(line = {}) {
@@ -116,16 +140,6 @@ function getQuoteNumber(payload) {
       "",
   );
 }
-function getSellerName(payload) {
-  return safeStr(
-    payload?.seller_name ??
-      payload?.sellerName ??
-      payload?.created_by_full_name ??
-      payload?.created_by_username ??
-      payload?.payload?.seller_name ??
-      "",
-  );
-}
 function resolveLoggedUserSellerName(user, payload) {
   return safeStr(
     user?.full_name ??
@@ -156,7 +170,7 @@ function stripSellerLines(value) {
   return String(value || "")
     .split(/\r?\n/)
     .map((line) => String(line || "").trim())
-    .filter((line) => line && !/^vendedor\s*:/i.test(line))
+    .filter((line) => line && !/^vendedor\s*:/i.test(line) && !/^PRESUPUESTADOR_PUERTA_ORDER_REF\s*:/i.test(line))
     .join("\n");
 }
 function formatShortDate(value) {
@@ -208,25 +222,18 @@ function resolveProductTemplateId(line = {}) {
   return toPositiveInt(line?.odoo_id || line?.odoo_template_id || 0);
 }
 function resolveVariantId(line = {}) {
-  return toPositiveInt(line?.odoo_variant_id || line?.product_id || 0);
+  return toPositiveInt(line?.odoo_variant_id || line?.product_id || line?.odoo_external_id || 0);
 }
 async function readOdooNamesFlexible(odoo, rawLines = []) {
-  const out = {
-    templateNameById: new Map(),
-    variantNameById: new Map(),
-    templateIdByVariantId: new Map(),
-  };
+  const out = { templateNameById: new Map(), variantNameById: new Map(), templateIdByVariantId: new Map() };
   if (!odoo) return out;
 
   const explicitTemplateIds = collectUniquePositiveInts(rawLines.map((line) => resolveProductTemplateId(line)));
   const variantIds = collectUniquePositiveInts(rawLines.map((line) => resolveVariantId(line)));
-
   let variantRows = [];
   if (variantIds.length) {
     try {
-      variantRows = await odoo.executeKw("product.product", "read", [variantIds], {
-        fields: ["id", "name", "display_name", "product_tmpl_id"],
-      });
+      variantRows = await odoo.executeKw("product.product", "read", [variantIds], { fields: ["id", "name", "display_name", "product_tmpl_id"] });
     } catch {
       variantRows = [];
     }
@@ -236,34 +243,26 @@ async function readOdooNamesFlexible(odoo, rawLines = []) {
   for (const row of Array.isArray(variantRows) ? variantRows : []) {
     const variantId = toPositiveInt(row?.id);
     const variantName = safeStr(row?.display_name || row?.name);
-    const templateId = Array.isArray(row?.product_tmpl_id)
-      ? toPositiveInt(row.product_tmpl_id[0])
-      : toPositiveInt(row?.product_tmpl_id);
-
+    const templateId = Array.isArray(row?.product_tmpl_id) ? toPositiveInt(row.product_tmpl_id[0]) : toPositiveInt(row?.product_tmpl_id);
     if (variantId && variantName) out.variantNameById.set(variantId, variantName);
     if (variantId && templateId) out.templateIdByVariantId.set(variantId, templateId);
     if (templateId) templateIdsFromVariants.push(templateId);
   }
 
   const templateIds = collectUniquePositiveInts([...explicitTemplateIds, ...templateIdsFromVariants]);
-
   let templateRows = [];
   if (templateIds.length) {
     try {
-      templateRows = await odoo.executeKw("product.template", "read", [templateIds], {
-        fields: ["id", "name", "display_name"],
-      });
+      templateRows = await odoo.executeKw("product.template", "read", [templateIds], { fields: ["id", "name", "display_name"] });
     } catch {
       templateRows = [];
     }
   }
-
   for (const row of Array.isArray(templateRows) ? templateRows : []) {
     const templateId = toPositiveInt(row?.id);
     const templateName = safeStr(row?.display_name || row?.name);
     if (templateId && templateName) out.templateNameById.set(templateId, templateName);
   }
-
   return out;
 }
 async function buildLines(payload, { useBasePrice, odoo, displayNetPrices = false, taxRate = IVA_RATE }) {
@@ -272,13 +271,8 @@ async function buildLines(payload, { useBasePrice, odoo, displayNetPrices = fals
   const coefFactor = 1 + coefPct / 100;
   const rawLines = Array.isArray(payload?.lines) ? payload.lines : [];
   const catalogKind = (() => {
-    try {
-      return normKind(payload?.catalog_kind || "porton");
-    } catch {
-      return "porton";
-    }
+    try { return normKind(payload?.catalog_kind || "porton"); } catch { return "porton"; }
   })();
-
   const productIds = collectUniquePositiveInts(rawLines.map((line) => line?.product_id));
   const pdfNameMap = await getProductPdfNameMap(catalogKind, productIds);
   const odooNames = await readOdooNamesFlexible(odoo, rawLines);
@@ -292,21 +286,17 @@ async function buildLines(payload, { useBasePrice, odoo, displayNetPrices = fals
       const unit = displayNetPrices ? unitNet : unitNet * (1 + effectiveTaxRate);
       const totalNet = unitNet * qty;
       const total = unit * qty;
-
       const productId = toPositiveInt(l?.product_id);
       const variantId = resolveVariantId(l);
       const explicitTemplateId = resolveProductTemplateId(l);
       const derivedTemplateId = odooNames.templateIdByVariantId.get(variantId) || 0;
       const templateId = explicitTemplateId || derivedTemplateId;
-
       const overrideName = safeStr(pdfNameMap.get(productId));
       const liveTemplateName = safeStr(odooNames.templateNameById.get(templateId));
       const liveVariantName = safeStr(odooNames.variantNameById.get(variantId));
-      const payloadName = safeStr(l?.name || l?.raw_name);
+      const payloadName = safeStr(l?.name || l?.raw_name || l?.display_name || l?.alias);
       const resolvedName = overrideName || liveTemplateName || liveVariantName || payloadName;
-
       if (!resolvedName) throw new Error(`No se pudo resolver el nombre para la línea ${productId || variantId || "sin id"}.`);
-
       return { qty, name: resolvedName, unit, total, totalNet };
     })
     .filter((l) => l.qty > 0);
@@ -316,6 +306,7 @@ async function buildLines(payload, { useBasePrice, odoo, displayNetPrices = fals
   const grandTotal = subtotalNet + ivaAmount;
   return { lines, grandTotal, subtotalNet, ivaAmount, coefPct, taxRate: effectiveTaxRate, displayNetPrices };
 }
+
 function drawPageFrame(doc, margin, pageNo, pageCount, footerLeft = "De Grandis Portones") {
   const w = doc.page.width;
   const h = doc.page.height;
@@ -329,34 +320,27 @@ function drawHeader(doc, { title, payload, margin, innerW, dateStr, validStr }) 
   const logoPath = getLogoPath(payload);
   const headerH = 64;
   const quoteNo = getQuoteNumber(payload);
-  doc.save().strokeColor("#111827").lineWidth(1).moveTo(margin, margin + headerH).lineTo(margin + innerW, margin + headerH).stroke().restore();
-  if (fs.existsSync(logoPath)) doc.image(logoPath, margin + 8, margin + 8, getLogoDrawOptions(payload));
-  doc.font("Helvetica-Bold").fillColor("#111827").fontSize(16).text(title, margin, margin + 18, { width: innerW, align: "center" });
-  doc.font("Helvetica-Bold").fontSize(11).text(`NÚMERO ${quoteNo || "-"}`, margin, margin + 16, { width: innerW - 10, align: "right" });
-
-  let y = margin + headerH + 12;
-  const customerName = safeStr(payload?.end_customer?.name) || "(sin nombre)";
-  doc.font("Helvetica-Bold").fontSize(18).fillColor("#111827").text(customerName.toUpperCase(), margin + 8, y);
-  doc.font("Helvetica").fontSize(10).fillColor("#111827")
-    .text(`Fecha ${dateStr}`, margin, y + 2, { width: innerW - 8, align: "right" })
-    .text(`Vigencia ${validStr}`, margin, y + 16, { width: innerW - 8, align: "right" });
-  return y + 44;
+  doc.save().strokeColor("#111827").lineWidth(1.2).roundedRect(margin, margin, innerW, headerH, 10).stroke().restore();
+  if (fs.existsSync(logoPath)) doc.image(logoPath, margin + 14, margin + 9, getLogoDrawOptions(payload));
+  doc.font("Helvetica-Bold").fontSize(18).fillColor("#111827").text(title, margin + 205, margin + 12, { width: innerW - 360, align: "center" });
+  doc.font("Helvetica").fontSize(9).fillColor("#374151").text(`Fecha: ${dateStr}`, margin + innerW - 135, margin + 14, { width: 120, align: "right" });
+  doc.text(`Válido hasta: ${validStr}`, margin + innerW - 135, margin + 28, { width: 120, align: "right" });
+  if (quoteNo) doc.font("Helvetica-Bold").fontSize(10).fillColor("#111827").text(`#${quoteNo}`, margin + 205, margin + 38, { width: innerW - 360, align: "center" });
+  return margin + headerH + 10;
 }
 function drawInfoTable(doc, payload, y, margin, innerW, useBasePrice) {
-  const endCustomer = payload?.end_customer || {};
-  const customerName = safeStr(endCustomer?.name) || "(sin nombre)";
-  const customerPhone = safeStr(endCustomer?.phone) || "-";
-  const customerEmail = safeStr(endCustomer?.email) || "-";
-  const sellerName = getSellerName(payload) || "-";
-  const destinationRaw = safeStr(payload?.fulfillment_mode);
-  const destination = destinationRaw === "acopio" ? "Acopio" : destinationRaw === "produccion" ? "Producción" : (destinationRaw || "-");
+  const c = payload?.end_customer || {};
+  const customerName = c.name || [c.first_name, c.last_name].filter(Boolean).join(" ") || "-";
+  const customerPhone = c.phone || "-";
+  const customerEmail = c.email || "-";
+  const sellerName = resolveLoggedUserSellerName(null, payload) || "-";
+  const address = [c.address, c.city].filter(Boolean).join(" - ");
   const cols = useBasePrice
     ? [
-        { w: innerW * 0.35, label: "Cliente", value: customerName },
-        { w: innerW * 0.18, label: "Teléfono", value: customerPhone },
-        { w: innerW * 0.22, label: "Email", value: customerEmail },
-        { w: innerW * 0.13, label: "Destino", value: destination },
-        { w: innerW * 0.12, label: "Vendedor", value: sellerName },
+        { w: innerW * 0.36, label: "Cliente", value: customerName },
+        { w: innerW * 0.22, label: "Teléfono", value: customerPhone },
+        { w: innerW * 0.22, label: "Dirección", value: address || "-" },
+        { w: innerW * 0.20, label: "Vendedor", value: sellerName },
       ]
     : [
         { w: innerW * 0.38, label: "Cliente", value: customerName },
@@ -369,18 +353,17 @@ function drawInfoTable(doc, payload, y, margin, innerW, useBasePrice) {
   doc.save().fillColor("#F3F4F6").rect(margin, y, innerW, h).fill().restore();
   doc.save().strokeColor("#D1D5DB").rect(margin, y, innerW, h).stroke().restore();
   for (let i = 0; i < cols.length; i += 1) {
-    const c = cols[i];
+    const cInfo = cols[i];
     if (i > 0) doc.save().strokeColor("#D1D5DB").moveTo(x, y).lineTo(x, y + h).stroke().restore();
-    doc.font("Helvetica-Bold").fontSize(8).fillColor("#6B7280").text(c.label.toUpperCase(), x + 8, y + 8, { width: c.w - 16 });
-    doc.font("Helvetica").fontSize(10).fillColor("#111827").text(c.value, x + 8, y + 24, { width: c.w - 16 });
-    x += c.w;
+    doc.font("Helvetica-Bold").fontSize(8).fillColor("#6B7280").text(cInfo.label.toUpperCase(), x + 8, y + 8, { width: cInfo.w - 16 });
+    doc.font("Helvetica").fontSize(10).fillColor("#111827").text(cInfo.value, x + 8, y + 24, { width: cInfo.w - 16 });
+    x += cInfo.w;
   }
   return y + h + 10;
 }
 function drawInfoBand(doc, { y, margin, innerW, items, fillColor = "#FFFFFF" }) {
   const cleanItems = (Array.isArray(items) ? items : []).map((item) => safeStr(item)).filter(Boolean);
   if (!cleanItems.length) return y;
-
   const text = cleanItems.join("   -   ");
   const padX = 8;
   const padY = 6;
@@ -388,7 +371,6 @@ function drawInfoBand(doc, { y, margin, innerW, items, fillColor = "#FFFFFF" }) 
   doc.font("Helvetica").fontSize(10);
   const textH = doc.heightOfString(text, { width: textW, lineGap: 2 });
   const h = Math.max(28, Math.ceil(textH + padY * 2));
-
   doc.save().fillColor(fillColor).rect(margin, y, innerW, h).fill().restore();
   doc.save().strokeColor("#D1D5DB").rect(margin, y, innerW, h).stroke().restore();
   doc.font("Helvetica").fontSize(10).fillColor("#111827").text(text, margin + padX, y + padY, { width: textW, lineGap: 2 });
@@ -399,15 +381,20 @@ function parsePositiveNumber(value) {
   const n = Number(String(value ?? "").replace(",", "."));
   return Number.isFinite(n) && n > 0 ? n : 0;
 }
+function formatNumberCompact(value) {
+  const n = Number(value || 0);
+  if (!Number.isFinite(n) || n <= 0) return "";
+  return String(Math.round(n * 100) / 100).replace(/\.00$/, "").replace(/(\.\d*[1-9])0+$/, "$1");
+}
 function formatMeters(value) {
   const n = parsePositiveNumber(value);
   if (!n) return "-";
-  return `${String(Math.round(n * 100) / 100).replace(/\.0+$/, "")} m`;
+  return `${formatNumberCompact(n)} m`;
 }
 function formatMmValue(value) {
   const n = parsePositiveNumber(value);
   if (!n) return "-";
-  return `${String(Math.round(n * 100) / 100).replace(/\.0+$/, "")} mm`;
+  return `${formatNumberCompact(n)} mm`;
 }
 function normalizeIpanelLamasOrientation(value) {
   const raw = String(value || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
@@ -420,11 +407,7 @@ function ipanelOrientationLabel(value) {
 function getIpanelDimensionsForPdf(payload) {
   const dims = getDimensions(payload);
   const orientation = normalizeIpanelLamasOrientation(
-    dims?.ipanel_lamas_orientacion ??
-      dims?.orientacion_ipanel_lamas ??
-      dims?.ipanel_orientacion_lamas ??
-      dims?.ipanel_lamas_orientation ??
-      "horizontal",
+    dims?.ipanel_lamas_orientacion ?? dims?.orientacion_ipanel_lamas ?? dims?.ipanel_orientacion_lamas ?? dims?.ipanel_lamas_orientation ?? "horizontal",
   );
   const divisionsRaw = dims?.ipanel_divisiones ?? dims?.cantidad_divisiones_ipanel ?? "";
   const divisions = Math.max(0, Math.trunc(Number(divisionsRaw || 0)));
@@ -441,7 +424,7 @@ function getIpanelDimensionsForPdf(payload) {
   const widthM = parsePositiveNumber(dims?.width);
   const heightM = parsePositiveNumber(dims?.height);
   const dividersIncluded = dims?.ipanel_divisiones_incluyen_liston === true || String(dims?.ipanel_divisiones_incluyen_liston || "").trim().toLowerCase() === "true" || String(dims?.ipanel_distribucion_divisiones || dims?.ipanel_divisiones_distribucion || "").trim().toLowerCase() === "clasica";
-  return { widthM, heightM, orientation, divisions, sectionSizes, dividersIncluded };
+  return { widthM, heightM, orientation, divisions, sectionSizes, dividersIncluded, title: "Ipanel" };
 }
 function buildIpanelInfoLines(payload) {
   if (getCatalogKindFromPayload(payload) !== "ipanel") return [];
@@ -450,7 +433,7 @@ function buildIpanelInfoLines(payload) {
   if (info.widthM || info.heightM) rows.push(`Medidas Ipanel: ancho ${formatMeters(info.widthM)} x alto ${formatMeters(info.heightM)}`);
   return rows;
 }
-function drawIpanelScheme(doc, { x, y, width, info }) {
+function drawPanelScheme(doc, { x, y, width, info, title = "Esquema" }) {
   if (!info.widthM || !info.heightM || !info.sectionSizes.length) return y;
   const maxW = Math.min(300, width - 200);
   const maxH = 160;
@@ -469,11 +452,11 @@ function drawIpanelScheme(doc, { x, y, width, info }) {
   const isVertical = info.orientation === "vertical";
   const axisMm = isVertical ? info.widthM * 1000 : info.heightM * 1000;
   const axisPx = isVertical ? panelW : panelH;
-  const dividerMm = info.dividersIncluded ? 0 : IPANEL_DIVIDER_LINE_MM;
+  const dividerMm = info.dividersIncluded ? 0 : (Number(info.dividerMm || 0) || IPANEL_DIVIDER_LINE_MM);
   const totalMm = info.sectionSizes.reduce((acc, n) => acc + n, 0) + Math.max(0, info.sectionSizes.length - 1) * dividerMm;
   const scaleCorrection = totalMm > 0 ? axisMm / totalMm : 1;
 
-  doc.font("Helvetica-Bold").fontSize(11).fillColor("#111827").text("Esquema del Ipanel", x + 8, y + 12, { width: width - 16 });
+  doc.font("Helvetica-Bold").fontSize(11).fillColor("#111827").text(title, x + 8, y + 12, { width: width - 16 });
   doc.font("Helvetica").fontSize(9).fillColor("#374151").text(`Ancho ${formatMeters(info.widthM)} · Alto ${formatMeters(info.heightM)} · Lamas ${ipanelOrientationLabel(info.orientation).toLowerCase()}`, x + 8, y + 28, { width: width - 16 });
   doc.save().roundedRect(panelX, panelY, panelW, panelH, 8).fillAndStroke("#FFFFFF", "#111827").restore();
 
@@ -498,6 +481,7 @@ function drawIpanelScheme(doc, { x, y, width, info }) {
     ["Orientación", ipanelOrientationLabel(info.orientation)],
     ["Divisiones", String(info.divisions || info.sectionSizes.length)],
     ["Secciones", info.sectionSizes.map(formatMmValue).join(" / ")],
+    ["Distribución", info.dividersIncluded ? "Clásica" : "Repartida / manual"],
   ];
   let detailY = panelY;
   for (const [label, value] of detailRows) {
@@ -508,8 +492,9 @@ function drawIpanelScheme(doc, { x, y, width, info }) {
   return y + Math.max(220, panelH + 82);
 }
 function drawIpanelPdfBlock(doc, { y, margin, innerW, pageBottom }) {
-  const info = getIpanelDimensionsForPdf(this.payload || {});
-  if (getCatalogKindFromPayload(this.payload || {}) !== "ipanel") return y;
+  const payload = this.payload || {};
+  const info = getIpanelDimensionsForPdf(payload);
+  if (getCatalogKindFromPayload(payload) !== "ipanel") return y;
   const hasAnything = info.widthM || info.heightM || info.sectionSizes.length || info.divisions;
   if (!hasAnything) return y;
   const blockH = info.sectionSizes.length && info.widthM && info.heightM ? 235 : 70;
@@ -518,20 +503,63 @@ function drawIpanelPdfBlock(doc, { y, margin, innerW, pageBottom }) {
     y = margin + 20;
   }
   doc.save().strokeColor("#D1D5DB").rect(margin, y, innerW, blockH).stroke().restore();
-  if (info.sectionSizes.length && info.widthM && info.heightM) return drawIpanelScheme(doc, { x: margin, y, width: innerW, info });
+  if (info.sectionSizes.length && info.widthM && info.heightM) return drawPanelScheme(doc, { x: margin, y, width: innerW, info, title: "Esquema del Ipanel" });
   doc.font("Helvetica-Bold").fontSize(11).fillColor("#111827").text("Medidas del Ipanel", margin + 8, y + 10, { width: innerW - 16 });
-  doc.font("Helvetica").fontSize(9.5).fillColor("#111827").text(buildIpanelInfoLines(this.payload || {}).join(" · "), margin + 8, y + 28, { width: innerW - 16, lineGap: 2 });
+  doc.font("Helvetica").fontSize(9.5).fillColor("#111827").text(buildIpanelInfoLines(payload).join(" · "), margin + 8, y + 28, { width: innerW - 16, lineGap: 2 });
   return y + blockH + 8;
 }
 
-const TERMS_AND_CONDITIONS = [
-  "1. Formas de Pago: Aceptamos pagos en efectivo (pesos o dólares billete), transferencia bancaria, cheques o tarjeta de crédito (consultar por planes vigentes). Para confirmar el pedido se requiere una seña del 70% del valor total. El saldo restante deberá abonarse en su totalidad antes de la entrega del producto.",
-  "2. Plazos de Entrega: El plazo estimado de entrega es de 40 días para portones en lamas, contados a partir de la confirmación de las medidas y características del pedido por parte del cliente y/o encargado. Para modelos especiales como portones coplanares o varillados, el plazo será de 60 días. Estos plazos aplican a partir de la confirmación técnica y el pago de la seña correspondiente.",
-  "3. Garantía: Nuestros productos cuentan con una garantía de 60 meses contra defectos de fabricación. Esta garantía no cubre daños causados por uso inadecuado o negligencia del cliente.",
-  "4. Responsabilidad del Cliente: El cliente es responsable de proporcionar información completa y precisa al momento de realizar el pedido. Cualquier error u omisión en los datos brindados será responsabilidad exclusiva del cliente, pudiendo afectar la correcta producción y entrega del portón. Asimismo, el cliente deberá garantizar que el lugar de instalación se encuentre limpio, ordenado y con libre acceso. No deben existir escombros, montículos de arena u otros obstáculos que dificulten el ingreso del personal o la manipulación del producto. En caso de ser necesario se deberá contar con personas disponibles al momento de la entrega para colaborar con la descarga del portón, desde el área de logística se dispondrá esta información.",
-  "5. Derechos de Propiedad: Todos los derechos de propiedad intelectual y derechos de autor de los productos y diseños son propiedad de DE GRANDIS PORTONES. Está prohibida la reproducción o distribución no autorizada.",
-  "6. Ajustes y Variaciones: En caso de existir diferencias entre el presupuesto confirmado y las características finales del pedido (como medidas, diseño, materiales, entre otros), que generen costos adicionales, nos reservamos el derecho de facturar dichos montos sin previo aviso. El cliente deberá abonar estos importes adicionales antes de que se inicie la producción del portón.",
-];
+function panelField(config, name) {
+  return `${config.prefix}_${name}`;
+}
+function payloadHasProduct(payload, productSet) {
+  return (Array.isArray(payload?.lines) ? payload.lines : []).some((line) => lineMatchesProductSet(line, productSet));
+}
+function getDoorPanelInfo(payload, config) {
+  if (getCatalogKindFromPayload(payload) !== "puerta") return null;
+  if (!payloadHasProduct(payload, config.productIds)) return null;
+  const dims = getDimensions(payload);
+  const completed = dims?.[panelField(config, "setup_completed")] === true || dims?.[panelField(config, "popup_completed")] === true;
+  if (!completed) return null;
+  const orientation = normalizeIpanelLamasOrientation(
+    dims?.[panelField(config, "orientacion")] ?? dims?.[panelField(config, "orientation")] ?? "horizontal",
+  );
+  const divisions = Math.max(0, Math.trunc(Number(dims?.[panelField(config, "divisiones")] ?? dims?.[panelField(config, "cantidad_divisiones")] ?? 0)));
+  const sectionSizes = (Array.isArray(dims?.[panelField(config, "divisiones_medidas_mm")])
+    ? dims[panelField(config, "divisiones_medidas_mm")]
+    : Array.isArray(dims?.[panelField(config, "section_sizes_mm")])
+      ? dims[panelField(config, "section_sizes_mm")]
+      : [])
+    .slice(0, divisions || undefined)
+    .map((item) => parsePositiveNumber(item))
+    .filter((item) => item > 0);
+  if (!sectionSizes.length) return null;
+  const widthM = parsePositiveNumber(dims?.[panelField(config, "width")] ?? dims?.width);
+  const heightM = parsePositiveNumber(dims?.[panelField(config, "height")] ?? dims?.height);
+  const distribution = safeStr(dims?.[panelField(config, "distribucion_divisiones")] ?? dims?.[panelField(config, "divisiones_distribucion")]).toLowerCase();
+  const dividersIncluded = dims?.[panelField(config, "divisiones_incluyen_liston")] === true || String(dims?.[panelField(config, "divisiones_incluyen_liston")] || "").trim().toLowerCase() === "true" || distribution === "clasica";
+  const dividerMm = parsePositiveNumber(dims?.[panelField(config, "divisor_mm")] ?? dims?.[panelField(config, "linea_division_mm")] ?? DOOR_PANEL_DIVIDER_LINE_MM) || DOOR_PANEL_DIVIDER_LINE_MM;
+  if (!widthM || !heightM) return null;
+  return { widthM, heightM, orientation, divisions, sectionSizes, dividersIncluded, dividerMm, title: config.title };
+}
+function drawDoorPanelSchemesPdfBlock(doc, { y, margin, innerW, pageBottom, payload }) {
+  if (getCatalogKindFromPayload(payload) !== "puerta") return y;
+  const infos = DOOR_PANEL_CONFIGS
+    .map((config) => ({ config, info: getDoorPanelInfo(payload, config) }))
+    .filter((item) => item.info);
+  if (!infos.length) return y;
+
+  for (const { info } of infos) {
+    const blockH = 235;
+    if (y + blockH > pageBottom()) {
+      doc.addPage();
+      y = margin + 20;
+    }
+    doc.save().strokeColor("#D1D5DB").rect(margin, y, innerW, blockH).stroke().restore();
+    y = drawPanelScheme(doc, { x: margin, y, width: innerW, info, title: `Esquema ${info.title}` });
+  }
+  return y;
+}
 
 function drawTermsAndConditionsPage(doc, { title, payload, margin, innerW, dateStr, validStr }) {
   doc.addPage();
@@ -539,10 +567,8 @@ function drawTermsAndConditionsPage(doc, { title, payload, margin, innerW, dateS
   const x = margin + 14;
   const width = innerW - 28;
   let y = titleY + 14;
-
   doc.font("Helvetica-Bold").fontSize(12).fillColor("#111827").text("Términos y Condiciones de Venta:", x, y, { width });
   y = doc.y + 10;
-
   doc.font("Helvetica").fontSize(8.8).fillColor("#111827");
   for (const paragraph of TERMS_AND_CONDITIONS) {
     doc.text(paragraph, x, y, { width, lineGap: 2, align: "left" });
@@ -653,6 +679,7 @@ async function renderPdf({ title, payload, useBasePrice, odoo, includeTerms = fa
 
   tableY += 12;
   tableY = drawIpanelPdfBlock.call({ payload }, doc, { y: tableY, margin, innerW, pageBottom });
+  tableY = drawDoorPanelSchemesPdfBlock(doc, { y: tableY, margin, innerW, pageBottom, payload });
 
   if (includeTerms) drawTermsAndConditionsPage(doc, { title, payload, margin, innerW, dateStr, validStr });
 
@@ -661,10 +688,10 @@ async function renderPdf({ title, payload, useBasePrice, odoo, includeTerms = fa
     doc.switchToPage(i);
     drawPageFrame(doc, margin, i + 1, range.count, getPdfFooterLeft(payload));
   }
-
   doc.end();
   return new Promise((resolve) => doc.on("end", () => resolve(Buffer.concat(buffers))));
 }
+
 function prettyMeasurementValue(key, value) {
   const raw = safeStr(value);
   const maps = {
@@ -682,29 +709,17 @@ async function renderMeasurementPdf({ quote, form }) {
   if (fs.existsSync(logoPath)) doc.image(logoPath, 32, 20, { width: 160, height: 42, fit: [160, 42] });
   doc.font("Helvetica-Bold").fontSize(18).fillColor("#111827").text("PLANILLA DE MEDICIÓN", 32, 34, { width: doc.page.width - 64, align: "center" });
   doc.moveDown(2);
-
   const c = quote?.end_customer || {};
   const rows = [
-    ["Cliente", c.name],
-    ["Teléfono", c.phone],
-    ["Dirección", c.address],
-    ["Localidad", c.city],
-    ["Maps", c.maps_url],
-    ["Fecha", pick(form, "fecha")],
-    ["Distribuidor", pick(form, "distribuidor")],
-    ["Nota de venta", quote?.odoo_sale_order_name || quote?.quote_number],
-    ["Alto final (mm)", form?.alto_final_mm],
-    ["Ancho final (mm)", form?.ancho_final_mm],
-    ["Accionamiento", prettyMeasurementValue("accionamiento", pick(form, "accionamiento"))],
-    ["Colocación", prettyMeasurementValue("colocacion", pick(form, "colocacion"))],
+    ["Cliente", c.name], ["Teléfono", c.phone], ["Dirección", c.address], ["Localidad", c.city], ["Maps", c.maps_url],
+    ["Fecha", pick(form, "fecha")], ["Distribuidor", pick(form, "distribuidor")], ["Nota de venta", quote?.odoo_sale_order_name || quote?.quote_number],
+    ["Alto final (mm)", form?.alto_final_mm], ["Ancho final (mm)", form?.ancho_final_mm], ["Accionamiento", prettyMeasurementValue("accionamiento", pick(form, "accionamiento"))], ["Colocación", prettyMeasurementValue("colocacion", pick(form, "colocacion"))],
   ];
-
   rows.forEach(([label, value]) => {
     doc.font("Helvetica-Bold").fontSize(9).fillColor("#6B7280").text(String(label || "").toUpperCase());
     doc.font("Helvetica").fontSize(11).fillColor("#111827").text(textOrDash(value));
     doc.moveDown(0.4);
   });
-
   const altos = Array.isArray(form?.esquema?.alto) ? form.esquema.alto : [];
   const anchos = Array.isArray(form?.esquema?.ancho) ? form.esquema.ancho : [];
   doc.moveDown(0.5);
@@ -712,16 +727,15 @@ async function renderMeasurementPdf({ quote, form }) {
   doc.moveDown(0.4);
   doc.font("Helvetica").fontSize(11).text(`Altos: ${(altos.filter(Boolean).join(" / ")) || "-"}`);
   doc.text(`Anchos: ${(anchos.filter(Boolean).join(" / ")) || "-"}`);
-
   const range = doc.bufferedPageRange();
   for (let i = range.start; i < range.start + range.count; i += 1) {
     doc.switchToPage(i);
     drawPageFrame(doc, 20, i + 1, range.count, "Planilla de medición - De Grandis Portones");
   }
-
   doc.end();
   return new Promise((resolve) => doc.on("end", () => resolve(Buffer.concat(buffers))));
 }
+
 export function buildPdfRouter(odoo = null) {
   const router = express.Router();
 
@@ -740,14 +754,7 @@ export function buildPdfRouter(odoo = null) {
     try {
       const rawPayload = req.body || {};
       const payload = { ...rawPayload, seller_name: resolveLoggedUserSellerName(req.user, rawPayload) };
-      const pdf = await renderPdf({
-        title: "PROFORMA",
-        payload,
-        useBasePrice: true,
-        odoo,
-        displayNetPrices: true,
-        taxRate: isCondition2(payload) ? 0.105 : IVA_RATE,
-      });
+      const pdf = await renderPdf({ title: "PROFORMA", payload, useBasePrice: true, odoo, displayNetPrices: true, taxRate: isCondition2(payload) ? 0.105 : IVA_RATE });
       res.setHeader("Content-Type", "application/pdf");
       res.setHeader("Content-Disposition", `attachment; filename="${buildDownloadFilename(payload, "proforma")}"`);
       res.send(pdf);
