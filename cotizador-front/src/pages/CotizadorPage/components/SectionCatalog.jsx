@@ -368,6 +368,18 @@ function matchProductIds(selectedIds, requiredIds, matchMode = "any") {
   return required.some((id) => selected.has(id));
 }
 
+function dependencyRuleMatchesSelection(selectedIds, rule = {}) {
+  const selected = selectedIds instanceof Set ? selectedIds : new Set(selectedIds || []);
+  const requiredIds = normalizeIdList(rule?.required_product_ids);
+
+  // En el dashboard, la condición "Si elige cualquier producto de la sección"
+  // se guarda sin IDs requeridos. En ese caso, la regla debe activarse con
+  // cualquier selección dentro de la sección padre.
+  if (!requiredIds.length) return selected.size > 0;
+
+  return matchProductIds(selected, requiredIds, rule?.match_mode || "any");
+}
+
 function parseTriggerGroups(value) {
   const text = String(value || "").trim();
   if (!text) return [];
@@ -494,13 +506,7 @@ function computeOrderedSectionIds({
         const parentSectionId = Number(rule?.parent_section_id || 0);
         if (parentSectionId !== Number(currentSectionId)) continue;
 
-        if (
-          !matchProductIds(
-            selectedInParent,
-            rule?.required_product_ids,
-            rule?.match_mode || "any",
-          )
-        ) {
+        if (!dependencyRuleMatchesSelection(selectedInParent, rule)) {
           continue;
         }
 
@@ -639,6 +645,10 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
           String(a?.name || "").localeCompare(String(b?.name || ""), "es"),
       );
   }, [rulesQ.data]);
+
+  const hasSectionFlowConfig = !!initialSectionId || dependencyRules.length > 0;
+  const shouldUseSectionFlow = catalogKind === "puerta" || hasSectionFlowConfig;
+
 
   const systemRules = useMemo(() => {
     if (catalogKind !== "porton") return [];
@@ -792,7 +802,9 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
   }, [selectedProductIdsGlobalKey, selectedProductIdsGlobal, productsBySection, sectionList]);
 
   const orderedVisibleSectionIds = useMemo(() => {
-    return computeOrderedSectionIds({
+    if (rulesQ.isLoading || rulesQ.isFetching) return [];
+
+    const ordered = computeOrderedSectionIds({
       kind: catalogKind,
       sectionList,
       sectionMap,
@@ -800,7 +812,15 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
       dependencyRules,
       selectedProductIdsBySection,
     });
-  }, [catalogKind, sectionList, sectionMap, initialSectionId, dependencyRules, selectedProductIdsBySection]);
+
+    if (ordered.length) return ordered;
+
+    // Para catálogos configurados por secciones dependientes, no mostramos
+    // todas las secciones como fallback porque rompe el flujo de carga.
+    if (shouldUseSectionFlow) return [];
+
+    return sectionList.map((section) => Number(section.id));
+  }, [rulesQ.isLoading, rulesQ.isFetching, catalogKind, sectionList, sectionMap, initialSectionId, dependencyRules, selectedProductIdsBySection, shouldUseSectionFlow]);
 
   const visibleSections = useMemo(
     () => orderedVisibleSectionIds.map((id) => sectionMap.get(Number(id))).filter(Boolean),
@@ -1067,7 +1087,9 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
         <>
           <div className="spacer" />
           <div className="muted">
-            No hay secciones habilitadas todavía. Configurá secciones y etiquetas para este catálogo desde el dashboard.
+            {rulesQ.isLoading || rulesQ.isFetching
+              ? "Cargando flujo de secciones del catálogo…"
+              : "No hay secciones habilitadas todavía. Configurá la sección inicial y sus dependencias desde el dashboard."}
           </div>
         </>
       ) : (
