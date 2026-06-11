@@ -15,17 +15,17 @@ import { downloadPlegadoAttachment, formatPlegadoAttachmentMeta, getPlegadoAttac
 const PAGE_SIZE = 25;
 const COMMERCIAL_TAB_LABELS = {
   aprobaciones_todos: "Todos",
-  aprobaciones_portones: "Aprobaciones Portones",
-  aprobaciones_ipanels: "Aprobaciones Ipanels",
-  aprobaciones_plegados: "Aprobaciones Plegados",
-  aprobaciones_otros: "Aprobaciones Otros",
-  mediciones: "Mediciones",
+  aprobaciones_portones: "Aprobación de Portones",
+  aprobaciones_ipanels: "Aprobación de Ipanels",
+  aprobaciones_plegados: "Aprobación de Plegados",
+  aprobaciones_otros: "Aprobación de Otros",
+  mediciones: "Mediciones / circuito técnico",
   acopio: "Acopio → Producción",
-  acopio_listado: "Portones / Ipanels en Acopio",
-  produccion: "Portones enviados a Producción",
-  produccion_ipanels: "Ipanels enviados a Producción",
-  produccion_puertas: "Puertas enviadas a Producción",
-  puertas: "Aprobaciones Puertas",
+  acopio_listado: "En Acopio",
+  produccion: "Enviados a Producción",
+  produccion_ipanels: "Enviados a Producción",
+  produccion_puertas: "Enviadas a Producción",
+  puertas: "Aprobación de Puertas",
 };
 const COMMERCIAL_TABS_BY_SECTION = {
   all: ["aprobaciones_todos", "aprobaciones_portones", "aprobaciones_ipanels", "aprobaciones_plegados", "aprobaciones_otros", "mediciones", "acopio", "acopio_listado", "produccion", "produccion_ipanels", "produccion_puertas", "puertas"],
@@ -39,6 +39,41 @@ function normalizeCommercialTab(raw, section = "all") {
   const allowed = COMMERCIAL_TABS_BY_SECTION[section] || COMMERCIAL_TABS_BY_SECTION.all;
   const value = String(raw || "").trim();
   return allowed.includes(value) ? value : allowed[0];
+}
+
+function commercialTabLabel(tabKey, section = "all") {
+  if (tabKey === "acopio") {
+    if (section === "porton") return "Portones: Acopio → Producción";
+    if (section === "ipanel") return "Ipanels: Acopio → Producción";
+    if (section === "puerta") return "Puertas: Acopio → Producción";
+    if (section === "plegados") return "Plegados: Acopio → Producción";
+    if (section === "otros") return "Otros: Acopio → Producción";
+    return "Todos: Acopio → Producción";
+  }
+  if (tabKey === "acopio_listado") {
+    if (section === "porton") return "Portones en Acopio";
+    if (section === "ipanel") return "Ipanels en Acopio";
+    if (section === "puerta") return "Puertas en Acopio";
+    if (section === "plegados") return "Plegados en Acopio";
+    if (section === "otros") return "Otros en Acopio";
+    return "Todos en Acopio";
+  }
+  if (tabKey === "produccion") {
+    if (section === "porton") return "Portones enviados a Producción";
+    if (section === "ipanel") return "Ipanels enviados a Producción";
+    if (section === "puerta") return "Puertas enviadas a Producción";
+    if (section === "plegados") return "Plegados enviados a Producción";
+    if (section === "otros") return "Otros enviados a Producción";
+    return "Todos enviados a Producción";
+  }
+  if (tabKey === "produccion_ipanels") return "Ipanels enviados a Producción";
+  if (tabKey === "produccion_puertas") return "Puertas enviadas a Producción";
+  if (tabKey === "mediciones") {
+    if (section === "porton") return "Mediciones Portones";
+    if (section === "puerta") return "Mediciones Puertas";
+    return "Mediciones / circuito técnico";
+  }
+  return COMMERCIAL_TAB_LABELS[tabKey] || tabKey;
 }
 
 function acopioReqLabel(r) {
@@ -552,7 +587,7 @@ export default function AprobacionComercialPage() {
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             {visibleTabKeys.map((tabKey) => (
-              <Button key={tabKey} variant={tab === tabKey ? "primary" : "ghost"} onClick={() => goToTab(tabKey)}>{COMMERCIAL_TAB_LABELS[tabKey] || tabKey}</Button>
+              <Button key={tabKey} variant={tab === tabKey ? "primary" : "ghost"} onClick={() => goToTab(tabKey)}>{commercialTabLabel(tabKey, approvalSection)}</Button>
             ))}
           </div>
           <Button variant="ghost" onClick={() => navigate("/aprobacion/comercial/menu")}>Volver al submenú</Button>
