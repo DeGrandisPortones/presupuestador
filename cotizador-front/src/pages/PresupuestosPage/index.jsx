@@ -354,6 +354,7 @@ export default function PresupuestosPage() {
     }
     if (typeFilter === "porton") filtered = filtered.filter((item) => item.rowKind === "quote" && effectiveQuoteKind(item.raw) === "porton");
     if (typeFilter === "ipanel") filtered = filtered.filter((item) => item.rowKind === "quote" && effectiveQuoteKind(item.raw) === "ipanel");
+    if (typeFilter === "plegados") filtered = filtered.filter((item) => item.rowKind === "quote" && effectiveQuoteKind(item.raw) === "plegados");
     if (typeFilter === "otros") filtered = filtered.filter((item) => item.rowKind === "quote" && effectiveQuoteKind(item.raw) === "otros");
     if (typeFilter === "door") filtered = filtered.filter((item) => item.rowKind === "door");
     return filtered.filter((item) => matchesRowSearch(item, searchText));
@@ -384,6 +385,7 @@ export default function PresupuestosPage() {
           <Button variant={typeFilter === "all" ? "primary" : "ghost"} onClick={() => setTypeFilter("all")}>Todos los tipos</Button>
           <Button variant={typeFilter === "porton" ? "primary" : "ghost"} onClick={() => setTypeFilter("porton")}>Portón</Button>
           <Button variant={typeFilter === "ipanel" ? "primary" : "ghost"} onClick={() => setTypeFilter("ipanel")}>Ipanel</Button>
+          <Button variant={typeFilter === "plegados" ? "primary" : "ghost"} onClick={() => setTypeFilter("plegados")}>Plegados</Button>
           <Button variant={typeFilter === "otros" ? "primary" : "ghost"} onClick={() => setTypeFilter("otros")}>Otros</Button>
           <Button variant={typeFilter === "door" ? "primary" : "ghost"} onClick={() => setTypeFilter("door")}>Puerta</Button>
         </div>
