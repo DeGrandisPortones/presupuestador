@@ -16,6 +16,61 @@ function extensionFromName(name = "") {
   return match ? match[1] : "";
 }
 
+function extensionFromMimeType(type = "") {
+  const mime = safeText(type).toLowerCase();
+  if (mime === "application/pdf") return "pdf";
+  if (mime === "image/jpeg") return "jpg";
+  if (mime === "image/png") return "png";
+  if (mime === "image/webp") return "webp";
+  if (mime === "image/gif") return "gif";
+  return "";
+}
+
+function normalizeAttachmentName(attachment = {}) {
+  const rawName = safeText(attachment?.name || attachment?.filename || attachment?.file_name) || "plano_plegado";
+  if (extensionFromName(rawName)) return rawName;
+  const ext = extensionFromMimeType(attachment?.type || attachment?.mime_type || attachment?.mimetype);
+  return ext ? `${rawName}.${ext}` : rawName;
+}
+
+function dataUrlToBlob(dataUrl = "", fallbackType = "application/octet-stream") {
+  const raw = safeText(dataUrl);
+  if (!raw) return null;
+  if (!raw.startsWith("data:")) return null;
+
+  const commaIndex = raw.indexOf(",");
+  if (commaIndex < 0) return null;
+
+  const meta = raw.slice(5, commaIndex);
+  const body = raw.slice(commaIndex + 1);
+  const [mimePart = ""] = meta.split(";");
+  const mimeType = safeText(mimePart) || safeText(fallbackType) || "application/octet-stream";
+  const isBase64 = meta.toLowerCase().includes(";base64");
+
+  if (isBase64) {
+    const binary = window.atob(body);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+    return new Blob([bytes], { type: mimeType });
+  }
+
+  return new Blob([decodeURIComponent(body)], { type: mimeType });
+}
+
+function buildAttachmentObjectUrl(attachment = {}) {
+  const href = safeText(attachment?.data_url || attachment?.dataUrl || attachment?.url || attachment?.href);
+  if (!href) return null;
+
+  if (href.startsWith("blob:") || href.startsWith("http://") || href.startsWith("https://")) {
+    return { url: href, revoke: false };
+  }
+
+  const blob = dataUrlToBlob(href, attachment?.type || attachment?.mime_type || attachment?.mimetype);
+  if (!blob) return { url: href, revoke: false };
+
+  return { url: window.URL.createObjectURL(blob), revoke: true };
+}
+
 export function isAllowedPlegadoAttachment(file) {
   if (!file) return false;
   const type = safeText(file.type).toLowerCase();
@@ -89,7 +144,7 @@ export function hasPlegadoAttachment(source = {}) {
 
 export function formatPlegadoAttachmentMeta(attachment) {
   if (!attachment) return "";
-  const name = safeText(attachment.name) || "plano_plegado";
+  const name = normalizeAttachmentName(attachment);
   const size = Number(attachment.size || 0) || 0;
   if (!size) return name;
   const unit = size >= 1024 * 1024 ? `${(size / (1024 * 1024)).toFixed(1)} MB` : `${Math.max(1, Math.round(size / 1024))} KB`;
@@ -97,20 +152,28 @@ export function formatPlegadoAttachmentMeta(attachment) {
 }
 
 export function openPlegadoAttachment(attachment) {
-  const href = safeText(attachment?.data_url);
-  if (!href) return false;
-  const opened = window.open(href, "_blank", "noopener,noreferrer");
+  if (typeof window === "undefined") return false;
+  const target = buildAttachmentObjectUrl(attachment);
+  if (!target?.url) return false;
+
+  // Chrome bloquea navegación directa a data: URLs y termina en about:blank#blocked.
+  // Por eso abrimos un blob: URL temporal del mismo archivo.
+  const opened = window.open(target.url, "_blank", "noopener,noreferrer");
+  if (target.revoke) window.setTimeout(() => window.URL.revokeObjectURL(target.url), 60 * 1000);
   return !!opened;
 }
 
 export function downloadPlegadoAttachment(attachment) {
-  const href = safeText(attachment?.data_url);
-  if (!href) return false;
+  if (typeof document === "undefined" || typeof window === "undefined") return false;
+  const target = buildAttachmentObjectUrl(attachment);
+  if (!target?.url) return false;
+
   const a = document.createElement("a");
-  a.href = href;
-  a.download = safeText(attachment?.name) || "plano_plegado";
+  a.href = target.url;
+  a.download = normalizeAttachmentName(attachment);
   document.body.appendChild(a);
   a.click();
   a.remove();
+  if (target.revoke) window.setTimeout(() => window.URL.revokeObjectURL(target.url), 1000);
   return true;
 }
