@@ -23,12 +23,13 @@ const TECHNICAL_TAB_LABELS = {
   acopio_listado: "Portones / Ipanels en Acopio",
   produccion: "Portones enviados a Producción",
   produccion_ipanels: "Ipanels enviados a Producción",
+  produccion_puertas: "Puertas enviadas a Producción",
 };
 const TECHNICAL_TABS_BY_SECTION = {
-  all: ["aprobaciones_todos", "aprobaciones_portones", "aprobaciones_ipanels", "aprobaciones_puertas", "aprobaciones_plegados", "aprobaciones_otros", "aprobaciones_mediciones", "acopio", "acopio_listado", "produccion", "produccion_ipanels"],
+  all: ["aprobaciones_todos", "aprobaciones_portones", "aprobaciones_ipanels", "aprobaciones_puertas", "aprobaciones_plegados", "aprobaciones_otros", "aprobaciones_mediciones", "acopio", "acopio_listado", "produccion", "produccion_ipanels", "produccion_puertas"],
   porton: ["aprobaciones_portones", "aprobaciones_mediciones", "acopio", "acopio_listado", "produccion"],
   ipanel: ["aprobaciones_ipanels", "acopio", "acopio_listado", "produccion_ipanels"],
-  puerta: ["aprobaciones_puertas"],
+  puerta: ["aprobaciones_puertas", "aprobaciones_mediciones", "acopio", "acopio_listado", "produccion_puertas"],
   plegados: ["aprobaciones_plegados"],
   otros: ["aprobaciones_otros"],
 };
@@ -90,6 +91,11 @@ function normalizeApprovalSection(raw) {
   return VALID_APPROVAL_SECTIONS.has(value) ? value : "all";
 }
 function isOtrosRow(row) { return catalogKind(row) === "otros"; }
+function isPuertaQuoteRow(row) {
+  const kind = catalogKind(row);
+  const payload = row?.payload && typeof row.payload === "object" ? row.payload : {};
+  return kind === "puerta" || payload?.door_structure_quote === true || String(payload?.quote_subkind || "").toLowerCase().trim() === "puerta";
+}
 function isPortonOnlyRow(row) {
   const kind = catalogKind(row);
   return !["ipanel", "puerta", "plegados", "otros"].includes(kind);
@@ -99,6 +105,7 @@ function rowMatchesApprovalSection(row, section) {
   if (section === "all") return true;
   if (section === "porton") return isPortonOnlyRow(row);
   if (section === "ipanel") return isIpanelRow(row);
+  if (section === "puerta") return isPuertaQuoteRow(row);
   if (section === "plegados") return isPlegadosRow(row);
   if (section === "otros") return isOtrosRow(row);
   return true;
@@ -336,7 +343,7 @@ export default function AprobacionTecnicaPage() {
   const q = useQuery({ queryKey: ["quotes", "technical_inbox"], queryFn: () => listQuotes({ scope: "technical_inbox" }), enabled: !!user?.is_rev_tecnica });
   const acopioQ = useQuery({ queryKey: ["quotes", "technical_acopio"], queryFn: () => listQuotes({ scope: "technical_acopio" }), enabled: tab === "acopio" && !!user?.is_rev_tecnica });
   const acopioListadoQ = useQuery({ queryKey: ["quotes", "technical_acopio_all"], queryFn: () => listQuotes({ scope: "technical_acopio_all" }), enabled: tab === "acopio_listado" && !!user?.is_rev_tecnica });
-  const produccionQ = useQuery({ queryKey: ["quotes", "production_sent", "technical", tab], queryFn: () => listQuotes({ scope: "production_sent" }), enabled: ["produccion", "produccion_ipanels"].includes(tab) && !!user?.is_rev_tecnica });
+  const produccionQ = useQuery({ queryKey: ["quotes", "production_sent", "technical", tab], queryFn: () => listQuotes({ scope: "production_sent" }), enabled: ["produccion", "produccion_ipanels", "produccion_puertas"].includes(tab) && !!user?.is_rev_tecnica });
   const doorsQ = useQuery({ queryKey: ["doors", "technical_inbox"], queryFn: () => listDoors({ scope: "technical_inbox" }), enabled: tab === "aprobaciones_puertas" && !!user?.is_rev_tecnica });
   const measQ = useQuery({ queryKey: ["measurements", "tecnica", tab, measurementStatus], queryFn: () => listMeasurements({ status: "all", viewer: "tecnica" }), enabled: ["aprobaciones_mediciones", "aprobaciones_ipanels"].includes(tab) && !!user?.is_rev_tecnica });
 
@@ -376,7 +383,7 @@ export default function AprobacionTecnicaPage() {
   const otrosRows = useMemo(() => approvalBaseRows.filter(isOtrosRow), [approvalBaseRows]);
 
   const measurementRows = useMemo(() => {
-    let arr = (measQ.data || []).slice().filter((r) => !isIpanelRow(r));
+    let arr = (measQ.data || []).slice().filter((r) => !isIpanelRow(r)).filter((r) => rowMatchesApprovalSection(r, approvalSection));
     if (measurementStatus === "por_realizar") arr = arr.filter((x) => ["pending", "needs_fix"].includes(String(x?.measurement_status || "")));
     else if (measurementStatus === "por_controlar") arr = arr.filter((x) => String(x?.measurement_status || "") === "submitted");
     else if (measurementStatus === "approved") arr = arr.filter((x) => String(x?.measurement_status || "") === "approved");
@@ -388,7 +395,7 @@ export default function AprobacionTecnicaPage() {
         if (weightDiff !== 0) return weightDiff;
         return toTimeDesc(b?.measurement_scheduled_for || b?.created_at) - toTimeDesc(a?.measurement_scheduled_for || a?.created_at);
       });
-  }, [measQ.data, measurementStatus, searchText]);
+  }, [measQ.data, measurementStatus, searchText, approvalSection]);
 
   const ipanelDetailRows = useMemo(() => {
     return (measQ.data || [])
@@ -422,6 +429,7 @@ export default function AprobacionTecnicaPage() {
   }, [produccionQ.data, searchText, approvalSection]);
   const produccionRows = useMemo(() => productionBaseRows.filter(isPortonLikeRow), [productionBaseRows]);
   const produccionIpanelRows = useMemo(() => productionBaseRows.filter(isIpanelRow), [productionBaseRows]);
+  const produccionPuertasRows = useMemo(() => productionBaseRows.filter(isPuertaQuoteRow), [productionBaseRows]);
 
   const doorRows = useMemo(() => {
     return (doorsQ.data || []).slice().sort((a, b) => toTimeDesc(b?.created_at) - toTimeDesc(a?.created_at)).filter((d) => matchesSearch([d?.door_code, d?.record?.end_customer?.name, d?.record?.obra_cliente, d?.linked_quote_odoo_name, doorOdooReference(d), d?.record?.asociado_porton, d?.status], searchText));
@@ -441,7 +449,7 @@ export default function AprobacionTecnicaPage() {
   useEffect(() => { const total = Math.max(1, Math.ceil(measurementRows.length / PAGE_SIZE)); if (pageMediciones > total) setPageMediciones(total); }, [measurementRows.length, pageMediciones]);
   useEffect(() => { const total = Math.max(1, Math.ceil(acopioRows.length / PAGE_SIZE)); if (pageAcopio > total) setPageAcopio(total); }, [acopioRows.length, pageAcopio]);
   useEffect(() => { const total = Math.max(1, Math.ceil(acopioListadoRows.length / PAGE_SIZE)); if (pageAcopioListado > total) setPageAcopioListado(total); }, [acopioListadoRows.length, pageAcopioListado]);
-  useEffect(() => { const total = Math.max(1, Math.ceil(produccionRows.length / PAGE_SIZE)); if (pageProduccion > total) setPageProduccion(total); }, [produccionRows.length, pageProduccion]);
+  useEffect(() => { const total = Math.max(1, Math.ceil((tab === "produccion_puertas" ? produccionPuertasRows.length : produccionRows.length) / PAGE_SIZE)); if (pageProduccion > total) setPageProduccion(total); }, [produccionRows.length, produccionPuertasRows.length, pageProduccion, tab]);
   useEffect(() => { const total = Math.max(1, Math.ceil(produccionIpanelRows.length / PAGE_SIZE)); if (pageProduccionIpanels > total) setPageProduccionIpanels(total); }, [produccionIpanelRows.length, pageProduccionIpanels]);
   useEffect(() => { const total = Math.max(1, Math.ceil(doorRows.length / PAGE_SIZE)); if (pagePuertas > total) setPagePuertas(total); }, [doorRows.length, pagePuertas]);
 
@@ -458,6 +466,7 @@ export default function AprobacionTecnicaPage() {
   const visibleAcopioListado = paged(acopioListadoRows, pageAcopioListado);
   const visibleProduccion = paged(produccionRows, pageProduccion);
   const visibleProduccionIpanels = paged(produccionIpanelRows, pageProduccionIpanels);
+  const visibleProduccionPuertas = paged(produccionPuertasRows, pageProduccion);
   const visibleDoors = paged(doorRows, pagePuertas);
   const hideScheduleColumns = measurementStatus === "sin_medicion";
 
@@ -632,7 +641,7 @@ export default function AprobacionTecnicaPage() {
           <>
             {acopioListadoQ.isLoading && <div className="muted">Cargando...</div>}
             {acopioListadoQ.isError && <div style={{ color: "#d93025", fontSize: 13 }}>{acopioListadoQ.error.message}</div>}
-            {!acopioListadoQ.isLoading && !acopioListadoRows.length && <div className="muted">Sin portones/Ipanels en acopio</div>}
+            {!acopioListadoQ.isLoading && !acopioListadoRows.length && <div className="muted">Sin elementos en acopio</div>}
             {!!acopioListadoRows.length && (
               <>
                 <table><thead><tr><th>Fecha</th><th>Tipo</th><th>NP/NV Odoo</th><th>Vendedor/Distribuidor</th><th>Cliente</th><th>Dirección</th><th>Estado</th><th>Datos plegado</th><th>Obs. presupuesto</th><th>Solicitud Prod.</th><th></th></tr></thead><tbody>
@@ -646,6 +655,7 @@ export default function AprobacionTecnicaPage() {
 
         {tab === "produccion" && renderProductionRows(visibleProduccion, produccionRows.length, pageProduccion, setPageProduccion, "Sin portones enviados a producción")}
         {tab === "produccion_ipanels" && renderProductionRows(visibleProduccionIpanels, produccionIpanelRows.length, pageProduccionIpanels, setPageProduccionIpanels, "Sin Ipanels enviados a producción")}
+        {tab === "produccion_puertas" && renderProductionRows(visibleProduccionPuertas, produccionPuertasRows.length, pageProduccion, setPageProduccion, "Sin puertas enviadas a producción")}
 
         {tab === "aprobaciones_puertas" && (
           <>

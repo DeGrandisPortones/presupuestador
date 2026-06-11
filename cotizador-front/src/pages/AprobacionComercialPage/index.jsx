@@ -24,13 +24,14 @@ const COMMERCIAL_TAB_LABELS = {
   acopio_listado: "Portones / Ipanels en Acopio",
   produccion: "Portones enviados a Producción",
   produccion_ipanels: "Ipanels enviados a Producción",
-  puertas: "Puertas",
+  produccion_puertas: "Puertas enviadas a Producción",
+  puertas: "Aprobaciones Puertas",
 };
 const COMMERCIAL_TABS_BY_SECTION = {
-  all: ["aprobaciones_todos", "aprobaciones_portones", "aprobaciones_ipanels", "aprobaciones_plegados", "aprobaciones_otros", "mediciones", "acopio", "acopio_listado", "produccion", "produccion_ipanels", "puertas"],
+  all: ["aprobaciones_todos", "aprobaciones_portones", "aprobaciones_ipanels", "aprobaciones_plegados", "aprobaciones_otros", "mediciones", "acopio", "acopio_listado", "produccion", "produccion_ipanels", "produccion_puertas", "puertas"],
   porton: ["aprobaciones_portones", "mediciones", "acopio", "acopio_listado", "produccion"],
   ipanel: ["aprobaciones_ipanels", "acopio", "acopio_listado", "produccion_ipanels"],
-  puerta: ["puertas"],
+  puerta: ["puertas", "mediciones", "acopio", "acopio_listado", "produccion_puertas"],
   plegados: ["aprobaciones_plegados"],
   otros: ["aprobaciones_otros"],
 };
@@ -99,6 +100,11 @@ function normalizeApprovalSection(raw) {
   return VALID_APPROVAL_SECTIONS.has(value) ? value : "all";
 }
 function isOtrosRow(row) { return catalogKind(row) === "otros"; }
+function isPuertaQuoteRow(row) {
+  const kind = catalogKind(row);
+  const payload = row?.payload && typeof row.payload === "object" ? row.payload : {};
+  return kind === "puerta" || payload?.door_structure_quote === true || String(payload?.quote_subkind || "").toLowerCase().trim() === "puerta";
+}
 function isPortonOnlyRow(row) {
   const kind = catalogKind(row);
   return !["ipanel", "puerta", "plegados", "otros"].includes(kind);
@@ -108,6 +114,7 @@ function rowMatchesApprovalSection(row, section) {
   if (section === "all") return true;
   if (section === "porton") return isPortonOnlyRow(row);
   if (section === "ipanel") return isIpanelRow(row);
+  if (section === "puerta") return isPuertaQuoteRow(row);
   if (section === "plegados") return isPlegadosRow(row);
   if (section === "otros") return isOtrosRow(row);
   return true;
@@ -320,7 +327,7 @@ export default function AprobacionComercialPage() {
   const q = useQuery({ queryKey: ["quotes", "commercial_inbox"], queryFn: () => listQuotes({ scope: "commercial_inbox" }), enabled: !!user?.is_enc_comercial });
   const acopioQ = useQuery({ queryKey: ["quotes", "commercial_acopio"], queryFn: () => listQuotes({ scope: "commercial_acopio" }), enabled: tab === "acopio" && !!user?.is_enc_comercial });
   const acopioListadoQ = useQuery({ queryKey: ["quotes", "commercial_acopio_all"], queryFn: () => listQuotes({ scope: "commercial_acopio_all" }), enabled: tab === "acopio_listado" && !!user?.is_enc_comercial });
-  const produccionQ = useQuery({ queryKey: ["quotes", "production_sent", "commercial", tab], queryFn: () => listQuotes({ scope: "production_sent" }), enabled: ["produccion", "produccion_ipanels"].includes(tab) && !!user?.is_enc_comercial });
+  const produccionQ = useQuery({ queryKey: ["quotes", "production_sent", "commercial", tab], queryFn: () => listQuotes({ scope: "production_sent" }), enabled: ["produccion", "produccion_ipanels", "produccion_puertas"].includes(tab) && !!user?.is_enc_comercial });
   const doorsQ = useQuery({ queryKey: ["doors", "commercial_inbox"], queryFn: () => listDoors({ scope: "commercial_inbox" }), enabled: tab === "puertas" && !!user?.is_enc_comercial });
   const medicionesQ = useQuery({
     queryKey: ["measurements", "commercial_review"],
@@ -405,6 +412,7 @@ export default function AprobacionComercialPage() {
   }, [produccionQ.data, searchText, approvalSection]);
   const produccionRows = useMemo(() => productionBaseRows.filter(isPortonLikeRow), [productionBaseRows]);
   const produccionIpanelRows = useMemo(() => productionBaseRows.filter(isIpanelRow), [productionBaseRows]);
+  const produccionPuertasRows = useMemo(() => productionBaseRows.filter(isPuertaQuoteRow), [productionBaseRows]);
 
   const doorRows = useMemo(() => {
     return (doorsQ.data || [])
@@ -417,6 +425,7 @@ export default function AprobacionComercialPage() {
     return (medicionesQ.data || [])
       .slice()
       .sort((a, b) => toTimeDesc(b?.measurement_at || b?.created_at) - toTimeDesc(a?.measurement_at || a?.created_at))
+      .filter((r) => rowMatchesApprovalSection(r, approvalSection))
       .filter((r) =>
         matchesSearch(
           [
@@ -433,7 +442,7 @@ export default function AprobacionComercialPage() {
           searchText,
         ),
       );
-  }, [medicionesQ.data, searchText]);
+  }, [medicionesQ.data, searchText, approvalSection]);
 
   useEffect(() => { setPageTodos(1); setPageAprobaciones(1); setPageIpanels(1); setPagePlegados(1); setPageOtros(1); }, [filter, searchText, approvalSection]);
   useEffect(() => { setPageAcopio(1); }, [searchText]);
@@ -451,6 +460,7 @@ export default function AprobacionComercialPage() {
   const visibleAcopioListadoRows = useMemo(() => acopioListadoRows.slice((pageAcopioListado - 1) * PAGE_SIZE, pageAcopioListado * PAGE_SIZE), [acopioListadoRows, pageAcopioListado]);
   const visibleProduccionRows = useMemo(() => produccionRows.slice((pageProduccion - 1) * PAGE_SIZE, pageProduccion * PAGE_SIZE), [produccionRows, pageProduccion]);
   const visibleProduccionIpanelRows = useMemo(() => produccionIpanelRows.slice((pageProduccionIpanels - 1) * PAGE_SIZE, pageProduccionIpanels * PAGE_SIZE), [produccionIpanelRows, pageProduccionIpanels]);
+  const visibleProduccionPuertasRows = useMemo(() => produccionPuertasRows.slice((pageProduccion - 1) * PAGE_SIZE, pageProduccion * PAGE_SIZE), [produccionPuertasRows, pageProduccion]);
   const visibleDoorRows = useMemo(() => doorRows.slice((pagePuertas - 1) * PAGE_SIZE, pagePuertas * PAGE_SIZE), [doorRows, pagePuertas]);
   const visibleMedicionesRows = useMemo(() => medicionesRows.slice((pageMediciones - 1) * PAGE_SIZE, pageMediciones * PAGE_SIZE), [medicionesRows, pageMediciones]);
 
@@ -648,7 +658,7 @@ export default function AprobacionComercialPage() {
           <>
             {acopioListadoQ.isLoading && <div className="muted">Cargando...</div>}
             {acopioListadoQ.isError && <div style={{ color: "#d93025", fontSize: 13 }}>{acopioListadoQ.error.message}</div>}
-            {!acopioListadoQ.isLoading && !acopioListadoRows.length && <div className="muted">Sin portones/Ipanels en acopio</div>}
+            {!acopioListadoQ.isLoading && !acopioListadoRows.length && <div className="muted">Sin elementos en acopio</div>}
             {!!acopioListadoRows.length && (
               <>
                 <table>
@@ -685,6 +695,7 @@ export default function AprobacionComercialPage() {
 
         {tab === "produccion" && renderProductionRows(visibleProduccionRows, produccionRows.length, pageProduccion, setPageProduccion, "Sin portones enviados a producción")}
         {tab === "produccion_ipanels" && renderProductionRows(visibleProduccionIpanelRows, produccionIpanelRows.length, pageProduccionIpanels, setPageProduccionIpanels, "Sin Ipanels enviados a producción")}
+        {tab === "produccion_puertas" && renderProductionRows(visibleProduccionPuertasRows, produccionPuertasRows.length, pageProduccion, setPageProduccion, "Sin puertas enviadas a producción")}
 
         {tab === "puertas" && (
           <>
