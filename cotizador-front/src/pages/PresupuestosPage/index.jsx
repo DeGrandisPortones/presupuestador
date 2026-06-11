@@ -8,7 +8,7 @@ import PaginationControls from "../../ui/PaginationControls.jsx";
 import { useAuthStore } from "../../domain/auth/store.js";
 import { listDoors } from "../../api/doors.js";
 import { listQuotes, requestProductionFromAcopio } from "../../api/quotes.js";
-import { downloadListingQuotePdf } from "../../utils/listingPdf.js";
+import { downloadListingQuotePdf, downloadListingQuoteProformaPdf } from "../../utils/listingPdf.js";
 
 const PAGE_SIZE = 25;
 
@@ -244,11 +244,18 @@ export default function PresupuestosPage() {
   const doorsQ = useQuery({ queryKey: ["doors", "mine", "presupuestos"], queryFn: () => listDoors({ scope: "mine" }), enabled: !!user?.is_vendedor || !!user?.is_distribuidor });
   const qc = useQueryClient();
   const moveM = useMutation({ mutationFn: (id) => requestProductionFromAcopio(id), onSuccess: () => qc.invalidateQueries({ queryKey: ["quotes", "mine"] }) });
+  const canDownloadQuoteProforma = !!user?.is_distribuidor && !user?.is_vendedor;
 
   async function handleDownloadQuotePdf(quoteId) {
     const key = `quote-${quoteId}`;
     setDownloadingPdfKey(key);
     try { await downloadListingQuotePdf(quoteId); } catch (e) { toast.error(e?.message || "No se pudo descargar el PDF"); } finally { setDownloadingPdfKey(""); }
+  }
+
+  async function handleDownloadQuoteProformaPdf(quoteId) {
+    const key = `proforma-${quoteId}`;
+    setDownloadingPdfKey(key);
+    try { await downloadListingQuoteProformaPdf(quoteId); } catch (e) { toast.error(e?.message || "No se pudo descargar la proforma"); } finally { setDownloadingPdfKey(""); }
   }
 
   const linkedDoorQuoteIds = useMemo(() => new Set((doorsQ.data || []).map((d) => String(d?.linked_quote_id || "").trim()).filter(Boolean)), [doorsQ.data]);
@@ -390,7 +397,9 @@ export default function PresupuestosPage() {
 
                   const r = item.raw;
                   const originalPdfKey = `quote-${r.id}`;
+                  const originalProformaPdfKey = `proforma-${r.id}`;
                   const finalPdfKey = r.final_copy_id ? `quote-${r.final_copy_id}` : "";
+                  const finalProformaPdfKey = r.final_copy_id ? `proforma-${r.final_copy_id}` : "";
                   const canRequestProduction = r.fulfillment_mode === "acopio" && r.status === "synced_odoo" && r.acopio_to_produccion_status !== "pending";
                   const hasFinal = !!r.final_copy_id;
                   const finalDraft = hasFinal && !["syncing_odoo", "synced_odoo"].includes(String(r.final_copy_status || ""));
@@ -419,7 +428,9 @@ export default function PresupuestosPage() {
                       {filter === "mediciones" ? <td>{item.measurementStatus}</td> : null}
                       <td className="right" style={{ display: "flex", justifyContent: "flex-end", gap: 8, flexWrap: "wrap" }}>
                         <Button variant="ghost" disabled={downloadingPdfKey === originalPdfKey} onClick={() => handleDownloadQuotePdf(r.id)}>Ver original</Button>
+                        {canDownloadQuoteProforma ? <Button variant="ghost" disabled={downloadingPdfKey === originalProformaPdfKey} onClick={() => handleDownloadQuoteProformaPdf(r.id)}>Proforma</Button> : null}
                         {hasFinal ? <Button variant="ghost" disabled={downloadingPdfKey === finalPdfKey} onClick={() => handleDownloadQuotePdf(r.final_copy_id)}>Ver final</Button> : null}
+                        {canDownloadQuoteProforma && hasFinal ? <Button variant="ghost" disabled={downloadingPdfKey === finalProformaPdfKey} onClick={() => handleDownloadQuoteProformaPdf(r.final_copy_id)}>Proforma final</Button> : null}
                         {hasMeasurementDetail ? <Button variant="ghost" disabled={!isMeasurementApproved} title={isMeasurementApproved ? "" : "Disponible cuando Técnica apruebe la medición / detalle técnico"} onClick={() => { if (!isMeasurementApproved) return; navigate(`/mediciones/${r.id}`); }}>{measurementLabel}</Button> : null}
                         {r.status === "draft" ? <Button onClick={() => navigate(quoteEditorPath(r))}>Editar</Button> : null}
                         {canAddDoor ? <Button variant="ghost" onClick={() => navigate(`/puertas/nuevo/${r.id}`)}>Agregar puerta</Button> : null}

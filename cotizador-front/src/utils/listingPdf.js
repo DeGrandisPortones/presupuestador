@@ -1,17 +1,17 @@
 import { getQuote, getProductionPlanningEstimate } from "../api/quotes.js";
 import { getDoorQuotePdfPayload } from "../api/doors.js";
-import { downloadPresupuestoPdf } from "../api/pdf.js";
+import { downloadPresupuestoPdf, downloadProformaPdf } from "../api/pdf.js";
 
 function safeText(value) {
   return String(value ?? "").trim();
 }
 
-function buildQuotePayload(quote, productionPlanning = null) {
+function buildQuotePayload(quote, productionPlanning = null, options = {}) {
   const q = quote || {};
   const isFinal = String(q?.quote_kind || "").toLowerCase() === "copy";
   return {
     ...q,
-    pdf_title: isFinal ? "NV" : "PRESUPUESTO",
+    pdf_title: safeText(options.pdfTitle) || (isFinal ? "NV" : "PRESUPUESTO"),
     quote_number: isFinal
       ? (safeText(q.final_sale_order_name) || safeText(q.odoo_sale_order_name) || safeText(q.quote_number))
       : (safeText(q.quote_number) || safeText(q.odoo_sale_order_name) || safeText(q.id)),
@@ -28,7 +28,7 @@ function buildQuotePayload(quote, productionPlanning = null) {
   };
 }
 
-export async function downloadListingQuotePdf(quoteId) {
+async function getQuotePayloadForListingPdf(quoteId, options = {}) {
   const quote = await getQuote(quoteId);
   let productionPlanning = quote?.production_planning || null;
   if (!productionPlanning && String(quote?.quote_kind || "original").toLowerCase() === "original") {
@@ -38,8 +38,18 @@ export async function downloadListingQuotePdf(quoteId) {
       productionPlanning = null;
     }
   }
-  const payload = buildQuotePayload(quote, productionPlanning);
+  return buildQuotePayload(quote, productionPlanning, options);
+}
+
+export async function downloadListingQuotePdf(quoteId) {
+  const payload = await getQuotePayloadForListingPdf(quoteId);
   await downloadPresupuestoPdf(payload);
+  return payload;
+}
+
+export async function downloadListingQuoteProformaPdf(quoteId) {
+  const payload = await getQuotePayloadForListingPdf(quoteId, { pdfTitle: "PROFORMA" });
+  await downloadProformaPdf(payload);
   return payload;
 }
 
