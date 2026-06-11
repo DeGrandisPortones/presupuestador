@@ -13,19 +13,27 @@ function getDoorSectionTone(sectionId) {
   const id = Number(sectionId || 0);
   if (DOOR_SECTION_GREEN_IDS.has(id)) {
     return {
-      background: "#ecfdf3",
-      borderColor: "#bbf7d0",
-      boxShadow: "inset 4px 0 0 #22c55e",
+      itemStyle: {
+        background: "#ecfdf3",
+        borderColor: "#bbf7d0",
+        boxShadow: "inset 4px 0 0 #22c55e",
+      },
+      headerStyle: { background: "transparent" },
+      bodyStyle: { background: "transparent" },
     };
   }
   if (DOOR_SECTION_BLUE_IDS.has(id)) {
     return {
-      background: "#eff6ff",
-      borderColor: "#bfdbfe",
-      boxShadow: "inset 4px 0 0 #38bdf8",
+      itemStyle: {
+        background: "#eff6ff",
+        borderColor: "#bfdbfe",
+        boxShadow: "inset 4px 0 0 #38bdf8",
+      },
+      headerStyle: { background: "transparent" },
+      bodyStyle: { background: "transparent" },
     };
   }
-  return undefined;
+  return null;
 }
 
 function getClientFacingProductName(product) {
@@ -418,7 +426,7 @@ export default function PuertaCatalog() {
             const isOpen = openSectionId === sectionId;
             const sectionProducts = productsBySection.get(sectionId) || [];
             const selectedInSection = selectedProductIdsBySection.get(sectionId) || new Set();
-            const sectionToneStyle = getDoorSectionTone(sectionId);
+            const sectionTone = getDoorSectionTone(sectionId);
             return (
               <div
                 key={sectionId}
@@ -427,16 +435,16 @@ export default function PuertaCatalog() {
                   else sectionRefs.current.delete(sectionId);
                 }}
                 className={isOpen ? "dg-acc-item is-open" : "dg-acc-item"}
-                style={sectionToneStyle ? { borderColor: sectionToneStyle.borderColor } : undefined}
+                style={sectionTone?.itemStyle || undefined}
               >
-                <button type="button" className="dg-acc-header" style={sectionToneStyle} onClick={() => setOpenSectionId(isOpen ? null : sectionId)}>
+                <button type="button" className="dg-acc-header" style={sectionTone?.headerStyle || undefined} onClick={() => setOpenSectionId(isOpen ? null : sectionId)}>
                   <div className="dg-acc-title">{section.name}</div>
                   <div className="dg-acc-meta">{selectedInSection.size ? `${selectedInSection.size} seleccionado` : "Sin selección"} · {sectionProducts.length}</div>
                   <div className="dg-acc-chevron">{isOpen ? "▾" : "▸"}</div>
                 </button>
 
                 {isOpen ? (
-                  <div className="dg-acc-body">
+                  <div className="dg-acc-body" style={sectionTone?.bodyStyle || undefined}>
                     <div className="dg-product-list">
                       {sectionProducts.map((product) => {
                         const disabledForUser = isDisabledForUser(product, user);
