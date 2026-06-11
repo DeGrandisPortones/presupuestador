@@ -46,6 +46,37 @@ const EXTERIOR_HELP_TEXT = "Siempre observando desde afuera de la vivienda/obra 
 const OPEN_SECTION_MEMORY = new Map();
 
 
+
+function catalogFlowDebugEnabled() {
+  try {
+    if (typeof window === "undefined") return false;
+    const params = new URLSearchParams(window.location.search || "");
+    return params.get("debugCatalog") === "1" || window.localStorage?.getItem("DFLEX_DEBUG_COTIZADOR") === "1";
+  } catch (_err) {
+    return false;
+  }
+}
+
+function formatDebugJson(value) {
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch (_err) {
+    return String(value || "");
+  }
+}
+
+function CatalogFlowDebugPanel({ data }) {
+  if (!catalogFlowDebugEnabled()) return null;
+  return (
+    <div style={{ margin: "12px 0", border: "1px solid #f59e0b", borderRadius: 12, background: "#fffbeb", padding: 12 }}>
+      <div style={{ fontWeight: 900, color: "#92400e", marginBottom: 8 }}>Debug flujo de secciones</div>
+      <pre style={{ margin: 0, whiteSpace: "pre-wrap", fontSize: 12, lineHeight: 1.35, maxHeight: 320, overflow: "auto" }}>
+        {formatDebugJson(data)}
+      </pre>
+    </div>
+  );
+}
+
 function ExteriorHelpButton({ open, onToggle }) {
   return (
     <button
@@ -1030,6 +1061,52 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
     if (nextSectionId) openSectionAndScroll(nextSectionId);
   }
 
+  const catalogFlowDebugData = useMemo(() => ({
+    catalogKind,
+    catalogPricingReady,
+    rulesLoading: !!rulesQ.isLoading,
+    rulesFetching: !!rulesQ.isFetching,
+    rulesError: rulesQ.error?.message || null,
+    rulesInitialSectionIdRaw: rulesQ.data?.initial_section_id ?? null,
+    initialSectionId,
+    dependencyRulesCount: dependencyRules.length,
+    dependencyRules: dependencyRules.map((rule) => ({
+      id: rule?.id,
+      name: rule?.name,
+      active: rule?.active !== false,
+      parent_section_id: Number(rule?.parent_section_id || 0) || null,
+      required_product_ids: normalizeIdList(rule?.required_product_ids),
+      match_mode: rule?.match_mode || "any",
+      child_section_ids: normalizeIdList(rule?.child_section_ids),
+    })),
+    hasSectionFlowConfig,
+    shouldUseSectionFlow,
+    sections: sectionList.map((section) => ({ id: Number(section.id), name: section.name })),
+    selectedProductIdsBySection: Array.from(selectedProductIdsBySection.entries()).map(([sectionId, ids]) => ({
+      sectionId: Number(sectionId),
+      selectedProductIds: Array.from(ids || []).map(Number),
+    })),
+    orderedVisibleSectionIds,
+    visibleSections: visibleSections.map((section) => ({ id: Number(section.id), name: section.name })),
+    openSectionId: Number(openSectionId || 0) || null,
+  }), [
+    catalogKind,
+    catalogPricingReady,
+    rulesQ.isLoading,
+    rulesQ.isFetching,
+    rulesQ.error,
+    rulesQ.data,
+    initialSectionId,
+    dependencyRules,
+    hasSectionFlowConfig,
+    shouldUseSectionFlow,
+    sectionList,
+    selectedProductIdsBySection,
+    orderedVisibleSectionIds,
+    visibleSections,
+    openSectionId,
+  ]);
+
   const title =
     catalogKind === "porton"
       ? "Características del portón"
@@ -1056,6 +1133,7 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
           </div>
         </div>
         {catalogKind === "porton" && catalogHelpOpen ? <ExteriorHelpBox /> : null}
+        <CatalogFlowDebugPanel data={catalogFlowDebugData} />
         <div className="spacer" />
         <div className="muted">
           {!catalogPricingReady
@@ -1082,6 +1160,7 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
         </div>
       </div>
       {catalogKind === "porton" && catalogHelpOpen ? <ExteriorHelpBox /> : null}
+      <CatalogFlowDebugPanel data={catalogFlowDebugData} />
 
       {!visibleSections.length ? (
         <>
