@@ -1604,6 +1604,95 @@ export function buildQuotesRouter(odoo) {
 
   router.use(requireAuth);
 
+
+  router.get("/customer-lookup", requireSellerOrDistributor, async (req, res, next) => {
+    try {
+      const u = req.user || {};
+      const query = toText(req.query.query);
+      const limit = Math.min(50, Math.max(1, Number(req.query.limit || 25) || 25));
+      if (query.length < 2) return res.json({ ok: true, customers: [] });
+
+      const like = `%${query}%`;
+      const digits = digitsOnly(query);
+      const digitLike = digits ? `%${digits}%` : "";
+      const r = await dbQuery(
+        `select q.id,
+                q.quote_number,
+                q.end_customer,
+                q.odoo_sale_order_name,
+                q.final_sale_order_name,
+                q.created_at,
+                q.confirmed_at,
+                q.catalog_kind,
+                q.fulfillment_mode,
+                q.status,
+                u.username as created_by_username,
+                u.full_name as created_by_full_name
+           from public.presupuestador_quotes q
+           left join public.presupuestador_users u on u.id = q.created_by_user_id
+          where q.created_by_user_id = $1
+            and coalesce(q.end_customer, '{}'::jsonb) <> '{}'::jsonb
+            and (
+              coalesce(q.end_customer->>'name', '') ilike $2
+              or coalesce(q.end_customer->>'first_name', '') ilike $2
+              or coalesce(q.end_customer->>'last_name', '') ilike $2
+              or coalesce(q.end_customer->>'email', '') ilike $2
+              or coalesce(q.end_customer->>'phone', '') ilike $2
+              or coalesce(q.end_customer->>'address', '') ilike $2
+              or coalesce(q.end_customer->>'city', '') ilike $2
+              or coalesce(q.end_customer->>'maps_url', '') ilike $2
+              or coalesce(q.quote_number::text, '') ilike $2
+              or coalesce(q.odoo_sale_order_name, '') ilike $2
+              or coalesce(q.final_sale_order_name, '') ilike $2
+              or ($3 <> '' and regexp_replace(coalesce(q.end_customer->>'phone', ''), '\\D', '', 'g') like $3)
+            )
+          order by coalesce(q.confirmed_at, q.created_at) desc nulls last, q.id desc
+          limit 150`,
+        [Number(u.user_id), like, digitLike]
+      );
+
+      const seen = new Set();
+      const customers = [];
+      for (const row of r.rows || []) {
+        const customer = row.end_customer && typeof row.end_customer === "object" ? row.end_customer : {};
+        const name = toText(customer.name || [customer.first_name, customer.last_name].filter(Boolean).join(" "));
+        const phone = toText(customer.phone);
+        const email = toText(customer.email).toLowerCase();
+        const address = toText(customer.address);
+        const city = toText(customer.city);
+        if (!name && !phone && !email && !address && !city) continue;
+        const key = [normalizeNameForLookup(name), normalizePhoneForLookup(phone), email, normalizeNameForLookup(address), normalizeNameForLookup(city)].join("|");
+        if (seen.has(key)) continue;
+        seen.add(key);
+        const reference = row.final_sale_order_name || row.odoo_sale_order_name || (row.quote_number ? `Presupuesto #${row.quote_number}` : "Presupuesto guardado");
+        customers.push({
+          key,
+          quote_id: row.id,
+          quote_number: row.quote_number,
+          reference,
+          catalog_kind: row.catalog_kind,
+          fulfillment_mode: row.fulfillment_mode,
+          status: row.status,
+          created_by_username: row.created_by_username || "",
+          created_by_full_name: row.created_by_full_name || "",
+          customer: {
+            name,
+            first_name: toText(customer.first_name),
+            last_name: toText(customer.last_name),
+            phone,
+            email,
+            address,
+            maps_url: toText(customer.maps_url),
+            city,
+          },
+        });
+        if (customers.length >= limit) break;
+      }
+
+      res.json({ ok: true, customers });
+    } catch (e) { next(e); }
+  });
+
   router.post("/", requireSellerOrDistributor, async (req, res, next) => {
     try {
       const u = req.user;
