@@ -157,12 +157,23 @@ function findCachedPriceForLine(line, cache) {
 
 function mapCachedLinePrice(line, cached) {
   const qty = Number(line?.qty || 1) || 1;
-  const productId = toPositiveInt(line?.product_id) || toPositiveInt(cached?.product_id) || toPositiveInt(cached?.odoo_product_id) || toPositiveInt(cached?.odoo_template_id);
+  const sourceProductId = toPositiveInt(
+    line?.source_product_id ||
+      line?.presupuestador_product_id ||
+      line?.catalog_product_id ||
+      line?.local_product_id ||
+      line?.line_product_id,
+  );
+  const requestedProductId = toPositiveInt(line?.product_id);
+  const cachedProductId = toPositiveInt(cached?.product_id) || toPositiveInt(cached?.odoo_product_id) || toPositiveInt(cached?.odoo_template_id);
+  const productId = sourceProductId || requestedProductId || cachedProductId;
+  const odooProductId = toPositiveInt(cached?.odoo_product_id) || requestedProductId || cachedProductId || productId;
   const name = cached?.name || cached?.raw_name || line?.name || (productId ? `Producto ${productId}` : "Producto");
 
   return {
     product_id: productId,
-    odoo_product_id: toPositiveInt(cached?.odoo_product_id) || productId,
+    odoo_product_id: odooProductId,
+    odoo_variant_id: toPositiveInt(cached?.odoo_variant_id) || toPositiveInt(line?.odoo_variant_id) || null,
     qty,
     price: Number(cached?.price || 0) || 0,
     name,

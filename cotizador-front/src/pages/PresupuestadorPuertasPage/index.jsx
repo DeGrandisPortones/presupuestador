@@ -168,6 +168,23 @@ function isSamePricelistId(currentId, expectedId) {
   return Number.isFinite(current) && current > 0 && Number.isFinite(expected) && expected > 0 && current === expected;
 }
 
+function resolveLinePricingProductId(line) {
+  const candidates = [
+    line?.odoo_variant_id,
+    line?.odoo_product_id,
+    line?.odoo_id,
+    line?.odoo_template_id,
+    line?.product_tmpl_id,
+    line?.odoo_external_id,
+    line?.product_id,
+  ];
+  for (const value of candidates) {
+    const n = Number(value || 0);
+    if (Number.isFinite(n) && n > 0) return Math.trunc(n);
+  }
+  return 0;
+}
+
 export default function PresupuestadorPuertasPage() {
   const navigate = useNavigate();
   const params = useParams();
@@ -285,7 +302,7 @@ export default function PresupuestadorPuertasPage() {
     return resolveQuoteAdjustmentPercent(financingPercent, conditionMode);
   }, [persistedQuoteId, savedQuoteAdjustmentPercent, financingPercent, conditionMode]);
   const totals = useMemo(() => calcTotals(lines, marginPercent, ivaRate, quoteAdjustmentPercent, conditionMode), [lines, marginPercent, ivaRate, quoteAdjustmentPercent, conditionMode]);
-  const linesKey = useMemo(() => lines.map((l) => `${l.product_id}:${l.qty}`).join("|"), [lines]);
+  const linesKey = useMemo(() => lines.map((l) => `${l.product_id}:${resolveLinePricingProductId(l)}:${l.odoo_template_id || ""}:${l.qty}`).join("|"), [lines]);
 
   useEffect(() => {
     async function run() {
@@ -295,7 +312,21 @@ export default function PresupuestadorPuertasPage() {
         ? lines.filter(lineNeedsPriceRefresh)
         : lines.filter((line) => !line.previously_billed_line);
       if (!linesToPrice.length) return;
-      const payload = { pricelist_id: pricelistId, partner_id: partnerId, lines: linesToPrice.filter((line) => !line.previously_billed_line).map((l) => ({ product_id: l.product_id, qty: l.qty })) };
+      const payload = {
+        pricelist_id: pricelistId,
+        partner_id: partnerId,
+        lines: linesToPrice
+          .filter((line) => !line.previously_billed_line)
+          .map((l) => ({
+            product_id: resolveLinePricingProductId(l),
+            source_product_id: l.product_id,
+            odoo_template_id: l.odoo_template_id || null,
+            odoo_variant_id: l.odoo_variant_id || null,
+            odoo_id: l.odoo_id || null,
+            qty: l.qty,
+          }))
+          .filter((line) => Number(line.product_id || 0) > 0),
+      };
       if (!payload.lines.length) return;
       const data = await getPrices(payload);
       applyBasePrices(data);
