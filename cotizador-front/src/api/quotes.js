@@ -59,6 +59,12 @@ export async function getQuoteViewer({ reference = "", quoteId = "" } = {}) {
   return data;
 }
 
+export async function listPortonesEstado() {
+  const { data } = await http.get(`/api/quotes?scope=portones_estado`);
+  if (!data?.ok) throw new Error(data?.error || "No se pudo cargar el estado de portones");
+  return data.quotes || [];
+}
+
 export async function searchExistingCustomers({ query = "", limit = 25 } = {}) {
   const params = new URLSearchParams();
   params.set("query", String(query || ""));

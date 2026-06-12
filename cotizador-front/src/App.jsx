@@ -38,6 +38,7 @@ import QuoteHistoryViewerPage from "./pages/QuoteHistoryViewerPage/index.jsx";
 import SalesActorActivityPage from "./pages/SalesActorActivityPage/index.jsx";
 import FinanciamientoPage from "./pages/FinanciamientoPage/index.jsx";
 import ApprovalSectionMenuPage from "./pages/ApprovalSectionMenuPage/index.jsx";
+import PortonesEstadoPage from "./pages/PortonesEstadoPage/index.jsx";
 
 import RequireAuth from "./routes/RequireAuth.jsx";
 import AppLayout from "./layouts/AppLayout.jsx";
@@ -94,6 +95,7 @@ export default function App() {
           <Route path="aprobacion/comercial/menu" element={<ApprovalSectionMenuPage mode="comercial" />} />
           <Route path="aprobacion/comercial" element={<AprobacionComercialPage />} />
           <Route path="aprobacion/tecnica/menu" element={<ApprovalSectionMenuPage mode="tecnica" />} />
+          <Route path="aprobacion/tecnica/portones-estado" element={<PortonesEstadoPage />} />
           <Route path="aprobacion/tecnica" element={<AprobacionTecnicaPage />} />
           <Route path="consultas-tecnicas" element={<TechnicalConsultsPage />} />
           <Route path="usuarios" element={<UsersAdminPage />} />
