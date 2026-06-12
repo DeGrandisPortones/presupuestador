@@ -537,15 +537,37 @@ function getPayloadQuoteAdjustmentPercent(payload) {
   }
   return 0;
 }
+function shouldUseDistributorProformaPricesForOdoo(quote = {}) {
+  return isDistributorQuote(quote);
+}
+function getLineBasePriceForOdoo(line = {}) {
+  const value = line?.basePrice ?? line?.base_price ?? line?.price ?? line?.list_price ?? line?.lst_price ?? 0;
+  const n = Number(String(value ?? 0).replace(",", "."));
+  return Number.isFinite(n) ? round2(n) : 0;
+}
+function calcOdooUnitPrice(line, payload, quote = null) {
+  if (shouldZeroShippingForOdoo(quote, line)) return 0;
+
+  // Distribuidores: cualquier disparo a Odoo debe coincidir con la proforma.
+  // No se manda el precio del presupuesto al cliente: se manda precio base/lista,
+  // sin margen, sin financiacion/ajuste y sin recargo de Condicion 2.
+  // Tambien se ignoran price_unit/unit_price porque pueden venir ya valorizados.
+  if (shouldUseDistributorProformaPricesForOdoo(quote)) {
+    return getLineBasePriceForOdoo(line);
+  }
+
+  if (typeof line?.price_unit === "number") return round2(line.price_unit);
+  if (typeof line?.unit_price === "number") return round2(line.unit_price);
+  const base = getLineBasePriceForOdoo(line);
+  const margin = Number(payload?.margin_percent_ui || 0) || 0;
+  const adjustment = getPayloadQuoteAdjustmentPercent(payload || {});
+  return round2(base * (1 + margin / 100) * (1 + adjustment / 100) * getOdooConditionPriceFactor(payload || {}));
+}
 function calcQuoteSubtotal({ lines, payload, quote = null }) {
   const arr = Array.isArray(lines) ? lines : [];
-  const m = Number(payload?.margin_percent_ui || 0) || 0;
-  const adjustment = getPayloadQuoteAdjustmentPercent(payload || {});
   return round2(arr.reduce((acc, l) => {
     const qty = Number(l?.qty || 0) || 0;
-    const rawBase = Number(l?.basePrice ?? l?.base_price ?? l?.price ?? 0) || 0;
-    const base = shouldZeroShippingForOdoo(quote, l) ? 0 : rawBase;
-    const unit = base * (1 + m / 100) * (1 + adjustment / 100);
+    const unit = calcOdooUnitPrice(l, payload || {}, quote);
     return acc + (qty * unit);
   }, 0));
 }
@@ -576,17 +598,12 @@ Condición vendida: ${getOdooConditionLabel(payload)}`;
 function calcQuoteTotalWithIva({ lines, payload, quote = null }) {
   // Nombre legacy: este total es el que se envía a Odoo.
   const subtotal = calcQuoteSubtotal({ lines, payload, quote });
+  if (shouldUseDistributorProformaPricesForOdoo(quote)) return round2(subtotal);
   return round2(subtotal * getOdooConditionPriceFactor(payload || {}));
 }
 function calcDetailedUnitWithIva(line, payload, quote = null) {
   // Nombre legacy: este precio unitario es el que se envía a Odoo.
-  if (shouldZeroShippingForOdoo(quote, line)) return 0;
-  if (typeof line?.price_unit === "number") return round2(line.price_unit);
-  if (typeof line?.unit_price === "number") return round2(line.unit_price);
-  const base = Number(line?.basePrice ?? line?.base_price ?? line?.price ?? 0) || 0;
-  const margin = Number(payload?.margin_percent_ui || 0) || 0;
-  const adjustment = getPayloadQuoteAdjustmentPercent(payload || {});
-  return round2(base * (1 + margin / 100) * (1 + adjustment / 100) * getOdooConditionPriceFactor(payload || {}));
+  return calcOdooUnitPrice(line, payload || {}, quote);
 }
 function normalizePortonTypeKey(value) {
   return String(value || "")
