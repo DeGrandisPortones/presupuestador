@@ -99,6 +99,11 @@ function roundMm(value) {
   if (!Number.isFinite(n)) return 0;
   return Math.round(n * 100) / 100;
 }
+function round4(value) {
+  const n = Number(value || 0);
+  if (!Number.isFinite(n)) return 0;
+  return Math.round(n * 10000) / 10000;
+}
 function getIpanelAxisDimensionMm({ orientation, widthM, heightM }) {
   const isVertical = normalizeIpanelLamasOrientation(orientation) === "vertical";
   const axisMeters = isVertical ? Number(widthM || 0) : Number(heightM || 0);
