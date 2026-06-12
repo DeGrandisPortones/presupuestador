@@ -163,6 +163,10 @@ export default function PortonesEstadoPage() {
       statusInfo: computeStatusInfo(quote),
       customerName: quote.end_customer?.name || "—",
       sellerName: quote.created_by_full_name || quote.created_by_username || "—",
+      displayRef: quote.final_sale_order_name
+        || quote.final_copy_sale_order_name
+        || quote.odoo_sale_order_name
+        || `#${quote.quote_number || "—"}`,
     }));
   }, [q.data]);
 
@@ -172,6 +176,7 @@ export default function PortonesEstadoPage() {
     if (search.trim()) {
       const s = search.trim().toLowerCase();
       out = out.filter((r) =>
+        r.displayRef.toLowerCase().includes(s) ||
         String(r.quote_number || "").includes(s) ||
         r.customerName.toLowerCase().includes(s) ||
         r.sellerName.toLowerCase().includes(s) ||
@@ -252,7 +257,7 @@ export default function PortonesEstadoPage() {
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead>
               <tr style={{ background: "#f5f5f5", borderBottom: "2px solid #e0e0e0" }}>
-                <th style={thStyle}>N°</th>
+                <th style={thStyle}>Referencia</th>
                 <th style={thStyle}>Cliente</th>
                 <th style={thStyle}>Vendedor / Distribuidor</th>
                 <th style={thStyle}>Estado</th>
@@ -275,7 +280,7 @@ export default function PortonesEstadoPage() {
                   onMouseLeave={(e) => { e.currentTarget.style.background = ""; }}
                 >
                   <td style={tdStyle}>
-                    <span style={{ fontWeight: 700, color: "#333" }}>#{r.quote_number || "—"}</span>
+                    <span style={{ fontWeight: 700, color: "#333" }}>{r.displayRef}</span>
                   </td>
                   <td style={tdStyle}>{r.customerName}</td>
                   <td style={tdStyle}>{r.sellerName}</td>
