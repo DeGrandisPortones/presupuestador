@@ -171,10 +171,10 @@ export default function AppLayout() {
 
           {showMyDistributors && <NavLink className={({ isActive }) => (isActive ? "navlink active" : "navlink")} to="/mis-distribuidores">Mis distribuidores</NavLink>}
           {showMediciones && <NavLink className={({ isActive }) => (isActive ? "navlink active" : "navlink")} to="/mediciones">Mediciones</NavLink>}
-          {showCommercial && <NavLink className={({ isActive }) => (isActive ? "navlink active" : "navlink")} to="/aprobacion/comercial">Aprobacion Comercial</NavLink>}
+          {showCommercial && <NavLink className={({ isActive }) => (isActive ? "navlink active" : "navlink")} to="/aprobacion/comercial/menu">Aprobacion Comercial</NavLink>}
           {showDashboard && <NavLink className={({ isActive }) => (isActive ? "navlink active" : "navlink")} to="/dashboard">Dashboard</NavLink>}
           {showUsers && <NavLink className={({ isActive }) => (isActive ? "navlink active" : "navlink")} to="/usuarios">Gestor de usuarios</NavLink>}
-          {showTechnical && <NavLink className={({ isActive }) => (isActive ? "navlink active" : "navlink")} to="/aprobacion/tecnica">Revision Tecnica</NavLink>}
+          {showTechnical && <NavLink className={({ isActive }) => (isActive ? "navlink active" : "navlink")} to="/aprobacion/tecnica/menu">Revision Tecnica</NavLink>}
         </div>
       </div>
 
