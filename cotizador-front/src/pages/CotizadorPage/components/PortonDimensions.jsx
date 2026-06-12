@@ -585,47 +585,6 @@ function buildCalculatedPreview({ widthM, heightM, lines, params, portonType, di
   const widthMm = Math.round((Number(widthM || 0) || 0) * 1000);
   const heightMm = Math.round((Number(heightM || 0) || 0) * 1000);
   const areaM2 = (Number(widthM || 0) || 0) * (Number(heightM || 0) || 0);
-  useEffect(() => {
-    if (!isPorton || !explicitVanoMeasures) return;
-    const nextWidth = calculatedPortonFromVano.widthM > 0 ? formatNumberForInput(calculatedPortonFromVano.widthM) : "";
-    const nextHeight = calculatedPortonFromVano.heightM > 0 ? formatNumberForInput(calculatedPortonFromVano.heightM) : "";
-    const patch = {
-      porton_measure_source: "vano",
-      porton_colocacion_product_id: selectedVanoPlacementProductId || null,
-      porton_colocacion_label: selectedVanoPlacementLabel,
-      porton_vano_width_m: vanoWidth > 0 ? Number(vanoWidth.toFixed(3)) : 0,
-      porton_vano_height_m: vanoHeight > 0 ? Number(vanoHeight.toFixed(3)) : 0,
-      porton_width_extra_m: calculatedPortonFromVano.widthAddM,
-      porton_height_extra_m: calculatedPortonFromVano.heightAddM,
-      porton_width_calculated_m: calculatedPortonFromVano.widthM,
-      porton_height_calculated_m: calculatedPortonFromVano.heightM,
-      porton_piernas_calculo: vanoLegsKey,
-    };
-    if (nextWidth && String(dimensions?.width ?? "") !== nextWidth) patch.width = nextWidth;
-    if (nextHeight && String(dimensions?.height ?? "") !== nextHeight) patch.height = nextHeight;
-    const changed = Object.entries(patch).some(([key, value]) => String(dimensions?.[key] ?? "") !== String(value ?? ""));
-    if (changed) setDimensions(patch);
-  }, [
-    isPorton,
-    explicitVanoMeasures,
-    selectedVanoPlacementProductId,
-    selectedVanoPlacementLabel,
-    vanoWidth,
-    vanoHeight,
-    calculatedPortonFromVano.widthM,
-    calculatedPortonFromVano.heightM,
-    calculatedPortonFromVano.widthAddM,
-    calculatedPortonFromVano.heightAddM,
-    vanoLegsKey,
-    dimensions?.width,
-    dimensions?.height,
-    dimensions?.porton_measure_source,
-    dimensions?.porton_colocacion_product_id,
-    dimensions?.porton_width_extra_m,
-    dimensions?.porton_height_extra_m,
-    setDimensions,
-  ]);
-
   const aptoParaRevestir = isAptoDerivedType(portonType) || detectNoCladdingByProducts(lines, params);
   const aptoKg = aptoParaRevestir ? resolveAptoKgM2ByProducts(lines, params) : 0;
   const sellerKgM2 = resolveSellerKgM2Entry(dimensions, params);
@@ -1717,6 +1676,54 @@ export default function PortonDimensions({ kind = "porton" }) {
     }),
     [vanoWidth, vanoHeight, selectedVanoPlacementProductId, vanoLegsKey],
   );
+
+  useEffect(() => {
+    if (!isPorton || !explicitVanoMeasures) return;
+    const nextWidth = calculatedPortonFromVano.widthM > 0 ? formatNumberForInput(calculatedPortonFromVano.widthM) : "";
+    const nextHeight = calculatedPortonFromVano.heightM > 0 ? formatNumberForInput(calculatedPortonFromVano.heightM) : "";
+    const patch = {
+      porton_measure_source: "vano",
+      porton_colocacion_product_id: selectedVanoPlacementProductId || null,
+      porton_colocacion_label: selectedVanoPlacementLabel,
+      porton_vano_width_m: vanoWidth > 0 ? Number(vanoWidth.toFixed(3)) : 0,
+      porton_vano_height_m: vanoHeight > 0 ? Number(vanoHeight.toFixed(3)) : 0,
+      porton_width_extra_m: calculatedPortonFromVano.widthAddM,
+      porton_height_extra_m: calculatedPortonFromVano.heightAddM,
+      porton_width_calculated_m: calculatedPortonFromVano.widthM,
+      porton_height_calculated_m: calculatedPortonFromVano.heightM,
+      porton_piernas_calculo: vanoLegsKey,
+    };
+    if (nextWidth && String(dimensions?.width ?? "") !== nextWidth) patch.width = nextWidth;
+    if (nextHeight && String(dimensions?.height ?? "") !== nextHeight) patch.height = nextHeight;
+    const changed = Object.entries(patch).some(([key, value]) => String(dimensions?.[key] ?? "") !== String(value ?? ""));
+    if (changed) setDimensions(patch);
+  }, [
+    isPorton,
+    explicitVanoMeasures,
+    selectedVanoPlacementProductId,
+    selectedVanoPlacementLabel,
+    vanoWidth,
+    vanoHeight,
+    calculatedPortonFromVano.widthM,
+    calculatedPortonFromVano.heightM,
+    calculatedPortonFromVano.widthAddM,
+    calculatedPortonFromVano.heightAddM,
+    vanoLegsKey,
+    dimensions?.width,
+    dimensions?.height,
+    dimensions?.porton_measure_source,
+    dimensions?.porton_colocacion_product_id,
+    dimensions?.porton_colocacion_label,
+    dimensions?.porton_vano_width_m,
+    dimensions?.porton_vano_height_m,
+    dimensions?.porton_width_extra_m,
+    dimensions?.porton_height_extra_m,
+    dimensions?.porton_width_calculated_m,
+    dimensions?.porton_height_calculated_m,
+    dimensions?.porton_piernas_calculo,
+    setDimensions,
+  ]);
+
   const aptoParaRevestir = isAptoDerivedType(portonType) || detectNoCladdingByProducts(lines, params);
   const isNonAptoPorton = isPorton && !aptoParaRevestir;
   const detectedDoorSide = useMemo(() => isPorton ? resolveDoorSideForParantes(lines, params) : "", [isPorton, lines, params]);
