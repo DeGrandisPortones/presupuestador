@@ -870,7 +870,7 @@ function ApprovalRowsGrid({ rows }) {
   );
 }
 
-function ApprovalContextCard({ commercialRows, technicalRows }) {
+function ApprovalContextCard({ quote, commercialRows, technicalRows }) {
   const hasCommercial = Array.isArray(commercialRows) && commercialRows.length > 0;
   const hasTechnical = Array.isArray(technicalRows) && technicalRows.length > 0;
   if (!hasCommercial && !hasTechnical) return null;
@@ -890,7 +890,10 @@ function ApprovalContextCard({ commercialRows, technicalRows }) {
 
       {hasTechnical ? (
         <>
-          <div style={{ fontWeight: 900, marginBottom: 8 }}>Datos técnicos</div>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 8 }}>
+            <div style={{ fontWeight: 900 }}>Datos técnicos</div>
+            <ParantesDistributionButton quote={quote} />
+          </div>
           <ApprovalRowsGrid rows={technicalRows} />
         </>
       ) : null}
@@ -1186,7 +1189,6 @@ export default function QuoteDetailPage() {
                 <div className="muted" style={{ marginTop: 6 }}>Condición: <b>{conditionModeLabel(conditionMode)}</b></div>
               </div>
               <div style={{ display: "flex", gap: 8, alignItems: "flex-end", flexWrap: "wrap", justifyContent: "flex-end" }}>
-                <ParantesDistributionButton quote={quote} />
                 {((!isRevision && quote.status === "draft") || (isRevision && !["syncing_odoo", "synced_odoo"].includes(quote.final_status || ""))) ? <Button onClick={() => navigate(quoteEditorPath(quote))}>{isRevision ? "Editar final" : "Editar"}</Button> : null}
                 {!isRevision && quote.final_copy_id ? <Button variant="ghost" onClick={() => navigate(`/presupuestos/${quote.final_copy_id}`)}>Ver final</Button> : null}
                 {((user?.is_vendedor || user?.is_distribuidor) && String(quote.created_by_user_id) === String(user.user_id) && !isRevision && quote.status === "synced_odoo" && hasMeasurementForPdf(quote) && !quote.final_copy_id) ? <Button variant="ghost" disabled={revisionM.isPending} onClick={() => revisionM.mutate()}>{revisionM.isPending ? "Creando…" : "Crear ajuste"}</Button> : null}
@@ -1203,7 +1205,7 @@ export default function QuoteDetailPage() {
             ) : null}
             <div className="spacer" />
             {!isRevision ? <div className="card" style={{ background: "#fafafa" }}><div style={{ fontWeight: 900, marginBottom: 6 }}>Aprobaciones</div><div className="muted" style={{ display: "flex", gap: 12, flexWrap: "wrap" }}><span>Comercial: <b>{decisionLabel(quote.commercial_decision)}</b>{quote.commercial_decision === "rejected" && quote.commercial_notes ? ` · ${quote.commercial_notes}` : ""}</span><span>Técnica: <b>{decisionLabel(quote.technical_decision)}</b>{quote.technical_decision === "rejected" && quote.technical_notes ? ` · ${quote.technical_notes}` : ""}</span></div></div> : null}
-            {(!!approvalCommercialRows.length || !!approvalTechnicalRows.length) ? <><div className="spacer" /><ApprovalContextCard commercialRows={approvalCommercialRows} technicalRows={approvalTechnicalRows} /></> : null}
+            {(!!approvalCommercialRows.length || !!approvalTechnicalRows.length) ? <><div className="spacer" /><ApprovalContextCard quote={quote} commercialRows={approvalCommercialRows} technicalRows={approvalTechnicalRows} /></> : null}
             {showMeasurement && !isRevision ? <><div className="spacer" /><div className="card" style={{ background: "#fafafa" }}><div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}><div><div style={{ fontWeight: 900 }}>Planilla de medición</div><div className="muted">Estado: <b>{measurementStatusLabel(quote.measurement_status)}</b></div></div>{hasMeasurementForPdf(quote) ? <Button variant="secondary" onClick={() => downloadMedicionPdf(quote.id)}>Descargar PDF</Button> : null}</div><div className="spacer" />{quote.measurement_form ? <MeasurementReadOnlyView quote={quote} /> : null}</div></> : null}
             <h3 style={{ marginTop: 0 }}>Ítems</h3>
             {!lines.length ? <div className="muted">Sin ítems</div> : null}

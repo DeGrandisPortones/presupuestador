@@ -9,7 +9,6 @@ import { listDoors, reviewDoorTechnical } from "../../api/doors.js";
 import { listMeasurements, scheduleMeasurement } from "../../api/measurements.js";
 import { useAuthStore } from "../../domain/auth/store.js";
 import { downloadPlegadoAttachment, formatPlegadoAttachmentMeta, getPlegadoAttachment, openPlegadoAttachment } from "../../utils/plegadoAttachment.js";
-import { ParantesDistributionButton } from "../../components/ParantesDistributionScheme.jsx";
 
 const PAGE_SIZE = 25;
 const TECHNICAL_TAB_LABELS = {
@@ -515,7 +514,7 @@ export default function AprobacionTecnicaPage() {
       {!!totalItems && (
         <>
           <table><thead><tr><th>Fecha</th>{showType ? <th>Tipo</th> : null}<th>Vendedor/Distribuidor</th><th>Cliente</th><th>Dirección</th><th>Estado</th><th>NP/NV Odoo</th>{showPlegadoInfo ? <th>Datos plegado</th> : null}<th>Obs. presupuesto</th><th></th></tr></thead><tbody>
-            {items.map((r) => <tr key={r.id}><td>{fmtDate(r.created_at)}</td>{showType ? <td>{catalogKindLabel(r)}</td> : null}<td>{createdByLabel(r)}</td><td>{r.end_customer?.name || <span className="muted">(sin nombre)</span>}</td><td>{r.end_customer?.address || "—"}</td><td>{rowLabel(r)}</td><td><OdooReferenceCell value={quoteOdooReference(r)} /></td>{showPlegadoInfo ? <td><PlegadoInfoCell row={r} /></td> : null}<td><BudgetObservationCell row={r} /></td><td className="right" style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>{isPortonOnlyRow(r) ? <ParantesDistributionButton quote={r} /> : null}<Button onClick={() => navigate(`/presupuestos/${r.id}`, { state: { from: "/aprobacion/tecnica" } })}>Abrir</Button></td></tr>)}
+            {items.map((r) => <tr key={r.id}><td>{fmtDate(r.created_at)}</td>{showType ? <td>{catalogKindLabel(r)}</td> : null}<td>{createdByLabel(r)}</td><td>{r.end_customer?.name || <span className="muted">(sin nombre)</span>}</td><td>{r.end_customer?.address || "—"}</td><td>{rowLabel(r)}</td><td><OdooReferenceCell value={quoteOdooReference(r)} /></td>{showPlegadoInfo ? <td><PlegadoInfoCell row={r} /></td> : null}<td><BudgetObservationCell row={r} /></td><td className="right" style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}><Button onClick={() => navigate(`/presupuestos/${r.id}`, { state: { from: "/aprobacion/tecnica" } })}>Abrir</Button></td></tr>)}
           </tbody></table>
           <PaginationControls page={page} totalItems={totalItems} pageSize={PAGE_SIZE} onPageChange={onPageChange} />
         </>
