@@ -376,7 +376,7 @@ function todayIsoDate() {
 }
 function patchPortonDimensionValidationUi(dimensions) {
   if (typeof document === "undefined") return;
-  const title = Array.from(document.querySelectorAll("div")).find((node) => node.textContent?.trim() === "Medidas del porton");
+  const title = Array.from(document.querySelectorAll("div")).find((node) => node.textContent?.trim() === "Medidas del porton" || node.textContent?.trim() === "Medidas del Vano");
   const root = title?.parentElement || null;
   if (!root) return;
 

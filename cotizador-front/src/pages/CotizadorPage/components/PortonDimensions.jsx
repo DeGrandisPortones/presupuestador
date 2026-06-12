@@ -19,6 +19,20 @@ const PARANTES_SPECIAL_PRODUCT_ID = 3006;
 const APTOS_PARA_REVESTIR_TYPE = "para_revestir_con_al_pvc_otros";
 const DEFAULT_PARANTES_TUBE_DISCOUNT_MM = 40;
 const DOOR_FIXED_PARANTE_DISTANCE_MM = 825;
+const VANO_PLACEMENT_PRODUCT_IDS = new Set([4125, 4126, 4127]);
+const VANO_REAR_PLACEMENT_LABELS = {
+  4125: "Piernas y dintel ocultos",
+  4126: "Piernas ocultas y dintel a la vista",
+  4127: "Dintel oculto y piernas a la vista",
+};
+const VANO_WIDTH_ADD_BY_LEGS_M = {
+  angostas: 0.14,
+  comunes: 0.20,
+  anchas: 0.28,
+  superanchas: 0.38,
+  especiales: 0.38,
+};
+const VANO_DINTEL_OCULTO_HEIGHT_ADD_M = 0.10;
 const ORDINAL_LABELS = ["primer", "segundo", "tercer", "cuarto", "quinto", "sexto", "septimo", "octavo", "noveno", "decimo"];
 const SURFACE_PARAMETERS_STORAGE_KEY = "presupuestador:technical_surface_parameters:porton";
 
@@ -353,6 +367,43 @@ function getPasoWidthDiscountByLegMm(legsKey, params) {
   if (configured !== null) return configured;
   return defaults[selectedKey];
 }
+function getSelectedVanoPlacementProductId(lines) {
+  const ids = getBudgetProductIdSetFromLines(lines);
+  for (const id of VANO_PLACEMENT_PRODUCT_IDS) {
+    if (ids.has(id)) return id;
+  }
+  return 0;
+}
+function getVanoPlacementLabel(productId) {
+  return VANO_REAR_PLACEMENT_LABELS[Number(productId || 0)] || "Por dentro del vano";
+}
+function hasExplicitVanoMeasures(dimensions = {}) {
+  return Object.prototype.hasOwnProperty.call(dimensions || {}, "vano_width")
+    || Object.prototype.hasOwnProperty.call(dimensions || {}, "vano_height")
+    || String(dimensions?.porton_measure_source || "").trim() === "vano";
+}
+function normalizeLegsKeyForVano(legsLabel) {
+  const key = mapLegsKeyForWidth(legsLabel);
+  if (key === "especiales") return "superanchas";
+  return key || "angostas";
+}
+function getVanoWidthAddM(legsKey) {
+  const key = normalizeLegsKeyForVano(legsKey);
+  return VANO_WIDTH_ADD_BY_LEGS_M[key] ?? VANO_WIDTH_ADD_BY_LEGS_M.angostas;
+}
+function computePortonFromVano({ vanoWidthM, vanoHeightM, placementProductId, legsKey }) {
+  const width = Number(vanoWidthM || 0) || 0;
+  const height = Number(vanoHeightM || 0) || 0;
+  const id = Number(placementProductId || 0);
+  const widthAddM = (id === 4125 || id === 4126) ? getVanoWidthAddM(legsKey) : 0;
+  const heightAddM = (id === 4125 || id === 4127) ? VANO_DINTEL_OCULTO_HEIGHT_ADD_M : 0;
+  return {
+    widthM: width > 0 ? round4(width + widthAddM) : 0,
+    heightM: height > 0 ? round4(height + heightAddM) : 0,
+    widthAddM,
+    heightAddM,
+  };
+}
 function parseProductIdList(value) {
   if (Array.isArray(value)) return value.map((item) => Number(item)).filter((item) => Number.isFinite(item) && item > 0);
   return String(value || "").split(/[^0-9]+/).map((item) => Number(item)).filter((item) => Number.isFinite(item) && item > 0);
@@ -534,6 +585,47 @@ function buildCalculatedPreview({ widthM, heightM, lines, params, portonType, di
   const widthMm = Math.round((Number(widthM || 0) || 0) * 1000);
   const heightMm = Math.round((Number(heightM || 0) || 0) * 1000);
   const areaM2 = (Number(widthM || 0) || 0) * (Number(heightM || 0) || 0);
+  useEffect(() => {
+    if (!isPorton || !explicitVanoMeasures) return;
+    const nextWidth = calculatedPortonFromVano.widthM > 0 ? formatNumberForInput(calculatedPortonFromVano.widthM) : "";
+    const nextHeight = calculatedPortonFromVano.heightM > 0 ? formatNumberForInput(calculatedPortonFromVano.heightM) : "";
+    const patch = {
+      porton_measure_source: "vano",
+      porton_colocacion_product_id: selectedVanoPlacementProductId || null,
+      porton_colocacion_label: selectedVanoPlacementLabel,
+      porton_vano_width_m: vanoWidth > 0 ? Number(vanoWidth.toFixed(3)) : 0,
+      porton_vano_height_m: vanoHeight > 0 ? Number(vanoHeight.toFixed(3)) : 0,
+      porton_width_extra_m: calculatedPortonFromVano.widthAddM,
+      porton_height_extra_m: calculatedPortonFromVano.heightAddM,
+      porton_width_calculated_m: calculatedPortonFromVano.widthM,
+      porton_height_calculated_m: calculatedPortonFromVano.heightM,
+      porton_piernas_calculo: vanoLegsKey,
+    };
+    if (nextWidth && String(dimensions?.width ?? "") !== nextWidth) patch.width = nextWidth;
+    if (nextHeight && String(dimensions?.height ?? "") !== nextHeight) patch.height = nextHeight;
+    const changed = Object.entries(patch).some(([key, value]) => String(dimensions?.[key] ?? "") !== String(value ?? ""));
+    if (changed) setDimensions(patch);
+  }, [
+    isPorton,
+    explicitVanoMeasures,
+    selectedVanoPlacementProductId,
+    selectedVanoPlacementLabel,
+    vanoWidth,
+    vanoHeight,
+    calculatedPortonFromVano.widthM,
+    calculatedPortonFromVano.heightM,
+    calculatedPortonFromVano.widthAddM,
+    calculatedPortonFromVano.heightAddM,
+    vanoLegsKey,
+    dimensions?.width,
+    dimensions?.height,
+    dimensions?.porton_measure_source,
+    dimensions?.porton_colocacion_product_id,
+    dimensions?.porton_width_extra_m,
+    dimensions?.porton_height_extra_m,
+    setDimensions,
+  ]);
+
   const aptoParaRevestir = isAptoDerivedType(portonType) || detectNoCladdingByProducts(lines, params);
   const aptoKg = aptoParaRevestir ? resolveAptoKgM2ByProducts(lines, params) : 0;
   const sellerKgM2 = resolveSellerKgM2Entry(dimensions, params);
@@ -1473,12 +1565,18 @@ export default function PortonDimensions({ kind = "porton" }) {
     }
   }
 
-  const widthRaw = String(dimensions?.width ?? "");
-  const heightRaw = String(dimensions?.height ?? "");
-  const width = useMemo(() => toNumber(widthRaw), [widthRaw]);
-  const height = useMemo(() => toNumber(heightRaw), [heightRaw]);
-  const widthValue = useMemo(() => parseOptionalNumber(normalizeDecimalWithDot(widthRaw)), [widthRaw]);
-  const heightValue = useMemo(() => parseOptionalNumber(normalizeDecimalWithDot(heightRaw)), [heightRaw]);
+  const portonWidthRaw = String(dimensions?.width ?? "");
+  const portonHeightRaw = String(dimensions?.height ?? "");
+  const vanoWidthRaw = isPorton ? String(dimensions?.vano_width ?? dimensions?.width ?? "") : portonWidthRaw;
+  const vanoHeightRaw = isPorton ? String(dimensions?.vano_height ?? dimensions?.height ?? "") : portonHeightRaw;
+  const widthRaw = isPorton ? vanoWidthRaw : portonWidthRaw;
+  const heightRaw = isPorton ? vanoHeightRaw : portonHeightRaw;
+  const width = useMemo(() => toNumber(isPorton ? portonWidthRaw : widthRaw), [isPorton, portonWidthRaw, widthRaw]);
+  const height = useMemo(() => toNumber(isPorton ? portonHeightRaw : heightRaw), [isPorton, portonHeightRaw, heightRaw]);
+  const widthValue = useMemo(() => parseOptionalNumber(normalizeDecimalWithDot(isPorton ? portonWidthRaw : widthRaw)), [isPorton, portonWidthRaw, widthRaw]);
+  const heightValue = useMemo(() => parseOptionalNumber(normalizeDecimalWithDot(isPorton ? portonHeightRaw : heightRaw)), [isPorton, portonHeightRaw, heightRaw]);
+  const vanoWidth = useMemo(() => toNumber(vanoWidthRaw), [vanoWidthRaw]);
+  const vanoHeight = useMemo(() => toNumber(vanoHeightRaw), [vanoHeightRaw]);
   const selectedProductIdsForIpanel = useMemo(() => getBudgetProductIdSetFromLines(lines), [lines]);
   const hasIpanelLamas22Panel = isIpanel && [...IPANEL_LAMAS_22_PRODUCT_IDS].some((id) => selectedProductIdsForIpanel.has(id));
   const hasIpanelVarilladoPanel = isIpanel && hasIpanelVarilladoProduct(lines);
@@ -1605,7 +1703,20 @@ export default function PortonDimensions({ kind = "porton" }) {
   }, [hasIpanelLamas22Panel, ipanelDivisionsValue, ipanelDivisionsCount, ipanelDivisionsMax, ipanelAxisDimensionMm, ipanelDistributionMode, dimensions?.ipanel_divisiones_incluyen_liston, dimensions?.ipanel_lamas_orientacion, dimensions?.orientacion_ipanel_lamas, dimensions?.ipanel_orientacion_lamas, dimensions?.ipanel_lamas_orientation, dimensions?.ipanel_divisiones_medidas_mm, dimensions?.medidas_divisiones_ipanel_mm, dimensions?.ipanel_section_sizes_mm, dimensions?.ipanel_divisor_mm, dimensions?.linea_division_ipanel_mm, setDimensions]);
 
   const params = useMemo(() => getRulesParams(rulesQ.data), [rulesQ.data]);
+  const selectedVanoPlacementProductId = useMemo(() => isPorton ? getSelectedVanoPlacementProductId(lines) : 0, [isPorton, lines]);
+  const selectedVanoPlacementLabel = getVanoPlacementLabel(selectedVanoPlacementProductId);
+  const explicitVanoMeasures = isPorton && hasExplicitVanoMeasures(dimensions);
   const preview = useMemo(() => buildCalculatedPreview({ widthM: width, heightM: height, lines, params, portonType, dimensions }), [width, height, lines, params, portonType, dimensions]);
+  const vanoLegsKey = normalizeLegsKeyForVano(preview?.legsLabel);
+  const calculatedPortonFromVano = useMemo(
+    () => computePortonFromVano({
+      vanoWidthM: vanoWidth,
+      vanoHeightM: vanoHeight,
+      placementProductId: selectedVanoPlacementProductId,
+      legsKey: vanoLegsKey,
+    }),
+    [vanoWidth, vanoHeight, selectedVanoPlacementProductId, vanoLegsKey],
+  );
   const aptoParaRevestir = isAptoDerivedType(portonType) || detectNoCladdingByProducts(lines, params);
   const isNonAptoPorton = isPorton && !aptoParaRevestir;
   const detectedDoorSide = useMemo(() => isPorton ? resolveDoorSideForParantes(lines, params) : "", [isPorton, lines, params]);
@@ -1798,7 +1909,15 @@ export default function PortonDimensions({ kind = "porton" }) {
   }, [isPorton, preview.anchoPasoMm, preview.altoPasoMm, preview.anchoHojaMm, preview.altoHojaMm, setDimensions]);
 
   if (!isPorton && !isIpanel && !isPlegados) return null;
-  const title = isPlegados ? "Medidas del plegado" : (isPorton ? "Medidas del porton" : "Medidas del Ipanel");
+  const title = isPlegados ? "Medidas del plegado" : (isPorton ? "Medidas del Vano" : "Medidas del Ipanel");
+  function setVanoDimension(key, value) {
+    const normalized = normalizeDecimal(value);
+    if (key === "width") {
+      setDimensions({ vano_width: normalized, porton_measure_source: "vano" });
+    } else {
+      setDimensions({ vano_height: normalized, porton_measure_source: "vano" });
+    }
+  }
   const parantesHelper = parantesFieldsReadOnly
     ? (hasDoorParantesConfig ? `Solo lectura. ${detectedDoorLabel}: primer parante a ${DOOR_FIXED_PARANTE_DISTANCE_MM} mm del lateral ${detectedDoorSide}.` : "Solo lectura. Se calcula automaticamente segun reglas tecnicas, orientacion y medidas cargadas.")
     : effectiveParantesOrientation === "verticales"
@@ -1896,8 +2015,8 @@ export default function PortonDimensions({ kind = "porton" }) {
       <div style={{ fontWeight: 800, marginBottom: 8 }}>{title}</div>
       {hasSizeError ? <div style={{ marginBottom: 12, padding: "10px 12px", borderRadius: 10, background: "#fee2e2", color: "#991b1b", fontWeight: 700 }}>Se encuentra fuera de los limites de tamano.</div> : null}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 12, alignItems: "start" }}>
-        <FieldBox label="Ancho (m)" helper={widthHelper} helperColor={widthOutOfBounds ? "#b91c1c" : undefined}><Input type="text" inputMode="decimal" value={widthRaw} onChange={(v) => setDimensions({ width: normalizeDecimal(v) })} onBlur={(e) => setDimensions({ width: normalizeDecimal(e?.target?.value) })} placeholder={isIpanel ? "Ej: 1.16" : "Ej: 3.2"} style={inputStateStyle(widthOutOfBounds)} /></FieldBox>
-        <FieldBox label="Alto (m)" helper={heightHelper} helperColor={heightOutOfBounds ? "#b91c1c" : undefined}><Input type="text" inputMode="decimal" value={heightRaw} onChange={(v) => setDimensions({ height: normalizeDecimal(v) })} onBlur={(e) => setDimensions({ height: normalizeDecimal(e?.target?.value) })} placeholder={heightPlaceholder} style={inputStateStyle(heightOutOfBounds)} /></FieldBox>
+        <FieldBox label={isPorton ? "Ancho del vano (m)" : "Ancho (m)"} helper={widthHelper} helperColor={widthOutOfBounds ? "#b91c1c" : undefined}><Input type="text" inputMode="decimal" value={widthRaw} onChange={(v) => isPorton ? setVanoDimension("width", v) : setDimensions({ width: normalizeDecimal(v) })} onBlur={(e) => isPorton ? setVanoDimension("width", e?.target?.value) : setDimensions({ width: normalizeDecimal(e?.target?.value) })} placeholder={isIpanel ? "Ej: 1.16" : "Ej: 3.2"} style={inputStateStyle(widthOutOfBounds)} /></FieldBox>
+        <FieldBox label={isPorton ? "Alto del vano (m)" : "Alto (m)"} helper={heightHelper} helperColor={heightOutOfBounds ? "#b91c1c" : undefined}><Input type="text" inputMode="decimal" value={heightRaw} onChange={(v) => isPorton ? setVanoDimension("height", v) : setDimensions({ height: normalizeDecimal(v) })} onBlur={(e) => isPorton ? setVanoDimension("height", e?.target?.value) : setDimensions({ height: normalizeDecimal(e?.target?.value) })} placeholder={heightPlaceholder} style={inputStateStyle(heightOutOfBounds)} /></FieldBox>
         {hasIpanelLamas22Panel ? (<>
           <FieldBox label="Orientación de lamas">
             <select
@@ -1961,6 +2080,15 @@ export default function PortonDimensions({ kind = "porton" }) {
           </div>
         </>) : null}
         {isPorton ? (<>
+          <FieldBox label="Tipo de colocación"><Input value={selectedVanoPlacementLabel} disabled placeholder="Por dentro del vano" style={disabledComputedInputStyle()} /></FieldBox>
+          <FieldBox label="Ancho calculado del portón"><Input value={width ? `${formatNumberForInput(width)} m` : ""} disabled placeholder="Se calcula desde el vano" style={disabledComputedInputStyle()} /></FieldBox>
+          <FieldBox label="Alto calculado del portón"><Input value={height ? `${formatNumberForInput(height)} m` : ""} disabled placeholder="Se calcula desde el vano" style={disabledComputedInputStyle()} /></FieldBox>
+          {selectedVanoPlacementProductId === 4125 || selectedVanoPlacementProductId === 4126 ? (
+            <FieldBox label="Adicional por piernas"><Input value={`${formatNumberForInput(calculatedPortonFromVano.widthAddM)} m (${vanoLegsKey})`} disabled style={disabledComputedInputStyle()} /></FieldBox>
+          ) : null}
+          {selectedVanoPlacementProductId === 4125 || selectedVanoPlacementProductId === 4127 ? (
+            <FieldBox label="Adicional por dintel oculto"><Input value={`${formatNumberForInput(calculatedPortonFromVano.heightAddM)} m`} disabled style={disabledComputedInputStyle()} /></FieldBox>
+          ) : null}
           <FieldBox label="Tipo / Sistema derivado"><Input value={portonType || ""} disabled placeholder="Se completa segun la combinacion de productos" style={disabledComputedInputStyle()} /></FieldBox>
           <FieldBox label="Kg por m2"><Input value={formatNumberForInput(preview.effectiveKgM2)} placeholder="Se calcula automaticamente segun el sistema" style={disabledComputedInputStyle()} disabled /></FieldBox>
           <FieldBox label="Superficie"><div style={{ fontWeight: 800, fontSize: 16, minHeight: 40, display: "flex", alignItems: "center", padding: "9px 12px", borderRadius: 10, border: "1px solid #d1d5db", background: "#f3f4f6", color: "#334155" }}>{area ? `${area.toFixed(2)} m2` : "-"}</div></FieldBox>
