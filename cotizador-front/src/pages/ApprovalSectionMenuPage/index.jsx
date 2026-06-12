@@ -35,6 +35,13 @@ function ApprovalMenuCard({ card, onOpen }) {
   );
 }
 
+const ESTADO_PORTONES_CARD = {
+  key: "_estado_portones",
+  title: "Estado de Portones",
+  description: "Vista general del estado actual de todos los portones: aprobaciones, acopio, mediciones y producción.",
+  iconSrc: "/menu-icons/aprobacion-portones.png",
+};
+
 export default function ApprovalSectionMenuPage({ mode = "comercial" }) {
   const navigate = useNavigate();
   const user = useAuthStore((s) => s.user);
@@ -57,6 +64,13 @@ export default function ApprovalSectionMenuPage({ mode = "comercial" }) {
       </div>
       <div className="spacer" />
       <div className="menu-grid">
+        {isTechnical && (
+          <ApprovalMenuCard
+            key={ESTADO_PORTONES_CARD.key}
+            card={ESTADO_PORTONES_CARD}
+            onOpen={() => navigate("/aprobacion/tecnica/portones-estado")}
+          />
+        )}
         {cards.map((card) => (
           <ApprovalMenuCard
             key={card.key}
