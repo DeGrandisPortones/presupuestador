@@ -125,24 +125,23 @@ export default function AppLayout() {
         <div style={{
           position: "fixed", inset: 0, zIndex: 9999,
           pointerEvents: "none", overflow: "hidden",
-          display: "flex", alignItems: "center", justifyContent: "center",
         }}>
-          <div style={{
-            fontSize: 80, fontWeight: 900, color: "rgba(220,50,50,0.08)",
-            whiteSpace: "nowrap", transform: "rotate(-35deg)",
-            userSelect: "none", letterSpacing: 12,
-            textShadow: "0 0 0 rgba(0,0,0,0)",
-            background: "repeating-linear-gradient(135deg, transparent 0px, transparent 180px, rgba(220,50,50,0.04) 180px, rgba(220,50,50,0.04) 360px)",
-            position: "absolute", inset: -200,
-            display: "flex", flexWrap: "wrap", gap: "80px 60px",
-            alignContent: "center", justifyContent: "center",
-          }}>
-            {Array.from({ length: 30 }).map((_, i) => (
-              <span key={i} style={{ fontSize: 36, fontWeight: 900, color: "rgba(200,40,40,0.13)", letterSpacing: 6 }}>
-                DEV ENVIRONMENT
-              </span>
-            ))}
-          </div>
+          {Array.from({ length: 20 }).map((_, i) => (
+            <div key={i} style={{
+              position: "absolute",
+              left: `${(i % 4) * 28 - 10}%`,
+              top: `${Math.floor(i / 4) * 22 - 5}%`,
+              transform: "rotate(-35deg)",
+              fontSize: 28,
+              fontWeight: 900,
+              color: "rgba(200,40,40,0.25)",
+              whiteSpace: "nowrap",
+              userSelect: "none",
+              letterSpacing: 4,
+            }}>
+              DEV ENVIRONMENT
+            </div>
+          ))}
         </div>
       )}
       <div className="card app-header" style={{ borderRadius: 0 }}>
