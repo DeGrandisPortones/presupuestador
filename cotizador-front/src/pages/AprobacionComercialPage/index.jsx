@@ -11,6 +11,7 @@ import { listMeasurements } from "../../api/measurements.js";
 import { useAuthStore } from "../../domain/auth/store.js";
 import { downloadListingDoorPdf, downloadListingQuotePdf } from "../../utils/listingPdf.js";
 import { downloadPlegadoAttachment, formatPlegadoAttachmentMeta, getPlegadoAttachment, openPlegadoAttachment } from "../../utils/plegadoAttachment.js";
+import { ParantesDistributionButton } from "../../components/ParantesDistributionScheme.jsx";
 
 const PAGE_SIZE = 25;
 const COMMERCIAL_TAB_LABELS = {
@@ -527,6 +528,7 @@ export default function AprobacionComercialPage() {
                     {showPlegadoInfo ? <td><PlegadoInfoCell row={r} /></td> : null}
                     <td><BudgetObservationCell row={r} /></td>
                     <td className="right" style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+                      {isPortonOnlyRow(r) ? <ParantesDistributionButton quote={r} /> : null}
                       <PdfIconButton disabled={downloadingPdfKey === pdfKey} onClick={() => handleDownloadQuotePdf(r.id)} />
                       <Button onClick={() => navigate(`/presupuestos/${r.id}`, { state: { from: "/aprobacion/comercial" } })}>Abrir</Button>
                     </td>

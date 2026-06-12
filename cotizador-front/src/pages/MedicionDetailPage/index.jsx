@@ -16,6 +16,7 @@ import { useAuthStore } from "../../domain/auth/store.js";
 import { mergeMeasurementFields, parseOptions } from "../../domain/measurement/technicalMeasurementRuleFields.js";
 import Button from "../../ui/Button.jsx";
 import Input from "../../ui/Input.jsx";
+import { ParantesDistributionScheme } from "../../components/ParantesDistributionScheme.jsx";
 
 const DEFAULT_RETURN_REASON_ITEM_18 =
   "El cambio en el item 18 puede ocasionar costos adicionales y debe pasar al vendedor.";
@@ -1429,6 +1430,10 @@ export default function MedicionDetailPage() {
           ) : (
             <div className="muted">Sin datos técnicos calculados.</div>
           )}
+        </Section>
+
+        <Section title="Esquema de distribución de parantes">
+          <ParantesDistributionScheme quote={quote} form={form} />
         </Section>
 
         <Section title="Esquema de medidas">

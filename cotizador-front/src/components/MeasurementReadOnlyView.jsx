@@ -1,3 +1,4 @@
+import { ParantesDistributionScheme } from "./ParantesDistributionScheme.jsx";
 function text(v) {
   return String(v ?? "").trim();
 }
@@ -428,6 +429,9 @@ export default function MeasurementReadOnlyView({ quote }) {
             </Row>
           </>
         ) : null}
+      </Section>
+      <Section title="Esquema de distribución de parantes">
+        <ParantesDistributionScheme quote={quote} form={form} />
       </Section>
       <Section title="Observaciones del medidor">
         <Row>

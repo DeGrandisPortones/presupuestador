@@ -12,6 +12,7 @@ import { useAuthStore } from "../../domain/auth/store.js";
 import { formatARS, calcTotals, calcFinalUnitPrice, calcLineTotal } from "../../domain/quote/pricing.js";
 import { downloadPlegadoAttachment, formatPlegadoAttachmentMeta, getPlegadoAttachment, openPlegadoAttachment } from "../../utils/plegadoAttachment.js";
 import MeasurementReadOnlyView from "../../components/MeasurementReadOnlyView.jsx";
+import { ParantesDistributionButton } from "../../components/ParantesDistributionScheme.jsx";
 
 function quoteEditorPath(quote) {
   const kind = String(quote?.payload?.quote_subkind || quote?.catalog_kind || "porton").toLowerCase();
@@ -1185,6 +1186,7 @@ export default function QuoteDetailPage() {
                 <div className="muted" style={{ marginTop: 6 }}>Condición: <b>{conditionModeLabel(conditionMode)}</b></div>
               </div>
               <div style={{ display: "flex", gap: 8, alignItems: "flex-end", flexWrap: "wrap", justifyContent: "flex-end" }}>
+                <ParantesDistributionButton quote={quote} />
                 {((!isRevision && quote.status === "draft") || (isRevision && !["syncing_odoo", "synced_odoo"].includes(quote.final_status || ""))) ? <Button onClick={() => navigate(quoteEditorPath(quote))}>{isRevision ? "Editar final" : "Editar"}</Button> : null}
                 {!isRevision && quote.final_copy_id ? <Button variant="ghost" onClick={() => navigate(`/presupuestos/${quote.final_copy_id}`)}>Ver final</Button> : null}
                 {((user?.is_vendedor || user?.is_distribuidor) && String(quote.created_by_user_id) === String(user.user_id) && !isRevision && quote.status === "synced_odoo" && hasMeasurementForPdf(quote) && !quote.final_copy_id) ? <Button variant="ghost" disabled={revisionM.isPending} onClick={() => revisionM.mutate()}>{revisionM.isPending ? "Creando…" : "Crear ajuste"}</Button> : null}
