@@ -1904,18 +1904,20 @@ export function buildQuotesRouter(odoo) {
                 limit 500`;
       } else if (scope === "portones_estado") {
         if (!u.is_rev_tecnica && !u.is_superuser) return res.status(403).json({ ok: false, error: "No autorizado" });
-        sql = `select q.id, q.quote_number, q.status, q.commercial_decision, q.technical_decision,
+        sql = `select q.id, q.quote_number, q.odoo_sale_order_name, q.final_sale_order_name,
+                      q.status, q.commercial_decision, q.technical_decision,
                       q.measurement_status, q.requires_measurement, q.measurement_share_enabled_at,
                       q.measurement_commercial_review_required, q.measurement_commercial_review_status,
                       q.fulfillment_mode, q.final_status, q.final_technical_decision, q.final_logistics_decision,
                       q.acopio_to_produccion_status, q.catalog_kind,
                       q.end_customer, q.created_at, q.updated_at,
                       u.username as created_by_username, u.full_name as created_by_full_name,
-                      fc.final_copy_id, fc.final_copy_status
+                      fc.final_copy_id, fc.final_copy_status, fc.final_copy_sale_order_name
                from public.presupuestador_quotes q
                left join public.presupuestador_users u on u.id = q.created_by_user_id
                left join lateral (
-                 select c.id as final_copy_id, c.final_status as final_copy_status
+                 select c.id as final_copy_id, c.final_status as final_copy_status,
+                        c.final_sale_order_name as final_copy_sale_order_name
                  from public.presupuestador_quotes c
                  where c.quote_kind = 'copy' and c.parent_quote_id = q.id
                  order by c.created_at desc nulls last, c.id desc
