@@ -145,7 +145,7 @@ export default function AppLayout() {
         </div>
       )}
       <div style={{ position: "relative", zIndex: 1 }}>
-      <div className="card app-header" style={{ borderRadius: 0 }}>
+      <div className="card app-header" style={{ borderRadius: 0, ...(isDevEnv && { background: "#7a1a1a" }) }}>
         <div className="container" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: 0, gap: 16 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
             <img className="brand-logo" src="/brands/dflex.png" alt="Dflex" />
