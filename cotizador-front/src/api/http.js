@@ -3,7 +3,7 @@ import axios from "axios";
 const TOKEN_KEY = "presupuestador_token";
 
 export const http = axios.create({
-  baseURL: "",
+  baseURL: import.meta.env.VITE_API_URL || "",
   timeout: 30000,
 });
 
