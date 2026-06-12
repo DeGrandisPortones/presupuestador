@@ -120,10 +120,10 @@ export default function AppLayout() {
   const isDevEnv = import.meta.env.VITE_API_URL?.includes("dev");
 
   return (
-    <div>
+    <div style={{ position: "relative" }}>
       {isDevEnv && (
         <div style={{
-          position: "fixed", inset: 0, zIndex: 9999,
+          position: "fixed", inset: 0, zIndex: 0,
           pointerEvents: "none", overflow: "hidden",
         }}>
           {Array.from({ length: 20 }).map((_, i) => (
@@ -134,7 +134,7 @@ export default function AppLayout() {
               transform: "rotate(-35deg)",
               fontSize: 28,
               fontWeight: 900,
-              color: "rgba(200,40,40,0.25)",
+              color: "rgba(200,40,40,0.18)",
               whiteSpace: "nowrap",
               userSelect: "none",
               letterSpacing: 4,
@@ -144,6 +144,7 @@ export default function AppLayout() {
           ))}
         </div>
       )}
+      <div style={{ position: "relative", zIndex: 1 }}>
       <div className="card app-header" style={{ borderRadius: 0 }}>
         <div className="container" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: 0, gap: 16 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
@@ -205,6 +206,7 @@ export default function AppLayout() {
 
       <AptoKgProductSectionFilterPatch />
       <Outlet />
+      </div>
     </div>
   );
 }
