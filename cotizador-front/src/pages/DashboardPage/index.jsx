@@ -1115,6 +1115,10 @@ function OdooProductDebugPanel() {
       {error && <div style={{ color: "red", marginTop: 8 }}>{error}</div>}
       {result && (
         <div style={{ marginTop: 16 }}>
+          <div className="muted" style={{ marginBottom: 8, fontSize: 13 }}>
+            Variantes encontradas (sale_ok=true): <b>{result.variants?.length ?? 0}</b>
+            {result.variants?.length > 0 && ` → ${result.variants.map((v) => v.name).join(", ")}`}
+          </div>
           <div style={{ fontWeight: 700, marginBottom: 6 }}>Tags encontrados en Odoo:</div>
           {uniqueTags.length === 0 ? (
             <div className="muted">Ningún tag encontrado para este producto.</div>
@@ -1143,14 +1147,14 @@ function OdooProductDebugPanel() {
           {result.variants?.[0]?.tag_fields_detected && (
             <div style={{ marginTop: 10 }}>
               <div className="muted" style={{ fontSize: 12 }}>
-                Campos de tag en variant: {result.variants[0].tag_fields_detected.map((f) => f.field).join(", ") || "(ninguno)"}
+                Campos de tag en variant: {(Array.isArray(result.variants[0].tag_fields_detected) ? result.variants[0].tag_fields_detected : []).map((f) => typeof f === "string" ? f : f?.field).filter(Boolean).join(", ") || "(ninguno)"}
               </div>
             </div>
           )}
           {result.templates?.[0]?.tag_fields_detected && (
             <div>
               <div className="muted" style={{ fontSize: 12 }}>
-                Campos de tag en template: {result.templates[0].tag_fields_detected.map((f) => f.field).join(", ") || "(ninguno)"}
+                Campos de tag en template: {(Array.isArray(result.templates[0].tag_fields_detected) ? result.templates[0].tag_fields_detected : []).map((f) => typeof f === "string" ? f : f?.field).filter(Boolean).join(", ") || "(ninguno)"}
               </div>
             </div>
           )}
