@@ -1589,18 +1589,23 @@ async function syncLatestFinalCopyForApprovedAcopio({ originalQuote, approverUse
   const existing = await getFinalCopyByParentId(originalQuote.id);
   if (!existing) return null;
   if (existing.final_sale_order_id || ["syncing_odoo", "synced_odoo"].includes(String(existing.final_status || ""))) return existing;
+  const approverUserId = Number(approverUser?.user_id || approverUser?.id || 0) || null;
   const updSync = await dbQuery(
     `update public.presupuestador_quotes
         set final_status='syncing_odoo',
             final_technical_decision='approved',
+            final_technical_decision_at=now(),
+            final_technical_decision_by_user_id=$2,
             final_logistics_decision='approved',
+            final_logistics_decision_at=now(),
+            final_logistics_decision_by_user_id=$2,
             final_technical_notes=null,
             final_logistics_notes=null
       where id=$1
         and coalesce(final_sale_order_id, 0) = 0
         and coalesce(final_status, 'draft') <> 'syncing_odoo'
       returning *`,
-    [existing.id]
+    [existing.id, approverUserId]
   );
   const qSync = updSync.rows?.[0] || existing;
   if (qSync.final_sale_order_id) return qSync;
@@ -2499,7 +2504,7 @@ export function buildQuotesRouter(odoo) {
       if (!orig.odoo_sale_order_id) return res.status(409).json({ ok: false, error: "El original todavía no fue enviado a Odoo" });
       if (quoteNeedsMeasurement(orig) && orig.measurement_status !== "approved") return res.status(409).json({ ok: false, error: "Primero debe estar aprobada la medición" });
 
-      const updSync = await dbQuery(`update public.presupuestador_quotes set final_status='syncing_odoo', final_technical_decision='approved', final_logistics_decision='approved', final_technical_notes=null, final_logistics_notes=null where id=$1 and coalesce(final_sale_order_id, 0) = 0 and coalesce(final_status, 'draft') <> 'syncing_odoo' returning *`, [id]);
+      const updSync = await dbQuery(`update public.presupuestador_quotes set final_status='syncing_odoo', final_technical_decision='approved', final_technical_decision_at=now(), final_technical_decision_by_user_id=$2, final_logistics_decision='approved', final_logistics_decision_at=now(), final_logistics_decision_by_user_id=$2, final_technical_notes=null, final_logistics_notes=null where id=$1 and coalesce(final_sale_order_id, 0) = 0 and coalesce(final_status, 'draft') <> 'syncing_odoo' returning *`, [id, Number(u.user_id)]);
       const qSync = updSync.rows?.[0] || q;
       if (qSync.final_sale_order_id) return res.json({ ok: true, quote: qSync });
 

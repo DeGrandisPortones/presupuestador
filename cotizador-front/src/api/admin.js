@@ -193,6 +193,24 @@ export async function adminDeleteQuote(id) {
   return true;
 }
 
+export async function adminGetHistory({ kind = "", q = "", fulfillment = "all", from_date = "", to_date = "" } = {}) {
+  const qs = new URLSearchParams();
+  if (kind) qs.set("kind", kind);
+  if (q) qs.set("q", q);
+  if (fulfillment && fulfillment !== "all") qs.set("fulfillment", fulfillment);
+  if (from_date) qs.set("from_date", from_date);
+  if (to_date) qs.set("to_date", to_date);
+  const { data } = await http.get(`/api/admin/history?${qs.toString()}`);
+  if (!data?.ok) throw new Error(data?.error || "No se pudo cargar el historial");
+  return data.quotes || [];
+}
+
+export async function adminGetHistoryDetail(id) {
+  const { data } = await http.get(`/api/admin/history/${encodeURIComponent(String(id))}`);
+  if (!data?.ok) throw new Error(data?.error || "No se pudo cargar el detalle");
+  return data.quote;
+}
+
 export async function adminListUsers({ role = "all", q = "", active = "all" } = {}) {
   const qs = new URLSearchParams();
   if (role) qs.set("role", role);

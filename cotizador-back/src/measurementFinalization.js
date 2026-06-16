@@ -1505,7 +1505,9 @@ export async function finalizeMeasurementToRevisionQuote({ odoo, originalQuote, 
         set status='syncing_odoo',
             final_status='syncing_odoo',
             final_technical_decision='approved',
+            final_technical_decision_at=now(),
             final_logistics_decision='approved',
+            final_logistics_decision_at=now(),
             final_technical_notes=null,
             final_logistics_notes=null
       where id=$1

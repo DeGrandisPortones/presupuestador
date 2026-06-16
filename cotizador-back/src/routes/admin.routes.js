@@ -491,5 +491,121 @@ export function buildAdminRouter(odoo) {
     try { res.json({ ok: true, user: await updateUser(req.params.id, req.body || {}) }); } catch (e) { next(e); }
   });
 
+  // ---- Historial para rol Administración ----
+
+  function requireAdministracion(req, res, next) {
+    if (!req.user?.is_administracion && !req.user?.is_superuser) return res.status(403).json({ ok: false, error: "No autorizado" });
+    next();
+  }
+
+  const historyLateral = `left join lateral (
+    select c.id as final_copy_id,
+           c.final_status as final_copy_status,
+           c.final_sale_order_id as final_copy_sale_order_id,
+           c.final_sale_order_name as final_copy_sale_order_name,
+           c.final_synced_at as final_copy_synced_at
+      from public.presupuestador_quotes c
+     where c.quote_kind = 'copy' and c.parent_quote_id = q.id
+     order by c.final_synced_at desc nulls last, c.created_at desc nulls last, c.id desc
+     limit 1
+  ) fc on true`;
+
+  router.get("/history", requireAuth, requireAdministracion, async (req, res, next) => {
+    try {
+      const search = cleanAdminText(req.query.q || req.query.search || "");
+      const kind = req.query.kind ? normKind(req.query.kind) : null;
+      const fulfillment = cleanAdminText(req.query.fulfillment || "all").toLowerCase();
+      const fromDate = cleanAdminText(req.query.from_date || "");
+      const toDate = cleanAdminText(req.query.to_date || "");
+
+      const params = [];
+      const where = [
+        `coalesce(q.quote_kind, 'original') = 'original'`,
+        `(q.status in ('syncing_odoo', 'synced_odoo')
+          or coalesce(q.odoo_sale_order_id, 0) <> 0
+          or nullif(q.odoo_sale_order_name, '') is not null)`,
+      ];
+
+      if (kind) { params.push(kind); where.push(`coalesce(q.catalog_kind, 'porton') = $${params.length}`); }
+      if (fulfillment === "acopio" || fulfillment === "produccion") { params.push(fulfillment); where.push(`q.fulfillment_mode = $${params.length}`); }
+      if (fromDate) { params.push(fromDate); where.push(`q.confirmed_at >= $${params.length}::date`); }
+      if (toDate) { params.push(toDate); where.push(`q.confirmed_at < ($${params.length}::date + interval '1 day')`); }
+      if (search) {
+        params.push(`%${search.toLowerCase()}%`);
+        const idx = params.length;
+        where.push(`(
+          lower(coalesce(q.quote_number::text,'')) like $${idx}
+          or lower(coalesce(q.odoo_sale_order_name,'')) like $${idx}
+          or lower(coalesce(q.final_sale_order_name,'')) like $${idx}
+          or lower(coalesce(fc.final_copy_sale_order_name,'')) like $${idx}
+          or lower(coalesce(q.end_customer->>'name','')) like $${idx}
+          or lower(coalesce(q.end_customer->>'phone','')) like $${idx}
+          or lower(coalesce(q.end_customer->>'address','')) like $${idx}
+          or lower(coalesce(u.username,'')) like $${idx}
+          or lower(coalesce(u.full_name,'')) like $${idx}
+        )`);
+      }
+
+      const sql = `
+        select q.id, q.quote_number, q.catalog_kind, q.fulfillment_mode,
+               q.status, q.final_status,
+               q.created_at, q.confirmed_at, q.updated_at,
+               q.commercial_decision, q.commercial_at,
+               q.technical_decision, q.technical_at,
+               q.final_technical_decision, q.final_technical_decision_at,
+               q.final_logistics_decision, q.final_logistics_decision_at,
+               q.final_synced_at,
+               q.odoo_sale_order_name, q.final_sale_order_name,
+               q.end_customer,
+               q.requires_measurement, q.measurement_status,
+               q.measurement_at, q.measurement_review_at,
+               q.created_by_role,
+               u.id as seller_id, u.username as seller_username, u.full_name as seller_full_name,
+               cu.username as commercial_by_username, cu.full_name as commercial_by_full_name,
+               tu.username as technical_by_username, tu.full_name as technical_by_full_name,
+               fc.final_copy_id, fc.final_copy_status, fc.final_copy_sale_order_name, fc.final_copy_synced_at
+          from public.presupuestador_quotes q
+          left join public.presupuestador_users u on u.id = q.created_by_user_id
+          left join public.presupuestador_users cu on cu.id = q.commercial_by_user_id
+          left join public.presupuestador_users tu on tu.id = q.technical_by_user_id
+          ${historyLateral}
+         where ${where.join(" and ")}
+         order by coalesce(q.confirmed_at, q.created_at) desc nulls last, q.id desc
+         limit 500`;
+
+      const r = await dbQuery(sql, params);
+      res.json({ ok: true, quotes: r.rows || [] });
+    } catch (e) { next(e); }
+  });
+
+  router.get("/history/:id", requireAuth, requireAdministracion, async (req, res, next) => {
+    try {
+      const id = cleanAdminText(req.params.id);
+      const sql = `
+        select q.*,
+               u.username as seller_username, u.full_name as seller_full_name,
+               cu.username as commercial_by_username, cu.full_name as commercial_by_full_name,
+               tu.username as technical_by_username, tu.full_name as technical_by_full_name,
+               mu.username as measurement_by_username, mu.full_name as measurement_by_full_name,
+               mru.username as measurement_review_by_username, mru.full_name as measurement_review_by_full_name,
+               ftu.username as final_technical_by_username, ftu.full_name as final_technical_by_full_name,
+               fc.final_copy_id, fc.final_copy_status, fc.final_copy_sale_order_name, fc.final_copy_synced_at
+          from public.presupuestador_quotes q
+          left join public.presupuestador_users u on u.id = q.created_by_user_id
+          left join public.presupuestador_users cu on cu.id = q.commercial_by_user_id
+          left join public.presupuestador_users tu on tu.id = q.technical_by_user_id
+          left join public.presupuestador_users mu on mu.id = q.measurement_by_user_id
+          left join public.presupuestador_users mru on mru.id = q.measurement_review_by_user_id
+          left join public.presupuestador_users ftu on ftu.id = q.final_technical_decision_by_user_id
+          ${historyLateral}
+         where q.id = $1
+         limit 1`;
+      const r = await dbQuery(sql, [id]);
+      const quote = r.rows?.[0] || null;
+      if (!quote) return res.status(404).json({ ok: false, error: "No encontrado" });
+      res.json({ ok: true, quote });
+    } catch (e) { next(e); }
+  });
+
   return router;
 }

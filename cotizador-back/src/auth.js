@@ -13,6 +13,7 @@ function withEffectiveRoles(user) {
     is_rev_tecnica: isSuperuser || !!user?.is_rev_tecnica,
     is_medidor: isSuperuser || !!user?.is_medidor,
     is_logistica: isSuperuser || !!user?.is_logistica,
+    is_administracion: isSuperuser || !!user?.is_administracion,
   };
 }
 
@@ -43,6 +44,7 @@ export function signToken(user) {
     is_rev_tecnica: !!u.is_rev_tecnica,
     is_medidor: !!u.is_medidor,
     is_logistica: !!u.is_logistica,
+    is_administracion: !!u.is_administracion,
 
     odoo_partner_id: u.odoo_partner_id ?? null,
     odoo_pricelist_id: u.odoo_pricelist_id ?? null,
@@ -79,6 +81,7 @@ export async function requireAuth(req, res, next) {
                coalesce(is_superuser, false) as is_superuser,
                is_distribuidor, is_vendedor,
                is_enc_comercial, is_rev_tecnica, is_medidor, is_logistica,
+               coalesce(is_administracion, false) as is_administracion,
                odoo_partner_id,
                odoo_pricelist_id,
                default_maps_url,
@@ -86,7 +89,7 @@ export async function requireAuth(req, res, next) {
         from public.presupuestador_users
         where id = $1
         limit 1
-        `,
+`,
         [decoded.user_id]
       );
       fresh = r.rows?.[0] || null;
@@ -108,6 +111,7 @@ export async function requireAuth(req, res, next) {
           is_rev_tecnica: !!fresh.is_rev_tecnica,
           is_medidor: !!fresh.is_medidor,
           is_logistica: !!fresh.is_logistica,
+          is_administracion: !!fresh.is_administracion,
           odoo_partner_id: fresh.odoo_partner_id ?? null,
           odoo_pricelist_id: fresh.odoo_pricelist_id ?? null,
           default_maps_url: fresh.default_maps_url ?? null,
