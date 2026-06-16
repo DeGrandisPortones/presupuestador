@@ -13,7 +13,7 @@ import {
 import { loadCatalogBootstrap } from "./catalogBootstrap.js";
 
 const PLACEHOLDER_PRODUCT_ID = Number(
-  process.env.ODOO_PLACEHOLDER_PRODUCT_ID || 2880,
+  process.env.ODOO_PLACEHOLDER_PRODUCT_ID || 3575,
 );
 function parseMeasurementProductIds(raw) {
   return String(raw || "2865,2961")

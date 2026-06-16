@@ -6,7 +6,7 @@ import { getCommercialFinalTolerancePercent } from "../settingsDb.js";
 import { commitQuoteProductionWeek } from "../productionPlanning.js";
 
 const MEASUREMENT_PRODUCT_ID = Number(process.env.ODOO_MEASUREMENT_PRODUCT_ID || 2865);
-const PLACEHOLDER_PRODUCT_ID = Number(process.env.ODOO_PLACEHOLDER_PRODUCT_ID || 2880);
+const PLACEHOLDER_PRODUCT_ID = Number(process.env.ODOO_PLACEHOLDER_PRODUCT_ID || 3575);
 const IPANEL_ACOPIO_PRODUCT_ID = Number(process.env.ODOO_IPANEL_ACOPIO_PRODUCT_ID || 3607);
 const PLEGADOS_ACOPIO_PRODUCT_ID = Number(process.env.ODOO_PLEGADOS_ACOPIO_PRODUCT_ID || IPANEL_ACOPIO_PRODUCT_ID);
 const PUERTA_ACOPIO_PRODUCT_ID = Number(process.env.ODOO_PUERTA_ACOPIO_PRODUCT_ID || 3558);
