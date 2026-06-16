@@ -78,18 +78,28 @@ function LinesTable({ lines }) {
           </tr>
         </thead>
         <tbody>
-          {lines.map((l, i) => (
-            <tr key={i} style={{ borderBottom: "1px solid #f0f0f0" }}>
-              <td style={{ padding: "6px 10px" }}>{l.display_name || l.name || l.product_id || "—"}</td>
-              <td style={{ padding: "6px 10px", textAlign: "right" }}>{l.quantity ?? "—"}</td>
-              <td style={{ padding: "6px 10px", textAlign: "right" }}>{fmtMoney(l.unit_price)}</td>
-              <td style={{ padding: "6px 10px", textAlign: "right" }}>{fmtMoney(l.subtotal ?? (l.unit_price * l.quantity))}</td>
-            </tr>
-          ))}
+          {lines.map((l, i) => {
+            const qty = l.qty ?? l.quantity ?? 1;
+            const price = l.basePrice ?? l.base_price ?? l.price ?? l.price_unit ?? l.unit_price ?? 0;
+            const sub = price * qty;
+            return (
+              <tr key={i} style={{ borderBottom: "1px solid #f0f0f0" }}>
+                <td style={{ padding: "6px 10px" }}>{l.name || l.raw_name || l.display_name || String(l.product_id || "—")}</td>
+                <td style={{ padding: "6px 10px", textAlign: "right" }}>{qty}</td>
+                <td style={{ padding: "6px 10px", textAlign: "right" }}>{price > 0 ? fmtMoney(price) : "—"}</td>
+                <td style={{ padding: "6px 10px", textAlign: "right" }}>{sub > 0 ? fmtMoney(sub) : "—"}</td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>
   );
+}
+
+function fmtTypeName(key) {
+  if (!key) return null;
+  return String(key).replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
 function PayloadSummary({ payload, catalogKind }) {
@@ -99,23 +109,23 @@ function PayloadSummary({ payload, catalogKind }) {
   const add = (label, val) => { if (val != null && val !== "") fields.push({ label, val: String(val) }); };
 
   if (catalogKind === "porton" || !catalogKind) {
-    add("Tipo de portón", payload.porton_type || payload.type);
+    add("Tipo de portón", fmtTypeName(payload.porton_type || payload.type));
     add("Alto", payload.alto ?? payload.height);
     add("Ancho", payload.ancho ?? payload.width);
     add("Color", payload.color);
     add("Motor", payload.motor);
     add("Telecomandos", payload.telecomandos ?? payload.remotes);
   } else if (catalogKind === "ipanel") {
-    add("Tipo Ipanel", payload.ipanel_type || payload.type);
+    add("Tipo Ipanel", fmtTypeName(payload.ipanel_type || payload.type));
     add("Alto", payload.alto ?? payload.height);
     add("Ancho", payload.ancho ?? payload.width);
     add("Color", payload.color);
   } else if (catalogKind === "puerta") {
-    add("Tipo", payload.door_type || payload.type);
+    add("Tipo", fmtTypeName(payload.door_type || payload.type));
     add("Alto", payload.alto ?? payload.height);
     add("Ancho", payload.ancho ?? payload.width);
   } else {
-    add("Tipo", payload.type);
+    add("Tipo", fmtTypeName(payload.type));
     add("Alto", payload.alto ?? payload.height);
     add("Ancho", payload.ancho ?? payload.width);
   }
@@ -166,7 +176,11 @@ export default function AdministracionDetailPage() {
 
   const totalAmount = (() => {
     const lines = Array.isArray(quote.lines) ? quote.lines : [];
-    const sum = lines.reduce((acc, l) => acc + Number(l.subtotal ?? (Number(l.unit_price || 0) * Number(l.quantity || 0))), 0);
+    const sum = lines.reduce((acc, l) => {
+      const price = Number(l.basePrice ?? l.base_price ?? l.price ?? l.price_unit ?? l.unit_price ?? 0) || 0;
+      const qty = Number(l.qty ?? l.quantity ?? 1) || 1;
+      return acc + price * qty;
+    }, 0);
     return sum > 0 ? sum : null;
   })();
 
