@@ -46,6 +46,9 @@ export default function MenuPage() {
   const showPdfNamesAdmin = !!isSuperuser;
   const showProductionAssignments = !!isSuperuser;
   const showQuotesAdmin = !!isSuperuser;
+  const showAdministracion = !!(isSuperuser || user?.is_administracion);
+  const showPortonesEstado = !!(isSuperuser || user?.is_rev_tecnica || user?.is_enc_comercial);
+  const showPortonesEstadoStandalone = showPortonesEstado && !showTechInbox;
 
   return (
     <div className="container">
@@ -141,6 +144,12 @@ export default function MenuPage() {
           <>
             <MenuTile title="Aprobaciones Técnicas" buttonText="Abrir menú" onClick={() => navigate("/aprobacion/tecnica/menu")} iconSrc="/menu-icons/aprobacion-portones.png" />
           </>
+        )}
+        {showPortonesEstadoStandalone && (
+          <MenuTile title="Estado Portones" buttonText="Ver estado" onClick={() => navigate("/aprobacion/tecnica/portones-estado")} iconSrc="/menu-icons/aprobacion-portones.png" />
+        )}
+        {showAdministracion && (
+          <MenuTile title="Administración" buttonText="Abrir administración" onClick={() => navigate("/administracion")} icon="" />
         )}
       </div>
     </div>
