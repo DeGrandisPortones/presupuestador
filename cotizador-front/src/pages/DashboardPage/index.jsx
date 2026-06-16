@@ -1092,6 +1092,10 @@ function OdooProductDebugPanel() {
   ] : [];
   const uniqueTags = [...new Map(allTagsFound.map((t) => [t.id, t])).values()];
 
+  const isTemplateIdSearch = result && result.requested?.template_id;
+  const variantsSaleOkCount = (result?.variants || []).filter((v) => v.raw?.sale_ok === true).length;
+  const variantsTotal = result?.variants?.length ?? 0;
+
   return (
     <div className="card" style={{ background: "#fffbf0", border: "1px solid #ffe082" }}>
       <h3 style={{ marginTop: 0, color: "#7a5a00" }}>Debug: tags de Odoo para un producto</h3>
@@ -1115,10 +1119,27 @@ function OdooProductDebugPanel() {
       {error && <div style={{ color: "red", marginTop: 8 }}>{error}</div>}
       {result && (
         <div style={{ marginTop: 16 }}>
-          <div className="muted" style={{ marginBottom: 8, fontSize: 13 }}>
-            Variantes encontradas (sale_ok=true): <b>{result.variants?.length ?? 0}</b>
-            {result.variants?.length > 0 && ` → ${result.variants.map((v) => v.name).join(", ")}`}
-          </div>
+          {isTemplateIdSearch ? (
+            <div className="muted" style={{ marginBottom: 8, fontSize: 13 }}>
+              Variantes del template: <b>{variantsTotal}</b> total, <b style={{ color: variantsSaleOkCount === 0 ? "#b71c1c" : "#1b5e20" }}>{variantsSaleOkCount} con sale_ok=true</b>
+              {variantsTotal > 0 && ` → ${(result.variants || []).map((v) => `${v.name} (sale_ok=${v.raw?.sale_ok})`).join(", ")}`}
+            </div>
+          ) : (
+            <div className="muted" style={{ marginBottom: 8, fontSize: 13 }}>
+              Variantes encontradas (sale_ok=true): <b>{variantsTotal}</b>
+              {variantsTotal > 0 && ` → ${result.variants.map((v) => v.name).join(", ")}`}
+              {(result.templates || []).length > 0 && (
+                <span style={{ marginLeft: 12, color: "#888" }}>
+                  Templates: {result.templates.map((t) => `ID ${t.id} "${t.name}"`).join(", ")}
+                </span>
+              )}
+            </div>
+          )}
+          {result.templates?.length > 0 && isTemplateIdSearch && (
+            <div className="muted" style={{ marginBottom: 8, fontSize: 13 }}>
+              Template: <b>ID {result.templates[0].id}</b> — "{result.templates[0].name}"
+            </div>
+          )}
           <div style={{ fontWeight: 700, marginBottom: 6 }}>Tags encontrados en Odoo:</div>
           {uniqueTags.length === 0 ? (
             <div className="muted">Ningún tag encontrado para este producto.</div>

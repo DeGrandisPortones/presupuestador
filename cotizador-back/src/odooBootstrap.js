@@ -214,6 +214,10 @@ export async function inspectOdooProductTags(odoo, { productId = null, templateI
   if (requestedProductId) {
     const rows = await safeProductSearchRead(odoo, [["id", "=", requestedProductId]], variantBaseFields, variantTagFields, 1);
     variants = rows || [];
+  } else if (requestedTemplateId) {
+    // Fetch ALL variants for this template (no sale_ok filter) so we can report counts
+    const rows = await safeProductSearchRead(odoo, [["product_tmpl_id", "=", requestedTemplateId]], variantBaseFields, variantTagFields, 50);
+    variants = rows || [];
   } else if (textQuery) {
     const domain = [["sale_ok", "=", true], "|", "|", ["name", "ilike", textQuery], ["display_name", "ilike", textQuery], ["default_code", "ilike", textQuery]];
     variants = await safeProductSearchRead(odoo, domain, variantBaseFields, variantTagFields, 20);
