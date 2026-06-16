@@ -1547,27 +1547,6 @@ export async function finalizeMeasurementToRevisionQuote({ odoo, originalQuote, 
   );
   const finalRevisionQuote = updFinal.rows?.[0] || qSync;
 
-  let preproductionSync = { ok: false, skipped: true, reason: "not_attempted" };
-  try {
-    preproductionSync = await upsertPreproduccionValoresForNv({
-      originalQuote,
-      sourceQuote: base.source_quote,
-      revisionQuote: finalRevisionQuote,
-      order,
-      metrics,
-      generatedLines: finalLines,
-      odoo,
-    });
-  } catch (error) {
-    preproductionSync = {
-      ok: false,
-      skipped: false,
-      reason: "write_failed",
-      error: error?.message || String(error || "Error escribiendo preproduccion_valores"),
-    };
-    console.error("No se pudo escribir preproduccion_valores:", preproductionSync.error);
-  }
-
   return {
     revisionQuote: finalRevisionQuote,
     generated_lines: finalLines,
@@ -1576,6 +1555,42 @@ export async function finalizeMeasurementToRevisionQuote({ odoo, originalQuote, 
     metrics,
     whatsappNotification,
     source_quote_id: base.source_quote_id,
-    preproductionSync,
   };
+}
+
+// Llama upsertPreproduccionValoresForNv usando la NV ya existente en la revision quote.
+// Se invoca desde clientAcceptance cuando el cliente acepta, no al generar la NV.
+export async function triggerPreproductionForClientAcceptance(odoo, originalQuote) {
+  const r = await dbQuery(
+    `select * from public.presupuestador_quotes
+     where quote_kind = 'copy' and parent_quote_id = $1
+       and final_sale_order_name is not null
+     order by created_at desc nulls last, id desc
+     limit 1`,
+    [originalQuote.id],
+  );
+  const revisionQuote = r.rows?.[0];
+  if (!revisionQuote) return { ok: false, skipped: true, reason: "no_revision_quote_with_nv" };
+
+  const order = {
+    id: Number(revisionQuote.final_sale_order_id || 0) || null,
+    name: String(revisionQuote.final_sale_order_name || ""),
+  };
+  const metrics = {
+    tolerance_percent: revisionQuote.final_tolerance_percent ?? 0,
+    tolerance_amount: revisionQuote.final_tolerance_amount ?? 0,
+    difference_amount: revisionQuote.final_difference_amount ?? 0,
+    absorbed_by_company: revisionQuote.final_absorbed_by_company === true,
+    final_amount_to_charge: revisionQuote.final_amount_to_charge ?? 0,
+  };
+
+  return upsertPreproduccionValoresForNv({
+    originalQuote,
+    sourceQuote: originalQuote,
+    revisionQuote,
+    order,
+    metrics,
+    generatedLines: Array.isArray(revisionQuote.lines) ? revisionQuote.lines : [],
+    odoo,
+  });
 }

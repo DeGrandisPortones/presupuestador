@@ -2,7 +2,7 @@ import express from "express";
 import { dbQuery } from "../db.js";
 import { ensureQuotesMeasurementColumns } from "../quotesSchema.js";
 import { getTechnicalMeasurementRules } from "../settingsDb.js";
-import { finalizeMeasurementToRevisionQuote } from "../measurementFinalization.js";
+import { triggerPreproductionForClientAcceptance } from "../measurementFinalization.js";
 
 function isShareToken(v) {
   const s = String(v || "").trim();
@@ -141,26 +141,18 @@ export function buildClientAcceptanceRouter(odoo) {
       const updatedQuote = upd.rows?.[0] || null;
       const acceptance = buildAcceptanceFromPayload(updatedQuote?.payload || currentPayload);
 
-      // Disparar generación de NV si aún no existe (nuevo flujo: producción arranca con la aceptación del cliente)
-      let finalization = null;
-      const nvAlreadyExists = !!(updatedQuote?.final_sale_order_id || updatedQuote?.final_sale_order_name);
-      if (!nvAlreadyExists && odoo) {
-        const measurementForm = await resolveMeasurementForm(updatedQuote);
-        if (measurementForm) {
-          try {
-            finalization = await finalizeMeasurementToRevisionQuote({
-              odoo,
-              originalQuote: updatedQuote,
-              measurementForm,
-            });
-          } catch (e) {
-            console.error("CLIENT ACCEPTANCE FINALIZATION ERROR:", e?.message || e);
-            finalization = { ok: false, error: e?.message || String(e) };
-          }
+      // La NV ya fue generada al aprobar la medición. Ahora que el cliente aceptó, insertar en preproduccion_valores.
+      let preproductionSync = null;
+      if (odoo) {
+        try {
+          preproductionSync = await triggerPreproductionForClientAcceptance(odoo, updatedQuote);
+        } catch (e) {
+          console.error("PREPRODUCTION SYNC ERROR:", e?.message || e);
+          preproductionSync = { ok: false, error: e?.message || String(e) };
         }
       }
 
-      return res.json({ ok: true, acceptance, finalization });
+      return res.json({ ok: true, acceptance, preproductionSync });
     } catch (e) {
       next(e);
     }
