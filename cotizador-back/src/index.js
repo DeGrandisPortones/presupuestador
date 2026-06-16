@@ -62,7 +62,7 @@ app.use("/api/production-planning", buildProductionPlanningRouter());
 app.use("/api/quotes", buildQuotesRouter(odoo));
 app.use("/api/doors", buildDoorsRouter(odoo));
 app.use("/api/measurements", buildMeasurementsRouter(odoo));
-app.use("/api/client-acceptance", buildClientAcceptanceRouter());
+app.use("/api/client-acceptance", buildClientAcceptanceRouter(odoo));
 app.use("/api/catalog", buildCatalogRouter(odoo));
 app.use("/api/admin", buildAdminRouter(odoo));
 app.use("/api/quote-viewer", buildQuoteViewerRouter());
