@@ -1,9 +1,57 @@
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Outlet, useNavigate, NavLink } from "react-router-dom";
 import Button from "../ui/Button.jsx";
 import { useAuthStore } from "../domain/auth/store.js";
 import { getTechnicalConsultUnreadSummary } from "../api/technicalConsults.js";
 import AptoKgProductSectionFilterPatch from "../components/AptoKgProductSectionFilterPatch.jsx";
+
+const DROPDOWN_ITEM_STYLE = {
+  display: "block",
+  padding: "8px 16px",
+  color: "#333",
+  textDecoration: "none",
+  fontSize: 14,
+  whiteSpace: "nowrap",
+  borderBottom: "1px solid #f0f0f0",
+};
+
+function PresupuestarDropdown({ show }) {
+  const [open, setOpen] = useState(false);
+  if (!show) return null;
+  return (
+    <div
+      style={{ position: "relative" }}
+      onMouseEnter={() => setOpen(true)}
+      onMouseLeave={() => setOpen(false)}
+    >
+      <span className="navlink" style={{ cursor: "pointer", userSelect: "none" }}>
+        Presupuestar ▾
+      </span>
+      {open && (
+        <div style={{
+          position: "absolute",
+          top: "100%",
+          left: 0,
+          background: "#fff",
+          border: "1px solid #e0e0e0",
+          borderRadius: 6,
+          boxShadow: "0 4px 12px rgba(0,0,0,0.12)",
+          minWidth: 230,
+          zIndex: 200,
+          padding: "4px 0",
+        }}>
+          <NavLink style={({ isActive }) => ({ ...DROPDOWN_ITEM_STYLE, background: isActive ? "#f0fffe" : undefined, fontWeight: isActive ? 700 : undefined })} to="/cotizador" end>De Grandis Portones</NavLink>
+          <NavLink style={({ isActive }) => ({ ...DROPDOWN_ITEM_STYLE, background: isActive ? "#f0fffe" : undefined, fontWeight: isActive ? 700 : undefined })} to="/cotizador/ipanel">Ipanel</NavLink>
+          <NavLink style={({ isActive }) => ({ ...DROPDOWN_ITEM_STYLE, background: isActive ? "#f0fffe" : undefined, fontWeight: isActive ? 700 : undefined })} to="/cotizador/plegados">Plegados</NavLink>
+          <NavLink style={({ isActive }) => ({ ...DROPDOWN_ITEM_STYLE, background: isActive ? "#f0fffe" : undefined, fontWeight: isActive ? 700 : undefined })} to="/cotizador/puerta">Puertas</NavLink>
+          <NavLink style={({ isActive }) => ({ ...DROPDOWN_ITEM_STYLE, background: isActive ? "#f0fffe" : undefined, fontWeight: isActive ? 700 : undefined })} to="/cotizador/otros">Otros</NavLink>
+          <NavLink style={({ isActive }) => ({ ...DROPDOWN_ITEM_STYLE, borderBottom: "none", background: isActive ? "#f0fffe" : undefined, fontWeight: isActive ? 700 : undefined })} to="/presupuestos">Mis presupuestos</NavLink>
+        </div>
+      )}
+    </div>
+  );
+}
 
 function OdooStatusBadge() {
   const odooStatus = useAuthStore((s) => s.odooStatus);
@@ -112,10 +160,12 @@ export default function AppLayout() {
   const showDashboard = !!(isSuperuser || user?.is_enc_comercial);
   const showUsers = !!(isSuperuser || user?.is_enc_comercial);
   const canQuote = !!(isSuperuser || user?.is_vendedor || user?.is_distribuidor);
+  const showPresupuestar = !!(isSuperuser || user?.is_vendedor || user?.is_distribuidor || user?.is_enc_comercial);
   const showMyDistributors = !!(isSuperuser || user?.is_enc_comercial || (user?.is_vendedor && !user?.is_distribuidor));
   const showMediciones = !!(isSuperuser || user?.is_medidor) && !user?.is_rev_tecnica;
   const showCommercial = !!(isSuperuser || user?.is_enc_comercial);
   const showTechnical = !!(isSuperuser || user?.is_rev_tecnica);
+  const showPortonesEstado = !!(isSuperuser || user?.is_rev_tecnica || user?.is_enc_comercial);
   const showAdministracion = !!(isSuperuser || user?.is_administracion);
 
   return (
@@ -147,28 +197,7 @@ export default function AppLayout() {
         <div className="container" style={{ padding: 0, marginTop: 10, display: "flex", gap: 10, flexWrap: "wrap" }}>
           <NavLink className={({ isActive }) => (isActive ? "navlink active" : "navlink")} to="/menu">Menu</NavLink>
 
-          {canQuote && (
-            <>
-              <NavLink className={({ isActive }) => (isActive ? "navlink active" : "navlink")} to="/cotizador" end>
-                Presupuesto Portones
-              </NavLink>
-              <NavLink className={({ isActive }) => (isActive ? "navlink active" : "navlink")} to="/cotizador/ipanel">
-                Presupuesto Ipanel
-              </NavLink>
-              <NavLink className={({ isActive }) => (isActive ? "navlink active" : "navlink")} to="/cotizador/plegados">
-                Presupuesto Plegados
-              </NavLink>
-              <NavLink className={({ isActive }) => (isActive ? "navlink active" : "navlink")} to="/cotizador/puerta">
-                Presupuesto Puertas
-              </NavLink>
-              <NavLink className={({ isActive }) => (isActive ? "navlink active" : "navlink")} to="/cotizador/otros">
-                Presupuesto Otros
-              </NavLink>
-              <NavLink className={({ isActive }) => (isActive ? "navlink active" : "navlink")} to="/presupuestos">
-                Mis presupuestos
-              </NavLink>
-            </>
-          )}
+          <PresupuestarDropdown show={showPresupuestar} />
 
           {showMyDistributors && <NavLink className={({ isActive }) => (isActive ? "navlink active" : "navlink")} to="/mis-distribuidores">Mis distribuidores</NavLink>}
           {showMediciones && <NavLink className={({ isActive }) => (isActive ? "navlink active" : "navlink")} to="/mediciones">Mediciones</NavLink>}
@@ -176,6 +205,7 @@ export default function AppLayout() {
           {showDashboard && <NavLink className={({ isActive }) => (isActive ? "navlink active" : "navlink")} to="/dashboard">Dashboard</NavLink>}
           {showUsers && <NavLink className={({ isActive }) => (isActive ? "navlink active" : "navlink")} to="/usuarios">Gestor de usuarios</NavLink>}
           {showTechnical && <NavLink className={({ isActive }) => (isActive ? "navlink active" : "navlink")} to="/aprobacion/tecnica/menu">Revision Tecnica</NavLink>}
+          {showPortonesEstado && !showTechnical && <NavLink className={({ isActive }) => (isActive ? "navlink active" : "navlink")} to="/aprobacion/tecnica/portones-estado">Estado Portones</NavLink>}
           {showAdministracion && <NavLink className={({ isActive }) => (isActive ? "navlink active" : "navlink")} to="/administracion">Administración</NavLink>}
         </div>
       </div>
