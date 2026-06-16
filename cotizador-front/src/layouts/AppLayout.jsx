@@ -16,6 +16,44 @@ const DROPDOWN_ITEM_STYLE = {
   borderBottom: "1px solid #f0f0f0",
 };
 
+function SuperusuarioDropdown({ show }) {
+  const [open, setOpen] = useState(false);
+  if (!show) return null;
+  return (
+    <div
+      style={{ position: "relative" }}
+      onMouseEnter={() => setOpen(true)}
+      onMouseLeave={() => setOpen(false)}
+    >
+      <span className="navlink" style={{ cursor: "pointer", userSelect: "none" }}>
+        Superusuario ▾
+      </span>
+      {open && (
+        <div style={{
+          position: "absolute",
+          top: "100%",
+          left: 0,
+          background: "#fff",
+          border: "1px solid #e0e0e0",
+          borderRadius: 6,
+          boxShadow: "0 4px 12px rgba(0,0,0,0.12)",
+          minWidth: 260,
+          zIndex: 200,
+          padding: "4px 0",
+        }}>
+          <NavLink style={({ isActive }) => ({ ...DROPDOWN_ITEM_STYLE, background: isActive ? "#f0fffe" : undefined, fontWeight: isActive ? 700 : undefined })} to="/dashboard/catalogo-puertas">Catalogo Puertas</NavLink>
+          <NavLink style={({ isActive }) => ({ ...DROPDOWN_ITEM_STYLE, background: isActive ? "#f0fffe" : undefined, fontWeight: isActive ? 700 : undefined })} to="/dashboard/reglas-tecnicas">Reglas Tecnicas</NavLink>
+          <NavLink style={({ isActive }) => ({ ...DROPDOWN_ITEM_STYLE, background: isActive ? "#f0fffe" : undefined, fontWeight: isActive ? 700 : undefined })} to="/superuser/nombres-pdf">Nombres PDF productos</NavLink>
+          <NavLink style={({ isActive }) => ({ ...DROPDOWN_ITEM_STYLE, background: isActive ? "#f0fffe" : undefined, fontWeight: isActive ? 700 : undefined })} to="/superuser/asignacion-produccion">Asignacion Produccion</NavLink>
+          <NavLink style={({ isActive }) => ({ ...DROPDOWN_ITEM_STYLE, background: isActive ? "#f0fffe" : undefined, fontWeight: isActive ? 700 : undefined })} to="/superuser/presupuestos-admin">Admin presupuestos y Odoo</NavLink>
+          <NavLink style={({ isActive }) => ({ ...DROPDOWN_ITEM_STYLE, background: isActive ? "#f0fffe" : undefined, fontWeight: isActive ? 700 : undefined })} to="/superuser/visualizador-porton">Visualizador portones</NavLink>
+          <NavLink style={({ isActive }) => ({ ...DROPDOWN_ITEM_STYLE, borderBottom: "none", background: isActive ? "#f0fffe" : undefined, fontWeight: isActive ? 700 : undefined })} to="/superuser/actividad-vendedores">Actividad vendedores</NavLink>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function PresupuestarDropdown({ show }) {
   const [open, setOpen] = useState(false);
   if (!show) return null;
@@ -167,10 +205,38 @@ export default function AppLayout() {
   const showTechnical = !!(isSuperuser || user?.is_rev_tecnica);
   const showPortonesEstado = !!(isSuperuser || user?.is_rev_tecnica || user?.is_enc_comercial);
   const showAdministracion = !!(isSuperuser || user?.is_administracion);
+  const showPlanning = !!(isSuperuser || user?.is_enc_comercial);
+  const showFinancing = !!(isSuperuser || user?.is_enc_comercial);
+
+  const isDevEnv = import.meta.env.VITE_API_URL?.includes("dev");
 
   return (
-    <div>
-      <div className="card app-header" style={{ borderRadius: 0 }}>
+    <div style={{ position: "relative" }}>
+      {isDevEnv && (
+        <div style={{
+          position: "fixed", inset: 0, zIndex: 0,
+          pointerEvents: "none", overflow: "hidden",
+        }}>
+          {Array.from({ length: 20 }).map((_, i) => (
+            <div key={i} style={{
+              position: "absolute",
+              left: `${(i % 4) * 28 - 10}%`,
+              top: `${Math.floor(i / 4) * 22 - 5}%`,
+              transform: "rotate(-35deg)",
+              fontSize: 28,
+              fontWeight: 900,
+              color: "rgba(200,40,40,0.18)",
+              whiteSpace: "nowrap",
+              userSelect: "none",
+              letterSpacing: 4,
+            }}>
+              DEV ENVIRONMENT
+            </div>
+          ))}
+        </div>
+      )}
+      <div style={{ position: "relative", zIndex: 1 }}>
+      <div className="card app-header" style={{ borderRadius: 0, ...(isDevEnv && { background: "#7a1a1a" }) }}>
         <div className="container" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: 0, gap: 16 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
             <img className="brand-logo" src="/brands/dflex.png" alt="Dflex" />
@@ -201,17 +267,21 @@ export default function AppLayout() {
 
           {showMyDistributors && <NavLink className={({ isActive }) => (isActive ? "navlink active" : "navlink")} to="/mis-distribuidores">Mis distribuidores</NavLink>}
           {showMediciones && <NavLink className={({ isActive }) => (isActive ? "navlink active" : "navlink")} to="/mediciones">Mediciones</NavLink>}
-          {showCommercial && <NavLink className={({ isActive }) => (isActive ? "navlink active" : "navlink")} to="/aprobacion/comercial/menu">Aprobacion Comercial</NavLink>}
           {showDashboard && <NavLink className={({ isActive }) => (isActive ? "navlink active" : "navlink")} to="/dashboard">Dashboard</NavLink>}
+          {showPlanning && <NavLink className={({ isActive }) => (isActive ? "navlink active" : "navlink")} to="/planificacion">Planificacion</NavLink>}
+          {showFinancing && <NavLink className={({ isActive }) => (isActive ? "navlink active" : "navlink")} to="/financiamiento">Financiamiento</NavLink>}
           {showUsers && <NavLink className={({ isActive }) => (isActive ? "navlink active" : "navlink")} to="/usuarios">Gestor de usuarios</NavLink>}
+          {showCommercial && <NavLink className={({ isActive }) => (isActive ? "navlink active" : "navlink")} to="/aprobacion/comercial/menu">Aprobacion Comercial</NavLink>}
           {showTechnical && <NavLink className={({ isActive }) => (isActive ? "navlink active" : "navlink")} to="/aprobacion/tecnica/menu">Revision Tecnica</NavLink>}
           {showPortonesEstado && !showTechnical && <NavLink className={({ isActive }) => (isActive ? "navlink active" : "navlink")} to="/aprobacion/tecnica/portones-estado">Estado Portones</NavLink>}
           {showAdministracion && <NavLink className={({ isActive }) => (isActive ? "navlink active" : "navlink")} to="/administracion">Administración</NavLink>}
+          <SuperusuarioDropdown show={isSuperuser} />
         </div>
       </div>
 
       <AptoKgProductSectionFilterPatch />
       <Outlet />
+      </div>
     </div>
   );
 }
