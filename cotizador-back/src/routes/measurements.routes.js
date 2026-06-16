@@ -3,7 +3,7 @@ import express from "express";
 import { requireAuth } from "../auth.js";
 import { dbQuery } from "../db.js";
 import { ensureQuotesMeasurementColumns } from "../quotesSchema.js";
-import { finalizeMeasurementToRevisionQuote, maybeSendMeasurementApprovedWhatsApp } from "../measurementFinalization.js";
+import { finalizeMeasurementToRevisionQuote } from "../measurementFinalization.js";
 import {
   getCommercialFinalToleranceAreaM2,
   getTechnicalMeasurementFieldDefinitions,
@@ -713,14 +713,18 @@ export function buildMeasurementsRouter(odoo = null) {
           [id, Number(u.user_id), shareToken],
         );
         const savedQuote = upd.rows?.[0] || null;
-        // Solo enviar WhatsApp con el link de aceptación. La NV se genera cuando el cliente acepta.
-        let whatsappNotification = null;
+        let finalization = null;
         try {
-          whatsappNotification = await maybeSendMeasurementApprovedWhatsApp({ odoo, quote: savedQuote });
+          finalization = await finalizeMeasurementToRevisionQuote({
+            odoo,
+            originalQuote: savedQuote,
+            measurementForm: savedQuote?.measurement_form || {},
+          });
         } catch (e) {
-          console.error("WHATSAPP SEND ERROR:", e?.message || e);
+          console.error("MEASUREMENT FINALIZATION ERROR:", e?.message || e);
+          throw e;
         }
-        return res.json({ ok: true, quote: savedQuote, whatsappNotification });
+        return res.json({ ok: true, quote: savedQuote, finalization });
       }
 
       const msg = String(notes || "Corregir").trim();
