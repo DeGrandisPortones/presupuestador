@@ -24,14 +24,15 @@ const TECHNICAL_TAB_LABELS = {
   produccion: "Enviados a Producción",
   produccion_ipanels: "Enviados a Producción",
   produccion_puertas: "Enviadas a Producción",
+  aprobados: "Aprobados (historial)",
 };
 const TECHNICAL_TABS_BY_SECTION = {
-  all: ["aprobaciones_todos", "aprobaciones_portones", "aprobaciones_ipanels", "aprobaciones_puertas", "aprobaciones_plegados", "aprobaciones_otros", "aprobaciones_mediciones", "acopio", "acopio_listado", "produccion", "produccion_ipanels", "produccion_puertas"],
-  porton: ["aprobaciones_portones", "aprobaciones_mediciones", "acopio", "acopio_listado", "produccion"],
-  ipanel: ["aprobaciones_ipanels", "acopio", "acopio_listado", "produccion_ipanels"],
-  puerta: ["aprobaciones_puertas", "aprobaciones_mediciones", "acopio", "acopio_listado", "produccion_puertas"],
-  plegados: ["aprobaciones_plegados"],
-  otros: ["aprobaciones_otros"],
+  all: ["aprobaciones_todos", "aprobaciones_portones", "aprobaciones_ipanels", "aprobaciones_puertas", "aprobaciones_plegados", "aprobaciones_otros", "aprobaciones_mediciones", "acopio", "acopio_listado", "produccion", "produccion_ipanels", "produccion_puertas", "aprobados"],
+  porton: ["aprobaciones_portones", "aprobaciones_mediciones", "acopio", "acopio_listado", "produccion", "aprobados"],
+  ipanel: ["aprobaciones_ipanels", "acopio", "acopio_listado", "produccion_ipanels", "aprobados"],
+  puerta: ["aprobaciones_puertas", "aprobaciones_mediciones", "acopio", "acopio_listado", "produccion_puertas", "aprobados"],
+  plegados: ["aprobaciones_plegados", "aprobados"],
+  otros: ["aprobaciones_otros", "aprobados"],
 };
 const VALID_TABS = Object.keys(TECHNICAL_TAB_LABELS);
 function normalizeTechnicalTab(raw, section = "all") {
@@ -370,6 +371,7 @@ export default function AprobacionTecnicaPage() {
   const [pageProduccion, setPageProduccion] = useState(1);
   const [pageProduccionIpanels, setPageProduccionIpanels] = useState(1);
   const [pagePuertas, setPagePuertas] = useState(1);
+  const [pageAprobados, setPageAprobados] = useState(1);
 
   useEffect(() => {
     const nextTab = normalizeTab(searchParams.get("tab"), approvalSection);
@@ -382,6 +384,7 @@ export default function AprobacionTecnicaPage() {
   const produccionQ = useQuery({ queryKey: ["quotes", "production_sent", "technical", tab], queryFn: () => listQuotes({ scope: "production_sent" }), enabled: ["produccion", "produccion_ipanels", "produccion_puertas"].includes(tab) && !!user?.is_rev_tecnica });
   const doorsQ = useQuery({ queryKey: ["doors", "technical_inbox"], queryFn: () => listDoors({ scope: "technical_inbox" }), enabled: tab === "aprobaciones_puertas" && !!user?.is_rev_tecnica });
   const measQ = useQuery({ queryKey: ["measurements", "tecnica", tab, measurementStatus], queryFn: () => listMeasurements({ status: "all", viewer: "tecnica" }), enabled: ["aprobaciones_mediciones", "aprobaciones_ipanels"].includes(tab) && !!user?.is_rev_tecnica });
+  const aprobadosQ = useQuery({ queryKey: ["quotes", "technical_approved"], queryFn: () => listQuotes({ scope: "technical_approved" }), enabled: tab === "aprobados" && !!user?.is_rev_tecnica });
 
   const acopioM = useMutation({ mutationFn: ({ id, action, notes }) => reviewAcopioTechnical(id, { action, notes }), onSuccess: () => acopioQ.refetch() });
   const doorM = useMutation({ mutationFn: ({ id, action, notes }) => reviewDoorTechnical(id, { action, notes }), onSuccess: () => doorsQ.refetch() });
@@ -406,6 +409,7 @@ export default function AprobacionTecnicaPage() {
   useEffect(() => { setPageAcopioListado(1); }, [searchText]);
   useEffect(() => { setPageProduccion(1); setPageProduccionIpanels(1); }, [searchText]);
   useEffect(() => { setPagePuertas(1); }, [searchText]);
+  useEffect(() => { setPageAprobados(1); }, [searchText]);
 
   const approvalBaseRows = useMemo(() => {
     const arr = (q.data || []).slice().sort((a, b) => toTimeDesc(b?.created_at) - toTimeDesc(a?.created_at));
@@ -504,6 +508,16 @@ export default function AprobacionTecnicaPage() {
   const visibleProduccionIpanels = paged(produccionIpanelRows, pageProduccionIpanels);
   const visibleProduccionPuertas = paged(produccionPuertasRows, pageProduccion);
   const visibleDoors = paged(doorRows, pagePuertas);
+
+  const aprobadosRows = useMemo(() => {
+    return (aprobadosQ.data || [])
+      .slice()
+      .sort((a, b) => toTimeDesc(b?.technical_at || b?.created_at) - toTimeDesc(a?.technical_at || a?.created_at))
+      .filter((r) => rowMatchesApprovalSection(r, approvalSection))
+      .filter((r) => matchesSearch(quoteSearchValues(r), searchText));
+  }, [aprobadosQ.data, searchText, approvalSection]);
+  const visibleAprobados = paged(aprobadosRows, pageAprobados);
+
   const hideScheduleColumns = measurementStatus === "sin_medicion";
 
   const renderApprovalRows = (items, totalItems, page, onPageChange, emptyText, showPlegadoInfo = true, showType = false) => (
@@ -692,6 +706,37 @@ export default function AprobacionTecnicaPage() {
         {tab === "produccion" && renderProductionRows(visibleProduccion, produccionRows.length, pageProduccion, setPageProduccion, "Sin portones enviados a producción")}
         {tab === "produccion_ipanels" && renderProductionRows(visibleProduccionIpanels, produccionIpanelRows.length, pageProduccionIpanels, setPageProduccionIpanels, "Sin Ipanels enviados a producción")}
         {tab === "produccion_puertas" && renderProductionRows(visibleProduccionPuertas, produccionPuertasRows.length, pageProduccion, setPageProduccion, "Sin puertas enviadas a producción")}
+
+        {tab === "aprobados" && (
+          <>
+            {aprobadosQ.isLoading && <div className="muted">Cargando...</div>}
+            {aprobadosQ.isError && <div style={{ color: "#d93025", fontSize: 13 }}>{aprobadosQ.error.message}</div>}
+            {!aprobadosQ.isLoading && !aprobadosRows.length && <div className="muted">Sin presupuestos aprobados</div>}
+            {!!aprobadosRows.length && (
+              <>
+                <table>
+                  <thead><tr><th>Fecha aprob.</th><th>Tipo</th><th>Vendedor/Distribuidor</th><th>Cliente</th><th>Dirección</th><th>Estado</th><th>NP/NV Odoo</th><th>Obs. presupuesto</th><th></th></tr></thead>
+                  <tbody>
+                    {visibleAprobados.map((r) => (
+                      <tr key={r.id}>
+                        <td>{fmtDate(r.technical_at || r.created_at)}</td>
+                        <td>{catalogKindLabel(r)}</td>
+                        <td>{createdByLabel(r)}</td>
+                        <td>{r.end_customer?.name || <span className="muted">(sin nombre)</span>}</td>
+                        <td>{r.end_customer?.address || "—"}</td>
+                        <td>{rowLabel(r)}</td>
+                        <td><OdooReferenceCell value={quoteOdooReference(r)} /></td>
+                        <td><BudgetObservationCell row={r} /></td>
+                        <td className="right"><Button variant="ghost" onClick={() => navigate(`/presupuestos/${r.id}`, { state: { from: "/aprobacion/tecnica" } })}>Abrir</Button></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                <PaginationControls page={pageAprobados} totalItems={aprobadosRows.length} pageSize={PAGE_SIZE} onPageChange={setPageAprobados} />
+              </>
+            )}
+          </>
+        )}
 
         {tab === "aprobaciones_puertas" && (
           <>
