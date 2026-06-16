@@ -19,6 +19,15 @@ export async function adminGetCatalog(kind = "porton") {
   return data;
 }
 
+export async function adminDebugOdooProduct({ templateId, productId, query } = {}) {
+  const params = new URLSearchParams();
+  if (templateId) params.set("template_id", String(templateId));
+  if (productId) params.set("product_id", String(productId));
+  if (query) params.set("q", String(query));
+  const { data } = await http.get(`/api/catalog/odoo-product-debug?${params.toString()}`);
+  return data;
+}
+
 export async function adminGetProductPdfNames(kind = "porton") {
   const { data } = await http.get(`/api/admin/product-pdf-names?kind=${encodeURIComponent(kind)}`);
   if (!data?.ok) throw new Error(data?.error || "No se pudieron cargar los nombres PDF");

@@ -22,6 +22,7 @@ import {
   adminSaveTechnicalMeasurementRules,
   adminGetProductPdfNames,
   adminSetProductPdfName,
+  adminDebugOdooProduct,
 } from "../../api/admin.js";
 
 const CATALOG_KIND_OPTIONS = [
@@ -1060,6 +1061,105 @@ function PdfNamesTab({ catalogKind, items, isLoading, isError, error, drafts, se
   );
 }
 
+function OdooProductDebugPanel() {
+  const [input, setInput] = useState("");
+  const [result, setResult] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+
+  async function handleDebug() {
+    const val = input.trim();
+    if (!val) return;
+    setLoading(true);
+    setError(null);
+    setResult(null);
+    try {
+      const isNumber = /^\d+$/.test(val);
+      const data = await adminDebugOdooProduct(
+        isNumber ? { templateId: val } : { query: val }
+      );
+      setResult(data);
+    } catch (e) {
+      setError(e?.message || "Error");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  const allTagsFound = result ? [
+    ...(result.variants || []).flatMap((v) => v.tags_resolved || []),
+    ...(result.templates || []).flatMap((t) => t.tags_resolved || []),
+  ] : [];
+  const uniqueTags = [...new Map(allTagsFound.map((t) => [t.id, t])).values()];
+
+  return (
+    <div className="card" style={{ background: "#fffbf0", border: "1px solid #ffe082" }}>
+      <h3 style={{ marginTop: 0, color: "#7a5a00" }}>Debug: tags de Odoo para un producto</h3>
+      <div className="muted" style={{ marginBottom: 10 }}>Ingresá el ID del template de Odoo (ej: 3503) o el nombre del producto.</div>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        <input
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && handleDebug()}
+          placeholder="Template ID o nombre..."
+          style={{ flex: 1, minWidth: 200, padding: "8px 12px", borderRadius: 6, border: "1px solid #ccc" }}
+        />
+        <button
+          onClick={handleDebug}
+          disabled={loading || !input.trim()}
+          style={{ padding: "8px 16px", borderRadius: 6, background: "#f57f17", color: "#fff", border: "none", cursor: "pointer", fontWeight: 700 }}
+        >
+          {loading ? "Consultando..." : "Consultar Odoo"}
+        </button>
+      </div>
+      {error && <div style={{ color: "red", marginTop: 8 }}>{error}</div>}
+      {result && (
+        <div style={{ marginTop: 16 }}>
+          <div style={{ fontWeight: 700, marginBottom: 6 }}>Tags encontrados en Odoo:</div>
+          {uniqueTags.length === 0 ? (
+            <div className="muted">Ningún tag encontrado para este producto.</div>
+          ) : (
+            <table style={{ borderCollapse: "collapse", width: "100%" }}>
+              <thead>
+                <tr style={{ background: "#fff8e1" }}>
+                  <th style={thStyle}>Nombre</th>
+                  <th style={thStyle}>Stable ID</th>
+                  <th style={thStyle}>Raw ID</th>
+                  <th style={thStyle}>Modelo</th>
+                </tr>
+              </thead>
+              <tbody>
+                {uniqueTags.map((tag) => (
+                  <tr key={tag.id}>
+                    <td style={tdStyle}><b>{tag.name}</b></td>
+                    <td style={tdStyle}><code>{tag.id}</code></td>
+                    <td style={tdStyle}><code>{tag.raw_id}</code></td>
+                    <td style={tdStyle}><code>{tag.model}</code></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+          {result.variants?.[0]?.tag_fields_detected && (
+            <div style={{ marginTop: 10 }}>
+              <div className="muted" style={{ fontSize: 12 }}>
+                Campos de tag en variant: {result.variants[0].tag_fields_detected.map((f) => f.field).join(", ") || "(ninguno)"}
+              </div>
+            </div>
+          )}
+          {result.templates?.[0]?.tag_fields_detected && (
+            <div>
+              <div className="muted" style={{ fontSize: 12 }}>
+                Campos de tag en template: {result.templates[0].tag_fields_detected.map((f) => f.field).join(", ") || "(ninguno)"}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function DataTab({ sections, tags, products, quotes, productQuery, setProductQuery, quoteQuery, setQuoteQuery, sectionFilter, setSectionFilter, tagFilter, setTagFilter }) {
   return (
     <>
@@ -1122,6 +1222,9 @@ function DataTab({ sections, tags, products, quotes, productQuery, setProductQue
         </table>
         {!quotes.length ? <div className="muted">Sin presupuestos para mostrar.</div> : null}
       </div>
+
+      <div className="spacer" />
+      <OdooProductDebugPanel />
     </>
   );
 }
