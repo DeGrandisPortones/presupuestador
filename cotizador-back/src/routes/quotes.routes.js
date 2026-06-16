@@ -1929,7 +1929,8 @@ export function buildQuotesRouter(odoo) {
         if (!u.is_rev_tecnica && !u.is_superuser && !u.is_enc_comercial) return res.status(403).json({ ok: false, error: "No autorizado" });
         sql = `select q.id, q.quote_number, q.odoo_sale_order_name, q.final_sale_order_name,
                       q.status, q.commercial_decision, q.technical_decision,
-                      q.measurement_status, q.requires_measurement, q.measurement_share_enabled_at, q.measurement_client_accepted_at,
+                      q.measurement_status, q.requires_measurement, q.measurement_review_at,
+                      q.measurement_share_enabled_at, q.measurement_client_accepted_at,
                       q.measurement_commercial_review_required, q.measurement_commercial_review_status,
                       q.fulfillment_mode, q.final_status, q.final_technical_decision, q.final_logistics_decision,
                       q.acopio_to_produccion_status, q.catalog_kind,

@@ -104,6 +104,12 @@ function computeStatusInfo(q) {
   return { label: "Estado desconocido", color: "gray" };
 }
 
+function daysSince(isoDate) {
+  if (!isoDate) return null;
+  const diff = Date.now() - new Date(isoDate).getTime();
+  return Math.floor(diff / (1000 * 60 * 60 * 24));
+}
+
 function StatusBadge({ color, label }) {
   const c = STATUS_COLORS[color] || STATUS_COLORS.gray;
   return (
@@ -119,6 +125,27 @@ function StatusBadge({ color, label }) {
       whiteSpace: "nowrap",
     }}>
       {label}
+    </span>
+  );
+}
+
+function DaysBadge({ days }) {
+  if (days === null || days === undefined) return null;
+  const urgent = days >= 7;
+  return (
+    <span style={{
+      display: "inline-block",
+      marginLeft: 8,
+      padding: "2px 10px",
+      borderRadius: 999,
+      border: `1px solid ${urgent ? "#ef9a9a" : "#ffe082"}`,
+      background: urgent ? "#ffebee" : "#fffde7",
+      color: urgent ? "#b71c1c" : "#f57f17",
+      fontWeight: 700,
+      fontSize: 12,
+      whiteSpace: "nowrap",
+    }}>
+      {days === 0 ? "hoy" : `${days}d esperando`}
     </span>
   );
 }
@@ -287,6 +314,9 @@ export default function PortonesEstadoPage() {
                   <td style={tdStyle}>{r.sellerName}</td>
                   <td style={tdStyle}>
                     <StatusBadge color={r.statusInfo.color} label={r.statusInfo.label} />
+                    {r.measurement_share_enabled_at && !r.measurement_client_accepted_at && r.final_status !== "synced_odoo" && (
+                      <DaysBadge days={daysSince(r.measurement_review_at)} />
+                    )}
                   </td>
                   <td style={{ ...tdStyle, color: "#888", fontSize: 13 }}>
                     {formatDate(r.updated_at)}
