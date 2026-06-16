@@ -108,7 +108,8 @@ export async function loadCatalogBootstrap(odoo, kind = "porton") {
 
     // Portones: trae todos los productos con tag, salvo los reservados a Ipanel.
     // El tag Puerta queda en Portones como puerta de escape, no como presupuestador Puertas.
-    return !isIpanel && !isPlegados;
+    // Excepción: si un producto plegado tiene sección asignada en portones, igual aparece.
+    return !isIpanel && (!isPlegados || configured);
   });
 
   const sectionById = new Map(sections.map((section) => [Number(section.id), section]));
