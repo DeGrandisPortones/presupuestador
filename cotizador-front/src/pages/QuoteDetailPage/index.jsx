@@ -1095,8 +1095,8 @@ export default function QuoteDetailPage() {
   const approvalReturnPath = useMemo(() => {
     const from = location.state?.from;
     if (typeof from === "string" && from.trim()) return from;
-    if (canTech && !user?.is_vendedor && !user?.is_distribuidor) return "/aprobacion/tecnica";
-    if (canCommercial && !user?.is_vendedor && !user?.is_distribuidor) return "/aprobacion/comercial";
+    if (canTech && !user?.is_vendedor && !user?.is_distribuidor) return "/aprobacion/tecnica/menu";
+    if (canCommercial && !user?.is_vendedor && !user?.is_distribuidor) return "/aprobacion/comercial/menu";
     return "/presupuestos";
   }, [location.state, canTech, canCommercial, user]);
 
