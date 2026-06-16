@@ -110,7 +110,11 @@ export async function ensureQuotesMeasurementColumns() {
 
   await dbQuery(`alter table public.presupuestador_quotes add column if not exists final_status text null;`);
   await dbQuery(`alter table public.presupuestador_quotes add column if not exists final_technical_decision text null;`);
+  await dbQuery(`alter table public.presupuestador_quotes add column if not exists final_technical_decision_at timestamptz null;`);
+  await dbQuery(`alter table public.presupuestador_quotes add column if not exists final_technical_decision_by_user_id int null;`);
   await dbQuery(`alter table public.presupuestador_quotes add column if not exists final_logistics_decision text null;`);
+  await dbQuery(`alter table public.presupuestador_quotes add column if not exists final_logistics_decision_at timestamptz null;`);
+  await dbQuery(`alter table public.presupuestador_quotes add column if not exists final_logistics_decision_by_user_id int null;`);
   await dbQuery(`alter table public.presupuestador_quotes add column if not exists final_technical_notes text null;`);
   await dbQuery(`alter table public.presupuestador_quotes add column if not exists final_logistics_notes text null;`);
   await dbQuery(`alter table public.presupuestador_quotes add column if not exists final_sale_order_id int null;`);

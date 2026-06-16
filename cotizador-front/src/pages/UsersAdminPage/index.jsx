@@ -18,6 +18,7 @@ function getRolesText(u) {
   if (u?.is_distribuidor) roles.push("Distribuidor");
   if (u?.is_medidor) roles.push("Medidor");
   if (u?.is_logistica) roles.push("Logística");
+  if (u?.is_administracion) roles.push("Administración");
   return roles.join(" · ") || "—";
 }
 
@@ -50,6 +51,7 @@ export default function UsersAdminPage() {
   const [fIsDistribuidor, setFIsDistribuidor] = useState(false);
   const [fIsMedidor, setFIsMedidor] = useState(false);
   const [fIsSuperuser, setFIsSuperuser] = useState(false);
+  const [fIsAdministracion, setFIsAdministracion] = useState(false);
   const [fOdooPartnerId, setFOdooPartnerId] = useState("");
   const [fOdooPricelistId, setFOdooPricelistId] = useState("");
   const [fAssignedSellerUserId, setFAssignedSellerUserId] = useState("");
@@ -106,10 +108,11 @@ export default function UsersAdminPage() {
     setFUsername("");
     setFFullName("");
     setFPassword("");
-    setFIsVendedor(roleTab !== "distribuidor" && roleTab !== "medidor" && roleTab !== "superuser");
+    setFIsVendedor(roleTab !== "distribuidor" && roleTab !== "medidor" && roleTab !== "superuser" && roleTab !== "administracion");
     setFIsDistribuidor(roleTab === "distribuidor");
     setFIsMedidor(roleTab === "medidor");
     setFIsSuperuser(roleTab === "superuser");
+    setFIsAdministracion(roleTab === "administracion");
     setFOdooPartnerId("");
     setFOdooPricelistId("");
     setFAssignedSellerUserId("");
@@ -127,6 +130,7 @@ export default function UsersAdminPage() {
     setFIsDistribuidor(!!u.is_distribuidor);
     setFIsMedidor(!!u.is_medidor);
     setFIsSuperuser(!!u.is_superuser);
+    setFIsAdministracion(!!u.is_administracion);
     setFOdooPartnerId(u.odoo_partner_id ? String(u.odoo_partner_id) : "");
     setFOdooPricelistId(u.odoo_pricelist_id ? String(u.odoo_pricelist_id) : "");
     setFAssignedSellerUserId(u.assigned_seller_user_id ? String(u.assigned_seller_user_id) : "");
@@ -136,8 +140,8 @@ export default function UsersAdminPage() {
   };
 
   function ensureAtLeastOneRole() {
-    if (!fIsVendedor && !fIsDistribuidor && !fIsMedidor && !fIsSuperuser) {
-      toast.error("Elegí Vendedor / Distribuidor / Medidor / Superusuario");
+    if (!fIsVendedor && !fIsDistribuidor && !fIsMedidor && !fIsSuperuser && !fIsAdministracion) {
+      toast.error("Elegí Vendedor / Distribuidor / Medidor / Superusuario / Administración");
       return false;
     }
     return true;
@@ -169,6 +173,7 @@ export default function UsersAdminPage() {
         is_distribuidor: fIsDistribuidor,
         is_medidor: fIsMedidor,
         is_superuser: fIsSuperuser,
+        is_administracion: fIsAdministracion,
         odoo_partner_id: fOdooPartnerId ? Number(fOdooPartnerId) : null,
         odoo_pricelist_id: fIsDistribuidor && fOdooPricelistId ? Number(fOdooPricelistId) : null,
         assigned_seller_user_id: fIsDistribuidor && fAssignedSellerUserId ? Number(fAssignedSellerUserId) : null,
@@ -192,6 +197,7 @@ export default function UsersAdminPage() {
         is_distribuidor: fIsDistribuidor,
         is_medidor: fIsMedidor,
         is_superuser: fIsSuperuser,
+        is_administracion: fIsAdministracion,
         odoo_partner_id: fOdooPartnerId ? Number(fOdooPartnerId) : null,
         odoo_pricelist_id: fIsDistribuidor && fOdooPricelistId ? Number(fOdooPricelistId) : null,
         assigned_seller_user_id: fIsDistribuidor && fAssignedSellerUserId ? Number(fAssignedSellerUserId) : null,
@@ -373,6 +379,10 @@ export default function UsersAdminPage() {
               Superusuario
             </label>
             <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <input type="checkbox" checked={fIsAdministracion} onChange={(e) => setFIsAdministracion(e.target.checked)} />
+              Administración
+            </label>
+            <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
               <input type="checkbox" checked={fIsActive} onChange={(e) => setFIsActive(e.target.checked)} />
               Activo
             </label>
@@ -405,6 +415,7 @@ export default function UsersAdminPage() {
           <Button variant={roleTab === "distribuidor" ? "primary" : "ghost"} onClick={() => { setRoleTab("distribuidor"); resetCreate(); }}>Distribuidores</Button>
           <Button variant={roleTab === "medidor" ? "primary" : "ghost"} onClick={() => { setRoleTab("medidor"); resetCreate(); }}>Medidores</Button>
           <Button variant={roleTab === "superuser" ? "primary" : "ghost"} onClick={() => { setRoleTab("superuser"); resetCreate(); }}>Superusuarios</Button>
+          <Button variant={roleTab === "administracion" ? "primary" : "ghost"} onClick={() => { setRoleTab("administracion"); resetCreate(); }}>Administración</Button>
         </div>
         <Button variant="ghost" onClick={() => usersQ.refetch()} disabled={usersQ.isFetching}>↻ Actualizar</Button>
       </div>

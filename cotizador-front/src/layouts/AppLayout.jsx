@@ -116,6 +116,7 @@ export default function AppLayout() {
   const showMediciones = !!(isSuperuser || user?.is_medidor) && !user?.is_rev_tecnica;
   const showCommercial = !!(isSuperuser || user?.is_enc_comercial);
   const showTechnical = !!(isSuperuser || user?.is_rev_tecnica);
+  const showAdministracion = !!(isSuperuser || user?.is_administracion);
 
   return (
     <div>
@@ -175,6 +176,7 @@ export default function AppLayout() {
           {showDashboard && <NavLink className={({ isActive }) => (isActive ? "navlink active" : "navlink")} to="/dashboard">Dashboard</NavLink>}
           {showUsers && <NavLink className={({ isActive }) => (isActive ? "navlink active" : "navlink")} to="/usuarios">Gestor de usuarios</NavLink>}
           {showTechnical && <NavLink className={({ isActive }) => (isActive ? "navlink active" : "navlink")} to="/aprobacion/tecnica/menu">Revision Tecnica</NavLink>}
+          {showAdministracion && <NavLink className={({ isActive }) => (isActive ? "navlink active" : "navlink")} to="/administracion">Administración</NavLink>}
         </div>
       </div>
 

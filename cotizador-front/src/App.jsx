@@ -39,6 +39,8 @@ import SalesActorActivityPage from "./pages/SalesActorActivityPage/index.jsx";
 import FinanciamientoPage from "./pages/FinanciamientoPage/index.jsx";
 import ApprovalSectionMenuPage from "./pages/ApprovalSectionMenuPage/index.jsx";
 import PortonesEstadoPage from "./pages/PortonesEstadoPage/index.jsx";
+import AdministracionPage from "./pages/AdministracionPage/index.jsx";
+import AdministracionDetailPage from "./pages/AdministracionDetailPage/index.jsx";
 
 import RequireAuth from "./routes/RequireAuth.jsx";
 import AppLayout from "./layouts/AppLayout.jsx";
@@ -109,6 +111,8 @@ export default function App() {
           <Route path="superuser/presupuestos-admin" element={<SuperuserQuotesAdminPage />} />
           <Route path="superuser/visualizador-porton" element={<QuoteHistoryViewerPage />} />
           <Route path="superuser/actividad-vendedores" element={<SalesActorActivityPage />} />
+          <Route path="administracion" element={<AdministracionPage />} />
+          <Route path="administracion/:id" element={<AdministracionDetailPage />} />
         </Route>
         <Route path="*" element={<Navigate to={token ? "/menu" : "/login"} replace />} />
       </Routes>
