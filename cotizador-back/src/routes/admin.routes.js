@@ -4,6 +4,7 @@ import { loadCatalogBootstrap, clearCatalogBootstrapCache } from "../catalogBoot
 import { normKind, createSection, updateSection, deleteSection, setTagSection, setProductAlias, setProductVisibility, setTypeVisibility, getProductPdfNameMap, setProductPdfName } from "../catalogDb.js";
 import { dbQuery } from "../db.js";
 import { listUsers, createUser, updateUser } from "../usersDb.js";
+import { ensureQuotesMeasurementColumns } from "../quotesSchema.js";
 import {
   getCommercialFinalQuoteSettings,
   setCommercialFinalQuoteSettings,
@@ -512,6 +513,7 @@ export function buildAdminRouter(odoo) {
 
   router.get("/history", requireAuth, requireAdministracion, async (req, res, next) => {
     try {
+      await ensureQuotesMeasurementColumns();
       const search = cleanAdminText(req.query.q || req.query.search || "");
       const kind = req.query.kind ? normKind(req.query.kind) : null;
       const fulfillment = cleanAdminText(req.query.fulfillment || "all").toLowerCase();
@@ -580,6 +582,7 @@ export function buildAdminRouter(odoo) {
 
   router.get("/history/:id", requireAuth, requireAdministracion, async (req, res, next) => {
     try {
+      await ensureQuotesMeasurementColumns();
       const id = cleanAdminText(req.params.id);
       const sql = `
         select q.*,
