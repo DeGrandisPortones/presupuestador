@@ -75,8 +75,6 @@ function computeStatusInfo(q) {
       if (q.measurement_status === "pending")
         return { label: "Medición pendiente", color: "yellow" };
       if (q.measurement_status === "submitted") {
-        if (q.measurement_share_enabled_at)
-          return { label: "Esperando que el cliente acepte los datos técnicos finales", color: "orange" };
         return { label: "Medición entregada, esperando revisión técnica", color: "orange" };
       }
       if (q.measurement_status === "needs_fix")
@@ -84,10 +82,13 @@ function computeStatusInfo(q) {
       if (q.measurement_status === "approved") {
         if (q.measurement_commercial_review_required && q.measurement_commercial_review_status !== "approved")
           return { label: "Medición aprobada — esperando revisión comercial", color: "orange" };
+        // Nuevo flujo: link enviado al cliente, esperando su aceptación para generar NV
+        if (q.measurement_share_enabled_at && !q.measurement_client_accepted_at && q.final_status !== "synced_odoo")
+          return { label: "Link enviado — esperando aceptación del cliente", color: "yellow" };
         if (q.final_status === "synced_odoo")
           return { label: "Completo — orden de producción generada", color: "green" };
         if (q.final_status === "syncing_odoo")
-          return { label: "Sincronizando con Odoo...", color: "blue" };
+          return { label: "Generando orden de producción en Odoo...", color: "blue" };
         if (q.final_technical_decision === "approved" && q.final_logistics_decision === "approved")
           return { label: "Aprobado — pendiente de envío a Odoo", color: "teal" };
         if (q.final_technical_decision === "approved")
@@ -126,7 +127,7 @@ const COLOR_GROUPS = [
   { key: "all",    label: "Todos" },
   { key: "red",    label: "Rechazados" },
   { key: "orange", label: "Pendientes" },
-  { key: "yellow", label: "En proceso" },
+  { key: "yellow", label: "Esperando cliente" },
   { key: "teal",   label: "Acopio / Producción" },
   { key: "green",  label: "Completos" },
   { key: "blue",   label: "Sincronizando" },

@@ -1177,7 +1177,7 @@ function buildMeasurementApprovedMessage({ quote, acceptanceUrl, recipientName, 
   ];
   return lines.join("\n");
 }
-async function maybeSendMeasurementApprovedWhatsApp({ odoo, quote }) {
+export async function maybeSendMeasurementApprovedWhatsApp({ odoo, quote }) {
   const recipient = await resolveMeasurementNotificationTarget({ odoo, quote });
   const to = recipient?.to || "";
   const publicUrl = buildMeasurementPublicUrl(quote);

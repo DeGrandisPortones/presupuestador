@@ -2,6 +2,7 @@ import express from "express";
 import { dbQuery } from "../db.js";
 import { ensureQuotesMeasurementColumns } from "../quotesSchema.js";
 import { getTechnicalMeasurementRules } from "../settingsDb.js";
+import { finalizeMeasurementToRevisionQuote } from "../measurementFinalization.js";
 
 function isShareToken(v) {
   const s = String(v || "").trim();
@@ -48,7 +49,7 @@ function buildAcceptanceFromPayload(payload = {}) {
   };
 }
 
-export function buildClientAcceptanceRouter() {
+export function buildClientAcceptanceRouter(odoo) {
   const router = express.Router();
 
   router.use(async (_req, _res, next) => {
@@ -131,13 +132,35 @@ export function buildClientAcceptanceRouter() {
 
       const upd = await dbQuery(
         `update public.presupuestador_quotes
-            set payload = $2::jsonb
+            set payload = $2::jsonb,
+                measurement_client_accepted_at = now()
           where id = $1
-          returning payload`,
+          returning *`,
         [quote.id, JSON.stringify(currentPayload)],
       );
-      const acceptance = buildAcceptanceFromPayload(upd.rows?.[0]?.payload || currentPayload);
-      return res.json({ ok: true, acceptance });
+      const updatedQuote = upd.rows?.[0] || null;
+      const acceptance = buildAcceptanceFromPayload(updatedQuote?.payload || currentPayload);
+
+      // Disparar generación de NV si aún no existe (nuevo flujo: producción arranca con la aceptación del cliente)
+      let finalization = null;
+      const nvAlreadyExists = !!(updatedQuote?.final_sale_order_id || updatedQuote?.final_sale_order_name);
+      if (!nvAlreadyExists && odoo) {
+        const measurementForm = await resolveMeasurementForm(updatedQuote);
+        if (measurementForm) {
+          try {
+            finalization = await finalizeMeasurementToRevisionQuote({
+              odoo,
+              originalQuote: updatedQuote,
+              measurementForm,
+            });
+          } catch (e) {
+            console.error("CLIENT ACCEPTANCE FINALIZATION ERROR:", e?.message || e);
+            finalization = { ok: false, error: e?.message || String(e) };
+          }
+        }
+      }
+
+      return res.json({ ok: true, acceptance, finalization });
     } catch (e) {
       next(e);
     }
