@@ -430,7 +430,6 @@ export async function getTechnicalMeasurementRules(kind = "porton") {
   const raw = await getSetting(TECHNICAL_MEASUREMENT_RULES_KEY, {});
   const catalogRules = normalizeCatalogRulesMap(raw);
   if (catalogRules[k]) return catalogRules[k];
-  if (k === "plegados" && catalogRules.ipanel) return catalogRules.ipanel;
   if (k === "porton") return normalizeTechnicalMeasurementRules(raw);
   return defaultTechnicalMeasurementRules();
 }
