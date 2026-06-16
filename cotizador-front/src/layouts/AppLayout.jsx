@@ -54,6 +54,57 @@ function SuperusuarioDropdown({ show }) {
   );
 }
 
+function AprobacionesDropdown({ show, showCommercial, showTechnical, showPortonesEstado }) {
+  const [open, setOpen] = useState(false);
+  if (!show) return null;
+  const items = [
+    showCommercial && { to: "/aprobacion/comercial/menu", label: "Aprobacion Comercial" },
+    showTechnical && { to: "/aprobacion/tecnica/menu", label: "Revision Tecnica" },
+    showPortonesEstado && { to: "/aprobacion/tecnica/portones-estado", label: "Estado Portones" },
+  ].filter(Boolean);
+  const lastIdx = items.length - 1;
+  return (
+    <div
+      style={{ position: "relative" }}
+      onMouseEnter={() => setOpen(true)}
+      onMouseLeave={() => setOpen(false)}
+    >
+      <span className="navlink" style={{ cursor: "pointer", userSelect: "none" }}>
+        Aprobaciones ▾
+      </span>
+      {open && (
+        <div style={{
+          position: "absolute",
+          top: "100%",
+          left: 0,
+          background: "#fff",
+          border: "1px solid #e0e0e0",
+          borderRadius: 6,
+          boxShadow: "0 4px 12px rgba(0,0,0,0.12)",
+          minWidth: 220,
+          zIndex: 200,
+          padding: "4px 0",
+        }}>
+          {items.map((item, idx) => (
+            <NavLink
+              key={item.to}
+              style={({ isActive }) => ({
+                ...DROPDOWN_ITEM_STYLE,
+                ...(idx === lastIdx ? { borderBottom: "none" } : {}),
+                background: isActive ? "#f0fffe" : undefined,
+                fontWeight: isActive ? 700 : undefined,
+              })}
+              to={item.to}
+            >
+              {item.label}
+            </NavLink>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function PresupuestarDropdown({ show }) {
   const [open, setOpen] = useState(false);
   if (!show) return null;
@@ -271,9 +322,12 @@ export default function AppLayout() {
           {showPlanning && <NavLink className={({ isActive }) => (isActive ? "navlink active" : "navlink")} to="/planificacion">Planificacion</NavLink>}
           {showFinancing && <NavLink className={({ isActive }) => (isActive ? "navlink active" : "navlink")} to="/financiamiento">Financiamiento</NavLink>}
           {showUsers && <NavLink className={({ isActive }) => (isActive ? "navlink active" : "navlink")} to="/usuarios">Gestor de usuarios</NavLink>}
-          {showCommercial && <NavLink className={({ isActive }) => (isActive ? "navlink active" : "navlink")} to="/aprobacion/comercial/menu">Aprobacion Comercial</NavLink>}
-          {showTechnical && <NavLink className={({ isActive }) => (isActive ? "navlink active" : "navlink")} to="/aprobacion/tecnica/menu">Revision Tecnica</NavLink>}
-          {showPortonesEstado && !showTechnical && <NavLink className={({ isActive }) => (isActive ? "navlink active" : "navlink")} to="/aprobacion/tecnica/portones-estado">Estado Portones</NavLink>}
+          <AprobacionesDropdown
+            show={!!(showCommercial || showTechnical || showPortonesEstado)}
+            showCommercial={showCommercial}
+            showTechnical={showTechnical}
+            showPortonesEstado={showPortonesEstado}
+          />
           {showAdministracion && <NavLink className={({ isActive }) => (isActive ? "navlink active" : "navlink")} to="/administracion">Administración</NavLink>}
           <SuperusuarioDropdown show={isSuperuser} />
         </div>
