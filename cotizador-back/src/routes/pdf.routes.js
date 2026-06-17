@@ -316,7 +316,7 @@ function drawPageFrame(doc, margin, pageNo, pageCount, footerLeft = "De Grandis 
     .text(`Página ${pageNo} de ${pageCount}`, margin, h - margin - 16, { width: w - margin * 2, align: "right" })
     .restore();
 }
-function drawHeader(doc, { title, payload, margin, innerW, dateStr, validStr }) {
+function drawHeader(doc, { title, payload, margin, innerW, dateStr, validStr, hideValidity = false }) {
   const logoPath = getLogoPath(payload);
   const headerH = 64;
   const quoteNo = getQuoteNumber(payload);
@@ -324,7 +324,7 @@ function drawHeader(doc, { title, payload, margin, innerW, dateStr, validStr }) 
   if (fs.existsSync(logoPath)) doc.image(logoPath, margin + 14, margin + 9, getLogoDrawOptions(payload));
   doc.font("Helvetica-Bold").fontSize(18).fillColor("#111827").text(title, margin + 205, margin + 12, { width: innerW - 360, align: "center" });
   doc.font("Helvetica").fontSize(9).fillColor("#374151").text(`Fecha: ${dateStr}`, margin + innerW - 135, margin + 14, { width: 120, align: "right" });
-  doc.text(`Válido hasta: ${validStr}`, margin + innerW - 135, margin + 28, { width: 120, align: "right" });
+  if (!hideValidity) doc.text(`Válido hasta: ${validStr}`, margin + innerW - 135, margin + 28, { width: 120, align: "right" });
   if (quoteNo) doc.font("Helvetica-Bold").fontSize(10).fillColor("#111827").text(`#${quoteNo}`, margin + 205, margin + 38, { width: innerW - 360, align: "center" });
   return margin + headerH + 10;
 }
@@ -576,7 +576,7 @@ function drawTermsAndConditionsPage(doc, { title, payload, margin, innerW, dateS
   }
 }
 
-async function renderPdf({ title, payload, useBasePrice, odoo, includeTerms = false, hideIvaBreakdown = false, displayNetPrices = false, taxRate = IVA_RATE }) {
+async function renderPdf({ title, payload, useBasePrice, odoo, includeTerms = false, hideIvaBreakdown = false, displayNetPrices = false, taxRate = IVA_RATE, hideAllPrices = false }) {
   const doc = new PDFDocument({ size: "A4", margin: 0, bufferPages: true });
   const buffers = [];
   doc.on("data", buffers.push.bind(buffers));
@@ -595,7 +595,7 @@ async function renderPdf({ title, payload, useBasePrice, odoo, includeTerms = fa
   const obs = stripSellerLines(safeStr(payload?.note));
   const { lines, grandTotal, subtotalNet, ivaAmount, taxRate: effectiveTaxRate } = await buildLines(payload, { useBasePrice, odoo, displayNetPrices, taxRate });
 
-  let y = drawHeader(doc, { title, payload, margin, innerW, dateStr, validStr });
+  let y = drawHeader(doc, { title, payload, margin, innerW, dateStr, validStr, hideValidity: hideAllPrices });
   y = drawInfoTable(doc, payload, y, margin, innerW, useBasePrice);
 
   const commercialInfoLines = [];
@@ -612,8 +612,8 @@ async function renderPdf({ title, payload, useBasePrice, odoo, includeTerms = fa
   y = drawInfoBand(doc, { y, margin, innerW, items: technicalInfoLines, fillColor: "#FFFFFF" });
   if (y !== beforeInfoY) y += 6;
 
-  const colDesc = innerW * 0.54;
-  const colQty = innerW * 0.10;
+  const colDesc = hideAllPrices ? innerW * 0.78 : innerW * 0.54;
+  const colQty = hideAllPrices ? innerW * 0.22 : innerW * 0.10;
   const colUnit = innerW * 0.18;
   const colTot = innerW * 0.18;
   const SAFE_BOTTOM_GAP = 56;
@@ -624,12 +624,17 @@ async function renderPdf({ title, payload, useBasePrice, odoo, includeTerms = fa
   function drawTableHeader() {
     doc.save().fillColor("#E5E7EB").rect(margin, tableY, innerW, 28).fill().restore();
     doc.save().strokeColor("#D1D5DB").rect(margin, tableY, innerW, 28).stroke().restore();
-    const headers = [
-      [margin + 8, colDesc - 16, "DESCRIPCIÓN", "left"],
-      [margin + colDesc + 8, colQty - 16, "CANT", "right"],
-      [margin + colDesc + colQty + 8, colUnit - 16, displayNetPrices ? "PRECIO s/IVA" : (hideIvaBreakdown ? "PRECIO" : "PRECIO c/IVA"), "right"],
-      [margin + colDesc + colQty + colUnit + 8, colTot - 16, displayNetPrices ? "TOTAL s/IVA" : (hideIvaBreakdown ? "TOTAL" : "TOTAL c/IVA"), "right"],
-    ];
+    const headers = hideAllPrices
+      ? [
+          [margin + 8, colDesc - 16, "DESCRIPCIÓN", "left"],
+          [margin + colDesc + 8, colQty - 16, "CANT.", "right"],
+        ]
+      : [
+          [margin + 8, colDesc - 16, "DESCRIPCIÓN", "left"],
+          [margin + colDesc + 8, colQty - 16, "CANT", "right"],
+          [margin + colDesc + colQty + 8, colUnit - 16, displayNetPrices ? "PRECIO s/IVA" : (hideIvaBreakdown ? "PRECIO" : "PRECIO c/IVA"), "right"],
+          [margin + colDesc + colQty + colUnit + 8, colTot - 16, displayNetPrices ? "TOTAL s/IVA" : (hideIvaBreakdown ? "TOTAL" : "TOTAL c/IVA"), "right"],
+        ];
     doc.font("Helvetica-Bold").fontSize(10).fillColor("#111827");
     headers.forEach(([x, w, text, align]) => doc.text(text, x, tableY + 8, { width: w, align }));
     tableY += 28;
@@ -647,34 +652,43 @@ async function renderPdf({ title, payload, useBasePrice, odoo, includeTerms = fa
     ensureSpace(rowH);
     doc.save().strokeColor("#D1D5DB").rect(margin, tableY, innerW, rowH).stroke().restore();
     const xQty = margin + colDesc;
-    const xUnit = xQty + colQty;
-    const xTot = xUnit + colUnit;
-    [xQty, xUnit, xTot].forEach((x) => doc.save().strokeColor("#D1D5DB").moveTo(x, tableY).lineTo(x, tableY + rowH).stroke().restore());
-    doc.font("Helvetica").fontSize(9.5).fillColor("#111827")
-      .text(line.name, margin + 8, tableY + 8, { width: colDesc - 16 })
-      .text(formatQty(line.qty), xQty + 8, tableY + 8, { width: colQty - 16, align: "right" })
-      .text(`$ ${formatMoney(line.unit)}`, xUnit + 8, tableY + 8, { width: colUnit - 16, align: "right" })
-      .text(`$ ${formatMoney(line.total)}`, xTot + 8, tableY + 8, { width: colTot - 16, align: "right" });
+    if (hideAllPrices) {
+      doc.save().strokeColor("#D1D5DB").moveTo(xQty, tableY).lineTo(xQty, tableY + rowH).stroke().restore();
+      doc.font("Helvetica").fontSize(9.5).fillColor("#111827")
+        .text(line.name, margin + 8, tableY + 8, { width: colDesc - 16 })
+        .text(formatQty(line.qty), xQty + 8, tableY + 8, { width: colQty - 16, align: "right" });
+    } else {
+      const xUnit = xQty + colQty;
+      const xTot = xUnit + colUnit;
+      [xQty, xUnit, xTot].forEach((x) => doc.save().strokeColor("#D1D5DB").moveTo(x, tableY).lineTo(x, tableY + rowH).stroke().restore());
+      doc.font("Helvetica").fontSize(9.5).fillColor("#111827")
+        .text(line.name, margin + 8, tableY + 8, { width: colDesc - 16 })
+        .text(formatQty(line.qty), xQty + 8, tableY + 8, { width: colQty - 16, align: "right" })
+        .text(`$ ${formatMoney(line.unit)}`, xUnit + 8, tableY + 8, { width: colUnit - 16, align: "right" })
+        .text(`$ ${formatMoney(line.total)}`, xTot + 8, tableY + 8, { width: colTot - 16, align: "right" });
+    }
     tableY += rowH;
   }
 
-  ensureSpace(hideIvaBreakdown ? 48 : 100);
-  const summaryX = margin + innerW * 0.68;
-  const summaryW = innerW * 0.32;
-  const rows = hideIvaBreakdown
-    ? [["TOTAL", grandTotal, 36, true]]
-    : [
-        ["Subtotal s/IVA", subtotalNet, 28, false],
-        ["IVA", ivaAmount, 28, false],
-        ["TOTAL", grandTotal, 36, true],
-      ];
-  for (const [label, amount, h, bold] of rows) {
-    if (bold) doc.save().fillColor("#F3F4F6").rect(margin, tableY, innerW, h).fill().restore();
-    doc.save().strokeColor("#D1D5DB").rect(margin, tableY, innerW, h).stroke().restore();
-    doc.font(bold ? "Helvetica-Bold" : "Helvetica").fontSize(bold ? 11 : 10).fillColor("#111827")
-      .text(label, margin + 8, tableY + 8, { width: innerW * 0.68 - 16, align: "right" })
-      .text(`$ ${formatMoney(amount)}`, summaryX + 8, tableY + 8, { width: summaryW - 16, align: "right" });
-    tableY += h;
+  if (!hideAllPrices) {
+    ensureSpace(hideIvaBreakdown ? 48 : 100);
+    const summaryX = margin + innerW * 0.68;
+    const summaryW = innerW * 0.32;
+    const rows = hideIvaBreakdown
+      ? [["TOTAL", grandTotal, 36, true]]
+      : [
+          ["Subtotal s/IVA", subtotalNet, 28, false],
+          ["IVA", ivaAmount, 28, false],
+          ["TOTAL", grandTotal, 36, true],
+        ];
+    for (const [label, amount, h, bold] of rows) {
+      if (bold) doc.save().fillColor("#F3F4F6").rect(margin, tableY, innerW, h).fill().restore();
+      doc.save().strokeColor("#D1D5DB").rect(margin, tableY, innerW, h).stroke().restore();
+      doc.font(bold ? "Helvetica-Bold" : "Helvetica").fontSize(bold ? 11 : 10).fillColor("#111827")
+        .text(label, margin + 8, tableY + 8, { width: innerW * 0.68 - 16, align: "right" })
+        .text(`$ ${formatMoney(amount)}`, summaryX + 8, tableY + 8, { width: summaryW - 16, align: "right" });
+      tableY += h;
+    }
   }
 
   tableY += 12;
@@ -738,6 +752,34 @@ async function renderMeasurementPdf({ quote, form }) {
 
 export function buildPdfRouter(odoo = null) {
   const router = express.Router();
+
+  router.get("/remito/nv/:nv", async (req, res, next) => {
+    try {
+      const nvParam = String(req.params.nv || "").trim();
+      if (!nvParam || !/^\d+$/.test(nvParam)) return res.status(400).json({ ok: false, error: "NV inválido" });
+      const nvStr = "NV" + nvParam;
+      const r = await dbQuery(
+        `SELECT * FROM public.presupuestador_quotes
+         WHERE final_sale_order_name = $1 AND quote_kind = 'copy'
+         ORDER BY updated_at DESC NULLS LAST, id DESC LIMIT 1`,
+        [nvStr],
+      );
+      const quote = r.rows?.[0];
+      if (!quote) return res.status(404).json({ ok: false, error: "NV no encontrada" });
+      const remitoPayload = { ...quote, quote_number: nvParam };
+      const pdf = await renderPdf({
+        title: "REMITO",
+        payload: remitoPayload,
+        useBasePrice: false,
+        odoo: null,
+        includeTerms: false,
+        hideAllPrices: true,
+      });
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader("Content-Disposition", `inline; filename="remito_${nvStr}.pdf"`);
+      res.send(pdf);
+    } catch (e) { next(e); }
+  });
 
   router.post("/presupuesto", requireAuth, async (req, res, next) => {
     try {
