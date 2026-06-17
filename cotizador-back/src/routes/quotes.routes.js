@@ -1621,13 +1621,14 @@ async function syncLatestFinalCopyForApprovedAcopio({ originalQuote, approverUse
               final_tolerance_amount=$5,
               final_difference_amount=$6,
               final_absorbed_by_company=$7
-        where id=$1
+        where id=$1 and coalesce(final_sale_order_id, 0) = 0
         returning *`,
       [qSync.id, Number(order.id), order.name, metrics.tolerance_percent, metrics.tolerance_amount, metrics.difference_amount, metrics.absorbed_by_company]
     );
     return updFinal.rows?.[0] || qSync;
   } catch (e) {
-    await dbQuery(`update public.presupuestador_quotes set final_status='draft' where id=$1`, [qSync.id]);
+    // Only reset to draft if Odoo did NOT create the NV — prevents retry from generating a duplicate
+    await dbQuery(`update public.presupuestador_quotes set final_status='draft' where id=$1 and coalesce(final_sale_order_id, 0) = 0`, [qSync.id]);
     throw e;
   }
 }
@@ -2541,12 +2542,13 @@ export function buildQuotesRouter(odoo) {
 
       try {
         const { order, metrics } = await syncFinalQuoteToOdoo({ odoo, revisionQuote: qSync, originalQuote: orig, approverUser: u });
-        const updFinal = await dbQuery(`update public.presupuestador_quotes set final_status='synced_odoo', final_sale_order_id=$2, final_sale_order_name=$3, final_synced_at=now(), final_tolerance_percent=$4, final_tolerance_amount=$5, final_difference_amount=$6, final_absorbed_by_company=$7 where id=$1 returning *`, [id, Number(order.id), order.name, metrics.tolerance_percent, metrics.tolerance_amount, metrics.difference_amount, metrics.absorbed_by_company]);
+        const updFinal = await dbQuery(`update public.presupuestador_quotes set final_status='synced_odoo', final_sale_order_id=$2, final_sale_order_name=$3, final_synced_at=now(), final_tolerance_percent=$4, final_tolerance_amount=$5, final_difference_amount=$6, final_absorbed_by_company=$7 where id=$1 and coalesce(final_sale_order_id, 0) = 0 returning *`, [id, Number(order.id), order.name, metrics.tolerance_percent, metrics.tolerance_amount, metrics.difference_amount, metrics.absorbed_by_company]);
         return res.json({ ok: true, quote: updFinal.rows?.[0] || qSync, order, metrics });
       } catch (e) {
         const msg = String(e?.message || "Error al sincronizar cotización final a Odoo");
         console.error("FINAL SYNC ODOO ERROR:", msg);
-        await dbQuery(`update public.presupuestador_quotes set final_status='draft' where id=$1`, [id]);
+        // Only reset to draft if Odoo did NOT create the NV — prevents retry from generating a duplicate
+        await dbQuery(`update public.presupuestador_quotes set final_status='draft' where id=$1 and coalesce(final_sale_order_id, 0) = 0`, [id]);
         return res.status(502).json({ ok: false, error: process.env.NODE_ENV === "development" ? `Error al sincronizar cotización final a Odoo: ${msg}` : "Error al sincronizar cotización final a Odoo. Reintentá." });
       }
     } catch (e) { next(e); }
