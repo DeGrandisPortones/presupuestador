@@ -707,10 +707,9 @@ export function buildMeasurementsRouter(odoo = null) {
         if (doorMeasuresErr) return res.status(400).json({ ok: false, error: doorMeasuresErr });
         const finalDimsErr = validateFinalDimensions(form);
         if (finalDimsErr) return res.status(400).json({ ok: false, error: finalDimsErr });
-        const shareToken = String(quote.measurement_share_token || makeShareToken());
         const upd = await dbQuery(
-          `update public.presupuestador_quotes set measurement_status='approved', measurement_review_by_user_id=$2, measurement_review_at=now(), measurement_review_notes=null, measurement_share_token=coalesce($3, measurement_share_token), measurement_share_enabled_at=coalesce(measurement_share_enabled_at, now()), status='synced_odoo' where id=$1 returning *`,
-          [id, Number(u.user_id), shareToken],
+          `update public.presupuestador_quotes set measurement_status='approved', measurement_review_by_user_id=$2, measurement_review_at=now(), measurement_review_notes=null, status='synced_odoo' where id=$1 returning *`,
+          [id, Number(u.user_id)],
         );
         const savedQuote = upd.rows?.[0] || null;
         let finalization = null;

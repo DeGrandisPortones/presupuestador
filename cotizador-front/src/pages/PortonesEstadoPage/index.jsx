@@ -82,13 +82,20 @@ function computeStatusInfo(q) {
       if (q.measurement_status === "approved") {
         if (q.measurement_commercial_review_required && q.measurement_commercial_review_status !== "approved")
           return { label: "Medición aprobada — esperando revisión comercial", color: "orange" };
-        // Nuevo flujo: link enviado al cliente, esperando su aceptación para generar NV
-        if (q.measurement_share_enabled_at && !q.measurement_client_accepted_at && q.final_status !== "synced_odoo")
-          return { label: "Link enviado — esperando aceptación del cliente", color: "yellow" };
-        if (q.final_status === "synced_odoo")
-          return { label: "Completo — orden de producción generada", color: "green" };
-        if (q.final_status === "syncing_odoo")
+        // La NV se crea junto con la aprobación técnica final; el link se genera DESPUÉS de la NV.
+        const nvReady = q.final_copy_status === "synced_odoo" || q.final_status === "synced_odoo";
+        const nvSyncing = q.final_copy_status === "syncing_odoo" || q.final_status === "syncing_odoo";
+        if (nvSyncing)
           return { label: "Generando orden de producción en Odoo...", color: "blue" };
+        if (nvReady && q.measurement_client_accepted_at)
+          return { label: "Completo — cliente aceptó, en producción", color: "green" };
+        if (nvReady && q.measurement_share_enabled_at && !q.measurement_client_accepted_at)
+          return { label: "Link enviado — esperando aceptación del cliente", color: "yellow" };
+        if (nvReady)
+          return { label: "Completo — orden de producción generada", color: "green" };
+        // Cliente aceptó pero NV no fue creada (finalizacion falló previamente — requiere revisión)
+        if (q.measurement_share_enabled_at && q.measurement_client_accepted_at)
+          return { label: "Cliente aceptó — NV pendiente de generación", color: "orange" };
         if (q.final_technical_decision === "approved" && q.final_logistics_decision === "approved")
           return { label: "Aprobado — pendiente de envío a Odoo", color: "teal" };
         if (q.final_technical_decision === "approved")

@@ -1,3 +1,4 @@
+import { randomBytes } from "crypto";
 import { dbQuery } from "./db.js";
 import {
   getCommercialFinalToleranceAreaM2,
@@ -1442,10 +1443,23 @@ export async function previewMeasurementRevisionQuote({ odoo, originalQuote, mea
   };
 }
 
+async function saveShareTokenToOriginalQuote(originalQuoteId, existingToken) {
+  const token = existingToken || randomBytes(24).toString("hex");
+  await dbQuery(
+    `update public.presupuestador_quotes
+        set measurement_share_token = coalesce(measurement_share_token, $2),
+            measurement_share_enabled_at = coalesce(measurement_share_enabled_at, now())
+      where id = $1`,
+    [originalQuoteId, token],
+  );
+  return token;
+}
+
 export async function finalizeMeasurementToRevisionQuote({ odoo, originalQuote, measurementForm }) {
   const base = await buildMeasurementFinalizationBase({ odoo, originalQuote, measurementForm });
   const finalLines = base.generated_lines || [];
-  const whatsappNotification = await maybeSendMeasurementApprovedWhatsApp({ odoo, quote: originalQuote });
+  // WhatsApp y generación de token se hacen DESPUÉS de crear la NV para garantizar que
+  // el cliente no pueda aceptar el link antes de que exista la NV en Odoo.
 
   // Porton a produccion sin medicion: la NV ya fue creada al aprobar Comercial+Tecnica.
   // La aprobacion final del circuito tecnico solo debe disparar WhatsApp y no crear otra NV.
@@ -1454,6 +1468,9 @@ export async function finalizeMeasurementToRevisionQuote({ odoo, originalQuote, 
       id: Number(originalQuote?.final_sale_order_id || originalQuote?.odoo_sale_order_id || 0) || null,
       name: toText(originalQuote?.final_sale_order_name || originalQuote?.odoo_sale_order_name),
     };
+    const savedToken = await saveShareTokenToOriginalQuote(originalQuote.id, originalQuote.measurement_share_token);
+    const quoteWithToken = { ...originalQuote, measurement_share_token: savedToken };
+    const whatsappNotification = await maybeSendMeasurementApprovedWhatsApp({ odoo, quote: quoteWithToken });
     return {
       revisionQuote: null,
       generated_lines: finalLines,
@@ -1477,7 +1494,7 @@ export async function finalizeMeasurementToRevisionQuote({ odoo, originalQuote, 
       synced: false,
       reason: "Sin reglas aplicables",
       metrics: base.metrics,
-      whatsappNotification,
+      whatsappNotification: null,
       source_quote_id: base.source_quote_id,
     };
   }
@@ -1495,7 +1512,7 @@ export async function finalizeMeasurementToRevisionQuote({ odoo, originalQuote, 
       synced: false,
       reason: !odoo ? "Odoo no disponible" : "No se pudo crear la copia",
       metrics: base.metrics,
-      whatsappNotification,
+      whatsappNotification: null,
       source_quote_id: base.source_quote_id,
     };
   }
@@ -1546,6 +1563,11 @@ export async function finalizeMeasurementToRevisionQuote({ odoo, originalQuote, 
     ],
   );
   const finalRevisionQuote = updFinal.rows?.[0] || qSync;
+
+  // Generar token DESPUÉS de confirmar la NV en Odoo: el cliente no puede aceptar antes de que exista la NV
+  const savedToken = await saveShareTokenToOriginalQuote(originalQuote.id, originalQuote.measurement_share_token);
+  const quoteWithToken = { ...originalQuote, measurement_share_token: savedToken };
+  const whatsappNotification = await maybeSendMeasurementApprovedWhatsApp({ odoo, quote: quoteWithToken });
 
   return {
     revisionQuote: finalRevisionQuote,
