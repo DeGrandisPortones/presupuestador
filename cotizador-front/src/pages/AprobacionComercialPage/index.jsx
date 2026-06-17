@@ -539,9 +539,11 @@ export default function AprobacionComercialPage() {
                     <td><OdooReferenceCell value={quoteOdooReference(r)} /></td>
                     {showPlegadoInfo ? <td><PlegadoInfoCell row={r} /></td> : null}
                     <td><BudgetObservationCell row={r} /></td>
-                    <td className="right" style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
-                      <PdfIconButton disabled={downloadingPdfKey === pdfKey} onClick={() => handleDownloadQuotePdf(r.id)} />
-                      <Button onClick={() => navigate(`/presupuestos/${r.id}`, { state: { from: "/aprobacion/comercial" } })}>Abrir</Button>
+                    <td className="right">
+                      <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+                        <PdfIconButton disabled={downloadingPdfKey === pdfKey} onClick={() => handleDownloadQuotePdf(r.id)} />
+                        <Button onClick={() => navigate(`/presupuestos/${r.id}`, { state: { from: "/aprobacion/comercial" } })}>Abrir</Button>
+                      </div>
                     </td>
                   </tr>
                 );
@@ -575,9 +577,11 @@ export default function AprobacionComercialPage() {
                     <td>{productionReference(r) || "—"}</td>
                     <td>{r.production_delivery_year && r.production_delivery_week ? `${r.production_delivery_year} · Semana ${r.production_delivery_week}` : "—"}</td>
                     <td><BudgetObservationCell row={r} /></td>
-                    <td className="right" style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
-                      <PdfIconButton disabled={downloadingPdfKey === pdfKey} onClick={() => handleDownloadQuotePdf(r.id)} />
-                      <Button variant="ghost" onClick={() => navigate(`/presupuestos/${r.id}`, { state: { from: "/aprobacion/comercial" } })}>Abrir</Button>
+                    <td className="right">
+                      <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+                        <PdfIconButton disabled={downloadingPdfKey === pdfKey} onClick={() => handleDownloadQuotePdf(r.id)} />
+                        <Button variant="ghost" onClick={() => navigate(`/presupuestos/${r.id}`, { state: { from: "/aprobacion/comercial" } })}>Abrir</Button>
+                      </div>
                     </td>
                   </tr>
                 );
@@ -777,9 +781,11 @@ export default function AprobacionComercialPage() {
                           <td>{rowLabel(r)}</td>
                           <td><OdooReferenceCell value={quoteOdooReference(r)} /></td>
                           <td><BudgetObservationCell row={r} /></td>
-                          <td className="right" style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
-                            <PdfIconButton disabled={downloadingPdfKey === pdfKey} onClick={() => handleDownloadQuotePdf(r.id)} />
-                            <Button variant="ghost" onClick={() => navigate(`/presupuestos/${r.id}`, { state: { from: "/aprobacion/comercial" } })}>Abrir</Button>
+                          <td className="right">
+                            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+                              <PdfIconButton disabled={downloadingPdfKey === pdfKey} onClick={() => handleDownloadQuotePdf(r.id)} />
+                              <Button variant="ghost" onClick={() => navigate(`/presupuestos/${r.id}`, { state: { from: "/aprobacion/comercial" } })}>Abrir</Button>
+                            </div>
                           </td>
                         </tr>
                       );
@@ -812,11 +818,13 @@ export default function AprobacionComercialPage() {
                           <td><OdooReferenceCell value={doorOdooReference(d)} /></td>
                           <td>{d.sale_amount ? `$ ${Number(d.sale_amount).toLocaleString("es-AR")}` : "—"}</td>
                           <td>{d.purchase_amount ? `$ ${Number(d.purchase_amount).toLocaleString("es-AR")}` : "—"}</td>
-                          <td className="right" style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
-                            <PdfIconButton disabled={downloadingPdfKey === pdfKey} onClick={() => handleDownloadDoorPdf(d.id)} />
-                            <Button variant="ghost" onClick={() => navigate(`/puertas/${d.id}`)}>Abrir</Button>
-                            <Button disabled={doorM.isPending} onClick={() => doorM.mutate({ id: d.id, action: "approve", notes: null })}>OK</Button>
-                            <Button variant="ghost" disabled={doorM.isPending} onClick={() => { const msg = window.prompt("Motivo del rechazo:", ""); if (msg !== null) doorM.mutate({ id: d.id, action: "reject", notes: msg }); }}>Rechazar</Button>
+                          <td className="right">
+                            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+                              <PdfIconButton disabled={downloadingPdfKey === pdfKey} onClick={() => handleDownloadDoorPdf(d.id)} />
+                              <Button variant="ghost" onClick={() => navigate(`/puertas/${d.id}`)}>Abrir</Button>
+                              <Button disabled={doorM.isPending} onClick={() => doorM.mutate({ id: d.id, action: "approve", notes: null })}>OK</Button>
+                              <Button variant="ghost" disabled={doorM.isPending} onClick={() => { const msg = window.prompt("Motivo del rechazo:", ""); if (msg !== null) doorM.mutate({ id: d.id, action: "reject", notes: msg }); }}>Rechazar</Button>
+                            </div>
                           </td>
                         </tr>
                       );
