@@ -2152,6 +2152,14 @@ export function buildQuotesRouter(odoo) {
   });
 
   async function handleReadyQuoteSync({ qSync, approverUser }) {
+    // Re-read from DB right before calling Odoo to prevent race-condition duplicates
+    const freshRow = (await dbQuery(`select odoo_sale_order_id, final_sale_order_id, status from public.presupuestador_quotes where id=$1`, [qSync.id])).rows?.[0];
+    if (freshRow?.odoo_sale_order_id || freshRow?.final_sale_order_id) {
+      // Already synced by a concurrent request — return current state without calling Odoo
+      const cur = (await dbQuery(`select * from public.presupuestador_quotes where id=$1`, [qSync.id])).rows?.[0];
+      return { quote: cur || qSync, directFinal: false, alreadySynced: true };
+    }
+
     const forced = getHardcodedOdooOverride(qSync);
     const directTechnicalOnly = isDirectProductionTechnicalOnlyQuote(qSync);
     const directFinal = forced?.stage === "nv" || directTechnicalOnly || (qSync.fulfillment_mode === "produccion" && !quoteNeedsMeasurement(qSync));
@@ -2175,7 +2183,7 @@ export function buildQuotesRouter(odoo) {
                 measurement_mode=case when $4::boolean then 'tecnica_only' else measurement_mode end,
                 measurement_subtype=case when $4::boolean then 'sin_medicion' else measurement_subtype end,
                 measurement_status=case when $4::boolean then 'pending' else 'none' end
-          where id=$1
+          where id=$1 and status='syncing_odoo' and odoo_sale_order_id is null
           returning *`,
         [qSync.id, Number(order.id), order.name, directTechnicalOnly]
       );
@@ -2281,7 +2289,9 @@ export function buildQuotesRouter(odoo) {
       } catch (e) {
         const msg = String(e?.message || "Error al sincronizar a Odoo");
         console.error("SYNC ODOO ERROR:", msg);
-        await dbQuery(`update public.presupuestador_quotes set status='pending_approvals', rejection_notes = concat_ws(E'\n', nullif(rejection_notes,''), 'SYNC ERROR: ' || $2) where id=$1 and status='syncing_odoo'`, [id, msg]);
+        // Only reset to pending_approvals if Odoo did NOT create an order.
+        // If odoo_sale_order_id was already written, keep synced_odoo to prevent a duplicate sync on retry.
+        await dbQuery(`update public.presupuestador_quotes set status='pending_approvals', rejection_notes = concat_ws(E'\n', nullif(rejection_notes,''), 'SYNC ERROR: ' || $2) where id=$1 and status='syncing_odoo' and odoo_sale_order_id is null`, [id, msg]);
         return res.status(502).json({ ok: false, error: process.env.NODE_ENV === "development" ? `Error al sincronizar a Odoo: ${msg}` : "Error al sincronizar a Odoo. Reintenta." });
       }
     } catch (e) { next(e); }
@@ -2326,7 +2336,9 @@ export function buildQuotesRouter(odoo) {
       } catch (e) {
         const msg = String(e?.message || "Error al sincronizar a Odoo");
         console.error("SYNC ODOO ERROR:", msg);
-        await dbQuery(`update public.presupuestador_quotes set status='pending_approvals', rejection_notes = concat_ws(E'\n', nullif(rejection_notes,''), 'SYNC ERROR: ' || $2) where id=$1 and status='syncing_odoo'`, [id, msg]);
+        // Only reset to pending_approvals if Odoo did NOT create an order.
+        // If odoo_sale_order_id was already written, keep synced_odoo to prevent a duplicate sync on retry.
+        await dbQuery(`update public.presupuestador_quotes set status='pending_approvals', rejection_notes = concat_ws(E'\n', nullif(rejection_notes,''), 'SYNC ERROR: ' || $2) where id=$1 and status='syncing_odoo' and odoo_sale_order_id is null`, [id, msg]);
         return res.status(502).json({ ok: false, error: process.env.NODE_ENV === "development" ? `Error al sincronizar a Odoo: ${msg}` : "Error al sincronizar a Odoo. Reintenta." });
       }
     } catch (e) { next(e); }
