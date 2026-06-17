@@ -765,7 +765,9 @@ export default function AprobacionTecnicaPage() {
                             <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
                               <Button variant="ghost" disabled={downloadingPdfKey === pdfKey} onClick={() => handleDownloadQuotePdf(r.id)} title="Descargar PDF">📄</Button>
                               {isDistribuidor && (
-                                <Button variant="ghost" disabled={downloadingPdfKey === proformaKey} onClick={() => handleDownloadProformaPdf(r.id)} title="Descargar proforma">Proforma</Button>
+                                <Button variant="ghost" disabled={downloadingPdfKey === proformaKey} onClick={() => handleDownloadProformaPdf(r.id)} title="Descargar proforma">
+                                  <span style={{ position: "relative", display: "inline-flex" }}>📄<span style={{ position: "absolute", bottom: 0, right: -2, fontSize: 9, fontWeight: 900, lineHeight: 1 }}>P</span></span>
+                                </Button>
                               )}
                               <Button variant="ghost" onClick={() => navigate(`/presupuestos/${r.id}`, { state: { from: "/aprobacion/tecnica" } })}>Abrir</Button>
                             </div>

@@ -796,7 +796,9 @@ export default function AprobacionComercialPage() {
                             <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
                               <PdfIconButton disabled={downloadingPdfKey === pdfKey} onClick={() => handleDownloadQuotePdf(r.id)} />
                               {isDistribuidor && (
-                                <Button variant="ghost" disabled={downloadingPdfKey === proformaKey} onClick={() => handleDownloadProformaPdf(r.id)} title="Descargar proforma">Proforma</Button>
+                                <Button variant="ghost" disabled={downloadingPdfKey === proformaKey} onClick={() => handleDownloadProformaPdf(r.id)} title="Descargar proforma">
+                                  <span style={{ position: "relative", display: "inline-flex" }}>📄<span style={{ position: "absolute", bottom: 0, right: -2, fontSize: 9, fontWeight: 900, lineHeight: 1 }}>P</span></span>
+                                </Button>
                               )}
                               <Button variant="ghost" onClick={() => navigate(`/presupuestos/${r.id}`, { state: { from: "/aprobacion/comercial" } })}>Abrir</Button>
                             </div>
