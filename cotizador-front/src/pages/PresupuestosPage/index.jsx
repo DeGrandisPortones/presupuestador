@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
@@ -253,6 +253,45 @@ function PlegadoModal({ row, onClose }) {
   );
 }
 
+function buildClientAcceptanceUrl(token) {
+  if (!token) return null;
+  return `${window.location.origin}/aceptacion-cliente/${token}`;
+}
+
+function LinkPopup({ url, onClose }) {
+  const [copied, setCopied] = useState(false);
+  const ref = useRef(null);
+  useEffect(() => {
+    function handleClick(e) {
+      if (ref.current && !ref.current.contains(e.target)) onClose();
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [onClose]);
+  function handleCopy() {
+    navigator.clipboard.writeText(url).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  }
+  return (
+    <div ref={ref} style={{
+      position: "absolute", zIndex: 100, background: "#fff", border: "1px solid #ddd",
+      borderRadius: 8, boxShadow: "0 4px 16px rgba(0,0,0,0.15)", padding: "14px 16px",
+      minWidth: 320, maxWidth: 460, right: 0, top: "calc(100% + 4px)",
+    }}>
+      <div style={{ fontSize: 12, color: "#888", marginBottom: 6 }}>Link de aceptación del cliente:</div>
+      <div style={{ fontSize: 12, wordBreak: "break-all", background: "#f5f5f5", padding: "6px 8px", borderRadius: 4, color: "#333", marginBottom: 10 }}>{url}</div>
+      <button
+        onClick={handleCopy}
+        style={{ padding: "5px 14px", borderRadius: 6, border: "1px solid #ccc", background: copied ? "#e8f5e9" : "#fff", cursor: "pointer", fontSize: 13, fontWeight: 600, color: copied ? "#1b5e20" : "#333" }}
+      >
+        {copied ? "✓ Copiado" : "Copiar link"}
+      </button>
+    </div>
+  );
+}
+
 function TypeBadge({ label }) {
   const isDoor = label === "Puerta";
   const isIpanel = label === "Ipanel";
@@ -286,6 +325,9 @@ export default function PresupuestosPage() {
   const [downloadingPdfKey, setDownloadingPdfKey] = useState("");
   const [rejectionModal, setRejectionModal] = useState(null);
   const [plegadoModal, setPlegadoModal] = useState(null);
+  const [linkPopupId, setLinkPopupId] = useState(null);
+
+  const showAcceptanceColumn = filter === "produccion" && !!user?.is_distribuidor;
 
   const quotesQ = useQuery({ queryKey: ["quotes", "mine"], queryFn: () => listQuotes({ scope: "mine" }) });
   const doorsQ = useQuery({ queryKey: ["doors", "mine", "presupuestos"], queryFn: () => listDoors({ scope: "mine" }), enabled: !!user?.is_vendedor || !!user?.is_distribuidor });
@@ -411,6 +453,7 @@ export default function PresupuestosPage() {
                   <th>Destino</th>
                   {filter === "mediciones" ? <th>Fecha medición</th> : null}
                   {filter === "mediciones" ? <th>Estado medición</th> : null}
+                  {showAcceptanceColumn ? <th>Aceptación del cliente</th> : null}
                   <th></th>
                 </tr>
               </thead>
@@ -436,6 +479,7 @@ export default function PresupuestosPage() {
                         <td>{item.destinationLabel}</td>
                         {filter === "mediciones" ? <td>—</td> : null}
                         {filter === "mediciones" ? <td>—</td> : null}
+                        {showAcceptanceColumn ? <td>—</td> : null}
                         <td className="right" style={{ display: "flex", justifyContent: "flex-end", gap: 8, flexWrap: "wrap" }}>
                           <Button variant="ghost" onClick={() => navigate(`/puertas/${door.id}`)}>Abrir puerta</Button>
                           {door.linked_quote_id ? <Button variant="ghost" onClick={() => navigate(`/presupuestos/${door.linked_quote_id}`)}>Ver portón</Button> : null}
@@ -475,6 +519,36 @@ export default function PresupuestosPage() {
                       <td>{item.destinationLabel}</td>
                       {filter === "mediciones" ? <td>{item.measurementDate}</td> : null}
                       {filter === "mediciones" ? <td>{item.measurementStatus}</td> : null}
+                      {showAcceptanceColumn ? (() => {
+                        const token = r.measurement_share_token;
+                        const acceptanceUrl = token ? buildClientAcceptanceUrl(token) : null;
+                        const acceptance = r.payload?.measurement_client_acceptance;
+                        const showLinkPopup = linkPopupId === r.id;
+                        return (
+                          <td style={{ position: "relative", minWidth: 160 }}>
+                            {acceptanceUrl ? (
+                              <div style={{ marginBottom: acceptance ? 8 : 0 }}>
+                                <button
+                                  onClick={() => setLinkPopupId(showLinkPopup ? null : r.id)}
+                                  style={{ padding: "3px 10px", borderRadius: 6, border: "1px solid #90caf9", background: "#e3f2fd", color: "#0d47a1", cursor: "pointer", fontSize: 12, fontWeight: 600 }}
+                                >
+                                  🔗 Ver link
+                                </button>
+                                {showLinkPopup && <LinkPopup url={acceptanceUrl} onClose={() => setLinkPopupId(null)} />}
+                              </div>
+                            ) : <span style={{ color: "#ccc", fontSize: 12 }}>Sin link aún</span>}
+                            {acceptance ? (
+                              <div style={{ fontSize: 12, color: "#333", marginTop: acceptanceUrl ? 6 : 0 }}>
+                                <div style={{ fontWeight: 700 }}>{acceptance.full_name || "—"}</div>
+                                <div style={{ color: "#666" }}>DNI: {acceptance.dni || "—"}</div>
+                                <div style={{ color: "#888" }}>{fmtDateTime(acceptance.accepted_at || r.measurement_client_accepted_at)}</div>
+                              </div>
+                            ) : r.measurement_share_enabled_at ? (
+                              <div style={{ fontSize: 12, color: "#999", fontStyle: "italic", marginTop: 4 }}>Pendiente de aceptación</div>
+                            ) : null}
+                          </td>
+                        );
+                      })() : null}
                       <td className="right" style={{ display: "flex", justifyContent: "flex-end", gap: 8, flexWrap: "wrap" }}>
                         <Button variant="ghost" disabled={downloadingPdfKey === originalPdfKey} onClick={() => handleDownloadQuotePdf(r.id)}>Ver original</Button>
                         {canDownloadQuoteProforma ? <Button variant="ghost" disabled={downloadingPdfKey === originalProformaPdfKey} onClick={() => handleDownloadQuoteProformaPdf(r.id)}>Proforma</Button> : null}
