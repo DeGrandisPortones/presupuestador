@@ -675,7 +675,7 @@ export default function AprobacionComercialPage() {
               return (
                 <>
                   <table>
-                    <thead><tr><th>Fecha</th><th>Tipo</th><th>Vendedor/Distribuidor</th><th>Cliente</th><th>Dirección</th><th>Solicitud</th><th>NP/NV Odoo</th>{hasPlegado && <th>Datos plegado</th>}<th>Obs. presupuesto</th><th>Decisiones</th><th></th></tr></thead>
+                    <thead><tr><th>Fecha</th><th>Vendedor/Distribuidor</th><th>Cliente</th><th>Dirección</th><th>Solicitud</th><th>NP/NV Odoo</th>{hasPlegado && <th>Datos plegado</th>}<th>Obs. presupuesto</th><th>Decisiones</th><th></th></tr></thead>
                     <tbody>
                       {visibleAcopioRows.map((r) => {
                         const canAct = (r.acopio_to_produccion_commercial_decision || "pending") === "pending";
@@ -683,7 +683,6 @@ export default function AprobacionComercialPage() {
                         return (
                           <tr key={r.id}>
                             <td>{fmtDate(r.acopio_to_produccion_requested_at || r.created_at)}</td>
-                            <td>{catalogKindLabel(r)}</td>
                             <td>{createdByLabel(r)}</td>
                             <td>{r.end_customer?.name || <span className="muted">(sin nombre)</span>}</td>
                             <td>{r.end_customer?.address || "—"}</td>
@@ -721,14 +720,13 @@ export default function AprobacionComercialPage() {
               return (
                 <>
                   <table>
-                    <thead><tr><th>Fecha</th><th>Tipo</th><th>Vendedor/Distribuidor</th><th>Cliente</th><th>Dirección</th><th>Estado</th><th>NP/NV Odoo</th>{hasPlegado && <th>Datos plegado</th>}<th>Obs. presupuesto</th><th>Solicitud Prod.</th><th></th></tr></thead>
+                    <thead><tr><th>Fecha</th><th>Vendedor/Distribuidor</th><th>Cliente</th><th>Dirección</th><th>Estado</th><th>NP/NV Odoo</th>{hasPlegado && <th>Datos plegado</th>}<th>Obs. presupuesto</th><th>Solicitud Prod.</th><th></th></tr></thead>
                     <tbody>
                       {visibleAcopioListadoRows.map((r) => {
                         const pdfKey = `quote-${r.id}`;
                         return (
                           <tr key={r.id}>
                             <td>{fmtDate(r.confirmed_at || r.created_at)}</td>
-                            <td>{catalogKindLabel(r)}</td>
                             <td>{createdByLabel(r)}</td>
                             <td>{r.end_customer?.name || <span className="muted">(sin nombre)</span>}</td>
                             <td>{r.end_customer?.address || "—"}</td>
