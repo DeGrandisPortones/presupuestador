@@ -621,7 +621,7 @@ export function buildAdminRouter(odoo) {
       const r = await dbQuery(
         `SELECT q.* FROM public.presupuestador_quotes q
          WHERE q.quote_kind = 'original'
-           AND (q.final_sale_order_name = $1 OR q.production_sale_order_name = $1 OR q.odoo_sale_order_name = $1)
+           AND (q.final_sale_order_name = $1 OR q.odoo_sale_order_name = $1)
          ORDER BY q.created_at DESC NULLS LAST LIMIT 1`,
         [nvStr],
       );
