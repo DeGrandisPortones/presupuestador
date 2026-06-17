@@ -478,15 +478,24 @@ async function upsertPreproduccionValoresForNv({ originalQuote, sourceQuote, rev
     ...mappedFromPresupuestador,
   };
 
+  const nvLines = (Array.isArray(generatedLines) ? generatedLines : [])
+    .filter((l) => l && (l.name || l.raw_name))
+    .map((l) => ({
+      name: toText(l.name),
+      raw_name: toText(l.raw_name),
+      qty: Number(l.qty || 0) || 0,
+    }));
+
   const q = await dbQuery(
-    `insert into public.preproduccion_valores (id, nv, data)
-     values ($1, $2, $3::jsonb)
+    `insert into public.preproduccion_valores (id, nv, data, nv_lines)
+     values ($1, $2, $3::jsonb, $4::jsonb)
      on conflict (nv)
      do update set
        data = excluded.data,
+       nv_lines = excluded.nv_lines,
        updated_at = now()
      returning id, nv, updated_at`,
-    [nv, nv, JSON.stringify(finalPayload)],
+    [nv, nv, JSON.stringify(finalPayload), JSON.stringify(nvLines)],
   );
 
   return {
