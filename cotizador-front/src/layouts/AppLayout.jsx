@@ -243,6 +243,7 @@ export default function AppLayout() {
   if (user?.is_rev_tecnica) roles.push("Rev. Tecnica");
   if (user?.is_medidor) roles.push("Medidor");
   if (user?.is_logistica) roles.push("Logistica");
+  if (user?.is_administracion) roles.push("Administración");
 
   const roleText = roles.length ? roles.join(" / ") : "Cargando sesion...";
 

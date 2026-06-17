@@ -14,6 +14,7 @@ function withEffectiveRoles(user) {
     is_rev_tecnica: isSuperuser || !!user?.is_rev_tecnica,
     is_medidor: isSuperuser || !!user?.is_medidor,
     is_logistica: isSuperuser || !!user?.is_logistica,
+    is_administracion: isSuperuser || !!user?.is_administracion,
   };
 }
 
@@ -33,6 +34,7 @@ export function buildAuthRouter() {
                coalesce(is_superuser, false) as is_superuser,
                is_distribuidor, is_vendedor,
                is_enc_comercial, is_rev_tecnica, is_medidor, is_logistica,
+               coalesce(is_administracion, false) as is_administracion,
                odoo_partner_id,
                odoo_pricelist_id,
                default_maps_url,
