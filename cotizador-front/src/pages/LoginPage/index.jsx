@@ -35,8 +35,6 @@ export default function LoginPage() {
   const setOdooStatus = useAuthStore((s) => s.setOdooStatus);
   const token = useAuthStore((s) => s.token);
 
-  if (token) return <Navigate to="/menu" replace />;
-
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -72,6 +70,8 @@ export default function LoginPage() {
       }, 0);
     },
   });
+
+  if (token) return <Navigate to="/menu" replace />;
 
   return (
     <div className="container" style={{ display: "flex", justifyContent: "center", paddingTop: 64 }}>
