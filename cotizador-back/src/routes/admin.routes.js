@@ -618,18 +618,49 @@ export function buildAdminRouter(odoo) {
       if (!Number.isInteger(nv) || nv <= 0) return res.status(400).json({ ok: false, error: "nv inválido" });
 
       const nvStr = `NV${nv}`;
-      const r = await dbQuery(
+
+      // Buscar el quote original (puede tener la NV en final_sale_order_name u odoo_sale_order_name)
+      const origR = await dbQuery(
         `SELECT q.* FROM public.presupuestador_quotes q
          WHERE q.quote_kind = 'original'
            AND (q.final_sale_order_name = $1 OR q.odoo_sale_order_name = $1)
          ORDER BY q.created_at DESC NULLS LAST LIMIT 1`,
         [nvStr],
       );
-      const originalQuote = r.rows?.[0];
+      const originalQuote = origR.rows?.[0];
       if (!originalQuote) return res.status(404).json({ ok: false, error: `No se encontró quote original para ${nvStr}` });
 
-      const result = await triggerPreproductionForClientAcceptance(null, originalQuote);
-      res.json({ ok: true, nv, result });
+      // Intentar primero por la función normal (requiere copy quote con NV)
+      const normalResult = await triggerPreproductionForClientAcceptance(null, originalQuote);
+      if (normalResult?.ok) return res.json({ ok: true, nv, method: "normal", result: normalResult });
+
+      // Fallback: upsert directo usando los datos del original + copy si existe
+      const copyR = await dbQuery(
+        `SELECT q.* FROM public.presupuestador_quotes q
+         WHERE q.quote_kind = 'copy' AND q.parent_quote_id = $1
+         ORDER BY q.created_at DESC NULLS LAST LIMIT 1`,
+        [originalQuote.id],
+      );
+      const copyQuote = copyR.rows?.[0];
+
+      const sourcePayload = (originalQuote.payload && typeof originalQuote.payload === "object") ? originalQuote.payload : {};
+      const copyPayload = (copyQuote?.payload && typeof copyQuote.payload === "object") ? copyQuote.payload : {};
+      const data = { ...sourcePayload, ...copyPayload, NV: nv, nv, referencia_nv: nvStr };
+
+      const rawLines = Array.isArray(copyQuote?.lines) ? copyQuote.lines : (Array.isArray(originalQuote?.lines) ? originalQuote.lines : []);
+      const nvLines = rawLines
+        .filter((l) => l && (l.name || l.raw_name))
+        .map((l) => ({ name: String(l.name || ""), raw_name: String(l.raw_name || ""), qty: Number(l.qty || 0) || 0 }));
+
+      const upsertR = await dbQuery(
+        `INSERT INTO public.preproduccion_valores (id, nv, data, nv_lines)
+         VALUES ($1, $1, $2::jsonb, $3::jsonb)
+         ON CONFLICT (nv) DO UPDATE SET data = EXCLUDED.data, nv_lines = EXCLUDED.nv_lines, updated_at = now()
+         RETURNING id, nv, updated_at`,
+        [nv, JSON.stringify(data), JSON.stringify(nvLines)],
+      );
+
+      res.json({ ok: true, nv, method: "fallback_direct", row: upsertR.rows?.[0] });
     } catch (e) { next(e); }
   });
 
