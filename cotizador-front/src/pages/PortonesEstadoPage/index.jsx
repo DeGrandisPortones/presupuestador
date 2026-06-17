@@ -85,16 +85,18 @@ function computeStatusInfo(q) {
         // La NV se crea junto con la aprobación técnica final; el link se genera DESPUÉS de la NV.
         const nvReady = q.final_copy_status === "synced_odoo" || q.final_status === "synced_odoo";
         const nvSyncing = q.final_copy_status === "syncing_odoo" || q.final_status === "syncing_odoo";
+        // Chequear aceptación por timestamp O por el objeto en payload (portones viejos pueden tener solo el payload)
+        const clientAccepted = !!(q.measurement_client_accepted_at || q.measurement_client_acceptance?.accepted_at);
         if (nvSyncing)
           return { label: "Generando orden de producción en Odoo...", color: "blue" };
-        if (nvReady && q.measurement_client_accepted_at)
+        if (nvReady && clientAccepted)
           return { label: "Completo — cliente aceptó, en producción", color: "green" };
-        if (nvReady && q.measurement_share_enabled_at && !q.measurement_client_accepted_at)
+        if (nvReady && q.measurement_share_enabled_at && !clientAccepted)
           return { label: "Link enviado — esperando aceptación del cliente", color: "yellow" };
         if (nvReady)
           return { label: "Completo — orden de producción generada", color: "green" };
         // Cliente aceptó pero NV no fue creada (finalizacion falló previamente — requiere revisión)
-        if (q.measurement_share_enabled_at && q.measurement_client_accepted_at)
+        if (q.measurement_share_enabled_at && clientAccepted)
           return { label: "Cliente aceptó — NV pendiente de generación", color: "orange" };
         if (q.final_technical_decision === "approved" && q.final_logistics_decision === "approved")
           return { label: "Aprobado — pendiente de envío a Odoo", color: "teal" };
