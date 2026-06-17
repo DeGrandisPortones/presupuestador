@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useNavigate, useSearchParams } from "react-router-dom";
+import toast from "react-hot-toast";
 import Button from "../../ui/Button.jsx";
 import Input from "../../ui/Input.jsx";
 import PaginationControls from "../../ui/PaginationControls.jsx";
@@ -8,6 +9,7 @@ import { listQuotes, reviewAcopioTechnical } from "../../api/quotes.js";
 import { listDoors, reviewDoorTechnical } from "../../api/doors.js";
 import { listMeasurements, scheduleMeasurement } from "../../api/measurements.js";
 import { useAuthStore } from "../../domain/auth/store.js";
+import { downloadListingQuotePdf, downloadListingQuoteProformaPdf } from "../../utils/listingPdf.js";
 import { downloadPlegadoAttachment, formatPlegadoAttachmentMeta, getPlegadoAttachment, openPlegadoAttachment } from "../../utils/plegadoAttachment.js";
 
 const PAGE_SIZE = 25;
@@ -373,6 +375,7 @@ export default function AprobacionTecnicaPage() {
   const [pageProduccionIpanels, setPageProduccionIpanels] = useState(1);
   const [pagePuertas, setPagePuertas] = useState(1);
   const [pageAprobados, setPageAprobados] = useState(1);
+  const [downloadingPdfKey, setDownloadingPdfKey] = useState("");
 
   useEffect(() => {
     const nextTab = normalizeTab(searchParams.get("tab"), approvalSection);
@@ -392,6 +395,30 @@ export default function AprobacionTecnicaPage() {
   const scheduleM = useMutation({ mutationFn: ({ id, scheduledFor }) => scheduleMeasurement(id, { scheduledFor }), onSuccess: () => measQ.refetch() });
 
   const visibleTabKeys = TECHNICAL_TABS_BY_SECTION[approvalSection] || TECHNICAL_TABS_BY_SECTION.all;
+
+  async function handleDownloadQuotePdf(id) {
+    const key = `quote-${id}`;
+    setDownloadingPdfKey(key);
+    try {
+      await downloadListingQuotePdf(id);
+    } catch (e) {
+      toast.error(e?.message || "No se pudo descargar el PDF");
+    } finally {
+      setDownloadingPdfKey("");
+    }
+  }
+
+  async function handleDownloadProformaPdf(id) {
+    const key = `proforma-${id}`;
+    setDownloadingPdfKey(key);
+    try {
+      await downloadListingQuoteProformaPdf(id);
+    } catch (e) {
+      toast.error(e?.message || "No se pudo descargar la proforma");
+    } finally {
+      setDownloadingPdfKey("");
+    }
+  }
 
   function goToTab(nextTab) {
     const normalized = normalizeTab(nextTab, approvalSection);
@@ -720,19 +747,32 @@ export default function AprobacionTecnicaPage() {
                 <table>
                   <thead><tr><th>Fecha aprob.</th><th>Tipo</th><th>Vendedor/Distribuidor</th><th>Cliente</th><th>Dirección</th><th>Estado</th><th>NP/NV Odoo</th><th>Obs. presupuesto</th><th></th></tr></thead>
                   <tbody>
-                    {visibleAprobados.map((r) => (
-                      <tr key={r.id}>
-                        <td>{fmtDate(r.technical_at || r.created_at)}</td>
-                        <td>{catalogKindLabel(r)}</td>
-                        <td>{createdByLabel(r)}</td>
-                        <td>{r.end_customer?.name || <span className="muted">(sin nombre)</span>}</td>
-                        <td>{r.end_customer?.address || "—"}</td>
-                        <td>{rowLabel(r)}</td>
-                        <td><OdooReferenceCell value={quoteOdooReference(r)} /></td>
-                        <td><BudgetObservationCell row={r} /></td>
-                        <td className="right"><Button variant="ghost" onClick={() => navigate(`/presupuestos/${r.id}`, { state: { from: "/aprobacion/tecnica" } })}>Abrir</Button></td>
-                      </tr>
-                    ))}
+                    {visibleAprobados.map((r) => {
+                      const pdfKey = `quote-${r.id}`;
+                      const proformaKey = `proforma-${r.id}`;
+                      const isDistribuidor = r.created_by_role === "distribuidor";
+                      return (
+                        <tr key={r.id}>
+                          <td>{fmtDate(r.technical_at || r.created_at)}</td>
+                          <td>{catalogKindLabel(r)}</td>
+                          <td>{createdByLabel(r)}</td>
+                          <td>{r.end_customer?.name || <span className="muted">(sin nombre)</span>}</td>
+                          <td>{r.end_customer?.address || "—"}</td>
+                          <td>{rowLabel(r)}</td>
+                          <td><OdooReferenceCell value={quoteOdooReference(r)} /></td>
+                          <td><BudgetObservationCell row={r} /></td>
+                          <td className="right">
+                            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+                              <Button variant="ghost" disabled={downloadingPdfKey === pdfKey} onClick={() => handleDownloadQuotePdf(r.id)} title="Descargar PDF">📄</Button>
+                              {isDistribuidor && (
+                                <Button variant="ghost" disabled={downloadingPdfKey === proformaKey} onClick={() => handleDownloadProformaPdf(r.id)} title="Descargar proforma">Proforma</Button>
+                              )}
+                              <Button variant="ghost" onClick={() => navigate(`/presupuestos/${r.id}`, { state: { from: "/aprobacion/tecnica" } })}>Abrir</Button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
                 <PaginationControls page={pageAprobados} totalItems={aprobadosRows.length} pageSize={PAGE_SIZE} onPageChange={setPageAprobados} />

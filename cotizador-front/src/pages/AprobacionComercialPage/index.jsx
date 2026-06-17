@@ -9,7 +9,7 @@ import { listQuotes, reviewAcopioCommercial } from "../../api/quotes.js";
 import { listDoors, reviewDoorCommercial } from "../../api/doors.js";
 import { listMeasurements } from "../../api/measurements.js";
 import { useAuthStore } from "../../domain/auth/store.js";
-import { downloadListingDoorPdf, downloadListingQuotePdf } from "../../utils/listingPdf.js";
+import { downloadListingDoorPdf, downloadListingQuotePdf, downloadListingQuoteProformaPdf } from "../../utils/listingPdf.js";
 import { downloadPlegadoAttachment, formatPlegadoAttachmentMeta, getPlegadoAttachment, openPlegadoAttachment } from "../../utils/plegadoAttachment.js";
 
 const PAGE_SIZE = 25;
@@ -415,6 +415,18 @@ export default function AprobacionComercialPage() {
     }
   }
 
+  async function handleDownloadProformaPdf(id) {
+    const key = `proforma-${id}`;
+    setDownloadingPdfKey(key);
+    try {
+      await downloadListingQuoteProformaPdf(id);
+    } catch (e) {
+      toast.error(e?.message || "No se pudo descargar la proforma");
+    } finally {
+      setDownloadingPdfKey("");
+    }
+  }
+
   const approvalBaseRows = useMemo(() => {
     const arr = (q.data || []).slice().sort((a, b) => toTimeDesc(b?.created_at) - toTimeDesc(a?.created_at));
     return applyApprovalFilter(arr, filter).filter((r) => matchesSearch(quoteSearchValues(r), searchText));
@@ -768,6 +780,8 @@ export default function AprobacionComercialPage() {
                   <tbody>
                     {visibleAprobadosRows.map((r) => {
                       const pdfKey = `quote-${r.id}`;
+                      const proformaKey = `proforma-${r.id}`;
+                      const isDistribuidor = r.created_by_role === "distribuidor";
                       return (
                         <tr key={r.id}>
                           <td>{fmtDate(r.commercial_at || r.created_at)}</td>
@@ -781,6 +795,9 @@ export default function AprobacionComercialPage() {
                           <td className="right">
                             <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
                               <PdfIconButton disabled={downloadingPdfKey === pdfKey} onClick={() => handleDownloadQuotePdf(r.id)} />
+                              {isDistribuidor && (
+                                <Button variant="ghost" disabled={downloadingPdfKey === proformaKey} onClick={() => handleDownloadProformaPdf(r.id)} title="Descargar proforma">Proforma</Button>
+                              )}
                               <Button variant="ghost" onClick={() => navigate(`/presupuestos/${r.id}`, { state: { from: "/aprobacion/comercial" } })}>Abrir</Button>
                             </div>
                           </td>
