@@ -4,6 +4,7 @@ import { loadCatalogBootstrap, clearCatalogBootstrapCache } from "../catalogBoot
 import { normKind, createSection, updateSection, deleteSection, setTagSection, setProductAlias, setProductVisibility, setTypeVisibility, getProductPdfNameMap, setProductPdfName } from "../catalogDb.js";
 import { dbQuery } from "../db.js";
 import { listUsers, createUser, updateUser } from "../usersDb.js";
+import { triggerPreproductionForClientAcceptance } from "../measurementFinalization.js";
 import { ensureQuotesMeasurementColumns } from "../quotesSchema.js";
 import {
   getCommercialFinalQuoteSettings,
@@ -607,6 +608,28 @@ export function buildAdminRouter(odoo) {
       const quote = r.rows?.[0] || null;
       if (!quote) return res.status(404).json({ ok: false, error: "No encontrado" });
       res.json({ ok: true, quote });
+    } catch (e) { next(e); }
+  });
+
+  // Re-dispara el upsert de preproduccion_valores para una NV que no se generó en su momento
+  router.post("/resync/preproduccion-valores", requireAuth, requireSuperuser, async (req, res, next) => {
+    try {
+      const nv = Number(req.body?.nv || 0);
+      if (!Number.isInteger(nv) || nv <= 0) return res.status(400).json({ ok: false, error: "nv inválido" });
+
+      const nvStr = `NV${nv}`;
+      const r = await dbQuery(
+        `SELECT q.* FROM public.presupuestador_quotes q
+         WHERE q.quote_kind = 'original'
+           AND (q.final_sale_order_name = $1 OR q.production_sale_order_name = $1 OR q.odoo_sale_order_name = $1)
+         ORDER BY q.created_at DESC NULLS LAST LIMIT 1`,
+        [nvStr],
+      );
+      const originalQuote = r.rows?.[0];
+      if (!originalQuote) return res.status(404).json({ ok: false, error: `No se encontró quote original para ${nvStr}` });
+
+      const result = await triggerPreproductionForClientAcceptance(null, originalQuote);
+      res.json({ ok: true, nv, result });
     } catch (e) { next(e); }
   });
 
