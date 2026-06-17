@@ -666,39 +666,46 @@ export default function AprobacionComercialPage() {
             {acopioQ.isLoading && <div className="muted">Cargando...</div>}
             {acopioQ.isError && <div style={{ color: "#d93025", fontSize: 13 }}>{acopioQ.error.message}</div>}
             {!acopioQ.isLoading && !acopioRows.length && <div className="muted">Sin solicitudes</div>}
-            {!!acopioRows.length && (
-              <>
-                <table>
-                  <thead><tr><th>Fecha</th><th>Tipo</th><th>Vendedor/Distribuidor</th><th>Cliente</th><th>Dirección</th><th>Solicitud</th><th>NP/NV Odoo</th><th>Datos plegado</th><th>Obs. presupuesto</th><th>Decisiones</th><th></th></tr></thead>
-                  <tbody>
-                    {visibleAcopioRows.map((r) => {
-                      const canAct = (r.acopio_to_produccion_commercial_decision || "pending") === "pending";
-                      const pdfKey = `quote-${r.id}`;
-                      return (
-                        <tr key={r.id}>
-                          <td>{fmtDate(r.acopio_to_produccion_requested_at || r.created_at)}</td>
-                          <td>{catalogKindLabel(r)}</td>
-                          <td>{createdByLabel(r)}</td>
-                          <td>{r.end_customer?.name || <span className="muted">(sin nombre)</span>}</td>
-                          <td>{r.end_customer?.address || "—"}</td>
-                          <td>{r.acopio_to_produccion_notes || <span className="muted">(sin nota)</span>}</td>
-                          <td><OdooReferenceCell value={quoteOdooReference(r)} /></td>
-                          <td><PlegadoInfoCell row={r} /></td>
-                          <td><BudgetObservationCell row={r} /></td>
-                          <td>{acopioReqLabel(r)}</td>
-                          <td className="right" style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
-                            <PdfIconButton disabled={downloadingPdfKey === pdfKey} onClick={() => handleDownloadQuotePdf(r.id)} />
-                            <Button variant="ghost" onClick={() => navigate(`/presupuestos/${r.id}`, { state: { from: "/aprobacion/comercial" } })}>Abrir</Button>
-                            {canAct ? <><Button disabled={acopioM.isPending} onClick={() => acopioM.mutate({ id: r.id, action: "approve", notes: null })}>OK</Button><Button variant="ghost" disabled={acopioM.isPending} onClick={() => { const msg = window.prompt("Motivo del rechazo:", ""); if (msg !== null) acopioM.mutate({ id: r.id, action: "reject", notes: msg }); }}>Rechazar</Button></> : <span className="muted">Ya decidiste</span>}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-                <PaginationControls page={pageAcopio} totalItems={acopioRows.length} pageSize={PAGE_SIZE} onPageChange={setPageAcopio} />
-              </>
-            )}
+            {!!acopioRows.length && (() => {
+              const hasPlegado = acopioRows.some(isPlegadosRow);
+              return (
+                <>
+                  <div style={{ overflowX: "auto" }}>
+                    <table>
+                      <thead><tr><th>Fecha</th><th>Tipo</th><th>Vendedor/Distribuidor</th><th>Cliente</th><th>Dirección</th><th>Solicitud</th><th>NP/NV Odoo</th>{hasPlegado && <th>Datos plegado</th>}<th>Obs. presupuesto</th><th>Decisiones</th><th></th></tr></thead>
+                      <tbody>
+                        {visibleAcopioRows.map((r) => {
+                          const canAct = (r.acopio_to_produccion_commercial_decision || "pending") === "pending";
+                          const pdfKey = `quote-${r.id}`;
+                          return (
+                            <tr key={r.id}>
+                              <td>{fmtDate(r.acopio_to_produccion_requested_at || r.created_at)}</td>
+                              <td>{catalogKindLabel(r)}</td>
+                              <td>{createdByLabel(r)}</td>
+                              <td>{r.end_customer?.name || <span className="muted">(sin nombre)</span>}</td>
+                              <td>{r.end_customer?.address || "—"}</td>
+                              <td>{r.acopio_to_produccion_notes || <span className="muted">(sin nota)</span>}</td>
+                              <td><OdooReferenceCell value={quoteOdooReference(r)} /></td>
+                              {hasPlegado && <td><PlegadoInfoCell row={r} /></td>}
+                              <td><BudgetObservationCell row={r} /></td>
+                              <td>{acopioReqLabel(r)}</td>
+                              <td className="right">
+                                <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+                                  <PdfIconButton disabled={downloadingPdfKey === pdfKey} onClick={() => handleDownloadQuotePdf(r.id)} />
+                                  <Button variant="ghost" onClick={() => navigate(`/presupuestos/${r.id}`, { state: { from: "/aprobacion/comercial" } })}>Abrir</Button>
+                                  {canAct ? <><Button disabled={acopioM.isPending} onClick={() => acopioM.mutate({ id: r.id, action: "approve", notes: null })}>OK</Button><Button variant="ghost" disabled={acopioM.isPending} onClick={() => { const msg = window.prompt("Motivo del rechazo:", ""); if (msg !== null) acopioM.mutate({ id: r.id, action: "reject", notes: msg }); }}>Rechazar</Button></> : <span className="muted">Ya decidiste</span>}
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                  <PaginationControls page={pageAcopio} totalItems={acopioRows.length} pageSize={PAGE_SIZE} onPageChange={setPageAcopio} />
+                </>
+              );
+            })()}
           </>
         )}
 
@@ -707,37 +714,44 @@ export default function AprobacionComercialPage() {
             {acopioListadoQ.isLoading && <div className="muted">Cargando...</div>}
             {acopioListadoQ.isError && <div style={{ color: "#d93025", fontSize: 13 }}>{acopioListadoQ.error.message}</div>}
             {!acopioListadoQ.isLoading && !acopioListadoRows.length && <div className="muted">Sin elementos en acopio</div>}
-            {!!acopioListadoRows.length && (
-              <>
-                <table>
-                  <thead><tr><th>Fecha</th><th>Tipo</th><th>Vendedor/Distribuidor</th><th>Cliente</th><th>Dirección</th><th>Estado</th><th>NP/NV Odoo</th><th>Datos plegado</th><th>Obs. presupuesto</th><th>Solicitud Prod.</th><th></th></tr></thead>
-                  <tbody>
-                    {visibleAcopioListadoRows.map((r) => {
-                      const pdfKey = `quote-${r.id}`;
-                      return (
-                        <tr key={r.id}>
-                          <td>{fmtDate(r.confirmed_at || r.created_at)}</td>
-                          <td>{catalogKindLabel(r)}</td>
-                          <td>{createdByLabel(r)}</td>
-                          <td>{r.end_customer?.name || <span className="muted">(sin nombre)</span>}</td>
-                          <td>{r.end_customer?.address || "—"}</td>
-                          <td>{rowLabel(r)}</td>
-                          <td><OdooReferenceCell value={quoteOdooReference(r)} /></td>
-                          <td><PlegadoInfoCell row={r} /></td>
-                          <td><BudgetObservationCell row={r} /></td>
-                          <td>{r.acopio_to_produccion_status ? acopioReqLabel(r) : "—"}</td>
-                          <td className="right" style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
-                            <PdfIconButton disabled={downloadingPdfKey === pdfKey} onClick={() => handleDownloadQuotePdf(r.id)} />
-                            <Button variant="ghost" onClick={() => navigate(`/presupuestos/${r.id}`, { state: { from: "/aprobacion/comercial" } })}>Abrir</Button>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-                <PaginationControls page={pageAcopioListado} totalItems={acopioListadoRows.length} pageSize={PAGE_SIZE} onPageChange={setPageAcopioListado} />
-              </>
-            )}
+            {!!acopioListadoRows.length && (() => {
+              const hasPlegado = acopioListadoRows.some(isPlegadosRow);
+              return (
+                <>
+                  <div style={{ overflowX: "auto" }}>
+                    <table>
+                      <thead><tr><th>Fecha</th><th>Tipo</th><th>Vendedor/Distribuidor</th><th>Cliente</th><th>Dirección</th><th>Estado</th><th>NP/NV Odoo</th>{hasPlegado && <th>Datos plegado</th>}<th>Obs. presupuesto</th><th>Solicitud Prod.</th><th></th></tr></thead>
+                      <tbody>
+                        {visibleAcopioListadoRows.map((r) => {
+                          const pdfKey = `quote-${r.id}`;
+                          return (
+                            <tr key={r.id}>
+                              <td>{fmtDate(r.confirmed_at || r.created_at)}</td>
+                              <td>{catalogKindLabel(r)}</td>
+                              <td>{createdByLabel(r)}</td>
+                              <td>{r.end_customer?.name || <span className="muted">(sin nombre)</span>}</td>
+                              <td>{r.end_customer?.address || "—"}</td>
+                              <td>{rowLabel(r)}</td>
+                              <td><OdooReferenceCell value={quoteOdooReference(r)} /></td>
+                              {hasPlegado && <td><PlegadoInfoCell row={r} /></td>}
+                              <td><BudgetObservationCell row={r} /></td>
+                              <td>{r.acopio_to_produccion_status ? acopioReqLabel(r) : "—"}</td>
+                              <td className="right">
+                                <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+                                  <PdfIconButton disabled={downloadingPdfKey === pdfKey} onClick={() => handleDownloadQuotePdf(r.id)} />
+                                  <Button variant="ghost" onClick={() => navigate(`/presupuestos/${r.id}`, { state: { from: "/aprobacion/comercial" } })}>Abrir</Button>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                  <PaginationControls page={pageAcopioListado} totalItems={acopioListadoRows.length} pageSize={PAGE_SIZE} onPageChange={setPageAcopioListado} />
+                </>
+              );
+            })()}
           </>
         )}
 
