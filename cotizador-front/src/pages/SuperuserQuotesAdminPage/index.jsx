@@ -1,8 +1,11 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import Button from "../../ui/Button.jsx";
+import PaginationControls from "../../ui/PaginationControls.jsx";
 import { adminDeleteQuote, adminGetQuotes } from "../../api/admin.js";
+
+const PAGE_SIZE = 25;
 
 const TABS = [
   { key: "budgets", label: "Presupuestos", help: "Registros internos sin NP/NV generada. Se pueden eliminar definitivamente." },
@@ -68,6 +71,7 @@ export default function SuperuserQuotesAdminPage() {
   const [activeTab, setActiveTab] = useState("budgets");
   const [searchDraft, setSearchDraft] = useState("");
   const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
 
   const activeMeta = useMemo(() => TABS.find((item) => item.key === activeTab) || TABS[0], [activeTab]);
 
@@ -84,6 +88,13 @@ export default function SuperuserQuotesAdminPage() {
 
   const rows = Array.isArray(quotesQ.data) ? quotesQ.data : [];
   const canShowDelete = activeTab === "budgets" || activeTab === "all";
+
+  useEffect(() => { setPage(1); }, [activeTab, search]);
+
+  const pagedRows = useMemo(() => {
+    const start = (page - 1) * PAGE_SIZE;
+    return rows.slice(start, start + PAGE_SIZE);
+  }, [rows, page]);
 
   function applySearch(e) {
     e?.preventDefault?.();
@@ -166,7 +177,7 @@ export default function SuperuserQuotesAdminPage() {
                 </tr>
               </thead>
               <tbody>
-                {rows.map((row) => (
+                {pagedRows.map((row) => (
                   <tr key={row.id}>
                     <td>{formatDate(row.created_at)}</td>
                     <td>{catalogLabel(row.catalog_kind)}</td>
@@ -194,6 +205,12 @@ export default function SuperuserQuotesAdminPage() {
                 ))}
               </tbody>
             </table>
+            <PaginationControls
+              page={page}
+              totalItems={rows.length}
+              pageSize={PAGE_SIZE}
+              onPageChange={setPage}
+            />
           </div>
         ) : null}
       </div>

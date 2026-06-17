@@ -3,9 +3,12 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import toast from "react-hot-toast";
 
 import Button from "../../ui/Button.jsx";
+import PaginationControls from "../../ui/PaginationControls.jsx";
 import { listMyDistributors, updateMyDistributorDefaultMapsUrl } from "../../api/sellerDistributors.js";
 import { getPricelists } from "../../api/odoo.js";
 import { useAuthStore } from "../../domain/auth/store.js";
+
+const PAGE_SIZE = 25;
 
 function copyToClipboard(value, label) {
   const text = String(value || "").trim();
@@ -104,6 +107,7 @@ export default function MyDistributorsPage() {
   const canSeeAll = !!(user?.is_superuser || user?.is_enc_comercial);
   const [searchText, setSearchText] = useState("");
   const [mapsDrafts, setMapsDrafts] = useState({});
+  const [page, setPage] = useState(1);
   const qc = useQueryClient();
 
   const q = useQuery({
@@ -166,6 +170,13 @@ export default function MyDistributorsPage() {
       return normalizeSearch(haystack).includes(search);
     });
   }, [distributors, pricelistById, searchText]);
+
+  useEffect(() => { setPage(1); }, [searchText]);
+
+  const pagedDistributors = useMemo(() => {
+    const start = (page - 1) * PAGE_SIZE;
+    return filteredDistributors.slice(start, start + PAGE_SIZE);
+  }, [filteredDistributors, page]);
 
   if (!canAccess) {
     return (
@@ -263,7 +274,7 @@ export default function MyDistributorsPage() {
               </tr>
             </thead>
             <tbody>
-              {filteredDistributors.map((d) => {
+              {pagedDistributors.map((d) => {
                 const username = String(d.username || "").trim();
                 return (
                   <tr key={d.id}>
@@ -297,6 +308,12 @@ export default function MyDistributorsPage() {
             </tbody>
           </table>
         ) : null}
+        <PaginationControls
+          page={page}
+          totalItems={filteredDistributors.length}
+          pageSize={PAGE_SIZE}
+          onPageChange={setPage}
+        />
       </div>
     </div>
   );
