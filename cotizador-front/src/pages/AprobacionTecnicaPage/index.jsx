@@ -305,6 +305,7 @@ function measurementStatusLabel(s, row) {
   if (s === "pending") return String(row?.measurement_subtype || "").toLowerCase().trim() === "sin_medicion" ? "Pendiente detalle técnico" : "Pendiente";
   if (s === "needs_fix") return "A corregir";
   if (s === "submitted") return "Pendiente aprobación final";
+  if (s === "returned_to_seller") return "Devuelta al vendedor";
   if (s === "approved") return "Aprobada";
   return s || "—";
 }
@@ -426,6 +427,7 @@ export default function AprobacionTecnicaPage() {
     let arr = (measQ.data || []).slice().filter((r) => !isIpanelRow(r)).filter((r) => rowMatchesApprovalSection(r, approvalSection));
     if (measurementStatus === "por_realizar") arr = arr.filter((x) => ["pending", "needs_fix"].includes(String(x?.measurement_status || "")));
     else if (measurementStatus === "por_controlar") arr = arr.filter((x) => String(x?.measurement_status || "") === "submitted");
+    else if (measurementStatus === "returned_to_seller") arr = arr.filter((x) => String(x?.measurement_status || "") === "returned_to_seller");
     else if (measurementStatus === "approved") arr = arr.filter((x) => String(x?.measurement_status || "") === "approved");
     else if (measurementStatus === "sin_medicion") arr = arr.filter((x) => String(x?.measurement_subtype || "normal").toLowerCase().trim() === "sin_medicion");
     return arr
@@ -518,7 +520,7 @@ export default function AprobacionTecnicaPage() {
   }, [aprobadosQ.data, searchText, approvalSection]);
   const visibleAprobados = paged(aprobadosRows, pageAprobados);
 
-  const hideScheduleColumns = measurementStatus === "sin_medicion";
+  const hideScheduleColumns = measurementStatus === "sin_medicion" || measurementStatus === "approved";
 
   const renderApprovalRows = (items, totalItems, page, onPageChange, emptyText, showPlegadoInfo = true, showType = false) => (
     <>
@@ -589,6 +591,7 @@ export default function AprobacionTecnicaPage() {
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
               <Button variant={measurementStatus === "all" ? "primary" : "ghost"} onClick={() => setMeasurementStatus("all")}>Todas</Button>
               <Button variant={measurementStatus === "por_controlar" ? "primary" : "ghost"} onClick={() => setMeasurementStatus("por_controlar")}>Pendientes aprobación final</Button>
+              <Button variant={measurementStatus === "returned_to_seller" ? "primary" : "ghost"} onClick={() => setMeasurementStatus("returned_to_seller")}>Devueltas al vendedor</Button>
               <Button variant={measurementStatus === "por_realizar" ? "primary" : "ghost"} onClick={() => setMeasurementStatus("por_realizar")}>Pendientes por realizar</Button>
               <Button variant={measurementStatus === "approved" ? "primary" : "ghost"} onClick={() => setMeasurementStatus("approved")}>Aprobadas</Button>
             </div>
