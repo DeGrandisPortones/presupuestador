@@ -203,7 +203,18 @@ export default function AdministracionDetailPage() {
           <div style={{ marginTop: 6, color: "#444" }}>
             <strong>{customerName}</strong>
             <span style={{ color: "#888", marginLeft: 10, fontSize: 13 }}>Vendedor: {sellerName}</span>
-            {totalAmount && <span style={{ color: "#333", marginLeft: 10, fontSize: 13, fontWeight: 600 }}>{fmtMoney(totalAmount)}</span>}
+          </div>
+          <div style={{ marginTop: 6, display: "flex", gap: 16, flexWrap: "wrap", alignItems: "center" }}>
+            {totalAmount && (
+              <span style={{ fontSize: 15, fontWeight: 700, color: "#1b5e20", background: "#e8f5e9", padding: "3px 10px", borderRadius: 6 }}>
+                Total: {fmtMoney(totalAmount)}
+              </span>
+            )}
+            {quote.payload?.condition_text && (
+              <span style={{ fontSize: 13, color: "#555", background: "#f3f0ff", padding: "3px 10px", borderRadius: 6, border: "1px solid #d1c4e9" }}>
+                Condición: {quote.payload.condition_text}
+              </span>
+            )}
           </div>
         </div>
         <Button variant="ghost" onClick={() => navigate("/administracion")}>← Volver</Button>
@@ -329,6 +340,35 @@ export default function AdministracionDetailPage() {
             sub={quote.production_delivery_week_start ? `${fmtDate(quote.production_delivery_week_start)} — ${fmtDate(quote.production_delivery_week_end)}` : null}
           />
         )}
+
+        {quote.measurement_share_enabled_at && (() => {
+          const acceptance = quote.payload?.measurement_client_acceptance;
+          return (
+            <div style={{ marginTop: 12, padding: "12px 14px", background: acceptance ? "#e8f5e9" : "#fffde7", borderRadius: 8, border: `1px solid ${acceptance ? "#a5d6a7" : "#ffe082"}` }}>
+              <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 8, color: acceptance ? "#1b5e20" : "#f57f17" }}>
+                {acceptance ? "✓ Aceptación del cliente completada" : "Link enviado — pendiente de aceptación"}
+              </div>
+              {acceptance ? (
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: "8px 16px" }}>
+                  <div>
+                    <div style={{ fontSize: 11, color: "#888", textTransform: "uppercase", letterSpacing: 0.5 }}>Nombre completo</div>
+                    <div style={{ fontSize: 14, fontWeight: 600 }}>{acceptance.full_name || "—"}</div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 11, color: "#888", textTransform: "uppercase", letterSpacing: 0.5 }}>DNI</div>
+                    <div style={{ fontSize: 14, fontWeight: 600 }}>{acceptance.dni || "—"}</div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 11, color: "#888", textTransform: "uppercase", letterSpacing: 0.5 }}>Fecha de aceptación</div>
+                    <div style={{ fontSize: 14, fontWeight: 600 }}>{fmt(acceptance.accepted_at || quote.measurement_client_accepted_at)}</div>
+                  </div>
+                </div>
+              ) : (
+                <div style={{ fontSize: 13, color: "#666" }}>Link enviado el {fmt(quote.measurement_share_enabled_at)}</div>
+              )}
+            </div>
+          );
+        })()}
       </SectionCard>
 
       <div className="spacer" />

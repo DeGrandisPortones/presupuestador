@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { listPortonesEstado } from "../../api/quotes.js";
@@ -169,6 +169,59 @@ function formatDate(iso) {
   }
 }
 
+function formatDateTime(iso) {
+  if (!iso) return "—";
+  try {
+    return new Date(iso).toLocaleString("es-AR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
+  } catch {
+    return "—";
+  }
+}
+
+function buildClientAcceptanceUrl(token) {
+  if (!token) return null;
+  return `${window.location.origin}/aceptacion-cliente/${token}`;
+}
+
+function LinkPopup({ url, onClose }) {
+  const [copied, setCopied] = useState(false);
+  const ref = useRef(null);
+
+  useEffect(() => {
+    function handleClick(e) {
+      if (ref.current && !ref.current.contains(e.target)) onClose();
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [onClose]);
+
+  function handleCopy() {
+    navigator.clipboard.writeText(url).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  }
+
+  return (
+    <div ref={ref} style={{
+      position: "absolute", zIndex: 100, background: "#fff", border: "1px solid #ddd",
+      borderRadius: 8, boxShadow: "0 4px 16px rgba(0,0,0,0.15)", padding: "14px 16px",
+      minWidth: 340, maxWidth: 480, right: 0, top: "calc(100% + 4px)",
+    }}>
+      <div style={{ fontSize: 12, color: "#888", marginBottom: 6 }}>Link de aceptación del cliente:</div>
+      <div style={{ fontSize: 12, wordBreak: "break-all", background: "#f5f5f5", padding: "6px 8px", borderRadius: 4, color: "#333", marginBottom: 10 }}>
+        {url}
+      </div>
+      <button
+        onClick={handleCopy}
+        style={{ padding: "5px 14px", borderRadius: 6, border: "1px solid #ccc", background: copied ? "#e8f5e9" : "#fff", cursor: "pointer", fontSize: 13, fontWeight: 600, color: copied ? "#1b5e20" : "#333" }}
+      >
+        {copied ? "✓ Copiado" : "Copiar link"}
+      </button>
+    </div>
+  );
+}
+
 export default function PortonesEstadoPage() {
   const navigate = useNavigate();
   const user = useAuthStore((s) => s.user);
@@ -176,6 +229,7 @@ export default function PortonesEstadoPage() {
 
   const [filterColor, setFilterColor] = useState("all");
   const [search, setSearch] = useState("");
+  const [linkPopupId, setLinkPopupId] = useState(null);
 
   const q = useQuery({
     queryKey: ["portones_estado"],
@@ -289,40 +343,75 @@ export default function PortonesEstadoPage() {
                 <th style={thStyle}>Cliente</th>
                 <th style={thStyle}>Vendedor / Distribuidor</th>
                 <th style={thStyle}>Estado</th>
+                <th style={thStyle}>Aceptación del cliente</th>
                 <th style={thStyle}>Actualizado</th>
               </tr>
             </thead>
             <tbody>
               {filtered.length === 0 && (
                 <tr>
-                  <td colSpan={5} style={{ textAlign: "center", padding: "24px 16px", color: "#888" }}>
+                  <td colSpan={6} style={{ textAlign: "center", padding: "24px 16px", color: "#888" }}>
                     No hay portones que coincidan con el filtro.
                   </td>
                 </tr>
               )}
-              {filtered.map((r) => (
-                <tr
-                  key={r.id}
-                  style={{ borderBottom: "1px solid #f0f0f0", transition: "background 0.15s" }}
-                  onMouseEnter={(e) => { e.currentTarget.style.background = "#fafafa"; }}
-                  onMouseLeave={(e) => { e.currentTarget.style.background = ""; }}
-                >
-                  <td style={tdStyle}>
-                    <span style={{ fontWeight: 700, color: "#333" }}>{r.displayRef}</span>
-                  </td>
-                  <td style={tdStyle}>{r.customerName}</td>
-                  <td style={tdStyle}>{r.sellerName}</td>
-                  <td style={tdStyle}>
-                    <StatusBadge color={r.statusInfo.color} label={r.statusInfo.label} />
-                    {r.measurement_share_enabled_at && !r.measurement_client_accepted_at && r.final_status !== "synced_odoo" && (
-                      <DaysBadge days={daysSince(r.measurement_review_at)} />
-                    )}
-                  </td>
-                  <td style={{ ...tdStyle, color: "#888", fontSize: 13 }}>
-                    {formatDate(r.updated_at)}
-                  </td>
-                </tr>
-              ))}
+              {filtered.map((r) => {
+                const acceptanceUrl = r.measurement_share_token ? buildClientAcceptanceUrl(r.measurement_share_token) : null;
+                const acceptance = r.measurement_client_acceptance;
+                const showLinkPopup = linkPopupId === r.id;
+                return (
+                  <tr
+                    key={r.id}
+                    style={{ borderBottom: "1px solid #f0f0f0", transition: "background 0.15s" }}
+                    onMouseEnter={(e) => { e.currentTarget.style.background = "#fafafa"; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.background = ""; }}
+                  >
+                    <td style={tdStyle}>
+                      <span style={{ fontWeight: 700, color: "#333" }}>{r.displayRef}</span>
+                    </td>
+                    <td style={tdStyle}>{r.customerName}</td>
+                    <td style={tdStyle}>{r.sellerName}</td>
+                    <td style={tdStyle}>
+                      <StatusBadge color={r.statusInfo.color} label={r.statusInfo.label} />
+                      {r.measurement_share_enabled_at && !r.measurement_client_accepted_at && r.final_status !== "synced_odoo" && (
+                        <DaysBadge days={daysSince(r.measurement_review_at)} />
+                      )}
+                    </td>
+                    <td style={{ ...tdStyle, position: "relative" }}>
+                      {acceptanceUrl && (
+                        <div style={{ marginBottom: acceptance ? 8 : 0 }}>
+                          <button
+                            onClick={() => setLinkPopupId(showLinkPopup ? null : r.id)}
+                            style={{
+                              padding: "3px 10px", borderRadius: 6, border: "1px solid #90caf9",
+                              background: "#e3f2fd", color: "#0d47a1", cursor: "pointer", fontSize: 12, fontWeight: 600,
+                            }}
+                          >
+                            🔗 Ver link
+                          </button>
+                          {showLinkPopup && (
+                            <LinkPopup url={acceptanceUrl} onClose={() => setLinkPopupId(null)} />
+                          )}
+                        </div>
+                      )}
+                      {acceptance ? (
+                        <div style={{ fontSize: 12, color: "#333" }}>
+                          <div style={{ fontWeight: 600 }}>{acceptance.full_name || "—"}</div>
+                          <div style={{ color: "#666" }}>DNI: {acceptance.dni || "—"}</div>
+                          <div style={{ color: "#888" }}>{formatDateTime(acceptance.accepted_at || r.measurement_client_accepted_at)}</div>
+                        </div>
+                      ) : r.measurement_share_enabled_at ? (
+                        <div style={{ fontSize: 12, color: "#999", fontStyle: "italic" }}>Pendiente de aceptación</div>
+                      ) : (
+                        <span style={{ color: "#ccc" }}>—</span>
+                      )}
+                    </td>
+                    <td style={{ ...tdStyle, color: "#888", fontSize: 13 }}>
+                      {formatDate(r.updated_at)}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>

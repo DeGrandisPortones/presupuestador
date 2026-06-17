@@ -1932,6 +1932,8 @@ export function buildQuotesRouter(odoo) {
                       q.status, q.commercial_decision, q.technical_decision,
                       q.measurement_status, q.requires_measurement, q.measurement_review_at,
                       q.measurement_share_enabled_at, q.measurement_client_accepted_at,
+                      q.measurement_share_token,
+                      q.payload->'measurement_client_acceptance' as measurement_client_acceptance,
                       q.measurement_commercial_review_required, q.measurement_commercial_review_status,
                       q.fulfillment_mode, q.final_status, q.final_technical_decision, q.final_logistics_decision,
                       q.acopio_to_produccion_status, q.catalog_kind,
