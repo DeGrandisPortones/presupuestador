@@ -713,11 +713,14 @@ function round2ForApproval(value) {
 
 function getQuoteBaseSubtotalForApproval(quote) {
   const lines = Array.isArray(quote?.lines) ? quote.lines : [];
-  return round2ForApproval(lines.reduce((acc, line) => {
+  const linesSubtotal = lines.reduce((acc, line) => {
     const qty = Number(line?.qty || 0) || 0;
     const basePrice = Number(line?.basePrice ?? line?.base_price ?? line?.price ?? 0) || 0;
     return acc + qty * basePrice;
-  }, 0));
+  }, 0);
+  const extraLines = Array.isArray(quote?.payload?.proforma_extra_lines) ? quote.payload.proforma_extra_lines : [];
+  const extraSubtotal = extraLines.reduce((acc, l) => acc + (Number(l?.qty ?? 1)) * (Number(l?.base_price ?? 0)), 0);
+  return round2ForApproval(linesSubtotal + extraSubtotal);
 }
 
 function getQuoteCoefficientAmountForApproval(quote) {
