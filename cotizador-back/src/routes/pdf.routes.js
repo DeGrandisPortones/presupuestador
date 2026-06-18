@@ -301,10 +301,23 @@ async function buildLines(payload, { useBasePrice, odoo, displayNetPrices = fals
     })
     .filter((l) => l.qty > 0);
 
-  const subtotalNet = lines.reduce((acc, l) => acc + l.totalNet, 0);
+  const rawExtraLines = Array.isArray(payload?.payload?.proforma_extra_lines)
+    ? payload.payload.proforma_extra_lines
+    : Array.isArray(payload?.proforma_extra_lines) ? payload.proforma_extra_lines : [];
+  const extraLines = rawExtraLines
+    .filter((l) => l && l.name && Number.isFinite(Number(l.base_price)))
+    .map((l) => {
+      const qty = n2(l?.qty ?? 1);
+      const unitNet = Number(l.base_price);
+      const unit = displayNetPrices ? unitNet : unitNet * (1 + effectiveTaxRate);
+      return { qty, name: String(l.name), unit, total: unit * qty, totalNet: unitNet * qty };
+    });
+
+  const allLines = [...lines, ...extraLines];
+  const subtotalNet = allLines.reduce((acc, l) => acc + l.totalNet, 0);
   const ivaAmount = subtotalNet * effectiveTaxRate;
   const grandTotal = subtotalNet + ivaAmount;
-  return { lines, grandTotal, subtotalNet, ivaAmount, coefPct, taxRate: effectiveTaxRate, displayNetPrices };
+  return { lines: allLines, grandTotal, subtotalNet, ivaAmount, coefPct, taxRate: effectiveTaxRate, displayNetPrices };
 }
 
 function drawPageFrame(doc, margin, pageNo, pageCount, footerLeft = "De Grandis Portones") {

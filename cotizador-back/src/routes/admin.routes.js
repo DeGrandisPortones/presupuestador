@@ -611,6 +611,45 @@ export function buildAdminRouter(odoo) {
     } catch (e) { next(e); }
   });
 
+  // Agrega una línea de ajuste a la proforma de un quote específico para forzar un total determinado
+  router.post("/quote/set-proforma-adjustment", requireAuth, requireSuperuser, async (req, res, next) => {
+    try {
+      const { quote_id, target_total_iva, description = "Ajuste de cambio de sistema", tax_rate = 0.105 } = req.body;
+      if (!quote_id) return res.status(400).json({ ok: false, error: "quote_id requerido" });
+      const targetTotal = Number(target_total_iva);
+      if (!Number.isFinite(targetTotal) || targetTotal <= 0) return res.status(400).json({ ok: false, error: "target_total_iva inválido" });
+
+      const r = await dbQuery(`SELECT * FROM public.presupuestador_quotes WHERE id = $1`, [quote_id]);
+      const quote = r.rows?.[0];
+      if (!quote) return res.status(404).json({ ok: false, error: "Quote no encontrado" });
+
+      const taxRateN = Number(tax_rate) || 0.105;
+      const targetSubtotalNet = targetTotal / (1 + taxRateN);
+
+      const lines = Array.isArray(quote.lines) ? quote.lines : [];
+      const currentSubtotalNet = lines.reduce((sum, l) => {
+        const qty = Number(l?.qty || 0);
+        const basePrice = Number(l?.base_price ?? l?.basePrice ?? l?.base_price_unit ?? l?.price_unit ?? l?.priceUnit ?? l?.price ?? 0);
+        return sum + basePrice * qty;
+      }, 0);
+
+      const adjustmentNet = Math.round((targetSubtotalNet - currentSubtotalNet) * 100) / 100;
+      const currentPayload = (quote.payload && typeof quote.payload === "object") ? quote.payload : {};
+      const newPayload = { ...currentPayload, proforma_extra_lines: [{ name: String(description), base_price: adjustmentNet, qty: 1 }] };
+
+      await dbQuery(`UPDATE public.presupuestador_quotes SET payload = $1::jsonb WHERE id = $2`, [JSON.stringify(newPayload), quote_id]);
+
+      res.json({
+        ok: true,
+        quote_id,
+        currentSubtotalNet: Math.round(currentSubtotalNet * 100) / 100,
+        targetSubtotalNet: Math.round(targetSubtotalNet * 100) / 100,
+        adjustmentNet,
+        expectedTotalWithIva: Math.round((currentSubtotalNet + adjustmentNet) * (1 + taxRateN) * 100) / 100,
+      });
+    } catch (e) { next(e); }
+  });
+
   // Re-dispara el upsert de preproduccion_valores para una NV que no se generó en su momento
   router.post("/resync/preproduccion-valores", requireAuth, requireSuperuser, async (req, res, next) => {
     try {
