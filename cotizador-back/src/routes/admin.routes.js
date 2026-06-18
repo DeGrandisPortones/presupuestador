@@ -650,13 +650,17 @@ export function buildAdminRouter(odoo) {
     } catch (e) { next(e); }
   });
 
-  // Re-dispara el upsert de preproduccion_valores para una NV que no se generó en su momento
+  // Re-dispara el upsert de preproduccion_valores para una NV que no se generó en su momento.
+  // Acepta body: { nv: number, tipo?: 'NV'|'ONV'|'INV'|'PLNV'|'PNV' }
+  // tipo por defecto es 'NV'. El prefijo se usa para construir el nombre de referencia (ej: ONV4121).
   router.post("/resync/preproduccion-valores", requireAuth, requireSuperuser, async (req, res, next) => {
     try {
       const nv = Number(req.body?.nv || 0);
       if (!Number.isInteger(nv) || nv <= 0) return res.status(400).json({ ok: false, error: "nv inválido" });
 
-      const nvStr = `NV${nv}`;
+      const VALID_TIPOS = ["NV", "ONV", "INV", "PLNV", "PNV"];
+      const nvTipo = VALID_TIPOS.includes(String(req.body?.tipo || "NV").toUpperCase()) ? String(req.body.tipo).toUpperCase() : "NV";
+      const nvStr = `${nvTipo}${nv}`;
 
       // Buscar el quote original (puede tener la NV en final_sale_order_name u odoo_sale_order_name)
       const origR = await dbQuery(
@@ -671,7 +675,7 @@ export function buildAdminRouter(odoo) {
 
       // Intentar primero por la función normal (requiere copy quote con NV)
       const normalResult = await triggerPreproductionForClientAcceptance(null, originalQuote);
-      if (normalResult?.ok) return res.json({ ok: true, nv, method: "normal", result: normalResult });
+      if (normalResult?.ok) return res.json({ ok: true, nv, nv_tipo: nvTipo, method: "normal", result: normalResult });
 
       // Fallback: upsert directo usando los datos del original + copy si existe
       const copyR = await dbQuery(
@@ -684,22 +688,38 @@ export function buildAdminRouter(odoo) {
 
       const sourcePayload = (originalQuote.payload && typeof originalQuote.payload === "object") ? originalQuote.payload : {};
       const copyPayload = (copyQuote?.payload && typeof copyQuote.payload === "object") ? copyQuote.payload : {};
-      const data = { ...sourcePayload, ...copyPayload, NV: nv, nv, referencia_nv: nvStr };
+      const data = { ...sourcePayload, ...copyPayload, NV: nv, nv, nv_tipo: nvTipo, referencia_nv: nvStr };
 
       const rawLines = Array.isArray(copyQuote?.lines) ? copyQuote.lines : (Array.isArray(originalQuote?.lines) ? originalQuote.lines : []);
       const nvLines = rawLines
         .filter((l) => l && (l.name || l.raw_name))
         .map((l) => ({ name: String(l.name || ""), raw_name: String(l.raw_name || ""), qty: Number(l.qty || 0) || 0 }));
 
-      const upsertR = await dbQuery(
-        `INSERT INTO public.preproduccion_valores (id, nv, data, nv_lines)
-         VALUES ($1, $1, $2::jsonb, $3::jsonb)
-         ON CONFLICT (nv) DO UPDATE SET data = EXCLUDED.data, nv_lines = EXCLUDED.nv_lines, updated_at = now()
-         RETURNING id, nv, updated_at`,
-        [nv, JSON.stringify(data), JSON.stringify(nvLines)],
-      );
+      let upsertRow;
+      if (nvTipo === "INV") {
+        const toDateOrNull = (v) => { const s = String(v || "").trim(); if (!s) return null; const d = new Date(s); return Number.isFinite(d.getTime()) ? d.toISOString().slice(0, 10) : null; };
+        const r = await dbQuery(
+          `INSERT INTO public.preproduccion_valores_ipanels
+             (partida, nv, source, fecha_nv, fecha_plan_entrega, descripcion, data)
+           VALUES ($1, $2, 'Presupuestador', $3, $4, $5, $6::jsonb)
+           ON CONFLICT (partida)
+           DO UPDATE SET nv = excluded.nv, source = excluded.source, descripcion = excluded.descripcion, data = excluded.data, updated_at = now()
+           RETURNING id, partida, updated_at`,
+          [nv, nv, toDateOrNull(data?.fecha_nv), toDateOrNull(data?.fecha_plan_entrega), String(data?.descripcion || data?.producto_descripcion || "") || null, JSON.stringify(data)],
+        );
+        upsertRow = r.rows?.[0];
+      } else {
+        const r = await dbQuery(
+          `INSERT INTO public.preproduccion_valores (nv, nv_tipo, data, nv_lines)
+           VALUES ($1, $2, $3::jsonb, $4::jsonb)
+           ON CONFLICT (nv, nv_tipo) DO UPDATE SET data = EXCLUDED.data, nv_lines = EXCLUDED.nv_lines, updated_at = now()
+           RETURNING id, nv, nv_tipo, updated_at`,
+          [nv, nvTipo, JSON.stringify(data), JSON.stringify(nvLines)],
+        );
+        upsertRow = r.rows?.[0];
+      }
 
-      res.json({ ok: true, nv, method: "fallback_direct", row: upsertR.rows?.[0] });
+      res.json({ ok: true, nv, nv_tipo: nvTipo, method: "fallback_direct", row: upsertRow });
     } catch (e) { next(e); }
   });
 

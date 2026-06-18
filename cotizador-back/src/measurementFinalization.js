@@ -11,6 +11,10 @@ import {
   applyProductionPropertyAssignments,
   buildSectionSourceKey,
 } from "./productionPropertyAssignments.js";
+import {
+  getIpanelPropertyAssignmentsMap,
+  applyIpanelPropertyAssignments,
+} from "./ipanelPropertyAssignments.js";
 import { loadCatalogBootstrap } from "./catalogBootstrap.js";
 
 const PLACEHOLDER_PRODUCT_ID = Number(
@@ -130,6 +134,12 @@ function extractNvInteger(value) {
   const digits = onlyDigits(value);
   const n = Number(digits);
   return Number.isFinite(n) && n > 0 ? Math.trunc(n) : null;
+}
+function extractNvTipo(value) {
+  const match = String(value || "").trim().match(/^([A-Za-z]+)\d/);
+  if (!match) return "NV";
+  const prefix = match[1].toUpperCase();
+  return ["INV", "ONV", "PLNV", "PNV"].includes(prefix) ? prefix : "NV";
 }
 function formatPortonTypeLabel(value) {
   return String(value || "")
@@ -486,22 +496,67 @@ async function upsertPreproduccionValoresForNv({ originalQuote, sourceQuote, rev
       qty: Number(l.qty || 0) || 0,
     }));
 
+  const nvTipo = extractNvTipo(basePayload?.referencia_nv);
+
+  if (nvTipo === "INV") {
+    // Aplicar asignaciones de propiedades para INV
+    const ipanelAssignmentsMap = await getIpanelPropertyAssignmentsMap();
+    const mappedFromPresupuestador = applyIpanelPropertyAssignments(finalPayload, ipanelAssignmentsMap);
+    const ipanelPayload = { ...finalPayload, ...mappedFromPresupuestador };
+
+    // INV va a preproduccion_valores_ipanels, no a preproduccion_valores
+    const toDateOrNull = (v) => {
+      const s = String(v || "").trim();
+      if (!s) return null;
+      const d = new Date(s);
+      return Number.isFinite(d.getTime()) ? d.toISOString().slice(0, 10) : null;
+    };
+    const fechaNv = toDateOrNull(ipanelPayload?.fecha_nv);
+    const fechaPlanEntrega = toDateOrNull(ipanelPayload?.fecha_plan_entrega);
+    const descripcion = toText(ipanelPayload?.descripcion || ipanelPayload?.producto_descripcion) || null;
+
+    const q = await dbQuery(
+      `insert into public.preproduccion_valores_ipanels
+         (partida, nv, source, fecha_nv, fecha_plan_entrega, descripcion, data)
+       values ($1, $2, 'Presupuestador', $3, $4, $5, $6::jsonb)
+       on conflict (partida)
+       do update set
+         nv          = excluded.nv,
+         source      = excluded.source,
+         descripcion = excluded.descripcion,
+         data        = excluded.data,
+         updated_at  = now()
+       returning id, partida, updated_at`,
+      [nv, nv, fechaNv, fechaPlanEntrega, descripcion, JSON.stringify(ipanelPayload)],
+    );
+
+    return {
+      ok: true,
+      id: q.rows?.[0]?.id ?? null,
+      nv: q.rows?.[0]?.partida ?? nv,
+      nv_tipo: "INV",
+      updated_at: q.rows?.[0]?.updated_at || null,
+      table: "preproduccion_valores_ipanels",
+    };
+  }
+
   const q = await dbQuery(
-    `insert into public.preproduccion_valores (id, nv, data, nv_lines)
+    `insert into public.preproduccion_valores (nv, nv_tipo, data, nv_lines)
      values ($1, $2, $3::jsonb, $4::jsonb)
-     on conflict (nv)
+     on conflict (nv, nv_tipo)
      do update set
        data = excluded.data,
        nv_lines = excluded.nv_lines,
        updated_at = now()
-     returning id, nv, updated_at`,
-    [nv, nv, JSON.stringify(finalPayload), JSON.stringify(nvLines)],
+     returning id, nv, nv_tipo, updated_at`,
+    [nv, nvTipo, JSON.stringify(finalPayload), JSON.stringify(nvLines)],
   );
 
   return {
     ok: true,
-    id: q.rows?.[0]?.id ?? nv,
+    id: q.rows?.[0]?.id ?? null,
     nv: q.rows?.[0]?.nv ?? nv,
+    nv_tipo: q.rows?.[0]?.nv_tipo ?? nvTipo,
     updated_at: q.rows?.[0]?.updated_at || null,
   };
 }
