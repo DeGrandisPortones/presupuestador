@@ -344,7 +344,7 @@ export default function PortonesEstadoPage() {
       {q.isError && <div className="card" style={{ color: "red" }}>Error: {q.error?.message}</div>}
 
       {!q.isLoading && !q.isError && (
-        <div className="card" style={{ padding: 0, overflow: "hidden" }}>
+        <div className="card" style={{ padding: 0, overflow: "visible" }}>
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead>
               <tr style={{ background: "#f5f5f5", borderBottom: "2px solid #e0e0e0" }}>
