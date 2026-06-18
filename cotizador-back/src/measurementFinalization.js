@@ -515,14 +515,23 @@ async function upsertPreproduccionValoresForNv({ originalQuote, sourceQuote, rev
     const fechaPlanEntrega = toDateOrNull(ipanelPayload?.fecha_plan_entrega);
     const descripcion = toText(ipanelPayload?.descripcion || ipanelPayload?.producto_descripcion) || null;
 
-    // Resolve DescripcionSimple: from assignment mapping, else auto-detect, else ALUMINIO for ipanel catalog
+    // Resolve DescripcionSimple: from assignment mapping, else from product lines, else ALUMINIO default
     let descripcionSimple = toText(ipanelPayload?.DescripcionSimple ?? ipanelPayload?.descripcion_simple) || null;
     if (!descripcionSimple) {
-      const descUp = toText(descripcion || "").toUpperCase();
-      if (descUp.includes("MADERA")) descripcionSimple = "MADERA";
-      else if (descUp.includes("PINTURA")) descripcionSimple = "PINTURA";
-      else if (descUp.includes("ALUMINIO")) descripcionSimple = "ALUMINIO";
-      else if (String(ipanelPayload?.catalog_kind || "").toLowerCase() === "ipanel") descripcionSimple = "ALUMINIO";
+      const ipanelLines = Array.isArray(ipanelPayload?.lines) ? ipanelPayload.lines : [];
+      const PRODUCT_ID_MADERA = 4060;
+      const PRODUCT_ID_ALUMINIO = 4059;
+      const hasMaderaById = ipanelLines.some((l) => Number(l?.product_id) === PRODUCT_ID_MADERA);
+      const hasAluminioById = ipanelLines.some((l) => Number(l?.product_id) === PRODUCT_ID_ALUMINIO);
+      if (hasMaderaById) descripcionSimple = "MADERA";
+      else if (hasAluminioById) descripcionSimple = "ALUMINIO";
+      else {
+        // Fallback: scan line names for keywords
+        const lineNames = ipanelLines.map((l) => toText(l?.name || l?.raw_name).toUpperCase()).join(" ");
+        if (lineNames.includes("MADERA")) descripcionSimple = "MADERA";
+        else if (lineNames.includes("ALUMINIO")) descripcionSimple = "ALUMINIO";
+        else descripcionSimple = "ALUMINIO"; // default for ipanel catalog_kind
+      }
     }
 
     const q = await dbQuery(

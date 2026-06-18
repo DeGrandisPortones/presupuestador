@@ -701,11 +701,17 @@ export function buildAdminRouter(odoo) {
         const _adminDescripcion = String(data?.descripcion || data?.producto_descripcion || "") || null;
         let _adminDescripcionSimple = String(data?.DescripcionSimple || data?.descripcion_simple || "").toUpperCase() || null;
         if (!_adminDescripcionSimple) {
-          const _du = String(_adminDescripcion || "").toUpperCase();
-          if (_du.includes("MADERA")) _adminDescripcionSimple = "MADERA";
-          else if (_du.includes("PINTURA")) _adminDescripcionSimple = "PINTURA";
-          else if (_du.includes("ALUMINIO")) _adminDescripcionSimple = "ALUMINIO";
-          else if (String(data?.catalog_kind || "").toLowerCase() === "ipanel") _adminDescripcionSimple = "ALUMINIO";
+          const _lines = Array.isArray(data?.lines) ? data.lines : [];
+          const _hasMadera = _lines.some((l) => Number(l?.product_id) === 4060);
+          const _hasAluminio = _lines.some((l) => Number(l?.product_id) === 4059);
+          if (_hasMadera) _adminDescripcionSimple = "MADERA";
+          else if (_hasAluminio) _adminDescripcionSimple = "ALUMINIO";
+          else {
+            const _lineNames = _lines.map((l) => String(l?.name || l?.raw_name || "").toUpperCase()).join(" ");
+            if (_lineNames.includes("MADERA")) _adminDescripcionSimple = "MADERA";
+            else if (_lineNames.includes("ALUMINIO")) _adminDescripcionSimple = "ALUMINIO";
+            else _adminDescripcionSimple = "ALUMINIO";
+          }
         }
         const r = await dbQuery(
           `INSERT INTO public.preproduccion_valores_ipanels
