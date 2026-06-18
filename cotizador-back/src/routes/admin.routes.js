@@ -698,14 +698,25 @@ export function buildAdminRouter(odoo) {
       let upsertRow;
       if (nvTipo === "INV") {
         const toDateOrNull = (v) => { const s = String(v || "").trim(); if (!s) return null; const d = new Date(s); return Number.isFinite(d.getTime()) ? d.toISOString().slice(0, 10) : null; };
+        const _adminDescripcion = String(data?.descripcion || data?.producto_descripcion || "") || null;
+        let _adminDescripcionSimple = String(data?.DescripcionSimple || data?.descripcion_simple || "").toUpperCase() || null;
+        if (!_adminDescripcionSimple) {
+          const _du = String(_adminDescripcion || "").toUpperCase();
+          if (_du.includes("MADERA")) _adminDescripcionSimple = "MADERA";
+          else if (_du.includes("PINTURA")) _adminDescripcionSimple = "PINTURA";
+          else if (_du.includes("ALUMINIO")) _adminDescripcionSimple = "ALUMINIO";
+          else if (String(data?.catalog_kind || "").toLowerCase() === "ipanel") _adminDescripcionSimple = "ALUMINIO";
+        }
         const r = await dbQuery(
           `INSERT INTO public.preproduccion_valores_ipanels
-             (partida, nv, source, fecha_nv, fecha_plan_entrega, descripcion, data)
-           VALUES ($1, $2, 'Presupuestador', $3, $4, $5, $6::jsonb)
+             (partida, nv, source, fecha_nv, fecha_plan_entrega, descripcion, descripcion_simple, data)
+           VALUES ($1, $2, 'Presupuestador', $3, $4, $5, $6, $7::jsonb)
            ON CONFLICT (partida)
-           DO UPDATE SET nv = excluded.nv, source = excluded.source, descripcion = excluded.descripcion, data = excluded.data, updated_at = now()
+           DO UPDATE SET nv = excluded.nv, source = excluded.source, descripcion = excluded.descripcion,
+             descripcion_simple = coalesce(excluded.descripcion_simple, preproduccion_valores_ipanels.descripcion_simple),
+             data = excluded.data, updated_at = now()
            RETURNING id, partida, updated_at`,
-          [nv, nv, toDateOrNull(data?.fecha_nv), toDateOrNull(data?.fecha_plan_entrega), String(data?.descripcion || data?.producto_descripcion || "") || null, JSON.stringify(data)],
+          [nv, nv, toDateOrNull(data?.fecha_nv), toDateOrNull(data?.fecha_plan_entrega), _adminDescripcion, _adminDescripcionSimple, JSON.stringify(data)],
         );
         upsertRow = r.rows?.[0];
       } else {

@@ -515,19 +515,30 @@ async function upsertPreproduccionValoresForNv({ originalQuote, sourceQuote, rev
     const fechaPlanEntrega = toDateOrNull(ipanelPayload?.fecha_plan_entrega);
     const descripcion = toText(ipanelPayload?.descripcion || ipanelPayload?.producto_descripcion) || null;
 
+    // Resolve DescripcionSimple: from assignment mapping, else auto-detect, else ALUMINIO for ipanel catalog
+    let descripcionSimple = toText(ipanelPayload?.DescripcionSimple ?? ipanelPayload?.descripcion_simple) || null;
+    if (!descripcionSimple) {
+      const descUp = toText(descripcion || "").toUpperCase();
+      if (descUp.includes("MADERA")) descripcionSimple = "MADERA";
+      else if (descUp.includes("PINTURA")) descripcionSimple = "PINTURA";
+      else if (descUp.includes("ALUMINIO")) descripcionSimple = "ALUMINIO";
+      else if (String(ipanelPayload?.catalog_kind || "").toLowerCase() === "ipanel") descripcionSimple = "ALUMINIO";
+    }
+
     const q = await dbQuery(
       `insert into public.preproduccion_valores_ipanels
-         (partida, nv, source, fecha_nv, fecha_plan_entrega, descripcion, data)
-       values ($1, $2, 'Presupuestador', $3, $4, $5, $6::jsonb)
+         (partida, nv, source, fecha_nv, fecha_plan_entrega, descripcion, descripcion_simple, data)
+       values ($1, $2, 'Presupuestador', $3, $4, $5, $6, $7::jsonb)
        on conflict (partida)
        do update set
-         nv          = excluded.nv,
-         source      = excluded.source,
-         descripcion = excluded.descripcion,
-         data        = excluded.data,
-         updated_at  = now()
+         nv                = excluded.nv,
+         source            = excluded.source,
+         descripcion       = excluded.descripcion,
+         descripcion_simple = coalesce(excluded.descripcion_simple, preproduccion_valores_ipanels.descripcion_simple),
+         data              = excluded.data,
+         updated_at        = now()
        returning id, partida, updated_at`,
-      [nv, nv, fechaNv, fechaPlanEntrega, descripcion, JSON.stringify(ipanelPayload)],
+      [nv, nv, fechaNv, fechaPlanEntrega, descripcion, descripcionSimple, JSON.stringify(ipanelPayload)],
     );
 
     return {
