@@ -187,8 +187,12 @@ export async function buildBudgetExtraSummaryLines(payload) {
 
   const lines = [];
   const sellerDimensionsLine = buildSellerDimensionsLine(quote);
-  const alto = formatMm(calculated?.alto_paso_mm || calculated?.alto_calculado_mm);
-  const ancho = formatMm(calculated?.ancho_paso_mm || calculated?.ancho_calculado_mm);
+  // Usar las medidas de paso guardadas por el frontend (que el usuario ve), con fallback al cálculo propio
+  const dims = quote?.payload?.dimensions || {};
+  const storedAnchoMm = Number(dims?.paso_ancho_mm || dims?.medidas_paso_ancho_mm || 0);
+  const storedAltoMm = Number(dims?.paso_alto_mm || dims?.medidas_paso_alto_mm || 0);
+  const ancho = formatMm(storedAnchoMm > 0 ? storedAnchoMm : (calculated?.ancho_paso_mm || calculated?.ancho_calculado_mm));
+  const alto = formatMm(storedAltoMm > 0 ? storedAltoMm : (calculated?.alto_paso_mm || calculated?.alto_calculado_mm));
   const peso = formatKg(calculated?.peso_estimado_kg);
   const piernas = formatPiernas(calculated?.piernas_tipo);
 
