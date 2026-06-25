@@ -207,6 +207,15 @@ export async function ensureQuotesMeasurementColumns() {
        and status in ('pending_approvals', 'synced_odoo', 'syncing_odoo')
   `);
 
+  // One-time: la puerta vinculada al portón NP3994 recibió PNP5981 por error de secuencia.
+  // Se corrige a PNP3994 para que la NV futura quede como PNV3994.
+  await dbQuery(`
+    update public.presupuestador_quotes
+       set odoo_sale_order_name = 'PNP3994'
+     where odoo_sale_order_name = 'PNP5981'
+       and catalog_kind = 'puerta'
+  `);
+
   await ensureSettingsTable();
   ensured = true;
 }

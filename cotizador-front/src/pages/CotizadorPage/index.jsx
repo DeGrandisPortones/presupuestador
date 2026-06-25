@@ -650,14 +650,16 @@ function isPortonQuoteForLink(quote = {}) {
 }
 function buildLinkedPortonPayload(linkedPorton, linkedPortonId) {
   if (!linkedPortonId) return null;
-  const reference = linkedPortonReferenceLabel(linkedPorton);
+  // Solo guardamos referencia NP/NV (no el número de presupuesto) para que la lógica
+  // de bloqueo del backend funcione correctamente cuando el portón aún no tiene NP/NV.
+  const npNvReference = linkedPorton?.odoo_sale_order_name || linkedPorton?.final_sale_order_name || "";
   return {
     linked_porton_quote_id: linkedPorton?.id || linkedPortonId,
     linked_porton_quote_number: linkedPorton?.quote_number || "",
-    linked_porton_reference: reference,
+    linked_porton_reference: npNvReference,
     linked_porton_odoo_sale_order_name: linkedPorton?.odoo_sale_order_name || "",
     linked_porton_final_sale_order_name: linkedPorton?.final_sale_order_name || "",
-    linked_porton_reference_core: extractReferenceCore(reference || linkedPorton?.quote_number || ""),
+    linked_porton_reference_core: extractReferenceCore(npNvReference),
   };
 }
 
@@ -678,7 +680,8 @@ function extractLinkedPortonPayloadFromQuote(quote) {
 }
 function buildSubQuoteDisplayReferenceFromPayload(kind, payload) {
   const p = payload && typeof payload === "object" ? payload : {};
-  const core = extractReferenceCore(p.linked_porton_reference || p.linked_porton_odoo_sale_order_name || p.linked_porton_final_sale_order_name || p.linked_porton_quote_number || p.linked_porton_reference_core || "");
+  // Solo usamos campos que contienen referencia NP/NV real (no quote_number ni reference que pueden ser n° de presupuesto).
+  const core = extractReferenceCore(p.linked_porton_odoo_sale_order_name || p.linked_porton_final_sale_order_name || p.linked_porton_reference_core || "");
   if (!core) return "";
   const normalizedKind = normalizeCatalogKind(kind);
   if (normalizedKind === "ipanel") return `INP${core}`;
@@ -690,8 +693,9 @@ function buildSubQuoteDisplayReferenceFromPayload(kind, payload) {
 
 function buildSubQuoteDisplayReference(kind, linkedPorton) {
   const normalizedKind = normalizeCatalogKind(kind);
-  const reference = linkedPortonReferenceLabel(linkedPorton);
-  const core = extractReferenceCore(reference || linkedPorton?.quote_number || "");
+  // Solo tomamos la NP/NV del portón, nunca el número de presupuesto.
+  const reference = linkedPorton?.odoo_sale_order_name || linkedPorton?.final_sale_order_name || "";
+  const core = extractReferenceCore(reference);
   if (!core) return "";
   if (normalizedKind === "ipanel") return `INP${core}`;
   if (normalizedKind === "plegados") return `PLNP${core}`;

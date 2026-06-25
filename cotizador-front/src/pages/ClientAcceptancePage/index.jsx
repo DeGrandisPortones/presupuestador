@@ -552,13 +552,13 @@ export default function ClientAcceptancePage() {
         <MeasurementSchemeVisual form={form} />
         <div className="spacer" />
         <Row>
-          <StaticField label="Alto final" value={formatMm(form?.alto_final_mm || technicalSummary.alto_calculado_mm)} />
           <StaticField label="Ancho final" value={formatMm(form?.ancho_final_mm || technicalSummary.ancho_calculado_mm)} />
+          <StaticField label="Alto final" value={formatMm(form?.alto_final_mm || technicalSummary.alto_calculado_mm)} />
           <StaticField label="Cantidad de parantes" value={text(form?.cantidad_parantes)} />
         </Row>
         <div className="spacer" />
         <Row>
-          <StaticField label="Medidas de paso" value={technicalSummary.alto_paso_mm && technicalSummary.ancho_paso_mm ? `${formatMm(technicalSummary.alto_paso_mm)} x ${formatMm(technicalSummary.ancho_paso_mm)}` : ""} />
+          <StaticField label="Medidas de paso" value={technicalSummary.alto_paso_mm && technicalSummary.ancho_paso_mm ? `${formatMm(technicalSummary.ancho_paso_mm)} x ${formatMm(technicalSummary.alto_paso_mm)}` : ""} />
           <StaticField label="Peso aproximado" value={formatKg(technicalSummary.peso_estimado_kg)} />
           <StaticField label="Tipo de piernas" value={formatPiernas(technicalSummary.piernas_tipo)} />
         </Row>

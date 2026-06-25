@@ -92,11 +92,11 @@ function normalizeFreeQty(value) {
   if (!Number.isFinite(n)) return 0;
   return Math.max(0, round2(n));
 }
-function normalizeEditableQty({ productId, qty, surfaceQuantity = false, freeQuantity = false }) {
+function normalizeEditableQty({ productId, qty, surfaceQuantity = false, freeQuantity = false, lockedLine = false }) {
   if (surfaceQuantity || freeQuantity) {
     return normalizeFreeQty(qty);
   }
-  if (isIntegerQtyProductId(productId)) {
+  if (lockedLine || isIntegerQtyProductId(productId)) {
     return normalizeIntegerQty(qty);
   }
   return 1;
@@ -116,7 +116,7 @@ function syncSurfaceLines(lines, dimensions) {
       if (isFreeQuantityLine(line)) {
         return { ...line, qty: normalizeFreeQty(line?.qty) };
       }
-      if (isIntegerQtyProductId(line?.product_id)) {
+      if (line?.locked_line || isIntegerQtyProductId(line?.product_id)) {
         return { ...line, qty: normalizeIntegerQty(line?.qty) };
       }
       return { ...line, qty: 1 };
@@ -264,6 +264,7 @@ export const useQuoteStore = create((set, get) => ({
             qty: l.qty || 1,
             surfaceQuantity: !!l.surface_quantity,
             freeQuantity,
+            lockedLine: !!l.locked_line,
           }),
           basePrice: Number(l.basePrice ?? l.base_price ?? l.price ?? 0) || 0,
           auto_system_item: !!l.auto_system_item,
@@ -581,6 +582,7 @@ export const useQuoteStore = create((set, get) => ({
             qty: l.qty,
             surfaceQuantity: !!l.surface_quantity,
             freeQuantity,
+            lockedLine: !!l.locked_line,
           }),
           name: l.name,
           raw_name: l.raw_name || null,

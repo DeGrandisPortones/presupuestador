@@ -1112,7 +1112,7 @@ async function getLinkedPortonReferenceCore(quote) {
     if (core) return core;
   }
 
-  const explicitCore = extractOdooReferenceCore(payload.linked_porton_reference_core, { allowBareNumber: true });
+  const explicitCore = extractOdooReferenceCore(payload.linked_porton_reference_core);
   if (explicitCore) return explicitCore;
 
   const linkedQuoteId = toText(payload.linked_porton_quote_id || payload.porton_quote_id || "");
@@ -2295,6 +2295,8 @@ export function buildQuotesRouter(odoo) {
         // Only reset to pending_approvals if Odoo did NOT create an order.
         // If odoo_sale_order_id was already written, keep synced_odoo to prevent a duplicate sync on retry.
         await dbQuery(`update public.presupuestador_quotes set status='pending_approvals', rejection_notes = concat_ws(E'\n', nullif(rejection_notes,''), 'SYNC ERROR: ' || $2) where id=$1 and status='syncing_odoo' and odoo_sale_order_id is null`, [id, msg]);
+        const isPortonPendingError = /portón vinculado|porton vinculado|Primero debe quedar aprobado/i.test(msg);
+        if (isPortonPendingError) return res.status(400).json({ ok: false, error: msg });
         return res.status(502).json({ ok: false, error: process.env.NODE_ENV === "development" ? `Error al sincronizar a Odoo: ${msg}` : "Error al sincronizar a Odoo. Reintenta." });
       }
     } catch (e) { next(e); }
@@ -2342,6 +2344,8 @@ export function buildQuotesRouter(odoo) {
         // Only reset to pending_approvals if Odoo did NOT create an order.
         // If odoo_sale_order_id was already written, keep synced_odoo to prevent a duplicate sync on retry.
         await dbQuery(`update public.presupuestador_quotes set status='pending_approvals', rejection_notes = concat_ws(E'\n', nullif(rejection_notes,''), 'SYNC ERROR: ' || $2) where id=$1 and status='syncing_odoo' and odoo_sale_order_id is null`, [id, msg]);
+        const isPortonPendingError = /portón vinculado|porton vinculado|Primero debe quedar aprobado/i.test(msg);
+        if (isPortonPendingError) return res.status(400).json({ ok: false, error: msg });
         return res.status(502).json({ ok: false, error: process.env.NODE_ENV === "development" ? `Error al sincronizar a Odoo: ${msg}` : "Error al sincronizar a Odoo. Reintenta." });
       }
     } catch (e) { next(e); }
