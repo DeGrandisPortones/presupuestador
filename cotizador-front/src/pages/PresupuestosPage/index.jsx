@@ -352,8 +352,11 @@ export default function PresupuestosPage() {
 
   // Resetear el filtro de estado si el tipo seleccionado no lo soporta
   useEffect(() => {
-    const portonOnlyFilters = ["acopio", "produccion", "mediciones"];
-    setFilter((prev) => (portonOnlyFilters.includes(prev) && typeFilter !== "porton" ? "all" : prev));
+    setFilter((prev) => {
+      if (prev === "mediciones" && typeFilter !== "porton") return "all";
+      if ((prev === "acopio" || prev === "produccion") && typeFilter === "door") return "all";
+      return prev;
+    });
   }, [typeFilter]);
 
   const rows = useMemo(() => {
@@ -432,11 +435,13 @@ export default function PresupuestosPage() {
           <Button variant={filter === "saved" ? "primary" : "ghost"} onClick={() => setFilter("saved")}>Guardados</Button>
           <Button variant={filter === "pending" ? "primary" : "ghost"} onClick={() => setFilter("pending")}>Pendientes</Button>
           <Button variant={filter === "rejected" ? "primary" : "ghost"} onClick={() => setFilter("rejected")}>Rechazados</Button>
-          {typeFilter === "porton" && <>
+          {typeFilter !== "door" && <>
             <Button variant={filter === "acopio" ? "primary" : "ghost"} onClick={() => setFilter("acopio")}>En Acopio</Button>
             <Button variant={filter === "produccion" ? "primary" : "ghost"} onClick={() => setFilter("produccion")}>En Producción</Button>
-            <Button variant={filter === "mediciones" ? "primary" : "ghost"} onClick={() => setFilter("mediciones")}>En Medición</Button>
           </>}
+          {typeFilter === "porton" && (
+            <Button variant={filter === "mediciones" ? "primary" : "ghost"} onClick={() => setFilter("mediciones")}>En Medición</Button>
+          )}
         </div>
         <input value={searchText} onChange={(e) => setSearchText(e.target.value)} placeholder="Buscar por tipo, cliente, localidad, dirección, teléfono o estado…" style={{ width: "100%", padding: 10, borderRadius: 12, border: "1px solid #ddd" }} />
       </div>
