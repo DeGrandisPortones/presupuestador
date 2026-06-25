@@ -350,6 +350,12 @@ export default function PresupuestosPage() {
   const linkedDoorQuoteIds = useMemo(() => new Set((doorsQ.data || []).map((d) => String(d?.linked_quote_id || "").trim()).filter(Boolean)), [doorsQ.data]);
   useEffect(() => { setPage(1); }, [filter, typeFilter, searchText]);
 
+  // Resetear el filtro de estado si el tipo seleccionado no lo soporta
+  useEffect(() => {
+    const portonOnlyFilters = ["acopio", "produccion", "mediciones"];
+    setFilter((prev) => (portonOnlyFilters.includes(prev) && typeFilter !== "porton" ? "all" : prev));
+  }, [typeFilter]);
+
   const rows = useMemo(() => {
     const quoteRows = (quotesQ.data || []).map((q) => ({
       rowKind: "quote",
@@ -385,8 +391,8 @@ export default function PresupuestosPage() {
     if (filter === "saved") filtered = filtered.filter((item) => (item.rowKind === "door" ? isDoorSaved(item.raw) : isQuoteSaved(item.raw)));
     else if (filter === "pending") filtered = filtered.filter((item) => (item.rowKind === "door" ? isDoorPending(item.raw) : isQuotePending(item.raw)));
     else if (filter === "rejected") filtered = filtered.filter((item) => (item.rowKind === "door" ? isDoorRejected(item.raw) : isQuoteRejected(item.raw)));
-    else if (filter === "acopio") filtered = filtered.filter((item) => item.rowKind === "quote" && item.raw?.fulfillment_mode === "acopio" && item.raw?.status !== "draft" && effectiveQuoteKind(item.raw) === "porton");
-    else if (filter === "produccion") filtered = filtered.filter((item) => item.rowKind === "quote" && item.raw?.fulfillment_mode === "produccion" && item.raw?.status !== "draft" && effectiveQuoteKind(item.raw) === "porton");
+    else if (filter === "acopio") filtered = filtered.filter((item) => item.rowKind === "quote" && item.raw?.fulfillment_mode === "acopio" && item.raw?.status !== "draft");
+    else if (filter === "produccion") filtered = filtered.filter((item) => item.rowKind === "quote" && item.raw?.fulfillment_mode === "produccion" && item.raw?.status !== "draft");
     else if (filter === "mediciones") {
       filtered = filtered.filter((item) => item.rowKind === "quote" && effectiveQuoteKind(item.raw) === "porton").filter((item) => {
         const q = item.raw;
@@ -413,23 +419,24 @@ export default function PresupuestosPage() {
         <h2 style={{ margin: 0 }}>Mis presupuestos</h2>
         <div className="muted">Portones, Ipanel, Otros y puertas, con seguimiento de estados, acopio, producción y mediciones</div>
         <div className="spacer" />
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <Button variant={filter === "all" ? "primary" : "ghost"} onClick={() => setFilter("all")}>Todos</Button>
-          <Button variant={filter === "saved" ? "primary" : "ghost"} onClick={() => setFilter("saved")}>Guardados</Button>
-          <Button variant={filter === "pending" ? "primary" : "ghost"} onClick={() => setFilter("pending")}>Pendientes</Button>
-          <Button variant={filter === "rejected" ? "primary" : "ghost"} onClick={() => setFilter("rejected")}>Rechazados</Button>
-          <Button variant={filter === "acopio" ? "primary" : "ghost"} onClick={() => setFilter("acopio")}>Portones en Acopio</Button>
-          <Button variant={filter === "produccion" ? "primary" : "ghost"} onClick={() => setFilter("produccion")}>Portones en Producción</Button>
-          <Button variant={filter === "mediciones" ? "primary" : "ghost"} onClick={() => setFilter("mediciones")}>Portones en Medición</Button>
-        </div>
-        <div className="spacer" />
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
           <Button variant={typeFilter === "all" ? "primary" : "ghost"} onClick={() => setTypeFilter("all")}>Todos los tipos</Button>
           <Button variant={typeFilter === "porton" ? "primary" : "ghost"} onClick={() => setTypeFilter("porton")}>Portón</Button>
           <Button variant={typeFilter === "ipanel" ? "primary" : "ghost"} onClick={() => setTypeFilter("ipanel")}>Ipanel</Button>
           <Button variant={typeFilter === "plegados" ? "primary" : "ghost"} onClick={() => setTypeFilter("plegados")}>Plegados</Button>
           <Button variant={typeFilter === "otros" ? "primary" : "ghost"} onClick={() => setTypeFilter("otros")}>Otros</Button>
           <Button variant={typeFilter === "door" ? "primary" : "ghost"} onClick={() => setTypeFilter("door")}>Puerta</Button>
+        </div>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
+          <Button variant={filter === "all" ? "primary" : "ghost"} onClick={() => setFilter("all")}>Todos</Button>
+          <Button variant={filter === "saved" ? "primary" : "ghost"} onClick={() => setFilter("saved")}>Guardados</Button>
+          <Button variant={filter === "pending" ? "primary" : "ghost"} onClick={() => setFilter("pending")}>Pendientes</Button>
+          <Button variant={filter === "rejected" ? "primary" : "ghost"} onClick={() => setFilter("rejected")}>Rechazados</Button>
+          {typeFilter === "porton" && <>
+            <Button variant={filter === "acopio" ? "primary" : "ghost"} onClick={() => setFilter("acopio")}>En Acopio</Button>
+            <Button variant={filter === "produccion" ? "primary" : "ghost"} onClick={() => setFilter("produccion")}>En Producción</Button>
+            <Button variant={filter === "mediciones" ? "primary" : "ghost"} onClick={() => setFilter("mediciones")}>En Medición</Button>
+          </>}
         </div>
         <input value={searchText} onChange={(e) => setSearchText(e.target.value)} placeholder="Buscar por tipo, cliente, localidad, dirección, teléfono o estado…" style={{ width: "100%", padding: 10, borderRadius: 12, border: "1px solid #ddd" }} />
       </div>
