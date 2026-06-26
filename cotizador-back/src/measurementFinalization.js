@@ -600,6 +600,12 @@ function getOdooConditionLabel(payload) {
 function calcDetailedUnitWithIva(line, payload, quote = null) {
   // Nombre legacy: este precio unitario es el que se envía a Odoo.
   if (shouldZeroShippingForOdoo(quote, line)) return 0;
+  // Distribuidores: precio base/lista sin margen, sin ajuste.
+  // Si es Condición 2 se incluye el IVA 10,5% en el neto enviado a Odoo.
+  if (isDistributorQuote(quote)) {
+    const base = Number(line?.basePrice ?? line?.base_price ?? line?.price ?? 0) || 0;
+    return round2(base * getOdooConditionPriceFactor(payload || {}));
+  }
   if (typeof line?.price_unit === "number") return round2(line.price_unit);
   if (typeof line?.unit_price === "number") return round2(line.unit_price);
   const base = Number(line?.basePrice ?? line?.base_price ?? line?.price ?? 0) || 0;

@@ -548,12 +548,11 @@ function getLineBasePriceForOdoo(line = {}) {
 function calcOdooUnitPrice(line, payload, quote = null) {
   if (shouldZeroShippingForOdoo(quote, line)) return 0;
 
-  // Distribuidores: cualquier disparo a Odoo debe coincidir con la proforma.
-  // No se manda el precio del presupuesto al cliente: se manda precio base/lista,
-  // sin margen, sin financiacion/ajuste y sin recargo de Condicion 2.
-  // Tambien se ignoran price_unit/unit_price porque pueden venir ya valorizados.
+  // Distribuidores: precio base/lista sin margen, sin financiacion/ajuste.
+  // Se ignoran price_unit/unit_price porque pueden venir ya valorizados.
+  // Si es Condición 2 se incluye el IVA 10,5% en el neto enviado a Odoo.
   if (shouldUseDistributorProformaPricesForOdoo(quote)) {
-    return getLineBasePriceForOdoo(line);
+    return round2(getLineBasePriceForOdoo(line) * getOdooConditionPriceFactor(payload || {}));
   }
 
   if (typeof line?.price_unit === "number") return round2(line.price_unit);
