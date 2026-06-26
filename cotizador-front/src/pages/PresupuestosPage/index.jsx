@@ -400,6 +400,9 @@ export default function PresupuestosPage() {
         return q?.fulfillment_mode === "produccion" && q?.status !== "draft" && q?.requires_measurement === true;
       });
     }
+    else if (filter === "devueltos") {
+      filtered = filtered.filter((item) => item.rowKind === "quote" && isReturnedFromMeasurement(item.raw));
+    }
     if (typeFilter === "porton") filtered = filtered.filter((item) => item.rowKind === "quote" && effectiveQuoteKind(item.raw) === "porton");
     if (typeFilter === "ipanel") filtered = filtered.filter((item) => item.rowKind === "quote" && effectiveQuoteKind(item.raw) === "ipanel");
     if (typeFilter === "plegados") filtered = filtered.filter((item) => item.rowKind === "quote" && effectiveQuoteKind(item.raw) === "plegados");
@@ -437,6 +440,7 @@ export default function PresupuestosPage() {
           {typeFilter === "porton" && (
             <Button variant={filter === "mediciones" ? "primary" : "ghost"} onClick={() => setFilter("mediciones")}>En Medición</Button>
           )}
+          <Button variant={filter === "devueltos" ? "primary" : "ghost"} onClick={() => setFilter("devueltos")}>Devueltos por medición</Button>
         </div>
         <input value={searchText} onChange={(e) => setSearchText(e.target.value)} placeholder="Buscar por tipo, cliente, localidad, dirección, teléfono o estado…" style={{ width: "100%", padding: 10, borderRadius: 12, border: "1px solid #ddd" }} />
       </div>
@@ -561,7 +565,7 @@ export default function PresupuestosPage() {
                         {canDownloadQuoteProforma ? <Button variant="ghost" disabled={downloadingPdfKey === originalProformaPdfKey} onClick={() => handleDownloadQuoteProformaPdf(r.id)}>Proforma</Button> : null}
                         {hasFinal ? <Button variant="ghost" disabled={downloadingPdfKey === finalPdfKey} onClick={() => handleDownloadQuotePdf(r.final_copy_id)}>Ver final</Button> : null}
                         {canDownloadQuoteProforma && hasFinal ? <Button variant="ghost" disabled={downloadingPdfKey === finalProformaPdfKey} onClick={() => handleDownloadQuoteProformaPdf(r.final_copy_id)}>Proforma final</Button> : null}
-                        {hasMeasurementDetail ? <Button variant="ghost" disabled={!isMeasurementApproved} title={isMeasurementApproved ? "" : "Disponible cuando Técnica apruebe la medición / detalle técnico"} onClick={() => { if (!isMeasurementApproved) return; navigate(`/mediciones/${r.id}`); }}>{measurementLabel}</Button> : null}
+                        {hasMeasurementDetail ? (() => { const canViewMeasurement = isMeasurementApproved || isReturnedFromMeasurement(r); return <Button variant="ghost" disabled={!canViewMeasurement} title={canViewMeasurement ? "" : "Disponible cuando Técnica apruebe la medición / detalle técnico"} onClick={() => { if (!canViewMeasurement) return; navigate(`/mediciones/${r.id}`, isReturnedFromMeasurement(r) && !isMeasurementApproved ? { state: { readOnlyMeasurement: true } } : undefined); }}>{measurementLabel}</Button>; })() : null}
                         {effectiveQuoteKind(r) === "plegados" ? <Button variant="ghost" onClick={() => setPlegadoModal(r)}>Plano / comentarios</Button> : null}
                         {r.status === "draft" ? <Button onClick={() => navigate(quoteEditorPath(r))}>Editar</Button> : null}
                         {canAddDoor ? <Button variant="ghost" onClick={() => navigate(`/puertas/nuevo/${r.id}`)}>Agregar puerta</Button> : null}
