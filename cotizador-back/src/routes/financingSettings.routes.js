@@ -13,7 +13,7 @@ const DEFAULT_PAYMENT_METHODS = [
   "Cta Cte",
   "Cheques 30",
   "Cheques 0 - 30 - 60 - 90 - 120",
-  "Cheques 0 - 30 - 60 - 90 - 120 - 150 - 180",
+  "Cheques 0 - 30 - 60 - 90 - 120 - 150 - 180 - 210",
   "CORDOBESA 4 CUOTAS",
   "CORDOBESA 6 CUOTAS",
   "CORDOBESA 10 CUOTAS",
@@ -70,7 +70,9 @@ function isCashPaymentMethod(value) {
   return normalizePaymentMethodKey(value) === normalizePaymentMethodKey(CASH_PAYMENT_METHOD);
 }
 function isLegacyCashTransferPaymentMethod(value) {
-  return normalizePaymentMethodKey(value) === normalizePaymentMethodKey(LEGACY_CASH_TRANSFER_PAYMENT_METHOD);
+  const key = normalizePaymentMethodKey(value);
+  return key === normalizePaymentMethodKey(LEGACY_CASH_TRANSFER_PAYMENT_METHOD)
+    || key === normalizePaymentMethodKey("CUENTA CORRIENTE");
 }
 function isVisibleSavedPaymentMethod(value) {
   return !isLegacyCashTransferPaymentMethod(value);
