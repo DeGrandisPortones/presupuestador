@@ -1240,6 +1240,22 @@ async function readPartnerNotificationData(odoo, partnerId) {
 async function resolveMeasurementNotificationTarget({ odoo, quote }) {
   const createdByRole = String(quote?.created_by_role || "").trim().toLowerCase();
   if (createdByRole === "distribuidor") {
+    // Primero buscamos el teléfono local del distribuidor en nuestra DB
+    const createdByUserId = Number(quote?.created_by_user_id || 0) || null;
+    if (createdByUserId) {
+      try {
+        const r = await dbQuery(`select phone from public.presupuestador_users where id=$1 limit 1`, [createdByUserId]);
+        const localPhone = normalizePhoneForWhatsApp(r.rows?.[0]?.phone);
+        if (localPhone) {
+          const partnerForName = await readPartnerNotificationData(odoo, quote?.bill_to_odoo_partner_id);
+          return {
+            to: localPhone,
+            recipient_name: String(partnerForName?.name || "distribuidor").trim() || "distribuidor",
+            recipient_type: "distribuidor",
+          };
+        }
+      } catch { /* fallback a Odoo */ }
+    }
     const partner = await readPartnerNotificationData(odoo, quote?.bill_to_odoo_partner_id);
     const partnerPhone = normalizePhoneForWhatsApp(partner?.phone || partner?.mobile);
     if (partnerPhone) {
@@ -1268,6 +1284,22 @@ function buildMeasurementApprovedMessage({ quote, acceptanceUrl, recipientName, 
   ];
   return lines.join("\n");
 }
+async function sendWhatsAppRaw({ to, message, acceptanceUrl, token, phoneNumberId, graphVersion }) {
+  const response = await fetch(`https://graph.facebook.com/${graphVersion}/${phoneNumberId}/messages`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      messaging_product: "whatsapp",
+      recipient_type: "individual",
+      to,
+      type: "text",
+      text: { preview_url: !!acceptanceUrl, body: message },
+    }),
+  });
+  const data = await response.json().catch(() => ({}));
+  return { ok: response.ok, status: response.status, data };
+}
+
 export async function maybeSendMeasurementApprovedWhatsApp({ odoo, quote }) {
   const recipient = await resolveMeasurementNotificationTarget({ odoo, quote });
   const to = recipient?.to || "";
@@ -1306,30 +1338,21 @@ export async function maybeSendMeasurementApprovedWhatsApp({ odoo, quote }) {
     };
   }
   try {
-    const response = await fetch(`https://graph.facebook.com/${graphVersion}/${phoneNumberId}/messages`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        messaging_product: "whatsapp",
-        recipient_type: "individual",
-        to,
-        type: "text",
-        text: {
-          preview_url: !!acceptanceUrl,
-          body: message,
-        },
-      }),
-    });
-    const data = await response.json().catch(() => ({}));
-    if (!response.ok) {
+    const ctx = { token, phoneNumberId, graphVersion };
+    const result = await sendWhatsAppRaw({ to, message, acceptanceUrl, ...ctx });
+
+    // Envío adicional al contacto extra si tiene teléfono cargado
+    const extraPhone = normalizePhoneForWhatsApp(quote?.payload?.extra_contact?.phone);
+    if (extraPhone && extraPhone !== to) {
+      sendWhatsAppRaw({ to: extraPhone, message, acceptanceUrl, ...ctx }).catch(() => {});
+    }
+
+    if (!result.ok) {
       return {
         sent: false,
         reason: "whatsapp_api_error",
-        status: response.status,
-        error: data,
+        status: result.status,
+        error: result.data,
         public_url: publicUrl,
         acceptance_url: acceptanceUrl,
         message,
@@ -1341,7 +1364,7 @@ export async function maybeSendMeasurementApprovedWhatsApp({ odoo, quote }) {
     return {
       sent: true,
       provider: "meta_cloud_api",
-      response: data,
+      response: result.data,
       public_url: publicUrl,
       acceptance_url: acceptanceUrl,
       message,

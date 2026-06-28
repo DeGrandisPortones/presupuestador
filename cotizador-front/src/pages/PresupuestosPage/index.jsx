@@ -516,7 +516,12 @@ export default function PresupuestosPage() {
                     <tr key={r.id}>
                       <td>{fmtDateTime(r.created_at)}</td>
                       <td><TypeBadge label={item.typeLabel} /></td>
-                      <td>{r.end_customer?.name || <span className="muted">(sin nombre)</span>}</td>
+                      <td>
+                        {r.end_customer?.name || <span className="muted">(sin nombre)</span>}
+                        {r.payload?.distribuidor_vendedor_nombre ? (
+                          <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>Vend. dist.: {r.payload.distribuidor_vendedor_nombre}</div>
+                        ) : null}
+                      </td>
                       <td>{item.locality}</td>
                       <td>
                         {getRejectionInfoFromQuote(r) ? (

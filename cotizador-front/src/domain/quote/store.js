@@ -208,6 +208,9 @@ export const useQuoteStore = create((set, get) => ({
   note: "",
   portonType: "",
   endCustomer: { ...EMPTY_CUSTOMER },
+  extraContact: { name: "", role: "", phone: "" },
+  distribuidorVendedorNombre: "",
+  pricesAppliedAt: null,
   dimensions: { width: "", height: "", kg_m2: "" },
   lines: [],
   reset() {
@@ -227,6 +230,9 @@ export const useQuoteStore = create((set, get) => ({
       note: "",
       portonType: "",
       endCustomer: { ...EMPTY_CUSTOMER },
+      extraContact: { name: "", role: "", phone: "" },
+      distribuidorVendedorNombre: "",
+      pricesAppliedAt: null,
       dimensions: { width: "", height: "", kg_m2: "" },
       lines: [],
     });
@@ -306,6 +312,9 @@ export const useQuoteStore = create((set, get) => ({
       },
       dimensions: loadedDimensions,
       lines: applyDerivedLines(mappedLines, portonType, loadedDimensions),
+      extraContact: payload?.extra_contact && typeof payload.extra_contact === "object" ? { name: String(payload.extra_contact.name || ""), role: String(payload.extra_contact.role || ""), phone: String(payload.extra_contact.phone || "") } : { name: "", role: "", phone: "" },
+      distribuidorVendedorNombre: String(payload?.distribuidor_vendedor_nombre || ""),
+      pricesAppliedAt: null,
     });
   },
   setDimensions(patch) {
@@ -389,6 +398,12 @@ export const useQuoteStore = create((set, get) => ({
   },
   setNote(v) {
     set({ note: String(v || "") });
+  },
+  setExtraContact(patch) {
+    set((s) => ({ extraContact: { ...s.extraContact, ...(patch || {}) } }));
+  },
+  setDistribuidorVendedorNombre(v) {
+    set({ distribuidorVendedorNombre: String(v || "") });
   },
   setEndCustomer(patch) {
     set((s) => {
@@ -559,7 +574,7 @@ export const useQuoteStore = create((set, get) => ({
         };
       });
       dflexQuoteDebug("applyBasePrices", { received: arr, before: dflexLineSnapshot(s.lines), after: dflexLineSnapshot(nextLines), includeStack: true });
-      return { lines: nextLines };
+      return { lines: nextLines, pricesAppliedAt: Date.now() };
     });
   },
   buildPayloadForBack() {
@@ -618,6 +633,8 @@ export const useQuoteStore = create((set, get) => ({
         condition_text: s.conditionText || "",
         payment_method: s.paymentMethod || "",
         porton_type: s.portonType || "",
+        extra_contact: (s.extraContact?.name || s.extraContact?.phone) ? { name: String(s.extraContact.name || ""), role: String(s.extraContact.role || ""), phone: String(s.extraContact.phone || "") } : undefined,
+        distribuidor_vendedor_nombre: s.distribuidorVendedorNombre ? String(s.distribuidorVendedorNombre) : undefined,
         dimensions: {
           ...safeDimensions,
           width: safeDimensions?.width ?? "",

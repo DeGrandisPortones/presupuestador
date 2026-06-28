@@ -4,7 +4,7 @@ import toast from "react-hot-toast";
 
 import Button from "../../ui/Button.jsx";
 import PaginationControls from "../../ui/PaginationControls.jsx";
-import { listMyDistributors, updateMyDistributorDefaultMapsUrl } from "../../api/sellerDistributors.js";
+import { listMyDistributors, updateMyDistributorDefaultMapsUrl, updateMyDistributorPhone } from "../../api/sellerDistributors.js";
 import { getPricelists } from "../../api/odoo.js";
 import { useAuthStore } from "../../domain/auth/store.js";
 
@@ -70,6 +70,28 @@ function SellerCell({ distributor }) {
   );
 }
 
+function PhoneCell({ distributor, value, onChange, onSave, saving }) {
+  const original = String(distributor?.phone || "").trim();
+  const current = String(value || "").trim();
+  const changed = current !== original;
+  return (
+    <div style={{ display: "grid", gap: 8, width: "100%" }}>
+      <div style={{ display: "grid", gridTemplateColumns: "minmax(130px, 1fr) auto", gap: 8, alignItems: "center", width: "100%" }}>
+        <input
+          value={value || ""}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder="Ej. 3516123456"
+          style={{ width: "100%", minWidth: 0, padding: 8, borderRadius: 10, border: "1px solid #ddd" }}
+        />
+        <Button variant="secondary" disabled={saving || !changed} onClick={() => onSave(current)}>
+          {saving ? "Guardando..." : "Guardar"}
+        </Button>
+      </div>
+      <div className="muted" style={{ fontSize: 12 }}>Teléfono del distribuidor para notificaciones de medición.</div>
+    </div>
+  );
+}
+
 function MapsCell({ distributor, value, onChange, onSave, saving }) {
   const original = String(distributor?.default_maps_url || "").trim();
   const current = String(value || "").trim();
@@ -107,6 +129,7 @@ export default function MyDistributorsPage() {
   const canSeeAll = !!(user?.is_superuser || user?.is_enc_comercial);
   const [searchText, setSearchText] = useState("");
   const [mapsDrafts, setMapsDrafts] = useState({});
+  const [phoneDrafts, setPhoneDrafts] = useState({});
   const [page, setPage] = useState(1);
   const qc = useQueryClient();
 
@@ -132,6 +155,15 @@ export default function MyDistributorsPage() {
     onError: (e) => toast.error(e?.message || "No se pudo guardar la URL"),
   });
 
+  const savePhoneM = useMutation({
+    mutationFn: ({ id, value }) => updateMyDistributorPhone(id, value),
+    onSuccess: () => {
+      toast.success("Teléfono guardado");
+      qc.invalidateQueries({ queryKey: ["myDistributors"] });
+    },
+    onError: (e) => toast.error(e?.message || "No se pudo guardar el teléfono"),
+  });
+
   const pricelistById = useMemo(() => {
     const map = new Map();
     for (const item of Array.isArray(pricelistsQ.data) ? pricelistsQ.data : []) {
@@ -144,9 +176,14 @@ export default function MyDistributorsPage() {
   const distributors = q.data || [];
 
   useEffect(() => {
-    const next = {};
-    for (const d of distributors) next[d.id] = String(d?.default_maps_url || "");
-    setMapsDrafts(next);
+    const nextMaps = {};
+    const nextPhone = {};
+    for (const d of distributors) {
+      nextMaps[d.id] = String(d?.default_maps_url || "");
+      nextPhone[d.id] = String(d?.phone || "");
+    }
+    setMapsDrafts(nextMaps);
+    setPhoneDrafts(nextPhone);
   }, [distributors]);
 
   const filteredDistributors = useMemo(() => {
@@ -250,15 +287,16 @@ export default function MyDistributorsPage() {
         {!q.isLoading && !!distributors.length && !filteredDistributors.length ? <div className="muted">No hay distribuidores que coincidan con la busqueda.</div> : null}
 
         {!!filteredDistributors.length ? (
-          <table style={{ width: "100%", minWidth: 1380, tableLayout: "fixed" }}>
+          <table style={{ width: "100%", minWidth: 1560, tableLayout: "fixed" }}>
             <colgroup>
-              <col style={{ width: "16%" }} />
               <col style={{ width: "14%" }} />
-              <col style={{ width: "15%" }} />
-              <col style={{ width: "10%" }} />
               <col style={{ width: "12%" }} />
-              <col style={{ width: "8%" }} />
-              <col style={{ width: "19%" }} />
+              <col style={{ width: "13%" }} />
+              <col style={{ width: "9%" }} />
+              <col style={{ width: "11%" }} />
+              <col style={{ width: "7%" }} />
+              <col style={{ width: "14%" }} />
+              <col style={{ width: "14%" }} />
               <col style={{ width: "6%" }} />
             </colgroup>
             <thead>
@@ -269,6 +307,7 @@ export default function MyDistributorsPage() {
                 <th>Contrasena</th>
                 <th>Lista de precios</th>
                 <th>Partner Odoo</th>
+                <th>Teléfono</th>
                 <th>Maps por defecto</th>
                 <th>Estado</th>
               </tr>
@@ -292,6 +331,15 @@ export default function MyDistributorsPage() {
                     <td style={tableCellStyle}><PasswordCell value={d.visible_password} /></td>
                     <td style={tableCellStyle}><PricelistCell distributor={d} pricelistById={pricelistById} /></td>
                     <td style={tableCellStyle}>{d.odoo_partner_id || <span className="muted">-</span>}</td>
+                    <td style={tableCellStyle}>
+                      <PhoneCell
+                        distributor={d}
+                        value={phoneDrafts[d.id] ?? ""}
+                        onChange={(value) => setPhoneDrafts((prev) => ({ ...prev, [d.id]: value }))}
+                        onSave={(value) => savePhoneM.mutate({ id: d.id, value })}
+                        saving={savePhoneM.isPending && String(savePhoneM.variables?.id || "") === String(d.id)}
+                      />
+                    </td>
                     <td style={tableCellStyle}>
                       <MapsCell
                         distributor={d}

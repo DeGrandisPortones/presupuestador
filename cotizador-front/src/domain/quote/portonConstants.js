@@ -26,7 +26,7 @@ export const PAYMENT_METHODS = [
   "Cta Cte",
   "Cheques 30",
   "Cheques 0 - 30 - 60 - 90 - 120",
-  "Cheques 0 - 30 - 60 - 90 - 120 - 150 - 180",
+  "Cheques 0 - 30 - 60 - 90 - 120 - 150 - 180 - 210",
   "CORDOBESA 4 CUOTAS",
   "CORDOBESA 6 CUOTAS",
   "CORDOBESA 10 CUOTAS",

@@ -4,6 +4,7 @@ import toast from "react-hot-toast";
 import Input from "../../../ui/Input.jsx";
 import Button from "../../../ui/Button.jsx";
 import { useQuoteStore } from "../../../domain/quote/store.js";
+import { useAuthStore } from "../../../domain/auth/store.js";
 import { PAYMENT_METHODS } from "../../../domain/quote/portonConstants.js";
 import { getFinancingPaymentMethods } from "../../../api/financingSettings.js";
 import { searchExistingCustomers } from "../../../api/quotes.js";
@@ -17,7 +18,7 @@ const MAIN_PAYMENT_METHODS = [
   "Cta Cte",
   "Cheques 30",
   "Cheques 0 - 30 - 60 - 90 - 120",
-  "Cheques 0 - 30 - 60 - 90 - 120 - 150 - 180",
+  "Cheques 0 - 30 - 60 - 90 - 120 - 150 - 180 - 210",
   CARD_CATEGORY,
 ];
 
@@ -27,6 +28,7 @@ function normalizeKey(value) {
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
     .toUpperCase()
+    .replace(/\bCHEQUES\b/g, "CHEQUE")
     .replace(/[^A-Z0-9]+/g, " ")
     .trim()
     .replace(/\s+/g, " ");
@@ -142,8 +144,8 @@ function paymentCategoryFromMethod(paymentMethod, categoryOverride = "") {
   if (key === normalizeKey("Cheques 0 - 30 - 60 - 90 - 120") || key === normalizeKey("Cheque 0 - 30 - 60 - 90 -120")) {
     return "Cheques 0 - 30 - 60 - 90 - 120";
   }
-  if (key === normalizeKey("Cheques 0 - 30 - 60 - 90 - 120 - 150 - 180")) {
-    return "Cheques 0 - 30 - 60 - 90 - 120 - 150 - 180";
+  if (key === normalizeKey("Cheques 0 - 30 - 60 - 90 - 120 - 150 - 180 - 210") || key === normalizeKey("Cheques 0 - 30 - 60 - 90 - 120 - 150 - 180")) {
+    return "Cheques 0 - 30 - 60 - 90 - 120 - 150 - 180 - 210";
   }
   return raw;
 }
@@ -371,7 +373,13 @@ export default function HeaderBar({ showMargin }) {
     setPaymentMethod,
     endCustomer,
     setEndCustomer,
+    extraContact,
+    setExtraContact,
+    distribuidorVendedorNombre,
+    setDistribuidorVendedorNombre,
   } = useQuoteStore();
+  const user = useAuthStore((s) => s.user);
+  const isDistribuidor = !!(user?.is_distribuidor && !user?.is_vendedor);
   const [multipleOpen, setMultipleOpen] = useState(false);
   const [customerLookupOpen, setCustomerLookupOpen] = useState(false);
   const [paymentCategoryOverride, setPaymentCategoryOverride] = useState("");
@@ -537,6 +545,26 @@ export default function HeaderBar({ showMargin }) {
           <div className="muted">Google Maps (URL)</div>
           <Input value={endCustomer.maps_url || ""} onChange={(v) => setEndCustomer({ maps_url: v })} placeholder="https://maps.app.goo.gl/..." style={{ width: "100%" }} />
         </div>
+
+        <div style={{ flex: 1, minWidth: 180 }}>
+          <div className="muted">Contacto adicional (nombre)</div>
+          <Input value={extraContact?.name || ""} onChange={(v) => setExtraContact({ name: v })} placeholder="Ej. jefe de obra" style={{ width: "100%" }} />
+        </div>
+        <div style={{ flex: 1, minWidth: 140 }}>
+          <div className="muted">Rol / calidad</div>
+          <Input value={extraContact?.role || ""} onChange={(v) => setExtraContact({ role: v })} placeholder="Ej. jefe de obra" style={{ width: "100%" }} />
+        </div>
+        <div style={{ minWidth: 160 }}>
+          <div className="muted">Teléfono contacto adicional</div>
+          <Input value={extraContact?.phone || ""} onChange={(v) => setExtraContact({ phone: v })} placeholder="Sin 0 y sin 15" style={{ minWidth: 150 }} />
+        </div>
+
+        {isDistribuidor ? (
+          <div style={{ flex: 1, minWidth: 200 }}>
+            <div className="muted">Vendedor del distribuidor</div>
+            <Input value={distribuidorVendedorNombre || ""} onChange={(v) => setDistribuidorVendedorNombre(v)} placeholder="Nombre del vendedor" style={{ width: "100%" }} />
+          </div>
+        ) : null}
 
         <div style={{ minWidth: 280 }}>
           <div className="muted">Forma de pago</div>

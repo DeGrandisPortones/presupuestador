@@ -8,6 +8,7 @@ export async function ensureUsersAdminColumns() {
   await dbQuery(`alter table public.presupuestador_users add column if not exists full_name text null;`);
   await dbQuery(`alter table public.presupuestador_users add column if not exists is_active boolean not null default true;`);
   await dbQuery(`alter table public.presupuestador_users add column if not exists default_maps_url text null;`);
+  await dbQuery(`alter table public.presupuestador_users add column if not exists phone varchar(64) null;`);
   await dbQuery(`alter table public.presupuestador_users add column if not exists is_medidor boolean not null default false;`);
   await dbQuery(`alter table public.presupuestador_users add column if not exists is_logistica boolean not null default false;`);
   await dbQuery(`alter table public.presupuestador_users add column if not exists is_superuser boolean not null default false;`);

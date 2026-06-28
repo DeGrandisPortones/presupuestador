@@ -12,3 +12,9 @@ export async function updateMyDistributorDefaultMapsUrl(id, default_maps_url = "
   if (!data?.ok) throw new Error(data?.error || "No se pudo guardar la URL de Google Maps");
   return data.distributor || null;
 }
+
+export async function updateMyDistributorPhone(id, phone = "") {
+  const { data } = await http.put(`/api/seller-distributors/${encodeURIComponent(String(id))}/phone`, { phone });
+  if (!data?.ok) throw new Error(data?.error || "No se pudo guardar el teléfono");
+  return data.distributor || null;
+}

@@ -774,6 +774,10 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
     setQuoteMeta,
     addLine,
     forceRemoveLine,
+    extraContact,
+    setExtraContact,
+    distribuidorVendedorNombre,
+    setDistribuidorVendedorNombre,
   } = useQuoteStore();
   const [ivaRate] = useState(IVA_RATE_DEFAULT);
   const [confirmChoiceOpen, setConfirmChoiceOpen] = useState(false);
@@ -1270,6 +1274,38 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
     };
   }, [autosaveWatchSignature, autosaveDraftKey, linkedPortonId, quoteId, idParam, status, confirmChoiceOpen]);
 
+  const [priceCheckPending, setPriceCheckPending] = useState(false);
+  async function handleSaveClick() {
+    if (!pricingContextReady || saveM.isPending || priceCheckPending) return;
+    const priceLines = lines.filter((l) => (l.catalog_id || l.odoo_template_id) && !l.manual_price && !l.previously_billed_line);
+    if (priceLines.length > 0) {
+      try {
+        setPriceCheckPending(true);
+        const pricePayload = {
+          pricelist_id: pricelistId,
+          partner_id: partnerId,
+          lines: priceLines.map((l) => ({ id: l.id, catalog_id: l.catalog_id, odoo_template_id: l.odoo_template_id, qty: l.qty })),
+        };
+        const data = await getPrices(pricePayload);
+        const fetchedMap = new Map((data?.prices || []).map((x) => [Number(x.product_id), Number(x.price ?? 0)]));
+        const anyChanged = priceLines.some((l) => {
+          const fetched = fetchedMap.get(l.product_id);
+          return fetched !== undefined && Math.abs(fetched - (l.basePrice || 0)) > 0.001;
+        });
+        if (anyChanged) {
+          applyBasePrices(data);
+          toast.error("Los precios se actualizaron porque hubo cambios en la lista desde que abriste la página. Revisá los totales y guardá nuevamente.", { duration: 6000 });
+          return;
+        }
+      } catch {
+        // Si falla la verificación, dejamos guardar igual para no bloquear al usuario
+      } finally {
+        setPriceCheckPending(false);
+      }
+    }
+    saveM.mutate();
+  }
+
   const saveM = useMutation({ mutationFn: async () => { const payload = getDraftPayload(); validateDraft(payload); if (quoteId) return await updateQuote(quoteId, payload); return await createQuote(payload); }, onSuccess: (q) => { setQuoteMeta({ quoteId: q.id, status: q.status, rejectionNotes: q.rejection_notes }); qc.invalidateQueries({ queryKey: ["quotes", "mine"] }); if (maybeContinueDoorWorkflow(q)) { toast.success("Presupuesto de puerta guardado. Volviendo al panel."); return; } navigate(editorRouteForKind(catalogKind, q.id)); toast.success("Guardado."); }, onError: (e) => toast.error(e?.message || "No se pudo guardar") });
 
   const confirmM = useMutation({
@@ -1458,7 +1494,7 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
           <Button variant="ghost" onClick={handleClearBudget}>Limpiar presupuesto</Button>
           <Button variant="secondary" onClick={onDownloadPresupuesto} disabled={!pricingContextReady}>PDF presupuesto</Button>
           {user?.is_distribuidor ? <Button variant="secondary" onClick={onDownloadProforma} disabled={!pricingContextReady}>PDF proforma</Button> : null}
-          <Button onClick={() => saveM.mutate()} disabled={saveM.isPending || !pricingContextReady}>{saveM.isPending ? "Guardando..." : "Guardar"}</Button>
+          <Button onClick={handleSaveClick} disabled={saveM.isPending || priceCheckPending || !pricingContextReady}>{saveM.isPending ? "Guardando..." : priceCheckPending ? "Verificando precios..." : "Guardar"}</Button>
           {isReturnedMeasurementQuote ? (
             <>
               <Button variant="ghost" onClick={() => resetReturnedM.mutate()} disabled={resetReturnedM.isPending || confirmReturnedM.isPending}>{resetReturnedM.isPending ? "Restableciendo..." : "Restablecer al original"}</Button>

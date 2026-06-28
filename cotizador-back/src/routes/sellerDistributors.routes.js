@@ -48,6 +48,7 @@ export function buildSellerDistributorsRouter() {
                d.odoo_partner_id,
                d.odoo_pricelist_id,
                d.default_maps_url,
+               d.phone,
                d.visible_password,
                d.created_at,
                d.updated_at,
@@ -106,6 +107,39 @@ export function buildSellerDistributorsRouter() {
                d.updated_at,
                d.assigned_seller_user_id
         `,
+        params
+      );
+      const distributor = q.rows?.[0] || null;
+      if (!distributor) return res.status(404).json({ ok: false, error: "Distribuidor no encontrado o no asignado a tu usuario" });
+      res.json({ ok: true, distributor });
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  router.put("/:id/phone", requireAuth, requireSellerOrCommercial, async (req, res, next) => {
+    try {
+      await ensureUsersAdminColumns();
+      const distributorId = Number(req.params.id || 0);
+      const sellerId = Number(req.user?.user_id || req.user?.id || 0);
+      const seeAll = canSeeAllDistributors(req.user);
+      if (!distributorId) return res.status(400).json({ ok: false, error: "Distribuidor invalido" });
+      if (!sellerId && !seeAll) return res.status(400).json({ ok: false, error: "Usuario invalido" });
+
+      const phone = String(req.body?.phone || "").trim().slice(0, 64);
+      const params = seeAll ? [distributorId, phone] : [distributorId, phone, sellerId];
+      const ownerWhere = seeAll ? "" : "and d.assigned_seller_user_id = $3";
+
+      const q = await dbQuery(
+        `update public.presupuestador_users d
+            set phone = nullif($2::text, ''),
+                updated_at = now()
+          where d.id = $1
+            and coalesce(d.is_distribuidor,false) = true
+            ${ownerWhere}
+          returning d.id, d.username, d.full_name, d.is_active, d.odoo_partner_id,
+                    d.odoo_pricelist_id, d.default_maps_url, d.phone,
+                    d.visible_password, d.created_at, d.updated_at, d.assigned_seller_user_id`,
         params
       );
       const distributor = q.rows?.[0] || null;
