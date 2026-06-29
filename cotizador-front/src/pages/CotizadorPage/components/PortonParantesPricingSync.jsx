@@ -190,6 +190,7 @@ export default function PortonParantesPricingSync() {
   const lines = useQuoteStore((state) => state.lines);
   const dimensions = useQuoteStore((state) => state.dimensions);
   const portonType = useQuoteStore((state) => state.portonType);
+  const paranteQtyLocked = useQuoteStore((state) => state.paranteQtyLocked);
 
   const rulesQ = useQuery({
     queryKey: ["technical-rules-parantes-pricing-sync", "porton"],
@@ -204,11 +205,7 @@ export default function PortonParantesPricingSync() {
   const qty = useMemo(() => parsePositiveInt(dimensions?.cantidad_parantes), [dimensions?.cantidad_parantes]);
   const orientation = useMemo(() => normalizeOrientation(dimensions?.orientacion_parantes), [dimensions?.orientacion_parantes]);
   const multiplier = orientation === "horizontal" ? 2 : 1;
-  const hasLockedParante = useMemo(
-    () => (Array.isArray(lines) ? lines : []).some((l) => !!l?.locked_qty),
-    [lines],
-  );
-  const shouldApply = productId > 0 && qty > 0 && isAptoParaRevestir(portonType) && !hasLockedParante;
+  const shouldApply = productId > 0 && qty > 0 && isAptoParaRevestir(portonType) && !paranteQtyLocked;
 
   const catalogQ = useQuery({
     queryKey: ["catalog-bootstrap-parantes-pricing-sync", "porton", productId],

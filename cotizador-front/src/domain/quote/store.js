@@ -210,6 +210,7 @@ export const useQuoteStore = create((set, get) => ({
   endCustomer: { ...EMPTY_CUSTOMER },
   extraContact: { name: "", role: "", phone: "" },
   distribuidorVendedorNombre: "",
+  paranteQtyLocked: false,
   pricesAppliedAt: null,
   dimensions: { width: "", height: "", kg_m2: "" },
   lines: [],
@@ -232,6 +233,7 @@ export const useQuoteStore = create((set, get) => ({
       endCustomer: { ...EMPTY_CUSTOMER },
       extraContact: { name: "", role: "", phone: "" },
       distribuidorVendedorNombre: "",
+      paranteQtyLocked: false,
       pricesAppliedAt: null,
       dimensions: { width: "", height: "", kg_m2: "" },
       lines: [],
@@ -321,6 +323,7 @@ export const useQuoteStore = create((set, get) => ({
       lines: applyDerivedLines(mappedLines, portonType, loadedDimensions),
       extraContact: payload?.extra_contact && typeof payload.extra_contact === "object" ? { name: String(payload.extra_contact.name || ""), role: String(payload.extra_contact.role || ""), phone: String(payload.extra_contact.phone || "") } : { name: "", role: "", phone: "" },
       distribuidorVendedorNombre: String(payload?.distribuidor_vendedor_nombre || ""),
+      paranteQtyLocked: !!payload?.parante_qty_locked,
       pricesAppliedAt: null,
     });
   },
@@ -642,6 +645,7 @@ export const useQuoteStore = create((set, get) => ({
         porton_type: s.portonType || "",
         extra_contact: (s.extraContact?.name || s.extraContact?.phone) ? { name: String(s.extraContact.name || ""), role: String(s.extraContact.role || ""), phone: String(s.extraContact.phone || "") } : undefined,
         distribuidor_vendedor_nombre: s.distribuidorVendedorNombre ? String(s.distribuidorVendedorNombre) : undefined,
+        parante_qty_locked: s.paranteQtyLocked || undefined,
         dimensions: {
           ...safeDimensions,
           width: safeDimensions?.width ?? "",
