@@ -250,6 +250,7 @@ export default function PortonParantesPricingSync() {
   }, [catalogProduct]);
 
   useEffect(() => {
+    if (paranteQtyLocked) return;
     useQuoteStore.setState((state) => {
       const current = Array.isArray(state.lines) ? state.lines : [];
       const autoLine = current.find((line) => line?.auto_parantes_pricing_line && Number(line.auto_parantes_configured_product_id || line.presupuestador_product_id || line.product_id) === productId) || null;
@@ -260,17 +261,15 @@ export default function PortonParantesPricingSync() {
         return cleaned.length === current.length ? {} : { lines: cleaned };
       }
 
-      if (autoLine?.locked_qty) return {};
-
       const withoutAuto = removeAutoParantesLines(current).filter((line) => Number(line.product_id) !== productId || line?.previously_billed_line);
       const existing = autoLine || manualSameProduct || null;
       const nextLine = buildPlaceholderLine({ productId, odooProductId, qty, multiplier, existing, catalogProduct });
       return { lines: [...withoutAuto, nextLine] };
     });
-  }, [shouldApply, productId, odooProductId, qty, multiplier, catalogProductKey]);
+  }, [paranteQtyLocked, shouldApply, productId, odooProductId, qty, multiplier, catalogProductKey]);
 
   useEffect(() => {
-    if (!shouldApply || !odooProductId || !pricelistId) return undefined;
+    if (paranteQtyLocked || !shouldApply || !odooProductId || !pricelistId) return undefined;
 
     let cancelled = false;
     async function run() {
@@ -329,7 +328,7 @@ export default function PortonParantesPricingSync() {
   }, [shouldApply, productId, odooProductId, pricelistId, partnerId, multiplier, catalogProductKey]);
 
   useEffect(() => {
-    if (!shouldApply) return;
+    if (paranteQtyLocked || !shouldApply) return;
     const autoLine = (Array.isArray(lines) ? lines : []).find((line) => line?.auto_parantes_pricing_line && Number(line.auto_parantes_configured_product_id || line.presupuestador_product_id || line.product_id) === productId);
     if (!autoLine) return;
     if (autoLine.locked_qty) return;
