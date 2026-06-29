@@ -284,6 +284,13 @@ export const useQuoteStore = create((set, get) => ({
           price_pricelist_id: q.pricelist_id ?? l.price_pricelist_id ?? null,
           previously_billed_line: !!l.previously_billed_line,
           locked_line: !!l.locked_line,
+          locked_qty: !!l.locked_qty,
+          auto_parantes_pricing_line: !!l.auto_parantes_pricing_line,
+          auto_parantes_configured_product_id: l.auto_parantes_configured_product_id || null,
+          auto_parantes_pricing_raw_price: Number(l.auto_parantes_pricing_raw_price || 0) || 0,
+          auto_parantes_pricing_multiplier: Number(l.auto_parantes_pricing_multiplier || 1) || 1,
+          auto_parantes_odoo_product_id: l.auto_parantes_odoo_product_id || null,
+          integer_qty: !!l.integer_qty,
           line_key: String(l.line_key || l.product_id || idx),
         };
       })
