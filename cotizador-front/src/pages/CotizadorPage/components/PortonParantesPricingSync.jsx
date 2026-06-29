@@ -71,7 +71,7 @@ function getConfiguredProductId(params) {
 }
 
 function removeAutoParantesLines(lines = []) {
-  return (Array.isArray(lines) ? lines : []).filter((line) => !line?.auto_parantes_pricing_line);
+  return (Array.isArray(lines) ? lines : []).filter((line) => !line?.auto_parantes_pricing_line || !!line?.locked_qty);
 }
 
 function getClientFacingProductName(product = {}) {
@@ -155,6 +155,8 @@ function buildPlaceholderLine({ productId, odooProductId, qty, multiplier, exist
   const catalogName = getProductLabel(catalogProduct);
   const catalogRawName = getClientFacingProductName(catalogProduct);
   const effectiveOdooProductId = Number(odooProductId || productId || 0) || productId;
+  const lockedQty = !!existing?.locked_qty;
+  const effectiveQty = lockedQty ? (Number(existing.qty) || qty) : qty;
 
   return {
     ...(existing || {}),
@@ -168,7 +170,8 @@ function buildPlaceholderLine({ productId, odooProductId, qty, multiplier, exist
     name: catalogName || String(existing?.name || "").trim() || "Parante Interno",
     raw_name: catalogRawName || String(existing?.raw_name || "").trim() || catalogName || "Parante Interno",
     code: catalogProduct?.code ?? existing?.code ?? null,
-    qty,
+    qty: effectiveQty,
+    locked_qty: lockedQty,
     basePrice,
     integer_qty: true,
     locked_line: true,
@@ -326,6 +329,7 @@ export default function PortonParantesPricingSync() {
     if (!shouldApply) return;
     const autoLine = (Array.isArray(lines) ? lines : []).find((line) => line?.auto_parantes_pricing_line && Number(line.auto_parantes_configured_product_id || line.presupuestador_product_id || line.product_id) === productId);
     if (!autoLine) return;
+    if (autoLine.locked_qty) return;
     if (Number(autoLine.qty) === qty && Number(autoLine.auto_parantes_pricing_multiplier || 1) === multiplier) return;
     useQuoteStore.setState((state) => ({
       lines: (Array.isArray(state.lines) ? state.lines : []).map((line) => {
