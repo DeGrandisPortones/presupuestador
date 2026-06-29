@@ -1704,7 +1704,8 @@ export async function triggerPreproductionForClientAcceptance(odoo, originalQuot
      limit 1`,
     [originalQuote.id],
   );
-  const revisionQuote = r.rows?.[0];
+  // Fallback: NV generada directamente en el quote original (sin copy — camino isDirectNvAlreadyCreated)
+  const revisionQuote = r.rows?.[0] || (originalQuote?.final_sale_order_name ? originalQuote : null);
   if (!revisionQuote) return { ok: false, skipped: true, reason: "no_revision_quote_with_nv" };
 
   const order = {
