@@ -659,7 +659,8 @@ export function buildAdminRouter(odoo) {
       if (!Number.isInteger(nv) || nv <= 0) return res.status(400).json({ ok: false, error: "nv inválido" });
 
       const VALID_TIPOS = ["NV", "ONV", "INV", "PLNV", "PNV"];
-      const nvTipo = VALID_TIPOS.includes(String(req.body?.tipo || "NV").toUpperCase()) ? String(req.body.tipo).toUpperCase() : "NV";
+      const rawTipo = String(req.body?.tipo || "NV").toUpperCase();
+      const nvTipo = VALID_TIPOS.includes(rawTipo) ? rawTipo : "NV";
       const nvStr = `${nvTipo}${nv}`;
 
       // Buscar el quote original (puede tener la NV en final_sale_order_name u odoo_sale_order_name)
