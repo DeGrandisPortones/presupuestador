@@ -204,7 +204,11 @@ export default function PortonParantesPricingSync() {
   const qty = useMemo(() => parsePositiveInt(dimensions?.cantidad_parantes), [dimensions?.cantidad_parantes]);
   const orientation = useMemo(() => normalizeOrientation(dimensions?.orientacion_parantes), [dimensions?.orientacion_parantes]);
   const multiplier = orientation === "horizontal" ? 2 : 1;
-  const shouldApply = productId > 0 && qty > 0 && isAptoParaRevestir(portonType);
+  const hasLockedParante = useMemo(
+    () => (Array.isArray(lines) ? lines : []).some((l) => !!l?.locked_qty),
+    [lines],
+  );
+  const shouldApply = productId > 0 && qty > 0 && isAptoParaRevestir(portonType) && !hasLockedParante;
 
   const catalogQ = useQuery({
     queryKey: ["catalog-bootstrap-parantes-pricing-sync", "porton", productId],
