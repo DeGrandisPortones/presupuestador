@@ -259,6 +259,8 @@ export default function PortonParantesPricingSync() {
         return cleaned.length === current.length ? {} : { lines: cleaned };
       }
 
+      if (autoLine?.locked_qty) return {};
+
       const withoutAuto = removeAutoParantesLines(current).filter((line) => Number(line.product_id) !== productId || line?.previously_billed_line);
       const existing = autoLine || manualSameProduct || null;
       const nextLine = buildPlaceholderLine({ productId, odooProductId, qty, multiplier, existing, catalogProduct });
