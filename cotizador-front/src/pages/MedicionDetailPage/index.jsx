@@ -1236,12 +1236,19 @@ export default function MedicionDetailPage() {
     const notification = response?.finalization?.whatsappNotification || {};
     const link = text(notification.acceptance_url) || text(notification.public_url);
     return [
-      "Se ha realizado el relevamiento de medidas de la obra para poder comenzar la producción de su portón.",
+      "¡Hola! Somos De Grandis Portones, la empresa que fabricará el portón que adquiriste.",
       "",
-      "En el siguiente link podrá ver la planilla de medición online y aceptarla:",
+      "Ya contamos con las medidas necesarias de tu obra para comenzar con la fabricación.",
+      "",
+      "Para avanzar, te pedimos que ingreses al siguiente enlace para revisar y aceptar la planilla de medición:",
+      "",
       link,
       "",
-      "Gracias por confiar en De Grandis Portones.",
+      "En ese mismo enlace también vas a poder consultar los términos y condiciones.",
+      "",
+      "Ante cualquier consulta, estamos a tu disposición.",
+      "",
+      "¡Gracias por confiar en De Grandis Portones!",
     ].join("\n");
   }
 
