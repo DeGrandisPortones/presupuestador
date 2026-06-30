@@ -1,6 +1,29 @@
 import { dbQuery } from "./db.js";
 import { getTechnicalMeasurementRules } from "./settingsDb.js";
 
+const PORTON_TYPE_LABELS = {
+  acero_simil_aluminio_clasico: "Portón Acero Simil Aluminio Clásico",
+  coplanar_acero_simil_aluminio_clasico: "Coplanar Acero Simil Aluminio Clásico",
+  acero_simil_aluminio_doble_iny: "Portón Acero Simil Aluminio Doble Iny.",
+  coplanar_acero_simil_aluminio_doble_iny: "Coplanar Acero Simil Aluminio Doble Iny.",
+  para_revestir_con_al_pvc_otros: "Para Revestir con AL-PVC-Otros",
+  estandar_acero_simil_aluminio: "Estándar Acero Simil Aluminio",
+  estandar_acero_simil_madera: "Estándar Acero Simil Madera",
+  acero_simil_madera_clasico: "Portón Acero Simil Madera Clásico",
+  coplanar_acero_simil_madera_clasico: "Coplanar Acero Simil Madera Clásico",
+  acero_simil_madera_doble_iny: "Portón Acero Simil Madera Doble Iny.",
+  coplanar_acero_simil_madera_doble_iny: "Coplanar Acero Simil Madera Doble Iny.",
+  revestimiento_wpc: "Revestimiento WPC",
+  corredizo_simil_madera: "Corredizo Simil Madera",
+  corredizo_simil_aluminio_doble: "Corredizo Simil Aluminio Doble",
+  corredizo_simil_madera_doble: "Corredizo Simil Madera Doble",
+  corredizo_simil_aluminio: "Corredizo Simil Aluminio",
+};
+function getPortonTypeLabelFromQuote(quote) {
+  const key = safeStr(quote?.payload?.porton_type || quote?.payload?.tipo_porton || "");
+  return PORTON_TYPE_LABELS[key] || "";
+}
+
 function safeStr(v) { return String(v ?? "").trim(); }
 function isUuid(v) { return /^[0-9a-fA-F-]{36}$/.test(String(v || "").trim()); }
 function toNumberLike(v) { const n = Number(String(v ?? "").replace(",", ".")); return Number.isFinite(n) ? n : null; }
@@ -186,6 +209,8 @@ export async function buildBudgetExtraSummaryLines(payload) {
   const calculated = computeSurfaceAutomaticContext({ quote, form: quote?.measurement_form || {}, surfaceParameters });
 
   const lines = [];
+  const portonTypeLabel = getPortonTypeLabelFromQuote(quote);
+  if (portonTypeLabel) lines.push(`Sistema: ${portonTypeLabel}`);
   const sellerDimensionsLine = buildSellerDimensionsLine(quote);
   // Usar las medidas de paso guardadas por el frontend (que el usuario ve), con fallback al cálculo propio
   const dims = quote?.payload?.dimensions || {};
