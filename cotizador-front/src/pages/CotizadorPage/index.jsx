@@ -769,6 +769,7 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
     applyBasePrices,
     loadFromQuote,
     reset,
+    setMarginPercent,
     setEndCustomer,
     buildPayloadForBack,
     setQuoteMeta,
@@ -797,8 +798,9 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
       setLinkedPortonId(initialLinkedPortonId || "");
       setPortonSearch("");
       if (user?.default_maps_url) setEndCustomer({ maps_url: user.default_maps_url });
+      if (user?.is_distribuidor && !user?.is_vendedor) setMarginPercent(20);
     }
-  }, [idParam, reset, user?.default_maps_url, setEndCustomer, initialLinkedPortonId]);
+  }, [idParam, reset, user?.default_maps_url, user?.is_distribuidor, user?.is_vendedor, setEndCustomer, setMarginPercent, initialLinkedPortonId]);
 
   const quoteQ = useQuery({ queryKey: ["quote", idParam], queryFn: () => getQuote(idParam), enabled: !!idParam });
   const pricelistsQ = useQuery({ queryKey: ["effective-pricelist", user?.user_id || user?.id || "current"], queryFn: getEffectivePricelists, enabled: !!user, staleTime: 60 * 1000 });
