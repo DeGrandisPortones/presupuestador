@@ -231,6 +231,69 @@ function LinkPopup({ url, onClose }) {
   );
 }
 
+function PhoneModal({ row, onClose }) {
+  const phones = [
+    { label: "Cliente", value: row?.end_customer?.phone },
+    { label: "Opcional", value: row?.extra_contact?.phone },
+    {
+      label: row?.created_by_role === "distribuidor" ? "Distribuidor" : "Vendedor",
+      value: row?.created_by_phone,
+    },
+  ].filter((p) => p.value);
+
+  useEffect(() => {
+    function handleKey(e) { if (e.key === "Escape") onClose(); }
+    document.addEventListener("keydown", handleKey);
+    return () => document.removeEventListener("keydown", handleKey);
+  }, [onClose]);
+
+  return (
+    <div
+      onClick={onClose}
+      style={{
+        position: "fixed", inset: 0, zIndex: 1000,
+        background: "rgba(0,0,0,0.35)",
+        display: "flex", alignItems: "center", justifyContent: "center",
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          background: "#fff", borderRadius: 12, boxShadow: "0 8px 32px rgba(0,0,0,0.2)",
+          padding: "24px 28px", minWidth: 280, maxWidth: 380,
+        }}
+      >
+        <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 16, color: "#222" }}>
+          Teléfonos — {row?.customerName}
+        </div>
+        {phones.map((p) => (
+          <div key={p.label} style={{ marginBottom: 14 }}>
+            <div style={{ fontSize: 11, fontWeight: 600, color: "#888", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 3 }}>
+              {p.label}
+            </div>
+            <a
+              href={`tel:+549${p.value.replace(/\D/g, "")}`}
+              style={{ fontSize: 17, fontWeight: 700, color: "#0d47a1", textDecoration: "none" }}
+            >
+              {p.value}
+            </a>
+          </div>
+        ))}
+        <button
+          onClick={onClose}
+          style={{
+            marginTop: 8, width: "100%", padding: "8px 0", borderRadius: 7,
+            border: "1px solid #e0e0e0", background: "#f5f5f5", cursor: "pointer",
+            fontSize: 13, fontWeight: 600, color: "#555",
+          }}
+        >
+          Cerrar
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export default function PortonesEstadoPage() {
   const navigate = useNavigate();
   const user = useAuthStore((s) => s.user);
@@ -239,6 +302,7 @@ export default function PortonesEstadoPage() {
   const [filterColor, setFilterColor] = useState("all");
   const [search, setSearch] = useState("");
   const [linkPopupId, setLinkPopupId] = useState(null);
+  const [phoneModalRow, setPhoneModalRow] = useState(null);
 
   const q = useQuery({
     queryKey: ["portones_estado"],
@@ -258,6 +322,7 @@ export default function PortonesEstadoPage() {
         || quote.final_copy_sale_order_name
         || quote.odoo_sale_order_name
         || `#${quote.quote_number || "—"}`,
+      extra_contact: quote.extra_contact || null,
     }));
   }, [q.data]);
 
@@ -378,7 +443,24 @@ export default function PortonesEstadoPage() {
                     <td style={tdStyle}>
                       <span style={{ fontWeight: 700, color: "#333" }}>{r.displayRef}</span>
                     </td>
-                    <td style={tdStyle}>{r.customerName}</td>
+                    <td style={tdStyle}>
+                      <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                        {r.customerName}
+                        {(r.end_customer?.phone || r.extra_contact?.phone || r.created_by_phone) && (
+                          <button
+                            onClick={() => setPhoneModalRow(r)}
+                            title="Ver teléfonos"
+                            style={{
+                              padding: "2px 7px", borderRadius: 5, border: "1px solid #90caf9",
+                              background: "#e3f2fd", color: "#0d47a1", cursor: "pointer",
+                              fontSize: 13, lineHeight: 1, flexShrink: 0,
+                            }}
+                          >
+                            📞
+                          </button>
+                        )}
+                      </span>
+                    </td>
                     <td style={tdStyle}>{r.sellerName}</td>
                     <td style={tdStyle}>
                       <StatusBadge color={r.statusInfo.color} label={r.statusInfo.label} />
@@ -427,6 +509,10 @@ export default function PortonesEstadoPage() {
       )}
 
       <div className="spacer" />
+
+      {phoneModalRow && (
+        <PhoneModal row={phoneModalRow} onClose={() => setPhoneModalRow(null)} />
+      )}
     </div>
   );
 }

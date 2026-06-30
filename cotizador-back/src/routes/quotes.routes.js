@@ -1937,7 +1937,10 @@ export function buildQuotesRouter(odoo) {
                       q.fulfillment_mode, q.final_status, q.final_technical_decision, q.final_logistics_decision,
                       q.acopio_to_produccion_status, q.catalog_kind,
                       q.end_customer, q.created_at, q.updated_at,
+                      q.payload->'extra_contact' as extra_contact,
+                      q.created_by_role,
                       u.username as created_by_username, u.full_name as created_by_full_name,
+                      u.phone as created_by_phone,
                       fc.final_copy_id, fc.final_copy_status, fc.final_copy_sale_order_name
                from public.presupuestador_quotes q
                left join public.presupuestador_users u on u.id = q.created_by_user_id
