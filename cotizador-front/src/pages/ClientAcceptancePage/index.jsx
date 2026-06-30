@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useParams } from "react-router-dom";
 import {
@@ -469,11 +469,96 @@ function MeasurementSchemeVisual({ form }) {
   );
 }
 
+const TERMINOS = [
+  {
+    title: "1. Formas de Pago:",
+    text: "Aceptamos pagos en efectivo (pesos o dólares billete), transferencia bancaria, cheques o tarjeta de crédito (consultar por planes vigentes). Para confirmar el pedido se requiere una seña del 70% del valor total. El saldo restante deberá abonarse en su totalidad antes de la fecha del despacho del mismo. Los productos con saldos pendientes o deuda no serán liberados para su retiro.",
+  },
+  {
+    title: "2. Plazos de Entrega:",
+    text: "La fecha estimada de entrega será la estipulada una vez que el cliente confirme las medidas, especificaciones y demás características del pedido. El plazo de entrega comenzará a computarse a partir de la confirmación técnica del pedido y de la recepción del pago de la seña correspondiente.",
+  },
+  {
+    title: "",
+    text: "Los plazos indicados son estimativos y podrán variar por causas ajenas al proveedor, tales como demoras en el suministro de materiales, inconvenientes logísticos, fuerza mayor u otras circunstancias imprevistas, las cuales serán comunicadas oportunamente al cliente.",
+  },
+  {
+    title: "3. Garantía:",
+    text: "Nuestros productos cuentan con una garantía de 60 meses contra defectos de fabricación. Esta garantía no cubre daños causados por uso inadecuado o negligencia del cliente.",
+  },
+  {
+    title: "4. Responsabilidad del Cliente:",
+    text: "El cliente es responsable de proporcionar información completa y precisa al momento de realizar el pedido. Cualquier error u omisión en los datos brindados será responsabilidad exclusiva del cliente, pudiendo afectar la correcta producción y entrega del portón. Asimismo, el cliente deberá garantizar que el lugar de instalación se encuentre limpio, ordenado y con libre acceso. No deben existir escombros, montículos de arena u otros obstáculos que dificulten el ingreso del personal o la manipulación del producto. En caso de ser necesario se deberá contar con personas disponibles al momento de la entrega para colaborar con la descarga del portón, desde el área de logística se dispondrá esta información.",
+  },
+  {
+    title: "5. Derechos de Propiedad:",
+    text: "Todos los derechos de propiedad intelectual y derechos de autor de los productos y diseños son propiedad de DE GRANDIS PORTONES. Está prohibida la reproducción o distribución no autorizada.",
+  },
+  {
+    title: "6. Ajustes y Variaciones:",
+    text: "En caso de existir diferencias entre el presupuesto confirmado y las características finales del pedido (como medidas, diseño, materiales, entre otros), que generen costos adicionales, nos reservamos el derecho de facturar dichos montos sin previo aviso. El cliente deberá abonar estos importes adicionales antes de que se inicie la producción del portón.",
+  },
+];
+
+function TermsModal({ onClose }) {
+  useEffect(() => {
+    function handleKey(e) { if (e.key === "Escape") onClose(); }
+    document.addEventListener("keydown", handleKey);
+    return () => document.removeEventListener("keydown", handleKey);
+  }, [onClose]);
+
+  return (
+    <div
+      onClick={onClose}
+      style={{
+        position: "fixed", inset: 0, zIndex: 1000,
+        background: "rgba(0,0,0,0.45)",
+        display: "flex", alignItems: "center", justifyContent: "center",
+        padding: "16px",
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          background: "#fff", borderRadius: 14, boxShadow: "0 8px 40px rgba(0,0,0,0.2)",
+          padding: "28px 28px 20px", width: "100%", maxWidth: 640,
+          maxHeight: "85vh", display: "flex", flexDirection: "column",
+        }}
+      >
+        <div style={{ fontWeight: 800, fontSize: 16, marginBottom: 18, color: "#111" }}>
+          Términos y Condiciones de Venta
+        </div>
+        <div style={{ overflowY: "auto", flex: 1, paddingRight: 4 }}>
+          {TERMINOS.map((p, i) => (
+            <div key={i} style={{ marginBottom: 14 }}>
+              {p.title ? (
+                <span style={{ fontWeight: 700 }}>{p.title} </span>
+              ) : null}
+              <span style={{ fontSize: 13.5, color: "#333", lineHeight: 1.6 }}>{p.text}</span>
+            </div>
+          ))}
+        </div>
+        <button
+          onClick={onClose}
+          style={{
+            marginTop: 20, width: "100%", padding: "10px 0", borderRadius: 8,
+            border: "1px solid #e0e0e0", background: "#f5f5f5", cursor: "pointer",
+            fontSize: 14, fontWeight: 600, color: "#555", flexShrink: 0,
+          }}
+        >
+          Cerrar
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export default function ClientAcceptancePage() {
   const { token } = useParams();
   const [step, setStep] = useState("initial");
   const [fullName, setFullName] = useState("");
   const [dni, setDni] = useState("");
+  const [showTerms, setShowTerms] = useState(false);
   const acceptanceQ = useQuery({
     queryKey: ["client-acceptance", token],
     queryFn: () => getPublicMeasurementAcceptance(token),
@@ -662,6 +747,20 @@ export default function ClientAcceptancePage() {
           </>
         )}
       </Card>
+
+      <div style={{ textAlign: "center", padding: "8px 0 24px" }}>
+        <button
+          onClick={() => setShowTerms(true)}
+          style={{
+            background: "none", border: "none", cursor: "pointer",
+            color: "#6b7280", fontSize: 13, textDecoration: "underline",
+          }}
+        >
+          Ver términos y condiciones
+        </button>
+      </div>
+
+      {showTerms && <TermsModal onClose={() => setShowTerms(false)} />}
     </div>
   );
 }
