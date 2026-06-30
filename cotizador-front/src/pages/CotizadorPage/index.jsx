@@ -1012,10 +1012,13 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
   const financingPercent = Number(financingQ.data?.percent || 0) || 0;
   const savedQuoteAdjustmentPercent = getSavedQuoteAdjustmentPercent(quoteQ.data);
   const persistedQuoteId = quoteQ.data?.id || quoteId || idParam;
+  const savedQuotePaymentMethod = String(quoteQ.data?.payload?.payment_method || "").trim();
+  const currentPaymentMethod = String(paymentMethod || "").trim();
+  const paymentMethodChangedFromSavedQuote = !!persistedQuoteId && currentPaymentMethod !== savedQuotePaymentMethod;
   const quoteAdjustmentPercent = useMemo(() => {
-    if (persistedQuoteId && savedQuoteAdjustmentPercent !== null) return savedQuoteAdjustmentPercent;
+    if (persistedQuoteId && savedQuoteAdjustmentPercent !== null && !paymentMethodChangedFromSavedQuote) return savedQuoteAdjustmentPercent;
     return resolveQuoteAdjustmentPercent(financingPercent, conditionMode);
-  }, [persistedQuoteId, savedQuoteAdjustmentPercent, financingPercent, conditionMode]);
+  }, [persistedQuoteId, savedQuoteAdjustmentPercent, paymentMethodChangedFromSavedQuote, financingPercent, conditionMode]);
   const totals = useMemo(() => calcTotals(lines, marginPercent, ivaRate, quoteAdjustmentPercent, conditionMode), [lines, marginPercent, ivaRate, quoteAdjustmentPercent, conditionMode]);
   const linesKey = useMemo(
     () => lines.map((l) => `${l.product_id}:${resolveLinePricingProductId(l)}:${l.odoo_template_id || ""}:${isStableEditableQtyLine(l) ? "stable-qty" : l.qty}`).join("|"),
@@ -1437,7 +1440,7 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
       const latestProductionPlanning = await getLatestProductionPlanning();
       const pdfPayload = buildPdfPayloadForDownload(
         payload,
-        0,
+        quoteAdjustmentPercent,
         latestProductionPlanning ? { production_planning: latestProductionPlanning } : {},
         { stripMarginPercent: true, zeroShippingForDistributor: true, keepShippingPriceForDistributorProforma: true },
       );

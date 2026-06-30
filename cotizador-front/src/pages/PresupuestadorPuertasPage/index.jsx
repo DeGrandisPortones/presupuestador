@@ -113,7 +113,7 @@ function validateCustomerContact(customer, { requirePhone = false, requireMaps =
   const mapsErr = validateGoogleMapsUrl(c.maps_url, { required: requireMaps });
   if (mapsErr) throw new Error(mapsErr);
 }
-function buildPdfPayloadForDownload(payload, financingPercent, extras = {}) {
+function buildPdfPayloadForDownload(payload, financingPercent, extras = {}, options = {}) {
   const percent = Number(financingPercent || 0) || 0;
   const factor = 1 + percent / 100;
   const nextLines = Array.isArray(payload?.lines)
@@ -123,7 +123,17 @@ function buildPdfPayloadForDownload(payload, financingPercent, extras = {}) {
         return { ...line, basePrice: financedBase, base_price: financedBase, price: financedBase };
       })
     : [];
-  return { ...(payload || {}), ...extras, lines: nextLines, payload: { ...(payload?.payload || {}), ...(extras.payload || {}) } };
+  const nextPayload = { ...(payload || {}), ...extras, lines: nextLines, payload: { ...(payload?.payload || {}), ...(extras.payload || {}) } };
+  if (options?.stripMarginPercent) {
+    nextPayload.margin_percent_ui = 0;
+    nextPayload.marginPercent = 0;
+    nextPayload.payload = {
+      ...(nextPayload.payload || {}),
+      margin_percent_ui: 0,
+      marginPercent: 0,
+    };
+  }
+  return nextPayload;
 }
 
 function hasUsableLineBasePrice(line = {}) {
@@ -297,10 +307,13 @@ export default function PresupuestadorPuertasPage() {
   const financingPercent = Number(financingQ.data?.percent || 0) || 0;
   const savedQuoteAdjustmentPercent = getSavedQuoteAdjustmentPercent(quoteQ.data);
   const persistedQuoteId = quoteQ.data?.id || quoteId || idParam;
+  const savedQuotePaymentMethod = String(quoteQ.data?.payload?.payment_method || "").trim();
+  const currentPaymentMethod = String(paymentMethod || "").trim();
+  const paymentMethodChangedFromSavedQuote = !!persistedQuoteId && currentPaymentMethod !== savedQuotePaymentMethod;
   const quoteAdjustmentPercent = useMemo(() => {
-    if (persistedQuoteId && savedQuoteAdjustmentPercent !== null) return savedQuoteAdjustmentPercent;
+    if (persistedQuoteId && savedQuoteAdjustmentPercent !== null && !paymentMethodChangedFromSavedQuote) return savedQuoteAdjustmentPercent;
     return resolveQuoteAdjustmentPercent(financingPercent, conditionMode);
-  }, [persistedQuoteId, savedQuoteAdjustmentPercent, financingPercent, conditionMode]);
+  }, [persistedQuoteId, savedQuoteAdjustmentPercent, paymentMethodChangedFromSavedQuote, financingPercent, conditionMode]);
   const totals = useMemo(() => calcTotals(lines, marginPercent, ivaRate, quoteAdjustmentPercent, conditionMode), [lines, marginPercent, ivaRate, quoteAdjustmentPercent, conditionMode]);
   const linesKey = useMemo(() => lines.map((l) => `${l.product_id}:${resolveLinePricingProductId(l)}:${l.odoo_template_id || ""}:${l.qty}`).join("|"), [lines]);
 
@@ -579,13 +592,17 @@ export default function PresupuestadorPuertasPage() {
       validatePricingContextReady();
       const saved = await saveDoorQuote({ forConfirm: false });
       const payload = buildDoorPayload({ savedQuote: saved, forceDoorRef: buildDoorOrderReference({ linkedQuote: linkedPorton, savedQuote: saved }) });
-      const pdfAdjustmentPercent = mode === "proforma" ? 0 : quoteAdjustmentPercent;
-      const pdfPayload = buildPdfPayloadForDownload(payload, pdfAdjustmentPercent, {
-        id: saved.id,
-        quote_id: saved.id,
-        quote_number: saved.quote_number || "",
-        seller_name: user?.full_name || user?.username || "",
-      });
+      const pdfPayload = buildPdfPayloadForDownload(
+        payload,
+        quoteAdjustmentPercent,
+        {
+          id: saved.id,
+          quote_id: saved.id,
+          quote_number: saved.quote_number || "",
+          seller_name: user?.full_name || user?.username || "",
+        },
+        mode === "proforma" ? { stripMarginPercent: true } : {},
+      );
       if (mode === "proforma") await downloadProformaPdf(pdfPayload);
       else await downloadPresupuestoPdf(pdfPayload);
     } catch (e) {
