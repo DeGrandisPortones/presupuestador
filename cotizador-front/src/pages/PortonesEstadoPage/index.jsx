@@ -297,7 +297,7 @@ function PhoneModal({ row, onClose }) {
 export default function PortonesEstadoPage() {
   const navigate = useNavigate();
   const user = useAuthStore((s) => s.user);
-  const allowed = !!(user?.is_rev_tecnica || user?.is_superuser || user?.is_enc_comercial);
+  const allowed = !!(user?.is_rev_tecnica || user?.is_superuser || user?.is_enc_comercial || user?.is_logistica);
 
   const [filterColor, setFilterColor] = useState("all");
   const [search, setSearch] = useState("");

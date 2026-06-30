@@ -1926,7 +1926,7 @@ export function buildQuotesRouter(odoo) {
                 order by coalesce(q.measurement_review_at, fc.final_copy_synced_at, q.final_synced_at, q.production_delivery_committed_at, q.confirmed_at) desc nulls last, q.id desc
                 limit 500`;
       } else if (scope === "portones_estado") {
-        if (!u.is_rev_tecnica && !u.is_superuser && !u.is_enc_comercial) return res.status(403).json({ ok: false, error: "No autorizado" });
+        if (!u.is_rev_tecnica && !u.is_superuser && !u.is_enc_comercial && !u.is_logistica) return res.status(403).json({ ok: false, error: "No autorizado" });
         sql = `select q.id, q.quote_number, q.odoo_sale_order_name, q.final_sale_order_name,
                       q.status, q.commercial_decision, q.technical_decision,
                       q.measurement_status, q.requires_measurement, q.measurement_review_at,
