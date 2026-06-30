@@ -870,6 +870,88 @@ function ParantesDistributionSelect({ value, onChange }) {
   );
 }
 
+function WhatsAppRecipientsModal({ recipients, message, onClose }) {
+  function normalizePhone(phone) {
+    const digits = String(phone || "").replace(/\D/g, "");
+    if (!digits) return "";
+    return digits.startsWith("54") ? digits : `54${digits}`;
+  }
+  function buildUrl(to) {
+    const phone = normalizePhone(to);
+    if (!phone || !message) return "";
+    return `https://web.whatsapp.com/send?phone=${encodeURIComponent(phone)}&text=${encodeURIComponent(message)}`;
+  }
+  useEffect(() => {
+    function handleKey(e) { if (e.key === "Escape") onClose(); }
+    document.addEventListener("keydown", handleKey);
+    return () => document.removeEventListener("keydown", handleKey);
+  }, [onClose]);
+  return (
+    <div
+      onClick={onClose}
+      style={{
+        position: "fixed", inset: 0, zIndex: 1000,
+        background: "rgba(0,0,0,0.45)",
+        display: "flex", alignItems: "center", justifyContent: "center",
+        padding: 16,
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          background: "#fff", borderRadius: 14, boxShadow: "0 8px 40px rgba(0,0,0,0.2)",
+          padding: "28px 28px 20px", width: "100%", maxWidth: 420,
+        }}
+      >
+        <div style={{ fontWeight: 800, fontSize: 16, marginBottom: 6 }}>
+          Enviar por WhatsApp
+        </div>
+        <div style={{ color: "#555", fontSize: 13, marginBottom: 20 }}>
+          Hacé clic en cada destinatario para abrir WhatsApp Web. Mandá el mensaje y volvé aquí para el siguiente.
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {recipients.map((r) => {
+            const url = buildUrl(r.to);
+            return (
+              <a
+                key={r.to}
+                href={url || undefined}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{
+                  display: "flex", alignItems: "center", justifyContent: "space-between",
+                  padding: "12px 16px", borderRadius: 10,
+                  border: "1px solid #e0e0e0", background: url ? "#f0fdf4" : "#f9f9f9",
+                  textDecoration: "none", color: "#111",
+                  pointerEvents: url ? "auto" : "none", opacity: url ? 1 : 0.5,
+                }}
+              >
+                <div>
+                  <div style={{ fontWeight: 700, fontSize: 14 }}>{r.label}</div>
+                  <div style={{ fontSize: 12, color: "#555" }}>{r.name}</div>
+                </div>
+                <div style={{ fontSize: 12, color: "#16a34a", fontWeight: 600 }}>
+                  {url ? "Abrir →" : "Sin teléfono"}
+                </div>
+              </a>
+            );
+          })}
+        </div>
+        <button
+          onClick={onClose}
+          style={{
+            marginTop: 20, width: "100%", padding: "10px 0", borderRadius: 8,
+            border: "1px solid #e0e0e0", background: "#f5f5f5", cursor: "pointer",
+            fontSize: 14, fontWeight: 600, color: "#555",
+          }}
+        >
+          Listo, cerrar
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export default function MedicionDetailPage() {
   const { id } = useParams();
   const quoteId = id ? String(id) : null;
@@ -1237,8 +1319,10 @@ export default function MedicionDetailPage() {
     },
   });
 
+  const [whatsappModal, setWhatsappModal] = useState(null);
+
   const approveTechnicalM = useMutation({
-    mutationFn: async ({ whatsappWindow = null } = {}) => {
+    mutationFn: async () => {
       await saveMeasurementDetailed(quoteId, {
         form,
         submit: false,
@@ -1247,23 +1331,17 @@ export default function MedicionDetailPage() {
         endCustomer: quote?.end_customer || {},
         baselineForm,
       });
-      return {
-        ...(await reviewMeasurement(quoteId, { action: "approve", notes: null })),
-        __whatsappWindow: whatsappWindow || null,
-      };
+      return reviewMeasurement(quoteId, { action: "approve", notes: null });
     },
     onSuccess: (response) => {
-      const opened = openWhatsAppWebForFinalApproval(response, response?.__whatsappWindow || null);
-      if (!opened) {
-        window.alert("La revisión técnica final fue aprobada correctamente. No se pudo abrir WhatsApp Web automáticamente.");
+      const notification = response?.finalization?.whatsappNotification || {};
+      const recipients = notification.recipients || [];
+      const message = text(notification.message) || buildFallbackApprovalMessage(response);
+      if (recipients.length > 0 && (text(notification.acceptance_url) || text(notification.public_url))) {
+        setWhatsappModal({ recipients, message });
       } else {
-        window.alert("La revisión técnica final fue aprobada correctamente. Se abrió WhatsApp Web con el mensaje para el cliente.");
-      }
-      navigate("/menu", { replace: true });
-    },
-    onError: (_error, variables) => {
-      if (variables?.whatsappWindow && !variables.whatsappWindow.closed) {
-        variables.whatsappWindow.close();
+        window.alert("La revisión técnica final fue aprobada correctamente.");
+        navigate("/menu", { replace: true });
       }
     },
   });
@@ -1322,6 +1400,7 @@ export default function MedicionDetailPage() {
   const isReadOnlyMeasurement = !isTechnical && (readOnlyFromState || readOnlyFromQuery || isMeasurementApproved);
 
   return (
+    <>
     <div className="container">
       <div className="card">
         <div
@@ -1355,10 +1434,7 @@ export default function MedicionDetailPage() {
             ) : null}
             {isTechnical ? (
               <>
-                <Button disabled={approveTechnicalM.isPending} onClick={() => {
-                  const whatsappWindow = window.open("", "dgp_whatsapp");
-                  approveTechnicalM.mutate({ whatsappWindow });
-                }}>
+                <Button disabled={approveTechnicalM.isPending} onClick={() => approveTechnicalM.mutate()}>
                   {approveTechnicalM.isPending ? "Aprobando..." : submitButtonLabel}
                 </Button>
                 <Button
@@ -1811,5 +1887,14 @@ export default function MedicionDetailPage() {
         ) : null}
       </div>
     </div>
+
+    {whatsappModal && (
+      <WhatsAppRecipientsModal
+        recipients={whatsappModal.recipients}
+        message={whatsappModal.message}
+        onClose={() => { setWhatsappModal(null); navigate("/menu", { replace: true }); }}
+      />
+    )}
+    </>
   );
 }

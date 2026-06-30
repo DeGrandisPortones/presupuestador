@@ -1237,39 +1237,52 @@ async function readPartnerNotificationData(odoo, partnerId) {
     return null;
   }
 }
-async function resolveMeasurementNotificationTarget({ odoo, quote }) {
+async function resolveAllMeasurementRecipients({ odoo, quote }) {
+  const recipients = [];
+  const seen = new Set();
+  function addRecipient(label, name, phone) {
+    const normalized = normalizePhoneForWhatsApp(phone);
+    if (!normalized || seen.has(normalized)) return;
+    seen.add(normalized);
+    recipients.push({ label, name: String(name || label).trim(), to: normalized });
+  }
+
+  // 1. Cliente siempre
+  addRecipient("Cliente", quote?.end_customer?.name, quote?.end_customer?.phone);
+
+  // 2. Distribuidor si el quote fue creado por distribuidor y tiene teléfono
   const createdByRole = String(quote?.created_by_role || "").trim().toLowerCase();
   if (createdByRole === "distribuidor") {
-    // Primero buscamos el teléfono local del distribuidor en nuestra DB
+    let distributorPhone = "";
+    let distributorName = "Distribuidor";
     const createdByUserId = Number(quote?.created_by_user_id || 0) || null;
     if (createdByUserId) {
       try {
         const r = await dbQuery(`select phone from public.presupuestador_users where id=$1 limit 1`, [createdByUserId]);
-        const localPhone = normalizePhoneForWhatsApp(r.rows?.[0]?.phone);
-        if (localPhone) {
-          const partnerForName = await readPartnerNotificationData(odoo, quote?.bill_to_odoo_partner_id);
-          return {
-            to: localPhone,
-            recipient_name: String(partnerForName?.name || "distribuidor").trim() || "distribuidor",
-            recipient_type: "distribuidor",
-          };
-        }
-      } catch { /* fallback a Odoo */ }
+        distributorPhone = r.rows?.[0]?.phone || "";
+      } catch { /* fallback */ }
     }
     const partner = await readPartnerNotificationData(odoo, quote?.bill_to_odoo_partner_id);
-    const partnerPhone = normalizePhoneForWhatsApp(partner?.phone || partner?.mobile);
-    if (partnerPhone) {
-      return {
-        to: partnerPhone,
-        recipient_name: String(partner?.name || "distribuidor").trim() || "distribuidor",
-        recipient_type: "distribuidor",
-      };
-    }
+    if (partner?.name) distributorName = partner.name;
+    if (!distributorPhone) distributorPhone = partner?.phone || partner?.mobile || "";
+    addRecipient("Distribuidor", distributorName, distributorPhone);
   }
+
+  // 3. Contacto opcional
+  const extraContact = quote?.payload?.extra_contact || {};
+  addRecipient("Contacto opcional", extraContact.name || "Contacto opcional", extraContact.phone);
+
+  return recipients;
+}
+
+// Mantener para compatibilidad con flujo de Cloud API
+async function resolveMeasurementNotificationTarget({ odoo, quote }) {
+  const recipients = await resolveAllMeasurementRecipients({ odoo, quote });
+  const main = recipients[0];
   return {
-    to: normalizePhoneForWhatsApp(quote?.end_customer?.phone),
-    recipient_name: String(quote?.end_customer?.name || "cliente").trim() || "cliente",
-    recipient_type: createdByRole === "distribuidor" ? "distribuidor" : "cliente",
+    to: main?.to || "",
+    recipient_name: main?.name || "cliente",
+    recipient_type: main?.label?.toLowerCase() || "cliente",
   };
 }
 function buildMeasurementApprovedMessage({ quote, acceptanceUrl, recipientName, recipientType }) {
@@ -1301,89 +1314,48 @@ async function sendWhatsAppRaw({ to, message, acceptanceUrl, token, phoneNumberI
 }
 
 export async function maybeSendMeasurementApprovedWhatsApp({ odoo, quote }) {
-  const recipient = await resolveMeasurementNotificationTarget({ odoo, quote });
-  const to = recipient?.to || "";
+  const recipients = await resolveAllMeasurementRecipients({ odoo, quote });
+  const mainRecipient = recipients[0];
+  const to = mainRecipient?.to || "";
   const publicUrl = buildMeasurementPublicUrl(quote);
   const acceptanceUrl = buildClientAcceptanceUrl(quote);
   const message = buildMeasurementApprovedMessage({
     quote,
     acceptanceUrl,
-    recipientName: recipient?.recipient_name,
-    recipientType: recipient?.recipient_type,
+    recipientName: mainRecipient?.name,
+    recipientType: mainRecipient?.label?.toLowerCase() || "cliente",
   });
+  const base = {
+    public_url: publicUrl,
+    acceptance_url: acceptanceUrl,
+    message,
+    to,
+    recipients,
+    recipient_type: mainRecipient?.label?.toLowerCase() || "cliente",
+    recipient_name: mainRecipient?.name || "",
+  };
   if (!to) {
-    return {
-      sent: false,
-      reason: "missing_phone",
-      public_url: publicUrl,
-      acceptance_url: acceptanceUrl,
-      message,
-      recipient_type: recipient?.recipient_type || "cliente",
-      recipient_name: recipient?.recipient_name || "",
-    };
+    return { ...base, sent: false, reason: "missing_phone" };
   }
   const token = String(process.env.WHATSAPP_CLOUD_API_TOKEN || "").trim();
   const phoneNumberId = String(process.env.WHATSAPP_CLOUD_PHONE_NUMBER_ID || "").trim();
   const graphVersion = String(process.env.WHATSAPP_GRAPH_VERSION || "v20.0").trim();
   if (!token || !phoneNumberId) {
-    return {
-      sent: false,
-      reason: "whatsapp_not_configured",
-      public_url: publicUrl,
-      acceptance_url: acceptanceUrl,
-      message,
-      to,
-      recipient_type: recipient?.recipient_type || "cliente",
-      recipient_name: recipient?.recipient_name || "",
-    };
+    return { ...base, sent: false, reason: "whatsapp_not_configured" };
   }
   try {
     const ctx = { token, phoneNumberId, graphVersion };
     const result = await sendWhatsAppRaw({ to, message, acceptanceUrl, ...ctx });
-
-    // Envío adicional al contacto extra si tiene teléfono cargado
-    const extraPhone = normalizePhoneForWhatsApp(quote?.payload?.extra_contact?.phone);
-    if (extraPhone && extraPhone !== to) {
-      sendWhatsAppRaw({ to: extraPhone, message, acceptanceUrl, ...ctx }).catch(() => {});
+    // Envío a todos los destinatarios adicionales (fire-and-forget)
+    for (const r of recipients.slice(1)) {
+      if (r.to) sendWhatsAppRaw({ to: r.to, message, acceptanceUrl, ...ctx }).catch(() => {});
     }
-
     if (!result.ok) {
-      return {
-        sent: false,
-        reason: "whatsapp_api_error",
-        status: result.status,
-        error: result.data,
-        public_url: publicUrl,
-        acceptance_url: acceptanceUrl,
-        message,
-        to,
-        recipient_type: recipient?.recipient_type || "cliente",
-        recipient_name: recipient?.recipient_name || "",
-      };
+      return { ...base, sent: false, reason: "whatsapp_api_error", status: result.status, error: result.data };
     }
-    return {
-      sent: true,
-      provider: "meta_cloud_api",
-      response: result.data,
-      public_url: publicUrl,
-      acceptance_url: acceptanceUrl,
-      message,
-      to,
-      recipient_type: recipient?.recipient_type || "cliente",
-      recipient_name: recipient?.recipient_name || "",
-    };
+    return { ...base, sent: true, provider: "meta_cloud_api", response: result.data };
   } catch (error) {
-    return {
-      sent: false,
-      reason: "whatsapp_request_failed",
-      error: error?.message || String(error || "Error enviando WhatsApp"),
-      public_url: publicUrl,
-      acceptance_url: acceptanceUrl,
-      message,
-      to,
-      recipient_type: recipient?.recipient_type || "cliente",
-      recipient_name: recipient?.recipient_name || "",
-    };
+    return { ...base, sent: false, reason: "whatsapp_request_failed", error: error?.message || String(error || "Error enviando WhatsApp") };
   }
 }
 
