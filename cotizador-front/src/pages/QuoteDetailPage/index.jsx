@@ -906,12 +906,12 @@ function ApprovalContextCard({ quote, commercialRows, technicalRows }) {
   );
 }
 
-function ProformaTotalsCard({ quote, conditionMode }) {
+function ProformaTotalsCard({ quote, conditionMode, financingPercent = 0 }) {
   if (!quote) return null;
-  const baseSubtotal = getQuoteBaseSubtotalForApproval(quote);
+  const financedSubtotal = round2ForApproval(getQuoteBaseSubtotalForApproval(quote) * (1 + (Number(financingPercent || 0) || 0) / 100));
   const { ivaRate } = getQuoteCommercialTotalsForApproval(quote, conditionMode, 0);
-  const baseIva = round2ForApproval(baseSubtotal * ivaRate);
-  const baseTotal = round2ForApproval(baseSubtotal + baseIva);
+  const baseIva = round2ForApproval(financedSubtotal * ivaRate);
+  const baseTotal = round2ForApproval(financedSubtotal + baseIva);
   return (
     <div className="card" style={{ background: "#f0fffe", border: "1px solid #b2e8e0", marginTop: 12 }}>
       <div style={{ fontWeight: 900, marginBottom: 4 }}>Proforma (precios base)</div>
@@ -919,7 +919,7 @@ function ProformaTotalsCard({ quote, conditionMode }) {
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 10 }}>
         <div style={{ border: "1px solid #b2e8e0", borderRadius: 10, padding: "8px 10px", background: "#fff" }}>
           <div className="muted" style={{ fontSize: 12 }}>Subtotal base</div>
-          <div style={{ fontWeight: 800, marginTop: 4 }}>{formatARS(baseSubtotal)}</div>
+          <div style={{ fontWeight: 800, marginTop: 4 }}>{formatARS(financedSubtotal)}</div>
         </div>
         <div style={{ border: "1px solid #b2e8e0", borderRadius: 10, padding: "8px 10px", background: "#fff" }}>
           <div className="muted" style={{ fontSize: 12 }}>IVA ({formatIvaRateForApproval(ivaRate)})</div>
@@ -1243,7 +1243,7 @@ export default function QuoteDetailPage() {
             <h3 style={{ marginTop: 0 }}>Ítems</h3>
             {!lines.length ? <div className="muted">Sin ítems</div> : null}
             {!!lines.length ? <table><thead><tr><th>Producto</th><th className="right">Cant.</th><th className="right">Precio base</th><th className="right">Total base</th><th className="right">Precio con coeficiente</th><th className="right">Total ítem</th></tr></thead><tbody>{approvalLineRows.map((l) => <tr key={l._approvalKey}><td><div style={{ fontWeight: 700 }}>{l.name || `Producto ${l.product_id}`}</div><div className="muted">ID: {l.product_id} {l.code ? `| ${l.code}` : ""}</div></td><td className="right">{l._approvalQty}</td><td className="right" style={{ color: "#1a6b5e" }}>{formatARS(l._approvalBasePrice)}</td><td className="right" style={{ color: "#1a6b5e" }}>{formatARS(l._approvalBaseTotal)}</td><td className="right">{formatARS(l._approvalFinalUnit)}</td><td className="right" style={{ fontWeight: 800 }}>{formatARS(l._approvalTotal)}</td></tr>)}</tbody></table> : null}
-            {!!lines.length ? <ProformaTotalsCard quote={quote} conditionMode={conditionMode} /> : null}
+            {!!lines.length ? <ProformaTotalsCard quote={quote} conditionMode={conditionMode} financingPercent={quote?.created_by_role === "distribuidor" ? approvalFinancingPercent : 0} /> : null}
             {!!lines.length ? <ApprovalTotalsBottomCard quote={quote} conditionMode={conditionMode} financingPercent={approvalFinancingPercent} /> : null}
             {(canCommercial || canTech) ? <><div className="spacer" /><div className="card" style={{ background: "#fafafa" }}><div style={{ fontWeight: 900 }}>Acciones de revisión</div><div className="muted">Solo si está en <b>pending_approvals</b> y tu decisión está en <b>pending</b>.</div><div className="spacer" /><div className="muted">Observaciones del revisor</div><textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Motivo si rechaza / notas si aprueba…" style={{ width: "100%", minHeight: 60, padding: "8px 10px", borderRadius: 8, border: "1px solid #ddd", outline: "none", resize: "vertical" }} /><div className="spacer" /><div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>{canCommercial ? <><Button disabled={!canCommercialAct || commercialM.isPending} onClick={handleCommercialApproveClick}>{commercialM.isPending ? "Procesando..." : "Aprobar Comercial"}</Button><Button variant="danger" disabled={!canCommercialAct || commercialM.isPending} onClick={() => commercialM.mutate({ action: "reject", billingCustomer: null })}>Rechazar Comercial</Button></> : null}{canTech ? <><Button disabled={!canTechAct || techM.isPending} onClick={() => techM.mutate({ action: "approve" })}>{techM.isPending ? "Procesando..." : "Aprobar Técnica"}</Button><Button variant="danger" disabled={!canTechAct || techM.isPending} onClick={() => techM.mutate({ action: "reject" })}>Rechazar Técnica</Button></> : null}</div>{commercialM.isError ? <div style={{ color: "#d93025", fontSize: 13, marginTop: 10 }}>{commercialM.error.message}</div> : null}{techM.isError ? <div style={{ color: "#d93025", fontSize: 13, marginTop: 10 }}>{techM.error.message}</div> : null}</div></> : null}
           </>
