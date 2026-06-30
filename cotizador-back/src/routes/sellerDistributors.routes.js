@@ -26,7 +26,7 @@ function requireSellerOrCommercial(req, res, next) {
 }
 
 function canSeeAllDistributors(user) {
-  return !!(user?.is_superuser || user?.is_enc_comercial);
+  return !!(user?.is_superuser || user?.is_enc_comercial || user?.see_all_distributors);
 }
 
 export function buildSellerDistributorsRouter() {

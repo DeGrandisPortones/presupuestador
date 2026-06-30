@@ -85,7 +85,8 @@ export async function requireAuth(req, res, next) {
                odoo_partner_id,
                odoo_pricelist_id,
                default_maps_url,
-               coalesce(is_active, true) as is_active
+               coalesce(is_active, true) as is_active,
+               coalesce(see_all_distributors, false) as see_all_distributors
         from public.presupuestador_users
         where id = $1
         limit 1
@@ -116,6 +117,7 @@ export async function requireAuth(req, res, next) {
           odoo_pricelist_id: fresh.odoo_pricelist_id ?? null,
           default_maps_url: fresh.default_maps_url ?? null,
           is_active: !!fresh.is_active,
+          see_all_distributors: !!fresh.see_all_distributors,
         })
       : sanitizeUserForPricing({ ...decoded, is_active: decoded.is_active ?? true });
 

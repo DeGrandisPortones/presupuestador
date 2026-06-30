@@ -16,6 +16,7 @@ export async function ensureUsersAdminColumns() {
   await dbQuery(`alter table public.presupuestador_users add column if not exists odoo_pricelist_id integer null;`);
   await dbQuery(`alter table public.presupuestador_users add column if not exists assigned_seller_user_id integer null;`);
   await dbQuery(`alter table public.presupuestador_users add column if not exists visible_password text null;`);
+  await dbQuery(`alter table public.presupuestador_users add column if not exists see_all_distributors boolean not null default false;`);
   await dbQuery(`create index if not exists presupuestador_users_assigned_seller_idx on public.presupuestador_users(assigned_seller_user_id);`);
 
   try {
@@ -119,6 +120,7 @@ export async function listUsers({ role = "all", q = "", active = "all" } = {}) {
            u.default_maps_url,
            u.assigned_seller_user_id,
            u.visible_password,
+           coalesce(u.see_all_distributors, false) as see_all_distributors,
            s.username as assigned_seller_username,
            s.full_name as assigned_seller_full_name,
            u.created_at, u.updated_at
@@ -227,6 +229,7 @@ export async function updateUser(id, {
   default_maps_url,
   assigned_seller_user_id,
   is_active,
+  see_all_distributors,
 } = {}) {
   await ensureUsersAdminColumns();
 
@@ -234,7 +237,7 @@ export async function updateUser(id, {
   if (!userId) throw new Error("id inválido");
 
   const cur = await dbQuery(
-    `select id, is_distribuidor, is_vendedor, is_medidor, is_logistica, is_superuser, is_administracion, is_active, full_name, odoo_partner_id, odoo_pricelist_id, default_maps_url, assigned_seller_user_id, visible_password
+    `select id, is_distribuidor, is_vendedor, is_medidor, is_logistica, is_superuser, is_administracion, is_active, full_name, odoo_partner_id, odoo_pricelist_id, default_maps_url, assigned_seller_user_id, visible_password, coalesce(see_all_distributors,false) as see_all_distributors
        from public.presupuestador_users where id=$1 limit 1`,
     [userId]
   );
@@ -271,6 +274,7 @@ export async function updateUser(id, {
   const mapsUrl = default_maps_url !== undefined ? (default_maps_url ? String(default_maps_url).trim() : null) : (current.default_maps_url ?? null);
   const pass = password !== undefined ? String(password || "") : "";
   const visiblePassword = pass ? pass : "";
+  const seeAll = see_all_distributors !== undefined ? !!see_all_distributors : !!current.see_all_distributors;
 
   const r = await dbQuery(
     `
@@ -289,15 +293,18 @@ export async function updateUser(id, {
         password_hash = case when $13::text is null or $13::text = '' then password_hash else crypt($13::text, gen_salt('bf')) end,
         visible_password = case when $14::text is null or $14::text = '' then visible_password else $14::text end,
         assigned_seller_user_id = $15,
+        see_all_distributors = $16,
         updated_at = now()
     where id = $1
     returning id, username, full_name,
               is_distribuidor, is_vendedor, is_medidor, is_logistica, is_superuser, is_administracion,
               is_enc_comercial, is_rev_tecnica,
               is_active, odoo_partner_id, odoo_pricelist_id, default_maps_url,
-              assigned_seller_user_id, visible_password, created_at, updated_at
+              assigned_seller_user_id, visible_password,
+              coalesce(see_all_distributors, false) as see_all_distributors,
+              created_at, updated_at
     `,
-    [userId, name, active, dist, vend, med, log, sup, adm, pid, pricelistId, mapsUrl, pass, visiblePassword, sellerUserId]
+    [userId, name, active, dist, vend, med, log, sup, adm, pid, pricelistId, mapsUrl, pass, visiblePassword, sellerUserId, seeAll]
   );
 
   return r.rows?.[0] || null;

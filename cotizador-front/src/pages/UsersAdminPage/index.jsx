@@ -57,6 +57,7 @@ export default function UsersAdminPage() {
   const [fAssignedSellerUserId, setFAssignedSellerUserId] = useState("");
   const [fDefaultMapsUrl, setFDefaultMapsUrl] = useState("");
   const [fIsActive, setFIsActive] = useState(true);
+  const [fSeeAllDistributors, setFSeeAllDistributors] = useState(false);
 
   const usersQ = useQuery({
     queryKey: ["adminUsers", roleTab, q, activeFilter],
@@ -118,6 +119,7 @@ export default function UsersAdminPage() {
     setFAssignedSellerUserId("");
     setFDefaultMapsUrl("");
     setFIsActive(true);
+    setFSeeAllDistributors(false);
   };
 
   const loadEdit = (u) => {
@@ -136,6 +138,7 @@ export default function UsersAdminPage() {
     setFAssignedSellerUserId(u.assigned_seller_user_id ? String(u.assigned_seller_user_id) : "");
     setFDefaultMapsUrl(u.default_maps_url ? String(u.default_maps_url) : "");
     setFIsActive(!!u.is_active);
+    setFSeeAllDistributors(!!u.see_all_distributors);
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
@@ -179,6 +182,7 @@ export default function UsersAdminPage() {
         assigned_seller_user_id: fIsDistribuidor && fAssignedSellerUserId ? Number(fAssignedSellerUserId) : null,
         default_maps_url: fDefaultMapsUrl ? String(fDefaultMapsUrl) : null,
         is_active: fIsActive,
+        see_all_distributors: fSeeAllDistributors,
       }),
     onSuccess: () => {
       toast.success("Usuario creado");
@@ -203,6 +207,7 @@ export default function UsersAdminPage() {
         assigned_seller_user_id: fIsDistribuidor && fAssignedSellerUserId ? Number(fAssignedSellerUserId) : null,
         default_maps_url: fDefaultMapsUrl ? String(fDefaultMapsUrl) : null,
         is_active: fIsActive,
+        see_all_distributors: fSeeAllDistributors,
       }),
     onSuccess: () => {
       toast.success("Usuario actualizado");
@@ -386,6 +391,12 @@ export default function UsersAdminPage() {
               <input type="checkbox" checked={fIsActive} onChange={(e) => setFIsActive(e.target.checked)} />
               Activo
             </label>
+            {fIsVendedor && (
+              <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                <input type="checkbox" checked={fSeeAllDistributors} onChange={(e) => setFSeeAllDistributors(e.target.checked)} />
+                Ver todos los distribuidores
+              </label>
+            )}
           </div>
 
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
