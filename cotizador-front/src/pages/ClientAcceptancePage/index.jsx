@@ -500,7 +500,10 @@ const TERMINOS = [
   },
 ];
 
-function TermsModal({ onClose }) {
+function TermsModal({ onClose, onAccept }) {
+  const isAcceptMode = typeof onAccept === "function";
+  const [accepted, setAccepted] = useState(false);
+
   useEffect(() => {
     function handleKey(e) { if (e.key === "Escape") onClose(); }
     document.addEventListener("keydown", handleKey);
@@ -509,10 +512,10 @@ function TermsModal({ onClose }) {
 
   return (
     <div
-      onClick={onClose}
+      onClick={isAcceptMode ? undefined : onClose}
       style={{
         position: "fixed", inset: 0, zIndex: 1000,
-        background: "rgba(0,0,0,0.45)",
+        background: "rgba(0,0,0,0.55)",
         display: "flex", alignItems: "center", justifyContent: "center",
         padding: "16px",
       }}
@@ -522,7 +525,7 @@ function TermsModal({ onClose }) {
         style={{
           background: "#fff", borderRadius: 14, boxShadow: "0 8px 40px rgba(0,0,0,0.2)",
           padding: "28px 28px 20px", width: "100%", maxWidth: 640,
-          maxHeight: "85vh", display: "flex", flexDirection: "column",
+          maxHeight: "90vh", display: "flex", flexDirection: "column",
         }}
       >
         <div style={{ fontWeight: 800, fontSize: 16, marginBottom: 18, color: "#111" }}>
@@ -538,16 +541,53 @@ function TermsModal({ onClose }) {
             </div>
           ))}
         </div>
-        <button
-          onClick={onClose}
-          style={{
-            marginTop: 20, width: "100%", padding: "10px 0", borderRadius: 8,
-            border: "1px solid #e0e0e0", background: "#f5f5f5", cursor: "pointer",
-            fontSize: 14, fontWeight: 600, color: "#555", flexShrink: 0,
-          }}
-        >
-          Cerrar
-        </button>
+
+        {isAcceptMode ? (
+          <>
+            <label
+              style={{
+                display: "flex", alignItems: "center", gap: 10,
+                marginTop: 20, cursor: "pointer", userSelect: "none",
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={accepted}
+                onChange={(e) => setAccepted(e.target.checked)}
+                style={{ width: 18, height: 18, cursor: "pointer", flexShrink: 0 }}
+              />
+              <span style={{ fontSize: 14, color: "#111", fontWeight: 600 }}>
+                Acepto los términos y condiciones
+              </span>
+            </label>
+            <button
+              disabled={!accepted}
+              onClick={() => { if (accepted) onAccept(); }}
+              style={{
+                marginTop: 12, width: "100%", padding: "12px 0", borderRadius: 8,
+                border: "none",
+                background: accepted ? "#111" : "#d1d5db",
+                cursor: accepted ? "pointer" : "not-allowed",
+                fontSize: 14, fontWeight: 700,
+                color: accepted ? "#fff" : "#9ca3af",
+                flexShrink: 0, transition: "background 0.15s",
+              }}
+            >
+              Aceptar y continuar
+            </button>
+          </>
+        ) : (
+          <button
+            onClick={onClose}
+            style={{
+              marginTop: 20, width: "100%", padding: "10px 0", borderRadius: 8,
+              border: "1px solid #e0e0e0", background: "#f5f5f5", cursor: "pointer",
+              fontSize: 14, fontWeight: 600, color: "#555", flexShrink: 0,
+            }}
+          >
+            Cerrar
+          </button>
+        )}
       </div>
     </div>
   );
@@ -693,7 +733,7 @@ export default function ClientAcceptancePage() {
         ) : (
           <>
             {step === "initial" ? (
-              <Button onClick={() => setStep("name")}>Acepto los datos técnicos del portón</Button>
+              <Button onClick={() => setShowTerms(true)}>Acepto los datos técnicos del portón</Button>
             ) : null}
 
             {step === "name" ? (
@@ -760,7 +800,12 @@ export default function ClientAcceptancePage() {
         </button>
       </div>
 
-      {showTerms && <TermsModal onClose={() => setShowTerms(false)} />}
+      {showTerms && (
+        <TermsModal
+          onClose={() => setShowTerms(false)}
+          onAccept={step === "initial" ? () => { setShowTerms(false); setStep("name"); } : undefined}
+        />
+      )}
     </div>
   );
 }
