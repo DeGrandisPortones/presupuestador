@@ -35,6 +35,7 @@ export async function saveMeasurementDetailed(id, {
   returnReason = "",
   endCustomer = null,
   baselineForm = null,
+  extraContact = null,
 } = {}) {
   const res = await http.put(`/api/measurements/${id}`, {
     form,
@@ -43,6 +44,7 @@ export async function saveMeasurementDetailed(id, {
     return_reason: returnReason,
     end_customer: endCustomer,
     baseline_form: baselineForm,
+    extra_contact: extraContact,
   });
   return res.data;
 }

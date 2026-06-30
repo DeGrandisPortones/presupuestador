@@ -535,6 +535,10 @@ export function buildMeasurementsRouter(odoo = null) {
       }
       const submit = body.submit === true;
       const endCustomer = body.end_customer ?? null;
+      const rawExtraContact = body.extra_contact && typeof body.extra_contact === "object" ? body.extra_contact : null;
+      const extraContact = rawExtraContact
+        ? { name: String(rawExtraContact.name || ""), role: String(rawExtraContact.role || ""), phone: String(rawExtraContact.phone || "") }
+        : null;
       const cur = await dbQuery(`select * from public.presupuestador_quotes where id=$1 limit 1`, [id]);
       const quote = cur.rows?.[0];
       if (!quote) return res.status(404).json({ ok: false, error: "Presupuesto no encontrado" });
@@ -578,25 +582,26 @@ export function buildMeasurementsRouter(odoo = null) {
           error: "En puertas el medidor no puede cambiar secciones/productos. Deja observaciones para devolverlo al vendedor o envia a aprobacion tecnica final.",
         });
       }
-      const observationReason = buildObservationReturnReason(form);
-      const forceSellerReturnByObservations = !!observationReason && !!u?.is_medidor;
       const forceSellerReturnByItem18 = item18Change.changed === true;
+      // El medidor elige a quién enviar; solo forzamos retorno al vendedor por item18 o area guard
+      const explicitReturnToSeller = body.return_to_seller === true;
       const forceSellerReturn =
         areaGuard.forced_return_to_seller === true ||
         forceSellerReturnByItem18 ||
-        forceSellerReturnByObservations;
+        explicitReturnToSeller;
 
       if (submit && forceSellerReturn) {
         const reason = forceSellerReturnByItem18
           ? item18Change.message || DEFAULT_ITEM18_REASON
-          : forceSellerReturnByObservations
-            ? observationReason
-            : areaGuard.default_return_reason || DEFAULT_RETURN_REASON;
+          : areaGuard.forced_return_to_seller
+            ? areaGuard.default_return_reason || DEFAULT_RETURN_REASON
+            : String(body.return_reason || "El medidor devuelve al vendedor para revisión.");
         const ctx = buildReturnContext(quote);
         const cleanLines = stripPreviouslyBilledLines(ctx.original_lines || quote.lines);
         const nextLines = [...cleanLines, buildPreviouslyBilledLine(quote)];
         const payloadSource = quote.payload && typeof quote.payload === "object" ? { ...quote.payload } : {};
-        const nextPayload = payloadWithReturnContext(payloadWithoutReturnContext(payloadSource), ctx);
+        const payloadWithExtra = extraContact ? { ...payloadSource, extra_contact: extraContact } : payloadSource;
+        const nextPayload = payloadWithReturnContext(payloadWithoutReturnContext(payloadWithExtra), ctx);
         const upd = await dbQuery(
           `update public.presupuestador_quotes
               set status='draft',
@@ -638,11 +643,14 @@ export function buildMeasurementsRouter(odoo = null) {
       if (submit) {
         const finalDimsErr = validateFinalDimensions(form);
         if (finalDimsErr) return res.status(400).json({ ok: false, error: finalDimsErr });
+        const submitPayloadSource = quote.payload && typeof quote.payload === "object" ? { ...quote.payload } : {};
+        const submitPayload = extraContact ? { ...submitPayloadSource, extra_contact: extraContact } : submitPayloadSource;
         const upd = await dbQuery(
-          `update public.presupuestador_quotes set end_customer=$2::jsonb, measurement_form=$3::jsonb, measurement_original_form=coalesce(measurement_original_form, $4::jsonb), measurement_status='submitted', measurement_review_notes=null, measurement_review_by_user_id=null, measurement_review_at=null, measurement_assigned_to_user_id=coalesce(measurement_assigned_to_user_id, $5), measurement_by_user_id=$5, measurement_at=now() where id=$1 returning *`,
+          `update public.presupuestador_quotes set end_customer=$2::jsonb, payload=$3::jsonb, measurement_form=$4::jsonb, measurement_original_form=coalesce(measurement_original_form, $5::jsonb), measurement_status='submitted', measurement_review_notes=null, measurement_review_by_user_id=null, measurement_review_at=null, measurement_assigned_to_user_id=coalesce(measurement_assigned_to_user_id, $6), measurement_by_user_id=$6, measurement_at=now() where id=$1 returning *`,
           [
             id,
             JSON.stringify(nextCustomer),
+            JSON.stringify(submitPayload),
             JSON.stringify(form),
             JSON.stringify(quote.measurement_original_form || quote.measurement_form || {}),
             Number(u.user_id),
@@ -652,9 +660,11 @@ export function buildMeasurementsRouter(odoo = null) {
       }
 
       const statusToKeep = currentStatus === "none" ? "pending" : currentStatus;
+      const draftPayloadSource = quote.payload && typeof quote.payload === "object" ? { ...quote.payload } : {};
+      const draftPayload = extraContact ? { ...draftPayloadSource, extra_contact: extraContact } : draftPayloadSource;
       const upd = await dbQuery(
-        `update public.presupuestador_quotes set end_customer=$2::jsonb, measurement_form=$3::jsonb, measurement_status=$4 where id=$1 returning *`,
-        [id, JSON.stringify(nextCustomer), JSON.stringify(form), statusToKeep],
+        `update public.presupuestador_quotes set end_customer=$2::jsonb, payload=$3::jsonb, measurement_form=$4::jsonb, measurement_status=$5 where id=$1 returning *`,
+        [id, JSON.stringify(nextCustomer), JSON.stringify(draftPayload), JSON.stringify(form), statusToKeep],
       );
       return res.json({ ok: true, quote: upd.rows?.[0] || null, measurement_surface_guard: areaGuard });
     } catch (e) {

@@ -996,10 +996,15 @@ export default function MedicionDetailPage() {
   const quote = q.data;
   const [form, setForm] = useState(null);
   const [lastMessage, setLastMessage] = useState("");
+  const [extraContact, setExtraContact] = useState({ name: "", role: "", phone: "" });
 
   useEffect(() => {
     if (!quote) return;
     setForm(buildInitialForm(quote, quote.measurement_form || {}));
+    const ec = quote?.payload?.extra_contact;
+    if (ec && typeof ec === "object") {
+      setExtraContact({ name: String(ec.name || ""), role: String(ec.role || ""), phone: String(ec.phone || "") });
+    }
   }, [quote]);
 
   const configuredFieldDefinitions = useMemo(
@@ -1260,10 +1265,8 @@ export default function MedicionDetailPage() {
   }
 
   const saveMedicionM = useMutation({
-    mutationFn: async ({ submit }) => {
+    mutationFn: async ({ submit, returnToSeller: explicitReturn = false, returnReason: explicitReason = "" }) => {
       let nextEndCustomer = { ...(quote?.end_customer || {}) };
-      let returnToSeller = false;
-      let returnReason = "";
       const finalDimensions = getFinalDimensionsFromScheme(form);
       const normalizedForm = !isTechnical
         ? {
@@ -1281,26 +1284,15 @@ export default function MedicionDetailPage() {
         } catch {
           // sin ubicación, no bloquea el guardado
         }
-        if (item18Changed) {
-          returnToSeller = true;
-          returnReason = DEFAULT_RETURN_REASON_ITEM_18;
-        } else if (placementChanged) {
-          returnToSeller = true;
-          returnReason = "El cambio en Tipo de colocación debe revisarlo el vendedor para ajustar la nota de pedido, la nota de venta y el presupuesto si corresponde.";
-        } else if (hasObservationsForSeller) {
-          returnToSeller = true;
-          returnReason = `${DEFAULT_RETURN_REASON_OBSERVATIONS}\n\nObservación del medidor: ${text(
-            form?.observaciones_medicion,
-          )}`;
-        }
       }
       return saveMeasurementDetailed(quoteId, {
         form: normalizedForm,
         submit,
-        returnToSeller,
-        returnReason,
+        returnToSeller: explicitReturn,
+        returnReason: explicitReason,
         endCustomer: nextEndCustomer,
         baselineForm,
+        extraContact: (extraContact?.name || extraContact?.phone) ? extraContact : null,
       });
     },
     onSuccess: (response, variables) => {
@@ -1330,6 +1322,7 @@ export default function MedicionDetailPage() {
         returnReason: "",
         endCustomer: quote?.end_customer || {},
         baselineForm,
+        extraContact: (extraContact?.name || extraContact?.phone) ? extraContact : null,
       });
       return reviewMeasurement(quoteId, { action: "approve", notes: null });
     },
@@ -1449,6 +1442,29 @@ export default function MedicionDetailPage() {
                   {rejectTechnicalM.isPending ? "Enviando..." : "Rechazar y enviar al vendedor"}
                 </Button>
               </>
+            ) : !isReadOnlyMeasurement && isMedidor ? (
+              <>
+                <Button
+                  disabled={saveMedicionM.isPending}
+                  onClick={() => saveMedicionM.mutate({ submit: true, returnToSeller: false })}
+                >
+                  {saveMedicionM.isPending ? "Procesando..." : "Enviar al técnico"}
+                </Button>
+                <Button
+                  variant="ghost"
+                  disabled={saveMedicionM.isPending}
+                  onClick={() => {
+                    const reason = window.prompt("Motivo de devolución al vendedor (opcional):", "") ?? "";
+                    saveMedicionM.mutate({
+                      submit: true,
+                      returnToSeller: true,
+                      returnReason: reason || "El medidor devuelve al vendedor para revisión.",
+                    });
+                  }}
+                >
+                  {saveMedicionM.isPending ? "Procesando..." : "Enviar al vendedor"}
+                </Button>
+              </>
             ) : !isReadOnlyMeasurement ? (
               <Button disabled={saveMedicionM.isPending} onClick={() => saveMedicionM.mutate({ submit: true })}>
                 {saveMedicionM.isPending ? "Procesando..." : submitButtonLabel}
@@ -1470,6 +1486,46 @@ export default function MedicionDetailPage() {
             <Field label="Maps"><StaticValue value={quote?.end_customer?.maps_url} /></Field>
             <Field label="Vendedor / Distribuidor">
               <StaticValue value={form.distribuidor || quote?.created_by_full_name || quote?.created_by_username} />
+            </Field>
+          </Row>
+          <div className="spacer" />
+          <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 8, color: "#555" }}>Contacto adicional</div>
+          <Row>
+            <Field label="Nombre">
+              {isMedidor && !isReadOnlyMeasurement ? (
+                <input
+                  value={extraContact.name}
+                  onChange={(e) => setExtraContact((p) => ({ ...p, name: e.target.value }))}
+                  placeholder="Nombre del contacto"
+                  style={{ width: "100%", padding: "6px 10px", borderRadius: 8, border: "1px solid #d1d5db", fontSize: 14 }}
+                />
+              ) : (
+                <StaticValue value={extraContact.name || quote?.payload?.extra_contact?.name} />
+              )}
+            </Field>
+            <Field label="Rol">
+              {isMedidor && !isReadOnlyMeasurement ? (
+                <input
+                  value={extraContact.role}
+                  onChange={(e) => setExtraContact((p) => ({ ...p, role: e.target.value }))}
+                  placeholder="Ej. jefe de obra"
+                  style={{ width: "100%", padding: "6px 10px", borderRadius: 8, border: "1px solid #d1d5db", fontSize: 14 }}
+                />
+              ) : (
+                <StaticValue value={extraContact.role || quote?.payload?.extra_contact?.role} />
+              )}
+            </Field>
+            <Field label="Teléfono">
+              {isMedidor && !isReadOnlyMeasurement ? (
+                <input
+                  value={extraContact.phone}
+                  onChange={(e) => setExtraContact((p) => ({ ...p, phone: e.target.value }))}
+                  placeholder="Sin 0 y sin 15"
+                  style={{ width: "100%", padding: "6px 10px", borderRadius: 8, border: "1px solid #d1d5db", fontSize: 14 }}
+                />
+              ) : (
+                <StaticValue value={extraContact.phone || quote?.payload?.extra_contact?.phone} />
+              )}
             </Field>
           </Row>
         </Section>
