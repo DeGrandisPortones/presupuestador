@@ -105,7 +105,7 @@ function matchesRowSearch(item, searchText) {
     return haystack.includes(s);
   }
   const q = item.raw;
-  const haystack = [quoteTypeLabel(q), quoteOdooReference(q), q?.end_customer?.name, q?.end_customer?.city, q?.end_customer?.address, q?.end_customer?.phone, labelQuoteStatus(q), labelMeasurementStatus(q), q?.fulfillment_mode === "acopio" ? "acopio" : "produccion", plegadoDescription(q), getPlegadoAttachment(q)?.name].filter(Boolean).join(" ").toLowerCase();
+  const haystack = [quoteTypeLabel(q), quoteOdooReference(q), q?.quote_number ? String(q.quote_number) : null, q?.end_customer?.name, q?.end_customer?.city, q?.end_customer?.address, q?.end_customer?.phone, labelQuoteStatus(q), labelMeasurementStatus(q), q?.fulfillment_mode === "acopio" ? "acopio" : "produccion", plegadoDescription(q), getPlegadoAttachment(q)?.name].filter(Boolean).join(" ").toLowerCase();
   return haystack.includes(s);
 }
 function toTimeDesc(value) { if (!value) return 0; const d = new Date(value); if (Number.isNaN(d.getTime())) return 0; return d.getTime(); }
@@ -455,6 +455,7 @@ export default function PresupuestosPage() {
             <table>
               <thead>
                 <tr>
+                  <th>Nº</th>
                   <th>Fecha y hora</th>
                   <th>Tipo</th>
                   <th>Cliente</th>
@@ -474,6 +475,7 @@ export default function PresupuestosPage() {
                     const door = item.raw;
                     return (
                       <tr key={`door-${door.id}`}>
+                        <td><span className="muted">—</span></td>
                         <td>{fmtDateTime(item.createdAt)}</td>
                         <td><TypeBadge label={item.typeLabel} /></td>
                         <td>{item.clientName || <span className="muted">(sin nombre)</span>}</td>
@@ -514,6 +516,11 @@ export default function PresupuestosPage() {
                   const measurementLabel = isTechnicalOnly ? "Ver detalle técnico" : "Ver medición";
                   return (
                     <tr key={r.id}>
+                      <td>
+                        {r.quote_number
+                          ? <span style={{ fontWeight: 800, color: "#374151", fontSize: 13 }}>#{r.quote_number}</span>
+                          : <span className="muted">—</span>}
+                      </td>
                       <td>{fmtDateTime(r.created_at)}</td>
                       <td><TypeBadge label={item.typeLabel} /></td>
                       <td>
