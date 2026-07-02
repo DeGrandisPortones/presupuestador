@@ -288,14 +288,25 @@ export default function AppLayout() {
         </div>
       )}
       <div style={{ position: "relative", zIndex: 1 }}>
-      <div className="card app-header" style={{ borderRadius: 0, ...(isDevEnv && { background: "#7a1a1a" }) }}>
-        <div className="container" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: 0, gap: 16 }}>
+      <div
+        className={`card app-header${user?.is_vendedor && !isDevEnv ? " app-header--vendedor" : ""}`}
+        style={{ borderRadius: 0, ...(isDevEnv && { background: "#7a1a1a" }) }}
+      >
+        <div className="container" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: 0, gap: 16, position: "relative" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
             <img className="brand-logo" src="/brands/dflex.png" alt="Dflex" />
-            <div>
-              <div className="muted">{user ? `${user.username} - ${roleText}` : roleText}</div>
-            </div>
           </div>
+
+          {user ? (
+            <div style={{
+              position: "absolute", left: "50%", top: "50%", transform: "translate(-50%, -50%)",
+              background: "#fff", color: "#111", borderRadius: 999,
+              padding: "10px 24px", fontSize: 17, fontWeight: 800,
+              boxShadow: "0 2px 10px rgba(0,0,0,0.18)", whiteSpace: "nowrap",
+            }}>
+              {user.username} - {roleText}
+            </div>
+          ) : null}
 
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
             <TechnicalConsultHeaderButton />
