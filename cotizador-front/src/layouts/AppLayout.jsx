@@ -247,7 +247,7 @@ export default function AppLayout() {
 
   const roleText = roles.length ? roles.join(" / ") : "Cargando sesion...";
 
-  const showDashboard = !!(isSuperuser || user?.is_enc_comercial);
+  const showDashboard = !!(isSuperuser || user?.is_enc_comercial || user?.see_all_distributors);
   const showUsers = !!(isSuperuser || user?.is_enc_comercial);
   const canQuote = !!(isSuperuser || user?.is_vendedor || user?.is_distribuidor);
   const showPresupuestar = !!(isSuperuser || user?.is_vendedor || user?.is_distribuidor || user?.is_enc_comercial);
