@@ -29,6 +29,10 @@ import {
 function requireEncComercial(req, res, next) { if (!req.user?.is_enc_comercial) return res.status(403).json({ ok: false, error: "No autorizado" }); next(); }
 function requireSuperuser(req, res, next) { if (!req.user?.is_superuser) return res.status(403).json({ ok: false, error: "No autorizado" }); next(); }
 function requireEncComercialOrSuperuser(req, res, next) { if (!req.user?.is_enc_comercial && !req.user?.is_superuser) return res.status(403).json({ ok: false, error: "No autorizado" }); next(); }
+// Mismas rutas que requireEncComercialOrSuperuser, pero además deja pasar a
+// vendedores con see_all_distributors=true (acceso al Dashboard de catálogo).
+// No reemplaza a requireEncComercialOrSuperuser en rutas ajenas al Dashboard (ej. /users).
+function requireEncComercialOrSuperuserOrDashboardViewer(req, res, next) { if (!req.user?.is_enc_comercial && !req.user?.is_superuser && !req.user?.see_all_distributors) return res.status(403).json({ ok: false, error: "No autorizado" }); next(); }
 
 function getOdooName(product = {}) {
   return String(product?.client_display_name || product?.raw_name || product?.original_name || product?.name || "").trim();
@@ -142,7 +146,7 @@ function adminQuoteBucketWhere(bucket) {
 export function buildAdminRouter(odoo) {
   const router = express.Router();
 
-  router.get("/catalog", requireAuth, requireEncComercialOrSuperuser, async (req, res, next) => {
+  router.get("/catalog", requireAuth, requireEncComercialOrSuperuserOrDashboardViewer, async (req, res, next) => {
     try {
       const kind = normKind(req.query.kind || "porton");
       const data = await loadCatalogBootstrap(odoo, kind);
@@ -208,10 +212,10 @@ export function buildAdminRouter(odoo) {
     } catch (e) { next(e); }
   });
 
-  router.get("/final-settings", requireAuth, requireEncComercialOrSuperuser, async (_req, res, next) => {
+  router.get("/final-settings", requireAuth, requireEncComercialOrSuperuserOrDashboardViewer, async (_req, res, next) => {
     try { res.json({ ok: true, settings: await getCommercialFinalQuoteSettings() }); } catch (e) { next(e); }
   });
-  router.put("/final-settings", requireAuth, requireEncComercialOrSuperuser, async (req, res, next) => {
+  router.put("/final-settings", requireAuth, requireEncComercialOrSuperuserOrDashboardViewer, async (req, res, next) => {
     try { res.json({ ok: true, settings: await setCommercialFinalQuoteSettings(req.body || {}) }); } catch (e) { next(e); }
   });
   router.get("/door-quote-settings", requireAuth, requireEncComercialOrSuperuser, async (_req, res, next) => {
@@ -234,7 +238,7 @@ export function buildAdminRouter(odoo) {
       res.json({ ok: true, rules: await getTechnicalMeasurementRules(kind) });
     } catch (e) { next(e); }
   });
-  router.put("/technical-measurement-rules", requireAuth, requireEncComercialOrSuperuser, async (req, res, next) => {
+  router.put("/technical-measurement-rules", requireAuth, requireEncComercialOrSuperuserOrDashboardViewer, async (req, res, next) => {
     try {
       const kind = normKind(req.query.kind || req.body?.kind || "porton");
       res.json({ ok: true, rules: await setTechnicalMeasurementRules(req.body || {}, kind) });
@@ -262,7 +266,7 @@ export function buildAdminRouter(odoo) {
     } catch (e) { next(e); }
   });
 
-  router.post("/sections", requireAuth, requireEncComercialOrSuperuser, async (req, res, next) => {
+  router.post("/sections", requireAuth, requireEncComercialOrSuperuserOrDashboardViewer, async (req, res, next) => {
     try {
       const kind = normKind(req.query.kind || req.body?.kind || "porton");
       const { name, position, use_surface_qty } = req.body || {};
@@ -271,7 +275,7 @@ export function buildAdminRouter(odoo) {
       res.json({ ok: true, section });
     } catch (e) { next(e); }
   });
-  router.put("/sections/:id", requireAuth, requireEncComercialOrSuperuser, async (req, res, next) => {
+  router.put("/sections/:id", requireAuth, requireEncComercialOrSuperuserOrDashboardViewer, async (req, res, next) => {
     try {
       const kind = normKind(req.query.kind || req.body?.kind || "porton");
       const section = await updateSection(kind, req.params.id, req.body || {});
@@ -279,7 +283,7 @@ export function buildAdminRouter(odoo) {
       res.json({ ok: true, section });
     } catch (e) { next(e); }
   });
-  router.delete("/sections/:id", requireAuth, requireEncComercialOrSuperuser, async (req, res, next) => {
+  router.delete("/sections/:id", requireAuth, requireEncComercialOrSuperuserOrDashboardViewer, async (req, res, next) => {
     try {
       const kind = normKind(req.query.kind || "porton");
       await deleteSection(kind, req.params.id);
@@ -287,7 +291,7 @@ export function buildAdminRouter(odoo) {
       res.json({ ok: true });
     } catch (e) { next(e); }
   });
-  router.put("/tags/:tagId/section", requireAuth, requireEncComercialOrSuperuser, async (req, res, next) => {
+  router.put("/tags/:tagId/section", requireAuth, requireEncComercialOrSuperuserOrDashboardViewer, async (req, res, next) => {
     try {
       const kind = normKind(req.query.kind || req.body?.kind || "porton");
       const mapping = await setTagSection(kind, req.params.tagId, req.body?.section_id ?? null);

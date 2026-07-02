@@ -31,7 +31,7 @@ export default function MenuPage() {
 
   const isSuperuser = !!user?.is_superuser;
   const canQuote = !!(isSuperuser || user?.is_vendedor || user?.is_distribuidor);
-  const showDashboard = !!(isSuperuser || user?.is_enc_comercial);
+  const showDashboard = !!(isSuperuser || user?.is_enc_comercial || user?.see_all_distributors);
   const showPlanning = !!(isSuperuser || user?.is_enc_comercial);
   const showFinancing = !!(isSuperuser || user?.is_enc_comercial);
   const showCommercialInbox = !!(isSuperuser || user?.is_enc_comercial);

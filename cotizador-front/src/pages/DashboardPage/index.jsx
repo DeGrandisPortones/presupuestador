@@ -194,7 +194,7 @@ export default function DashboardPage() {
   const qc = useQueryClient();
 
   const isSuperuser = !!user?.is_superuser;
-  const enabled = !!user?.is_enc_comercial || isSuperuser;
+  const enabled = !!user?.is_enc_comercial || isSuperuser || !!user?.see_all_distributors;
 
   const [catalogKind, setCatalogKind] = useState("porton");
   const [tab, setTab] = useState("tags");
