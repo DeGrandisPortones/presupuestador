@@ -45,6 +45,48 @@
   color: rgba(255,255,255,.72);
 }
 
+/* Banner verde clarito para vendedores: ayuda a distinguir la sesion de
+   vendedor de una sesion de distribuidor abierta en otra pestana/incognito. */
+.app-header.app-header--vendedor{
+  background: #dcfce7;
+  color: #14532d;
+}
+.app-header--vendedor .muted{
+  color: rgba(20,83,45,.75);
+}
+.app-header--vendedor .navlink{
+  background: rgba(20,83,45,.08);
+  color: rgba(20,83,45,.88);
+  border-color: rgba(20,83,45,.20);
+}
+.app-header--vendedor .navlink:hover{
+  background: rgba(20,83,45,.14);
+  border-color: rgba(20,83,45,.32);
+}
+.app-header--vendedor .navlink.active{
+  background: var(--dg-teal);
+  border-color: var(--dg-teal);
+  color: #fff;
+}
+.app-header--vendedor .btn--ghost{
+  background: rgba(20,83,45,.08);
+  color: rgba(20,83,45,.88);
+  border-color: rgba(20,83,45,.20);
+}
+.app-header--vendedor .btn--ghost:not(:disabled):hover{
+  background: rgba(20,83,45,.14);
+  border-color: rgba(20,83,45,.32);
+}
+.app-header--vendedor .btn--secondary{
+  background: rgba(20,83,45,.08);
+  color: rgba(20,83,45,.88);
+  border-color: rgba(20,83,45,.20);
+}
+.app-header--vendedor .btn--secondary:not(:disabled):hover{
+  background: rgba(20,83,45,.14);
+  border-color: rgba(20,83,45,.32);
+}
+
 /* Coeficiente: verde si positivo, rojo si negativo */
 .coef-input {
   border-width: 2px !important;
