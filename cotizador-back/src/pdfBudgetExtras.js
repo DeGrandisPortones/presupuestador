@@ -146,8 +146,13 @@ function computeSurfaceAutomaticContext({ quote, form, surfaceParameters }) {
     };
     anchoCalculadoMm = Math.max(0, anchoMinMm + (addMap[piernasTipo] || 0));
   } else if (installationMode === "dentro_vano") {
-    altoCalculadoMm = Math.max(0, altoMinMm - Number(surfaceParameters?.inside_vano_subtract_height_mm || 10));
-    anchoCalculadoMm = Math.max(0, anchoMinMm - Number(surfaceParameters?.inside_vano_subtract_width_mm || 20));
+    // Presupuestos nuevos (con dimensions.vano_size_auto_calc): el porton debe quedar igual al vano.
+    // Presupuestos previos a este cambio: se mantiene el descuento historico para no alterar mediciones ya confirmadas.
+    const usesNewVanoCalc = quote?.payload?.dimensions?.vano_size_auto_calc === true;
+    const subtractHeightMm = usesNewVanoCalc ? 0 : Number(surfaceParameters?.inside_vano_subtract_height_mm || 10);
+    const subtractWidthMm = usesNewVanoCalc ? 0 : Number(surfaceParameters?.inside_vano_subtract_width_mm || 20);
+    altoCalculadoMm = Math.max(0, altoMinMm - subtractHeightMm);
+    anchoCalculadoMm = Math.max(0, anchoMinMm - subtractWidthMm);
   }
 
   const legWidthMm = getLegWidthMmByType(piernasTipo);

@@ -212,7 +212,7 @@ export const useQuoteStore = create((set, get) => ({
   distribuidorVendedorNombre: "",
   paranteQtyLocked: false,
   pricesAppliedAt: null,
-  dimensions: { width: "", height: "", kg_m2: "" },
+  dimensions: { width: "", height: "", kg_m2: "", vano_size_auto_calc: true },
   lines: [],
   reset() {
     set({
@@ -235,7 +235,7 @@ export const useQuoteStore = create((set, get) => ({
       distribuidorVendedorNombre: "",
       paranteQtyLocked: false,
       pricesAppliedAt: null,
-      dimensions: { width: "", height: "", kg_m2: "" },
+      dimensions: { width: "", height: "", kg_m2: "", vano_size_auto_calc: true },
       lines: [],
     });
   },
