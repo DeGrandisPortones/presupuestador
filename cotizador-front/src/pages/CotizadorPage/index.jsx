@@ -555,7 +555,10 @@ function validateDimensionsRequired(payload, kind = "porton") {
 
   if (!(width > 0)) throw new Error(`Completá el ancho del ${itemLabel}.`);
   if (!(height > 0)) throw new Error(`Completá el alto del ${itemLabel}.`);
-  if (normalizedKind === "plegados" && !hasPlegadoAttachment({ payload: payload?.payload || {} })) throw new Error("Adjuntá el plano del plegado.");
+  if (normalizedKind === "plegados" && !hasPlegadoAttachment({ payload: payload?.payload || {} })) {
+    const wantsToContinue = window.confirm("No se adjuntó ningún plano, ¿desea continuar?");
+    if (!wantsToContinue) throw new Error("Adjuntá el plano del plegado.");
+  }
 
   if (normalizedKind === "porton") {
     if (width < WIDTH_MIN_M || width > WIDTH_MAX_M) throw new Error("El ancho debe estar entre 2.3 m y 7 m.");
