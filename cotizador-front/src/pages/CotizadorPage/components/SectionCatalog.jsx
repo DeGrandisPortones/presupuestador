@@ -629,7 +629,7 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
   }, [catalogKind]);
   const [refreshing, setRefreshing] = useState(false);
   const [autoloadAttempted, setAutoloadAttempted] = useState(false);
-  const [catalogHelpOpen, setCatalogHelpOpen] = useState(false);
+  const [catalogHelpOpen, setCatalogHelpOpen] = useState(true);
   const sectionRefs = useRef(new Map());
   const pendingAutoScrollSectionIdRef = useRef(null);
   const autoScrollTimeoutRef = useRef(null);
