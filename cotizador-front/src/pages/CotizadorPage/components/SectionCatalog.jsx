@@ -18,6 +18,9 @@ const IPANEL_LAMAS_RANGE_MAX_WIDTH_M = 2;
 const IPANEL_LAMAS_RANGE_MIN_HEIGHT_M = 2.45;
 const IPANEL_LAMAS_RANGE_MAX_HEIGHT_M = 3;
 const CATALOG_PRICING_VERSION = 3;
+// "Revestimiento especial x m2": al elegirlo pide los kg/m2 al vendedor y ese valor
+// reemplaza el peso calculado del porton (y por lo tanto el tipo de piernas).
+const REVESTIMIENTO_ESPECIAL_PRODUCT_ID = 4176;
 
 function dflexCatalogDebugEnabled() {
   try {
@@ -164,6 +167,56 @@ function ExteriorHelpBox() {
     <div style={{ padding: "0 14px 12px" }}>
       <div style={{ border: "1px solid #dbeafe", background: "#eff6ff", color: "#1e3a8a", borderRadius: 10, padding: "10px 12px", fontWeight: 800 }}>
         {EXTERIOR_HELP_TEXT}
+      </div>
+    </div>
+  );
+}
+
+function RevestimientoKgM2Modal({ open, initialValue, onConfirm, onCancel }) {
+  const [value, setValue] = useState(initialValue || "");
+  useEffect(() => { if (open) setValue(initialValue || ""); }, [open, initialValue]);
+  if (!open) return null;
+  const parsed = Number(String(value).replace(",", "."));
+  const isValid = Number.isFinite(parsed) && parsed > 0;
+  return (
+    <div
+      onClick={onCancel}
+      style={{
+        position: "fixed", inset: 0, zIndex: 1000,
+        background: "rgba(0,0,0,0.45)",
+        display: "flex", alignItems: "center", justifyContent: "center",
+        padding: 16,
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          background: "#fff", borderRadius: 14, boxShadow: "0 8px 40px rgba(0,0,0,0.2)",
+          padding: "28px 28px 20px", width: "100%", maxWidth: 380,
+        }}
+      >
+        <div style={{ fontWeight: 800, fontSize: 16, marginBottom: 6 }}>
+          Revestimiento especial
+        </div>
+        <div style={{ color: "#555", fontSize: 13, marginBottom: 16 }}>
+          Ingresá los Kg/m2 del revestimiento. Este valor reemplaza el peso calculado del portón y define el tipo de piernas.
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          <div className="muted">Kg/m2</div>
+          <input
+            type="text"
+            inputMode="decimal"
+            autoFocus
+            value={value}
+            onChange={(e) => setValue(String(e.target.value ?? "").replace(/[^0-9.,]/g, ""))}
+            placeholder="Ej: 18"
+            style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid #ddd" }}
+          />
+        </div>
+        <div style={{ display: "flex", gap: 8, marginTop: 20 }}>
+          <Button variant="secondary" onClick={onCancel}>Cancelar</Button>
+          <Button variant="primary" disabled={!isValid} onClick={() => onConfirm(parsed)}>Confirmar</Button>
+        </div>
       </div>
     </div>
   );
@@ -613,6 +666,7 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
   const catalogSelectionKey = useQuoteStore((s) => buildCatalogSelectionKey(s.lines));
   const lines = useMemo(() => parseCatalogSelectionKey(catalogSelectionKey), [catalogSelectionKey]);
   const dimensions = useQuoteStore((s) => s.dimensions);
+  const setDimensions = useQuoteStore((s) => s.setDimensions);
   const portonType = useQuoteStore((s) => s.portonType);
   const setPortonType = useQuoteStore((s) => s.setPortonType);
 
@@ -918,9 +972,30 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
   const isAptoParaRevestir = useMemo(() => {
     const normalizedType = norm(portonType);
     if (normalizedType === APTOS_PARA_REVESTIR_TYPE || normalizedType.includes("para_revestir") || normalizedType.includes("apto")) return true;
+    if (selectedProductIdsForAutomation.has(REVESTIMIENTO_ESPECIAL_PRODUCT_ID)) return true;
     const aptoProductId = Number(surfaceParameters?.no_cladding_product_id || 0);
     return !!(aptoProductId && selectedProductIdsForAutomation.has(aptoProductId));
   }, [portonType, selectedProductIdsForAutomationKey, selectedProductIdsForAutomation, surfaceParameters]);
+
+  const [revestimientoKgModalOpen, setRevestimientoKgModalOpen] = useState(false);
+  const hasRevestimientoEspecial = selectedProductIdsGlobal.has(REVESTIMIENTO_ESPECIAL_PRODUCT_ID);
+  useEffect(() => {
+    if (!hasRevestimientoEspecial) {
+      if (dimensions?.revestimiento_especial_kg_m2) setDimensions({ revestimiento_especial_kg_m2: "", kg_m2: "" });
+      setRevestimientoKgModalOpen(false);
+      return;
+    }
+    if (!dimensions?.revestimiento_especial_kg_m2) setRevestimientoKgModalOpen(true);
+  }, [hasRevestimientoEspecial, dimensions?.revestimiento_especial_kg_m2, setDimensions]);
+  function confirmRevestimientoKg(kgM2) {
+    setDimensions({ revestimiento_especial_kg_m2: kgM2, kg_m2: kgM2 });
+    setRevestimientoKgModalOpen(false);
+  }
+  function cancelRevestimientoKg() {
+    forceRemoveLine(REVESTIMIENTO_ESPECIAL_PRODUCT_ID);
+    setDimensions({ revestimiento_especial_kg_m2: "", kg_m2: "" });
+    setRevestimientoKgModalOpen(false);
+  }
 
   useEffect(() => {
     if (catalogKind !== "porton") return;
@@ -1209,6 +1284,12 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
         </div>
       </div>
       {catalogKind === "porton" && catalogHelpOpen ? <ExteriorHelpBox /> : null}
+      <RevestimientoKgM2Modal
+        open={revestimientoKgModalOpen}
+        initialValue={dimensions?.revestimiento_especial_kg_m2 || ""}
+        onConfirm={confirmRevestimientoKg}
+        onCancel={cancelRevestimientoKg}
+      />
       <CatalogFlowDebugPanel data={catalogFlowDebugData} />
 
       {!visibleSections.length ? (

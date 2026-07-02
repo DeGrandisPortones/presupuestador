@@ -42,8 +42,12 @@ function detectInstallationModeByProducts(quote, surfaceParameters) {
   if (behindId && ids.has(behindId)) return "detras_vano";
   return "sin_instalacion";
 }
+// "Revestimiento especial x m2": el vendedor carga los kg/m2 a mano (ver SectionCatalog.jsx del
+// front) en quote.payload.dimensions.kg_m2, y ese valor debe reemplazar el peso calculado.
+const REVESTIMIENTO_ESPECIAL_PRODUCT_ID = 4176;
 function detectNoCladding(quote, surfaceParameters) {
   const ids = getBudgetProductIdSet(quote);
+  if (ids.has(REVESTIMIENTO_ESPECIAL_PRODUCT_ID)) return true;
   const noCladdingId = Number(surfaceParameters?.no_cladding_product_id || 0);
   return !!(noCladdingId && ids.has(noCladdingId));
 }

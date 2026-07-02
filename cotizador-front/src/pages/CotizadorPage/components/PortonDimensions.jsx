@@ -33,6 +33,9 @@ const VANO_WIDTH_ADD_BY_LEGS_MM_DEFAULT = {
   superanchas: 380,
 };
 const VANO_HEIGHT_ADD_MM_DEFAULT = 100;
+// "Revestimiento especial x m2": al elegirlo pide los kg/m2 al vendedor (ver SectionCatalog.jsx)
+// y ese valor reemplaza el peso calculado del porton (define tipo de piernas y medidas de paso/hoja).
+const REVESTIMIENTO_ESPECIAL_PRODUCT_ID = 4176;
 const ORDINAL_LABELS = ["primer", "segundo", "tercer", "cuarto", "quinto", "sexto", "septimo", "octavo", "noveno", "decimo"];
 const SURFACE_PARAMETERS_STORAGE_KEY = "presupuestador:technical_surface_parameters:porton";
 
@@ -279,6 +282,7 @@ function hasIpanelVarilladoProduct(lines) {
 }
 function detectNoCladdingByProducts(lines, params) {
   const ids = getBudgetProductIdSetFromLines(lines);
+  if (ids.has(REVESTIMIENTO_ESPECIAL_PRODUCT_ID)) return true;
   const noCladdingId = Number(params?.no_cladding_product_id || 0);
   return !!(noCladdingId && ids.has(noCladdingId));
 }

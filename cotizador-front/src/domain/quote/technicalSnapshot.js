@@ -200,8 +200,10 @@ function productRuleMatches(rule, lines) {
   return required.every((productId) => ids.has(Number(productId)));
 }
 
+const REVESTIMIENTO_ESPECIAL_PRODUCT_ID = 4176;
 function detectNoCladdingByProducts(lines, params) {
   const ids = getLineIdSet(lines);
+  if (ids.has(REVESTIMIENTO_ESPECIAL_PRODUCT_ID)) return true;
   const noCladdingId = Number(params?.no_cladding_product_id || 0);
   return !!(noCladdingId && ids.has(noCladdingId));
 }
