@@ -758,11 +758,21 @@ function measurementTripleMm(values) {
 function MeasuredValuesNote({ triple }) {
   if (!triple) return null;
   return (
-    <div className="muted" style={{ fontSize: 12 }}>
+    <div
+      style={{
+        fontSize: 12,
+        fontWeight: 800,
+        border: "1.5px solid #fca5a5",
+        background: "#fef2f2",
+        color: "#7f1d1d",
+        borderRadius: 8,
+        padding: "6px 10px",
+      }}
+    >
       Valores medidos:{" "}
       {triple.values.map((v, i) => (
         <span key={i}>
-          <span style={{ fontWeight: v === triple.min ? 800 : 400, color: v === triple.min ? "#166534" : undefined }}>
+          <span style={{ color: v === triple.min ? "#166534" : "#7f1d1d" }}>
             {v}
           </span>
           {i < triple.values.length - 1 ? " / " : ""}
