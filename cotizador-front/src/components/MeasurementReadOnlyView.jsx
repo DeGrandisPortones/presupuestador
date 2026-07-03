@@ -327,9 +327,11 @@ function normalizeDistribution(value) {
   return String(value || "").trim().toLowerCase() === "especial" ? "Especial" : "Repartido";
 }
 function getTechnicalFieldValue(form, quote, key, fallback = "") {
-  const current = text(form?.[key]);
-  if (current) return current;
-  return text(quote?.payload?.dimensions?.[key] || fallback);
+  // El esquema de parantes lo define siempre el presupuesto (dimensions); lo cargado en
+  // el formulario de medicion queda solo como respaldo si el presupuesto no tiene nada.
+  const fromBudget = text(quote?.payload?.dimensions?.[key]);
+  if (fromBudget) return fromBudget;
+  return text(form?.[key] || fallback);
 }
 export default function MeasurementReadOnlyView({ quote }) {
   const form = quote?.measurement_form || {};

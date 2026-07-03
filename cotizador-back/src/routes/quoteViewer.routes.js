@@ -63,10 +63,12 @@ function buildTechnicalSnapshot(quote, finalCopy = null) {
     budget_dimensions: dimensions,
     alto_final_mm: toText(measurementForm?.alto_final_mm),
     ancho_final_mm: toText(measurementForm?.ancho_final_mm),
-    cantidad_parantes: toText(measurementForm?.cantidad_parantes || dimensions?.cantidad_parantes),
-    orientacion_parantes: toText(measurementForm?.orientacion_parantes || dimensions?.orientacion_parantes),
-    distribucion_parantes: toText(measurementForm?.distribucion_parantes || dimensions?.distribucion_parantes),
-    observaciones_parantes: toText(measurementForm?.observaciones_parantes || dimensions?.observaciones_parantes),
+    // El esquema de parantes lo define siempre el presupuesto (dimensions); measurementForm
+    // queda solo como respaldo si el presupuesto no tiene nada cargado todavia.
+    cantidad_parantes: toText(dimensions?.cantidad_parantes || measurementForm?.cantidad_parantes),
+    orientacion_parantes: toText(dimensions?.orientacion_parantes || measurementForm?.orientacion_parantes),
+    distribucion_parantes: toText(dimensions?.distribucion_parantes || measurementForm?.distribucion_parantes),
+    observaciones_parantes: toText(dimensions?.observaciones_parantes || measurementForm?.observaciones_parantes),
     observaciones_medicion: toText(measurementForm?.observaciones_medicion),
   };
 }

@@ -701,10 +701,13 @@ function buildMeasurementTechnicalSummaryItems({ quote, form, technicalSummary =
   pushTechnicalSummaryItem(rows, "Tipo de piernas", formatPiernas(technicalSummary?.piernas_tipo));
   pushTechnicalSummaryItem(rows, "Ancho de pierna", formatMm(technicalSummary?.ancho_pierna_mm));
   pushTechnicalSummaryItem(rows, "Tipo de instalación", formatInstallationMode(technicalSummary?.installation_mode));
-  pushTechnicalSummaryItem(rows, "Cantidad de parantes", text(form?.cantidad_parantes));
-  pushTechnicalSummaryItem(rows, "Orientación de parantes", formatOrientation(form?.orientacion_parantes));
-  pushTechnicalSummaryItem(rows, "Distribución de parantes", formatDistribution(form?.distribucion_parantes));
-  pushTechnicalSummaryItem(rows, "Obs. parantes", text(form?.observaciones_parantes));
+  // Estos 4 vienen siempre del presupuesto, nunca de lo que se haya tipeado en la
+  // medición: el único que puede modificar el esquema de parantes es el vendedor,
+  // editando el presupuesto.
+  pushTechnicalSummaryItem(rows, "Cantidad de parantes", text(dimensions?.cantidad_parantes));
+  pushTechnicalSummaryItem(rows, "Orientación de parantes", formatOrientation(dimensions?.orientacion_parantes));
+  pushTechnicalSummaryItem(rows, "Distribución de parantes", formatDistribution(dimensions?.distribucion_parantes));
+  pushTechnicalSummaryItem(rows, "Obs. parantes", text(dimensions?.observaciones_parantes));
   return rows;
 }
 function formatProductionDeliveryDisplay(planning) {
@@ -767,53 +770,6 @@ function MeasurementSchemeVisual({ form, pointCount = 3 }) {
         ))}
       </div>
     </div>
-  );
-}
-function buildParantesOptions(currentValue = "") {
-  const base = Array.from({ length: 7 }, (_, idx) => String(idx));
-  const current = String(currentValue || "").trim();
-  if (current && !base.includes(current)) base.push(current);
-  return base.sort((a, b) => Number(a) - Number(b));
-}
-function ParantesSelect({ value, onChange }) {
-  const options = buildParantesOptions(value);
-  return (
-    <select
-      value={value || ""}
-      onChange={(e) => onChange(e.target.value)}
-      style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid #ddd", background: "#fff" }}
-    >
-      <option value="">Seleccione cantidad…</option>
-      {options.map((opt) => (
-        <option key={opt} value={opt}>
-          {opt}
-        </option>
-      ))}
-    </select>
-  );
-}
-function ParantesOrientationSelect({ value, onChange }) {
-  return (
-    <select
-      value={normalizeOrientation(value)}
-      onChange={(e) => onChange(e.target.value)}
-      style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid #ddd", background: "#fff" }}
-    >
-      <option value="verticales">Verticales</option>
-      <option value="horizontal">Horizontal</option>
-    </select>
-  );
-}
-function ParantesDistributionSelect({ value, onChange }) {
-  return (
-    <select
-      value={normalizeDistribution(value)}
-      onChange={(e) => onChange(e.target.value)}
-      style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid #ddd", background: "#fff" }}
-    >
-      <option value="repartido">Repartido</option>
-      <option value="especial">Especial</option>
-    </select>
   );
 }
 
@@ -1575,54 +1531,6 @@ export default function MedicionDetailPage() {
               } />
             </Field>
           </Row>
-          {isTechnical ? (
-            <>
-              <div className="spacer" />
-              <Row>
-                <Field label="Cantidad de parantes">
-                  <ParantesSelect
-                    value={form.cantidad_parantes || ""}
-                    onChange={(value) => setForm((prev) => ({ ...prev, cantidad_parantes: value }))}
-                  />
-                </Field>
-                <Field label="Orientación de los parantes">
-                  <ParantesOrientationSelect
-                    value={form.orientacion_parantes}
-                    onChange={(value) => setForm((prev) => ({ ...prev, orientacion_parantes: value }))}
-                  />
-                </Field>
-                <Field label="Distribución de los parantes">
-                  <ParantesDistributionSelect
-                    value={form.distribucion_parantes}
-                    onChange={(value) => setForm((prev) => ({ ...prev, distribucion_parantes: value }))}
-                  />
-                </Field>
-              </Row>
-              {normalizeDistribution(form.distribucion_parantes) === "especial" ? (
-                <>
-                  <div className="spacer" />
-                  <Row>
-                    <Field label="Observaciones de distribución especial">
-                      <textarea
-                        value={form.observaciones_parantes || ""}
-                        onChange={(e) => setForm((prev) => ({ ...prev, observaciones_parantes: e.target.value }))}
-                        rows={3}
-                        style={{
-                          width: "100%",
-                          borderRadius: 12,
-                          border: "1px solid #d7d7d7",
-                          padding: 12,
-                          resize: "vertical",
-                          fontFamily: "inherit",
-                        }}
-                        placeholder="Indicá cómo debe ser la distribución especial de los parantes."
-                      />
-                    </Field>
-                  </Row>
-                </>
-              ) : null}
-            </>
-          ) : null}
         </Section>
 
         <Section title="Productos que puede cambiar el medidor">

@@ -434,22 +434,25 @@ async function buildPreproduccionPayload({ originalQuote, sourceQuote, revisionQ
       toText(dimensions?.width_mm) ||
       toText(dimensions?.ancho_final_mm),
 
+    // Estos 4 vienen siempre del presupuesto: el unico que puede modificar el esquema de
+    // parantes es el vendedor, editando el presupuesto. measurementForm queda solo como
+    // respaldo para presupuestos viejos que no tengan nada cargado en dimensions.
     cantidad_parantes:
+      toText(dimensions?.cantidad_parantes) ||
       toText(measurementForm?.cantidad_parantes) ||
-      toText(measurementForm?.parantes?.cant) ||
-      toText(dimensions?.cantidad_parantes),
+      toText(measurementForm?.parantes?.cant),
     orientacion_parantes:
+      toText(dimensions?.orientacion_parantes) ||
       toText(measurementForm?.orientacion_parantes) ||
-      toText(measurementForm?.parantes?.orientacion) ||
-      toText(dimensions?.orientacion_parantes),
+      toText(measurementForm?.parantes?.orientacion),
     distribucion_parantes:
+      toText(dimensions?.distribucion_parantes) ||
       toText(measurementForm?.distribucion_parantes) ||
-      toText(measurementForm?.parantes?.distribucion) ||
-      toText(dimensions?.distribucion_parantes),
+      toText(measurementForm?.parantes?.distribucion),
     observaciones_parantes:
+      toText(dimensions?.observaciones_parantes) ||
       toText(measurementForm?.observaciones_parantes) ||
-      toText(measurementForm?.parantes?.observaciones) ||
-      toText(dimensions?.observaciones_parantes),
+      toText(measurementForm?.parantes?.observaciones),
 
     tolerance_percent: Number(metrics?.tolerance_percent ?? 0) || 0,
     tolerance_amount: Number(metrics?.tolerance_amount ?? 0) || 0,
