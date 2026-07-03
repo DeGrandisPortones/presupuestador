@@ -1240,6 +1240,10 @@ function getLinkedPortonQuoteIdFromBody(body = {}) {
   const payload = body?.payload && typeof body.payload === "object" ? body.payload : {};
   return toText(body?.linked_porton_quote_id || payload?.linked_porton_quote_id || payload?.porton_quote_id || "");
 }
+async function getQuoteOwnedBySeller(quoteId, userId) {
+  const r = await dbQuery(`select * from public.presupuestador_quotes where id = $1 and created_by_user_id = $2 limit 1`, [quoteId, Number(userId)]);
+  return r.rows?.[0] || null;
+}
 function mergeLinkedPortonPayload(payload = {}, linkedPorton = null) {
   const next = payload && typeof payload === "object" ? { ...payload } : {};
   if (!linkedPorton?.id) return next;
