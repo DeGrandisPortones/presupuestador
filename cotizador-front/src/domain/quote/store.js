@@ -214,6 +214,9 @@ export const useQuoteStore = create((set, get) => ({
   pricesAppliedAt: null,
   dimensions: { width: "", height: "", kg_m2: "", vano_size_auto_calc: true },
   lines: [],
+  // Registro de medición (solo lectura): nunca se edita desde acá, se muestra tal
+  // cual se guardó al medir, sin importar lo que despues se cambie en dimensions.
+  measurementForm: null,
   reset() {
     set({
       quoteId: null,
@@ -237,6 +240,7 @@ export const useQuoteStore = create((set, get) => ({
       pricesAppliedAt: null,
       dimensions: { width: "", height: "", kg_m2: "", vano_size_auto_calc: true },
       lines: [],
+      measurementForm: null,
     });
   },
   loadFromQuote(quote) {
@@ -304,6 +308,7 @@ export const useQuoteStore = create((set, get) => ({
       rejectionNotes: q.rejection_notes || null,
       pricelistId: q.pricelist_id ?? null,
       pricelistName: "",
+      measurementForm: q.measurement_form || null,
       marginPercent: m,
       marginPercentInput: m === 0 ? "" : String(payload?.margin_percent_ui ?? m),
       fulfillmentMode: q.fulfillment_mode || "produccion",

@@ -642,6 +642,30 @@ function inputStateStyle(hasError) {
 function disabledComputedInputStyle(extra = {}) {
   return { width: "100%", background: "#f3f4f6", color: "#475569", borderColor: "#d1d5db", ...extra };
 }
+function measurementTripleMm(values) {
+  const nums = (Array.isArray(values) ? values : [])
+    .map((v) => Number(String(v ?? "").replace(",", ".")))
+    .filter((n) => Number.isFinite(n) && n > 0);
+  if (!nums.length) return null;
+  return { values: nums, min: Math.min(...nums) };
+}
+function MeasuredValuesNote({ triple }) {
+  if (!triple) return null;
+  return (
+    <div className="muted" style={{ fontSize: 12 }}>
+      Valores medidos:{" "}
+      {triple.values.map((v, i) => (
+        <span key={i}>
+          <span style={{ fontWeight: v === triple.min ? 800 : 400, color: v === triple.min ? "#166534" : undefined }}>
+            {v}
+          </span>
+          {i < triple.values.length - 1 ? " / " : ""}
+        </span>
+      ))}{" "}
+      mm <span style={{ fontStyle: "italic" }}>(se toma el menor)</span>
+    </div>
+  );
+}
 function FieldBox({ label, helper, helperColor, children }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 0 }}>
@@ -1526,6 +1550,9 @@ export default function PortonDimensions({ kind = "porton" }) {
   const setDimensions = useQuoteStore((s) => s.setDimensions);
   const portonType = useQuoteStore((s) => s.portonType);
   const lines = useQuoteStore((s) => s.lines);
+  const measurementForm = useQuoteStore((s) => s.measurementForm);
+  const measuredWidths = measurementTripleMm(measurementForm?.esquema?.ancho);
+  const measuredHeights = measurementTripleMm(measurementForm?.esquema?.alto);
   const [parantesSketchOpen, setParantesSketchOpen] = useState(false);
   const [ipanelSketchOpen, setIpanelSketchOpen] = useState(false);
   const [ipanelLamasSetupOpen, setIpanelLamasSetupOpen] = useState(false);
@@ -2050,8 +2077,14 @@ export default function PortonDimensions({ kind = "porton" }) {
       <div style={{ fontWeight: 800, marginBottom: 8 }}>{title}</div>
       {hasSizeError ? <div style={{ marginBottom: 12, padding: "10px 12px", borderRadius: 10, background: "#fee2e2", color: "#991b1b", fontWeight: 700 }}>Se encuentra fuera de los limites de tamano.</div> : null}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 12, alignItems: "start" }}>
-        <FieldBox label={isPorton ? "Ancho del vano (m)" : "Ancho (m)"} helper={widthHelper} helperColor={widthOutOfBounds ? "#b91c1c" : undefined}><Input type="text" inputMode="decimal" value={widthRaw} onChange={(v) => isPorton ? setVanoDimension("width", v) : setDimensions({ width: normalizeDecimal(v) })} onBlur={(e) => isPorton ? setVanoDimension("width", e?.target?.value) : setDimensions({ width: normalizeDecimal(e?.target?.value) })} placeholder={isIpanel ? "Ej: 1.16" : "Ej: 3.2"} style={inputStateStyle(widthOutOfBounds)} /></FieldBox>
-        <FieldBox label={isPorton ? "Alto del vano (m)" : "Alto (m)"} helper={heightHelper} helperColor={heightOutOfBounds ? "#b91c1c" : undefined}><Input type="text" inputMode="decimal" value={heightRaw} onChange={(v) => isPorton ? setVanoDimension("height", v) : setDimensions({ height: normalizeDecimal(v) })} onBlur={(e) => isPorton ? setVanoDimension("height", e?.target?.value) : setDimensions({ height: normalizeDecimal(e?.target?.value) })} placeholder={heightPlaceholder} style={inputStateStyle(heightOutOfBounds)} /></FieldBox>
+        <FieldBox label={isPorton ? "Ancho del vano (m)" : "Ancho (m)"} helper={widthHelper} helperColor={widthOutOfBounds ? "#b91c1c" : undefined}>
+          <Input type="text" inputMode="decimal" value={widthRaw} onChange={(v) => isPorton ? setVanoDimension("width", v) : setDimensions({ width: normalizeDecimal(v) })} onBlur={(e) => isPorton ? setVanoDimension("width", e?.target?.value) : setDimensions({ width: normalizeDecimal(e?.target?.value) })} placeholder={isIpanel ? "Ej: 1.16" : "Ej: 3.2"} style={inputStateStyle(widthOutOfBounds)} />
+          {isPorton ? <MeasuredValuesNote triple={measuredWidths} /> : null}
+        </FieldBox>
+        <FieldBox label={isPorton ? "Alto del vano (m)" : "Alto (m)"} helper={heightHelper} helperColor={heightOutOfBounds ? "#b91c1c" : undefined}>
+          <Input type="text" inputMode="decimal" value={heightRaw} onChange={(v) => isPorton ? setVanoDimension("height", v) : setDimensions({ height: normalizeDecimal(v) })} onBlur={(e) => isPorton ? setVanoDimension("height", e?.target?.value) : setDimensions({ height: normalizeDecimal(e?.target?.value) })} placeholder={heightPlaceholder} style={inputStateStyle(heightOutOfBounds)} />
+          {isPorton ? <MeasuredValuesNote triple={measuredHeights} /> : null}
+        </FieldBox>
         {hasIpanelLamas22Panel ? (<>
           <FieldBox label="Orientación de lamas">
             <select

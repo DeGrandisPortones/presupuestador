@@ -18,11 +18,6 @@ import Button from "../../ui/Button.jsx";
 import Input from "../../ui/Input.jsx";
 import { ParantesDistributionScheme } from "../../components/ParantesDistributionScheme.jsx";
 
-const DEFAULT_RETURN_REASON_ITEM_18 =
-  "El cambio en el item 18 puede ocasionar costos adicionales y debe pasar al vendedor.";
-const DEFAULT_RETURN_REASON_OBSERVATIONS =
-  "El medidor dejó observaciones y debe revisarlo el vendedor antes de seguir.";
-
 const SCHEME_RECT_PCTS = {
   alto: [
     { left: 9.22, top: 43.73, width: 14.4, height: 14.24 },
@@ -334,59 +329,6 @@ function getCurrentPositionAsync() {
 }
 function normalizeNameKey(value) {
   return String(value || "").trim().toLowerCase().replace(/\s+/g, " ");
-}
-function normalizeSensitiveNameKey(value) {
-  return String(value || "")
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, " ")
-    .trim()
-    .replace(/\s+/g, " ");
-}
-function isPlacementSectionName(value) {
-  const key = normalizeSensitiveNameKey(value);
-  return key === "tipo de colocacion" || key === "colocacion" || key.includes("tipo de colocacion");
-}
-function getBudgetSectionNameById(budgetContext, sectionId) {
-  const byId = budgetContext?.budget_sections?.by_id || {};
-  return String(byId?.[Number(sectionId)]?.name || "").trim();
-}
-function isPlacementMeasurementField(field, budgetContext) {
-  if (!field) return false;
-  const sectionId = Number(field?.budget_section_id || 0);
-  const candidates = [
-    field?.budget_section_name,
-    field?.section_name,
-    field?.label,
-    field?.name,
-    field?.title,
-    field?.key,
-    getBudgetSectionNameById(budgetContext, sectionId),
-  ];
-  return candidates.some(isPlacementSectionName);
-}
-function configuredMeasurementProductChanged(form, baselineForm, field) {
-  const key = String(field?.key || "").trim();
-  if (!key) return false;
-  const current = Number(getByPath(form, `__selected_binding_product.${key}.product_id`) || 0);
-  const base = Number(
-    getByPath(baselineForm, `__selected_binding_product.${key}.product_id`) ||
-      getByPath(form, `__budget_binding_products.${key}.0.product_id`) ||
-      0,
-  );
-  return !!(current && base && current !== base);
-}
-function fallbackMeasurementProductChanged(form, baselineForm, sectionId) {
-  const id = Number(sectionId || 0);
-  if (!id) return false;
-  const current = Number(getByPath(form, `__fallback_selected_section_products.${id}.product_id`) || 0);
-  const base = Number(
-    getByPath(baselineForm, `__fallback_selected_section_products.${id}.product_id`) ||
-      getByPath(form, `__fallback_budget_binding_products.${id}.0.product_id`) ||
-      0,
-  );
-  return !!(current && base && current !== base);
 }
 function buildBudgetSectionsContext(quote, catalog) {
   const sections = Array.isArray(catalog?.sections) ? catalog.sections.slice() : [];
@@ -1125,43 +1067,6 @@ export default function MedicionDetailPage() {
     [quote],
   );
 
-  const item18Changed = useMemo(() => {
-    if (!form) return false;
-    const configured18 = editableConfiguredFields.filter((field) => Number(field?.budget_section_id || 0) === 18);
-    for (const field of configured18) {
-      const current = Number(getByPath(form, `__selected_binding_product.${field.key}.product_id`) || 0);
-      const base = Number(
-        getByPath(baselineForm, `__selected_binding_product.${field.key}.product_id`) ||
-          getByPath(form, `__budget_binding_products.${field.key}.0.product_id`) ||
-          0,
-      );
-      if (current && base && current !== base) return true;
-    }
-    const currentFallback = Number(getByPath(form, `__fallback_selected_section_products.18.product_id`) || 0);
-    const baseFallback = Number(
-      getByPath(baselineForm, `__fallback_selected_section_products.18.product_id`) ||
-        getByPath(form, `__fallback_budget_binding_products.18.0.product_id`) ||
-        0,
-    );
-    return !!(currentFallback && baseFallback && currentFallback !== baseFallback);
-  }, [form, baselineForm, editableConfiguredFields]);
-
-  const placementChanged = useMemo(() => {
-    if (!form) return false;
-    const configuredPlacementFields = editableConfiguredFields.filter((field) => isPlacementMeasurementField(field, budgetContext));
-    for (const field of configuredPlacementFields) {
-      if (configuredMeasurementProductChanged(form, baselineForm, field)) return true;
-    }
-    for (const section of fallbackSections) {
-      if (!isPlacementSectionName(section?.name)) continue;
-      if (fallbackMeasurementProductChanged(form, baselineForm, section?.id)) return true;
-    }
-    return false;
-  }, [form, baselineForm, editableConfiguredFields, fallbackSections, budgetContext]);
-
-  const hasObservationsForSeller = !!text(form?.observaciones_medicion);
-  const mustGoToSeller = item18Changed || placementChanged || hasObservationsForSeller;
-
   const technicalRules = dynamicRulesQ.data || {};
   const technicalSummary = useMemo(
     () => computeAutomaticSummary({ quote, form, surfaceParameters: technicalRules?.surface_parameters || {} }),
@@ -1394,11 +1299,7 @@ export default function MedicionDetailPage() {
   const pointCount = measurementPointCount(quote);
   const kindLabel = isIpanelQuote(quote) ? "Ipanel" : isDoorQuote(quote) ? "puerta" : "porton";
   const editableCount = editableConfiguredFields.length + fallbackSections.length;
-  const submitButtonLabel = isTechnical
-    ? "Aprobar revisión final"
-    : mustGoToSeller
-      ? "Enviar al vendedor"
-      : "Enviar al técnico";
+  const submitButtonLabel = isTechnical ? "Aprobar revisión final" : "Enviar al técnico";
   const pageTitle = isTechnical ? `Revisión técnica final ${kindLabel}` : `Medición de ${kindLabel}`;
   const planningLabel = formatProductionDeliveryDisplay(planningQ.data);
   const isMeasurementApproved = String(quote?.measurement_status || "").toLowerCase() === "approved";
@@ -1865,39 +1766,6 @@ export default function MedicionDetailPage() {
             );
           })}
 
-          {item18Changed ? (
-            <div
-              style={{
-                marginTop: 14,
-                border: "2px solid #b91c1c",
-                background: "#fee2e2",
-                color: "#7f1d1d",
-                borderRadius: 12,
-                padding: 14,
-                fontWeight: 800,
-                boxShadow: "0 0 0 2px rgba(185,28,28,0.08) inset",
-              }}
-            >
-              Atención: cambiaste un producto de la sección 18. Este cambio puede ocasionar costos adicionales y debe enviarse al vendedor.
-            </div>
-          ) : null}
-
-          {placementChanged ? (
-            <div
-              style={{
-                marginTop: 14,
-                border: "2px solid #b91c1c",
-                background: "#fee2e2",
-                color: "#7f1d1d",
-                borderRadius: 12,
-                padding: 14,
-                fontWeight: 800,
-                boxShadow: "0 0 0 2px rgba(185,28,28,0.08) inset",
-              }}
-            >
-              Atención: cambiaste Tipo de colocación. Este cambio debe revisarlo el vendedor para ajustar la nota de pedido, la nota de venta y el presupuesto si corresponde.
-            </div>
-          ) : null}
         </Section>
 
         <Section title="Observaciones del medidor">
@@ -1919,21 +1787,6 @@ export default function MedicionDetailPage() {
               placeholder="Escribí una observación para el vendedor si necesitás devolver el portón por un motivo adicional."
             />
           )}
-          {hasObservationsForSeller ? (
-            <div
-              style={{
-                marginTop: 12,
-                border: "2px solid #b91c1c",
-                background: "#fee2e2",
-                color: "#7f1d1d",
-                borderRadius: 12,
-                padding: 14,
-                fontWeight: 800,
-              }}
-            >
-              Hay observaciones cargadas. Al enviar, este portón se derivará al vendedor para revisión.
-            </div>
-          ) : null}
         </Section>
 
         {(saveMedicionM.isError || approveTechnicalM.isError || rejectTechnicalM.isError) ? (

@@ -582,20 +582,19 @@ export function buildMeasurementsRouter(odoo = null) {
           error: "En puertas el medidor no puede cambiar secciones/productos. Deja observaciones para devolverlo al vendedor o envia a aprobacion tecnica final.",
         });
       }
-      const forceSellerReturnByItem18 = item18Change.changed === true;
-      // El medidor elige a quién enviar; solo forzamos retorno al vendedor por item18 o area guard
+      // El medidor elige libremente a quién enviar (técnico o vendedor). Cambiar el
+      // producto de la sección 18 ya no fuerza el retorno al vendedor por sí solo;
+      // solo se fuerza por el guardia de superficie (portón terminó más grande que
+      // lo presupuestado) o si el medidor lo pide explícitamente.
       const explicitReturnToSeller = body.return_to_seller === true;
       const forceSellerReturn =
         areaGuard.forced_return_to_seller === true ||
-        forceSellerReturnByItem18 ||
         explicitReturnToSeller;
 
       if (submit && forceSellerReturn) {
-        const reason = forceSellerReturnByItem18
-          ? item18Change.message || DEFAULT_ITEM18_REASON
-          : areaGuard.forced_return_to_seller
-            ? areaGuard.default_return_reason || DEFAULT_RETURN_REASON
-            : String(body.return_reason || "El medidor devuelve al vendedor para revisión.");
+        const reason = areaGuard.forced_return_to_seller
+          ? areaGuard.default_return_reason || DEFAULT_RETURN_REASON
+          : String(body.return_reason || "El medidor devuelve al vendedor para revisión.");
         const ctx = buildReturnContext(quote);
         const cleanLines = stripPreviouslyBilledLines(ctx.original_lines || quote.lines);
         const nextLines = [...cleanLines, buildPreviouslyBilledLine(quote)];
