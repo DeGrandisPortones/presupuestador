@@ -19,20 +19,23 @@ const PARANTES_SPECIAL_PRODUCT_ID = 3006;
 const APTOS_PARA_REVESTIR_TYPE = "para_revestir_con_al_pvc_otros";
 const DEFAULT_PARANTES_TUBE_DISCOUNT_MM = 40;
 const DOOR_FIXED_PARANTE_DISTANCE_MM = 825;
-const VANO_PLACEMENT_PRODUCT_IDS = new Set([4125, 4126, 4127]);
+const VANO_BEHIND_PRODUCT_ID = 3022;
+const VANO_INSIDE_PRODUCT_ID = 3023;
+const VANO_PLACEMENT_PRODUCT_IDS = new Set([VANO_BEHIND_PRODUCT_ID, VANO_INSIDE_PRODUCT_ID]);
 const VANO_REAR_PLACEMENT_LABELS = {
-  4125: "Piernas y dintel ocultos",
-  4126: "Piernas ocultas y dintel a la vista",
-  4127: "Dintel oculto y piernas a la vista",
+  [VANO_BEHIND_PRODUCT_ID]: "Por detras del vano",
+  [VANO_INSIDE_PRODUCT_ID]: "Dentro del vano",
 };
-const VANO_WIDTH_ADD_BY_LEGS_M = {
-  angostas: 0.14,
-  comunes: 0.20,
-  anchas: 0.28,
-  superanchas: 0.38,
-  especiales: 0.38,
+const VANO_WIDTH_ADD_BY_LEGS_MM_DEFAULT = {
+  angostas: 140,
+  comunes: 200,
+  anchas: 280,
+  superanchas: 380,
 };
-const VANO_DINTEL_OCULTO_HEIGHT_ADD_M = 0.10;
+const VANO_HEIGHT_ADD_MM_DEFAULT = 100;
+// "Revestimiento especial x m2": al elegirlo pide los kg/m2 al vendedor (ver SectionCatalog.jsx)
+// y ese valor reemplaza el peso calculado del porton (define tipo de piernas y medidas de paso/hoja).
+const REVESTIMIENTO_ESPECIAL_PRODUCT_ID = 4176;
 const ORDINAL_LABELS = ["primer", "segundo", "tercer", "cuarto", "quinto", "sexto", "septimo", "octavo", "noveno", "decimo"];
 const SURFACE_PARAMETERS_STORAGE_KEY = "presupuestador:technical_surface_parameters:porton";
 
@@ -279,6 +282,7 @@ function hasIpanelVarilladoProduct(lines) {
 }
 function detectNoCladdingByProducts(lines, params) {
   const ids = getBudgetProductIdSetFromLines(lines);
+  if (ids.has(REVESTIMIENTO_ESPECIAL_PRODUCT_ID)) return true;
   const noCladdingId = Number(params?.no_cladding_product_id || 0);
   return !!(noCladdingId && ids.has(noCladdingId));
 }
@@ -392,16 +396,30 @@ function normalizeLegsKeyForVano(legsLabel) {
   if (key === "especiales") return "superanchas";
   return key || "angostas";
 }
-function getVanoWidthAddM(legsKey) {
+const VANO_LEGS_ADD_WIDTH_PARAM_KEYS = {
+  angostas: ["legs_angostas_add_width_mm"],
+  comunes: ["legs_comunes_add_width_mm"],
+  anchas: ["legs_anchas_add_width_mm"],
+  superanchas: ["legs_superanchas_add_width_mm"],
+};
+// Mismas claves de surfaceParameters que usa el calculo de piernas en medicion tecnica (pdfBudgetExtras.js),
+// para que "Por detras del vano" de el mismo resultado en el presupuesto y en el PDF de medicion.
+function getVanoWidthAddM(legsKey, params) {
   const key = normalizeLegsKeyForVano(legsKey);
-  return VANO_WIDTH_ADD_BY_LEGS_M[key] ?? VANO_WIDTH_ADD_BY_LEGS_M.angostas;
+  const mm = getNumberParam(params, VANO_LEGS_ADD_WIDTH_PARAM_KEYS[key] || VANO_LEGS_ADD_WIDTH_PARAM_KEYS.angostas, VANO_WIDTH_ADD_BY_LEGS_MM_DEFAULT[key] ?? VANO_WIDTH_ADD_BY_LEGS_MM_DEFAULT.angostas);
+  return mm / 1000;
 }
-function computePortonFromVano({ vanoWidthM, vanoHeightM, placementProductId, legsKey }) {
+function getVanoHeightAddM(params) {
+  const mm = getNumberParam(params, ["behind_vano_add_height_mm"], VANO_HEIGHT_ADD_MM_DEFAULT);
+  return mm / 1000;
+}
+function computePortonFromVano({ vanoWidthM, vanoHeightM, placementProductId, legsKey, params }) {
   const width = Number(vanoWidthM || 0) || 0;
   const height = Number(vanoHeightM || 0) || 0;
   const id = Number(placementProductId || 0);
-  const widthAddM = (id === 4125 || id === 4126) ? getVanoWidthAddM(legsKey) : 0;
-  const heightAddM = (id === 4125 || id === 4127) ? VANO_DINTEL_OCULTO_HEIGHT_ADD_M : 0;
+  const isBehindVano = id === VANO_BEHIND_PRODUCT_ID;
+  const widthAddM = isBehindVano ? getVanoWidthAddM(legsKey, params) : 0;
+  const heightAddM = isBehindVano ? getVanoHeightAddM(params) : 0;
   return {
     widthM: width > 0 ? round4(width + widthAddM) : 0,
     heightM: height > 0 ? round4(height + heightAddM) : 0,
@@ -1678,12 +1696,16 @@ export default function PortonDimensions({ kind = "porton" }) {
       vanoHeightM: vanoHeight,
       placementProductId: selectedVanoPlacementProductId,
       legsKey: vanoLegsKey,
+      params,
     }),
-    [vanoWidth, vanoHeight, selectedVanoPlacementProductId, vanoLegsKey],
+    [vanoWidth, vanoHeight, selectedVanoPlacementProductId, vanoLegsKey, params],
   );
 
   useEffect(() => {
-    if (!isPorton || !explicitVanoMeasures) return;
+    // vano_size_auto_calc solo se setea en presupuestos nuevos (ver store.reset()). Los presupuestos
+    // existentes cargados via loadFromQuote no lo tienen, asi que este calculo no les toca ancho/alto
+    // ya guardados/vendidos.
+    if (!isPorton || !explicitVanoMeasures || !dimensions?.vano_size_auto_calc) return;
     const nextWidth = calculatedPortonFromVano.widthM > 0 ? formatNumberForInput(calculatedPortonFromVano.widthM) : "";
     const nextHeight = calculatedPortonFromVano.heightM > 0 ? formatNumberForInput(calculatedPortonFromVano.heightM) : "";
     const patch = {
@@ -1705,6 +1727,7 @@ export default function PortonDimensions({ kind = "porton" }) {
   }, [
     isPorton,
     explicitVanoMeasures,
+    dimensions?.vano_size_auto_calc,
     selectedVanoPlacementProductId,
     selectedVanoPlacementLabel,
     vanoWidth,
@@ -2095,11 +2118,18 @@ export default function PortonDimensions({ kind = "porton" }) {
           <FieldBox label="Tipo de colocación"><Input value={selectedVanoPlacementLabel} disabled placeholder="Por dentro del vano" style={disabledComputedInputStyle()} /></FieldBox>
           <FieldBox label="Ancho calculado del portón"><Input value={width ? `${formatNumberForInput(width)} m` : ""} disabled placeholder="Se calcula desde el vano" style={disabledComputedInputStyle()} /></FieldBox>
           <FieldBox label="Alto calculado del portón"><Input value={height ? `${formatNumberForInput(height)} m` : ""} disabled placeholder="Se calcula desde el vano" style={disabledComputedInputStyle()} /></FieldBox>
-          {selectedVanoPlacementProductId === 4125 || selectedVanoPlacementProductId === 4126 ? (
+          {selectedVanoPlacementProductId === VANO_BEHIND_PRODUCT_ID ? (
             <FieldBox label="Adicional por piernas"><Input value={`${formatNumberForInput(calculatedPortonFromVano.widthAddM)} m (${vanoLegsKey})`} disabled style={disabledComputedInputStyle()} /></FieldBox>
           ) : null}
-          {selectedVanoPlacementProductId === 4125 || selectedVanoPlacementProductId === 4127 ? (
-            <FieldBox label="Adicional por dintel oculto"><Input value={`${formatNumberForInput(calculatedPortonFromVano.heightAddM)} m`} disabled style={disabledComputedInputStyle()} /></FieldBox>
+          {selectedVanoPlacementProductId === VANO_BEHIND_PRODUCT_ID ? (
+            <FieldBox label="Adicional de alto (dintel)"><Input value={`${formatNumberForInput(calculatedPortonFromVano.heightAddM)} m`} disabled style={disabledComputedInputStyle()} /></FieldBox>
+          ) : null}
+          {explicitVanoMeasures && !dimensions?.vano_size_auto_calc ? (
+            <FieldBox label="Calculo automatico">
+              <div style={{ fontSize: 13, color: "#92400e", fontWeight: 700, padding: "9px 12px", borderRadius: 10, border: "1px solid #fde68a", background: "#fffbeb" }}>
+                Este presupuesto es anterior al calculo automatico por vano: el ancho/alto no se recalculan solos para no modificar lo ya guardado.
+              </div>
+            </FieldBox>
           ) : null}
           <FieldBox label="Tipo / Sistema derivado"><Input value={portonType || ""} disabled placeholder="Se completa segun la combinacion de productos" style={disabledComputedInputStyle()} /></FieldBox>
           <FieldBox label="Kg por m2"><Input value={formatNumberForInput(preview.effectiveKgM2)} placeholder="Se calcula automaticamente segun el sistema" style={disabledComputedInputStyle()} disabled /></FieldBox>

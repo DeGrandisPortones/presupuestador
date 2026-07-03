@@ -42,8 +42,12 @@ function detectInstallationModeByProducts(quote, surfaceParameters) {
   if (behindId && ids.has(behindId)) return "detras_vano";
   return "sin_instalacion";
 }
+// "Revestimiento especial x m2": el vendedor carga los kg/m2 a mano (ver SectionCatalog.jsx del
+// front) en quote.payload.dimensions.kg_m2, y ese valor debe reemplazar el peso calculado.
+const REVESTIMIENTO_ESPECIAL_PRODUCT_ID = 4176;
 function detectNoCladding(quote, surfaceParameters) {
   const ids = getBudgetProductIdSet(quote);
+  if (ids.has(REVESTIMIENTO_ESPECIAL_PRODUCT_ID)) return true;
   const noCladdingId = Number(surfaceParameters?.no_cladding_product_id || 0);
   return !!(noCladdingId && ids.has(noCladdingId));
 }
@@ -146,8 +150,13 @@ function computeSurfaceAutomaticContext({ quote, form, surfaceParameters }) {
     };
     anchoCalculadoMm = Math.max(0, anchoMinMm + (addMap[piernasTipo] || 0));
   } else if (installationMode === "dentro_vano") {
-    altoCalculadoMm = Math.max(0, altoMinMm - Number(surfaceParameters?.inside_vano_subtract_height_mm || 10));
-    anchoCalculadoMm = Math.max(0, anchoMinMm - Number(surfaceParameters?.inside_vano_subtract_width_mm || 20));
+    // Presupuestos nuevos (con dimensions.vano_size_auto_calc): el porton debe quedar igual al vano.
+    // Presupuestos previos a este cambio: se mantiene el descuento historico para no alterar mediciones ya confirmadas.
+    const usesNewVanoCalc = quote?.payload?.dimensions?.vano_size_auto_calc === true;
+    const subtractHeightMm = usesNewVanoCalc ? 0 : Number(surfaceParameters?.inside_vano_subtract_height_mm || 10);
+    const subtractWidthMm = usesNewVanoCalc ? 0 : Number(surfaceParameters?.inside_vano_subtract_width_mm || 20);
+    altoCalculadoMm = Math.max(0, altoMinMm - subtractHeightMm);
+    anchoCalculadoMm = Math.max(0, anchoMinMm - subtractWidthMm);
   }
 
   const legWidthMm = getLegWidthMmByType(piernasTipo);
