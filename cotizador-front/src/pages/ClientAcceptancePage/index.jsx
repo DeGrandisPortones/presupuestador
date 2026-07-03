@@ -336,9 +336,11 @@ function buildBudgetTechnicalDetailRows(quote, form, technicalSummary = {}) {
   pushTechnicalDetailRow(rows, "Peso aproximado", formatKg(technicalSummary.peso_estimado_kg));
   pushTechnicalDetailRow(rows, "Tipo de piernas", formatPiernas(technicalSummary.piernas_tipo));
   pushTechnicalDetailRow(rows, "Ancho de pierna", formatMm(technicalSummary.ancho_pierna_mm));
-  pushTechnicalDetailEntry(rows, "Orientación de parantes", firstTechnicalEntry(sources, ["orientacion_parantes", "orientación_parantes", "parantes_orientacion", "parantes_orientación"]));
-  pushTechnicalDetailEntry(rows, "Cantidad de parantes", firstTechnicalEntry(sources, ["cantidad_parantes", "parantes_cantidad", "cant_parantes", "parantes_cant"]));
-  pushTechnicalDetailEntry(rows, "Distribución de parantes", firstTechnicalEntry(sources, ["distribucion_parantes", "distribución_parantes", "parantes_distribucion", "parantes_distribución"]));
+  // El esquema de parantes lo define siempre el presupuesto (dimensions); solo si no
+  // tiene nada cargado se busca en el resto de las fuentes (medicion, etc).
+  pushTechnicalDetailEntry(rows, "Orientación de parantes", dimensions?.orientacion_parantes ? { value: dimensions.orientacion_parantes } : firstTechnicalEntry(sources, ["orientacion_parantes", "orientación_parantes", "parantes_orientacion", "parantes_orientación"]));
+  pushTechnicalDetailEntry(rows, "Cantidad de parantes", dimensions?.cantidad_parantes ? { value: dimensions.cantidad_parantes } : firstTechnicalEntry(sources, ["cantidad_parantes", "parantes_cantidad", "cant_parantes", "parantes_cant"]));
+  pushTechnicalDetailEntry(rows, "Distribución de parantes", dimensions?.distribucion_parantes ? { value: dimensions.distribucion_parantes } : firstTechnicalEntry(sources, ["distribucion_parantes", "distribución_parantes", "parantes_distribucion", "parantes_distribución"]));
   return rows;
 }
 function DetailGrid({ rows }) {
