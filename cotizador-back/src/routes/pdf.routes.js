@@ -42,6 +42,15 @@ const TERMS_AND_CONDITIONS = [
 function isDistributorPayload(payload = {}) {
   return String(payload?.created_by_role || payload?.payload?.created_by_role || "").trim().toLowerCase() === "distribuidor";
 }
+// Precio de Envío: se lee el valor ya congelado en envio_odoo_price_snapshot
+// (armado al crear el presupuesto, o al apretar "Actualizar presupuesto" en uno
+// viejo). Si no existe (presupuesto viejo nunca actualizado) no se inventa nada
+// y se mantiene el comportamiento historico ($0), para no cambiarlo solo.
+function getEnvioOdooPriceSnapshot(payload = {}) {
+  const raw = payload?.envio_odoo_price_snapshot ?? payload?.payload?.envio_odoo_price_snapshot;
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
 function lineMatchesProductSet(line = {}, productSet) {
   const ids = [line?.product_id, line?.id, line?.odoo_id, line?.odoo_template_id, line?.odoo_variant_id, line?.odoo_external_id, line?.odoo_product_id];
   return ids.some((value) => productSet.has(Number(value || 0)));
@@ -277,18 +286,26 @@ async function buildLines(payload, { useBasePrice, odoo, displayNetPrices = fals
   const productIds = collectUniquePositiveInts(rawLines.map((line) => line?.product_id));
   const pdfNameMap = await getProductPdfNameMap(catalogKind, productIds);
   const odooNames = await readOdooNamesFlexible(odoo, rawLines);
+  const distributorPayload = isDistributorPayload(payload);
+  // El envío lo sigue cobrando De Grandis aunque sea "provisión propia" del
+  // distribuidor: en la proforma va al precio de Odoo congelado en
+  // envio_odoo_price_snapshot, no a $0 ni al precio que cargó el distribuidor.
+  const envioOdooPriceSnapshot = getEnvioOdooPriceSnapshot(payload);
 
   const lines = rawLines
     .map((l) => {
       const qty = n2(l?.qty);
       const rawBasePrice = n2(l?.base_price ?? l?.basePrice ?? l?.base_price_unit ?? l?.price_unit ?? l?.priceUnit ?? l?.price ?? 0);
-      const basePrice = useBasePrice && isDistributorPayload(payload) && isDistributorOwnSupplyLine(l) ? 0 : rawBasePrice;
+      const variantId = resolveVariantId(l);
+      const isDistOwnSupply = distributorPayload && isDistributorOwnSupplyLine(l);
+      const basePrice = useBasePrice && isDistOwnSupply
+        ? (isShippingLine(l) && envioOdooPriceSnapshot != null ? envioOdooPriceSnapshot : 0)
+        : rawBasePrice;
       const unitNet = useBasePrice ? basePrice : basePrice * coefFactor;
       const unit = displayNetPrices ? unitNet : unitNet * (1 + effectiveTaxRate);
       const totalNet = unitNet * qty;
       const total = unit * qty;
       const productId = toPositiveInt(l?.product_id);
-      const variantId = resolveVariantId(l);
       const explicitTemplateId = resolveProductTemplateId(l);
       const derivedTemplateId = odooNames.templateIdByVariantId.get(variantId) || 0;
       const templateId = explicitTemplateId || derivedTemplateId;

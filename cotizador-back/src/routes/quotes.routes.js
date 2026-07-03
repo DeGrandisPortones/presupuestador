@@ -103,6 +103,32 @@ function isDistributorQuote(quote = {}) {
 function shouldZeroShippingForOdoo(quote = {}, line = {}) {
   return isDistributorQuote(quote) && isDistributorOwnSupplyLine(line);
 }
+// Precio de Envío tomado de Odoo y congelado en envio_odoo_price_snapshot al crear
+// el presupuesto, o al apretar "Actualizar presupuesto" (refresh_emission_date) en
+// uno viejo. No se recalcula solo en ningun otro guardado, para no cambiarle el
+// numero a un presupuesto ya armado. Lo usan la proforma y el envio real a Odoo.
+async function fetchShippingOdooListPrice(odoo, productId) {
+  const id = Number(productId) || 0;
+  if (!odoo || !id) return null;
+  try {
+    const [row] = await odoo.executeKw("product.product", "read", [[id]], { fields: ["list_price"] });
+    const price = Number(row?.list_price);
+    return Number.isFinite(price) ? price : null;
+  } catch {
+    return null;
+  }
+}
+async function computeEnvioOdooPriceSnapshot({ odoo, createdByRole, lines }) {
+  if (String(createdByRole || "").trim().toLowerCase() !== "distribuidor") return null;
+  const shippingLine = (Array.isArray(lines) ? lines : []).find((l) => isShippingLine(l));
+  if (!shippingLine) return null;
+  const productId = shippingLine?.odoo_variant_id || shippingLine?.product_id || shippingLine?.odoo_external_id;
+  return await fetchShippingOdooListPrice(odoo, productId);
+}
+function getEnvioOdooPriceSnapshot(quote = {}) {
+  const n = Number(quote?.envio_odoo_price_snapshot);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
 function toText(v) { const x = toScalar(v); return x === null || x === undefined ? "" : String(x).trim(); }
 function isUuid(v) { return /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(String(v || "").trim()); }
 function round2(n) { return Math.round(Number(n || 0) * 100) / 100; }
@@ -547,6 +573,18 @@ function getLineBasePriceForOdoo(line = {}) {
 }
 function calcOdooUnitPrice(line, payload, quote = null) {
   if (shouldZeroShippingForOdoo(quote, line)) return 0;
+
+  // Envío: si ya existe el precio de Odoo congelado (envio_odoo_price_snapshot),
+  // se usa ese en vez del que quedó en la línea (que el distribuidor puede editar
+  // para su propio presupuesto). Si es un presupuesto viejo sin ese snapshot,
+  // sigue exactamente como estaba: usa el precio guardado en la línea.
+  if (isDistributorQuote(quote) && isShippingLine(line)) {
+    const snapshot = getEnvioOdooPriceSnapshot(quote);
+    if (snapshot != null) {
+      const adjustment = getPayloadQuoteAdjustmentPercent(payload || {});
+      return round2(snapshot * (1 + adjustment / 100) * getOdooConditionPriceFactor(payload || {}));
+    }
+  }
 
   // Distribuidores: precio base/lista sin margen (coeficiente), pero con la
   // financiacion/ajuste por forma de pago aplicado igual que al vendedor.
@@ -1766,14 +1804,16 @@ export function buildQuotesRouter(odoo) {
       if (created_by_role === "distribuidor" && !bill_to_odoo_partner_id) bill_to_odoo_partner_id = u.odoo_partner_id ? Number(u.odoo_partner_id) : null;
 
       const measurementFlow = getMeasurementFlowForQuote({ catalog_kind, fulfillment_mode, lines });
+      const envioOdooPriceSnapshot = await computeEnvioOdooPriceSnapshot({ odoo, createdByRole: created_by_role, lines });
 
       const q = await dbQuery(
         `insert into public.presupuestador_quotes (
             quote_kind, parent_quote_id, created_by_user_id, created_by_role, fulfillment_mode, pricelist_id,
             bill_to_odoo_partner_id, end_customer, lines, payload, note, catalog_kind, status,
-            commercial_decision, technical_decision, requires_measurement, measurement_mode, measurement_subtype
+            commercial_decision, technical_decision, requires_measurement, measurement_mode, measurement_subtype,
+            envio_odoo_price_snapshot
          )
-         values ('original', null, $1, $2, $3, $4, $5, $6::jsonb, $7::jsonb, $8::jsonb, $9, $10, 'draft', 'pending', 'pending', $11, $12, $13)
+         values ('original', null, $1, $2, $3, $4, $5, $6::jsonb, $7::jsonb, $8::jsonb, $9, $10, 'draft', 'pending', 'pending', $11, $12, $13, $14)
          returning *`,
         [
           Number(u.user_id),
@@ -1789,6 +1829,7 @@ export function buildQuotesRouter(odoo) {
           measurementFlow.requires_measurement,
           measurementFlow.measurement_mode,
           measurementFlow.measurement_subtype,
+          envioOdooPriceSnapshot,
         ]
       );
       res.json({ ok: true, quote: q.rows[0] });
@@ -2044,6 +2085,13 @@ export function buildQuotesRouter(odoo) {
 
       const nextLines = body.lines !== undefined ? body.lines : quote.lines;
       const measurementFlow = getMeasurementFlowForQuote({ catalog_kind, fulfillment_mode, lines: nextLines });
+      // El precio de Envío congelado solo se recalcula cuando el usuario aprieta
+      // explícitamente "Actualizar presupuesto" (refresh_emission_date). En
+      // cualquier otro guardado se mantiene el valor ya congelado tal cual estaba.
+      const isRefreshEmissionDate = body.refresh_emission_date === true;
+      const envioOdooPriceSnapshot = isRefreshEmissionDate
+        ? await computeEnvioOdooPriceSnapshot({ odoo, createdByRole: quote.created_by_role, lines: nextLines })
+        : quote.envio_odoo_price_snapshot;
 
       const upd = await dbQuery(
         `update public.presupuestador_quotes
@@ -2060,7 +2108,8 @@ export function buildQuotesRouter(odoo) {
                 measurement_subtype=$12,
                 measurement_status=case when status='draft' then $13 else measurement_status end,
                 acopio_to_produccion_status=$14,
-                created_at=case when $15::boolean then now() else created_at end
+                created_at=case when $15::boolean then now() else created_at end,
+                envio_odoo_price_snapshot=$16
           where id=$1
           returning *`,
         [
@@ -2078,7 +2127,8 @@ export function buildQuotesRouter(odoo) {
           measurementFlow.measurement_subtype,
           quote.status === "draft" ? measurementFlow.measurement_status : quote.measurement_status,
           nextAcopioStatus,
-          body.refresh_emission_date === true,
+          isRefreshEmissionDate,
+          envioOdooPriceSnapshot,
         ]
       );
       res.json({ ok: true, quote: upd.rows[0] });

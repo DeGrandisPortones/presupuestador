@@ -216,6 +216,11 @@ export async function ensureQuotesMeasurementColumns() {
        and catalog_kind = 'puerta'
   `);
 
+  // Precio de Envío tomado de Odoo y congelado al crear el presupuesto (o al
+  // apretar "Actualizar presupuesto" en uno viejo). No se recalcula solo en
+  // ningun otro guardado; lo usan la proforma y el envio real a Odoo por igual.
+  await dbQuery(`alter table public.presupuestador_quotes add column if not exists envio_odoo_price_snapshot numeric(14,2) null;`);
+
   await ensureSettingsTable();
   ensured = true;
 }

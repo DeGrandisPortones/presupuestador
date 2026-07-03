@@ -483,25 +483,6 @@ function appendMetricsToNote(note, payload) {
   filtered.push(metrics);
   return filtered.join("\n").trim();
 }
-function makeShippingLineRegularForDistributorProforma(line = {}) {
-  if (!isShippingLine(line)) return line;
-  const visibleName = String(line?.raw_name || line?.rawName || line?.name || "Envío").trim() || "Envío";
-  return {
-    ...line,
-    product_id: 0,
-    odoo_external_id: 0,
-    odoo_id: 0,
-    odoo_template_id: 0,
-    odoo_variant_id: 0,
-    pdf_original_product_id: line?.product_id || null,
-    pdf_original_odoo_external_id: line?.odoo_external_id || null,
-    pdf_original_odoo_id: line?.odoo_id || null,
-    pdf_original_odoo_template_id: line?.odoo_template_id || null,
-    pdf_original_odoo_variant_id: line?.odoo_variant_id || null,
-    name: visibleName,
-    raw_name: visibleName,
-  };
-}
 function buildPdfPayloadForDownload(payload, financingPercent, extras = {}, options = {}) {
   const percent = Number(financingPercent || 0) || 0;
   const factor = 1 + percent / 100;
@@ -510,8 +491,7 @@ function buildPdfPayloadForDownload(payload, financingPercent, extras = {}, opti
         const rawBase = Number(line?.basePrice ?? line?.base_price ?? line?.price ?? 0) || 0;
         const financedBase = Math.round(rawBase * factor * 100) / 100;
         const nextLine = { ...line, basePrice: financedBase, base_price: financedBase, price: financedBase };
-        const pricedLine = options?.zeroShippingForDistributor ? zeroDistributorOwnSupplyLinePrice(nextLine) : nextLine;
-        return options?.keepShippingPriceForDistributorProforma ? makeShippingLineRegularForDistributorProforma(pricedLine) : pricedLine;
+        return options?.zeroShippingForDistributor ? zeroDistributorOwnSupplyLinePrice(nextLine) : nextLine;
       })
     : [];
   const nextPayload = { ...(payload || {}), ...extras, lines: nextLines, payload: { ...(payload?.payload || {}), ...(extras.payload || {}) } };
@@ -1154,12 +1134,12 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
       const created = await createQuote(payload);
       setQuoteMeta({ quoteId: created.id, status: created.status, rejectionNotes: created.rejection_notes });
       qc.invalidateQueries({ queryKey: ["quotes", "mine"] });
-      return { quote: created, payload: { ...payload, id: created.id, quote_id: created.id, quote_number: displayQuoteNumberForKind(catalogKind, created, created.quote_number || ""), seller_name: user?.full_name || user?.username || "" } };
+      return { quote: created, payload: { ...payload, id: created.id, quote_id: created.id, quote_number: displayQuoteNumberForKind(catalogKind, created, created.quote_number || ""), seller_name: user?.full_name || user?.username || "", envio_odoo_price_snapshot: created.envio_odoo_price_snapshot } };
     }
     const q = await updateQuote(quoteId, payload);
     setQuoteMeta({ quoteId: q.id, status: q.status, rejectionNotes: q.rejection_notes });
     qc.invalidateQueries({ queryKey: ["quotes", "mine"] });
-    return { quote: q, payload: { ...payload, id: q.id, quote_id: q.id, quote_number: displayQuoteNumberForKind(catalogKind, q, q.quote_number || ""), seller_name: user?.full_name || user?.username || "" } };
+    return { quote: q, payload: { ...payload, id: q.id, quote_id: q.id, quote_number: displayQuoteNumberForKind(catalogKind, q, q.quote_number || ""), seller_name: user?.full_name || user?.username || "", envio_odoo_price_snapshot: q.envio_odoo_price_snapshot } };
   }
   function maybeContinueDoorWorkflow(savedQuote) {
     if (!isDoorWorkflow || !["ipanel", "puerta"].includes(normalizedCatalogKind) || !workflowDoorId) return false;
@@ -1445,7 +1425,7 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
         payload,
         quoteAdjustmentPercent,
         latestProductionPlanning ? { production_planning: latestProductionPlanning } : {},
-        { stripMarginPercent: true, zeroShippingForDistributor: true, keepShippingPriceForDistributorProforma: true },
+        { stripMarginPercent: true, zeroShippingForDistributor: true },
       );
       console.log("[PDF FRONT] payload completo proforma", pdfPayload);
       console.log("[PDF FRONT] lineas proforma", summarizeLinesForDebug(pdfPayload?.lines || []));

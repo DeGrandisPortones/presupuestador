@@ -34,7 +34,10 @@ const MEASUREMENT_PRODUCT_IDS = parseMeasurementProductIds(
 );
 const IVA_RATE = 0.21;
 const SHIPPING_PRODUCT_IDS = new Set([2842]);
-const DISTRIBUTOR_OWN_SUPPLY_PRODUCT_IDS = new Set([2842, 3956, 3957, 3961, 3962, 3963, 3966, 4037, 3991, 3992, 3993, 3994, 3995, 3996, 3485, 3486, 3490, 3491, 3492, 3495, 3566, 3520, 3521, 3522, 3523, 3524, 3525]);
+// El envío (2842) lo sigue cobrando De Grandis al distribuidor, a diferencia del
+// resto de esta lista que sí provee el distribuidor por su cuenta: no debe ir a $0
+// en la orden real de Odoo. Mismo criterio ya aplicado en quotes.routes.js.
+const DISTRIBUTOR_OWN_SUPPLY_PRODUCT_IDS = new Set([3956, 3957, 3961, 3962, 3963, 3966, 4037, 3991, 3992, 3993, 3994, 3995, 3996, 3485, 3486, 3490, 3491, 3492, 3495, 3566, 3520, 3521, 3522, 3523, 3524, 3525]);
 
 function toScalar(v) {
   return Array.isArray(v) ? v[0] : v;
@@ -57,8 +60,19 @@ function isDistributorOwnSupplyLine(line = {}) {
 function isDistributorQuote(quote = {}) {
   return String(quote?.created_by_role || quote?.payload?.created_by_role || "").trim().toLowerCase() === "distribuidor";
 }
+// Precio de Envío: se usa el valor ya congelado en envio_odoo_price_snapshot
+// (armado al crear el presupuesto, o al apretar "Actualizar presupuesto" en uno
+// viejo). Si no existe (presupuesto viejo nunca actualizado) se mantiene el
+// comportamiento historico: va a $0, igual que siempre.
+function getEnvioOdooPriceSnapshot(quote = {}) {
+  const raw = quote?.envio_odoo_price_snapshot;
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
 function shouldZeroShippingForOdoo(quote = {}, line = {}) {
-  return isDistributorQuote(quote) && isDistributorOwnSupplyLine(line);
+  if (!isDistributorQuote(quote)) return false;
+  if (isShippingLine(line)) return getEnvioOdooPriceSnapshot(quote) == null;
+  return isDistributorOwnSupplyLine(line);
 }
 function toText(v) {
   const x = toScalar(v);
@@ -600,6 +614,12 @@ function getOdooConditionLabel(payload) {
 function calcDetailedUnitWithIva(line, payload, quote = null) {
   // Nombre legacy: este precio unitario es el que se envía a Odoo.
   if (shouldZeroShippingForOdoo(quote, line)) return 0;
+  // Envío: usa el precio de Odoo ya congelado (no el que cargó el distribuidor
+  // para su propio presupuesto, que puede estar editado/marcado con margen).
+  if (isDistributorQuote(quote) && isShippingLine(line)) {
+    const snapshot = getEnvioOdooPriceSnapshot(quote);
+    return round2((snapshot || 0) * getOdooConditionPriceFactor(payload || {}));
+  }
   // Distribuidores: precio base/lista sin margen, sin ajuste.
   // Si es Condición 2 se incluye el IVA 10,5% en el neto enviado a Odoo.
   if (isDistributorQuote(quote)) {
