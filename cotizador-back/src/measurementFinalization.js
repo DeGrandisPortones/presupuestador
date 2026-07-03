@@ -74,6 +74,40 @@ function shouldZeroShippingForOdoo(quote = {}, line = {}) {
   if (isShippingLine(line)) return getEnvioOdooPriceSnapshot(quote) == null;
   return isDistributorOwnSupplyLine(line);
 }
+// Cliente externo: el cliente real del distribuidor (no el partner de Odoo, que es
+// siempre el distribuidor). Mismo patron usado en quotes.routes.js: prueba nombres de
+// campo candidatos vía fields_get y no hace nada si todavia no existe en Odoo.
+const ODOO_SALE_ORDER_EXTERNAL_CUSTOMER_FIELD_CANDIDATES = Object.freeze([
+  "x_studio_cliente_externo",
+  "x_cliente_externo",
+  "x_studio_cliente_final",
+]);
+let saleOrderExternalCustomerFieldCache = undefined;
+async function resolveSaleOrderExternalCustomerFieldMeta(odoo) {
+  if (saleOrderExternalCustomerFieldCache !== undefined) return saleOrderExternalCustomerFieldCache;
+  const preferred = toText(process.env.ODOO_SALE_ORDER_EXTERNAL_CUSTOMER_FIELD);
+  const candidates = [preferred, ...ODOO_SALE_ORDER_EXTERNAL_CUSTOMER_FIELD_CANDIDATES].filter(Boolean);
+  try {
+    const fields = await odoo.executeKw("sale.order", "fields_get", [], { attributes: ["string", "type"] });
+    for (const fieldName of candidates) {
+      const meta = fields?.[fieldName];
+      if (!meta) continue;
+      saleOrderExternalCustomerFieldCache = { name: fieldName, type: String(meta.type || "").trim() };
+      return saleOrderExternalCustomerFieldCache;
+    }
+  } catch {}
+  saleOrderExternalCustomerFieldCache = null;
+  return saleOrderExternalCustomerFieldCache;
+}
+async function applyExternalCustomerToSaleOrder(odoo, orderId, externalCustomerName) {
+  const cleanName = toText(externalCustomerName);
+  if (!orderId || !cleanName) return;
+  const fieldMeta = await resolveSaleOrderExternalCustomerFieldMeta(odoo);
+  if (!fieldMeta?.name) return;
+  try {
+    await odoo.executeKw("sale.order", "write", [[Number(orderId)], { [fieldMeta.name]: cleanName }]);
+  } catch {}
+}
 function toText(v) {
   const x = toScalar(v);
   return x === null || x === undefined ? "" : String(x).trim();
@@ -1173,6 +1207,10 @@ async function syncFinalQuoteToOdoo({ odoo, revisionQuote, originalQuote, source
 
   const orderId = Number(createdOrderId);
   if (!orderId) throw new Error("No se pudo crear sale.order final en Odoo");
+  if (isDistributorQuote(originalQuote)) {
+    const externalCustomerName = revisionQuote?.end_customer?.name || sourceQuote?.end_customer?.name || originalQuote?.end_customer?.name;
+    await applyExternalCustomerToSaleOrder(odoo, orderId, externalCustomerName);
+  }
 
   let order = { id: orderId, name: referenceNv };
   try {

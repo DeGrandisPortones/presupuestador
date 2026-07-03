@@ -797,6 +797,41 @@ async function applySellerToSaleOrder(odoo, orderId, sellerName) {
   } catch {}
 }
 
+// Cliente externo: el cliente real del distribuidor (no el partner de Odoo, que es
+// siempre el distribuidor). Mismo patron que el campo de vendedor: prueba nombres de
+// campo candidatos vía fields_get y no hace nada si todavia no existe en Odoo.
+const ODOO_SALE_ORDER_EXTERNAL_CUSTOMER_FIELD_CANDIDATES = Object.freeze([
+  "x_studio_cliente_externo",
+  "x_cliente_externo",
+  "x_studio_cliente_final",
+]);
+let saleOrderExternalCustomerFieldCache = undefined;
+async function resolveSaleOrderExternalCustomerFieldMeta(odoo) {
+  if (saleOrderExternalCustomerFieldCache !== undefined) return saleOrderExternalCustomerFieldCache;
+  const preferred = toText(process.env.ODOO_SALE_ORDER_EXTERNAL_CUSTOMER_FIELD);
+  const candidates = [preferred, ...ODOO_SALE_ORDER_EXTERNAL_CUSTOMER_FIELD_CANDIDATES].filter(Boolean);
+  try {
+    const fields = await odoo.executeKw("sale.order", "fields_get", [], { attributes: ["string", "type"] });
+    for (const fieldName of candidates) {
+      const meta = fields?.[fieldName];
+      if (!meta) continue;
+      saleOrderExternalCustomerFieldCache = { name: fieldName, type: String(meta.type || "").trim() };
+      return saleOrderExternalCustomerFieldCache;
+    }
+  } catch {}
+  saleOrderExternalCustomerFieldCache = null;
+  return saleOrderExternalCustomerFieldCache;
+}
+async function applyExternalCustomerToSaleOrder(odoo, orderId, externalCustomerName) {
+  const cleanName = toText(externalCustomerName);
+  if (!orderId || !cleanName) return;
+  const fieldMeta = await resolveSaleOrderExternalCustomerFieldMeta(odoo);
+  if (!fieldMeta?.name) return;
+  try {
+    await odoo.executeKw("sale.order", "write", [[Number(orderId)], { [fieldMeta.name]: cleanName }]);
+  } catch {}
+}
+
 function normalizePaymentMethodKey(value) {
   return String(value || "")
     .normalize("NFD")
@@ -1323,6 +1358,9 @@ async function syncQuoteToOdoo({ odoo, quote, approverUser }) {
   const orderId = toIntId(createdOrderId);
   if (!orderId) throw new Error("No se pudo crear sale.order en Odoo");
   await applySellerToSaleOrder(odoo, orderId, sellerName);
+  if (quote.created_by_role === "distribuidor") {
+    await applyExternalCustomerToSaleOrder(odoo, orderId, quote?.end_customer?.name);
+  }
 
   const orderReference = await buildQuoteOdooReference(quote, "np");
   const order = orderReference
@@ -1452,6 +1490,9 @@ async function syncFinalQuoteToOdoo({ odoo, revisionQuote, originalQuote, approv
   const orderId = toIntId(createdOrderId);
   if (!orderId) throw new Error("No se pudo crear sale.order final en Odoo");
   await applySellerToSaleOrder(odoo, orderId, sellerName);
+  if (originalQuote.created_by_role === "distribuidor") {
+    await applyExternalCustomerToSaleOrder(odoo, orderId, revisionQuote?.end_customer?.name || originalQuote?.end_customer?.name);
+  }
   const order = await renameOrderToReference(odoo, orderId, referenceNv);
   if (!order?.id) throw new Error("No se pudo leer sale.order final en Odoo");
   assertHardcodedOdooReferenceApplied(order, forcedNv);
@@ -1562,6 +1603,9 @@ async function syncDirectProductionFinalToOdoo({ odoo, quote, approverUser }) {
   const orderId = toIntId(createdOrderId);
   if (!orderId) throw new Error("No se pudo crear sale.order final directa en Odoo");
   await applySellerToSaleOrder(odoo, orderId, sellerName);
+  if (quote.created_by_role === "distribuidor") {
+    await applyExternalCustomerToSaleOrder(odoo, orderId, quote?.end_customer?.name);
+  }
   const referenceNv = await buildQuoteOdooReference(quote, "nv");
   const order = await renameOrderToReference(odoo, orderId, referenceNv);
   if (!order?.id) throw new Error("No se pudo leer sale.order directa en Odoo");
