@@ -45,6 +45,10 @@ function isPortonQuote(quote = {}) {
   const kind = getCatalogKind(quote);
   return !["ipanel", "puerta", "plegados", "otros"].includes(kind);
 }
+const APTOS_PARA_REVESTIR_TYPE = "para_revestir_con_al_pvc_otros";
+function isAptoParaRevestirType(quote = {}) {
+  return String(getPayload(quote)?.porton_type || "").trim().toLowerCase() === APTOS_PARA_REVESTIR_TYPE;
+}
 function normalizeDistanceList(value) {
   if (Array.isArray(value)) return value.map((item) => text(item));
   if (value && typeof value === "object") return Object.values(value).map((item) => text(item));
@@ -147,6 +151,16 @@ function getSchemeData(quote, form = {}) {
   if (!isPortonQuote(quote)) return null;
   const dimensions = getDimensions(quote);
   const source = { ...dimensions, ...(form || {}) };
+  if (!isAptoParaRevestirType(quote)) {
+    // Solo los sistemas "apto para revestir" permiten distribucion especial de parantes;
+    // para el resto, orientacion/distribucion/cantidad las define y corrige el propio
+    // presupuesto (ver PortonDimensions.jsx). Lo que haya tipeado el medidor en el
+    // formulario de medicion (a veces describe la puerta, no el porton entero) no debe
+    // pisar esos valores.
+    source.orientacion_parantes = dimensions?.orientacion_parantes;
+    source.distribucion_parantes = dimensions?.distribucion_parantes;
+    source.cantidad_parantes = dimensions?.cantidad_parantes;
+  }
   const orientation = normalizeOrientation(source?.orientacion_parantes || dimensions?.orientacion_parantes || "verticales");
   const distribution = normalizeDistribution(source?.distribucion_parantes || dimensions?.distribucion_parantes || "repartido");
   const parantesCount = getParantesCount(source?.cantidad_parantes ?? dimensions?.cantidad_parantes);
