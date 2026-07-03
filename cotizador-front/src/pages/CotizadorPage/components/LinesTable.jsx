@@ -43,7 +43,7 @@ export default function LinesTable({ financingPercent = null }) {
         </thead>
         <tbody>
           {lines.map((l) => {
-            const finalUnit = calcFinalUnitPrice(l.basePrice, marginPercent, effectiveFinancingPercent);
+            const finalUnit = calcFinalUnitPrice(l.basePrice, marginPercent, effectiveFinancingPercent, "cond1", { skipAdjustment: !!l?.previously_billed_line });
             const total = calcLineTotal(l.qty, finalUnit);
             return <LineRow key={l.product_id} line={l} finalUnit={finalUnit} total={total} formatARS={formatARS} />;
           })}

@@ -756,7 +756,7 @@ function buildApprovalLineRows(lines, marginPercent, financingPercent = 0, condi
   return (Array.isArray(lines) ? lines : []).map((line, idx) => {
     const qty = Number(line?.qty || 0) || 0;
     const basePrice = Number(line?.basePrice ?? line?.base_price ?? line?.price ?? 0) || 0;
-    const finalUnit = calcFinalUnitPrice(basePrice, marginPercent, Number(financingPercent || 0) || 0, conditionMode);
+    const finalUnit = calcFinalUnitPrice(basePrice, marginPercent, Number(financingPercent || 0) || 0, conditionMode, { skipAdjustment: !!line?.previously_billed_line });
     const total = calcLineTotal(qty, finalUnit);
     return {
       ...line,

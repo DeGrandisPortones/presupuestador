@@ -301,8 +301,11 @@ async function buildLines(payload, { useBasePrice, odoo, displayNetPrices = fals
       const basePrice = useBasePrice && isDistOwnSupply
         ? (isShippingLine(l) && envioOdooPriceSnapshot != null ? envioOdooPriceSnapshot : 0)
         : rawBasePrice;
-      const unitNet = useBasePrice ? basePrice : basePrice * coefFactor;
-      const unit = displayNetPrices ? unitNet : unitNet * (1 + effectiveTaxRate);
+      // "Facturado previamente" (deposito ya cobrado): dato duro, no se le aplica
+      // coeficiente/margen ni IVA ni recargo por forma de pago. Pasa tal cual.
+      const isPreviouslyBilled = !!l?.previously_billed_line;
+      const unitNet = isPreviouslyBilled ? basePrice : (useBasePrice ? basePrice : basePrice * coefFactor);
+      const unit = isPreviouslyBilled ? basePrice : (displayNetPrices ? unitNet : unitNet * (1 + effectiveTaxRate));
       const totalNet = unitNet * qty;
       const total = unit * qty;
       const productId = toPositiveInt(l?.product_id);

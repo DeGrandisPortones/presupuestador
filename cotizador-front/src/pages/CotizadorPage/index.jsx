@@ -488,6 +488,9 @@ function buildPdfPayloadForDownload(payload, financingPercent, extras = {}, opti
   const factor = 1 + percent / 100;
   const nextLines = Array.isArray(payload?.lines)
     ? payload.lines.map((line) => {
+        // "Facturado previamente" (deposito ya cobrado): dato duro, no se le aplica
+        // recargo por forma de pago ni ningun otro ajuste.
+        if (line?.previously_billed_line) return line;
         const rawBase = Number(line?.basePrice ?? line?.base_price ?? line?.price ?? 0) || 0;
         const financedBase = Math.round(rawBase * factor * 100) / 100;
         const nextLine = { ...line, basePrice: financedBase, base_price: financedBase, price: financedBase };
