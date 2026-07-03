@@ -185,7 +185,7 @@ function isEmptyParamValue(value) {
   if (typeof value === "object") return !Object.keys(value).length;
   return String(value).trim() === "";
 }
-function getRulesParams(rulesData) {
+export function getRulesParams(rulesData) {
   const root = rulesData || {};
   const portonRules = root.catalog_rules?.porton || {};
   const params = {
@@ -604,7 +604,7 @@ function buildParantesPayload({ distances, tubeDiscountMm }) {
     descuento_cano_parantes_mm: tubeDiscountMm,
   };
 }
-function buildCalculatedPreview({ widthM, heightM, lines, params, portonType, dimensions }) {
+export function buildCalculatedPreview({ widthM, heightM, lines, params, portonType, dimensions }) {
   const widthMm = Math.round((Number(widthM || 0) || 0) * 1000);
   const heightMm = Math.round((Number(heightM || 0) || 0) * 1000);
   const areaM2 = (Number(widthM || 0) || 0) * (Number(heightM || 0) || 0);
@@ -633,6 +633,112 @@ function buildCalculatedPreview({ widthM, heightM, lines, params, portonType, di
   const altoPasoMm = Math.max(0, altoHojaMm - pasoAltoFromHojaDiscountMm);
   const anchoHojaMm = Math.max(0, anchoPasoMm - (hasRebajeLateral ? hojaRebajeLateralDiscountMm : 0));
   return { effectiveKgM2, estimatedWeightKg, legsLabel, altoPasoMm, anchoPasoMm, altoHojaMm, anchoHojaMm, hasRebajeLateral };
+}
+// Mismas reglas que usa el editor del presupuesto (aptos vs no-aptos, puerta embutida con
+// parante fijo, distribucion especial, etc.) para armar los props de <ParantesSketchModal>.
+// La usan tambien la medicion y cualquier otro lugar que necesite mostrar el mismo esquema,
+// para que nunca se desincronicen entre si.
+export function computeParantesSchemeProps({ dimensions = {}, lines = [], params = {}, portonType = "", width = 0, height = 0 }) {
+  const preview = buildCalculatedPreview({ widthM: width, heightM: height, lines, params, portonType, dimensions });
+  const aptoParaRevestir = isAptoDerivedType(portonType) || detectNoCladdingByProducts(lines, params);
+  const isNonAptoPorton = !aptoParaRevestir;
+  const detectedDoorSide = resolveDoorSideForParantes(lines, params);
+  const detectedDoorLabel = detectedDoorSide === "izquierdo" ? "Puerta Izquierda" : (detectedDoorSide === "derecho" ? "Puerta Derecha" : "");
+  const hasDoorParantesConfig = !!detectedDoorSide;
+  const nonAptoConfiguredOrientation = isNonAptoPorton ? resolveNonAptoParantesOrientation(lines, params) : "";
+  const orientation = normalizeOrientation(dimensions?.orientacion_parantes);
+  const effectiveParantesOrientation = isNonAptoPorton && nonAptoConfiguredOrientation ? nonAptoConfiguredOrientation : orientation;
+  const distribution = normalizeDistribution(dimensions?.distribucion_parantes);
+  const autoParantesCount = computeAutomaticParantesCount({ orientation: effectiveParantesOrientation, widthM: width, heightM: height, lines });
+  const parantesCount = getParantesCount(dimensions?.cantidad_parantes) || autoParantesCount;
+  const tubeDiscountMm = getParantesTubeDiscountMm(params);
+  const baseParantesDimensionMm = effectiveParantesOrientation === "horizontal"
+    ? Math.max(0, Number(preview?.altoHojaMm || preview?.altoPasoMm || 0))
+    : Math.max(0, Number(preview?.anchoHojaMm || preview?.anchoPasoMm || 0));
+  const rawParantesDistances = dimensions?.distancias_parantes_mm ?? dimensions?.distancias_parantes ?? [];
+  const distributeUniformly = dimensions?.distribuir_parantes_uniformemente === true || String(dimensions?.distribuir_parantes_uniformemente || "").trim().toLowerCase() === "true";
+  const showSpecialParantesDistances = aptoParaRevestir && distribution === "especial";
+  const aptoHasDoorFixedReference = aptoParaRevestir && hasDoorParantesConfig;
+  const aptoManualFixedReferenceEnabled = showSpecialParantesDistances && !hasDoorParantesConfig && (
+    dimensions?.parantes_primer_parante_distancia_fija === true ||
+    String(dimensions?.parantes_primer_parante_distancia_fija || "").trim().toLowerCase() === "true" ||
+    dimensions?.parantes_simular_referencia_horizontal === true ||
+    String(dimensions?.parantes_simular_referencia_horizontal || "").trim().toLowerCase() === "true"
+  );
+  const aptoSimulaHorizontalReferencia = aptoHasDoorFixedReference || aptoManualFixedReferenceEnabled;
+  const aptoReferenciaLado = String(dimensions?.parantes_referencia_lado || detectedDoorSide || "izquierdo").trim().toLowerCase() === "derecho" ? "derecho" : "izquierdo";
+  const aptoReferenciaDistancia = String(dimensions?.parantes_referencia_distancia_mm ?? dimensions?.parantes_primer_parante_distancia_mm ?? String(DOOR_FIXED_PARANTE_DISTANCE_MM));
+  const aptoReferenciaDistanciaMm = Math.max(0, parseMmNumber(aptoReferenciaDistancia) || DOOR_FIXED_PARANTE_DISTANCE_MM);
+  const nonAptoDoorFixedReference = isNonAptoPorton && hasDoorParantesConfig;
+  const effectiveFixedReference = aptoSimulaHorizontalReferencia || nonAptoDoorFixedReference;
+  const effectiveFixedReferenceSide = aptoSimulaHorizontalReferencia ? aptoReferenciaLado : (detectedDoorSide || aptoReferenciaLado);
+  const effectiveFixedReferenceDistanceMm = aptoSimulaHorizontalReferencia ? aptoReferenciaDistanciaMm : DOOR_FIXED_PARANTE_DISTANCE_MM;
+  const aptoParantesRestantesCount = aptoSimulaHorizontalReferencia ? Math.max(0, parantesCount - 1) : parantesCount;
+  const aptoDistributionBaseDimensionMm = aptoSimulaHorizontalReferencia && effectiveParantesOrientation === "verticales"
+    ? Math.max(0, baseParantesDimensionMm - aptoReferenciaDistanciaMm)
+    : baseParantesDimensionMm;
+  const effectiveParantesRestantesCount = effectiveFixedReference ? Math.max(0, parantesCount - 1) : parantesCount;
+  const effectiveDistributionBaseDimensionMm = effectiveFixedReference && effectiveParantesOrientation === "verticales"
+    ? Math.max(0, baseParantesDimensionMm - effectiveFixedReferenceDistanceMm)
+    : baseParantesDimensionMm;
+  void aptoDistributionBaseDimensionMm;
+  const countForDistances = effectiveFixedReference ? effectiveParantesRestantesCount : (showSpecialParantesDistances ? aptoParantesRestantesCount : parantesCount);
+  let resolvedParantesDistances;
+  if (aptoSimulaHorizontalReferencia && distribution !== "especial") {
+    resolvedParantesDistances = buildResolvedParantesDistances({
+      distanceList: [],
+      distributeUniformly: true,
+      parantesCount: countForDistances,
+      baseDimensionMm: effectiveDistributionBaseDimensionMm,
+      tubeDiscountMm,
+    });
+  } else if (showSpecialParantesDistances && distributeUniformly) {
+    resolvedParantesDistances = buildResolvedParantesDistances({
+      distanceList: [],
+      distributeUniformly: true,
+      parantesCount: countForDistances,
+      baseDimensionMm: effectiveDistributionBaseDimensionMm,
+      tubeDiscountMm,
+    });
+  } else {
+    resolvedParantesDistances = padDistanceList(normalizeDistanceList(rawParantesDistances), countForDistances);
+  }
+  const resolvedDistancesHaveValues = normalizeDistanceList(resolvedParantesDistances).some((item) => {
+    const n = parseMmNumber(item);
+    return Number.isFinite(n) && n > 0;
+  });
+  const distancesForFixedReferenceSketch = effectiveFixedReference && !resolvedDistancesHaveValues
+    ? buildUniformParantesDistances({
+        parantesCount: effectiveParantesRestantesCount,
+        baseDimensionMm: effectiveDistributionBaseDimensionMm,
+        tubeDiscountMm,
+      })
+    : resolvedParantesDistances;
+  const sketchParantesDistances = effectiveFixedReference
+    ? buildFixedReferenceSketchDistances({
+        distances: distancesForFixedReferenceSketch,
+        orientation: effectiveParantesOrientation,
+        fixedDistanceMm: effectiveFixedReferenceDistanceMm,
+      })
+    : resolvedParantesDistances;
+  const sketchParantesCount = effectiveFixedReference ? effectiveParantesRestantesCount : parantesCount;
+  const resolvedBaseDimensionMm = baseParantesDimensionMm || getBaseParantesDimensionMm({ orientation: effectiveParantesOrientation, widthM: width, heightM: height });
+
+  return {
+    hasScheme: sketchParantesCount > 0 && resolvedBaseDimensionMm > 0,
+    orientation: effectiveParantesOrientation,
+    parantesCount: sketchParantesCount,
+    baseDimensionMm: resolvedBaseDimensionMm,
+    distances: sketchParantesDistances,
+    distributeUniformly: false,
+    tubeDiscountMm,
+    portonWidthMm: Math.max(0, Number(preview?.anchoHojaMm || preview?.anchoPasoMm || 0)),
+    portonHeightMm: Math.max(0, Number(preview?.altoHojaMm || preview?.altoPasoMm || 0)),
+    hasFixedVerticalReference: effectiveFixedReference,
+    fixedReferenceSide: effectiveFixedReferenceSide,
+    fixedReferenceDistanceMm: effectiveFixedReferenceDistanceMm,
+    doorLabel: detectedDoorLabel,
+  };
 }
 function inputStateStyle(hasError) {
   return hasError
@@ -792,9 +898,9 @@ function buildFixedReferenceSketchDistances({ distances = [], orientation, fixed
   const firstGap = parseMmNumber(list[0]) || 0;
   return [formatNumberForInput(fixed + firstGap), ...list.slice(1)];
 }
-function ParantesSketchModal({
-  open,
-  onClose,
+// Dibujo puro del esquema (sin el modal alrededor), para poder reusarlo tal cual en
+// lugares que lo muestran embebido (medicion) ademas del modal del presupuestador.
+export function ParantesSchemeDiagram({
   orientation,
   parantesCount,
   baseDimensionMm,
@@ -807,8 +913,8 @@ function ParantesSketchModal({
   fixedReferenceSide = "izquierdo",
   fixedReferenceDistanceMm = 0,
   doorLabel = "",
+  onClose,
 }) {
-  if (!open) return null;
   const isHorizontal = normalizeOrientation(orientation) === "horizontal";
   const count = Math.max(0, Math.trunc(Number(parantesCount || 0)));
   const tube = Math.max(0, Number(tubeDiscountMm || 0) || DEFAULT_PARANTES_TUBE_DISCOUNT_MM);
@@ -863,33 +969,7 @@ function ParantesSketchModal({
   const horizontalMarkerLabelX = fixedSide === "derecho" && showFixedVerticalReference ? horizontalStartX - 22 : horizontalEndX + 22;
 
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      style={{
-        position: "fixed",
-        inset: 0,
-        background: "rgba(15, 23, 42, 0.45)",
-        zIndex: 9999,
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        padding: 16,
-      }}
-      onClick={onClose}
-    >
-      <div
-        style={{
-          width: "min(980px, 96vw)",
-          maxHeight: "92vh",
-          overflow: "auto",
-          background: "#fff",
-          borderRadius: 16,
-          padding: 16,
-          boxShadow: "0 20px 60px rgba(15,23,42,0.3)",
-        }}
-        onClick={(e) => e.stopPropagation()}
-      >
+    <div>
         <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start" }}>
           <div>
             <div style={{ fontWeight: 900, fontSize: 18 }}>Esquema de parantes</div>
@@ -897,9 +977,11 @@ function ParantesSketchModal({
               Orientación {isHorizontal ? "horizontal" : "vertical"} - {count || 0} parantes internos + 2 laterales - base exterior {formatMm(baseDimensionMm)} - ancho caño {formatMm(tube)} - luz para repartir {formatMm(effectiveSpan)}{showFixedVerticalReference ? ` - parante fijo ${fixedSide} a ${formatNumberForInput(fixedDistance)} mm` : ""}
             </div>
           </div>
-          <button type="button" onClick={onClose} style={{ border: "1px solid #ddd", borderRadius: 10, padding: "8px 12px", background: "#fff", cursor: "pointer" }}>
-            Cerrar
-          </button>
+          {onClose ? (
+            <button type="button" onClick={onClose} style={{ border: "1px solid #ddd", borderRadius: 10, padding: "8px 12px", background: "#fff", cursor: "pointer" }}>
+              Cerrar
+            </button>
+          ) : null}
         </div>
         <div className="spacer" />
         <svg viewBox={`0 0 ${width} ${height}`} style={{ width: "100%", height: "auto", border: "1px solid #e5e7eb", borderRadius: 14, background: "#f8fafc" }}>
@@ -1028,6 +1110,40 @@ function ParantesSketchModal({
           {finalLateralGapMm !== null ? ` · Libre final: ${Math.round(finalLateralGapMm)} mm` : ""}
           {portonWidthMm || portonHeightMm ? ` · Hoja ${formatMm(portonWidthMm)} x ${formatMm(portonHeightMm)}` : ""}
         </div>
+    </div>
+  );
+}
+export function ParantesSketchModal({ open, onClose, ...diagramProps }) {
+  if (!open) return null;
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "rgba(15, 23, 42, 0.45)",
+        zIndex: 9999,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: 16,
+      }}
+      onClick={onClose}
+    >
+      <div
+        style={{
+          width: "min(980px, 96vw)",
+          maxHeight: "92vh",
+          overflow: "auto",
+          background: "#fff",
+          borderRadius: 16,
+          padding: 16,
+          boxShadow: "0 20px 60px rgba(15,23,42,0.3)",
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <ParantesSchemeDiagram {...diagramProps} onClose={onClose} />
       </div>
     </div>
   );
