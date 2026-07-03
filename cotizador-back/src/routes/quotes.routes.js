@@ -822,13 +822,23 @@ async function resolveSaleOrderExternalCustomerFieldMeta(odoo) {
   saleOrderExternalCustomerFieldCache = null;
   return saleOrderExternalCustomerFieldCache;
 }
-async function applyExternalCustomerToSaleOrder(odoo, orderId, externalCustomerName) {
+function buildClientOrderRefWithExternalCustomer(reference, externalCustomerName) {
+  const ref = toText(reference);
+  const name = toText(externalCustomerName);
+  if (!name) return ref;
+  return ref ? `${ref} Cliente ${name}` : `Cliente ${name}`;
+}
+// Se llama DESPUES de fijar name/origin/client_order_ref con la referencia NV/NP (ej.
+// renameOrderToReference), asi el client_order_ref combinado ("NV4253 Cliente Pedrito
+// Gomez") no se pisa. name/origin quedan con la referencia limpia unicamente.
+async function applyExternalCustomerToSaleOrder(odoo, orderId, { reference, externalCustomerName } = {}) {
   const cleanName = toText(externalCustomerName);
   if (!orderId || !cleanName) return;
   const fieldMeta = await resolveSaleOrderExternalCustomerFieldMeta(odoo);
-  if (!fieldMeta?.name) return;
+  const patch = { client_order_ref: buildClientOrderRefWithExternalCustomer(reference, cleanName) };
+  if (fieldMeta?.name) patch[fieldMeta.name] = cleanName;
   try {
-    await odoo.executeKw("sale.order", "write", [[Number(orderId)], { [fieldMeta.name]: cleanName }]);
+    await odoo.executeKw("sale.order", "write", [[Number(orderId)], patch]);
   } catch {}
 }
 
@@ -1358,15 +1368,16 @@ async function syncQuoteToOdoo({ odoo, quote, approverUser }) {
   const orderId = toIntId(createdOrderId);
   if (!orderId) throw new Error("No se pudo crear sale.order en Odoo");
   await applySellerToSaleOrder(odoo, orderId, sellerName);
-  if (quote.created_by_role === "distribuidor") {
-    await applyExternalCustomerToSaleOrder(odoo, orderId, quote?.end_customer?.name);
-  }
 
   const orderReference = await buildQuoteOdooReference(quote, "np");
-  const order = orderReference
+  let order = orderReference
     ? (await renameOrderToReference(odoo, orderId, orderReference))
-    : (await odoo.executeKw("sale.order", "read", [[orderId]], { fields: ["id", "name", "amount_total", "partner_id", "state", "pricelist_id"] }))?.[0];
+    : (await odoo.executeKw("sale.order", "read", [[orderId]], { fields: ["id", "name", "amount_total", "partner_id", "state", "pricelist_id", "client_order_ref"] }))?.[0];
   assertHardcodedOdooReferenceApplied(order, forcedNp);
+  if (quote.created_by_role === "distribuidor") {
+    await applyExternalCustomerToSaleOrder(odoo, orderId, { reference: order?.name || orderReference, externalCustomerName: quote?.end_customer?.name });
+    if (order) order = { ...order, client_order_ref: buildClientOrderRefWithExternalCustomer(order?.name || orderReference, quote?.end_customer?.name) };
+  }
   return { order, deposit_amount: round2(total) };
 }
 
@@ -1490,10 +1501,12 @@ async function syncFinalQuoteToOdoo({ odoo, revisionQuote, originalQuote, approv
   const orderId = toIntId(createdOrderId);
   if (!orderId) throw new Error("No se pudo crear sale.order final en Odoo");
   await applySellerToSaleOrder(odoo, orderId, sellerName);
-  if (originalQuote.created_by_role === "distribuidor") {
-    await applyExternalCustomerToSaleOrder(odoo, orderId, revisionQuote?.end_customer?.name || originalQuote?.end_customer?.name);
-  }
   const order = await renameOrderToReference(odoo, orderId, referenceNv);
+  if (originalQuote.created_by_role === "distribuidor") {
+    const externalCustomerName = revisionQuote?.end_customer?.name || originalQuote?.end_customer?.name;
+    await applyExternalCustomerToSaleOrder(odoo, orderId, { reference: referenceNv, externalCustomerName });
+    if (order) order.client_order_ref = buildClientOrderRefWithExternalCustomer(referenceNv, externalCustomerName);
+  }
   if (!order?.id) throw new Error("No se pudo leer sale.order final en Odoo");
   assertHardcodedOdooReferenceApplied(order, forcedNv);
 
@@ -1603,12 +1616,13 @@ async function syncDirectProductionFinalToOdoo({ odoo, quote, approverUser }) {
   const orderId = toIntId(createdOrderId);
   if (!orderId) throw new Error("No se pudo crear sale.order final directa en Odoo");
   await applySellerToSaleOrder(odoo, orderId, sellerName);
-  if (quote.created_by_role === "distribuidor") {
-    await applyExternalCustomerToSaleOrder(odoo, orderId, quote?.end_customer?.name);
-  }
   const referenceNv = await buildQuoteOdooReference(quote, "nv");
   const order = await renameOrderToReference(odoo, orderId, referenceNv);
   if (!order?.id) throw new Error("No se pudo leer sale.order directa en Odoo");
+  if (quote.created_by_role === "distribuidor") {
+    await applyExternalCustomerToSaleOrder(odoo, orderId, { reference: referenceNv, externalCustomerName: quote?.end_customer?.name });
+    order.client_order_ref = buildClientOrderRefWithExternalCustomer(referenceNv, quote?.end_customer?.name);
+  }
   assertHardcodedOdooReferenceApplied(order, forcedDirectNv);
 
   return {

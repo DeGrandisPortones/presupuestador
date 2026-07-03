@@ -99,13 +99,23 @@ async function resolveSaleOrderExternalCustomerFieldMeta(odoo) {
   saleOrderExternalCustomerFieldCache = null;
   return saleOrderExternalCustomerFieldCache;
 }
-async function applyExternalCustomerToSaleOrder(odoo, orderId, externalCustomerName) {
+function buildClientOrderRefWithExternalCustomer(reference, externalCustomerName) {
+  const ref = toText(reference);
+  const name = toText(externalCustomerName);
+  if (!name) return ref;
+  return ref ? `${ref} Cliente ${name}` : `Cliente ${name}`;
+}
+// Se llama DESPUES de fijar name/origin/client_order_ref con la referencia NV, asi el
+// client_order_ref combinado ("NV4253 Cliente Pedrito Gomez") no se pisa. name/origin
+// quedan con la referencia limpia unicamente.
+async function applyExternalCustomerToSaleOrder(odoo, orderId, { reference, externalCustomerName } = {}) {
   const cleanName = toText(externalCustomerName);
   if (!orderId || !cleanName) return;
   const fieldMeta = await resolveSaleOrderExternalCustomerFieldMeta(odoo);
-  if (!fieldMeta?.name) return;
+  const patch = { client_order_ref: buildClientOrderRefWithExternalCustomer(reference, cleanName) };
+  if (fieldMeta?.name) patch[fieldMeta.name] = cleanName;
   try {
-    await odoo.executeKw("sale.order", "write", [[Number(orderId)], { [fieldMeta.name]: cleanName }]);
+    await odoo.executeKw("sale.order", "write", [[Number(orderId)], patch]);
   } catch {}
 }
 function toText(v) {
@@ -1207,10 +1217,6 @@ async function syncFinalQuoteToOdoo({ odoo, revisionQuote, originalQuote, source
 
   const orderId = Number(createdOrderId);
   if (!orderId) throw new Error("No se pudo crear sale.order final en Odoo");
-  if (isDistributorQuote(originalQuote)) {
-    const externalCustomerName = revisionQuote?.end_customer?.name || sourceQuote?.end_customer?.name || originalQuote?.end_customer?.name;
-    await applyExternalCustomerToSaleOrder(odoo, orderId, externalCustomerName);
-  }
 
   let order = { id: orderId, name: referenceNv };
   try {
@@ -1226,6 +1232,11 @@ async function syncFinalQuoteToOdoo({ odoo, revisionQuote, originalQuote, source
         client_order_ref: referenceNv,
       }]);
     } catch {}
+  }
+
+  if (isDistributorQuote(originalQuote)) {
+    const externalCustomerName = revisionQuote?.end_customer?.name || sourceQuote?.end_customer?.name || originalQuote?.end_customer?.name;
+    await applyExternalCustomerToSaleOrder(odoo, orderId, { reference: referenceNv, externalCustomerName });
   }
 
   try {
