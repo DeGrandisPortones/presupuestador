@@ -86,7 +86,11 @@ function normCatalogKind(kind) {
   return k;
 }
 function toScalar(v) { return Array.isArray(v) ? v[0] : v; }
-function toIntId(v) { const n = Number(toScalar(v)); return Number.isFinite(n) ? n : null; }
+function toIntId(v) {
+  if (v === null || v === undefined || v === "") return null;
+  const n = Number(toScalar(v));
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
 function lineMatchesProductSet(line = {}, productSet) {
   const ids = [line?.product_id, line?.odoo_id, line?.odoo_template_id, line?.odoo_variant_id, line?.odoo_external_id];
   return ids.some((value) => productSet.has(Number(value || 0)));
@@ -1305,20 +1309,31 @@ function mergeLinkedPortonPayload(payload = {}, linkedPorton = null) {
 
 async function syncQuoteToOdoo({ odoo, quote, approverUser }) {
   const pricelistId = resolveQuotePricelistId(quote, quote?.pricelist_id);
-  let partnerId = null;
-  if (quote.created_by_role === "distribuidor") {
-    partnerId = toIntId(quote?.bill_to_odoo_partner_id) || await getCreatorOdooPartnerId(quote.created_by_user_id) || toIntId(approverUser?.odoo_partner_id);
-    if (!partnerId) throw new Error("Distribuidor sin bill_to_odoo_partner_id (quote) y sin odoo_partner_id (JWT/DB)");
-  } else {
-    const customerForOdoo = resolveCustomerForOdoo(quote);
-    if (requiresBillingCustomerForQuote(quote)) {
-      const billingErr = validateBillingCustomerRequired(customerForOdoo);
-      if (billingErr) throw new Error(billingErr);
+  let partnerId = toIntId(quote?.bill_to_odoo_partner_id);
+  if (!partnerId) {
+    if (quote.created_by_role === "distribuidor") {
+      partnerId = await getCreatorOdooPartnerId(quote.created_by_user_id) || toIntId(approverUser?.odoo_partner_id);
+      if (!partnerId) throw new Error("Distribuidor sin bill_to_odoo_partner_id (quote) y sin odoo_partner_id (JWT/DB)");
+    } else {
+      const customerForOdoo = resolveCustomerForOdoo(quote);
+      if (requiresBillingCustomerForQuote(quote)) {
+        const billingErr = validateBillingCustomerRequired(customerForOdoo);
+        if (billingErr) throw new Error(billingErr);
+      }
+      partnerId = await findOrCreateCustomerPartner(odoo, customerForOdoo);
     }
-    partnerId = await findOrCreateCustomerPartner(odoo, customerForOdoo);
   }
   partnerId = toIntId(partnerId);
   if (!partnerId) throw new Error("partner_id invalido para Odoo");
+  // Se persiste el partner que efectivamente se uso en Odoo, para que la NV final
+  // (syncFinalQuoteToOdoo / syncDirectProductionFinalToOdoo) reutilice el mismo en vez
+  // de volver a buscar/crear un partner por su cuenta y terminar en uno distinto.
+  if (toIntId(quote?.bill_to_odoo_partner_id) !== partnerId) {
+    try {
+      await dbQuery(`update public.presupuestador_quotes set bill_to_odoo_partner_id=$2 where id=$1`, [quote.id, partnerId]);
+      quote.bill_to_odoo_partner_id = partnerId;
+    } catch {}
+  }
 
   const sellerName = await resolveSellerDisplayNameForOdoo(quote, approverUser);
   let total = calcQuoteTotalWithIva({ lines: quote.lines, payload: quote.payload, quote });
@@ -1384,20 +1399,31 @@ async function syncQuoteToOdoo({ odoo, quote, approverUser }) {
 async function syncFinalQuoteToOdoo({ odoo, revisionQuote, originalQuote, approverUser }) {
   const pricelistId = resolveQuotePricelistId(originalQuote, revisionQuote?.pricelist_id, originalQuote?.pricelist_id);
   const sellerName = await resolveSellerDisplayNameForOdoo(originalQuote, approverUser);
-  let partnerId = null;
-  if (originalQuote.created_by_role === "distribuidor") {
-    partnerId = toIntId(originalQuote?.bill_to_odoo_partner_id) || await getCreatorOdooPartnerId(originalQuote.created_by_user_id) || toIntId(approverUser?.odoo_partner_id);
-    if (!partnerId) throw new Error("Distribuidor sin partner en Odoo");
-  } else {
-    const customerForOdoo = resolveCustomerForOdoo(originalQuote, revisionQuote);
-    if (requiresBillingCustomerForQuote(originalQuote)) {
-      const billingErr = validateBillingCustomerRequired(customerForOdoo);
-      if (billingErr) throw new Error(billingErr);
+  // Se reutiliza el mismo partner que ya se uso para la NP inicial (guardado en
+  // bill_to_odoo_partner_id) en vez de volver a buscar/crear un partner por su cuenta:
+  // eso es lo que hacia que NP y NV terminaran con clientes distintos en Odoo.
+  let partnerId = toIntId(revisionQuote?.bill_to_odoo_partner_id) || toIntId(originalQuote?.bill_to_odoo_partner_id);
+  if (!partnerId) {
+    if (originalQuote.created_by_role === "distribuidor") {
+      partnerId = await getCreatorOdooPartnerId(originalQuote.created_by_user_id) || toIntId(approverUser?.odoo_partner_id);
+      if (!partnerId) throw new Error("Distribuidor sin partner en Odoo");
+    } else {
+      const customerForOdoo = resolveCustomerForOdoo(originalQuote, revisionQuote);
+      if (requiresBillingCustomerForQuote(originalQuote)) {
+        const billingErr = validateBillingCustomerRequired(customerForOdoo);
+        if (billingErr) throw new Error(billingErr);
+      }
+      partnerId = await findOrCreateCustomerPartner(odoo, customerForOdoo);
     }
-    partnerId = await findOrCreateCustomerPartner(odoo, customerForOdoo);
   }
   partnerId = toIntId(partnerId);
   if (!partnerId) throw new Error("partner_id invalido para Odoo");
+  if (revisionQuote?.id && toIntId(revisionQuote?.bill_to_odoo_partner_id) !== partnerId) {
+    try {
+      await dbQuery(`update public.presupuestador_quotes set bill_to_odoo_partner_id=$2 where id=$1`, [revisionQuote.id, partnerId]);
+      revisionQuote.bill_to_odoo_partner_id = partnerId;
+    } catch {}
+  }
 
   const lines = Array.isArray(revisionQuote.lines) ? revisionQuote.lines : [];
   if (!lines.length) throw new Error("La copia no tiene items");
@@ -1528,20 +1554,31 @@ async function syncFinalQuoteToOdoo({ odoo, revisionQuote, originalQuote, approv
 async function syncDirectProductionFinalToOdoo({ odoo, quote, approverUser }) {
   const pricelistId = resolveQuotePricelistId(quote, quote?.pricelist_id);
   const sellerName = await resolveSellerDisplayNameForOdoo(quote, approverUser);
-  let partnerId = null;
-  if (quote.created_by_role === "distribuidor") {
-    partnerId = toIntId(quote?.bill_to_odoo_partner_id) || await getCreatorOdooPartnerId(quote.created_by_user_id) || toIntId(approverUser?.odoo_partner_id);
-    if (!partnerId) throw new Error("Distribuidor sin partner en Odoo");
-  } else {
-    const customerForOdoo = resolveCustomerForOdoo(quote);
-    if (requiresBillingCustomerForQuote(quote)) {
-      const billingErr = validateBillingCustomerRequired(customerForOdoo);
-      if (billingErr) throw new Error(billingErr);
+  // Se reutiliza el mismo partner que ya se uso para la NP inicial (guardado en
+  // bill_to_odoo_partner_id) en vez de volver a buscar/crear un partner por su cuenta:
+  // eso es lo que hacia que NP y NV terminaran con clientes distintos en Odoo.
+  let partnerId = toIntId(quote?.bill_to_odoo_partner_id);
+  if (!partnerId) {
+    if (quote.created_by_role === "distribuidor") {
+      partnerId = await getCreatorOdooPartnerId(quote.created_by_user_id) || toIntId(approverUser?.odoo_partner_id);
+      if (!partnerId) throw new Error("Distribuidor sin partner en Odoo");
+    } else {
+      const customerForOdoo = resolveCustomerForOdoo(quote);
+      if (requiresBillingCustomerForQuote(quote)) {
+        const billingErr = validateBillingCustomerRequired(customerForOdoo);
+        if (billingErr) throw new Error(billingErr);
+      }
+      partnerId = await findOrCreateCustomerPartner(odoo, customerForOdoo);
     }
-    partnerId = await findOrCreateCustomerPartner(odoo, customerForOdoo);
   }
   partnerId = toIntId(partnerId);
   if (!partnerId) throw new Error("partner_id invalido para Odoo");
+  if (toIntId(quote?.bill_to_odoo_partner_id) !== partnerId) {
+    try {
+      await dbQuery(`update public.presupuestador_quotes set bill_to_odoo_partner_id=$2 where id=$1`, [quote.id, partnerId]);
+      quote.bill_to_odoo_partner_id = partnerId;
+    } catch {}
+  }
 
   const kind = String(quote?.catalog_kind || "porton").toLowerCase().trim();
   const includeInitialProductLine = kind === "porton";

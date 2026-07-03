@@ -43,9 +43,10 @@ function toScalar(v) {
   return Array.isArray(v) ? v[0] : v;
 }
 function toIntId(v) {
+  if (v === null || v === undefined || v === "") return null;
   const x = toScalar(v);
   const n = Number(x);
-  return Number.isFinite(n) ? n : null;
+  return Number.isFinite(n) && n > 0 ? n : null;
 }
 function lineMatchesProductSet(line = {}, productSet) {
   const ids = [line?.product_id, line?.odoo_id, line?.odoo_template_id, line?.odoo_variant_id, line?.odoo_external_id];
@@ -1153,11 +1154,15 @@ async function getOrCreateRevisionQuote({ originalQuote, sourceQuote, finalLines
   return ins.rows?.[0] || null;
 }
 async function syncFinalQuoteToOdoo({ odoo, revisionQuote, originalQuote, sourceQuote, precomputedMetrics }) {
+  // Reutiliza el mismo partner que ya se uso para la NP inicial. Antes, si no habia
+  // ninguno guardado (pasaba con presupuestos de vendedor, que resuelven el cliente
+  // recien al crear la NP) caia en el partner_id=1 hardcodeado, que en este Odoo es la
+  // propia empresa - por eso NP y NV terminaban con clientes distintos.
   const partnerId =
     toIntId(revisionQuote?.bill_to_odoo_partner_id) ||
     toIntId(sourceQuote?.bill_to_odoo_partner_id) ||
-    toIntId(originalQuote?.bill_to_odoo_partner_id) ||
-    1;
+    toIntId(originalQuote?.bill_to_odoo_partner_id);
+  if (!partnerId) throw new Error("No se encontro bill_to_odoo_partner_id para sincronizar la NV final (revisar la NP inicial)");
   const lines = Array.isArray(revisionQuote.lines) ? revisionQuote.lines : [];
   if (!lines.length) throw new Error("La cotización final no tiene items");
   const productIds = [...new Set(lines.map((l) => Number(l.product_id)).filter(Boolean))];
