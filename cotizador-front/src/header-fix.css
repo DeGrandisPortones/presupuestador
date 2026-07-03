@@ -46,9 +46,13 @@
 }
 
 /* Banner verde clarito para vendedores: ayuda a distinguir la sesion de
-   vendedor de una sesion de distribuidor abierta en otra pestana/incognito. */
+   vendedor de una sesion de distribuidor abierta en otra pestana/incognito.
+   Los extremos van grisaceos y el centro queda verde, con una textura de
+   lineas diagonales sutil encima. */
 .app-header.app-header--vendedor{
-  background: #dcfce7;
+  background-image:
+    repeating-linear-gradient(135deg, rgba(100,116,139,0.14) 0px, rgba(100,116,139,0.14) 1.5px, transparent 1.5px, transparent 16px),
+    linear-gradient(90deg, #e2e8f0 0%, #dcfce7 42%, #dcfce7 58%, #e2e8f0 100%);
   color: #14532d;
 }
 .app-header--vendedor .muted{
