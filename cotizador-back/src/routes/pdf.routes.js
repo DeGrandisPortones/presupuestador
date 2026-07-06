@@ -664,9 +664,12 @@ async function renderPdf({ title, payload, useBasePrice, odoo, includeTerms = fa
   }
 
   drawTableHeader();
+  const GROUPED_ROW_GAP = 10;
   for (const line of rowsToRender) {
     const nameWidth = colDesc - 16;
     const isGrouped = !!line.isGrouped;
+    const boxStrokeColor = isGrouped ? "#111827" : "#D1D5DB";
+    const boxLineWidth = isGrouped ? 1.6 : 1;
     const bodyOptions = isGrouped ? { width: nameWidth, lineGap: 1 } : { width: nameWidth };
     let titleH = 0;
     if (isGrouped && line.title) {
@@ -676,8 +679,8 @@ async function renderPdf({ title, payload, useBasePrice, odoo, includeTerms = fa
     doc.font("Helvetica").fontSize(9.5);
     const bodyH = doc.heightOfString(line.name, bodyOptions);
     const rowH = Math.max(28, titleH + (titleH ? 4 : 0) + bodyH + 16);
-    ensureSpace(rowH);
-    doc.save().strokeColor("#D1D5DB").rect(margin, tableY, innerW, rowH).stroke().restore();
+    ensureSpace(rowH + (isGrouped ? GROUPED_ROW_GAP : 0));
+    doc.save().lineWidth(boxLineWidth).strokeColor(boxStrokeColor).rect(margin, tableY, innerW, rowH).stroke().restore();
     const xQty = margin + colDesc;
 
     let textY = tableY + 8;
@@ -687,21 +690,21 @@ async function renderPdf({ title, payload, useBasePrice, odoo, includeTerms = fa
     }
 
     if (hideAllPrices) {
-      doc.save().strokeColor("#D1D5DB").moveTo(xQty, tableY).lineTo(xQty, tableY + rowH).stroke().restore();
+      doc.save().lineWidth(boxLineWidth).strokeColor(boxStrokeColor).moveTo(xQty, tableY).lineTo(xQty, tableY + rowH).stroke().restore();
       doc.font("Helvetica").fontSize(9.5).fillColor("#111827")
         .text(line.name, margin + 8, textY, bodyOptions)
         .text(formatQty(line.qty), xQty + 8, tableY + 8, { width: colQty - 16, align: "right" });
     } else {
       const xUnit = xQty + colQty;
       const xTot = xUnit + colUnit;
-      [xQty, xUnit, xTot].forEach((x) => doc.save().strokeColor("#D1D5DB").moveTo(x, tableY).lineTo(x, tableY + rowH).stroke().restore());
+      [xQty, xUnit, xTot].forEach((x) => doc.save().lineWidth(boxLineWidth).strokeColor(boxStrokeColor).moveTo(x, tableY).lineTo(x, tableY + rowH).stroke().restore());
       doc.font("Helvetica").fontSize(9.5).fillColor("#111827")
         .text(line.name, margin + 8, textY, bodyOptions)
         .text(formatQty(line.qty), xQty + 8, tableY + 8, { width: colQty - 16, align: "right" })
         .text(`$ ${formatMoney(line.unit)}`, xUnit + 8, tableY + 8, { width: colUnit - 16, align: "right" })
         .text(`$ ${formatMoney(line.total)}`, xTot + 8, tableY + 8, { width: colTot - 16, align: "right" });
     }
-    tableY += rowH;
+    tableY += rowH + (isGrouped ? GROUPED_ROW_GAP : 0);
   }
 
   if (!hideAllPrices) {
