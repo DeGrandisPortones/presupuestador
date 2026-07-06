@@ -8,6 +8,7 @@ import { requireAuth } from "../auth.js";
 import { ensureQuotesMeasurementColumns } from "../quotesSchema.js";
 import { buildBudgetExtraSummaryLines } from "../pdfBudgetExtras.js";
 import { getProductPdfNameMap, normKind } from "../catalogDb.js";
+import { resolveBudgetSectionRows } from "../pdfBudgetSections.js";
 
 const IVA_RATE = 0.21;
 const SHIPPING_PRODUCT_IDS = new Set([2842]);
@@ -298,7 +299,7 @@ async function buildLines(payload, { useBasePrice, odoo, displayNetPrices = fals
       const payloadName = safeStr(l?.name || l?.raw_name || l?.display_name || l?.alias);
       const resolvedName = overrideName || liveTemplateName || liveVariantName || payloadName;
       if (!resolvedName) throw new Error(`No se pudo resolver el nombre para la línea ${productId || variantId || "sin id"}.`);
-      return { qty, name: resolvedName, unit, total, totalNet };
+      return { qty, name: resolvedName, unit, total, totalNet, productId };
     })
     .filter((l) => l.qty > 0);
 
@@ -318,7 +319,7 @@ async function buildLines(payload, { useBasePrice, odoo, displayNetPrices = fals
   const subtotalNet = allLines.reduce((acc, l) => acc + l.totalNet, 0);
   const ivaAmount = subtotalNet * effectiveTaxRate;
   const grandTotal = subtotalNet + ivaAmount;
-  return { lines: allLines, grandTotal, subtotalNet, ivaAmount, coefPct, taxRate: effectiveTaxRate, displayNetPrices };
+  return { lines: allLines, grandTotal, subtotalNet, ivaAmount, coefPct, taxRate: effectiveTaxRate, displayNetPrices, catalogKind };
 }
 
 function drawPageFrame(doc, margin, pageNo, pageCount, footerLeft = "De Grandis Portones") {
@@ -607,7 +608,9 @@ async function renderPdf({ title, payload, useBasePrice, odoo, includeTerms = fa
   const paymentMethod = safeStr(payload?.payload?.payment_method ?? payload?.payment_method);
   const productionPlanningText = getProductionPlanningText(payload);
   const obs = stripSellerLines(safeStr(payload?.note));
-  const { lines, grandTotal, subtotalNet, ivaAmount, taxRate: effectiveTaxRate } = await buildLines(payload, { useBasePrice, odoo, displayNetPrices, taxRate });
+  const { lines, grandTotal, subtotalNet, ivaAmount, taxRate: effectiveTaxRate, catalogKind } = await buildLines(payload, { useBasePrice, odoo, displayNetPrices, taxRate });
+  const budgetSections = await resolveBudgetSectionRows({ catalogKind, lines, odoo });
+  const rowsToRender = budgetSections ? [...budgetSections.groupedRows, ...budgetSections.leftoverLines] : lines;
 
   let y = drawHeader(doc, { title, payload, margin, innerW, dateStr, validStr, hideValidity: hideAllPrices });
   y = drawInfoTable(doc, payload, y, margin, innerW, useBasePrice);
@@ -661,22 +664,39 @@ async function renderPdf({ title, payload, useBasePrice, odoo, includeTerms = fa
   }
 
   drawTableHeader();
-  for (const line of lines) {
-    const rowH = Math.max(28, doc.heightOfString(line.name, { width: colDesc - 16 }) + 16);
+  for (const line of rowsToRender) {
+    const nameWidth = colDesc - 16;
+    const isGrouped = !!line.isGrouped;
+    const bodyOptions = isGrouped ? { width: nameWidth, lineGap: 1 } : { width: nameWidth };
+    let titleH = 0;
+    if (isGrouped && line.title) {
+      doc.font("Helvetica-Bold").fontSize(9.5);
+      titleH = doc.heightOfString(line.title, { width: nameWidth });
+    }
+    doc.font("Helvetica").fontSize(9.5);
+    const bodyH = doc.heightOfString(line.name, bodyOptions);
+    const rowH = Math.max(28, titleH + (titleH ? 4 : 0) + bodyH + 16);
     ensureSpace(rowH);
     doc.save().strokeColor("#D1D5DB").rect(margin, tableY, innerW, rowH).stroke().restore();
     const xQty = margin + colDesc;
+
+    let textY = tableY + 8;
+    if (isGrouped && line.title) {
+      doc.font("Helvetica-Bold").fontSize(9.5).fillColor("#111827").text(line.title, margin + 8, textY, { width: nameWidth });
+      textY += titleH + 4;
+    }
+
     if (hideAllPrices) {
       doc.save().strokeColor("#D1D5DB").moveTo(xQty, tableY).lineTo(xQty, tableY + rowH).stroke().restore();
       doc.font("Helvetica").fontSize(9.5).fillColor("#111827")
-        .text(line.name, margin + 8, tableY + 8, { width: colDesc - 16 })
+        .text(line.name, margin + 8, textY, bodyOptions)
         .text(formatQty(line.qty), xQty + 8, tableY + 8, { width: colQty - 16, align: "right" });
     } else {
       const xUnit = xQty + colQty;
       const xTot = xUnit + colUnit;
       [xQty, xUnit, xTot].forEach((x) => doc.save().strokeColor("#D1D5DB").moveTo(x, tableY).lineTo(x, tableY + rowH).stroke().restore());
       doc.font("Helvetica").fontSize(9.5).fillColor("#111827")
-        .text(line.name, margin + 8, tableY + 8, { width: colDesc - 16 })
+        .text(line.name, margin + 8, textY, bodyOptions)
         .text(formatQty(line.qty), xQty + 8, tableY + 8, { width: colQty - 16, align: "right" })
         .text(`$ ${formatMoney(line.unit)}`, xUnit + 8, tableY + 8, { width: colUnit - 16, align: "right" })
         .text(`$ ${formatMoney(line.total)}`, xTot + 8, tableY + 8, { width: colTot - 16, align: "right" });

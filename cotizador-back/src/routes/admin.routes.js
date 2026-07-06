@@ -1,7 +1,7 @@
 import express from "express";
 import { requireAuth } from "../auth.js";
 import { loadCatalogBootstrap, clearCatalogBootstrapCache } from "../catalogBootstrap.js";
-import { normKind, createSection, updateSection, deleteSection, setTagSection, setProductAlias, setProductVisibility, setTypeVisibility, getProductPdfNameMap, setProductPdfName } from "../catalogDb.js";
+import { normKind, createSection, updateSection, deleteSection, setTagSection, setProductAlias, setProductVisibility, setTypeVisibility, getProductPdfNameMap, setProductPdfName, listSections, listBudgetSections, upsertBudgetSection } from "../catalogDb.js";
 import { dbQuery } from "../db.js";
 import { listUsers, createUser, updateUser } from "../usersDb.js";
 import { triggerPreproductionForClientAcceptance } from "../measurementFinalization.js";
@@ -191,6 +191,27 @@ export function buildAdminRouter(odoo) {
       const pdfName = req.body?.pdf_name ?? "";
       const saved = await setProductPdfName(kind, req.params.productId, pdfName);
       res.json({ ok: true, pdf_name: saved.pdf_name || null });
+    } catch (e) { next(e); }
+  });
+
+  router.get("/budget-sections", requireAuth, requireSuperuser, async (req, res, next) => {
+    try {
+      const kind = normKind(req.query.kind || "porton");
+      const [savedSections, catalogSections] = await Promise.all([listBudgetSections(kind), listSections(kind)]);
+      const savedByIndex = new Map(savedSections.map((s) => [Number(s.section_index), s]));
+      const sections = [1, 2, 3].map((sectionIndex) => {
+        const saved = savedByIndex.get(sectionIndex);
+        return { section_index: sectionIndex, name: saved?.name || "", template: saved?.template || "" };
+      });
+      const catalog_sections = catalogSections.map((s) => ({ id: Number(s.id), name: s.name }));
+      res.json({ ok: true, kind, sections, catalog_sections });
+    } catch (e) { next(e); }
+  });
+  router.put("/budget-sections/:sectionIndex", requireAuth, requireSuperuser, async (req, res, next) => {
+    try {
+      const kind = normKind(req.query.kind || req.body?.kind || "porton");
+      const saved = await upsertBudgetSection(kind, req.params.sectionIndex, req.body || {});
+      res.json({ ok: true, section: saved });
     } catch (e) { next(e); }
   });
 

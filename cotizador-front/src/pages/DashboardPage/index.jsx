@@ -5,6 +5,7 @@ import { PORTON_TYPES } from "../../domain/quote/portonConstants.js";
 
 import Button from "../../ui/Button.jsx";
 import Input from "../../ui/Input.jsx";
+import BudgetSectionsTab from "./BudgetSectionsTab.jsx";
 
 import {
   adminGetCatalog,
@@ -300,7 +301,7 @@ export default function DashboardPage() {
   }, [catalogKind, tab]);
 
   useEffect(() => {
-    if (!isSuperuser && (tab === "aliases" || tab === "pdf")) setTab("tags");
+    if (!isSuperuser && (tab === "aliases" || tab === "pdf" || tab === "budgetSections")) setTab("tags");
   }, [isSuperuser, tab]);
 
   const catalog = catalogQ.data || {};
@@ -480,6 +481,7 @@ export default function DashboardPage() {
         <button className={tab === "dependencies" ? "navlink active" : "navlink"} type="button" onClick={() => setTab("dependencies")}>Dependencias</button>
         {catalogKind === "porton" ? <button className={tab === "systems" ? "navlink active" : "navlink"} type="button" onClick={() => setTab("systems")}>Tipos o sistemas</button> : null}
         {isSuperuser ? <button className={tab === "pdf" ? "navlink active" : "navlink"} type="button" onClick={() => setTab("pdf")}>Nombres PDF</button> : null}
+        {isSuperuser ? <button className={tab === "budgetSections" ? "navlink active" : "navlink"} type="button" onClick={() => setTab("budgetSections")}>Secciones del presupuesto</button> : null}
         <button className={tab === "data" ? "navlink active" : "navlink"} type="button" onClick={() => setTab("data")}>Data</button>
       </div>
 
@@ -565,6 +567,10 @@ export default function DashboardPage() {
               setDrafts={setPdfDrafts}
               qc={qc}
             />
+          ) : null}
+
+          {isSuperuser && tab === "budgetSections" ? (
+            <BudgetSectionsTab catalogKind={catalogKind} />
           ) : null}
 
           {tab === "data" ? (

@@ -40,6 +40,18 @@ export async function adminSetProductPdfName(kind = "porton", productId, pdf_nam
   return data.pdf_name || null;
 }
 
+export async function adminGetBudgetSections(kind = "porton") {
+  const { data } = await http.get(`/api/admin/budget-sections?kind=${encodeURIComponent(kind)}`);
+  if (!data?.ok) throw new Error(data?.error || "No se pudieron cargar las secciones del presupuesto");
+  return { sections: data.sections || [], catalog_sections: data.catalog_sections || [] };
+}
+
+export async function adminSetBudgetSection(kind = "porton", sectionIndex, { name, template }) {
+  const { data } = await http.put(`/api/admin/budget-sections/${encodeURIComponent(String(sectionIndex))}?kind=${encodeURIComponent(kind)}`, { name, template });
+  if (!data?.ok) throw new Error(data?.error || "No se pudo guardar la sección del presupuesto");
+  return data.section;
+}
+
 export async function adminGetProductionPropertyAssignments() {
   const { data } = await http.get(`/api/admin/production-property-assignments`);
   if (!data?.ok) throw new Error(data?.error || "No se pudieron cargar las asignaciones de producción");
