@@ -195,7 +195,9 @@ export default function DashboardPage() {
   const qc = useQueryClient();
 
   const isSuperuser = !!user?.is_superuser;
-  const enabled = !!user?.is_enc_comercial || isSuperuser || !!user?.see_all_distributors;
+  const seeAllDistributors = !!user?.see_all_distributors;
+  const enabled = !!user?.is_enc_comercial || isSuperuser || seeAllDistributors;
+  const canManageAdvanced = isSuperuser || seeAllDistributors;
 
   const [catalogKind, setCatalogKind] = useState("porton");
   const [tab, setTab] = useState("tags");
@@ -242,7 +244,7 @@ export default function DashboardPage() {
   const pdfNamesQ = useQuery({
     queryKey: ["adminProductPdfNames", catalogKind],
     queryFn: () => adminGetProductPdfNames(catalogKind),
-    enabled: enabled && isSuperuser && tab === "pdf",
+    enabled: enabled && canManageAdvanced && tab === "pdf",
   });
 
   useEffect(() => {
@@ -301,8 +303,8 @@ export default function DashboardPage() {
   }, [catalogKind, tab]);
 
   useEffect(() => {
-    if (!isSuperuser && (tab === "aliases" || tab === "pdf" || tab === "budgetSections")) setTab("tags");
-  }, [isSuperuser, tab]);
+    if (!canManageAdvanced && (tab === "aliases" || tab === "pdf" || tab === "budgetSections")) setTab("tags");
+  }, [canManageAdvanced, tab]);
 
   const catalog = catalogQ.data || {};
   const sections = Array.isArray(catalog.sections) ? catalog.sections : [];
@@ -477,11 +479,11 @@ export default function DashboardPage() {
       <div className="spacer" />
       <div className="card" style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
         <button className={tab === "tags" ? "navlink active" : "navlink"} type="button" onClick={() => setTab("tags")}>Etiquetas → Secciones</button>
-        {isSuperuser ? <button className={tab === "aliases" ? "navlink active" : "navlink"} type="button" onClick={() => setTab("aliases")}>Alias y visibilidad</button> : null}
+        {canManageAdvanced ? <button className={tab === "aliases" ? "navlink active" : "navlink"} type="button" onClick={() => setTab("aliases")}>Alias y visibilidad</button> : null}
         <button className={tab === "dependencies" ? "navlink active" : "navlink"} type="button" onClick={() => setTab("dependencies")}>Dependencias</button>
         {catalogKind === "porton" ? <button className={tab === "systems" ? "navlink active" : "navlink"} type="button" onClick={() => setTab("systems")}>Tipos o sistemas</button> : null}
-        {isSuperuser ? <button className={tab === "pdf" ? "navlink active" : "navlink"} type="button" onClick={() => setTab("pdf")}>Nombres PDF</button> : null}
-        {isSuperuser ? <button className={tab === "budgetSections" ? "navlink active" : "navlink"} type="button" onClick={() => setTab("budgetSections")}>Secciones del presupuesto</button> : null}
+        {canManageAdvanced ? <button className={tab === "pdf" ? "navlink active" : "navlink"} type="button" onClick={() => setTab("pdf")}>Nombres PDF</button> : null}
+        {canManageAdvanced ? <button className={tab === "budgetSections" ? "navlink active" : "navlink"} type="button" onClick={() => setTab("budgetSections")}>Secciones del presupuesto</button> : null}
         <button className={tab === "data" ? "navlink active" : "navlink"} type="button" onClick={() => setTab("data")}>Data</button>
       </div>
 
@@ -514,7 +516,7 @@ export default function DashboardPage() {
             />
           ) : null}
 
-          {isSuperuser && tab === "aliases" ? (
+          {canManageAdvanced && tab === "aliases" ? (
             <AliasesTab
               catalogKind={catalogKind}
               products={filteredProductsByQuery}
@@ -556,7 +558,7 @@ export default function DashboardPage() {
             />
           ) : null}
 
-          {isSuperuser && tab === "pdf" ? (
+          {canManageAdvanced && tab === "pdf" ? (
             <PdfNamesTab
               catalogKind={catalogKind}
               items={pdfNamesQ.data || []}
@@ -569,7 +571,7 @@ export default function DashboardPage() {
             />
           ) : null}
 
-          {isSuperuser && tab === "budgetSections" ? (
+          {canManageAdvanced && tab === "budgetSections" ? (
             <BudgetSectionsTab catalogKind={catalogKind} />
           ) : null}
 
