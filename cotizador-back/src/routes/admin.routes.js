@@ -157,7 +157,7 @@ export function buildAdminRouter(odoo) {
     } catch (e) { next(e); }
   });
 
-  router.get("/product-pdf-names", requireAuth, requireSuperuser, async (req, res, next) => {
+  router.get("/product-pdf-names", requireAuth, requireEncComercialOrSuperuserOrDashboardViewer, async (req, res, next) => {
     try {
       const kind = normKind(req.query.kind || "porton");
       const data = await loadCatalogBootstrap(odoo, kind);
@@ -185,7 +185,7 @@ export function buildAdminRouter(odoo) {
     } catch (e) { next(e); }
   });
 
-  router.put("/products/:productId/pdf-name", requireAuth, requireSuperuser, async (req, res, next) => {
+  router.put("/products/:productId/pdf-name", requireAuth, requireEncComercialOrSuperuserOrDashboardViewer, async (req, res, next) => {
     try {
       const kind = normKind(req.query.kind || req.body?.kind || "porton");
       const pdfName = req.body?.pdf_name ?? "";
@@ -299,7 +299,7 @@ export function buildAdminRouter(odoo) {
       res.json({ ok: true, mapping });
     } catch (e) { next(e); }
   });
-  router.put("/products/:productId/alias", requireAuth, requireSuperuser, async (req, res, next) => {
+  router.put("/products/:productId/alias", requireAuth, requireEncComercialOrSuperuserOrDashboardViewer, async (req, res, next) => {
     try {
       const kind = normKind(req.query.kind || req.body?.kind || "porton");
       const alias = req.body?.alias ?? "";
