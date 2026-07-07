@@ -271,7 +271,7 @@ export async function searchProducts({ query = "", limit = 10 }) {
   return data.products || [];
 }
 
-export async function getPrices({ pricelist_id, partner_id = null, lines }) {
+export async function getPrices({ pricelist_id, partner_id = null, lines, force = false }) {
   const requestedLines = Array.isArray(lines) ? lines : [];
   const requestedPricelistId = toPositiveInt(pricelist_id) || toPositiveInt(lastEffectivePricelist?.id);
 
@@ -281,7 +281,7 @@ export async function getPrices({ pricelist_id, partner_id = null, lines }) {
 
   if (requestedPricelistId) {
     try {
-      const cache = await fetchPriceCacheForPricelist(requestedPricelistId);
+      const cache = await fetchPriceCacheForPricelist(requestedPricelistId, { force });
       if (cache?.index) {
         const prices = [];
         let missing = false;
