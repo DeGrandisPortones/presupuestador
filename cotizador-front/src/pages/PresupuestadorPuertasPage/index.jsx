@@ -21,6 +21,7 @@ import { validateArgentinaPhone, validateEmailAddress, validateGoogleMapsUrl } f
 import {
   buildQuoteAutosaveKey,
   canRemoteAutosaveQuote,
+  clearAllAutosaveDrafts,
   clearAutosaveDraft,
   formatAutosaveTime,
   hasAutosaveCustomerMinimum,
@@ -193,6 +194,50 @@ function resolveLinePricingProductId(line) {
     if (Number.isFinite(n) && n > 0) return Math.trunc(n);
   }
   return 0;
+}
+
+function buildPriceRefreshLines(lines = []) {
+  return (Array.isArray(lines) ? lines : [])
+    .filter((line) => !line?.previously_billed_line)
+    .map((line) => ({
+      product_id: resolveLinePricingProductId(line),
+      source_product_id: line?.product_id,
+      odoo_template_id: line?.odoo_template_id || null,
+      qty: line?.qty,
+    }))
+    .filter((line) => Number(line.product_id || 0) > 0);
+}
+
+function mergeUpdatedBasePrices(lines = [], pricesResponse = {}) {
+  const prices = Array.isArray(pricesResponse?.prices) ? pricesResponse.prices : [];
+  const bySourceProductId = new Map();
+  const byOdooProductId = new Map();
+
+  for (const item of prices) {
+    const sourceId = Number(item?.product_id || 0);
+    const odooId = Number(item?.odoo_product_id || item?.odoo_template_id || 0);
+    if (Number.isFinite(sourceId) && sourceId > 0) bySourceProductId.set(sourceId, item);
+    if (Number.isFinite(odooId) && odooId > 0) byOdooProductId.set(odooId, item);
+  }
+
+  return (Array.isArray(lines) ? lines : []).map((line) => {
+    if (!line || line.previously_billed_line) return line;
+    const sourceId = Number(line?.product_id || 0);
+    const odooId = Number(resolveLinePricingProductId(line) || 0);
+    const next = bySourceProductId.get(sourceId) || byOdooProductId.get(odooId);
+    if (!next || line?.manual_price) return line;
+    const nextPrice = Number(next.price ?? line.basePrice ?? 0);
+    return {
+      ...line,
+      basePrice: Number.isFinite(nextPrice) ? nextPrice : line.basePrice,
+      code: next.code ?? line.code,
+      raw_name: line.raw_name,
+      name: line.name || next.name || line.raw_name,
+    };
+  });
+}
+function todayIsoDate() {
+  return new Date().toISOString().slice(0, 10);
 }
 
 export default function PresupuestadorPuertasPage() {
@@ -574,6 +619,64 @@ export default function PresupuestadorPuertasPage() {
     onError: (e) => toast.error(e?.message || "No se pudo confirmar la puerta"),
   });
 
+  const refreshQuoteM = useMutation({
+    mutationFn: async () => {
+      const id = quoteId || idParam;
+      if (!id) throw new Error("Abrí o guardá el presupuesto antes de actualizarlo.");
+
+      const ok = window.confirm(
+        "Los valores del presupuesto se sobrescribirán con la lista de precios actual. ¿Deseás continuar?",
+      );
+      if (!ok) return null;
+
+      const refreshPricelistId = Number(expectedPricelistId || 0);
+      if (!refreshPricelistId) throw new Error("No se pudo resolver la lista de precios actual.");
+
+      const currentLines = useQuoteStore.getState().lines || [];
+      if (!currentLines.filter((line) => !line?.previously_billed_line).length) {
+        throw new Error("Agregá al menos un producto para actualizar precios.");
+      }
+
+      const pricesPayload = {
+        pricelist_id: refreshPricelistId,
+        partner_id: partnerId,
+        lines: buildPriceRefreshLines(currentLines),
+      };
+      const prices = await getPrices(pricesPayload);
+      const refreshedLines = mergeUpdatedBasePrices(currentLines, prices);
+
+      setPricelist(expectedPricelist);
+      useQuoteStore.setState({ lines: refreshedLines });
+
+      const issuedAt = new Date().toISOString();
+      const currentAdjustmentPercent = resolveQuoteAdjustmentPercent(financingPercent, conditionMode);
+      const payload = buildDoorPayload();
+      payload.pricelist_id = refreshPricelistId;
+      payload.payload = {
+        ...(payload.payload || {}),
+        quote_issued_at: issuedAt,
+        quote_issued_date: todayIsoDate(),
+        price_refreshed_at: issuedAt,
+        refreshed_pricelist_id: refreshPricelistId,
+        quote_adjustment_percent_snapshot: currentAdjustmentPercent,
+        financing_percent_snapshot: currentAdjustmentPercent,
+        iva_rate_snapshot: resolveQuoteIvaRate(ivaRate, conditionMode),
+        pricing_snapshot_at: issuedAt,
+      };
+      validateDraft(payload);
+      return await updateQuote(id, payload);
+    },
+    onSuccess: (q) => {
+      if (!q) return;
+      setQuoteMeta({ quoteId: q.id, status: q.status, rejectionNotes: q.rejection_notes });
+      loadFromQuote(q);
+      qc.invalidateQueries({ queryKey: ["quote", q.id] });
+      qc.invalidateQueries({ queryKey: ["quotes", "mine"] });
+      toast.success("Presupuesto actualizado con la lista de precios actual.");
+    },
+    onError: (e) => toast.error(e?.message || "No se pudo actualizar el presupuesto"),
+  });
+
   function confirmDoorWithOptionalPortonWarning(fulfillmentMode) {
     if (!cleanText(linkedPortonId)) {
       const ok = window.confirm(
@@ -610,7 +713,36 @@ export default function PresupuestadorPuertasPage() {
     }
   }
 
+  function handleClearBudget() {
+    const ok = window.confirm(
+      "Esto limpia el formulario actual y borra los borradores locales de autoguardado de este navegador. No elimina presupuestos ya guardados en Mis presupuestos. ¿Continuar?",
+    );
+    if (!ok) return;
+
+    if (autosaveTimerRef.current) {
+      window.clearTimeout(autosaveTimerRef.current);
+      autosaveTimerRef.current = null;
+    }
+
+    clearAllAutosaveDrafts();
+    autosaveLastRemoteSignatureRef.current = "";
+    autosaveInFlightRef.current = false;
+    autosaveRestoredLocalRef.current = true;
+    reset();
+    setLinkedPortonId("");
+    setPortonSearch("");
+    setConfirmChoiceOpen(false);
+    setConfirmBudgetObservation("");
+    setAutosaveState({ status: "cleared", message: "Presupuesto limpio. Autoguardado local borrado.", savedAt: new Date().toISOString() });
+    toast.success("Presupuesto limpio. Autoguardado local borrado.");
+
+    if (quoteId || idParam) {
+      navigate("/cotizador/puerta", { replace: true });
+    }
+  }
+
   const canConfirm = ["draft", "rejected_commercial", "rejected_technical"].includes(status);
+  const canRefreshSavedQuote = !!(quoteId || idParam) && ["draft", "rejected_commercial", "rejected_technical"].includes(String(status || ""));
   const visibleQuoteNumber = cleanText(quoteQ.data?.quote_number || quoteQ.data?.odoo_sale_order_name || "");
 
   return (
@@ -628,7 +760,13 @@ export default function PresupuestadorPuertasPage() {
           <Button variant="secondary" onClick={() => onDownloadPdf("presupuesto")} disabled={!pricingContextReady}>PDF presupuesto</Button>
           {user?.is_distribuidor ? <Button variant="secondary" onClick={() => onDownloadPdf("proforma")} disabled={!pricingContextReady}>PDF proforma</Button> : null}
           <Button onClick={() => saveM.mutate()} disabled={saveM.isPending || !pricingContextReady}>{saveM.isPending ? "Guardando..." : "Guardar"}</Button>
+          {canRefreshSavedQuote ? (
+            <Button variant="secondary" disabled={refreshQuoteM.isPending} onClick={() => refreshQuoteM.mutate()}>
+              {refreshQuoteM.isPending ? "Actualizando..." : "Actualizar presupuesto"}
+            </Button>
+          ) : null}
           <Button variant="primary" onClick={() => { setConfirmBudgetObservation(readBudgetObservationFromPayload(buildDoorPayload())); setConfirmChoiceOpen(true); }} disabled={!canConfirm || confirmM.isPending || !pricingContextReady}>{confirmM.isPending ? "Confirmando..." : "Confirmar presupuesto"}</Button>
+          <Button variant="ghost" onClick={handleClearBudget}>Limpiar presupuesto</Button>
           <Button variant="ghost" onClick={() => navigate("/menu")}>Volver</Button>
         </div>
       </div>
