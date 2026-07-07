@@ -1357,13 +1357,22 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
 
   const refreshQuoteM = useMutation({
     mutationFn: async () => {
-      const id = quoteId || idParam;
-      if (!id) throw new Error("Abrí o guardá el presupuesto antes de actualizarlo.");
-
       const ok = window.confirm(
         "Los valores del presupuesto se sobrescribirán con la lista de precios actual. ¿Deseás continuar?",
       );
       if (!ok) return null;
+
+      // Si el presupuesto todavia no se guardo (nuevo, sin id), lo creamos primero para poder
+      // actualizarlo despues. Sin esto, un presupuesto nuevo nunca podia forzar el precio en
+      // vivo de Odoo y se quedaba con lo que hubiera en la cache local.
+      let id = quoteId || idParam;
+      if (!id) {
+        const draftPayload = getDraftPayload();
+        validateDraft(draftPayload);
+        const created = await createQuote(draftPayload);
+        id = created.id;
+        setQuoteMeta({ quoteId: created.id, status: created.status, rejectionNotes: created.rejection_notes });
+      }
 
       // Presupuestos viejos por vano (antes del calculo automatico) pueden haber quedado sin ancho/alto
       // cargado. No los recalculamos solo por abrirlos (ver PortonDimensions.jsx), pero si el usuario pide
@@ -1502,8 +1511,7 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
   }
 
   const canConfirm = isAcopioRevision ? false : (isReturnedMeasurementQuote ? false : (isRevisionQuote ? ["", "draft", "rejected"].includes(finalStatus || "") : ["draft", "rejected_commercial", "rejected_technical"].includes(status)));
-  const canRefreshSavedQuote = !!(quoteId || idParam)
-    && !isRevisionQuote
+  const canRefreshSavedQuote = !isRevisionQuote
     && !isReturnedMeasurementQuote
     && ["draft", "rejected_commercial", "rejected_technical"].includes(String(status || ""));
 

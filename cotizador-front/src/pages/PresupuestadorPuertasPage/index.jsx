@@ -621,13 +621,20 @@ export default function PresupuestadorPuertasPage() {
 
   const refreshQuoteM = useMutation({
     mutationFn: async () => {
-      const id = quoteId || idParam;
-      if (!id) throw new Error("Abrí o guardá el presupuesto antes de actualizarlo.");
-
       const ok = window.confirm(
         "Los valores del presupuesto se sobrescribirán con la lista de precios actual. ¿Deseás continuar?",
       );
       if (!ok) return null;
+
+      // Si el presupuesto todavia no se guardo (nuevo, sin id), lo guardamos primero para
+      // poder actualizarlo despues. Sin esto, un presupuesto nuevo nunca podia forzar el
+      // precio en vivo de Odoo y se quedaba con lo que hubiera en la cache local.
+      let id = quoteId || idParam;
+      if (!id) {
+        const created = await saveDoorQuote({ forConfirm: false });
+        id = created.id;
+        setQuoteMeta({ quoteId: created.id, status: created.status, rejectionNotes: created.rejection_notes });
+      }
 
       const refreshPricelistId = Number(expectedPricelistId || 0);
       if (!refreshPricelistId) throw new Error("No se pudo resolver la lista de precios actual.");
@@ -745,7 +752,7 @@ export default function PresupuestadorPuertasPage() {
   }
 
   const canConfirm = ["draft", "rejected_commercial", "rejected_technical"].includes(status);
-  const canRefreshSavedQuote = !!(quoteId || idParam) && ["draft", "rejected_commercial", "rejected_technical"].includes(String(status || ""));
+  const canRefreshSavedQuote = ["draft", "rejected_commercial", "rejected_technical"].includes(String(status || ""));
   const visibleQuoteNumber = cleanText(quoteQ.data?.quote_number || quoteQ.data?.odoo_sale_order_name || "");
 
   return (
@@ -764,7 +771,7 @@ export default function PresupuestadorPuertasPage() {
           {user?.is_distribuidor ? <Button variant="secondary" onClick={() => onDownloadPdf("proforma")} disabled={!pricingContextReady}>PDF proforma</Button> : null}
           <Button onClick={() => saveM.mutate()} disabled={saveM.isPending || !pricingContextReady}>{saveM.isPending ? "Guardando..." : "Guardar"}</Button>
           {canRefreshSavedQuote ? (
-            <Button variant="secondary" disabled={refreshQuoteM.isPending} onClick={() => refreshQuoteM.mutate()}>
+            <Button variant="secondary" disabled={refreshQuoteM.isPending || !pricingContextReady} onClick={() => refreshQuoteM.mutate()}>
               {refreshQuoteM.isPending ? "Actualizando..." : "Actualizar presupuesto"}
             </Button>
           ) : null}
