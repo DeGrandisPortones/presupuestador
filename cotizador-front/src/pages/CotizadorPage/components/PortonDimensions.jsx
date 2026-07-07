@@ -9,6 +9,7 @@ const WIDTH_MIN_M = 2.4;
 const WIDTH_MAX_M = 7;
 const HEIGHT_MIN_M = 2;
 const HEIGHT_MAX_M = 3;
+const PORTON_MAX_WEIGHT_KG = 350;
 const IPANEL_WIDTH_MAX_M = 1.16;
 const IPANEL_HEIGHT_MAX_M = 2.45;
 const IPANEL_LAMAS_WIDTH_MAX_M = 2;
@@ -651,11 +652,11 @@ function FieldBox({ label, helper, helperColor, children }) {
     </div>
   );
 }
-function ComputedCard({ label, value }) {
+function ComputedCard({ label, value, warn = false }) {
   return (
-    <div style={{ border: "1px solid #d1d5db", borderRadius: 10, padding: 10, background: "#f3f4f6" }}>
+    <div style={{ border: warn ? "1px solid #fca5a5" : "1px solid #d1d5db", borderRadius: 10, padding: 10, background: warn ? "#fef2f2" : "#f3f4f6" }}>
       <div className="muted">{label}</div>
-      <div style={{ fontWeight: 800, color: "#334155" }}>{value || "-"}</div>
+      <div style={{ fontWeight: 800, color: warn ? "#b91c1c" : "#334155" }}>{value || "-"}</div>
     </div>
   );
 }
@@ -1702,9 +1703,10 @@ export default function PortonDimensions({ kind = "porton" }) {
   );
 
   useEffect(() => {
-    // vano_size_auto_calc solo se setea en presupuestos nuevos (ver store.reset()). Los presupuestos
-    // existentes cargados via loadFromQuote no lo tienen, asi que este calculo no les toca ancho/alto
-    // ya guardados/vendidos.
+    // vano_size_auto_calc solo se setea en presupuestos nuevos (ver store.reset()) o cuando "Actualizar
+    // presupuesto" lo activa a proposito para un presupuesto viejo sin ancho/alto cargado (ver CotizadorPage
+    // index.jsx). Los presupuestos existentes cargados via loadFromQuote no lo tienen por defecto, asi que
+    // este calculo no les toca ancho/alto en pantalla con solo abrirlos.
     if (!isPorton || !explicitVanoMeasures || !dimensions?.vano_size_auto_calc) return;
     const nextWidth = calculatedPortonFromVano.widthM > 0 ? formatNumberForInput(calculatedPortonFromVano.widthM) : "";
     const nextHeight = calculatedPortonFromVano.heightM > 0 ? formatNumberForInput(calculatedPortonFromVano.heightM) : "";
@@ -1751,6 +1753,16 @@ export default function PortonDimensions({ kind = "porton" }) {
     dimensions?.porton_piernas_calculo,
     setDimensions,
   ]);
+
+  useEffect(() => {
+    // Se guarda el peso estimado dentro de dimensions para poder validar el tope maximo del
+    // porton (350 kg) al confirmar/guardar, sin tener que recalcular la formula completa alli.
+    if (!isPorton) return;
+    const kg = preview?.estimatedWeightKg > 0 ? preview.estimatedWeightKg : 0;
+    if (String(dimensions?.porton_estimated_weight_kg ?? "") !== String(kg)) {
+      setDimensions({ porton_estimated_weight_kg: kg });
+    }
+  }, [isPorton, preview?.estimatedWeightKg, dimensions?.porton_estimated_weight_kg, setDimensions]);
 
   const aptoParaRevestir = isAptoDerivedType(portonType) || detectNoCladdingByProducts(lines, params);
   const isNonAptoPorton = isPorton && !aptoParaRevestir;
@@ -2243,9 +2255,18 @@ export default function PortonDimensions({ kind = "porton" }) {
           <ComputedCard label="Medidas de hoja" value={preview.altoHojaMm > 0 && preview.anchoHojaMm > 0 ? `${formatMetersFromMm(preview.anchoHojaMm)} x ${formatMetersFromMm(preview.altoHojaMm)}` : "-"} />
           <ComputedCard label="Rebaje lateral" value={preview.hasRebajeLateral ? "Si" : "No"} />
           <ComputedCard label="Kg/m2 efectivo" value={preview.effectiveKgM2 > 0 ? `${preview.effectiveKgM2.toFixed(2)} kg/m2` : "-"} />
-          <ComputedCard label="Peso estimado" value={preview.estimatedWeightKg > 0 ? `${preview.estimatedWeightKg.toFixed(2)} kg` : "-"} />
+          <ComputedCard
+            label="Peso estimado"
+            value={preview.estimatedWeightKg > 0 ? `${preview.estimatedWeightKg.toFixed(2)} kg` : "-"}
+            warn={preview.estimatedWeightKg > PORTON_MAX_WEIGHT_KG}
+          />
           <ComputedCard label="Piernas estimadas" value={preview.legsLabel} />
         </div>
+        {preview.estimatedWeightKg > PORTON_MAX_WEIGHT_KG ? (
+          <div style={{ marginTop: 8, fontSize: 13, color: "#b91c1c", fontWeight: 700, padding: "9px 12px", borderRadius: 10, border: "1px solid #fca5a5", background: "#fef2f2" }}>
+            El peso estimado supera el máximo permitido de {PORTON_MAX_WEIGHT_KG} kg para un portón. Ajustá el revestimiento (kg/m2) o las medidas antes de guardar.
+          </div>
+        ) : null}
         <div className="muted" style={{ marginTop: 8 }}>Estas medidas se guardan dentro del presupuesto para usarlas despues en medicion, calculo de peso y comparacion de superficie.</div>
       </>) : null}
 

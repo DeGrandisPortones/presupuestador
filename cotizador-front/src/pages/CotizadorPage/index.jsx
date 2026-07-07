@@ -46,6 +46,7 @@ const WIDTH_MIN_M = 2.3;
 const WIDTH_MAX_M = 7;
 const HEIGHT_MIN_M = 2;
 const HEIGHT_MAX_M = 3;
+const PORTON_MAX_WEIGHT_KG = 350;
 const IPANEL_WIDTH_MAX_M = 1.16;
 const IPANEL_HEIGHT_MAX_M = 2.45;
 const IPANEL_LAMAS_WIDTH_MAX_M = 2;
@@ -563,6 +564,10 @@ function validateDimensionsRequired(payload, kind = "porton") {
   if (normalizedKind === "porton") {
     if (width < WIDTH_MIN_M || width > WIDTH_MAX_M) throw new Error("El ancho debe estar entre 2.3 m y 7 m.");
     if (height < HEIGHT_MIN_M || height > HEIGHT_MAX_M) throw new Error("El alto debe estar entre 2 m y 3 m.");
+    const estimatedWeightKg = parseNum(dims?.porton_estimated_weight_kg);
+    if (estimatedWeightKg > PORTON_MAX_WEIGHT_KG) {
+      throw new Error(`El portón supera el peso máximo permitido (${PORTON_MAX_WEIGHT_KG} kg). Ajustá el revestimiento (kg/m2) o las medidas.`);
+    }
   }
 
   if (normalizedKind === "ipanel") {
@@ -1359,6 +1364,18 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
         "Los valores del presupuesto se sobrescribirán con la lista de precios actual. ¿Deseás continuar?",
       );
       if (!ok) return null;
+
+      // Presupuestos viejos por vano (antes del calculo automatico) pueden haber quedado sin ancho/alto
+      // cargado. No los recalculamos solo por abrirlos (ver PortonDimensions.jsx), pero si el usuario pide
+      // "Actualizar presupuesto" activamos ahora el flag para que se calculen y no quede bloqueado sin poder
+      // guardarse. El await de getPrices de mas abajo le da tiempo a React a aplicar el calculo antes de
+      // armar el payload.
+      const currentDimensions = useQuoteStore.getState().dimensions || {};
+      const hasVanoMeasures = !!(currentDimensions.vano_width || currentDimensions.vano_height || currentDimensions.porton_measure_source === "vano");
+      const missingStoredSize = !(Number(currentDimensions.width) > 0) || !(Number(currentDimensions.height) > 0);
+      if (catalogKind === "porton" && hasVanoMeasures && missingStoredSize && !currentDimensions.vano_size_auto_calc) {
+        useQuoteStore.setState({ dimensions: { ...currentDimensions, vano_size_auto_calc: true } });
+      }
 
       const refreshPricelist = resolveRefreshPricelist();
       const refreshPricelistId = Number(refreshPricelist?.id || 0);
