@@ -4,7 +4,7 @@ import { loadCatalogBootstrap, clearCatalogBootstrapCache } from "../catalogBoot
 import { normKind, createSection, updateSection, deleteSection, setTagSection, setProductAlias, setProductVisibility, setTypeVisibility, getProductPdfNameMap, setProductPdfName } from "../catalogDb.js";
 import { dbQuery } from "../db.js";
 import { listUsers, createUser, updateUser } from "../usersDb.js";
-import { triggerPreproductionForClientAcceptance } from "../measurementFinalization.js";
+import { triggerPreproductionForClientAcceptance, formatPortonTypeLabel } from "../measurementFinalization.js";
 import { ensureQuotesMeasurementColumns } from "../quotesSchema.js";
 import {
   getCommercialFinalQuoteSettings,
@@ -694,6 +694,15 @@ export function buildAdminRouter(odoo) {
       const sourcePayload = (originalQuote.payload && typeof originalQuote.payload === "object") ? originalQuote.payload : {};
       const copyPayload = (copyQuote?.payload && typeof copyQuote.payload === "object") ? copyQuote.payload : {};
       const data = { ...sourcePayload, ...copyPayload, NV: nv, nv, nv_tipo: nvTipo, referencia_nv: nvStr };
+
+      // El path normal (triggerPreproductionForClientAcceptance) formatea porton_type
+      // ("acero_simil_aluminio_doble_iny" -> "ACERO SIMIL ALUMINIO DOBLE INY") antes de guardarlo.
+      // Este fallback copiaba el payload crudo del presupuesto, así que había que aplicar el mismo formateo acá.
+      if (data.porton_type) {
+        const rawPortonType = data.porton_type;
+        data.porton_type = formatPortonTypeLabel(rawPortonType) || rawPortonType;
+        if (!data.porton_type_key) data.porton_type_key = rawPortonType;
+      }
 
       const rawLines = Array.isArray(copyQuote?.lines) ? copyQuote.lines : (Array.isArray(originalQuote?.lines) ? originalQuote.lines : []);
       const nvLines = rawLines

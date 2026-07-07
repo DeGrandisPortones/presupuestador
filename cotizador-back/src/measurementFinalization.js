@@ -200,7 +200,7 @@ function extractNvTipo(value) {
   const prefix = match[1].toUpperCase();
   return ["INV", "ONV", "PLNV", "PNV"].includes(prefix) ? prefix : "NV";
 }
-function formatPortonTypeLabel(value) {
+export function formatPortonTypeLabel(value) {
   return String(value || "")
     .replace(/_/g, " ")
     .replace(/\s+/g, " ")
