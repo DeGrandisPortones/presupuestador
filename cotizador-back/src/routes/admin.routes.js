@@ -454,10 +454,10 @@ export function buildAdminRouter(odoo) {
         `select count(*)::int as count
            from public.presupuestador_quotes child
           where coalesce(child.quote_kind, 'original') = 'original'
-            and child.id <> $1
+            and child.id <> $1::uuid
             and (
-              child.payload->>'linked_porton_quote_id' = $1
-              or child.payload->>'porton_quote_id' = $1
+              child.payload->>'linked_porton_quote_id' = $1::text
+              or child.payload->>'porton_quote_id' = $1::text
             )`,
         [id]
       );
