@@ -450,11 +450,15 @@ function buildIpanelInfoLines(payload) {
 }
 function buildPuertaInfoLines(payload) {
   if (getCatalogKindFromPayload(payload) !== "puerta") return [];
+  const p = getPayloadObject(payload);
   const dims = getDimensions(payload);
+  const rows = [];
+  const linkedPortonRef = safeStr(p?.linked_porton_reference);
+  if (linkedPortonRef) rows.push(`Vinculado a portón: ${linkedPortonRef}`);
   const widthMm = parsePositiveNumber(dims?.width) * 1000;
   const heightMm = parsePositiveNumber(dims?.height) * 1000;
-  if (!widthMm && !heightMm) return [];
-  return [`Ancho: ${formatMmValue(widthMm)} - Alto: ${formatMmValue(heightMm)}`];
+  if (widthMm || heightMm) rows.push(`Ancho: ${formatMmValue(widthMm)} - Alto: ${formatMmValue(heightMm)}`);
+  return rows;
 }
 function drawPanelScheme(doc, { x, y, width, info, title = "Esquema" }) {
   if (!info.widthM || !info.heightM || !info.sectionSizes.length) return y;
@@ -625,7 +629,7 @@ async function renderPdf({ title, payload, useBasePrice, odoo, includeTerms = fa
 
   const commercialInfoLines = [];
   if (paymentMethod) commercialInfoLines.push(`Forma de pago: ${paymentMethod}`);
-  if (productionPlanningText) commercialInfoLines.push(`Fecha estimada de entrega "${productionPlanningText}"`);
+  if (productionPlanningText && getCatalogKindFromPayload(payload) !== "puerta") commercialInfoLines.push(`Fecha estimada de entrega "${productionPlanningText}"`);
 
   const technicalInfoLines = [];
   technicalInfoLines.push(...extraCalculatedLines);
