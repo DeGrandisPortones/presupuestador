@@ -2417,15 +2417,20 @@ export default function PortonDimensions({ kind = "porton" }) {
           <ComputedCard
             label="Peso estimado"
             value={preview.estimatedWeightKg > 0 ? `${preview.estimatedWeightKg.toFixed(2)} kg` : "-"}
-            warn={preview.estimatedWeightKg > PORTON_MAX_WEIGHT_KG}
+            // Tope de peso desactivado a pedido (revertido en main, no borrado por si hay
+            // que reactivarlo). Descomentar para volver a marcar en rojo el peso estimado.
+            // warn={preview.estimatedWeightKg > PORTON_MAX_WEIGHT_KG}
           />
           <ComputedCard label="Piernas estimadas" value={preview.legsLabel} />
         </div>
+        {/* Tope de peso desactivado a pedido (revertido en main, no borrado por si hay que
+        reactivarlo). Descomentar para volver a mostrar el cartel de aviso.
         {preview.estimatedWeightKg > PORTON_MAX_WEIGHT_KG ? (
           <div style={{ marginTop: 8, fontSize: 13, color: "#b91c1c", fontWeight: 700, padding: "9px 12px", borderRadius: 10, border: "1px solid #fca5a5", background: "#fef2f2" }}>
             El peso estimado supera el máximo permitido de {PORTON_MAX_WEIGHT_KG} kg para un portón. Ajustá el revestimiento (kg/m2) o las medidas antes de guardar.
           </div>
         ) : null}
+        */}
         <div className="muted" style={{ marginTop: 8 }}>Estas medidas se guardan dentro del presupuesto para usarlas despues en medicion, calculo de peso y comparacion de superficie.</div>
       </>) : null}
 

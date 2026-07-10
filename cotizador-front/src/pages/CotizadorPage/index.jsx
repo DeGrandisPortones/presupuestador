@@ -547,10 +547,12 @@ function validateDimensionsRequired(payload, kind = "porton") {
   if (normalizedKind === "porton") {
     if (width < WIDTH_MIN_M || width > WIDTH_MAX_M) throw new Error("El ancho debe estar entre 2.3 m y 7 m.");
     if (height < HEIGHT_MIN_M || height > HEIGHT_MAX_M) throw new Error("El alto debe estar entre 2 m y 3 m.");
-    const estimatedWeightKg = parseNum(dims?.porton_estimated_weight_kg);
-    if (estimatedWeightKg > PORTON_MAX_WEIGHT_KG) {
-      throw new Error(`El portón supera el peso máximo permitido (${PORTON_MAX_WEIGHT_KG} kg). Ajustá el revestimiento (kg/m2) o las medidas.`);
-    }
+    // Tope de peso desactivado a pedido (revertido en main, no borrado por si hay que
+    // reactivarlo). Descomentar para volver a bloquear el guardado por encima de 350kg.
+    // const estimatedWeightKg = parseNum(dims?.porton_estimated_weight_kg);
+    // if (estimatedWeightKg > PORTON_MAX_WEIGHT_KG) {
+    //   throw new Error(`El portón supera el peso máximo permitido (${PORTON_MAX_WEIGHT_KG} kg). Ajustá el revestimiento (kg/m2) o las medidas.`);
+    // }
   }
 
   if (normalizedKind === "ipanel") {
