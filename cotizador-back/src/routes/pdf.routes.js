@@ -448,6 +448,14 @@ function buildIpanelInfoLines(payload) {
   if (info.widthM || info.heightM) rows.push(`Medidas Ipanel: ancho ${formatMeters(info.widthM)} x alto ${formatMeters(info.heightM)}`);
   return rows;
 }
+function buildPuertaInfoLines(payload) {
+  if (getCatalogKindFromPayload(payload) !== "puerta") return [];
+  const dims = getDimensions(payload);
+  const widthMm = parsePositiveNumber(dims?.width) * 1000;
+  const heightMm = parsePositiveNumber(dims?.height) * 1000;
+  if (!widthMm && !heightMm) return [];
+  return [`Ancho: ${formatMmValue(widthMm)} - Alto: ${formatMmValue(heightMm)}`];
+}
 function drawPanelScheme(doc, { x, y, width, info, title = "Esquema" }) {
   if (!info.widthM || !info.heightM || !info.sectionSizes.length) return y;
   const maxW = Math.min(300, width - 200);
@@ -622,6 +630,7 @@ async function renderPdf({ title, payload, useBasePrice, odoo, includeTerms = fa
   const technicalInfoLines = [];
   technicalInfoLines.push(...extraCalculatedLines);
   technicalInfoLines.push(...buildIpanelInfoLines(payload));
+  technicalInfoLines.push(...buildPuertaInfoLines(payload));
   if (obs) technicalInfoLines.push(`Obs: ${obs}`);
 
   const beforeInfoY = y;
