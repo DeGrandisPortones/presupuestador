@@ -269,8 +269,8 @@ export function buildAdminRouter(odoo) {
   router.post("/sections", requireAuth, requireEncComercialOrSuperuserOrDashboardViewer, async (req, res, next) => {
     try {
       const kind = normKind(req.query.kind || req.body?.kind || "porton");
-      const { name, position, use_surface_qty, budget_sector } = req.body || {};
-      const section = await createSection(kind, { name, position, use_surface_qty, budget_sector });
+      const { name, position, use_surface_qty, budget_sector, budget_show_detail } = req.body || {};
+      const section = await createSection(kind, { name, position, use_surface_qty, budget_sector, budget_show_detail });
       clearCatalogBootstrapCache();
       res.json({ ok: true, section });
     } catch (e) { next(e); }
