@@ -1780,8 +1780,10 @@ export async function triggerPreproductionForClientAcceptance(odoo, originalQuot
 // Resync manual para superusuario ("tengo una queja puntual de este portón"): recalcula medidas
 // de paso/hoja con la misma formula oficial (buildMeasurementFinalizationBase) y refresca
 // preproduccion_valores. NO toca Odoo -la NV ya sincronizada no se modifica-, y respeta el freeze:
-// si el cliente ya acepto el link, no cambia nada.
-export async function resyncPortonMeasurements({ odoo, originalQuoteId }) {
+// si el cliente ya acepto el link, no cambia nada salvo que el superusuario lo fuerce explicitamente
+// (force:true) - ese es el UNICO camino permitido para tocar datos post-aceptacion. Queda registrado
+// en el payload quien y cuando lo forzo.
+export async function resyncPortonMeasurements({ odoo, originalQuoteId, force = false, forcedBy = null }) {
   const r = await dbQuery(
     `select * from public.presupuestador_quotes where id=$1 and quote_kind='original' limit 1`,
     [originalQuoteId],
@@ -1791,8 +1793,13 @@ export async function resyncPortonMeasurements({ odoo, originalQuoteId }) {
   if (String(originalQuote.catalog_kind || "porton").toLowerCase().trim() !== "porton") {
     return { ok: false, error: "El resync de medidas de paso solo aplica a portones" };
   }
-  if (isClientAlreadyAccepted(originalQuote)) {
-    return { ok: false, error: "El cliente ya aceptó el link: las medidas quedan congeladas, no se modifican." };
+  const clientAccepted = isClientAlreadyAccepted(originalQuote);
+  if (clientAccepted && !force) {
+    return {
+      ok: false,
+      blocked_reason: "client_already_accepted",
+      error: "El cliente ya aceptó el link: las medidas quedan congeladas. Si igual querés forzar el cambio, confirmalo explícitamente.",
+    };
   }
   const anchoFinalMm = Number(originalQuote.measurement_form?.ancho_final_mm || 0);
   const altoFinalMm = Number(originalQuote.measurement_form?.alto_final_mm || 0);
@@ -1812,6 +1819,20 @@ export async function resyncPortonMeasurements({ odoo, originalQuoteId }) {
 
   const beforeDims = originalQuote.payload?.dimensions || {};
   await persistDimensionsPatch(originalQuote.id, dimensionsPatch);
+  if (clientAccepted && force) {
+    // Unico camino permitido para tocar datos post-aceptacion: queda registrado quien y cuando.
+    await dbQuery(
+      `update public.presupuestador_quotes
+          set payload = jsonb_set(coalesce(payload, '{}'::jsonb), '{paso_measurements_forced_resync}', $2::jsonb, true)
+        where id=$1`,
+      [originalQuote.id, JSON.stringify({
+        at: new Date().toISOString(),
+        by_user_id: forcedBy?.user_id ?? null,
+        by_username: forcedBy?.username ?? null,
+        reason: "client_already_accepted_override",
+      })],
+    );
+  }
 
   const copyR = await dbQuery(
     `select id from public.presupuestador_quotes
@@ -1827,6 +1848,7 @@ export async function resyncPortonMeasurements({ odoo, originalQuoteId }) {
 
   return {
     ok: true,
+    forced_after_client_acceptance: clientAccepted && force,
     quote_id: originalQuote.id,
     quote_number: originalQuote.quote_number,
     odoo_sale_order_name: originalQuote.odoo_sale_order_name || null,

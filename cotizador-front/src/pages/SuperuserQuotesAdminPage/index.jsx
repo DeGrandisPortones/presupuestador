@@ -89,8 +89,12 @@ export default function SuperuserQuotesAdminPage() {
   const [resyncIdentifier, setResyncIdentifier] = useState("");
   const [resyncResult, setResyncResult] = useState(null);
   const resyncM = useMutation({
-    mutationFn: (identifier) => adminResyncPortonMeasurements(identifier),
+    mutationFn: ({ identifier, force }) => adminResyncPortonMeasurements(identifier, { force }),
     onSuccess: (data) => {
+      if (data?.ok === false && data?.blocked_reason === "client_already_accepted") {
+        setResyncResult({ blocked: true, identifier: resyncIdentifier.trim(), error: data.error });
+        return;
+      }
       setResyncResult({ ok: true, data });
       qc.invalidateQueries({ queryKey: ["admin-quotes"] });
     },
@@ -102,7 +106,17 @@ export default function SuperuserQuotesAdminPage() {
     const identifier = resyncIdentifier.trim();
     if (!identifier || resyncM.isPending) return;
     setResyncResult(null);
-    resyncM.mutate(identifier);
+    resyncM.mutate({ identifier, force: false });
+  }
+
+  function forceResync() {
+    const identifier = String(resyncResult?.identifier || "").trim();
+    if (!identifier || resyncM.isPending) return;
+    const ok = window.confirm(
+      `El cliente ya aceptó el link de "${identifier}". Vas a modificar datos que ya se le mostraron y aceptó.\n\nEsta es la ÚNICA vía permitida para hacerlo — quedará registrado quién y cuándo lo forzó.\n\n¿Confirmás que igual querés continuar?`,
+    );
+    if (!ok) return;
+    resyncM.mutate({ identifier, force: true });
   }
 
   const rows = Array.isArray(quotesQ.data) ? quotesQ.data : [];
@@ -187,6 +201,19 @@ export default function SuperuserQuotesAdminPage() {
             {resyncM.isPending ? "Resincronizando..." : "Resync"}
           </Button>
         </form>
+        {resyncResult?.blocked ? (
+          <div style={{ marginTop: 10, padding: 10, borderRadius: 8, background: "#fff8e1", border: "1px solid #f5c518" }}>
+            <div style={{ color: "#7a5b00", fontWeight: 700 }}>{resyncResult.error}</div>
+            <div className="muted" style={{ marginTop: 4, fontSize: 13 }}>
+              Esta es la única vía habilitada para tocar medidas después de la aceptación del cliente. Se registra quién y cuándo lo fuerza.
+            </div>
+            <div style={{ marginTop: 8 }}>
+              <Button variant="danger" disabled={resyncM.isPending} onClick={forceResync}>
+                {resyncM.isPending ? "Forzando..." : "Forzar de todos modos"}
+              </Button>
+            </div>
+          </div>
+        ) : null}
         {resyncResult?.ok === false ? (
           <div style={{ color: "#d93025", marginTop: 10 }}>{resyncResult.error}</div>
         ) : null}
@@ -194,6 +221,7 @@ export default function SuperuserQuotesAdminPage() {
           <div style={{ marginTop: 10, fontSize: 13 }}>
             <div style={{ color: "#188038", fontWeight: 700 }}>
               Actualizado: presupuesto #{resyncResult.data.quote_number} ({resyncResult.data.odoo_sale_order_name || "—"} / {resyncResult.data.final_sale_order_name || "—"})
+              {resyncResult.data.forced_after_client_acceptance ? " · forzado tras aceptación del cliente" : ""}
             </div>
             <div className="muted" style={{ marginTop: 4 }}>
               Medidas de paso: {resyncResult.data.before?.medidas_paso_text || "—"} → {resyncResult.data.after?.medidas_paso_text || "—"}
