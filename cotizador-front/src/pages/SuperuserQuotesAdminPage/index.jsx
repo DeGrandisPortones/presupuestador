@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import Button from "../../ui/Button.jsx";
 import PaginationControls from "../../ui/PaginationControls.jsx";
-import { adminDeleteQuote, adminGetQuotes } from "../../api/admin.js";
+import { adminDeleteQuote, adminGetQuotes, adminResyncPortonMeasurements } from "../../api/admin.js";
 
 const PAGE_SIZE = 25;
 
@@ -86,6 +86,25 @@ export default function SuperuserQuotesAdminPage() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["admin-quotes"] }),
   });
 
+  const [resyncIdentifier, setResyncIdentifier] = useState("");
+  const [resyncResult, setResyncResult] = useState(null);
+  const resyncM = useMutation({
+    mutationFn: (identifier) => adminResyncPortonMeasurements(identifier),
+    onSuccess: (data) => {
+      setResyncResult({ ok: true, data });
+      qc.invalidateQueries({ queryKey: ["admin-quotes"] });
+    },
+    onError: (e) => setResyncResult({ ok: false, error: e?.message || "No se pudo resincronizar" }),
+  });
+
+  function runResync(e) {
+    e?.preventDefault?.();
+    const identifier = resyncIdentifier.trim();
+    if (!identifier || resyncM.isPending) return;
+    setResyncResult(null);
+    resyncM.mutate(identifier);
+  }
+
   const rows = Array.isArray(quotesQ.data) ? quotesQ.data : [];
   const canShowDelete = activeTab === "budgets" || activeTab === "all";
 
@@ -147,6 +166,43 @@ export default function SuperuserQuotesAdminPage() {
           <Button type="submit">Buscar</Button>
           {search ? <Button type="button" variant="ghost" onClick={() => { setSearchDraft(""); setSearch(""); }}>Limpiar</Button> : null}
         </form>
+      </div>
+
+      <div className="spacer" />
+      <div className="card">
+        <div style={{ fontWeight: 900 }}>Resync medidas de paso (portones)</div>
+        <div className="muted" style={{ marginTop: 6 }}>
+          Recalcula ancho/alto de portón y medidas de paso/hoja con la fórmula oficial, usando la medición final
+          cargada, y refresca preproducción_valores. No toca la NV en Odoo. Si el cliente ya aceptó el link, no
+          modifica nada.
+        </div>
+        <form onSubmit={runResync} style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginTop: 10 }}>
+          <input
+            value={resyncIdentifier}
+            onChange={(e) => setResyncIdentifier(e.target.value)}
+            placeholder="Número de NP o NV, ej: NV4307"
+            style={{ flex: "1 1 260px", padding: "9px 11px", borderRadius: 8, border: "1px solid #ddd", outline: "none" }}
+          />
+          <Button type="submit" disabled={resyncM.isPending || !resyncIdentifier.trim()}>
+            {resyncM.isPending ? "Resincronizando..." : "Resync"}
+          </Button>
+        </form>
+        {resyncResult?.ok === false ? (
+          <div style={{ color: "#d93025", marginTop: 10 }}>{resyncResult.error}</div>
+        ) : null}
+        {resyncResult?.ok === true ? (
+          <div style={{ marginTop: 10, fontSize: 13 }}>
+            <div style={{ color: "#188038", fontWeight: 700 }}>
+              Actualizado: presupuesto #{resyncResult.data.quote_number} ({resyncResult.data.odoo_sale_order_name || "—"} / {resyncResult.data.final_sale_order_name || "—"})
+            </div>
+            <div className="muted" style={{ marginTop: 4 }}>
+              Medidas de paso: {resyncResult.data.before?.medidas_paso_text || "—"} → {resyncResult.data.after?.medidas_paso_text || "—"}
+            </div>
+            <div className="muted">
+              Copia sincronizada: {resyncResult.data.copy_updated ? "sí" : "no había copia"} · preproducción_valores: {resyncResult.data.preproduccion_valores?.updated ? "actualizado" : `sin actualizar (${resyncResult.data.preproduccion_valores?.reason || "-"})`}
+            </div>
+          </div>
+        ) : null}
       </div>
 
       <div className="spacer" />

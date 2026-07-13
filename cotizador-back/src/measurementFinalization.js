@@ -1585,11 +1585,11 @@ function mergeDimensionsPatch(payload, dimensionsPatch) {
 function isClientAlreadyAccepted(quote) {
   return !!(quote?.measurement_client_accepted_at || quote?.payload?.measurement_client_acceptance?.accepted_at);
 }
-// Actualiza payload.dimensions de la quote ORIGINAL con las medidas de paso/hoja recalculadas,
-// para que el link de aceptacion del cliente (que lee del original) y cualquier consulta tecnica
-// vean la medida final, no la del presupuesto. Se usa jsonb merge para no pisar el resto del payload.
-async function persistDimensionsPatchToOriginal(originalQuoteId, dimensionsPatch) {
-  if (!originalQuoteId || !dimensionsPatch || typeof dimensionsPatch !== "object" || !Object.keys(dimensionsPatch).length) return;
+// Actualiza payload.dimensions de la quote dada (original o copia) con las medidas de paso/hoja
+// recalculadas, para que el link de aceptacion del cliente (que lee del original) y cualquier
+// consulta tecnica vean la medida final, no la del presupuesto. jsonb merge para no pisar el resto.
+async function persistDimensionsPatch(quoteId, dimensionsPatch) {
+  if (!quoteId || !dimensionsPatch || typeof dimensionsPatch !== "object" || !Object.keys(dimensionsPatch).length) return;
   await dbQuery(
     `update public.presupuestador_quotes
         set payload = jsonb_set(
@@ -1599,7 +1599,7 @@ async function persistDimensionsPatchToOriginal(originalQuoteId, dimensionsPatch
           true
         )
       where id=$1`,
-    [originalQuoteId, JSON.stringify(dimensionsPatch)],
+    [quoteId, JSON.stringify(dimensionsPatch)],
   );
 }
 
@@ -1613,7 +1613,7 @@ export async function finalizeMeasurementToRevisionQuote({ odoo, originalQuote, 
   // La aprobacion final del circuito tecnico solo debe disparar WhatsApp y no crear otra NV.
   if (isDirectNvAlreadyCreated(originalQuote)) {
     if (!isClientAlreadyAccepted(originalQuote)) {
-      await persistDimensionsPatchToOriginal(originalQuote?.id, base.dimensions_patch);
+      await persistDimensionsPatch(originalQuote?.id, base.dimensions_patch);
     }
     const existingOrder = {
       id: Number(originalQuote?.final_sale_order_id || originalQuote?.odoo_sale_order_id || 0) || null,
@@ -1652,7 +1652,7 @@ export async function finalizeMeasurementToRevisionQuote({ odoo, originalQuote, 
 
   const clientAlreadyAccepted = isClientAlreadyAccepted(originalQuote);
   if (!clientAlreadyAccepted) {
-    await persistDimensionsPatchToOriginal(originalQuote?.id, base.dimensions_patch);
+    await persistDimensionsPatch(originalQuote?.id, base.dimensions_patch);
   }
   const patchedSourceQuote = base.dimensions_patch && !clientAlreadyAccepted
     ? { ...base.source_quote, payload: mergeDimensionsPatch(base.source_quote?.payload, base.dimensions_patch) }
@@ -1775,4 +1775,73 @@ export async function triggerPreproductionForClientAcceptance(odoo, originalQuot
     generatedLines: Array.isArray(revisionQuote.lines) ? revisionQuote.lines : [],
     odoo,
   });
+}
+
+// Resync manual para superusuario ("tengo una queja puntual de este portón"): recalcula medidas
+// de paso/hoja con la misma formula oficial (buildMeasurementFinalizationBase) y refresca
+// preproduccion_valores. NO toca Odoo -la NV ya sincronizada no se modifica-, y respeta el freeze:
+// si el cliente ya acepto el link, no cambia nada.
+export async function resyncPortonMeasurements({ odoo, originalQuoteId }) {
+  const r = await dbQuery(
+    `select * from public.presupuestador_quotes where id=$1 and quote_kind='original' limit 1`,
+    [originalQuoteId],
+  );
+  const originalQuote = r.rows?.[0];
+  if (!originalQuote) return { ok: false, error: "Presupuesto original no encontrado" };
+  if (String(originalQuote.catalog_kind || "porton").toLowerCase().trim() !== "porton") {
+    return { ok: false, error: "El resync de medidas de paso solo aplica a portones" };
+  }
+  if (isClientAlreadyAccepted(originalQuote)) {
+    return { ok: false, error: "El cliente ya aceptó el link: las medidas quedan congeladas, no se modifican." };
+  }
+  const anchoFinalMm = Number(originalQuote.measurement_form?.ancho_final_mm || 0);
+  const altoFinalMm = Number(originalQuote.measurement_form?.alto_final_mm || 0);
+  if (!anchoFinalMm || !altoFinalMm) {
+    return { ok: false, error: "El presupuesto no tiene medición final cargada (ancho/alto final)" };
+  }
+
+  const base = await buildMeasurementFinalizationBase({
+    odoo,
+    originalQuote,
+    measurementForm: originalQuote.measurement_form,
+  });
+  const dimensionsPatch = base.dimensions_patch;
+  if (!dimensionsPatch || !Object.keys(dimensionsPatch).length) {
+    return { ok: false, error: "No se pudieron recalcular las medidas (revisar tipo de portón/líneas del presupuesto)" };
+  }
+
+  const beforeDims = originalQuote.payload?.dimensions || {};
+  await persistDimensionsPatch(originalQuote.id, dimensionsPatch);
+
+  const copyR = await dbQuery(
+    `select id from public.presupuestador_quotes
+      where quote_kind='copy' and parent_quote_id=$1
+      order by created_at desc nulls last, id desc limit 1`,
+    [originalQuote.id],
+  );
+  const copyId = copyR.rows?.[0]?.id || null;
+  if (copyId) await persistDimensionsPatch(copyId, dimensionsPatch);
+
+  const patchedOriginalForPreproduccion = { ...originalQuote, payload: mergeDimensionsPatch(originalQuote.payload, dimensionsPatch) };
+  const preproduccion = await triggerPreproductionForClientAcceptance(odoo, patchedOriginalForPreproduccion);
+
+  return {
+    ok: true,
+    quote_id: originalQuote.id,
+    quote_number: originalQuote.quote_number,
+    odoo_sale_order_name: originalQuote.odoo_sale_order_name || null,
+    final_sale_order_name: originalQuote.final_sale_order_name || null,
+    copy_updated: !!copyId,
+    before: {
+      medidas_paso_text: beforeDims.medidas_paso_text || null,
+      paso_ancho_mm: beforeDims.paso_ancho_mm || null,
+      paso_alto_mm: beforeDims.paso_alto_mm || null,
+    },
+    after: {
+      medidas_paso_text: dimensionsPatch.medidas_paso_text || null,
+      paso_ancho_mm: dimensionsPatch.paso_ancho_mm || null,
+      paso_alto_mm: dimensionsPatch.paso_alto_mm || null,
+    },
+    preproduccion_valores: preproduccion?.ok === false ? { updated: false, reason: preproduccion?.reason || "no_disponible" } : { updated: true },
+  };
 }

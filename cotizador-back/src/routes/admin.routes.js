@@ -4,7 +4,7 @@ import { loadCatalogBootstrap, clearCatalogBootstrapCache } from "../catalogBoot
 import { normKind, createSection, updateSection, deleteSection, setTagSection, setProductAlias, setProductVisibility, setTypeVisibility, getProductPdfNameMap, setProductPdfName } from "../catalogDb.js";
 import { dbQuery } from "../db.js";
 import { listUsers, createUser, updateUser } from "../usersDb.js";
-import { triggerPreproductionForClientAcceptance, formatPortonTypeLabel } from "../measurementFinalization.js";
+import { triggerPreproductionForClientAcceptance, formatPortonTypeLabel, resyncPortonMeasurements } from "../measurementFinalization.js";
 import { ensureQuotesMeasurementColumns } from "../quotesSchema.js";
 import {
   getCommercialFinalQuoteSettings,
@@ -751,6 +751,50 @@ export function buildAdminRouter(odoo) {
       }
 
       res.json({ ok: true, nv, nv_tipo: nvTipo, method: "fallback_direct", row: upsertRow });
+    } catch (e) { next(e); }
+  });
+
+  // Resync manual de medidas de paso/hoja para un portón puntual (queja de un vendedor/cliente).
+  // Busca el presupuesto por número de NP o NV, recalcula con la fórmula oficial y refresca
+  // preproducción_valores. No toca Odoo. Si el cliente ya aceptó el link, no modifica nada.
+  router.post("/resync/porton-measurements", requireAuth, requireSuperuser, async (req, res, next) => {
+    try {
+      const identifier = String(req.body?.identifier || "").trim();
+      if (!identifier) return res.status(400).json({ ok: false, error: "Falta identifier (número de NP o NV)" });
+
+      const directR = await dbQuery(
+        `SELECT * FROM public.presupuestador_quotes
+          WHERE quote_kind = 'original'
+            AND (upper(odoo_sale_order_name) = upper($1) OR upper(final_sale_order_name) = upper($1))
+          ORDER BY created_at DESC NULLS LAST LIMIT 1`,
+        [identifier],
+      );
+      let originalQuote = directR.rows?.[0] || null;
+
+      if (!originalQuote) {
+        const copyR = await dbQuery(
+          `SELECT parent_quote_id FROM public.presupuestador_quotes
+            WHERE quote_kind = 'copy' AND upper(final_sale_order_name) = upper($1)
+            ORDER BY created_at DESC NULLS LAST LIMIT 1`,
+          [identifier],
+        );
+        const parentId = copyR.rows?.[0]?.parent_quote_id;
+        if (parentId) {
+          const origR = await dbQuery(
+            `SELECT * FROM public.presupuestador_quotes WHERE id = $1 AND quote_kind = 'original' LIMIT 1`,
+            [parentId],
+          );
+          originalQuote = origR.rows?.[0] || null;
+        }
+      }
+
+      if (!originalQuote) {
+        return res.status(404).json({ ok: false, error: `No se encontró un presupuesto de portón para "${identifier}"` });
+      }
+
+      const result = await resyncPortonMeasurements({ odoo, originalQuoteId: originalQuote.id });
+      if (!result.ok) return res.status(409).json(result);
+      res.json(result);
     } catch (e) { next(e); }
   });
 
