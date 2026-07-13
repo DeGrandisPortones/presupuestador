@@ -8,7 +8,7 @@ import { requireAuth } from "../auth.js";
 import { ensureQuotesMeasurementColumns } from "../quotesSchema.js";
 import { buildBudgetExtraSummaryLines } from "../pdfBudgetExtras.js";
 import { getProductPdfNameMap, normKind } from "../catalogDb.js";
-import { resolveBudgetSectionRows } from "../pdfBudgetSections.js";
+import { resolveBudgetSectorSummary } from "../pdfBudgetSectorSummary.js";
 
 const IVA_RATE = 0.21;
 const SHIPPING_PRODUCT_IDS = new Set([2842]);
@@ -42,6 +42,15 @@ const TERMS_AND_CONDITIONS = [
 
 function isDistributorPayload(payload = {}) {
   return String(payload?.created_by_role || payload?.payload?.created_by_role || "").trim().toLowerCase() === "distribuidor";
+}
+// Precio de Envío: se lee el valor ya congelado en envio_odoo_price_snapshot
+// (armado al crear el presupuesto, o al apretar "Actualizar presupuesto" en uno
+// viejo). Si no existe (presupuesto viejo nunca actualizado) no se inventa nada
+// y se mantiene el comportamiento historico ($0), para no cambiarlo solo.
+function getEnvioOdooPriceSnapshot(payload = {}) {
+  const raw = payload?.envio_odoo_price_snapshot ?? payload?.payload?.envio_odoo_price_snapshot;
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 ? n : null;
 }
 function lineMatchesProductSet(line = {}, productSet) {
   const ids = [line?.product_id, line?.id, line?.odoo_id, line?.odoo_template_id, line?.odoo_variant_id, line?.odoo_external_id, line?.odoo_product_id];
@@ -278,18 +287,29 @@ async function buildLines(payload, { useBasePrice, odoo, displayNetPrices = fals
   const productIds = collectUniquePositiveInts(rawLines.map((line) => line?.product_id));
   const pdfNameMap = await getProductPdfNameMap(catalogKind, productIds);
   const odooNames = await readOdooNamesFlexible(odoo, rawLines);
+  const distributorPayload = isDistributorPayload(payload);
+  // El envío lo sigue cobrando De Grandis aunque sea "provisión propia" del
+  // distribuidor: en la proforma va al precio de Odoo congelado en
+  // envio_odoo_price_snapshot, no a $0 ni al precio que cargó el distribuidor.
+  const envioOdooPriceSnapshot = getEnvioOdooPriceSnapshot(payload);
 
   const lines = rawLines
     .map((l) => {
       const qty = n2(l?.qty);
       const rawBasePrice = n2(l?.base_price ?? l?.basePrice ?? l?.base_price_unit ?? l?.price_unit ?? l?.priceUnit ?? l?.price ?? 0);
-      const basePrice = useBasePrice && isDistributorPayload(payload) && isDistributorOwnSupplyLine(l) ? 0 : rawBasePrice;
-      const unitNet = useBasePrice ? basePrice : basePrice * coefFactor;
-      const unit = displayNetPrices ? unitNet : unitNet * (1 + effectiveTaxRate);
+      const variantId = resolveVariantId(l);
+      const isDistOwnSupply = distributorPayload && isDistributorOwnSupplyLine(l);
+      const basePrice = useBasePrice && isDistOwnSupply
+        ? (isShippingLine(l) && envioOdooPriceSnapshot != null ? envioOdooPriceSnapshot : 0)
+        : rawBasePrice;
+      // "Facturado previamente" (deposito ya cobrado): dato duro, no se le aplica
+      // coeficiente/margen ni IVA ni recargo por forma de pago. Pasa tal cual.
+      const isPreviouslyBilled = !!l?.previously_billed_line;
+      const unitNet = isPreviouslyBilled ? basePrice : (useBasePrice ? basePrice : basePrice * coefFactor);
+      const unit = isPreviouslyBilled ? basePrice : (displayNetPrices ? unitNet : unitNet * (1 + effectiveTaxRate));
       const totalNet = unitNet * qty;
       const total = unit * qty;
       const productId = toPositiveInt(l?.product_id);
-      const variantId = resolveVariantId(l);
       const explicitTemplateId = resolveProductTemplateId(l);
       const derivedTemplateId = odooNames.templateIdByVariantId.get(variantId) || 0;
       const templateId = explicitTemplateId || derivedTemplateId;
@@ -603,6 +623,91 @@ function drawTermsAndConditionsPage(doc, { title, payload, margin, innerW, dateS
   }
 }
 
+function drawSectorItemsBlock(doc, { y, margin, innerW, pageBottom, headerLabel, headerFill, subtotalLabel, items, total }) {
+  function ensureSpace(h) {
+    if (y + h <= pageBottom()) return;
+    doc.addPage();
+    y = margin + 20;
+  }
+
+  ensureSpace(24);
+  doc.save().fillColor(headerFill).rect(margin, y, innerW, 24).fill().restore();
+  doc.save().strokeColor("#111827").lineWidth(1).rect(margin, y, innerW, 24).stroke().restore();
+  doc.font("Helvetica-Bold").fontSize(10.5).fillColor("#111827").text(headerLabel.toUpperCase(), margin + 10, y + 7, { width: innerW - 20 });
+  y += 24;
+
+  const textWidth = innerW - 32;
+  for (const item of items) {
+    const text = `${item.sectionName}: ${item.productName}`;
+    doc.font("Helvetica").fontSize(9.5);
+    const textH = doc.heightOfString(text, { width: textWidth });
+    const rowH = Math.max(22, textH + 10);
+    ensureSpace(rowH);
+    doc.save().strokeColor("#D1D5DB").rect(margin, y, innerW, rowH).stroke().restore();
+    doc.font("Helvetica").fontSize(9.5).fillColor("#111827").text(`•  ${text}`, margin + 16, y + 5, { width: textWidth });
+    y += rowH;
+  }
+
+  ensureSpace(26);
+  doc.save().fillColor("#F3F4F6").rect(margin, y, innerW, 26).fill().restore();
+  doc.save().strokeColor("#D1D5DB").rect(margin, y, innerW, 26).stroke().restore();
+  doc.font("Helvetica-Bold").fontSize(10).fillColor("#111827")
+    .text(subtotalLabel, margin + 10, y + 7, { width: innerW * 0.68 - 10 })
+    .text(`$ ${formatMoney(total)}`, margin + innerW * 0.68, y + 7, { width: innerW * 0.32 - 10, align: "right" });
+  y += 26 + 12;
+
+  return y;
+}
+
+// Primera hoja del presupuesto/proforma: agrupa las lineas por sector
+// (Producto/Automatizacion/Servicios) segun la seccion de catalogo de cada
+// producto. Solo se llama cuando resolveBudgetSectorSummary encontro al
+// menos una seccion con sector asignado; la hoja de detalle de siempre sigue
+// exactamente igual, arrancando en la pagina siguiente.
+function drawBudgetSectorSummaryPage(doc, { title, payload, margin, innerW, dateStr, validStr, hideValidity, summary }) {
+  const SAFE_BOTTOM_GAP = 56;
+  function pageBottom() {
+    return doc.page.height - margin - SAFE_BOTTOM_GAP;
+  }
+
+  let y = drawHeader(doc, { title, payload, margin, innerW, dateStr, validStr, hideValidity });
+  doc.font("Helvetica-Bold").fontSize(13).fillColor("#111827").text("Resumen por sector", margin, y, { width: innerW });
+  y = doc.y + 12;
+
+  for (const sector of summary.sectors) {
+    y = drawSectorItemsBlock(doc, {
+      y, margin, innerW, pageBottom,
+      headerLabel: sector.label,
+      headerFill: "#E5E7EB",
+      subtotalLabel: `Subtotal ${sector.label}`,
+      items: sector.items,
+      total: sector.total,
+    });
+  }
+
+  if (y + 36 > pageBottom()) {
+    doc.addPage();
+    y = margin + 20;
+  }
+  doc.save().fillColor("#F3F4F6").rect(margin, y, innerW, 36).fill().restore();
+  doc.save().strokeColor("#111827").lineWidth(1.6).rect(margin, y, innerW, 36).stroke().restore();
+  doc.font("Helvetica-Bold").fontSize(12).fillColor("#111827")
+    .text("TOTAL", margin + 10, y + 11, { width: innerW * 0.68 - 10 })
+    .text(`$ ${formatMoney(summary.grandTotal)}`, margin + innerW * 0.68, y + 11, { width: innerW * 0.32 - 10, align: "right" });
+  y += 36 + 16;
+
+  if (summary.unassigned) {
+    drawSectorItemsBlock(doc, {
+      y, margin, innerW, pageBottom,
+      headerLabel: "Secciones sin asignar",
+      headerFill: "#FEF3C7",
+      subtotalLabel: "Subtotal sin asignar",
+      items: summary.unassigned.items,
+      total: summary.unassigned.total,
+    });
+  }
+}
+
 async function renderPdf({ title, payload, useBasePrice, odoo, includeTerms = false, hideIvaBreakdown = false, displayNetPrices = false, taxRate = IVA_RATE, hideAllPrices = false }) {
   const doc = new PDFDocument({ size: "A4", margin: 0, bufferPages: true });
   const buffers = [];
@@ -621,8 +726,12 @@ async function renderPdf({ title, payload, useBasePrice, odoo, includeTerms = fa
   const productionPlanningText = getProductionPlanningText(payload);
   const obs = stripSellerLines(safeStr(payload?.note));
   const { lines, grandTotal, subtotalNet, ivaAmount, taxRate: effectiveTaxRate, catalogKind } = await buildLines(payload, { useBasePrice, odoo, displayNetPrices, taxRate });
-  const budgetSections = await resolveBudgetSectionRows({ catalogKind, lines, odoo });
-  const rowsToRender = budgetSections ? [...budgetSections.groupedRows, ...budgetSections.leftoverLines] : lines;
+
+  const sectorSummary = hideAllPrices ? null : await resolveBudgetSectorSummary({ catalogKind, lines, odoo });
+  if (sectorSummary) {
+    drawBudgetSectorSummaryPage(doc, { title, payload, margin, innerW, dateStr, validStr, hideValidity: hideAllPrices, summary: sectorSummary });
+    doc.addPage();
+  }
 
   let y = drawHeader(doc, { title, payload, margin, innerW, dateStr, validStr, hideValidity: hideAllPrices });
   y = drawInfoTable(doc, payload, y, margin, innerW, useBasePrice);
@@ -677,47 +786,27 @@ async function renderPdf({ title, payload, useBasePrice, odoo, includeTerms = fa
   }
 
   drawTableHeader();
-  const GROUPED_ROW_GAP = 10;
-  for (const line of rowsToRender) {
-    const nameWidth = colDesc - 16;
-    const isGrouped = !!line.isGrouped;
-    const boxStrokeColor = isGrouped ? "#111827" : "#D1D5DB";
-    const boxLineWidth = isGrouped ? 1.6 : 1;
-    const bodyOptions = isGrouped ? { width: nameWidth, lineGap: 1 } : { width: nameWidth };
-    let titleH = 0;
-    if (isGrouped && line.title) {
-      doc.font("Helvetica-Bold").fontSize(9.5);
-      titleH = doc.heightOfString(line.title, { width: nameWidth });
-    }
-    doc.font("Helvetica").fontSize(9.5);
-    const bodyH = doc.heightOfString(line.name, bodyOptions);
-    const rowH = Math.max(28, titleH + (titleH ? 4 : 0) + bodyH + 16);
-    ensureSpace(rowH + (isGrouped ? GROUPED_ROW_GAP : 0));
-    doc.save().lineWidth(boxLineWidth).strokeColor(boxStrokeColor).rect(margin, tableY, innerW, rowH).stroke().restore();
+  for (const line of lines) {
+    const rowH = Math.max(28, doc.heightOfString(line.name, { width: colDesc - 16 }) + 16);
+    ensureSpace(rowH);
+    doc.save().strokeColor("#D1D5DB").rect(margin, tableY, innerW, rowH).stroke().restore();
     const xQty = margin + colDesc;
-
-    let textY = tableY + 8;
-    if (isGrouped && line.title) {
-      doc.font("Helvetica-Bold").fontSize(9.5).fillColor("#111827").text(line.title, margin + 8, textY, { width: nameWidth });
-      textY += titleH + 4;
-    }
-
     if (hideAllPrices) {
-      doc.save().lineWidth(boxLineWidth).strokeColor(boxStrokeColor).moveTo(xQty, tableY).lineTo(xQty, tableY + rowH).stroke().restore();
+      doc.save().strokeColor("#D1D5DB").moveTo(xQty, tableY).lineTo(xQty, tableY + rowH).stroke().restore();
       doc.font("Helvetica").fontSize(9.5).fillColor("#111827")
-        .text(line.name, margin + 8, textY, bodyOptions)
+        .text(line.name, margin + 8, tableY + 8, { width: colDesc - 16 })
         .text(formatQty(line.qty), xQty + 8, tableY + 8, { width: colQty - 16, align: "right" });
     } else {
       const xUnit = xQty + colQty;
       const xTot = xUnit + colUnit;
-      [xQty, xUnit, xTot].forEach((x) => doc.save().lineWidth(boxLineWidth).strokeColor(boxStrokeColor).moveTo(x, tableY).lineTo(x, tableY + rowH).stroke().restore());
+      [xQty, xUnit, xTot].forEach((x) => doc.save().strokeColor("#D1D5DB").moveTo(x, tableY).lineTo(x, tableY + rowH).stroke().restore());
       doc.font("Helvetica").fontSize(9.5).fillColor("#111827")
-        .text(line.name, margin + 8, textY, bodyOptions)
+        .text(line.name, margin + 8, tableY + 8, { width: colDesc - 16 })
         .text(formatQty(line.qty), xQty + 8, tableY + 8, { width: colQty - 16, align: "right" })
         .text(`$ ${formatMoney(line.unit)}`, xUnit + 8, tableY + 8, { width: colUnit - 16, align: "right" })
         .text(`$ ${formatMoney(line.total)}`, xTot + 8, tableY + 8, { width: colTot - 16, align: "right" });
     }
-    tableY += rowH + (isGrouped ? GROUPED_ROW_GAP : 0);
+    tableY += rowH;
   }
 
   if (!hideAllPrices) {

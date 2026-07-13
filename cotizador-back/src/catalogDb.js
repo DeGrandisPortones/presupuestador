@@ -80,6 +80,9 @@ async function ensureCatalogControls() {
   `);
   await dbQuery(`alter table public.presupuestador_sections add column if not exists catalog_kind text not null default 'porton';`);
   await dbQuery(`alter table public.presupuestador_sections add column if not exists use_surface_qty boolean not null default false;`);
+  await dbQuery(`alter table public.presupuestador_sections add column if not exists budget_sector text null;`);
+  await dbQuery(`alter table public.presupuestador_sections drop constraint if exists presupuestador_sections_budget_sector_check;`);
+  await dbQuery(`alter table public.presupuestador_sections add constraint presupuestador_sections_budget_sector_check check (budget_sector is null or budget_sector in ('producto', 'automatizacion', 'servicios'));`);
 
   await dbQuery(`
     create table if not exists public.presupuestador_tag_sections (
@@ -149,20 +152,6 @@ async function ensureCatalogControls() {
     );
   `);
 
-  await dbQuery(`
-    create table if not exists public.presupuestador_budget_sections (
-      catalog_kind text not null,
-      section_index smallint not null,
-      name text not null default '',
-      template text not null default '',
-      created_at timestamptz not null default now(),
-      updated_at timestamptz not null default now(),
-      primary key (catalog_kind, section_index)
-    );
-  `);
-  await dbQuery(`alter table public.presupuestador_budget_sections drop constraint if exists presupuestador_budget_sections_section_index_check;`);
-  await dbQuery(`alter table public.presupuestador_budget_sections add constraint presupuestador_budget_sections_section_index_check check (section_index between 1 and 3);`);
-
   for (const table of [
     "presupuestador_sections",
     "presupuestador_tag_sections",
@@ -171,7 +160,6 @@ async function ensureCatalogControls() {
     "presupuestador_product_visibility",
     "presupuestador_type_visibility",
     "presupuestador_product_pdf_names",
-    "presupuestador_budget_sections",
   ]) {
     await dbQuery(`alter table public.${table} add column if not exists created_at timestamptz not null default now();`);
     await dbQuery(`alter table public.${table} add column if not exists updated_at timestamptz not null default now();`);
@@ -185,7 +173,6 @@ async function ensureCatalogControls() {
     "presupuestador_product_visibility",
     "presupuestador_type_visibility",
     "presupuestador_product_pdf_names",
-    "presupuestador_budget_sections",
   ]);
 
   for (const [table, constraint] of [
@@ -196,7 +183,6 @@ async function ensureCatalogControls() {
     ["presupuestador_product_visibility", "presupuestador_product_visibility_catalog_kind_check"],
     ["presupuestador_type_visibility", "presupuestador_type_visibility_catalog_kind_check"],
     ["presupuestador_product_pdf_names", "presupuestador_product_pdf_names_catalog_kind_check"],
-    ["presupuestador_budget_sections", "presupuestador_budget_sections_catalog_kind_check"],
   ]) {
     await dbQuery(`alter table public.${table} add constraint ${constraint} check (catalog_kind in (${KIND_SQL}));`);
   }
@@ -205,11 +191,16 @@ async function ensureCatalogControls() {
   catalogControlsEnsured = true;
 }
 
+function normalizeBudgetSector(value) {
+  const v = String(value || "").trim().toLowerCase();
+  return v === "producto" || v === "automatizacion" || v === "servicios" ? v : null;
+}
+
 export async function listSections(kind) {
   await ensureCatalogControls();
   const k = normKind(kind);
   const q = await dbQuery(
-    `select id, name, position, catalog_kind, use_surface_qty
+    `select id, name, position, catalog_kind, use_surface_qty, budget_sector
        from public.presupuestador_sections
       where catalog_kind = $1
       order by position asc, name asc`,
@@ -218,14 +209,14 @@ export async function listSections(kind) {
   return q.rows || [];
 }
 
-export async function createSection(kind, { name, position = 100, use_surface_qty = false }) {
+export async function createSection(kind, { name, position = 100, use_surface_qty = false, budget_sector = null }) {
   await ensureCatalogControls();
   const k = normKind(kind);
   const q = await dbQuery(
-    `insert into public.presupuestador_sections (name, position, catalog_kind, use_surface_qty)
-     values ($1, $2, $3, $4)
-     returning id, name, position, catalog_kind, use_surface_qty`,
-    [String(name || "").trim(), Number(position || 100), k, !!use_surface_qty],
+    `insert into public.presupuestador_sections (name, position, catalog_kind, use_surface_qty, budget_sector)
+     values ($1, $2, $3, $4, $5)
+     returning id, name, position, catalog_kind, use_surface_qty, budget_sector`,
+    [String(name || "").trim(), Number(position || 100), k, !!use_surface_qty, normalizeBudgetSector(budget_sector)],
   );
   return q.rows?.[0];
 }
@@ -235,15 +226,22 @@ export async function updateSection(kind, id, patch = {}) {
   const k = normKind(kind);
   const sid = Number(id);
   if (!sid) throw new Error("sectionId inválido");
-  const currentQ = await dbQuery(`select id, name, position, catalog_kind, use_surface_qty from public.presupuestador_sections where id=$1 and catalog_kind=$2 limit 1`, [sid, k]);
+  const currentQ = await dbQuery(`select id, name, position, catalog_kind, use_surface_qty, budget_sector from public.presupuestador_sections where id=$1 and catalog_kind=$2 limit 1`, [sid, k]);
   const current = currentQ.rows?.[0];
   if (!current) throw new Error("Sección no encontrada");
   const q = await dbQuery(
     `update public.presupuestador_sections
-        set name=$3, position=$4, use_surface_qty=$5, updated_at=now()
+        set name=$3, position=$4, use_surface_qty=$5, budget_sector=$6, updated_at=now()
       where id=$1 and catalog_kind=$2
-      returning id, name, position, catalog_kind, use_surface_qty`,
-    [sid, k, patch.name !== undefined ? String(patch.name || "").trim() : current.name, patch.position !== undefined ? Number(patch.position || 0) : Number(current.position || 0), patch.use_surface_qty !== undefined ? !!patch.use_surface_qty : !!current.use_surface_qty],
+      returning id, name, position, catalog_kind, use_surface_qty, budget_sector`,
+    [
+      sid,
+      k,
+      patch.name !== undefined ? String(patch.name || "").trim() : current.name,
+      patch.position !== undefined ? Number(patch.position || 0) : Number(current.position || 0),
+      patch.use_surface_qty !== undefined ? !!patch.use_surface_qty : !!current.use_surface_qty,
+      patch.budget_sector !== undefined ? normalizeBudgetSector(patch.budget_sector) : current.budget_sector,
+    ],
   );
   return q.rows?.[0] || current;
 }
@@ -349,31 +347,3 @@ export async function setTypeVisibility(kind, typeKey, patch = {}) {
 
 export async function getTypeSectionsMap(kind) { await ensureCatalogControls(); void kind; return {}; }
 export async function setTypeSections(kind, typeKey, sectionIds) { await ensureCatalogControls(); return { catalog_kind: normKind(kind), type_key: String(typeKey || "").trim(), section_ids: Array.isArray(sectionIds) ? sectionIds.map(Number).filter(Boolean) : [] }; }
-
-export async function listBudgetSections(kind) {
-  await ensureCatalogControls();
-  const k = normKind(kind);
-  const q = await dbQuery(
-    `select catalog_kind, section_index, name, template
-       from public.presupuestador_budget_sections
-      where catalog_kind = $1
-      order by section_index asc`,
-    [k],
-  );
-  return q.rows || [];
-}
-
-export async function upsertBudgetSection(kind, sectionIndex, { name, template } = {}) {
-  await ensureCatalogControls();
-  const k = normKind(kind);
-  const idx = Number(sectionIndex);
-  if (!Number.isInteger(idx) || idx < 1 || idx > 3) throw new Error("sectionIndex inválido (debe ser 1, 2 o 3)");
-  const q = await dbQuery(
-    `insert into public.presupuestador_budget_sections (catalog_kind, section_index, name, template)
-     values ($1,$2,$3,$4)
-     on conflict (catalog_kind, section_index) do update set name=excluded.name, template=excluded.template, updated_at=now()
-     returning catalog_kind, section_index, name, template`,
-    [k, idx, String(name ?? "").trim(), String(template ?? "")],
-  );
-  return q.rows?.[0];
-}

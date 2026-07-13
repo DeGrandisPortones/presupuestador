@@ -1,7 +1,7 @@
 import express from "express";
 import { requireAuth } from "../auth.js";
 import { loadCatalogBootstrap, clearCatalogBootstrapCache } from "../catalogBootstrap.js";
-import { normKind, createSection, updateSection, deleteSection, setTagSection, setProductAlias, setProductVisibility, setTypeVisibility, getProductPdfNameMap, setProductPdfName, listSections, listBudgetSections, upsertBudgetSection } from "../catalogDb.js";
+import { normKind, createSection, updateSection, deleteSection, setTagSection, setProductAlias, setProductVisibility, setTypeVisibility, getProductPdfNameMap, setProductPdfName } from "../catalogDb.js";
 import { dbQuery } from "../db.js";
 import { listUsers, createUser, updateUser } from "../usersDb.js";
 import { triggerPreproductionForClientAcceptance, formatPortonTypeLabel } from "../measurementFinalization.js";
@@ -194,27 +194,6 @@ export function buildAdminRouter(odoo) {
     } catch (e) { next(e); }
   });
 
-  router.get("/budget-sections", requireAuth, requireEncComercialOrSuperuserOrDashboardViewer, async (req, res, next) => {
-    try {
-      const kind = normKind(req.query.kind || "porton");
-      const [savedSections, catalogSections] = await Promise.all([listBudgetSections(kind), listSections(kind)]);
-      const savedByIndex = new Map(savedSections.map((s) => [Number(s.section_index), s]));
-      const sections = [1, 2, 3].map((sectionIndex) => {
-        const saved = savedByIndex.get(sectionIndex);
-        return { section_index: sectionIndex, name: saved?.name || "", template: saved?.template || "" };
-      });
-      const catalog_sections = catalogSections.map((s) => ({ id: Number(s.id), name: s.name }));
-      res.json({ ok: true, kind, sections, catalog_sections });
-    } catch (e) { next(e); }
-  });
-  router.put("/budget-sections/:sectionIndex", requireAuth, requireEncComercialOrSuperuserOrDashboardViewer, async (req, res, next) => {
-    try {
-      const kind = normKind(req.query.kind || req.body?.kind || "porton");
-      const saved = await upsertBudgetSection(kind, req.params.sectionIndex, req.body || {});
-      res.json({ ok: true, section: saved });
-    } catch (e) { next(e); }
-  });
-
   router.get("/production-property-assignments", requireAuth, requireSuperuser, async (_req, res, next) => {
     try {
       const [source_properties, target_properties, assignments] = await Promise.all([
@@ -290,8 +269,8 @@ export function buildAdminRouter(odoo) {
   router.post("/sections", requireAuth, requireEncComercialOrSuperuserOrDashboardViewer, async (req, res, next) => {
     try {
       const kind = normKind(req.query.kind || req.body?.kind || "porton");
-      const { name, position, use_surface_qty } = req.body || {};
-      const section = await createSection(kind, { name, position, use_surface_qty });
+      const { name, position, use_surface_qty, budget_sector } = req.body || {};
+      const section = await createSection(kind, { name, position, use_surface_qty, budget_sector });
       clearCatalogBootstrapCache();
       res.json({ ok: true, section });
     } catch (e) { next(e); }
