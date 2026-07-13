@@ -476,7 +476,28 @@ export default function PortonesEstadoPage() {
                         )}
                       </span>
                     </td>
-                    <td style={tdStyle}>{r.sellerName}</td>
+                    <td style={tdStyle}>
+                      <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                        {r.sellerName}
+                        {r.created_by_phone && (
+                          <button
+                            onClick={() => {
+                              navigator.clipboard.writeText(r.created_by_phone).then(() => {
+                                toast.success(`Teléfono copiado: ${r.created_by_phone}`);
+                              });
+                            }}
+                            title={`Copiar teléfono: ${r.created_by_phone}`}
+                            style={{
+                              padding: "2px 7px", borderRadius: 5, border: "1px solid #90caf9",
+                              background: "#e3f2fd", color: "#0d47a1", cursor: "pointer",
+                              fontSize: 13, lineHeight: 1, flexShrink: 0,
+                            }}
+                          >
+                            📞
+                          </button>
+                        )}
+                      </span>
+                    </td>
                     <td style={tdStyle}>
                       <StatusBadge color={r.statusInfo.color} label={r.statusInfo.label} />
                       {r.measurement_share_enabled_at && !r.measurement_client_accepted_at && r.final_status !== "synced_odoo" && (
