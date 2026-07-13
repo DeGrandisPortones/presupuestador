@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { useQuoteStore } from "../../../domain/quote/store";
-import { calcFinalUnitPrice, calcLineTotal, formatARS, resolveQuoteAdjustmentPercent } from "../../../domain/quote/pricing";
+import { calcLineTotal, formatARS, resolveLineFinalUnitPrice, resolveQuoteAdjustmentPercent } from "../../../domain/quote/pricing";
 import { getFinancingPreview } from "../../../api/odoo";
 import LineRow from "./LineRow";
 
@@ -43,7 +43,7 @@ export default function LinesTable({ financingPercent = null }) {
         </thead>
         <tbody>
           {lines.map((l) => {
-            const finalUnit = calcFinalUnitPrice(l.basePrice, marginPercent, effectiveFinancingPercent, "cond1", { skipAdjustment: !!l?.previously_billed_line });
+            const finalUnit = resolveLineFinalUnitPrice(l, marginPercent, effectiveFinancingPercent, conditionMode);
             const total = calcLineTotal(l.qty, finalUnit);
             return <LineRow key={l.product_id} line={l} finalUnit={finalUnit} total={total} formatARS={formatARS} />;
           })}

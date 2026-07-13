@@ -9,7 +9,7 @@ import { listDoorsByQuote } from "../../api/doors.js";
 import { downloadMedicionPdf } from "../../api/pdf.js";
 import { findBillingCustomerByVat, getBillingOptions, getFinancingPreview } from "../../api/odoo.js";
 import { useAuthStore } from "../../domain/auth/store.js";
-import { formatARS, calcTotals, calcFinalUnitPrice, calcLineTotal } from "../../domain/quote/pricing.js";
+import { formatARS, calcTotals, calcLineTotal, resolveLineFinalUnitPrice } from "../../domain/quote/pricing.js";
 import { downloadPlegadoAttachment, formatPlegadoAttachmentMeta, getPlegadoAttachment, openPlegadoAttachment } from "../../utils/plegadoAttachment.js";
 import MeasurementReadOnlyView from "../../components/MeasurementReadOnlyView.jsx";
 import { ParantesDistributionButton } from "../../components/ParantesDistributionScheme.jsx";
@@ -756,7 +756,7 @@ function buildApprovalLineRows(lines, marginPercent, financingPercent = 0, condi
   return (Array.isArray(lines) ? lines : []).map((line, idx) => {
     const qty = Number(line?.qty || 0) || 0;
     const basePrice = Number(line?.basePrice ?? line?.base_price ?? line?.price ?? 0) || 0;
-    const finalUnit = calcFinalUnitPrice(basePrice, marginPercent, Number(financingPercent || 0) || 0, conditionMode, { skipAdjustment: !!line?.previously_billed_line });
+    const finalUnit = resolveLineFinalUnitPrice({ ...line, basePrice }, marginPercent, Number(financingPercent || 0) || 0, conditionMode);
     const total = calcLineTotal(qty, finalUnit);
     return {
       ...line,
