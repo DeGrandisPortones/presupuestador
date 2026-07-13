@@ -202,6 +202,12 @@ export async function adminDeleteQuote(id) {
   return true;
 }
 
+export async function adminResyncPortonMeasurements(identifier) {
+  const { data } = await http.post("/api/admin/resync/porton-measurements", { identifier });
+  if (!data?.ok) throw new Error(data?.error || "No se pudo resincronizar las medidas");
+  return data;
+}
+
 export async function adminGetHistory({ kind = "", q = "", fulfillment = "all", from_date = "", to_date = "" } = {}) {
   const qs = new URLSearchParams();
   if (kind) qs.set("kind", kind);
