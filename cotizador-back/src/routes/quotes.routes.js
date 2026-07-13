@@ -4,6 +4,7 @@ import { dbQuery } from "../db.js";
 import { ensureQuotesMeasurementColumns } from "../quotesSchema.js";
 import { getCommercialFinalTolerancePercent } from "../settingsDb.js";
 import { commitQuoteProductionWeek } from "../productionPlanning.js";
+import { triggerPreproductionForClientAcceptance } from "../measurementFinalization.js";
 
 const MEASUREMENT_PRODUCT_ID = Number(process.env.ODOO_MEASUREMENT_PRODUCT_ID || 2865);
 const PLACEHOLDER_PRODUCT_ID = Number(process.env.ODOO_PLACEHOLDER_PRODUCT_ID || 3575);
@@ -2369,7 +2370,19 @@ export function buildQuotesRouter(odoo) {
           returning *`,
         [qSync.id, Number(order.id), order.name, directTechnicalOnly]
       );
-      return { quote: upd.rows?.[0] || qSync, order, directFinal: true, directTechnicalOnly };
+      const syncedQuote = upd.rows?.[0] || qSync;
+      // Los pedidos directFinal (sin medicion) nunca pasan por la aceptacion del
+      // cliente, asi que preproduccion_valores no se carga solo. Los "tecnica_only"
+      // todavia tienen que pasar la revision tecnica interna (measurement_status
+      // 'pending'), asi que esos se dejan para que ese paso dispare la carga.
+      if (!directTechnicalOnly) {
+        try {
+          await triggerPreproductionForClientAcceptance(odoo, syncedQuote);
+        } catch (err) {
+          console.error("[quotes.routes] triggerPreproductionForClientAcceptance (directFinal) fallo:", err);
+        }
+      }
+      return { quote: syncedQuote, order, directFinal: true, directTechnicalOnly };
     }
 
     const { order, deposit_amount } = await syncQuoteToOdoo({ odoo, quote: qSync, approverUser });
