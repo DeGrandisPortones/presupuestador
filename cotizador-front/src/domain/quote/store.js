@@ -576,6 +576,7 @@ export const useQuoteStore = create((set, get) => ({
           basePrice: typeof next.price === "number" ? next.price : l.basePrice,
           price_pending: false,
           price_resolved: true,
+          price_error: false,
           price_pricelist_id: pricesResponse?.pricelist_id ?? l.price_pricelist_id ?? null,
           price_partner_id: pricesResponse?.partner_id ?? l.price_partner_id ?? null,
           code: next.code ?? l.code,
@@ -586,6 +587,18 @@ export const useQuoteStore = create((set, get) => ({
       dflexQuoteDebug("applyBasePrices", { received: arr, before: dflexLineSnapshot(s.lines), after: dflexLineSnapshot(nextLines), includeStack: true });
       return { lines: nextLines, pricesAppliedAt: Date.now() };
     });
+  },
+  // Se llama cuando el pedido de precio de Odoo fallo (sin internet, timeout, etc) despues
+  // de agotar los reintentos. Nunca dejamos la linea "resuelta" en $0 en silencio: queda
+  // marcada para que la UI la muestre en rojo y bloquee confirmar hasta reintentar.
+  markLinesPriceError(productIds = []) {
+    const ids = new Set((Array.isArray(productIds) ? productIds : []).map((id) => Number(id)).filter(Boolean));
+    if (!ids.size) return;
+    set((s) => ({
+      lines: s.lines.map((l) => (ids.has(Number(l.product_id)) && !l.previously_billed_line && !l.manual_price
+        ? { ...l, price_error: true, price_pending: true, price_resolved: false }
+        : l)),
+    }));
   },
   buildPayloadForBack() {
     const s = get();

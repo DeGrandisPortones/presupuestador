@@ -167,7 +167,13 @@ export default function LineRow({ line, finalUnit, total, formatARS }) {
       </td>
 
       <td className="right">
-        {canEditPrice ? (
+        {!canEditPrice && line.price_error ? (
+          <span style={{ color: "#b3261e", fontWeight: 700, fontSize: 13 }} title="No se pudo obtener el precio de Odoo para este producto. Reintentá o revisá tu conexión.">
+            ⚠ Precio no disponible
+          </span>
+        ) : !canEditPrice && line.price_pending ? (
+          <span className="muted" style={{ fontSize: 13 }}>Cargando precio...</span>
+        ) : canEditPrice ? (
           <input
             type="text"
             inputMode="decimal"

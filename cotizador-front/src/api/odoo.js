@@ -3,9 +3,15 @@ import { getOdooBootstrap } from "../domain/odoo/bootstrap.js";
 import { getFinancingPreviewFromSettings } from "./financingSettings.js";
 
 const PRICE_CACHE_VERSION = "v2_price_lists_fast";
-const PRICE_CACHE_TTL_MS = 12 * 60 * 60 * 1000;
+const PRICE_CACHE_TTL_MS = 60 * 60 * 1000;
+const PRICE_FETCH_RETRIES = 3;
+const PRICE_FETCH_RETRY_DELAY_MS = 800;
 const priceCachePromises = new Map();
 let lastEffectivePricelist = null;
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 function toPositiveInt(value) {
   const n = Number(value || 0);
@@ -102,7 +108,10 @@ function normalizePriceListsProductsResponse(data, pricelistId) {
   };
 }
 
-function readPriceCache(pricelistId) {
+// allowStale=true devuelve la cache aunque haya vencido el TTL - se usa solo como
+// ultimo recurso cuando todos los reintentos de red fallaron (offline es mejor con
+// precios de hace unas horas que sin precios en absoluto).
+function readPriceCache(pricelistId, { allowStale = false } = {}) {
   const id = toPositiveInt(pricelistId);
   if (!id || !storageAvailable()) return null;
 
@@ -111,8 +120,10 @@ function readPriceCache(pricelistId) {
     if (!raw) return null;
     const parsed = JSON.parse(raw);
     if (!parsed || parsed.version !== PRICE_CACHE_VERSION || toPositiveInt(parsed.pricelist_id) !== id) return null;
-    if (Date.now() - Number(parsed.saved_at || 0) > PRICE_CACHE_TTL_MS) return null;
+    const isStale = Date.now() - Number(parsed.saved_at || 0) > PRICE_CACHE_TTL_MS;
+    if (isStale && !allowStale) return null;
     parsed.index = parsed.index || buildPriceIndex(parsed.prices || []);
+    parsed.stale = isStale;
     return parsed;
   } catch {
     return null;
@@ -184,6 +195,26 @@ function mapCachedLinePrice(line, cached) {
   };
 }
 
+async function fetchPriceListProductsWithRetry(id) {
+  let lastError = null;
+  for (let attempt = 1; attempt <= PRICE_FETCH_RETRIES; attempt += 1) {
+    try {
+      const { data } = await http.get(`/api/price-lists/${encodeURIComponent(String(id))}/products`);
+      const payload = normalizePriceListsProductsResponse(data, id);
+      if (!payload?.ok) throw new Error(data?.error || "No se pudieron precargar los precios");
+      return writePriceCache(payload);
+    } catch (e) {
+      lastError = e;
+      if (attempt < PRICE_FETCH_RETRIES) await sleep(PRICE_FETCH_RETRY_DELAY_MS * attempt);
+    }
+  }
+  // Todos los reintentos fallaron: mejor una cache vieja (aunque haya vencido el TTL)
+  // que dejar al cotizador sin ningun precio - eso es lo que termina mostrando $0.
+  const stale = readPriceCache(id, { allowStale: true });
+  if (stale) return stale;
+  throw lastError || new Error("No se pudieron precargar los precios");
+}
+
 async function fetchPriceCacheForPricelist(pricelistId, { force = false } = {}) {
   const id = toPositiveInt(pricelistId);
   if (!id) return null;
@@ -197,16 +228,9 @@ async function fetchPriceCacheForPricelist(pricelistId, { force = false } = {}) 
 
   // Mismo criterio que el actualizador rapido de listas: un solo GET para toda la lista.
   // Evita calcular producto por producto contra Odoo desde el cotizador.
-  const promise = http
-    .get(`/api/price-lists/${encodeURIComponent(String(id))}/products`)
-    .then(({ data }) => {
-      const payload = normalizePriceListsProductsResponse(data, id);
-      if (!payload?.ok) throw new Error(data?.error || "No se pudieron precargar los precios");
-      return writePriceCache(payload);
-    })
-    .finally(() => {
-      priceCachePromises.delete(id);
-    });
+  const promise = fetchPriceListProductsWithRetry(id).finally(() => {
+    priceCachePromises.delete(id);
+  });
 
   priceCachePromises.set(id, promise);
   return promise;
@@ -216,6 +240,18 @@ export async function preloadEffectivePriceCache({ force = false } = {}) {
   const effective = lastEffectivePricelist || (await getEffectivePricelist());
   if (!effective?.id) return null;
   return fetchPriceCacheForPricelist(effective.id, { force });
+}
+
+// Version "nunca tira una excepcion sin manejar" de preloadEffectivePriceCache, pensada
+// para bloquear la UI del cotizador hasta tener precios (o confirmar que no se pudo).
+export async function ensurePricesReadyForPricelist(pricelistId, { force = false } = {}) {
+  try {
+    const cache = await fetchPriceCacheForPricelist(pricelistId, { force });
+    if (!cache) return { ok: false, error: "No se pudo resolver la lista de precios." };
+    return { ok: true, stale: !!cache.stale, pricelist: cache.pricelist || null };
+  } catch (e) {
+    return { ok: false, error: e?.message || "No se pudieron cargar los precios de Odoo." };
+  }
 }
 
 export async function getPricelists() {
@@ -317,9 +353,18 @@ export async function getPrices({ pricelist_id, partner_id = null, lines, force 
     lines: requestedLines,
   };
 
-  const { data } = await http.post("/api/odoo/prices", payload);
-  if (!data?.ok) throw new Error(data?.error || "No se pudieron calcular los precios");
-  return data;
+  let lastError = null;
+  for (let attempt = 1; attempt <= PRICE_FETCH_RETRIES; attempt += 1) {
+    try {
+      const { data } = await http.post("/api/odoo/prices", payload);
+      if (!data?.ok) throw new Error(data?.error || "No se pudieron calcular los precios");
+      return data;
+    } catch (e) {
+      lastError = e;
+      if (attempt < PRICE_FETCH_RETRIES) await sleep(PRICE_FETCH_RETRY_DELAY_MS * attempt);
+    }
+  }
+  throw lastError || new Error("No se pudieron calcular los precios");
 }
 
 export async function getBillingOptions() {
