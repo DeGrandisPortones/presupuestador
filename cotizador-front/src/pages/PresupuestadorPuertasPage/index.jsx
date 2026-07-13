@@ -386,7 +386,10 @@ export default function PresupuestadorPuertasPage() {
           .filter((line) => Number(line.product_id || 0) > 0),
       };
       if (!payload.lines.length) return;
-      const data = await getPrices(payload);
+      // Presupuesto nuevo (sin guardar todavia, sin datos de cliente): siempre traemos
+      // el precio en vivo de Odoo, sin usar la cache local de 12hs, para no arrastrar
+      // precios viejos mientras el usuario todavia no puede usar "Actualizar presupuesto".
+      const data = await getPrices({ ...payload, force: !isPersistedQuote });
       applyBasePrices(data);
     }
     run().catch(console.error);

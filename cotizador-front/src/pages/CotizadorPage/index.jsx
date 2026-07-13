@@ -1042,8 +1042,12 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
           })),
       };
       if (!payload.lines.length) return;
-      dflexCotizadorDebug("getPrices:auto", { payload, linesKey, lines: summarizeLinesForDebug(lines), includeStack: true });
-      const data = await getPrices(payload);
+      // Presupuesto nuevo (sin guardar todavia, sin datos de cliente): siempre traemos
+      // el precio en vivo de Odoo, sin usar la cache local de 12hs, para no arrastrar
+      // precios viejos mientras el usuario todavia no puede usar "Actualizar presupuesto".
+      const forcedPayload = { ...payload, force: !isPersistedQuote };
+      dflexCotizadorDebug("getPrices:auto", { payload: forcedPayload, linesKey, lines: summarizeLinesForDebug(lines), includeStack: true });
+      const data = await getPrices(forcedPayload);
       dflexCotizadorDebug("getPrices:auto:response", { data, includeStack: false });
       applyBasePrices(data);
     }
