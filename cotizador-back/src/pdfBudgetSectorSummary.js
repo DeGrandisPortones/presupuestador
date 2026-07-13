@@ -26,6 +26,7 @@ export function computeBudgetSectorSummary({ sections, products, lines }) {
   const buckets = new Map(SECTOR_KEYS.map((key) => [key, { key, label: SECTOR_LABELS[key], items: [], total: 0 }]));
   const unassignedItems = [];
   let unassignedTotal = 0;
+  let hasUnassignedLines = false;
 
   for (const line of Array.isArray(lines) ? lines : []) {
     const productId = Number(line?.productId || 0);
@@ -37,19 +38,24 @@ export function computeBudgetSectorSummary({ sections, products, lines }) {
     if (!sectionIds.length) {
       unassignedItems.push({ sectionName: "Sin sección", productName });
       unassignedTotal += lineTotal;
+      hasUnassignedLines = true;
       continue;
     }
     for (const sectionId of sectionIds) {
       const section = sectionsById.get(Number(sectionId));
       const sector = normalizeSector(section?.budget_sector);
+      // budget_show_detail controla solo si el item se lista como bullet: el
+      // total del sector (o de sin-asignar) siempre suma, tenga o no la tilde.
+      const showDetail = section?.budget_show_detail !== false;
       const item = { sectionName: section?.name || "Sección", productName };
       if (sector) {
         const bucket = buckets.get(sector);
-        bucket.items.push(item);
+        if (showDetail) bucket.items.push(item);
         bucket.total += lineTotal;
       } else {
-        unassignedItems.push(item);
+        if (showDetail) unassignedItems.push(item);
         unassignedTotal += lineTotal;
+        hasUnassignedLines = true;
       }
     }
   }
@@ -59,7 +65,10 @@ export function computeBudgetSectorSummary({ sections, products, lines }) {
   return {
     sectors,
     grandTotal,
-    unassigned: unassignedItems.length ? { items: unassignedItems, total: unassignedTotal } : null,
+    // Se muestra el bloque de "sin asignar" si hay plata que sumar ahi, aunque
+    // budget_show_detail lo deje sin ningun item listado (para que el subtotal
+    // no desaparezca en silencio de la hoja).
+    unassigned: hasUnassignedLines ? { items: unassignedItems, total: unassignedTotal } : null,
   };
 }
 

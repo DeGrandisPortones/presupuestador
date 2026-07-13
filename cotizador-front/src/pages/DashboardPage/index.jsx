@@ -203,6 +203,7 @@ export default function DashboardPage() {
   const [newSectionName, setNewSectionName] = useState("");
   const [newSectionUseSurface, setNewSectionUseSurface] = useState(false);
   const [newSectionBudgetSector, setNewSectionBudgetSector] = useState("");
+  const [newSectionShowDetail, setNewSectionShowDetail] = useState(true);
   const [productQuery, setProductQuery] = useState("");
   const [quoteQuery, setQuoteQuery] = useState("");
   const [sectionFilter, setSectionFilter] = useState("all");
@@ -370,10 +371,12 @@ export default function DashboardPage() {
       position: sections.length + 1,
       use_surface_qty: newSectionUseSurface,
       budget_sector: newSectionBudgetSector || null,
+      budget_show_detail: newSectionShowDetail,
     });
     setNewSectionName("");
     setNewSectionUseSurface(false);
     setNewSectionBudgetSector("");
+    setNewSectionShowDetail(true);
     invalidateCatalog();
     alert("Sección creada.");
   }
@@ -514,6 +517,8 @@ export default function DashboardPage() {
               setNewSectionUseSurface={setNewSectionUseSurface}
               newSectionBudgetSector={newSectionBudgetSector}
               setNewSectionBudgetSector={setNewSectionBudgetSector}
+              newSectionShowDetail={newSectionShowDetail}
+              setNewSectionShowDetail={setNewSectionShowDetail}
               onCreateSection={onCreateSection}
               invalidateCatalog={invalidateCatalog}
             />
@@ -596,7 +601,7 @@ export default function DashboardPage() {
   );
 }
 
-function TagsTab({ catalogKind, sections, tags, newSectionName, setNewSectionName, newSectionUseSurface, setNewSectionUseSurface, newSectionBudgetSector, setNewSectionBudgetSector, onCreateSection, invalidateCatalog }) {
+function TagsTab({ catalogKind, sections, tags, newSectionName, setNewSectionName, newSectionUseSurface, setNewSectionUseSurface, newSectionBudgetSector, setNewSectionBudgetSector, newSectionShowDetail, setNewSectionShowDetail, onCreateSection, invalidateCatalog }) {
   const sortedTags = useMemo(
     () => [...tags].sort((a, b) => String(a?.name || "").localeCompare(String(b?.name || ""), "es", { sensitivity: "base" })),
     [tags],
@@ -624,6 +629,10 @@ function TagsTab({ catalogKind, sections, tags, newSectionName, setNewSectionNam
             <option value="automatizacion">Sector Automatización</option>
             <option value="servicios">Sector Servicios</option>
           </select>
+          <label style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 180 }}>
+            <input type="checkbox" checked={newSectionShowDetail} onChange={(event) => setNewSectionShowDetail(event.target.checked)} />
+            <span className="muted">Mostrar detalle en el presupuesto</span>
+          </label>
           <Button variant="primary" disabled={!String(newSectionName || "").trim()} onClick={onCreateSection}>Crear</Button>
         </div>
         <div className="spacer" />
@@ -742,6 +751,18 @@ function EditableSectionRow({ catalogKind, section, invalidateCatalog }) {
           <option value="servicios">Sector Servicios</option>
         </select>
       </div>
+      <div className="spacer" />
+      <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
+        <input
+          type="checkbox"
+          checked={section.budget_show_detail !== false}
+          onChange={async (event) => {
+            await adminUpdateSection(catalogKind, section.id, { budget_show_detail: event.target.checked });
+            invalidateCatalog();
+          }}
+        />
+        <span className="muted">Mostrar detalle en el presupuesto (si está destildado, igual suma al total del sector, pero no lista el producto).</span>
+      </label>
     </div>
   );
 }

@@ -142,8 +142,8 @@ export async function adminSaveProductionPlanning(payload) {
   return data.planning || { year: Number(payload?.year || 0), weeks: [] };
 }
 
-export async function adminCreateSection(kind = "porton", { name, position = 100, use_surface_qty = false, budget_sector = null }) {
-  const { data } = await http.post(`/api/admin/sections?kind=${encodeURIComponent(kind)}`, { name, position, use_surface_qty, budget_sector });
+export async function adminCreateSection(kind = "porton", { name, position = 100, use_surface_qty = false, budget_sector = null, budget_show_detail = true }) {
+  const { data } = await http.post(`/api/admin/sections?kind=${encodeURIComponent(kind)}`, { name, position, use_surface_qty, budget_sector, budget_show_detail });
   if (!data?.ok) throw new Error(data?.error || "No se pudo guardar la sección");
   return data.section;
 }
