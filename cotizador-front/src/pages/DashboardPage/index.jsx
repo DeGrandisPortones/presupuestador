@@ -202,6 +202,7 @@ export default function DashboardPage() {
   const [tab, setTab] = useState("tags");
   const [newSectionName, setNewSectionName] = useState("");
   const [newSectionUseSurface, setNewSectionUseSurface] = useState(false);
+  const [newSectionBudgetSector, setNewSectionBudgetSector] = useState("");
   const [productQuery, setProductQuery] = useState("");
   const [quoteQuery, setQuoteQuery] = useState("");
   const [sectionFilter, setSectionFilter] = useState("all");
@@ -368,9 +369,11 @@ export default function DashboardPage() {
       name,
       position: sections.length + 1,
       use_surface_qty: newSectionUseSurface,
+      budget_sector: newSectionBudgetSector || null,
     });
     setNewSectionName("");
     setNewSectionUseSurface(false);
+    setNewSectionBudgetSector("");
     invalidateCatalog();
     alert("Sección creada.");
   }
@@ -509,6 +512,8 @@ export default function DashboardPage() {
               setNewSectionName={setNewSectionName}
               newSectionUseSurface={newSectionUseSurface}
               setNewSectionUseSurface={setNewSectionUseSurface}
+              newSectionBudgetSector={newSectionBudgetSector}
+              setNewSectionBudgetSector={setNewSectionBudgetSector}
               onCreateSection={onCreateSection}
               invalidateCatalog={invalidateCatalog}
             />
@@ -591,7 +596,7 @@ export default function DashboardPage() {
   );
 }
 
-function TagsTab({ catalogKind, sections, tags, newSectionName, setNewSectionName, newSectionUseSurface, setNewSectionUseSurface, onCreateSection, invalidateCatalog }) {
+function TagsTab({ catalogKind, sections, tags, newSectionName, setNewSectionName, newSectionUseSurface, setNewSectionUseSurface, newSectionBudgetSector, setNewSectionBudgetSector, onCreateSection, invalidateCatalog }) {
   const sortedTags = useMemo(
     () => [...tags].sort((a, b) => String(a?.name || "").localeCompare(String(b?.name || ""), "es", { sensitivity: "base" })),
     [tags],
@@ -609,6 +614,16 @@ function TagsTab({ catalogKind, sections, tags, newSectionName, setNewSectionNam
             <input type="checkbox" checked={newSectionUseSurface} onChange={(event) => setNewSectionUseSurface(event.target.checked)} />
             <span className="muted">Cantidad = superficie</span>
           </label>
+          <select
+            value={newSectionBudgetSector}
+            onChange={(event) => setNewSectionBudgetSector(event.target.value)}
+            style={{ padding: 8, borderRadius: 10, border: "1px solid #ddd", minWidth: 200 }}
+          >
+            <option value="">Sector del presupuesto (sin asignar)</option>
+            <option value="producto">Sector Producto</option>
+            <option value="automatizacion">Sector Automatización</option>
+            <option value="servicios">Sector Servicios</option>
+          </select>
           <Button variant="primary" disabled={!String(newSectionName || "").trim()} onClick={onCreateSection}>Crear</Button>
         </div>
         <div className="spacer" />
@@ -710,6 +725,23 @@ function EditableSectionRow({ catalogKind, section, invalidateCatalog }) {
         />
         <span className="muted">Usar superficie como cantidad automática para los productos de esta sección.</span>
       </label>
+      <div className="spacer" />
+      <div>
+        <div className="muted" style={{ marginBottom: 6 }}>Sector del presupuesto (hoja resumen del PDF)</div>
+        <select
+          value={section.budget_sector || ""}
+          onChange={async (event) => {
+            await adminUpdateSection(catalogKind, section.id, { budget_sector: event.target.value || null });
+            invalidateCatalog();
+          }}
+          style={{ padding: 8, borderRadius: 10, border: "1px solid #ddd", minWidth: 220 }}
+        >
+          <option value="">(sin asignar)</option>
+          <option value="producto">Sector Producto</option>
+          <option value="automatizacion">Sector Automatización</option>
+          <option value="servicios">Sector Servicios</option>
+        </select>
+      </div>
     </div>
   );
 }
