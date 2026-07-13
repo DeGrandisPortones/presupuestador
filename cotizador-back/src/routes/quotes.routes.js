@@ -1935,6 +1935,7 @@ export function buildQuotesRouter(odoo) {
                       q.measurement_status, q.requires_measurement, q.measurement_review_at,
                       q.measurement_share_enabled_at, q.measurement_client_accepted_at,
                       q.measurement_share_token,
+                      q.measurement_link_sent_confirmed_at, q.measurement_link_sent_confirmed_by_user_id,
                       q.payload->'measurement_client_acceptance' as measurement_client_acceptance,
                       q.measurement_commercial_review_required, q.measurement_commercial_review_status,
                       q.fulfillment_mode, q.final_status, q.final_technical_decision, q.final_logistics_decision,
@@ -1965,6 +1966,30 @@ export function buildQuotesRouter(odoo) {
       }
       const r = await dbQuery(sql, params);
       res.json({ ok: true, quotes: r.rows || [] });
+    } catch (e) { next(e); }
+  });
+
+  // Control manual (no automatico) para "Estado de Portones": el usuario confirma a mano
+  // que ya le mando el link de aceptacion al cliente. Mismos roles que pueden ver esa pantalla.
+  router.post("/:id/measurement-link-sent-confirm", async (req, res, next) => {
+    try {
+      const u = req.user;
+      if (!u.is_rev_tecnica && !u.is_superuser && !u.is_enc_comercial && !u.is_logistica) {
+        return res.status(403).json({ ok: false, error: "No autorizado" });
+      }
+      const id = String(req.params.id || "").trim();
+      if (!isUuid(id)) return res.status(400).json({ ok: false, error: "id invalido" });
+      const r = await dbQuery(
+        `update public.presupuestador_quotes
+            set measurement_link_sent_confirmed_at = now(),
+                measurement_link_sent_confirmed_by_user_id = $2
+          where id = $1
+          returning id, measurement_link_sent_confirmed_at, measurement_link_sent_confirmed_by_user_id`,
+        [id, Number(u.user_id)],
+      );
+      const row = r.rows?.[0];
+      if (!row) return res.status(404).json({ ok: false, error: "Presupuesto no encontrado" });
+      res.json({ ok: true, quote: row });
     } catch (e) { next(e); }
   });
 
