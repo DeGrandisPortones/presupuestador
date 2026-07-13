@@ -14,7 +14,7 @@ import { useAuthStore } from "../../domain/auth/store.js";
 import { useQuoteStore } from "../../domain/quote/store.js";
 import { IVA_RATE_DEFAULT } from "../../domain/quote/defaults.js";
 import { calcTotals, resolveQuoteAdjustmentPercent, resolveQuoteIvaRate } from "../../domain/quote/pricing.js";
-import { getPrices, getEffectivePricelists, getFinancingPreview } from "../../api/odoo.js";
+import { getPrices, getEffectivePricelists, getFinancingPreview, ensurePricesReadyForPricelist } from "../../api/odoo.js";
 import { createQuote, getQuote, updateQuote, confirmQuote, listQuotes } from "../../api/quotes.js";
 import { downloadPresupuestoPdf, downloadProformaPdf } from "../../api/pdf.js";
 import { validateArgentinaPhone, validateEmailAddress, validateGoogleMapsUrl } from "../../utils/contactValidation.js";
@@ -268,6 +268,7 @@ export default function PresupuestadorPuertasPage() {
     buildPayloadForBack,
     setQuoteMeta,
     applyBasePrices,
+    markLinesPriceError,
   } = useQuoteStore();
 
   const [confirmChoiceOpen, setConfirmChoiceOpen] = useState(false);
@@ -301,12 +302,46 @@ export default function PresupuestadorPuertasPage() {
     [user, user?.odoo_pricelist_id, pricelistsQ.data, quoteQ.data?.pricelist_id],
   );
   const expectedPricelistId = Number(expectedPricelist?.id || 0) || null;
+
+  // Precarga bloqueante de TODOS los precios de la lista del usuario antes de dejar
+  // cotizar. Sin esto, agregar un producto antes de que termine la precarga (o justo
+  // cuando se corta internet) dejaba la linea en $0 sin ningun aviso.
+  const [pricesReady, setPricesReady] = useState(false);
+  const [pricesLoading, setPricesLoading] = useState(false);
+  const [pricesError, setPricesError] = useState("");
+  const pricesReadyForPricelistRef = useRef(null);
+  useEffect(() => {
+    if (!isSamePricelistId(pricelistId, expectedPricelistId) || !pricelistId) return;
+    if (pricesReadyForPricelistRef.current === pricelistId) return;
+    let cancelled = false;
+    setPricesLoading(true);
+    setPricesError("");
+    ensurePricesReadyForPricelist(pricelistId).then((result) => {
+      if (cancelled) return;
+      setPricesLoading(false);
+      if (result.ok) {
+        pricesReadyForPricelistRef.current = pricelistId;
+        setPricesReady(true);
+      } else {
+        setPricesReady(false);
+        setPricesError(result.error || "No se pudieron cargar los precios de Odoo.");
+      }
+    });
+    return () => { cancelled = true; };
+  }, [pricelistId, expectedPricelistId]);
+  function retryLoadPrices() {
+    pricesReadyForPricelistRef.current = null;
+    setPricesError("");
+    setPricesReady(false);
+  }
+
   const pricingContextReady = !!user
     && !quoteQ.isLoading
     && !pricelistsQ.isLoading
     && !!expectedPricelistId
     && isSamePricelistId(pricelistId, expectedPricelistId)
-    && (!user?.is_distribuidor || !user?.odoo_partner_id || !!partnerId);
+    && (!user?.is_distribuidor || !user?.odoo_partner_id || !!partnerId)
+    && pricesReady;
   const pricingContextMessage = !user
     ? "Cargando usuario para resolver lista de precios..."
     : quoteQ.isLoading
@@ -319,6 +354,10 @@ export default function PresupuestadorPuertasPage() {
             ? "Aplicando lista de precios correcta antes de cotizar..."
             : (user?.is_distribuidor && user?.odoo_partner_id && !partnerId)
               ? "Aplicando cliente Odoo del distribuidor antes de cotizar..."
+              : pricesError
+                ? pricesError
+                : pricesLoading || !pricesReady
+                  ? "Cargando precios de Odoo..."
               : "";
   useEffect(() => {
     if (!user || !expectedPricelistId || !expectedPricelist) return;
@@ -362,6 +401,7 @@ export default function PresupuestadorPuertasPage() {
   const totals = useMemo(() => calcTotals(lines, marginPercent, ivaRate, quoteAdjustmentPercent, conditionMode), [lines, marginPercent, ivaRate, quoteAdjustmentPercent, conditionMode]);
   const linesKey = useMemo(() => lines.map((l) => `${l.product_id}:${resolveLinePricingProductId(l)}:${l.odoo_template_id || ""}:${l.qty}`).join("|"), [lines]);
 
+  const linesBeingPricedRef = useRef([]);
   useEffect(() => {
     async function run() {
       if (!pricingContextReady || !pricelistId || !lines.length) return;
@@ -370,6 +410,7 @@ export default function PresupuestadorPuertasPage() {
         ? lines.filter(lineNeedsPriceRefresh)
         : lines.filter((line) => !line.previously_billed_line);
       if (!linesToPrice.length) return;
+      linesBeingPricedRef.current = linesToPrice.map((l) => Number(l.product_id)).filter(Boolean);
       const payload = {
         pricelist_id: pricelistId,
         partner_id: partnerId,
@@ -391,9 +432,18 @@ export default function PresupuestadorPuertasPage() {
       // precios viejos mientras el usuario todavia no puede usar "Actualizar presupuesto".
       const data = await getPrices({ ...payload, force: !isPersistedQuote });
       applyBasePrices(data);
+      linesBeingPricedRef.current = [];
     }
-    run().catch(console.error);
-  }, [pricingContextReady, pricelistId, partnerId, linesKey, lines.length, applyBasePrices, quoteQ.data?.id, quoteId, idParam]);
+    run().catch((e) => {
+      console.error(e);
+      // Nunca dejamos la linea "resuelta" en $0 en silencio: la marcamos para que se
+      // vea en rojo en la tabla y quede bloqueado confirmar hasta que se resuelva.
+      const failedIds = linesBeingPricedRef.current;
+      linesBeingPricedRef.current = [];
+      if (failedIds.length) markLinesPriceError(failedIds);
+      toast.error(`No se pudo obtener el precio de Odoo${failedIds.length > 1 ? ` para ${failedIds.length} productos` : ""}. Revisá tu conexión.`);
+    });
+  }, [pricingContextReady, pricelistId, partnerId, linesKey, lines.length, applyBasePrices, markLinesPriceError, quoteQ.data?.id, quoteId, idParam]);
 
   function applyPortonData(portonId) {
     const selected = portonQuotes.find((q) => String(q.id) === String(portonId));
@@ -557,6 +607,8 @@ export default function PresupuestadorPuertasPage() {
   }
   function validatePricingContextReady() {
     if (!pricingContextReady) throw new Error(pricingContextMessage || "Esperá a que se aplique la lista de precios correcta antes de continuar.");
+    const unresolved = lines.filter((l) => !l.previously_billed_line && !l.manual_price && (l.price_error || l.price_pending));
+    if (unresolved.length) throw new Error("Hay productos sin precio confirmado de Odoo. Reintentá antes de confirmar.");
   }
   function validateConfirm(payload) {
     validatePricingContextReady();
@@ -787,9 +839,14 @@ export default function PresupuestadorPuertasPage() {
       {quoteQ.isLoading ? <><div className="spacer" /><div className="card"><div className="muted">Cargando puerta...</div></div></> : null}
       {quoteQ.isError ? <><div className="spacer" /><div className="card"><div style={{ color: "#d93025" }}>{quoteQ.error.message}</div></div></> : null}
       {!pricingContextReady ? (
-        <><div className="spacer" /><div className="card" style={{ background: "#fff8e1", border: "1px solid #f2d08a" }}>
-          <div style={{ fontWeight: 900, marginBottom: 6 }}>Preparando lista de precios</div>
+        <><div className="spacer" /><div className="card" style={{ background: pricesError ? "#fdecea" : "#fff8e1", border: pricesError ? "1px solid #e5a8a1" : "1px solid #f2d08a" }}>
+          <div style={{ fontWeight: 900, marginBottom: 6 }}>{pricesError ? "No se pudieron cargar los precios" : "Preparando lista de precios"}</div>
           <div className="muted">{pricingContextMessage || "Esperá unos segundos antes de seleccionar productos o confirmar. Esto evita presupuestar con una lista incorrecta."}</div>
+          {pricesError ? (
+            <div style={{ marginTop: 8 }}>
+              <Button variant="secondary" onClick={retryLoadPrices}>Reintentar</Button>
+            </div>
+          ) : null}
         </div></>
       ) : null}
 
