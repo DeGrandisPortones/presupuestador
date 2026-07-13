@@ -792,7 +792,13 @@ export function buildAdminRouter(odoo) {
         return res.status(404).json({ ok: false, error: `No se encontró un presupuesto de portón para "${identifier}"` });
       }
 
-      const result = await resyncPortonMeasurements({ odoo, originalQuoteId: originalQuote.id });
+      const force = req.body?.force === true;
+      const result = await resyncPortonMeasurements({
+        odoo,
+        originalQuoteId: originalQuote.id,
+        force,
+        forcedBy: force ? { user_id: req.user?.user_id ?? null, username: req.user?.username ?? null } : null,
+      });
       if (!result.ok) return res.status(409).json(result);
       res.json(result);
     } catch (e) { next(e); }

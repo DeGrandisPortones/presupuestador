@@ -202,9 +202,11 @@ export async function adminDeleteQuote(id) {
   return true;
 }
 
-export async function adminResyncPortonMeasurements(identifier) {
-  const { data } = await http.post("/api/admin/resync/porton-measurements", { identifier });
-  if (!data?.ok) throw new Error(data?.error || "No se pudo resincronizar las medidas");
+export async function adminResyncPortonMeasurements(identifier, { force = false } = {}) {
+  const { data } = await http.post("/api/admin/resync/porton-measurements", { identifier, force });
+  // Si esta bloqueado porque el cliente ya acepto, devolvemos la respuesta tal cual (no es un error
+  // de verdad) para que la UI pueda ofrecer confirmar el forzado explicitamente.
+  if (!data?.ok && !data?.blocked_reason) throw new Error(data?.error || "No se pudo resincronizar las medidas");
   return data;
 }
 
