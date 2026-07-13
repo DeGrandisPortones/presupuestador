@@ -708,7 +708,7 @@ function drawBudgetSectorSummaryPage(doc, { title, payload, margin, innerW, date
   }
 }
 
-async function renderPdf({ title, payload, useBasePrice, odoo, includeTerms = false, hideIvaBreakdown = false, displayNetPrices = false, taxRate = IVA_RATE, hideAllPrices = false }) {
+async function renderPdf({ title, payload, useBasePrice, odoo, includeTerms = false, hideIvaBreakdown = false, displayNetPrices = false, taxRate = IVA_RATE, hideAllPrices = false, hideDetailPrices = false }) {
   const doc = new PDFDocument({ size: "A4", margin: 0, bufferPages: true });
   const buffers = [];
   doc.on("data", buffers.push.bind(buffers));
@@ -751,8 +751,12 @@ async function renderPdf({ title, payload, useBasePrice, odoo, includeTerms = fa
   y = drawInfoBand(doc, { y, margin, innerW, items: technicalInfoLines, fillColor: "#FFFFFF" });
   if (y !== beforeInfoY) y += 6;
 
-  const colDesc = hideAllPrices ? innerW * 0.78 : innerW * 0.54;
-  const colQty = hideAllPrices ? innerW * 0.22 : innerW * 0.10;
+  // hideDetailPrices: variante pedida para "PRESUPUESTO" - saca el precio SOLO de la
+  // tabla de detalle linea por linea (misma grilla que hideAllPrices), pero a diferencia
+  // de hideAllPrices deja el resumen por sector y el total final intactos.
+  const hideRowPrices = hideAllPrices || hideDetailPrices;
+  const colDesc = hideRowPrices ? innerW * 0.78 : innerW * 0.54;
+  const colQty = hideRowPrices ? innerW * 0.22 : innerW * 0.10;
   const colUnit = innerW * 0.18;
   const colTot = innerW * 0.18;
   const SAFE_BOTTOM_GAP = 56;
@@ -763,7 +767,7 @@ async function renderPdf({ title, payload, useBasePrice, odoo, includeTerms = fa
   function drawTableHeader() {
     doc.save().fillColor("#E5E7EB").rect(margin, tableY, innerW, 28).fill().restore();
     doc.save().strokeColor("#D1D5DB").rect(margin, tableY, innerW, 28).stroke().restore();
-    const headers = hideAllPrices
+    const headers = hideRowPrices
       ? [
           [margin + 8, colDesc - 16, "DESCRIPCIÓN", "left"],
           [margin + colDesc + 8, colQty - 16, "CANT.", "right"],
@@ -791,7 +795,7 @@ async function renderPdf({ title, payload, useBasePrice, odoo, includeTerms = fa
     ensureSpace(rowH);
     doc.save().strokeColor("#D1D5DB").rect(margin, tableY, innerW, rowH).stroke().restore();
     const xQty = margin + colDesc;
-    if (hideAllPrices) {
+    if (hideRowPrices) {
       doc.save().strokeColor("#D1D5DB").moveTo(xQty, tableY).lineTo(xQty, tableY + rowH).stroke().restore();
       doc.font("Helvetica").fontSize(9.5).fillColor("#111827")
         .text(line.name, margin + 8, tableY + 8, { width: colDesc - 16 })
@@ -924,7 +928,7 @@ export function buildPdfRouter(odoo = null) {
     try {
       const rawPayload = req.body || {};
       const payload = { ...rawPayload, seller_name: resolveLoggedUserSellerName(req.user, rawPayload) };
-      const pdf = await renderPdf({ title: "PRESUPUESTO", payload, useBasePrice: false, odoo, includeTerms: true, hideIvaBreakdown: true, taxRate: isCondition2(payload) ? 0.105 : IVA_RATE });
+      const pdf = await renderPdf({ title: "PRESUPUESTO", payload, useBasePrice: false, odoo, includeTerms: true, hideIvaBreakdown: true, taxRate: isCondition2(payload) ? 0.105 : IVA_RATE, hideDetailPrices: true });
       res.setHeader("Content-Type", "application/pdf");
       res.setHeader("Content-Disposition", `attachment; filename="${buildDownloadFilename(payload, "presupuesto")}"`);
       res.send(pdf);
