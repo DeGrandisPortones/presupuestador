@@ -1,7 +1,8 @@
 import { useState, useMemo, useRef, useEffect } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
-import { listPortonesEstado } from "../../api/quotes.js";
+import toast from "react-hot-toast";
+import { listPortonesEstado, confirmMeasurementLinkSent } from "../../api/quotes.js";
 import { useAuthStore } from "../../domain/auth/store.js";
 import Button from "../../ui/Button.jsx";
 
@@ -296,6 +297,7 @@ function PhoneModal({ row, onClose }) {
 
 export default function PortonesEstadoPage() {
   const navigate = useNavigate();
+  const qc = useQueryClient();
   const user = useAuthStore((s) => s.user);
   const allowed = !!(user?.is_rev_tecnica || user?.is_superuser || user?.is_enc_comercial || user?.is_logistica);
 
@@ -310,6 +312,18 @@ export default function PortonesEstadoPage() {
     staleTime: 30000,
     refetchInterval: 60000,
   });
+
+  const confirmLinkSentM = useMutation({
+    mutationFn: (id) => confirmMeasurementLinkSent(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["portones_estado"] }),
+    onError: (e) => toast.error(e?.message || "No se pudo confirmar el envío del link"),
+  });
+
+  function handleConfirmLinkSent(row) {
+    const ok = window.confirm("¿Ya enviaste el link a cliente?");
+    if (!ok) return;
+    confirmLinkSentM.mutate(row.id);
+  }
 
   const rows = useMemo(() => {
     if (!q.data) return [];
@@ -418,13 +432,14 @@ export default function PortonesEstadoPage() {
                 <th style={thStyle}>Vendedor / Distribuidor</th>
                 <th style={thStyle}>Estado</th>
                 <th style={thStyle}>Aceptación del cliente</th>
+                <th style={{ ...thStyle, textAlign: "center" }}>Link enviado</th>
                 <th style={thStyle}>Actualizado</th>
               </tr>
             </thead>
             <tbody>
               {filtered.length === 0 && (
                 <tr>
-                  <td colSpan={6} style={{ textAlign: "center", padding: "24px 16px", color: "#888" }}>
+                  <td colSpan={7} style={{ textAlign: "center", padding: "24px 16px", color: "#888" }}>
                     No hay portones que coincidan con el filtro.
                   </td>
                 </tr>
@@ -493,6 +508,32 @@ export default function PortonesEstadoPage() {
                         </div>
                       ) : r.measurement_share_enabled_at ? (
                         <div style={{ fontSize: 12, color: "#999", fontStyle: "italic" }}>Pendiente de aceptación</div>
+                      ) : (
+                        <span style={{ color: "#ccc" }}>—</span>
+                      )}
+                    </td>
+                    <td style={{ ...tdStyle, textAlign: "center" }}>
+                      {acceptanceUrl ? (
+                        r.measurement_link_sent_confirmed_at ? (
+                          <span
+                            title={`Confirmado ${formatDateTime(r.measurement_link_sent_confirmed_at)}`}
+                            style={{ fontSize: 18, color: "#2e7d32", cursor: "default" }}
+                          >
+                            ✓
+                          </span>
+                        ) : (
+                          <button
+                            onClick={() => handleConfirmLinkSent(r)}
+                            disabled={confirmLinkSentM.isPending && confirmLinkSentM.variables === r.id}
+                            title="Confirmar que ya se envió el link al cliente"
+                            style={{
+                              padding: "2px 9px", borderRadius: 6, border: "1px solid #ef9a9a",
+                              background: "#ffebee", color: "#b71c1c", cursor: "pointer", fontSize: 14, lineHeight: 1.4,
+                            }}
+                          >
+                            ✗
+                          </button>
+                        )
                       ) : (
                         <span style={{ color: "#ccc" }}>—</span>
                       )}

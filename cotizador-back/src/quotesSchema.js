@@ -103,6 +103,10 @@ export async function ensureQuotesMeasurementColumns() {
   await dbQuery(`alter table public.presupuestador_quotes add column if not exists measurement_share_token text null;`);
   await dbQuery(`alter table public.presupuestador_quotes add column if not exists measurement_share_enabled_at timestamptz null;`);
   await dbQuery(`alter table public.presupuestador_quotes add column if not exists measurement_client_accepted_at timestamptz null;`);
+  // Control manual: el vendedor/tecnica confirma a mano que el link de aceptacion
+  // realmente se le mando al cliente (no se infiere automaticamente de nada).
+  await dbQuery(`alter table public.presupuestador_quotes add column if not exists measurement_link_sent_confirmed_at timestamptz null;`);
+  await dbQuery(`alter table public.presupuestador_quotes add column if not exists measurement_link_sent_confirmed_by_user_id int null;`);
   await dbQuery(`alter table public.presupuestador_quotes add column if not exists measurement_commercial_review_required boolean not null default false;`);
   await dbQuery(`alter table public.presupuestador_quotes add column if not exists measurement_commercial_review_status text null;`);
   await dbQuery(`alter table public.presupuestador_quotes add column if not exists measurement_commercial_review_by_user_id int null;`);
