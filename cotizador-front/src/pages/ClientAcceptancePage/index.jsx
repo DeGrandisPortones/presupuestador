@@ -630,6 +630,17 @@ export default function ClientAcceptancePage() {
     form,
     surfaceParameters: quote?.technical_rules?.surface_parameters || {},
   }), [quote, form]);
+  // Medidas de paso ya calculadas por el backend con la medida final (ver measurementFinalization.js /
+  // portonVanoMeasurements.js). Se prefieren sobre technicalSummary (aproximacion local, puede no
+  // coincidir con la formula oficial para presupuestos viejos sin esta medida recalculada todavia).
+  const storedMedidasPasoText = useMemo(() => {
+    const dims = quote?.payload?.dimensions || {};
+    if (dims?.medidas_paso_text) return String(dims.medidas_paso_text).trim();
+    const anchoM = toNumberLike(dims?.paso_ancho_m ?? dims?.medidas_paso_ancho_m);
+    const altoM = toNumberLike(dims?.paso_alto_m ?? dims?.medidas_paso_alto_m);
+    if (anchoM > 0 && altoM > 0) return `${anchoM.toFixed(2)} m x ${altoM.toFixed(2)} m`;
+    return "";
+  }, [quote]);
   const budgetTechnicalRows = useMemo(
     () => buildBudgetTechnicalDetailRows(quote, form, technicalSummary),
     [quote, form, technicalSummary],
@@ -685,7 +696,7 @@ export default function ClientAcceptancePage() {
         </Row>
         <div className="spacer" />
         <Row>
-          <StaticField label="Medidas de paso" value={technicalSummary.alto_paso_mm && technicalSummary.ancho_paso_mm ? `${formatMm(technicalSummary.ancho_paso_mm)} x ${formatMm(technicalSummary.alto_paso_mm)}` : ""} />
+          <StaticField label="Medidas de paso" value={storedMedidasPasoText || (technicalSummary.alto_paso_mm && technicalSummary.ancho_paso_mm ? `${formatMm(technicalSummary.ancho_paso_mm)} x ${formatMm(technicalSummary.alto_paso_mm)}` : "")} />
           <StaticField label="Peso aproximado" value={formatKg(technicalSummary.peso_estimado_kg)} />
           <StaticField label="Tipo de piernas" value={formatPiernas(technicalSummary.piernas_tipo)} />
         </Row>

@@ -359,6 +359,7 @@ function buildBudgetSectionsContext(quote, catalog) {
         raw_name: String(line?.raw_name || product?.name || displayName).trim(),
         code: String(line?.code || product?.code || "").trim(),
         qty: Number(line?.qty || 1) || 1,
+        uses_surface_quantity: product?.uses_surface_quantity === true || line?.surface_quantity === true,
       });
     }
   }
@@ -1028,6 +1029,17 @@ export default function MedicionDetailPage() {
     () => computeAutomaticSummary({ quote, form, surfaceParameters: technicalRules?.surface_parameters || {} }),
     [quote, form, technicalRules],
   );
+  // Medidas de paso ya calculadas por el backend con la medida final (measurementFinalization.js /
+  // portonVanoMeasurements.js). Se prefieren sobre technicalSummary (aproximacion local) una vez
+  // que la aprobacion tecnica final ya corrio.
+  const storedMedidasPasoText = useMemo(() => {
+    const dims = quote?.payload?.dimensions || {};
+    if (dims?.medidas_paso_text) return String(dims.medidas_paso_text).trim();
+    const anchoM = toNumberLike(dims?.paso_ancho_m ?? dims?.medidas_paso_ancho_m);
+    const altoM = toNumberLike(dims?.paso_alto_m ?? dims?.medidas_paso_alto_m);
+    if (anchoM > 0 && altoM > 0) return `${anchoM.toFixed(2)} m x ${altoM.toFixed(2)} m`;
+    return "";
+  }, [quote]);
   const measuredFinalDimensions = useMemo(
     () => getFinalDimensionsFromScheme(form),
     [form?.esquema?.alto, form?.esquema?.ancho],
@@ -1079,7 +1091,7 @@ export default function MedicionDetailPage() {
       setForm((prev) => ({ ...prev, [key]: value }));
       return;
     }
-    const confirmed = window.confirm("¿Desea modificar el dato de alto y ancho finales?");
+    const confirmed = window.confirm("¿Desea modificar el dato de ancho y alto finales?");
     if (!confirmed) return;
     setForm((prev) => ({ ...prev, [key]: value }));
   }
@@ -1440,17 +1452,6 @@ export default function MedicionDetailPage() {
         <Section title="Esquema de medidas">
           <MeasurementSchemeVisual form={form} pointCount={pointCount} />
           <Row>
-            <Field label="Alto final editable (mm)">
-              {isTechnical ? (
-                <Input
-                  value={form.alto_final_mm || ""}
-                  onChange={(v) => handleTechnicalFinalDimensionChange("alto_final_mm", v)}
-                  style={{ width: "100%" }}
-                />
-              ) : (
-                <StaticValue value={formatMm(form.alto_final_mm || measuredFinalDimensions.alto_final_mm || technicalSummary.alto_calculado_mm)} />
-              )}
-            </Field>
             <Field label="Ancho final editable (mm)">
               {isTechnical ? (
                 <Input
@@ -1460,6 +1461,17 @@ export default function MedicionDetailPage() {
                 />
               ) : (
                 <StaticValue value={formatMm(form.ancho_final_mm || measuredFinalDimensions.ancho_final_mm || technicalSummary.ancho_calculado_mm)} />
+              )}
+            </Field>
+            <Field label="Alto final editable (mm)">
+              {isTechnical ? (
+                <Input
+                  value={form.alto_final_mm || ""}
+                  onChange={(v) => handleTechnicalFinalDimensionChange("alto_final_mm", v)}
+                  style={{ width: "100%" }}
+                />
+              ) : (
+                <StaticValue value={formatMm(form.alto_final_mm || measuredFinalDimensions.alto_final_mm || technicalSummary.alto_calculado_mm)} />
               )}
             </Field>
           </Row>
@@ -1502,17 +1514,19 @@ export default function MedicionDetailPage() {
             <Field label={`Medidas finales del ${kindLabel}`}>
               <StaticValue value={
                 form.alto_final_mm && form.ancho_final_mm
-                  ? `${formatMm(form.alto_final_mm)} x ${formatMm(form.ancho_final_mm)}`
+                  ? `${formatMm(form.ancho_final_mm)} x ${formatMm(form.alto_final_mm)}`
                   : technicalSummary.alto_calculado_mm && technicalSummary.ancho_calculado_mm
-                    ? `${formatMm(technicalSummary.alto_calculado_mm)} x ${formatMm(technicalSummary.ancho_calculado_mm)}`
+                    ? `${formatMm(technicalSummary.ancho_calculado_mm)} x ${formatMm(technicalSummary.alto_calculado_mm)}`
                     : ""
               } />
             </Field>
             <Field label="Medidas de paso">
               <StaticValue value={
-                technicalSummary.alto_paso_mm && technicalSummary.ancho_paso_mm
-                  ? `${formatMm(technicalSummary.alto_paso_mm)} x ${formatMm(technicalSummary.ancho_paso_mm)}`
-                  : ""
+                storedMedidasPasoText || (
+                  technicalSummary.alto_paso_mm && technicalSummary.ancho_paso_mm
+                    ? `${formatMm(technicalSummary.ancho_paso_mm)} x ${formatMm(technicalSummary.alto_paso_mm)}`
+                    : ""
+                )
               } />
             </Field>
           </Row>

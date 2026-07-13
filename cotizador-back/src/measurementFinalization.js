@@ -16,6 +16,7 @@ import {
   applyIpanelPropertyAssignments,
 } from "./ipanelPropertyAssignments.js";
 import { loadCatalogBootstrap } from "./catalogBootstrap.js";
+import { computeOfficialPortonMeasurements } from "./portonVanoMeasurements.js";
 
 const PLACEHOLDER_PRODUCT_ID = Number(
   process.env.ODOO_PLACEHOLDER_PRODUCT_ID || 3575,
@@ -835,8 +836,12 @@ function cloneBudgetLine(line = {}) {
     raw_name: String(line?.raw_name || line?.name || `Producto ${productId}`).trim(),
     code: String(line?.code || "").trim() || null,
     basePrice: Number(line?.basePrice ?? line?.base_price ?? line?.price ?? 0) || 0,
-    uses_surface_quantity: line?.uses_surface_quantity === true || line?.use_surface_qty === true,
-    use_surface_qty: line?.use_surface_qty === true || line?.uses_surface_quantity === true,
+    // El presupuesto (domain/quote/store.js) guarda el flag como "surface_quantity", no
+    // "uses_surface_quantity"/"use_surface_qty" (esos nombres son de la metadata de catalogo).
+    // Sin este fallback, isSurfaceQtyLine() nunca detecta las lineas por m2 y scaleSurfaceLinesByArea()
+    // nunca reescala la cantidad final medida.
+    uses_surface_quantity: line?.uses_surface_quantity === true || line?.use_surface_qty === true || line?.surface_quantity === true,
+    use_surface_qty: line?.use_surface_qty === true || line?.uses_surface_quantity === true || line?.surface_quantity === true,
     ...(typeof line?.price_unit === "number" ? { price_unit: Number(line.price_unit) } : {}),
     ...(typeof line?.unit_price === "number" ? { unit_price: Number(line.unit_price) } : {}),
   };
@@ -1512,6 +1517,27 @@ async function buildMeasurementFinalizationBase({ odoo, originalQuote, measureme
     finalAreaM2,
   });
 
+  // Medidas de paso/hoja recalculadas con la MISMA formula que usa el presupuesto
+  // (PortonDimensions.jsx, portada en portonVanoMeasurements.js), alimentada con el vano
+  // FINAL medido -no el presupuestado- para que "el editado mande" tambien en lo que se fabrica.
+  let dimensionsPatch = null;
+  const vanoWidthM = Number(measurementForm?.ancho_final_mm || 0) / 1000;
+  const vanoHeightM = Number(measurementForm?.alto_final_mm || 0) / 1000;
+  if (vanoWidthM > 0 && vanoHeightM > 0) {
+    try {
+      const officialMeasurements = await computeOfficialPortonMeasurements({
+        vanoWidthM,
+        vanoHeightM,
+        lines: sourceBaseLines,
+        portonType: sourceQuote?.payload?.porton_type || originalQuote?.payload?.porton_type || "",
+        dimensions: sourceQuote?.payload?.dimensions || originalQuote?.payload?.dimensions || {},
+      });
+      dimensionsPatch = officialMeasurements.dimensionsPatch;
+    } catch (e) {
+      console.error("[measurementFinalization] computeOfficialPortonMeasurements fallo:", e?.message || e);
+    }
+  }
+
   for (const field of technicalFields) {
     baseLines = replaceBoundProductsInBaseLines({
       baseLines,
@@ -1599,6 +1625,7 @@ async function buildMeasurementFinalizationBase({ odoo, originalQuote, measureme
       final_amount_to_charge: finalAmountToCharge,
       reference_nv: referenceNumberFromQuote(originalQuote, null),
     },
+    dimensions_patch: dimensionsPatch,
   };
 }
 
@@ -1624,6 +1651,35 @@ async function saveShareTokenToOriginalQuote(originalQuoteId, existingToken) {
   return token;
 }
 
+function mergeDimensionsPatch(payload, dimensionsPatch) {
+  if (!dimensionsPatch || typeof dimensionsPatch !== "object" || !Object.keys(dimensionsPatch).length) return payload;
+  const base = payload && typeof payload === "object" ? payload : {};
+  return { ...base, dimensions: { ...(base.dimensions || {}), ...dimensionsPatch } };
+}
+// Una vez que el cliente acepto el link, los datos que ve (medidas incluidas) quedan congelados
+// para siempre - no se vuelven a tocar aunque la finalizacion se re-dispare (retry, resync, un
+// segundo "approve"). Solo se modifican si alguien lo pide explicitamente por otra via.
+function isClientAlreadyAccepted(quote) {
+  return !!(quote?.measurement_client_accepted_at || quote?.payload?.measurement_client_acceptance?.accepted_at);
+}
+// Actualiza payload.dimensions de la quote ORIGINAL con las medidas de paso/hoja recalculadas,
+// para que el link de aceptacion del cliente (que lee del original) y cualquier consulta tecnica
+// vean la medida final, no la del presupuesto. Se usa jsonb merge para no pisar el resto del payload.
+async function persistDimensionsPatchToOriginal(originalQuoteId, dimensionsPatch) {
+  if (!originalQuoteId || !dimensionsPatch || typeof dimensionsPatch !== "object" || !Object.keys(dimensionsPatch).length) return;
+  await dbQuery(
+    `update public.presupuestador_quotes
+        set payload = jsonb_set(
+          coalesce(payload, '{}'::jsonb),
+          '{dimensions}',
+          coalesce(payload->'dimensions', '{}'::jsonb) || $2::jsonb,
+          true
+        )
+      where id=$1`,
+    [originalQuoteId, JSON.stringify(dimensionsPatch)],
+  );
+}
+
 export async function finalizeMeasurementToRevisionQuote({ odoo, originalQuote, measurementForm }) {
   const base = await buildMeasurementFinalizationBase({ odoo, originalQuote, measurementForm });
   const finalLines = base.generated_lines || [];
@@ -1633,6 +1689,9 @@ export async function finalizeMeasurementToRevisionQuote({ odoo, originalQuote, 
   // Porton a produccion sin medicion: la NV ya fue creada al aprobar Comercial+Tecnica.
   // La aprobacion final del circuito tecnico solo debe disparar WhatsApp y no crear otra NV.
   if (isDirectNvAlreadyCreated(originalQuote)) {
+    if (!isClientAlreadyAccepted(originalQuote)) {
+      await persistDimensionsPatchToOriginal(originalQuote?.id, base.dimensions_patch);
+    }
     const existingOrder = {
       id: Number(originalQuote?.final_sale_order_id || originalQuote?.odoo_sale_order_id || 0) || null,
       name: toText(originalQuote?.final_sale_order_name || originalQuote?.odoo_sale_order_name),
@@ -1668,9 +1727,17 @@ export async function finalizeMeasurementToRevisionQuote({ odoo, originalQuote, 
     };
   }
 
+  const clientAlreadyAccepted = isClientAlreadyAccepted(originalQuote);
+  if (!clientAlreadyAccepted) {
+    await persistDimensionsPatchToOriginal(originalQuote?.id, base.dimensions_patch);
+  }
+  const patchedSourceQuote = base.dimensions_patch && !clientAlreadyAccepted
+    ? { ...base.source_quote, payload: mergeDimensionsPatch(base.source_quote?.payload, base.dimensions_patch) }
+    : base.source_quote;
+
   const revisionQuote = await getOrCreateRevisionQuote({
     originalQuote,
-    sourceQuote: base.source_quote,
+    sourceQuote: patchedSourceQuote,
     finalLines,
   });
 
