@@ -1090,6 +1090,7 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
       dflexCotizadorDebug("getPrices:auto", { payload: forcedPayload, linesKey, lines: summarizeLinesForDebug(lines), includeStack: true });
       const data = await getPrices(forcedPayload);
       dflexCotizadorDebug("getPrices:auto:response", { data, includeStack: false });
+      await applySection37VendorExtra(data);
       applyBasePrices(data);
       linesBeingPricedRef.current = [];
     }
@@ -1111,6 +1112,39 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
     return "vendedor";
   }
   function withCreatorRole(payload) { return { ...(payload || {}), created_by_role: resolveCreatedByRole() }; }
+  // Una vez que el presupuesto ya existe, su rol queda fijo desde que se creo
+  // (no debe cambiar segun quien lo este editando ahora); para uno nuevo se usa
+  // el rol de la sesion actual.
+  function resolveEffectiveRoleForPricing() {
+    const savedRole = quoteQ.data?.created_by_role;
+    if (savedRole === "vendedor" || savedRole === "distribuidor") return savedRole;
+    return resolveCreatedByRole();
+  }
+  // Solo para Vendedores (nunca Distribuidores): al producto elegido en la
+  // seccion "Tipo de portón" (Coplanar 3008 / Clásico 3009) se le suma, sin
+  // aparecer como linea aparte, el precio de Odoo del producto 2865 - queda
+  // mezclado en el mismo precio por m2 que ya trae ese producto, asi que
+  // escala con la superficie del portón igual que el resto del precio.
+  const SECTION_37_PRODUCT_IDS = [3008, 3009];
+  const SECTION_37_EXTRA_PRODUCT_ID = 2865;
+  async function applySection37VendorExtra(pricesData) {
+    if (resolveEffectiveRoleForPricing() !== "vendedor") return pricesData;
+    const prices = Array.isArray(pricesData?.prices) ? pricesData.prices : [];
+    const target = prices.find((p) => SECTION_37_PRODUCT_IDS.includes(Number(p.product_id)));
+    if (!target) return pricesData;
+    try {
+      const extraRes = await getPrices({
+        pricelist_id: pricesData?.pricelist_id ?? pricelistId,
+        partner_id: pricesData?.partner_id ?? partnerId,
+        lines: [{ product_id: SECTION_37_EXTRA_PRODUCT_ID, qty: 1 }],
+      });
+      const extraPrice = Number(extraRes?.prices?.[0]?.price || 0);
+      if (extraPrice > 0) target.price = Number(target.price || 0) + extraPrice;
+    } catch {
+      // Si falla, la linea queda con el precio de Odoo tal cual, sin la suma.
+    }
+    return pricesData;
+  }
   function normalizeNoteWithSeller(note) {
     const sellerLabel = String(user?.full_name || user?.username || "").trim();
     const raw = String(note || "").trim();
@@ -1341,6 +1375,7 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
           lines: priceLines.map((l) => ({ id: l.id, catalog_id: l.catalog_id, odoo_template_id: l.odoo_template_id, qty: l.qty })),
         };
         const data = await getPrices(pricePayload);
+        await applySection37VendorExtra(data);
         const fetchedMap = new Map((data?.prices || []).map((x) => [Number(x.product_id), Number(x.price ?? 0)]));
         const anyChanged = priceLines.some((l) => {
           const fetched = fetchedMap.get(l.product_id);
