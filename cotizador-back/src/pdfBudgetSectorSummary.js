@@ -2,9 +2,9 @@ import { loadCatalogBootstrap } from "./catalogBootstrap.js";
 
 const SECTOR_KEYS = ["producto", "automatizacion", "servicios"];
 const SECTOR_LABELS = {
-  producto: "Sector Producto",
-  automatizacion: "Sector Automatización",
-  servicios: "Sector Servicios",
+  producto: "Productos",
+  automatizacion: "Automatización",
+  servicios: "Servicios",
 };
 
 // Logica pura (sin I/O) que arma el resumen por sector a partir del catalogo
