@@ -1106,7 +1106,7 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
       dflexCotizadorDebug("getPrices:auto", { payload: forcedPayload, linesKey, lines: summarizeLinesForDebug(lines), includeStack: true });
       const data = await getPrices(forcedPayload);
       dflexCotizadorDebug("getPrices:auto:response", { data, includeStack: false });
-      applyBasePrices(mergeSection37VendorExtra(data));
+      applyBasePrices(mergeSection37VendorExtra(data, linesToPrice));
       linesBeingPricedRef.current = [];
     }
     run().catch((e) => {
@@ -1146,23 +1146,33 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
   // dependientes, etc.) ni un pelo respecto de como era antes.
   const SECTION_37_PRODUCT_IDS = [3008, 3009];
   const SECTION_37_EXTRA_PRODUCT_ID = 2865;
-  // sourceLines: lineas reales del presupuesto (siempre tienen product_id) - se usan
-  // solo para decidir si corresponde agregar el extra. payloadLines: el array en
-  // formato de pedido de precio (puede traer product_id o catalog_id segun el
-  // llamador), al que se le agrega la linea sintetica si corresponde.
+  // sourceLines: lineas reales del presupuesto que se estan pidiendo en esta
+  // tanda (siempre tienen product_id, sin importar el formato del pedido de
+  // precio de cada llamador) - se usan solo para decidir si corresponde
+  // agregar el extra, y si la instalacion YA es una linea real propia (el
+  // vendedor la eligio aparte) para no duplicar el pedido ni pisar su precio.
   function withSection37ExtraLine(sourceLines, payloadLines) {
     const wireLines = Array.isArray(payloadLines) ? payloadLines : [];
     if (resolveEffectiveRoleForPricing() !== "vendedor") return wireLines;
-    const hasSection37Line = (Array.isArray(sourceLines) ? sourceLines : []).some((l) => SECTION_37_PRODUCT_IDS.includes(Number(l.product_id)));
+    const srcLines = Array.isArray(sourceLines) ? sourceLines : [];
+    const hasSection37Line = srcLines.some((l) => SECTION_37_PRODUCT_IDS.includes(Number(l.product_id)));
     if (!hasSection37Line) return wireLines;
+    const alreadyRealLine = srcLines.some((l) => Number(l.product_id) === SECTION_37_EXTRA_PRODUCT_ID);
+    if (alreadyRealLine) return wireLines;
     return [...wireLines, { product_id: SECTION_37_EXTRA_PRODUCT_ID, qty: 1 }];
   }
-  function mergeSection37VendorExtra(pricesData) {
+  function mergeSection37VendorExtra(pricesData, sourceLines) {
     const prices = Array.isArray(pricesData?.prices) ? pricesData.prices : [];
     const extraEntry = prices.find((p) => Number(p.product_id) === SECTION_37_EXTRA_PRODUCT_ID);
     if (!extraEntry) return pricesData;
     const target = prices.find((p) => SECTION_37_PRODUCT_IDS.includes(Number(p.product_id)));
     if (target) target.price = Number(target.price || 0) + Number(extraEntry.price || 0);
+    // Si la instalacion tambien es una linea real (el vendedor la eligio en su
+    // propia seccion), su entrada de precio tiene que seguir en la respuesta
+    // para que esa linea se resuelva normal - solo se saca cuando la agregamos
+    // nosotros como sintetica, para no dejar una linea real sin precio nunca.
+    const isRealLine = (Array.isArray(sourceLines) ? sourceLines : []).some((l) => Number(l.product_id) === SECTION_37_EXTRA_PRODUCT_ID);
+    if (isRealLine) return pricesData;
     return { ...pricesData, prices: prices.filter((p) => Number(p.product_id) !== SECTION_37_EXTRA_PRODUCT_ID) };
   }
   function normalizeNoteWithSeller(note) {
@@ -1394,7 +1404,7 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
           partner_id: partnerId,
           lines: withSection37ExtraLine(priceLines, priceLines.map((l) => ({ id: l.id, catalog_id: l.catalog_id, odoo_template_id: l.odoo_template_id, qty: l.qty }))),
         };
-        const data = mergeSection37VendorExtra(await getPrices(pricePayload));
+        const data = mergeSection37VendorExtra(await getPrices(pricePayload), priceLines);
         const fetchedMap = new Map((data?.prices || []).map((x) => [Number(x.product_id), Number(x.price ?? 0)]));
         const anyChanged = priceLines.some((l) => {
           const fetched = fetchedMap.get(l.product_id);
