@@ -6,7 +6,7 @@ import { fileURLToPath } from "url";
 import { dbQuery } from "../db.js";
 import { requireAuth } from "../auth.js";
 import { ensureQuotesMeasurementColumns } from "../quotesSchema.js";
-import { buildBudgetExtraSummaryLines } from "../pdfBudgetExtras.js";
+import { buildBudgetExtraSummaryLines, buildBudgetVanoTechnicalLines } from "../pdfBudgetExtras.js";
 import { getProductPdfNameMap, normKind } from "../catalogDb.js";
 import { resolveBudgetSectorSummary } from "../pdfBudgetSectorSummary.js";
 
@@ -412,6 +412,47 @@ function drawInfoBand(doc, { y, margin, innerW, items, fillColor = "#FFFFFF" }) 
   return y + h + 4;
 }
 
+// Igual que drawInfoBand, pero cada item va en su propio renglon (en vez de
+// unirse todo con guiones en un solo parrafo).
+function drawLinesBand(doc, { y, margin, innerW, items }) {
+  const cleanItems = (Array.isArray(items) ? items : []).map((item) => safeStr(item)).filter(Boolean);
+  if (!cleanItems.length) return y;
+  const padX = 10;
+  const padY = 8;
+  const lineGapPx = 4;
+  const textW = innerW - padX * 2;
+  doc.font("Helvetica").fontSize(10);
+  const lineHeights = cleanItems.map((text) => doc.heightOfString(text, { width: textW, lineGap: 2 }));
+  const contentH = lineHeights.reduce((acc, h) => acc + h + lineGapPx, -lineGapPx);
+  const h = Math.max(28, Math.ceil(contentH + padY * 2));
+  doc.save().fillColor("#FFFFFF").rect(margin, y, innerW, h).fill().restore();
+  doc.save().strokeColor("#D1D5DB").rect(margin, y, innerW, h).stroke().restore();
+  let cy = y + padY;
+  cleanItems.forEach((text, i) => {
+    doc.font("Helvetica").fontSize(10).fillColor("#111827").text(text, margin + padX, cy, { width: textW, lineGap: 2 });
+    cy += lineHeights[i] + lineGapPx;
+  });
+  return y + h;
+}
+
+// Envuelve el contenido dibujado por drawContent en un recuadro con borde
+// redondeado marcado (mismo estilo que los bloques de sector), con una barra
+// de titulo opcional arriba.
+function drawFramedBox(doc, { y, margin, innerW, headerLabel, drawContent }) {
+  const blockStartY = y;
+  const startPageCount = doc.bufferedPageRange().count;
+  if (headerLabel) {
+    doc.save().fillColor("#E5E7EB").rect(margin, y, innerW, 22).fill().restore();
+    doc.font("Helvetica-Bold").fontSize(9.5).fillColor("#111827").text(headerLabel.toUpperCase(), margin + 10, y + 6, { width: innerW - 20, align: "center" });
+    y += 22;
+  }
+  y = drawContent(y);
+  if (doc.bufferedPageRange().count === startPageCount) {
+    doc.save().strokeColor("#111827").lineWidth(1.5).roundedRect(margin, blockStartY, innerW, y - blockStartY, 10).stroke().restore();
+  }
+  return y + 12;
+}
+
 function parsePositiveNumber(value) {
   const n = Number(String(value ?? "").replace(",", "."));
   return Number.isFinite(n) && n > 0 ? n : 0;
@@ -640,7 +681,7 @@ function drawSectorItemsBlock(doc, { y, margin, innerW, pageBottom, headerLabel,
 
   const textWidth = innerW - 32;
   for (const item of items) {
-    const bulletText = `•  ${item.sectionName}: ${item.productName}`;
+    const bulletText = `•  ${item.productName}`;
     doc.font("Helvetica").fontSize(9.5);
     const textH = doc.heightOfString(bulletText, { width: textWidth });
     const rowH = Math.max(22, textH + 12);
@@ -670,19 +711,21 @@ function drawSectorItemsBlock(doc, { y, margin, innerW, pageBottom, headerLabel,
 // producto. Solo se llama cuando resolveBudgetSectorSummary encontro al
 // menos una seccion con sector asignado; la hoja de detalle de siempre sigue
 // exactamente igual, arrancando en la pagina siguiente.
-function drawBudgetSectorSummaryPage(doc, { title, payload, margin, innerW, dateStr, validStr, hideValidity, summary, useBasePrice, measurementLines }) {
+function drawBudgetSectorSummaryPage(doc, { title, payload, margin, innerW, dateStr, validStr, hideValidity, summary, useBasePrice, technicalLines, paymentLines }) {
   const SAFE_BOTTOM_GAP = 56;
   function pageBottom() {
     return doc.page.height - margin - SAFE_BOTTOM_GAP;
   }
 
   let y = drawHeader(doc, { title, payload, margin, innerW, dateStr, validStr, hideValidity });
-  y = drawInfoTable(doc, payload, y, margin, innerW, useBasePrice);
-  if (measurementLines?.length) {
-    y = drawInfoBand(doc, { y, margin, innerW, items: measurementLines, fillColor: "#FFFFFF" });
+  y = drawFramedBox(doc, { y, margin, innerW, drawContent: (yy) => drawInfoTable(doc, payload, yy, margin, innerW, useBasePrice) });
+  if (technicalLines?.length) {
+    y = drawFramedBox(doc, { y, margin, innerW, headerLabel: "Datos técnicos", drawContent: (yy) => drawLinesBand(doc, { y: yy, margin, innerW, items: technicalLines }) });
   }
-  y += 6;
-  doc.font("Helvetica-Bold").fontSize(13).fillColor("#111827").text("Presupuesto", margin, y, { width: innerW });
+  if (paymentLines?.length) {
+    y = drawFramedBox(doc, { y, margin, innerW, headerLabel: "Forma de pago", drawContent: (yy) => drawLinesBand(doc, { y: yy, margin, innerW, items: paymentLines }) });
+  }
+  doc.font("Helvetica-Bold").fontSize(13).fillColor("#111827").text("Presupuesto", margin, y, { width: innerW, align: "center" });
   y = doc.y + 12;
 
   for (const sector of summary.sectors) {
@@ -733,23 +776,24 @@ async function renderPdf({ title, payload, useBasePrice, odoo, includeTerms = fa
     : new Date(now.getTime() + validityDays * 86400000);
   const validStr = validUntil.toLocaleDateString("es-AR");
   const extraCalculatedLines = await buildBudgetExtraSummaryLines(payload);
+  const vanoTechnicalLines = hideAllPrices ? [] : await buildBudgetVanoTechnicalLines(payload);
   const paymentMethod = safeStr(payload?.payload?.payment_method ?? payload?.payment_method);
   const productionPlanningText = getProductionPlanningText(payload);
   const obs = stripSellerLines(safeStr(payload?.note));
   const { lines, grandTotal, subtotalNet, ivaAmount, taxRate: effectiveTaxRate, catalogKind } = await buildLines(payload, { useBasePrice, odoo, displayNetPrices, taxRate });
 
+  const commercialInfoLines = [];
+  if (paymentMethod) commercialInfoLines.push(`Forma de pago: ${paymentMethod}`);
+  if (productionPlanningText && getCatalogKindFromPayload(payload) !== "puerta") commercialInfoLines.push(`Fecha estimada de entrega "${productionPlanningText}"`);
+
   const sectorSummary = hideAllPrices ? null : await resolveBudgetSectorSummary({ catalogKind, lines, odoo });
   if (sectorSummary) {
-    drawBudgetSectorSummaryPage(doc, { title, payload, margin, innerW, dateStr, validStr, hideValidity: hideAllPrices, summary: sectorSummary, useBasePrice, measurementLines: extraCalculatedLines });
+    drawBudgetSectorSummaryPage(doc, { title, payload, margin, innerW, dateStr, validStr, hideValidity: hideAllPrices, summary: sectorSummary, useBasePrice, technicalLines: vanoTechnicalLines, paymentLines: commercialInfoLines });
     doc.addPage();
   }
 
   let y = drawHeader(doc, { title, payload, margin, innerW, dateStr, validStr, hideValidity: hideAllPrices });
   y = drawInfoTable(doc, payload, y, margin, innerW, useBasePrice);
-
-  const commercialInfoLines = [];
-  if (paymentMethod) commercialInfoLines.push(`Forma de pago: ${paymentMethod}`);
-  if (productionPlanningText && getCatalogKindFromPayload(payload) !== "puerta") commercialInfoLines.push(`Fecha estimada de entrega "${productionPlanningText}"`);
 
   const technicalInfoLines = [];
   technicalInfoLines.push(...extraCalculatedLines);
