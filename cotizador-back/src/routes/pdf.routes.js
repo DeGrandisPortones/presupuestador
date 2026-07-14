@@ -670,13 +670,18 @@ function drawSectorItemsBlock(doc, { y, margin, innerW, pageBottom, headerLabel,
 // producto. Solo se llama cuando resolveBudgetSectorSummary encontro al
 // menos una seccion con sector asignado; la hoja de detalle de siempre sigue
 // exactamente igual, arrancando en la pagina siguiente.
-function drawBudgetSectorSummaryPage(doc, { title, payload, margin, innerW, dateStr, validStr, hideValidity, summary }) {
+function drawBudgetSectorSummaryPage(doc, { title, payload, margin, innerW, dateStr, validStr, hideValidity, summary, useBasePrice, measurementLines }) {
   const SAFE_BOTTOM_GAP = 56;
   function pageBottom() {
     return doc.page.height - margin - SAFE_BOTTOM_GAP;
   }
 
   let y = drawHeader(doc, { title, payload, margin, innerW, dateStr, validStr, hideValidity });
+  y = drawInfoTable(doc, payload, y, margin, innerW, useBasePrice);
+  if (measurementLines?.length) {
+    y = drawInfoBand(doc, { y, margin, innerW, items: measurementLines, fillColor: "#FFFFFF" });
+  }
+  y += 6;
   doc.font("Helvetica-Bold").fontSize(13).fillColor("#111827").text("Presupuesto", margin, y, { width: innerW });
   y = doc.y + 12;
 
@@ -735,7 +740,7 @@ async function renderPdf({ title, payload, useBasePrice, odoo, includeTerms = fa
 
   const sectorSummary = hideAllPrices ? null : await resolveBudgetSectorSummary({ catalogKind, lines, odoo });
   if (sectorSummary) {
-    drawBudgetSectorSummaryPage(doc, { title, payload, margin, innerW, dateStr, validStr, hideValidity: hideAllPrices, summary: sectorSummary });
+    drawBudgetSectorSummaryPage(doc, { title, payload, margin, innerW, dateStr, validStr, hideValidity: hideAllPrices, summary: sectorSummary, useBasePrice, measurementLines: extraCalculatedLines });
     doc.addPage();
   }
 
@@ -761,8 +766,8 @@ async function renderPdf({ title, payload, useBasePrice, odoo, includeTerms = fa
   // tabla de detalle linea por linea (misma grilla que hideAllPrices), pero a diferencia
   // de hideAllPrices deja el resumen por sector y el total final intactos.
   const hideRowPrices = hideAllPrices || hideDetailPrices;
-  const colDesc = hideRowPrices ? innerW * 0.78 : innerW * 0.54;
-  const colQty = hideRowPrices ? innerW * 0.22 : innerW * 0.10;
+  const colDesc = hideRowPrices ? innerW : innerW * 0.54;
+  const colQty = hideRowPrices ? 0 : innerW * 0.10;
   const colUnit = innerW * 0.18;
   const colTot = innerW * 0.18;
   const SAFE_BOTTOM_GAP = 56;
@@ -776,7 +781,6 @@ async function renderPdf({ title, payload, useBasePrice, odoo, includeTerms = fa
     const headers = hideRowPrices
       ? [
           [margin + 8, colDesc - 16, "DESCRIPCIÓN", "left"],
-          [margin + colDesc + 8, colQty - 16, "CANT.", "right"],
         ]
       : [
           [margin + 8, colDesc - 16, "DESCRIPCIÓN", "left"],
@@ -802,10 +806,8 @@ async function renderPdf({ title, payload, useBasePrice, odoo, includeTerms = fa
     doc.save().strokeColor("#D1D5DB").rect(margin, tableY, innerW, rowH).stroke().restore();
     const xQty = margin + colDesc;
     if (hideRowPrices) {
-      doc.save().strokeColor("#D1D5DB").moveTo(xQty, tableY).lineTo(xQty, tableY + rowH).stroke().restore();
       doc.font("Helvetica").fontSize(9.5).fillColor("#111827")
-        .text(line.name, margin + 8, tableY + 8, { width: colDesc - 16 })
-        .text(formatQty(line.qty), xQty + 8, tableY + 8, { width: colQty - 16, align: "right" });
+        .text(line.name, margin + 8, tableY + 8, { width: colDesc - 16 });
     } else {
       const xUnit = xQty + colQty;
       const xTot = xUnit + colUnit;

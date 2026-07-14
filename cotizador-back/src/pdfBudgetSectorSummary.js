@@ -22,6 +22,12 @@ export function computeBudgetSectorSummary({ sections, products, lines }) {
       Array.isArray(p?.section_ids) ? p.section_ids.map(Number) : [],
     ]),
   );
+  // El alias es el nombre "amigable" que se carga en el presupuestador para
+  // cada producto (catalogBootstrap.js lo resuelve como display_name). En esta
+  // hoja se prioriza sobre la descripcion tecnica larga de la linea.
+  const aliasByProductId = new Map(
+    (Array.isArray(products) ? products : []).map((p) => [Number(p?.id || 0), String(p?.alias || p?.display_name || "").trim()]),
+  );
 
   const buckets = new Map(SECTOR_KEYS.map((key) => [key, { key, label: SECTOR_LABELS[key], items: [], total: 0 }]));
   const unassignedItems = [];
@@ -31,7 +37,7 @@ export function computeBudgetSectorSummary({ sections, products, lines }) {
   for (const line of Array.isArray(lines) ? lines : []) {
     const productId = Number(line?.productId || 0);
     const sectionIds = productId ? (sectionIdsByProductId.get(productId) || []) : [];
-    const productName = String(line?.name || "").trim();
+    const productName = (productId && aliasByProductId.get(productId)) || String(line?.name || "").trim();
     const lineTotal = Number(line?.total || 0);
     if (!productName) continue;
 
