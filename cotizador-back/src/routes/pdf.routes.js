@@ -192,11 +192,13 @@ function formatShortDate(value) {
   return d.toLocaleDateString("es-AR");
 }
 function getProductionPlanningText(payload) {
-  const planning = payload?.production_planning || payload?.payload?.production_planning || null;
-  if (!planning || typeof planning !== "object") return "";
-  const weekNumber = safeStr(planning.week_number || planning.week || "");
-  const startLabel = safeStr(planning.start_date_label || formatShortDate(planning.start_date));
-  const endLabel = safeStr(planning.end_date_label || formatShortDate(planning.end_date));
+  // El planning vive en columnas propias de la quote (production_delivery_*),
+  // no anidado en el payload - esta funcion antes buscaba un objeto
+  // "production_planning" que nunca existe, asi que la fecha de entrega nunca
+  // salia en el PDF.
+  const weekNumber = safeStr(payload?.production_delivery_week ?? payload?.payload?.production_delivery_week ?? "");
+  const startLabel = formatShortDate(payload?.production_delivery_week_start ?? payload?.payload?.production_delivery_week_start);
+  const endLabel = formatShortDate(payload?.production_delivery_week_end ?? payload?.payload?.production_delivery_week_end);
   if (!weekNumber && !startLabel && !endLabel) return "";
   const weekPart = weekNumber ? `Semana ${weekNumber}` : "Semana estimada";
   if (startLabel || endLabel) return `${weekPart}, entre ${startLabel || "-"} y ${endLabel || "-"}`;
