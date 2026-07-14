@@ -2297,8 +2297,19 @@ export default function PortonDimensions({ kind = "porton" }) {
           ) : null}
           {explicitVanoMeasures && !dimensions?.vano_size_auto_calc ? (
             <FieldBox label="Calculo automatico">
-              <div style={{ fontSize: 13, color: "#92400e", fontWeight: 700, padding: "9px 12px", borderRadius: 10, border: "1px solid #fde68a", background: "#fffbeb" }}>
-                Este presupuesto es anterior al calculo automatico por vano: el ancho/alto no se recalculan solos para no modificar lo ya guardado.
+              <div style={{ fontSize: 13, color: "#92400e", fontWeight: 700, padding: "9px 12px", borderRadius: 10, border: "1px solid #fde68a", background: "#fffbeb", display: "flex", flexDirection: "column", gap: 8 }}>
+                <span>Este presupuesto es anterior al calculo automatico por vano: el ancho/alto no se recalculan solos para no modificar lo ya guardado.</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const ok = window.confirm("Se va a recalcular el ancho/alto del porton a partir del vano, sobrescribiendo los valores actuales. ¿Continuar?");
+                    if (!ok) return;
+                    setDimensions({ vano_size_auto_calc: true });
+                  }}
+                  style={{ alignSelf: "flex-start", border: "1px solid #d97706", borderRadius: 10, background: "#fff", color: "#92400e", padding: "7px 10px", fontWeight: 800, cursor: "pointer" }}
+                >
+                  Recalcular ahora
+                </button>
               </div>
             </FieldBox>
           ) : null}
