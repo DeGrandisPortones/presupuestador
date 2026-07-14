@@ -624,6 +624,9 @@ function drawTermsAndConditionsPage(doc, { title, payload, margin, innerW, dateS
 }
 
 function drawSectorItemsBlock(doc, { y, margin, innerW, pageBottom, headerLabel, headerFill, subtotalLabel, items, total }) {
+  const blockStartY = y;
+  const startPageCount = doc.bufferedPageRange().count;
+
   function ensureSpace(h) {
     if (y + h <= pageBottom()) return;
     doc.addPage();
@@ -632,29 +635,32 @@ function drawSectorItemsBlock(doc, { y, margin, innerW, pageBottom, headerLabel,
 
   ensureSpace(24);
   doc.save().fillColor(headerFill).rect(margin, y, innerW, 24).fill().restore();
-  doc.save().strokeColor("#111827").lineWidth(1).rect(margin, y, innerW, 24).stroke().restore();
-  doc.font("Helvetica-Bold").fontSize(10.5).fillColor("#111827").text(headerLabel.toUpperCase(), margin + 10, y + 7, { width: innerW - 20 });
+  doc.font("Helvetica-Bold").fontSize(10.5).fillColor("#111827").text(headerLabel.toUpperCase(), margin + 10, y + 7, { width: innerW - 20, align: "center" });
   y += 24;
 
   const textWidth = innerW - 32;
   for (const item of items) {
-    const text = `${item.sectionName}: ${item.productName}`;
+    const bulletText = `•  ${item.sectionName}: ${item.productName}`;
     doc.font("Helvetica").fontSize(9.5);
-    const textH = doc.heightOfString(text, { width: textWidth });
-    const rowH = Math.max(22, textH + 10);
+    const textH = doc.heightOfString(bulletText, { width: textWidth });
+    const rowH = Math.max(22, textH + 12);
     ensureSpace(rowH);
-    doc.save().strokeColor("#D1D5DB").rect(margin, y, innerW, rowH).stroke().restore();
-    doc.font("Helvetica").fontSize(9.5).fillColor("#111827").text(`•  ${text}`, margin + 16, y + 5, { width: textWidth });
+    doc.save().strokeColor("#E5E7EB").rect(margin, y, innerW, rowH).stroke().restore();
+    doc.font("Helvetica").fontSize(9.5).fillColor("#111827").text(bulletText, margin + 16, y + 5, { width: textWidth });
     y += rowH;
   }
 
   ensureSpace(26);
   doc.save().fillColor("#F3F4F6").rect(margin, y, innerW, 26).fill().restore();
-  doc.save().strokeColor("#D1D5DB").rect(margin, y, innerW, 26).stroke().restore();
   doc.font("Helvetica-Bold").fontSize(10).fillColor("#111827")
     .text(subtotalLabel, margin + 10, y + 7, { width: innerW * 0.68 - 10 })
     .text(`$ ${formatMoney(total)}`, margin + innerW * 0.68, y + 7, { width: innerW * 0.32 - 10, align: "right" });
-  y += 26 + 12;
+  y += 26;
+
+  if (doc.bufferedPageRange().count === startPageCount) {
+    doc.save().strokeColor("#111827").lineWidth(1.5).roundedRect(margin, blockStartY, innerW, y - blockStartY, 10).stroke().restore();
+  }
+  y += 12;
 
   return y;
 }
@@ -671,7 +677,7 @@ function drawBudgetSectorSummaryPage(doc, { title, payload, margin, innerW, date
   }
 
   let y = drawHeader(doc, { title, payload, margin, innerW, dateStr, validStr, hideValidity });
-  doc.font("Helvetica-Bold").fontSize(13).fillColor("#111827").text("Resumen por sector", margin, y, { width: innerW });
+  doc.font("Helvetica-Bold").fontSize(13).fillColor("#111827").text("Presupuesto", margin, y, { width: innerW });
   y = doc.y + 12;
 
   for (const sector of summary.sectors) {
