@@ -797,7 +797,7 @@ function drawBudgetSectorSummaryPage(doc, { title, payload, margin, innerW, date
     y = drawFramedBox(doc, { y, margin, innerW, headerLabel: "Datos técnicos", drawContent: (yy) => drawTwoColumnLinesBand(doc, { y: yy, margin, innerW, left: technicalLines.left, right: technicalLines.right }) });
   }
   if (paymentLines?.length) {
-    y = drawFramedBox(doc, { y, margin, innerW, headerLabel: "Forma de pago", drawContent: (yy) => drawLinesBand(doc, { y: yy, margin, innerW, items: paymentLines }) });
+    y = drawFramedBox(doc, { y, margin, innerW, headerLabel: "Forma de pago y entrega estimada", drawContent: (yy) => drawLinesBand(doc, { y: yy, margin, innerW, items: paymentLines }) });
   }
   doc.font("Helvetica-Bold").fontSize(13).fillColor("#111827").text("Presupuesto", margin, y, { width: innerW, align: "center" });
   y = doc.y + 12;
