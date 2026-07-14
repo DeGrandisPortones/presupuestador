@@ -240,40 +240,43 @@ export async function buildBudgetExtraSummaryLines(payload) {
 }
 
 // Membrete tecnico de la primera hoja (resumen por sector): a diferencia de
-// buildBudgetExtraSummaryLines, siempre en lineas separadas y distinguiendo
-// vano medido vs porton calculado (post ajuste por modo de instalacion).
+// buildBudgetExtraSummaryLines, separa vano medido vs porton calculado (post
+// ajuste por modo de instalacion), y devuelve dos columnas para que el PDF
+// las dibuje una al lado de la otra (izquierda: sistema/dimensiones,
+// derecha: paso/peso/piernas).
 export async function buildBudgetVanoTechnicalLines(payload) {
   const quote = await resolveQuoteSource(payload || {});
-  if (String(quote?.catalog_kind || "porton").toLowerCase().trim() !== "porton") return [];
+  if (String(quote?.catalog_kind || "porton").toLowerCase().trim() !== "porton") return { left: [], right: [] };
 
   const technicalSettings = await getTechnicalMeasurementRules();
   const surfaceParameters = technicalSettings?.surface_parameters || {};
   const calculated = computeSurfaceAutomaticContext({ quote, form: quote?.measurement_form || {}, surfaceParameters });
   const dims = quote?.payload?.dimensions || {};
 
-  const lines = [];
+  const left = [];
   const portonTypeLabel = getPortonTypeLabelFromQuote(quote);
-  if (portonTypeLabel) lines.push(`Sistema: ${portonTypeLabel}`);
+  if (portonTypeLabel) left.push(`Sistema: ${portonTypeLabel}`);
 
   const vanoWidthMm = normalizeSellerDimensionMm(dims?.vano_width);
   const vanoHeightMm = normalizeSellerDimensionMm(dims?.vano_height);
-  if (vanoWidthMm || vanoHeightMm) lines.push(`Dimensiones del Vano: Ancho ${vanoWidthMm || "-"}mm - Alto ${vanoHeightMm || "-"}mm`);
+  if (vanoWidthMm || vanoHeightMm) left.push(`Dimensiones del Vano: Ancho ${vanoWidthMm || "-"}mm - Alto ${vanoHeightMm || "-"}mm`);
 
   const portonWidthMm = normalizeSellerDimensionMm(dims?.width);
   const portonHeightMm = normalizeSellerDimensionMm(dims?.height);
-  if (portonWidthMm || portonHeightMm) lines.push(`Dimensiones del portón: Ancho ${portonWidthMm || "-"}mm - Alto ${portonHeightMm || "-"}mm`);
+  if (portonWidthMm || portonHeightMm) left.push(`Dimensiones del portón: Ancho ${portonWidthMm || "-"}mm - Alto ${portonHeightMm || "-"}mm`);
 
+  const right = [];
   const storedAnchoMm = Number(dims?.paso_ancho_mm || dims?.medidas_paso_ancho_mm || 0);
   const storedAltoMm = Number(dims?.paso_alto_mm || dims?.medidas_paso_alto_mm || 0);
   const anchoPasoMm = Math.round(storedAnchoMm > 0 ? storedAnchoMm : (calculated?.ancho_paso_mm || calculated?.ancho_calculado_mm || 0));
   const altoPasoMm = Math.round(storedAltoMm > 0 ? storedAltoMm : (calculated?.alto_paso_mm || calculated?.alto_calculado_mm || 0));
-  if (anchoPasoMm || altoPasoMm) lines.push(`Medidas de paso: ${anchoPasoMm || "-"}mm x ${altoPasoMm || "-"}mm`);
+  if (anchoPasoMm || altoPasoMm) right.push(`Medidas de paso: ${anchoPasoMm || "-"}mm x ${altoPasoMm || "-"}mm`);
 
   const peso = formatKg(calculated?.peso_estimado_kg);
-  if (peso) lines.push(`Peso Calculado: ${peso}`);
+  if (peso) right.push(`Peso Calculado: ${peso}`);
 
   const piernas = formatPiernas(calculated?.piernas_tipo);
-  if (piernas) lines.push(`Piernas: ${piernas}`);
+  if (piernas) right.push(`Piernas: ${piernas}`);
 
-  return lines;
+  return { left, right };
 }
