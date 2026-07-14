@@ -1098,6 +1098,7 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
           })),
       };
       if (!payload.lines.length) return;
+      payload.lines = withSection37ExtraLine(linesToPrice, payload.lines);
       // Presupuesto nuevo (sin guardar todavia, sin datos de cliente): siempre traemos
       // el precio en vivo de Odoo, sin usar la cache local de 12hs, para no arrastrar
       // precios viejos mientras el usuario todavia no puede usar "Actualizar presupuesto".
@@ -1105,8 +1106,7 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
       dflexCotizadorDebug("getPrices:auto", { payload: forcedPayload, linesKey, lines: summarizeLinesForDebug(lines), includeStack: true });
       const data = await getPrices(forcedPayload);
       dflexCotizadorDebug("getPrices:auto:response", { data, includeStack: false });
-      await applySection37VendorExtra(data);
-      applyBasePrices(data);
+      applyBasePrices(mergeSection37VendorExtra(data));
       linesBeingPricedRef.current = [];
     }
     run().catch((e) => {
@@ -1140,25 +1140,30 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
   // aparecer como linea aparte, el precio de Odoo del producto 2865 - queda
   // mezclado en el mismo precio por m2 que ya trae ese producto, asi que
   // escala con la superficie del portón igual que el resto del precio.
+  // Todo se resuelve dentro del MISMO pedido de precios que ya se hacia
+  // (una linea sintetica de mas en el request), sin ningun round-trip ni
+  // await extra, para no correr el timing del resto del flujo (secciones
+  // dependientes, etc.) ni un pelo respecto de como era antes.
   const SECTION_37_PRODUCT_IDS = [3008, 3009];
   const SECTION_37_EXTRA_PRODUCT_ID = 2865;
-  async function applySection37VendorExtra(pricesData) {
-    if (resolveEffectiveRoleForPricing() !== "vendedor") return pricesData;
+  // sourceLines: lineas reales del presupuesto (siempre tienen product_id) - se usan
+  // solo para decidir si corresponde agregar el extra. payloadLines: el array en
+  // formato de pedido de precio (puede traer product_id o catalog_id segun el
+  // llamador), al que se le agrega la linea sintetica si corresponde.
+  function withSection37ExtraLine(sourceLines, payloadLines) {
+    const wireLines = Array.isArray(payloadLines) ? payloadLines : [];
+    if (resolveEffectiveRoleForPricing() !== "vendedor") return wireLines;
+    const hasSection37Line = (Array.isArray(sourceLines) ? sourceLines : []).some((l) => SECTION_37_PRODUCT_IDS.includes(Number(l.product_id)));
+    if (!hasSection37Line) return wireLines;
+    return [...wireLines, { product_id: SECTION_37_EXTRA_PRODUCT_ID, qty: 1 }];
+  }
+  function mergeSection37VendorExtra(pricesData) {
     const prices = Array.isArray(pricesData?.prices) ? pricesData.prices : [];
+    const extraEntry = prices.find((p) => Number(p.product_id) === SECTION_37_EXTRA_PRODUCT_ID);
+    if (!extraEntry) return pricesData;
     const target = prices.find((p) => SECTION_37_PRODUCT_IDS.includes(Number(p.product_id)));
-    if (!target) return pricesData;
-    try {
-      const extraRes = await getPrices({
-        pricelist_id: pricesData?.pricelist_id ?? pricelistId,
-        partner_id: pricesData?.partner_id ?? partnerId,
-        lines: [{ product_id: SECTION_37_EXTRA_PRODUCT_ID, qty: 1 }],
-      });
-      const extraPrice = Number(extraRes?.prices?.[0]?.price || 0);
-      if (extraPrice > 0) target.price = Number(target.price || 0) + extraPrice;
-    } catch {
-      // Si falla, la linea queda con el precio de Odoo tal cual, sin la suma.
-    }
-    return pricesData;
+    if (target) target.price = Number(target.price || 0) + Number(extraEntry.price || 0);
+    return { ...pricesData, prices: prices.filter((p) => Number(p.product_id) !== SECTION_37_EXTRA_PRODUCT_ID) };
   }
   function normalizeNoteWithSeller(note) {
     const sellerLabel = String(user?.full_name || user?.username || "").trim();
@@ -1387,10 +1392,9 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
         const pricePayload = {
           pricelist_id: pricelistId,
           partner_id: partnerId,
-          lines: priceLines.map((l) => ({ id: l.id, catalog_id: l.catalog_id, odoo_template_id: l.odoo_template_id, qty: l.qty })),
+          lines: withSection37ExtraLine(priceLines, priceLines.map((l) => ({ id: l.id, catalog_id: l.catalog_id, odoo_template_id: l.odoo_template_id, qty: l.qty }))),
         };
-        const data = await getPrices(pricePayload);
-        await applySection37VendorExtra(data);
+        const data = mergeSection37VendorExtra(await getPrices(pricePayload));
         const fetchedMap = new Map((data?.prices || []).map((x) => [Number(x.product_id), Number(x.price ?? 0)]));
         const anyChanged = priceLines.some((l) => {
           const fetched = fetchedMap.get(l.product_id);
