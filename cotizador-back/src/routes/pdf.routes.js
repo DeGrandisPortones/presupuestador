@@ -870,8 +870,11 @@ function quoteUsesNewBudgetFormat(payload) {
   return createdAt.getTime() >= NEW_BUDGET_FORMAT_CUTOFF_MS;
 }
 
-async function renderPdf({ title, payload, useBasePrice, odoo, includeTerms = false, hideIvaBreakdown = false, displayNetPrices = false, taxRate = IVA_RATE, hideAllPrices = false, hideDetailPrices = false }) {
-  const usesNewBudgetFormat = quoteUsesNewBudgetFormat(payload);
+async function renderPdf({ title, payload, useBasePrice, odoo, includeTerms = false, hideIvaBreakdown = false, displayNetPrices = false, taxRate = IVA_RATE, hideAllPrices = false, hideDetailPrices = false, allowNewBudgetFormat = true }) {
+  // La proforma nunca debe tocarse por el corte de fecha - pasa allowNewBudgetFormat:false
+  // explicitamente para que jamas le aparezca el resumen por sector/membrete, sin importar
+  // la fecha de creacion del presupuesto.
+  const usesNewBudgetFormat = allowNewBudgetFormat && quoteUsesNewBudgetFormat(payload);
   const doc = new PDFDocument({ size: "A4", margin: 0, bufferPages: true });
   const buffers = [];
   doc.on("data", buffers.push.bind(buffers));
@@ -1101,7 +1104,7 @@ export function buildPdfRouter(odoo = null) {
     try {
       const rawPayload = req.body || {};
       const payload = { ...rawPayload, seller_name: resolveLoggedUserSellerName(req.user, rawPayload) };
-      const pdf = await renderPdf({ title: "PROFORMA", payload, useBasePrice: true, odoo, displayNetPrices: true, taxRate: isCondition2(payload) ? 0.105 : IVA_RATE });
+      const pdf = await renderPdf({ title: "PROFORMA", payload, useBasePrice: true, odoo, displayNetPrices: true, taxRate: isCondition2(payload) ? 0.105 : IVA_RATE, allowNewBudgetFormat: false });
       res.setHeader("Content-Type", "application/pdf");
       res.setHeader("Content-Disposition", `attachment; filename="${buildDownloadFilename(payload, "proforma")}"`);
       res.send(pdf);
