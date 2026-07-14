@@ -642,9 +642,9 @@ Condición vendida: ${getOdooConditionLabel(payload)}`;
 }
 function calcQuoteTotalWithIva({ lines, payload, quote = null }) {
   // Nombre legacy: este total es el que se envía a Odoo.
-  const subtotal = calcQuoteSubtotal({ lines, payload, quote });
-  if (shouldUseDistributorProformaPricesForOdoo(quote)) return round2(subtotal);
-  return round2(subtotal * getOdooConditionPriceFactor(payload || {}));
+  // calcQuoteSubtotal ya aplica el factor de condición linea por linea (via calcOdooUnitPrice),
+  // tanto para distribuidor como para vendedor. No volver a aplicarlo aca o Condicion 2 duplica el 10,5%.
+  return calcQuoteSubtotal({ lines, payload, quote });
 }
 function calcDetailedUnitWithIva(line, payload, quote = null) {
   // Nombre legacy: este precio unitario es el que se envía a Odoo.
