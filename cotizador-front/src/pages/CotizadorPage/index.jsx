@@ -1120,17 +1120,33 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
     if (savedRole === "vendedor" || savedRole === "distribuidor") return savedRole;
     return resolveCreatedByRole();
   }
-  // Solo para Vendedores (nunca Distribuidores): al producto elegido en la
-  // seccion "Tipo de portón" (Coplanar 3008 / Clásico 3009) se le suma, sin
-  // aparecer como linea aparte, el precio de Odoo del producto 2865 - queda
-  // mezclado en el mismo precio por m2 que ya trae ese producto, asi que
-  // escala con la superficie del portón igual que el resto del precio.
+  // Solo para Vendedores (nunca Distribuidores) y solo para presupuestos
+  // creados desde el corte en adelante: al producto elegido en la seccion
+  // "Tipo de portón" (Coplanar 3008 / Clásico 3009) se le suma, sin aparecer
+  // como linea aparte, el precio de Odoo del producto 2865 - queda mezclado
+  // en el mismo precio por m2 que ya trae ese producto, asi que escala con
+  // la superficie del portón igual que el resto del precio.
   // Todo se resuelve dentro del MISMO pedido de precios que ya se hacia
   // (una linea sintetica de mas en el request), sin ningun round-trip ni
   // await extra, para no correr el timing del resto del flujo (secciones
   // dependientes, etc.) ni un pelo respecto de como era antes.
   const SECTION_37_PRODUCT_IDS = [3008, 3009];
   const SECTION_37_EXTRA_PRODUCT_ID = 2865;
+  // Corte pedido explicitamente: los presupuestos creados hasta el 14/7/2026
+  // (inclusive) tienen que seguir calculando exactamente como en main hoy -
+  // esta funcionalidad solo aplica a presupuestos creados desde el 15/7/2026.
+  // Para un presupuesto nuevo (sin guardar todavia, sin created_at) se usa la
+  // fecha actual, que es la que terminara siendo su created_at real al guardarlo.
+  const NEW_PRICING_RULES_CUTOFF_MS = new Date("2026-07-15T00:00:00-03:00").getTime();
+  function quoteUsesNewPricingRules() {
+    const createdAtRaw = quoteQ.data?.created_at || new Date().toISOString();
+    const createdAt = new Date(createdAtRaw);
+    if (Number.isNaN(createdAt.getTime())) return true;
+    return createdAt.getTime() >= NEW_PRICING_RULES_CUTOFF_MS;
+  }
+  function shouldApplySection37VendorExtra() {
+    return resolveEffectiveRoleForPricing() === "vendedor" && quoteUsesNewPricingRules();
+  }
   // sourceLines: lineas reales del presupuesto que se estan pidiendo en esta
   // tanda (siempre tienen product_id, sin importar el formato del pedido de
   // precio de cada llamador) - se usan solo para decidir si corresponde
@@ -1138,7 +1154,7 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
   // vendedor la eligio aparte) para no duplicar el pedido ni pisar su precio.
   function withSection37ExtraLine(sourceLines, payloadLines) {
     const wireLines = Array.isArray(payloadLines) ? payloadLines : [];
-    if (resolveEffectiveRoleForPricing() !== "vendedor") return wireLines;
+    if (!shouldApplySection37VendorExtra()) return wireLines;
     const srcLines = Array.isArray(sourceLines) ? sourceLines : [];
     const hasSection37Line = srcLines.some((l) => SECTION_37_PRODUCT_IDS.includes(Number(l.product_id)));
     if (!hasSection37Line) return wireLines;
@@ -1147,6 +1163,7 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
     return [...wireLines, { product_id: SECTION_37_EXTRA_PRODUCT_ID, qty: 1 }];
   }
   function mergeSection37VendorExtra(pricesData, sourceLines) {
+    if (!shouldApplySection37VendorExtra()) return pricesData;
     const prices = Array.isArray(pricesData?.prices) ? pricesData.prices : [];
     const extraEntry = prices.find((p) => Number(p.product_id) === SECTION_37_EXTRA_PRODUCT_ID);
     if (!extraEntry) return pricesData;

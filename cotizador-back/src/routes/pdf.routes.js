@@ -192,10 +192,24 @@ function formatShortDate(value) {
   return d.toLocaleDateString("es-AR");
 }
 function getProductionPlanningText(payload) {
-  // El planning vive en columnas propias de la quote (production_delivery_*),
-  // no anidado en el payload - esta funcion antes buscaba un objeto
-  // "production_planning" que nunca existe, asi que la fecha de entrega nunca
-  // salia en el PDF.
+  // Dos fuentes posibles: el boton "PDF presupuesto" del front pide una
+  // estimacion en vivo (getProductionPlanningEstimate) y la manda como
+  // payload.production_planning ({week_number, start_date_label, end_date_label}).
+  // Si el PDF se genera de otra forma (ej. regenerar desde la fila cruda de la
+  // base, sin pasar por ese boton), esa estimacion en vivo no viene - ahi se
+  // cae a las columnas ya persistidas en la quote (production_delivery_*).
+  const planning = payload?.production_planning || payload?.payload?.production_planning || null;
+  if (planning && typeof planning === "object") {
+    const weekNumber = safeStr(planning.week_number || planning.week || "");
+    const startLabel = safeStr(planning.start_date_label || formatShortDate(planning.start_date));
+    const endLabel = safeStr(planning.end_date_label || formatShortDate(planning.end_date));
+    if (weekNumber || startLabel || endLabel) {
+      const weekPart = weekNumber ? `Semana ${weekNumber}` : "Semana estimada";
+      if (startLabel || endLabel) return `${weekPart}, entre ${startLabel || "-"} y ${endLabel || "-"}`;
+      return weekPart;
+    }
+  }
+
   const weekNumber = safeStr(payload?.production_delivery_week ?? payload?.payload?.production_delivery_week ?? "");
   const startLabel = formatShortDate(payload?.production_delivery_week_start ?? payload?.payload?.production_delivery_week_start);
   const endLabel = formatShortDate(payload?.production_delivery_week_end ?? payload?.payload?.production_delivery_week_end);
@@ -842,7 +856,22 @@ function drawBudgetSectorSummaryPage(doc, { title, payload, margin, innerW, date
   }
 }
 
+// Corte pedido explicitamente: los presupuestos creados hasta el 14/7/2026
+// (inclusive) tienen que seguir saliendo exactamente igual que en main hoy -
+// el formato nuevo (resumen por sector, membrete, sin cantidades en el
+// detalle) solo aplica a presupuestos creados desde el 15/7/2026. Un
+// presupuesto sin created_at todavia (borrador nuevo, sin guardar) usa la
+// fecha actual, que es la que terminara siendo su created_at real al guardarlo.
+const NEW_BUDGET_FORMAT_CUTOFF_MS = new Date("2026-07-15T00:00:00-03:00").getTime();
+function quoteUsesNewBudgetFormat(payload) {
+  const createdAtRaw = payload?.created_at || payload?.payload?.created_at || new Date().toISOString();
+  const createdAt = new Date(createdAtRaw);
+  if (Number.isNaN(createdAt.getTime())) return true;
+  return createdAt.getTime() >= NEW_BUDGET_FORMAT_CUTOFF_MS;
+}
+
 async function renderPdf({ title, payload, useBasePrice, odoo, includeTerms = false, hideIvaBreakdown = false, displayNetPrices = false, taxRate = IVA_RATE, hideAllPrices = false, hideDetailPrices = false }) {
+  const usesNewBudgetFormat = quoteUsesNewBudgetFormat(payload);
   const doc = new PDFDocument({ size: "A4", margin: 0, bufferPages: true });
   const buffers = [];
   doc.on("data", buffers.push.bind(buffers));
@@ -856,7 +885,7 @@ async function renderPdf({ title, payload, useBasePrice, odoo, includeTerms = fa
     : new Date(now.getTime() + validityDays * 86400000);
   const validStr = validUntil.toLocaleDateString("es-AR");
   const extraCalculatedLines = await buildBudgetExtraSummaryLines(payload);
-  const vanoTechnicalLines = hideAllPrices ? { left: [], right: [] } : await buildBudgetVanoTechnicalLines(payload);
+  const vanoTechnicalLines = (hideAllPrices || !usesNewBudgetFormat) ? { left: [], right: [] } : await buildBudgetVanoTechnicalLines(payload);
   const paymentMethod = safeStr(payload?.payload?.payment_method ?? payload?.payment_method);
   const productionPlanningText = getProductionPlanningText(payload);
   const obs = stripSellerLines(safeStr(payload?.note));
@@ -866,7 +895,7 @@ async function renderPdf({ title, payload, useBasePrice, odoo, includeTerms = fa
   if (paymentMethod) commercialInfoLines.push(`Forma de pago: ${paymentMethod}`);
   if (productionPlanningText && getCatalogKindFromPayload(payload) !== "puerta") commercialInfoLines.push(`Fecha estimada de entrega "${productionPlanningText}"`);
 
-  const sectorSummary = hideAllPrices ? null : await resolveBudgetSectorSummary({ catalogKind, lines, odoo });
+  const sectorSummary = (hideAllPrices || !usesNewBudgetFormat) ? null : await resolveBudgetSectorSummary({ catalogKind, lines, odoo });
   if (sectorSummary) {
     drawBudgetSectorSummaryPage(doc, { title, payload, margin, innerW, dateStr, validStr, hideValidity: hideAllPrices, summary: sectorSummary, useBasePrice, technicalLines: vanoTechnicalLines, paymentLines: commercialInfoLines });
     doc.addPage();
@@ -888,8 +917,9 @@ async function renderPdf({ title, payload, useBasePrice, odoo, includeTerms = fa
 
   // hideDetailPrices: variante pedida para "PRESUPUESTO" - saca el precio SOLO de la
   // tabla de detalle linea por linea (misma grilla que hideAllPrices), pero a diferencia
-  // de hideAllPrices deja el resumen por sector y el total final intactos.
-  const hideRowPrices = hideAllPrices || hideDetailPrices;
+  // de hideAllPrices deja el resumen por sector y el total final intactos. Junto con la
+  // cantidad, es parte del "formato nuevo" y por lo tanto tambien respeta el corte de fecha.
+  const hideRowPrices = hideAllPrices || (hideDetailPrices && usesNewBudgetFormat);
   const colDesc = hideRowPrices ? innerW : innerW * 0.54;
   const colQty = hideRowPrices ? 0 : innerW * 0.10;
   const colUnit = innerW * 0.18;
