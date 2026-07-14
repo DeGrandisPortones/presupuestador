@@ -5,6 +5,7 @@ import Button from "../ui/Button.jsx";
 import { useAuthStore } from "../domain/auth/store.js";
 import { getTechnicalConsultUnreadSummary } from "../api/technicalConsults.js";
 import AptoKgProductSectionFilterPatch from "../components/AptoKgProductSectionFilterPatch.jsx";
+import PdfFormatAnnouncementModal from "../components/PdfFormatAnnouncementModal.jsx";
 
 const DROPDOWN_ITEM_STYLE = {
   display: "block",
@@ -346,6 +347,7 @@ export default function AppLayout() {
       </div>
 
       <AptoKgProductSectionFilterPatch />
+      {canQuote ? <PdfFormatAnnouncementModal /> : null}
       <Outlet />
       </div>
     </div>
