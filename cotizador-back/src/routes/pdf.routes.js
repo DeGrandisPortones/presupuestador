@@ -435,6 +435,42 @@ function drawLinesBand(doc, { y, margin, innerW, items }) {
   return y + h;
 }
 
+// Igual que drawLinesBand, pero en dos columnas lado a lado (para el
+// membrete tecnico: sistema/dimensiones a la izquierda, paso/peso/piernas a
+// la derecha). Cada columna se calcula y dibuja de forma independiente.
+function drawTwoColumnLinesBand(doc, { y, margin, innerW, left, right }) {
+  const cleanLeft = (Array.isArray(left) ? left : []).map((item) => safeStr(item)).filter(Boolean);
+  const cleanRight = (Array.isArray(right) ? right : []).map((item) => safeStr(item)).filter(Boolean);
+  if (!cleanLeft.length && !cleanRight.length) return y;
+  const padX = 10;
+  const padY = 8;
+  const lineGapPx = 4;
+  const colGap = 20;
+  const colW = (innerW - padX * 2 - colGap) / 2;
+  doc.font("Helvetica").fontSize(10);
+  const measure = (arr) => arr.map((text) => doc.heightOfString(text, { width: colW, lineGap: 2 }));
+  const leftHeights = measure(cleanLeft);
+  const rightHeights = measure(cleanRight);
+  const sumH = (heights) => heights.reduce((acc, h) => acc + h + lineGapPx, -lineGapPx);
+  const contentH = Math.max(sumH(leftHeights), sumH(rightHeights), 0);
+  const h = Math.max(28, Math.ceil(contentH + padY * 2));
+  doc.save().fillColor("#FFFFFF").rect(margin, y, innerW, h).fill().restore();
+  doc.save().strokeColor("#D1D5DB").rect(margin, y, innerW, h).stroke().restore();
+  doc.save().strokeColor("#E5E7EB").moveTo(margin + padX + colW + colGap / 2, y + padY).lineTo(margin + padX + colW + colGap / 2, y + h - padY).stroke().restore();
+  let cy = y + padY;
+  cleanLeft.forEach((text, i) => {
+    doc.font("Helvetica").fontSize(10).fillColor("#111827").text(text, margin + padX, cy, { width: colW, lineGap: 2 });
+    cy += leftHeights[i] + lineGapPx;
+  });
+  const xRight = margin + padX + colW + colGap;
+  cy = y + padY;
+  cleanRight.forEach((text, i) => {
+    doc.font("Helvetica").fontSize(10).fillColor("#111827").text(text, xRight, cy, { width: colW, lineGap: 2 });
+    cy += rightHeights[i] + lineGapPx;
+  });
+  return y + h;
+}
+
 // Envuelve el contenido dibujado por drawContent en un recuadro con borde
 // redondeado marcado (mismo estilo que los bloques de sector), con una barra
 // de titulo opcional arriba.
@@ -664,7 +700,42 @@ function drawTermsAndConditionsPage(doc, { title, payload, margin, innerW, dateS
   }
 }
 
-function drawSectorItemsBlock(doc, { y, margin, innerW, pageBottom, headerLabel, headerFill, subtotalLabel, items, total }) {
+// Configs candidatas para que los 3 sectores entren en una sola hoja: se
+// prueban de mas espaciosa a mas compacta (ver pickSectorBlockCfg) y solo se
+// achica letra/espaciado si con la espaciosa no alcanza.
+const SECTOR_BLOCK_CFGS = [
+  { headerH: 24, itemFontSize: 9.5, rowPad: 12, rowMinH: 22, subtotalH: 26, blockGap: 12 },
+  { headerH: 21, itemFontSize: 9, rowPad: 9, rowMinH: 19, subtotalH: 22, blockGap: 8 },
+  { headerH: 18, itemFontSize: 8.3, rowPad: 7, rowMinH: 16, subtotalH: 20, blockGap: 6 },
+  { headerH: 16, itemFontSize: 7.6, rowPad: 5, rowMinH: 14, subtotalH: 18, blockGap: 4 },
+];
+
+function measureSectorBlockHeight(doc, { innerW, items, cfg }) {
+  const textWidth = innerW - 32;
+  let h = cfg.headerH;
+  doc.font("Helvetica").fontSize(cfg.itemFontSize);
+  for (const item of items) {
+    const bulletText = `•  ${item.productName}`;
+    const textH = doc.heightOfString(bulletText, { width: textWidth });
+    h += Math.max(cfg.rowMinH, textH + cfg.rowPad);
+  }
+  h += cfg.subtotalH + cfg.blockGap;
+  return h;
+}
+
+// Elige, entre SECTOR_BLOCK_CFGS, la mas espaciosa que hace entrar los 3
+// sectores en el alto disponible; si ninguna alcanza, usa la mas compacta
+// (el ensureSpace de drawSectorItemsBlock queda como red de seguridad).
+function pickSectorBlockCfg(doc, { innerW, sectors, availableH }) {
+  for (const cfg of SECTOR_BLOCK_CFGS) {
+    const neededH = sectors.reduce((acc, s) => acc + measureSectorBlockHeight(doc, { innerW, items: s.items, cfg }), 0);
+    if (neededH <= availableH) return cfg;
+  }
+  return SECTOR_BLOCK_CFGS[SECTOR_BLOCK_CFGS.length - 1];
+}
+
+function drawSectorItemsBlock(doc, { y, margin, innerW, pageBottom, headerLabel, headerFill, subtotalLabel, items, total, cfg = SECTOR_BLOCK_CFGS[0] }) {
+  const { headerH, itemFontSize, rowPad, rowMinH, subtotalH, blockGap } = cfg;
   const blockStartY = y;
   const startPageCount = doc.bufferedPageRange().count;
 
@@ -674,34 +745,35 @@ function drawSectorItemsBlock(doc, { y, margin, innerW, pageBottom, headerLabel,
     y = margin + 20;
   }
 
-  ensureSpace(24);
-  doc.save().fillColor(headerFill).rect(margin, y, innerW, 24).fill().restore();
-  doc.font("Helvetica-Bold").fontSize(10.5).fillColor("#111827").text(headerLabel.toUpperCase(), margin + 10, y + 7, { width: innerW - 20, align: "center" });
-  y += 24;
+  ensureSpace(headerH);
+  doc.save().fillColor(headerFill).rect(margin, y, innerW, headerH).fill().restore();
+  doc.font("Helvetica-Bold").fontSize(Math.min(10.5, itemFontSize + 1)).fillColor("#111827")
+    .text(headerLabel.toUpperCase(), margin + 10, y + Math.max(4, (headerH - 11) / 2), { width: innerW - 20, align: "center" });
+  y += headerH;
 
   const textWidth = innerW - 32;
   for (const item of items) {
     const bulletText = `•  ${item.productName}`;
-    doc.font("Helvetica").fontSize(9.5);
+    doc.font("Helvetica").fontSize(itemFontSize);
     const textH = doc.heightOfString(bulletText, { width: textWidth });
-    const rowH = Math.max(22, textH + 12);
+    const rowH = Math.max(rowMinH, textH + rowPad);
     ensureSpace(rowH);
     doc.save().strokeColor("#E5E7EB").rect(margin, y, innerW, rowH).stroke().restore();
-    doc.font("Helvetica").fontSize(9.5).fillColor("#111827").text(bulletText, margin + 16, y + 5, { width: textWidth });
+    doc.font("Helvetica").fontSize(itemFontSize).fillColor("#111827").text(bulletText, margin + 16, y + Math.max(3, (rowPad - 2) / 2), { width: textWidth });
     y += rowH;
   }
 
-  ensureSpace(26);
-  doc.save().fillColor("#F3F4F6").rect(margin, y, innerW, 26).fill().restore();
-  doc.font("Helvetica-Bold").fontSize(10).fillColor("#111827")
-    .text(subtotalLabel, margin + 10, y + 7, { width: innerW * 0.68 - 10 })
-    .text(`$ ${formatMoney(total)}`, margin + innerW * 0.68, y + 7, { width: innerW * 0.32 - 10, align: "right" });
-  y += 26;
+  ensureSpace(subtotalH);
+  doc.save().fillColor("#F3F4F6").rect(margin, y, innerW, subtotalH).fill().restore();
+  doc.font("Helvetica-Bold").fontSize(Math.min(10, itemFontSize + 0.5)).fillColor("#111827")
+    .text(subtotalLabel, margin + 10, y + Math.max(4, (subtotalH - 11) / 2), { width: innerW * 0.68 - 10 })
+    .text(`$ ${formatMoney(total)}`, margin + innerW * 0.68, y + Math.max(4, (subtotalH - 11) / 2), { width: innerW * 0.32 - 10, align: "right" });
+  y += subtotalH;
 
   if (doc.bufferedPageRange().count === startPageCount) {
     doc.save().strokeColor("#111827").lineWidth(1.5).roundedRect(margin, blockStartY, innerW, y - blockStartY, 10).stroke().restore();
   }
-  y += 12;
+  y += blockGap;
 
   return y;
 }
@@ -719,14 +791,19 @@ function drawBudgetSectorSummaryPage(doc, { title, payload, margin, innerW, date
 
   let y = drawHeader(doc, { title, payload, margin, innerW, dateStr, validStr, hideValidity });
   y = drawFramedBox(doc, { y, margin, innerW, drawContent: (yy) => drawInfoTable(doc, payload, yy, margin, innerW, useBasePrice) });
-  if (technicalLines?.length) {
-    y = drawFramedBox(doc, { y, margin, innerW, headerLabel: "Datos técnicos", drawContent: (yy) => drawLinesBand(doc, { y: yy, margin, innerW, items: technicalLines }) });
+  if (technicalLines?.left?.length || technicalLines?.right?.length) {
+    y = drawFramedBox(doc, { y, margin, innerW, headerLabel: "Datos técnicos", drawContent: (yy) => drawTwoColumnLinesBand(doc, { y: yy, margin, innerW, left: technicalLines.left, right: technicalLines.right }) });
   }
   if (paymentLines?.length) {
     y = drawFramedBox(doc, { y, margin, innerW, headerLabel: "Forma de pago", drawContent: (yy) => drawLinesBand(doc, { y: yy, margin, innerW, items: paymentLines }) });
   }
   doc.font("Helvetica-Bold").fontSize(13).fillColor("#111827").text("Presupuesto", margin, y, { width: innerW, align: "center" });
   y = doc.y + 12;
+
+  // Los 3 sectores (y su TOTAL) tienen que entrar en esta misma hoja: se mide
+  // el alto disponible y se elige la config mas espaciosa que alcance.
+  const availableForSectors = pageBottom() - y - (36 + 16);
+  const sectorCfg = pickSectorBlockCfg(doc, { innerW, sectors: summary.sectors, availableH: availableForSectors });
 
   for (const sector of summary.sectors) {
     y = drawSectorItemsBlock(doc, {
@@ -736,6 +813,7 @@ function drawBudgetSectorSummaryPage(doc, { title, payload, margin, innerW, date
       subtotalLabel: `Subtotal ${sector.label}`,
       items: sector.items,
       total: sector.total,
+      cfg: sectorCfg,
     });
   }
 
@@ -776,7 +854,7 @@ async function renderPdf({ title, payload, useBasePrice, odoo, includeTerms = fa
     : new Date(now.getTime() + validityDays * 86400000);
   const validStr = validUntil.toLocaleDateString("es-AR");
   const extraCalculatedLines = await buildBudgetExtraSummaryLines(payload);
-  const vanoTechnicalLines = hideAllPrices ? [] : await buildBudgetVanoTechnicalLines(payload);
+  const vanoTechnicalLines = hideAllPrices ? { left: [], right: [] } : await buildBudgetVanoTechnicalLines(payload);
   const paymentMethod = safeStr(payload?.payload?.payment_method ?? payload?.payment_method);
   const productionPlanningText = getProductionPlanningText(payload);
   const obs = stripSellerLines(safeStr(payload?.note));
