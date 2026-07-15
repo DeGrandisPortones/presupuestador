@@ -1,20 +1,12 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
-const SEEN_KEY = "dg_seen_announcement_pdf_format_v1";
-
+// A proposito sin persistencia: tiene que aparecer cada vez que el usuario
+// se loguea (este componente se monta de nuevo en cada login/carga de la
+// app), no solo la primera vez.
 export default function PdfFormatAnnouncementModal() {
-  const [open, setOpen] = useState(false);
-
-  useEffect(() => {
-    try {
-      if (window.localStorage.getItem(SEEN_KEY) !== "1") setOpen(true);
-    } catch {
-      setOpen(true);
-    }
-  }, []);
+  const [open, setOpen] = useState(true);
 
   function close() {
-    try { window.localStorage.setItem(SEEN_KEY, "1"); } catch {}
     setOpen(false);
   }
 
