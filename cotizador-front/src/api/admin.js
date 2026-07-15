@@ -202,6 +202,12 @@ export async function adminDeleteQuote(id) {
   return true;
 }
 
+export async function adminSetQuoteTechnicalFormula(id, enabled) {
+  const { data } = await http.post(`/api/admin/quotes/${encodeURIComponent(String(id))}/technical-formula`, { enabled });
+  if (!data?.ok) throw new Error(data?.error || "No se pudo actualizar el presupuesto");
+  return data;
+}
+
 export async function adminResyncPortonMeasurements(identifier, { force = false } = {}) {
   const { data } = await http.post("/api/admin/resync/porton-measurements", { identifier, force });
   // Si esta bloqueado porque el cliente ya acepto, devolvemos la respuesta tal cual (no es un error

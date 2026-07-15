@@ -548,30 +548,52 @@ function getPasoWidthDeductionMm(piernasTipo, surfaceParameters) {
   };
   return Number(map[key] || 0);
 }
-// Portones puntuales donde el resumen automatico (que recalcula localmente y no coincide
-// con la formula oficial del backend en portonVanoMeasurements.js) fue reemplazado a mano
-// por un reclamo. Acotado a proposito a estos ids nada mas (no es un mecanismo general
-// todavia). Valores tomados 1 a 1 del recalculo oficial ya persistido en el backend.
-const TECHNICAL_SUMMARY_OVERRIDE_BY_QUOTE_ID = {
-  "4624e5aa-66db-461f-98bb-3a639ac0b900": { // Mandrini - NP4288/NV4288
-    alto_calculado_mm: 2200, ancho_calculado_mm: 3375,
-    alto_paso_mm: 2000, ancho_paso_mm: 3105,
-    peso_estimado_kg: 117.77, piernas_tipo: "comunes", ancho_pierna_mm: 270,
-  },
-  "a2ce4bbd-2f8b-45e7-b15d-e1f51c8e9407": { // Balsa - NP4298/NV4298
-    alto_calculado_mm: 2450, ancho_calculado_mm: 3300,
-    alto_paso_mm: 2250, ancho_paso_mm: 2930,
-    peso_estimado_kg: 128.29, piernas_tipo: "anchas", ancho_pierna_mm: 370,
-  },
-  "ee869687-463e-4341-9575-d8728631e1f2": { // NV4332
-    alto_calculado_mm: 2450, ancho_calculado_mm: 3970,
-    alto_paso_mm: 2250, ancho_paso_mm: 3700,
-    peso_estimado_kg: 154.44, piernas_tipo: "comunes", ancho_pierna_mm: 270,
-  },
-};
+function mapPiernasLabelToKey(label) {
+  const t = String(label || "").trim().toLowerCase();
+  if (t.includes("super")) return "superanchas";
+  if (t.includes("especial")) return "especiales";
+  if (t.includes("ancha")) return "anchas";
+  if (t.includes("comun")) return "comunes";
+  if (t.includes("angosta")) return "angostas";
+  return "";
+}
+// Corte: los presupuestos confirmados/creados a partir de esta fecha ya usan la formula
+// oficial del backend (portonVanoMeasurements.js) en vez del calculo local obsoleto de mas
+// abajo. Los anteriores mantienen el comportamiento historico salvo que se habiliten a mano
+// desde Superusuario > Admin presupuestos ("Usar formula nueva"), para no arriesgar
+// presupuestos ya confirmados sin que alguien lo decida puntualmente.
+const NEW_TECHNICAL_FORMULA_CUTOFF_MS = new Date("2026-07-15T20:00:00-03:00").getTime();
+function quoteUsesNewTechnicalFormula(quote) {
+  if (quote?.payload?.use_new_technical_formula === true) return true;
+  const createdMs = new Date(quote?.created_at || 0).getTime();
+  return Number.isFinite(createdMs) && createdMs >= NEW_TECHNICAL_FORMULA_CUTOFF_MS;
+}
+// El calculo local de mas abajo usa una formula obsoleta (descuenta el ancho de pierna x2
+// en vez del descuento oficial por tipo de pierna) y puede no coincidir con lo que el
+// backend ya recalculo con la medicion final (portonVanoMeasurements.js). Para los
+// presupuestos habilitados (ver quoteUsesNewTechnicalFormula), prioriza ese valor oficial
+// ya guardado en payload.dimensions; para el resto no cambia nada.
+function resolveTechnicalSummary({ quote, form, surfaceParameters = {} }) {
+  const local = computeAutomaticSummary({ quote, form, surfaceParameters });
+  if (!quoteUsesNewTechnicalFormula(quote)) return local;
+  const dims = quote?.payload?.dimensions || {};
+  const anchoCalculadoMm = Math.round((toNumberLike(dims?.width) || 0) * 1000);
+  const altoCalculadoMm = Math.round((toNumberLike(dims?.height) || 0) * 1000);
+  const anchoPasoMm = Number(dims?.paso_ancho_mm || dims?.medidas_paso_ancho_mm || 0);
+  const altoPasoMm = Number(dims?.paso_alto_mm || dims?.medidas_paso_alto_mm || 0);
+  const pesoEstimadoKg = Number(dims?.calculated_estimated_weight_kg || 0);
+  const piernasTipo = mapPiernasLabelToKey(dims?.calculated_legs_label);
+  return {
+    ...local,
+    ancho_calculado_mm: anchoCalculadoMm || local.ancho_calculado_mm,
+    alto_calculado_mm: altoCalculadoMm || local.alto_calculado_mm,
+    ancho_paso_mm: anchoPasoMm || local.ancho_paso_mm,
+    alto_paso_mm: altoPasoMm || local.alto_paso_mm,
+    peso_estimado_kg: pesoEstimadoKg || local.peso_estimado_kg,
+    piernas_tipo: piernasTipo || local.piernas_tipo,
+  };
+}
 function computeAutomaticSummary({ quote, form, surfaceParameters = {} }) {
-  const summaryOverride = TECHNICAL_SUMMARY_OVERRIDE_BY_QUOTE_ID[String(quote?.id || "")];
-  if (summaryOverride) return summaryOverride;
   const budgetHeightMm = Math.round(toNumberLike(quote?.payload?.dimensions?.height) * 1000) || 0;
   const budgetWidthMm = Math.round(toNumberLike(quote?.payload?.dimensions?.width) * 1000) || 0;
   const altos = Array.isArray(form?.esquema?.alto) ? form.esquema.alto : [];
@@ -1049,7 +1071,7 @@ export default function MedicionDetailPage() {
 
   const technicalRules = dynamicRulesQ.data || {};
   const technicalSummary = useMemo(
-    () => computeAutomaticSummary({ quote, form, surfaceParameters: technicalRules?.surface_parameters || {} }),
+    () => resolveTechnicalSummary({ quote, form, surfaceParameters: technicalRules?.surface_parameters || {} }),
     [quote, form, technicalRules],
   );
   // Medidas de paso ya calculadas por el backend con la medida final (measurementFinalization.js /

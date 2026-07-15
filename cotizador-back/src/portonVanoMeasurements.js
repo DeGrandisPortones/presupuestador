@@ -272,7 +272,9 @@ function computePortonFromVano({ vanoWidthM, vanoHeightM, placementProductId, le
   };
 }
 
-function buildCalculatedPreview({ widthM, heightM, lines, params, portonType, dimensions }) {
+const LEGS_KEY_TO_LABEL = { angostas: "Angostas", comunes: "Comunes", anchas: "Anchas", superanchas: "Superanchas", especiales: "Especiales" };
+
+function buildCalculatedPreview({ widthM, heightM, lines, params, portonType, dimensions, legsLabelOverride }) {
   const widthMm = Math.round((Number(widthM || 0) || 0) * 1000);
   const heightMm = Math.round((Number(heightM || 0) || 0) * 1000);
   const areaM2 = (Number(widthM || 0) || 0) * (Number(heightM || 0) || 0);
@@ -289,7 +291,9 @@ function buildCalculatedPreview({ widthM, heightM, lines, params, portonType, di
   const estimatedWeightKg = areaM2 > 0 && effectiveKgM2 > 0
     ? Number((discountedHeightMm / 1000 * discountedWidthMm / 1000 * effectiveKgM2).toFixed(2))
     : 0;
-  const legsLabel = legsTypeForWeight(estimatedWeightKg, aptoParaRevestir, params);
+  // legsLabelOverride: permite que una "pierna" cargada a mano por tecnica (measurement_form.piernas)
+  // reemplace el calculo automatico por peso, para que medidas de paso/hoja salgan con esa pierna.
+  const legsLabel = legsLabelOverride || legsTypeForWeight(estimatedWeightKg, aptoParaRevestir, params);
   const legsKey = mapLegsKeyForWidth(legsLabel);
   const pasoWidthDiscountMm = getPasoWidthDiscountByLegMm(legsKey, params);
   const anchoPasoMm = Math.max(0, widthMm - pasoWidthDiscountMm);
@@ -332,12 +336,13 @@ function formatMetersFromMm(mm) {
 // a partir del vano final (medido), replicando exactamente lo que hace el presupuesto. legsKey
 // para el ajuste "por detras del vano" se resuelve con un pequeno punto fijo (2-3 iteraciones),
 // igual que converge la UI entre renders sucesivos del efecto en PortonDimensions.jsx.
-export async function computeOfficialPortonMeasurements({ vanoWidthM, vanoHeightM, lines, portonType, dimensions }) {
+export async function computeOfficialPortonMeasurements({ vanoWidthM, vanoHeightM, lines, portonType, dimensions, legsKeyOverride }) {
   const rulesData = await getTechnicalMeasurementRules("porton");
   const params = getRulesParams(rulesData);
   const placementProductId = getSelectedVanoPlacementProductId(lines);
+  const legsLabelOverride = legsKeyOverride ? LEGS_KEY_TO_LABEL[mapLegsKeyForWidth(String(legsKeyOverride))] : null;
 
-  let legsLabelGuess = buildCalculatedPreview({ widthM: vanoWidthM, heightM: vanoHeightM, lines, params, portonType, dimensions }).legsLabel;
+  let legsLabelGuess = legsLabelOverride || buildCalculatedPreview({ widthM: vanoWidthM, heightM: vanoHeightM, lines, params, portonType, dimensions }).legsLabel;
   let portonFromVano = { widthM: 0, heightM: 0 };
   let preview = null;
 
@@ -346,7 +351,7 @@ export async function computeOfficialPortonMeasurements({ vanoWidthM, vanoHeight
     portonFromVano = computePortonFromVano({ vanoWidthM, vanoHeightM, placementProductId, legsKey: vanoLegsKey, params });
     const portonWidthM = portonFromVano.widthM > 0 ? portonFromVano.widthM : vanoWidthM;
     const portonHeightM = portonFromVano.heightM > 0 ? portonFromVano.heightM : vanoHeightM;
-    preview = buildCalculatedPreview({ widthM: portonWidthM, heightM: portonHeightM, lines, params, portonType, dimensions });
+    preview = buildCalculatedPreview({ widthM: portonWidthM, heightM: portonHeightM, lines, params, portonType, dimensions, legsLabelOverride });
     if (preview.legsLabel === legsLabelGuess) break;
     legsLabelGuess = preview.legsLabel;
   }

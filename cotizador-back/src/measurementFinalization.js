@@ -1463,7 +1463,7 @@ function isDirectNvAlreadyCreated(originalQuote) {
   );
 }
 
-async function buildMeasurementFinalizationBase({ odoo, originalQuote, measurementForm }) {
+async function buildMeasurementFinalizationBase({ odoo, originalQuote, measurementForm, allowLegsOverride = false }) {
   const sourceQuote = await resolveBaseSourceQuote(originalQuote);
   if (String(originalQuote?.catalog_kind || sourceQuote?.catalog_kind || "").toLowerCase().trim() === "ipanel") {
     const pricingPayload = sourceQuote?.payload || originalQuote?.payload || {};
@@ -1531,6 +1531,10 @@ async function buildMeasurementFinalizationBase({ odoo, originalQuote, measureme
         lines: sourceBaseLines,
         portonType: sourceQuote?.payload?.porton_type || originalQuote?.payload?.porton_type || "",
         dimensions: sourceQuote?.payload?.dimensions || originalQuote?.payload?.dimensions || {},
+        // El tipo de pierna SIEMPRE se calcula por peso con la formula oficial. Nadie
+        // puede cambiarlo desde el presupuestador (ni medidor ni tecnica) - la unica
+        // via de override es superusuario forzando el resync puntual de un portón.
+        legsKeyOverride: allowLegsOverride ? (String(measurementForm?.piernas || "").trim() || undefined) : undefined,
       });
       dimensionsPatch = officialMeasurements.dimensionsPatch;
     } catch (e) {
@@ -1888,6 +1892,7 @@ export async function resyncPortonMeasurements({ odoo, originalQuoteId, force = 
     odoo,
     originalQuote,
     measurementForm: originalQuote.measurement_form,
+    allowLegsOverride: true,
   });
   const dimensionsPatch = base.dimensions_patch;
   if (!dimensionsPatch || !Object.keys(dimensionsPatch).length) {

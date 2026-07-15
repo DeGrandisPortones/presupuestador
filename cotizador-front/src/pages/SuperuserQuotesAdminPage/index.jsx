@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import Button from "../../ui/Button.jsx";
 import PaginationControls from "../../ui/PaginationControls.jsx";
-import { adminDeleteQuote, adminGetQuotes, adminResyncPortonMeasurements } from "../../api/admin.js";
+import { adminDeleteQuote, adminGetQuotes, adminResyncPortonMeasurements, adminSetQuoteTechnicalFormula } from "../../api/admin.js";
 
 const PAGE_SIZE = 25;
 
@@ -84,6 +84,12 @@ export default function SuperuserQuotesAdminPage() {
   const deleteM = useMutation({
     mutationFn: (id) => adminDeleteQuote(id),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["admin-quotes"] }),
+  });
+
+  const technicalFormulaM = useMutation({
+    mutationFn: ({ id, enabled }) => adminSetQuoteTechnicalFormula(id, enabled),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["admin-quotes"] }),
+    onError: (e) => window.alert(e?.message || "No se pudo actualizar el presupuesto"),
   });
 
   const [resyncIdentifier, setResyncIdentifier] = useState("");
@@ -277,6 +283,16 @@ export default function SuperuserQuotesAdminPage() {
                     <td className="right">
                       <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", flexWrap: "wrap" }}>
                         <Button variant="ghost" onClick={() => navigate(`/presupuestos/${row.id}`)}>Ver</Button>
+                        {String(row.catalog_kind || "porton").toLowerCase() === "porton" ? (
+                          <Button
+                            variant={row.payload?.use_new_technical_formula ? "primary" : "secondary"}
+                            disabled={technicalFormulaM.isPending}
+                            title="Medidas de paso/hoja: usar la fórmula oficial (backend) en vez del cálculo local obsoleto para este presupuesto puntual"
+                            onClick={() => technicalFormulaM.mutate({ id: row.id, enabled: !row.payload?.use_new_technical_formula })}
+                          >
+                            {row.payload?.use_new_technical_formula ? "Fórmula nueva ✓" : "Usar fórmula nueva"}
+                          </Button>
+                        ) : null}
                         {canShowDelete && row.can_delete ? (
                           <Button variant="danger" disabled={deleteM.isPending} onClick={() => deleteQuote(row)}>
                             Eliminar
