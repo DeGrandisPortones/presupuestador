@@ -181,6 +181,51 @@ function minMm(values = []) {
   const nums = (Array.isArray(values) ? values : []).map((v) => toNumberLike(v)).filter((n) => Number.isFinite(n) && n > 0);
   return nums.length ? Math.min(...nums) : 0;
 }
+function mapPiernasLabelToKey(label) {
+  const t = String(label || "").trim().toLowerCase();
+  if (t.includes("super")) return "superanchas";
+  if (t.includes("especial")) return "especiales";
+  if (t.includes("ancha")) return "anchas";
+  if (t.includes("comun")) return "comunes";
+  if (t.includes("angosta")) return "angostas";
+  return "";
+}
+// Corte: los presupuestos confirmados/creados a partir de esta fecha ya usan la formula
+// oficial del backend (portonVanoMeasurements.js) en vez del calculo local obsoleto de mas
+// abajo. Los anteriores mantienen el comportamiento historico salvo que se habiliten a mano
+// desde Superusuario > Admin presupuestos ("Usar formula nueva"), para no arriesgar
+// presupuestos ya confirmados sin que alguien lo decida puntualmente.
+const NEW_TECHNICAL_FORMULA_CUTOFF_MS = new Date("2026-07-15T20:00:00-03:00").getTime();
+function quoteUsesNewTechnicalFormula(quote) {
+  if (quote?.payload?.use_new_technical_formula === true) return true;
+  const createdMs = new Date(quote?.created_at || 0).getTime();
+  return Number.isFinite(createdMs) && createdMs >= NEW_TECHNICAL_FORMULA_CUTOFF_MS;
+}
+// El calculo local de mas abajo usa una formula obsoleta (descuenta el ancho de pierna x2
+// en vez del descuento oficial por tipo de pierna) y puede no coincidir con lo que el
+// backend ya recalculo con la medicion final (portonVanoMeasurements.js). Para los
+// presupuestos habilitados (ver quoteUsesNewTechnicalFormula), prioriza ese valor oficial
+// ya guardado en payload.dimensions; para el resto no cambia nada.
+function resolveTechnicalSummary({ quote, form, surfaceParameters = {} }) {
+  const local = computeAutomaticSummary({ quote, form, surfaceParameters });
+  if (!quoteUsesNewTechnicalFormula(quote)) return local;
+  const dims = quote?.payload?.dimensions || {};
+  const anchoCalculadoMm = Math.round((toNumberLike(dims?.width) || 0) * 1000);
+  const altoCalculadoMm = Math.round((toNumberLike(dims?.height) || 0) * 1000);
+  const anchoPasoMm = Number(dims?.paso_ancho_mm || dims?.medidas_paso_ancho_mm || 0);
+  const altoPasoMm = Number(dims?.paso_alto_mm || dims?.medidas_paso_alto_mm || 0);
+  const pesoEstimadoKg = Number(dims?.calculated_estimated_weight_kg || 0);
+  const piernasTipo = mapPiernasLabelToKey(dims?.calculated_legs_label);
+  return {
+    ...local,
+    ancho_calculado_mm: anchoCalculadoMm || local.ancho_calculado_mm,
+    alto_calculado_mm: altoCalculadoMm || local.alto_calculado_mm,
+    ancho_paso_mm: anchoPasoMm || local.ancho_paso_mm,
+    alto_paso_mm: altoPasoMm || local.alto_paso_mm,
+    peso_estimado_kg: pesoEstimadoKg || local.peso_estimado_kg,
+    piernas_tipo: piernasTipo || local.piernas_tipo,
+  };
+}
 function computeAutomaticSummary({ quote, form, surfaceParameters = {} }) {
   const budgetHeightMm = Math.round(toNumberLike(quote?.payload?.dimensions?.height) * 1000) || 0;
   const budgetWidthMm = Math.round(toNumberLike(quote?.payload?.dimensions?.width) * 1000) || 0;
@@ -336,7 +381,7 @@ export default function MeasurementReadOnlyView({ quote }) {
   const end = quote?.end_customer || {};
   const split = splitName(end);
   const budgetSummaryItems = buildBudgetSummaryItems(quote);
-  const technicalSummary = computeAutomaticSummary({
+  const technicalSummary = resolveTechnicalSummary({
     quote,
     form,
     surfaceParameters: quote?.technical_rules?.surface_parameters || {},

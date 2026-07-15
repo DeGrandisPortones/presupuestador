@@ -484,6 +484,26 @@ export function buildAdminRouter(odoo) {
     } catch (e) { next(e); }
   });
 
+  // Prende/apaga a mano, para un presupuesto puntual, el uso de la formula oficial de
+  // medidas de paso/hoja (en vez del calculo local obsoleto) en las vistas de
+  // medicion/aceptacion/detalle. Los presupuestos nuevos (posteriores al corte de fecha)
+  // ya la usan solos; esto es para poder migrar presupuestos viejos de a uno, sin arriesgar
+  // el resto.
+  router.post("/quotes/:id/technical-formula", requireAuth, requireSuperuser, async (req, res, next) => {
+    try {
+      const id = cleanAdminText(req.params.id);
+      const enabled = req.body?.enabled === true;
+      const cur = await dbQuery(`select payload from public.presupuestador_quotes where id=$1 limit 1`, [id]);
+      const quote = cur.rows?.[0];
+      if (!quote) return res.status(404).json({ ok: false, error: "Presupuesto no encontrado" });
+      const payload = quote.payload && typeof quote.payload === "object" ? { ...quote.payload } : {};
+      if (enabled) payload.use_new_technical_formula = true;
+      else delete payload.use_new_technical_formula;
+      await dbQuery(`update public.presupuestador_quotes set payload=$2::jsonb where id=$1`, [id, JSON.stringify(payload)]);
+      res.json({ ok: true, id, use_new_technical_formula: enabled });
+    } catch (e) { next(e); }
+  });
+
   router.get("/users", requireAuth, requireEncComercialOrSuperuser, async (req, res, next) => {
     try {
       const users = await listUsers({ role: req.query.role || "all", q: req.query.q || "", active: req.query.active || "all" });
