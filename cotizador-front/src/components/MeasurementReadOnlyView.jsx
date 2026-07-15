@@ -187,9 +187,9 @@ function minMm(values = []) {
 // todavia). Valores tomados 1 a 1 del recalculo oficial ya persistido en el backend.
 const TECHNICAL_SUMMARY_OVERRIDE_BY_QUOTE_ID = {
   "4624e5aa-66db-461f-98bb-3a639ac0b900": { // Mandrini - NP4288/NV4288
-    alto_calculado_mm: 2200, ancho_calculado_mm: 3915,
-    alto_paso_mm: 2000, ancho_paso_mm: 3645,
-    peso_estimado_kg: 136.69, piernas_tipo: "comunes", ancho_pierna_mm: 270,
+    alto_calculado_mm: 2200, ancho_calculado_mm: 3375,
+    alto_paso_mm: 2000, ancho_paso_mm: 3105,
+    peso_estimado_kg: 117.77, piernas_tipo: "comunes", ancho_pierna_mm: 270,
   },
   "a2ce4bbd-2f8b-45e7-b15d-e1f51c8e9407": { // Balsa - NP4298/NV4298
     alto_calculado_mm: 2450, ancho_calculado_mm: 3300,
