@@ -6,6 +6,12 @@ const SECTOR_LABELS = {
   automatizacion: "Automatización",
   servicios: "Servicios",
 };
+// Lineas auto-generadas (precio de parantes segun m2, etc.) que no tienen seccion de
+// catalogo propia: sin esto caen en "Sin seccion" y se listan como item suelto. El pedido
+// es que sumen en el sector Producto pero no aparezcan como item individual.
+const HIDDEN_SUM_ONLY_PRODUCT_IDS = new Set([
+  4009, // Parante Interno (Odoo 3538) - Auto parantes apto para revestir
+]);
 
 // Logica pura (sin I/O) que arma el resumen por sector a partir del catalogo
 // ya resuelto. Separada de resolveBudgetSectorSummary para poder probarla
@@ -40,6 +46,11 @@ export function computeBudgetSectorSummary({ sections, products, lines }) {
     const productName = (productId && aliasByProductId.get(productId)) || String(line?.name || "").trim();
     const lineTotal = Number(line?.total || 0);
     if (!productName) continue;
+
+    if (HIDDEN_SUM_ONLY_PRODUCT_IDS.has(productId)) {
+      buckets.get("producto").total += lineTotal;
+      continue;
+    }
 
     if (!sectionIds.length) {
       unassignedItems.push({ sectionName: "Sin sección", productName });
