@@ -181,13 +181,30 @@ function minMm(values = []) {
   const nums = (Array.isArray(values) ? values : []).map((v) => toNumberLike(v)).filter((n) => Number.isFinite(n) && n > 0);
   return nums.length ? Math.min(...nums) : 0;
 }
-// Portones puntuales donde la "pierna" fue corregida a mano por un reclamo y debe mandar
-// sobre el calculo automatico por peso en esta vista. Acotado a proposito a estos ids
-// nada mas (no es un mecanismo general todavia).
-const PIERNAS_MANUAL_OVERRIDE_BY_QUOTE_ID = {
-  "a2ce4bbd-2f8b-45e7-b15d-e1f51c8e9407": "anchas", // Balsa - NP4298/NV4298
+// Portones puntuales donde el resumen automatico (que recalcula localmente y no coincide
+// con la formula oficial del backend en portonVanoMeasurements.js) fue reemplazado a mano
+// por un reclamo. Acotado a proposito a estos ids nada mas (no es un mecanismo general
+// todavia). Valores tomados 1 a 1 del recalculo oficial ya persistido en el backend.
+const TECHNICAL_SUMMARY_OVERRIDE_BY_QUOTE_ID = {
+  "4624e5aa-66db-461f-98bb-3a639ac0b900": { // Mandrini - NP4288/NV4288
+    alto_calculado_mm: 2200, ancho_calculado_mm: 3915,
+    alto_paso_mm: 2000, ancho_paso_mm: 3645,
+    peso_estimado_kg: 136.69, piernas_tipo: "comunes", ancho_pierna_mm: 270,
+  },
+  "a2ce4bbd-2f8b-45e7-b15d-e1f51c8e9407": { // Balsa - NP4298/NV4298
+    alto_calculado_mm: 2450, ancho_calculado_mm: 3300,
+    alto_paso_mm: 2250, ancho_paso_mm: 2930,
+    peso_estimado_kg: 128.29, piernas_tipo: "anchas", ancho_pierna_mm: 370,
+  },
+  "ee869687-463e-4341-9575-d8728631e1f2": { // NV4332
+    alto_calculado_mm: 2450, ancho_calculado_mm: 3970,
+    alto_paso_mm: 2250, ancho_paso_mm: 3700,
+    peso_estimado_kg: 154.44, piernas_tipo: "comunes", ancho_pierna_mm: 270,
+  },
 };
 function computeAutomaticSummary({ quote, form, surfaceParameters = {} }) {
+  const summaryOverride = TECHNICAL_SUMMARY_OVERRIDE_BY_QUOTE_ID[String(quote?.id || "")];
+  if (summaryOverride) return summaryOverride;
   const budgetHeightMm = Math.round(toNumberLike(quote?.payload?.dimensions?.height) * 1000) || 0;
   const budgetWidthMm = Math.round(toNumberLike(quote?.payload?.dimensions?.width) * 1000) || 0;
   const altos = Array.isArray(form?.esquema?.alto) ? form.esquema.alto : [];
@@ -221,14 +238,11 @@ function computeAutomaticSummary({ quote, form, surfaceParameters = {} }) {
   const limitAnchas = Number(surfaceParameters?.legs_anchas_max_kg || 240);
   const limitSuperanchas = Number(surfaceParameters?.legs_superanchas_max_kg || 300);
 
-  const piernasOverride = PIERNAS_MANUAL_OVERRIDE_BY_QUOTE_ID[String(quote?.id || "")] || "";
-  let piernasTipo = piernasOverride || "angostas";
-  if (!piernasOverride) {
-    if (pesoEstimadoKg > limitSuperanchas) piernasTipo = "especiales";
-    else if (pesoEstimadoKg > limitAnchas) piernasTipo = "superanchas";
-    else if (pesoEstimadoKg > limitComunes) piernasTipo = "anchas";
-    else if (pesoEstimadoKg > limitAngostas) piernasTipo = "comunes";
-  }
+  let piernasTipo = "angostas";
+  if (pesoEstimadoKg > limitSuperanchas) piernasTipo = "especiales";
+  else if (pesoEstimadoKg > limitAnchas) piernasTipo = "superanchas";
+  else if (pesoEstimadoKg > limitComunes) piernasTipo = "anchas";
+  else if (pesoEstimadoKg > limitAngostas) piernasTipo = "comunes";
 
   let altoCalculadoMm = discountedHeightMm;
   let anchoCalculadoMm = discountedWidthMm;
