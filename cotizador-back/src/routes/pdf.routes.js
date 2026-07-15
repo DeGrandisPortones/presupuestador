@@ -335,7 +335,7 @@ async function buildLines(payload, { useBasePrice, odoo, displayNetPrices = fals
       const payloadName = safeStr(l?.name || l?.raw_name || l?.display_name || l?.alias);
       const resolvedName = overrideName || liveTemplateName || liveVariantName || payloadName;
       if (!resolvedName) throw new Error(`No se pudo resolver el nombre para la línea ${productId || variantId || "sin id"}.`);
-      return { qty, name: resolvedName, unit, total, totalNet };
+      return { qty, name: resolvedName, unit, total, totalNet, productId };
     })
     .filter((l) => l.qty > 0);
 
@@ -355,7 +355,7 @@ async function buildLines(payload, { useBasePrice, odoo, displayNetPrices = fals
   const subtotalNet = allLines.reduce((acc, l) => acc + l.totalNet, 0);
   const ivaAmount = subtotalNet * effectiveTaxRate;
   const grandTotal = subtotalNet + ivaAmount;
-  return { lines: allLines, grandTotal, subtotalNet, ivaAmount, coefPct, taxRate: effectiveTaxRate, displayNetPrices };
+  return { lines: allLines, grandTotal, subtotalNet, ivaAmount, coefPct, taxRate: effectiveTaxRate, displayNetPrices, catalogKind };
 }
 
 function drawPageFrame(doc, margin, pageNo, pageCount, footerLeft = "De Grandis Portones") {
