@@ -181,6 +181,12 @@ function minMm(values = []) {
   const nums = (Array.isArray(values) ? values : []).map((v) => toNumberLike(v)).filter((n) => Number.isFinite(n) && n > 0);
   return nums.length ? Math.min(...nums) : 0;
 }
+// Portones puntuales donde la "pierna" fue corregida a mano por un reclamo y debe mandar
+// sobre el calculo automatico por peso en esta vista. Acotado a proposito a estos ids
+// nada mas (no es un mecanismo general todavia).
+const PIERNAS_MANUAL_OVERRIDE_BY_QUOTE_ID = {
+  "a2ce4bbd-2f8b-45e7-b15d-e1f51c8e9407": "anchas", // Balsa - NP4298/NV4298
+};
 function computeAutomaticSummary({ quote, form, surfaceParameters = {} }) {
   const budgetHeightMm = Math.round(toNumberLike(quote?.payload?.dimensions?.height) * 1000) || 0;
   const budgetWidthMm = Math.round(toNumberLike(quote?.payload?.dimensions?.width) * 1000) || 0;
@@ -215,11 +221,14 @@ function computeAutomaticSummary({ quote, form, surfaceParameters = {} }) {
   const limitAnchas = Number(surfaceParameters?.legs_anchas_max_kg || 240);
   const limitSuperanchas = Number(surfaceParameters?.legs_superanchas_max_kg || 300);
 
-  let piernasTipo = "angostas";
-  if (pesoEstimadoKg > limitSuperanchas) piernasTipo = "especiales";
-  else if (pesoEstimadoKg > limitAnchas) piernasTipo = "superanchas";
-  else if (pesoEstimadoKg > limitComunes) piernasTipo = "anchas";
-  else if (pesoEstimadoKg > limitAngostas) piernasTipo = "comunes";
+  const piernasOverride = PIERNAS_MANUAL_OVERRIDE_BY_QUOTE_ID[String(quote?.id || "")] || "";
+  let piernasTipo = piernasOverride || "angostas";
+  if (!piernasOverride) {
+    if (pesoEstimadoKg > limitSuperanchas) piernasTipo = "especiales";
+    else if (pesoEstimadoKg > limitAnchas) piernasTipo = "superanchas";
+    else if (pesoEstimadoKg > limitComunes) piernasTipo = "anchas";
+    else if (pesoEstimadoKg > limitAngostas) piernasTipo = "comunes";
+  }
 
   let altoCalculadoMm = discountedHeightMm;
   let anchoCalculadoMm = discountedWidthMm;
