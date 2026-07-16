@@ -145,6 +145,13 @@ function writePriceCache(payload) {
   return normalized;
 }
 
+// El endpoint masivo (/api/price-lists/:id/products) lista las reglas de precio de
+// Odoo tal cual, sin filtrar por cantidad minima - si un producto tiene mas de una
+// regla (distintos min_quantity), la cache puede quedarse con la que no corresponde.
+// Instalacion (2865) es "por m2" y depende de esa cantidad minima, asi que nunca se
+// sirve desde esta cache: siempre se pide en vivo (unico pedido que si respeta qty).
+const NEVER_CACHE_PRODUCT_IDS = new Set([2865]);
+
 function findCachedPriceForLine(line, cache) {
   if (!cache?.index || !line) return null;
   const ids = [
@@ -158,6 +165,8 @@ function findCachedPriceForLine(line, cache) {
   ]
     .map((value) => toPositiveInt(value))
     .filter(Boolean);
+
+  if (ids.some((id) => NEVER_CACHE_PRODUCT_IDS.has(id))) return null;
 
   for (const id of ids) {
     const found = cache.index[String(id)];

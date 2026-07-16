@@ -1156,6 +1156,22 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
   function shouldApplySection37VendorExtra() {
     return resolveEffectiveRoleForPricing() === "vendedor" && quoteUsesNewPricingRules();
   }
+  // Red de seguridad: el precio base de Coplanar/Clasico para vendedores tiene que ser
+  // SIEMPRE (portón + instalación) para esta lista de precios. Si por lo que sea (cache
+  // vieja, race de red, etc) el precio guardado no coincide, bloqueamos guardar/PDF/
+  // confirmar en vez de dejar salir un presupuesto mal cotizado en silencio.
+  const SECTION_37_EXPECTED_BASE_PRICE = { 3008: 312297.72, 3009: 293211.07 };
+  const section37MismatchIds = shouldApplySection37VendorExtra()
+    ? new Set(
+        lines
+          .filter((l) => {
+            const expected = SECTION_37_EXPECTED_BASE_PRICE[Number(l.product_id)];
+            return expected != null && Math.abs(Number(l.basePrice || 0) - expected) > 0.5;
+          })
+          .map((l) => Number(l.product_id)),
+      )
+    : new Set();
+  const hasSection37Mismatch = section37MismatchIds.size > 0;
   // sourceLines: lineas reales del presupuesto que se estan pidiendo en esta tanda
   // (siempre tienen product_id, sin importar el formato del pedido de precio de cada
   // llamador) - se usan solo para decidir si corresponde agregar el extra.
@@ -1243,6 +1259,7 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
     if (!pricingContextReady) throw new Error(pricingContextMessage || "Esperá a que se aplique la lista de precios correcta antes de continuar.");
     const unresolved = lines.filter((l) => !l.previously_billed_line && !l.manual_price && (l.price_error || l.price_pending));
     if (unresolved.length) throw new Error("Hay productos sin precio confirmado de Odoo. Reintentá antes de confirmar.");
+    if (hasSection37Mismatch) throw new Error("El precio de Coplanar/Clásico no tiene la instalación sumada correctamente. Recargá la página (Shift+F5) e intentá de nuevo antes de continuar.");
   }
   function validateConfirm(payload) {
     validatePricingContextReady();
@@ -1401,7 +1418,7 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
 
   const [priceCheckPending, setPriceCheckPending] = useState(false);
   async function handleSaveClick() {
-    if (!pricingContextReady || saveM.isPending || priceCheckPending) return;
+    if (!pricingContextReady || hasSection37Mismatch || saveM.isPending || priceCheckPending) return;
     const priceLines = lines.filter((l) => (l.catalog_id || l.odoo_template_id) && !l.manual_price && !l.previously_billed_line);
     if (priceLines.length > 0) {
       try {
@@ -1639,16 +1656,21 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
           </div>
         </div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
+          {hasSection37Mismatch ? (
+            <div style={{ width: "100%", color: "#b3261e", fontWeight: 700, fontSize: 13, textAlign: "right" }}>
+              ⚠ El precio de Coplanar/Clásico no tiene la instalación sumada correctamente. Recargá la página (Shift+F5) antes de guardar, generar PDF o confirmar.
+            </div>
+          ) : null}
           <Button variant="ghost" onClick={handleClearBudget}>Limpiar presupuesto</Button>
-          <Button variant="secondary" onClick={onDownloadPresupuesto} disabled={!pricingContextReady}>PDF presupuesto</Button>
-          {user?.is_distribuidor ? <Button variant="secondary" onClick={onDownloadProforma} disabled={!pricingContextReady}>PDF proforma</Button> : null}
-          <Button onClick={handleSaveClick} disabled={saveM.isPending || priceCheckPending || !pricingContextReady}>{saveM.isPending ? "Guardando..." : priceCheckPending ? "Verificando precios..." : "Guardar"}</Button>
+          <Button variant="secondary" onClick={onDownloadPresupuesto} disabled={!pricingContextReady || hasSection37Mismatch}>PDF presupuesto</Button>
+          {user?.is_distribuidor ? <Button variant="secondary" onClick={onDownloadProforma} disabled={!pricingContextReady || hasSection37Mismatch}>PDF proforma</Button> : null}
+          <Button onClick={handleSaveClick} disabled={saveM.isPending || priceCheckPending || !pricingContextReady || hasSection37Mismatch}>{saveM.isPending ? "Guardando..." : priceCheckPending ? "Verificando precios..." : "Guardar"}</Button>
           {isReturnedMeasurementQuote ? (
             <>
               <Button variant="ghost" onClick={() => resetReturnedM.mutate()} disabled={resetReturnedM.isPending || confirmReturnedM.isPending}>{resetReturnedM.isPending ? "Restableciendo..." : "Restablecer al original"}</Button>
-              <Button variant="primary" onClick={() => confirmReturnedM.mutate()} disabled={confirmReturnedM.isPending || resetReturnedM.isPending || !pricingContextReady}>{confirmReturnedM.isPending ? "Enviando..." : "Confirmar y volver a Técnica"}</Button>
+              <Button variant="primary" onClick={() => confirmReturnedM.mutate()} disabled={confirmReturnedM.isPending || resetReturnedM.isPending || !pricingContextReady || hasSection37Mismatch}>{confirmReturnedM.isPending ? "Enviando..." : "Confirmar y volver a Técnica"}</Button>
             </>
-          ) : (!isAcopioRevision ? (<Button variant="primary" onClick={() => { if (isRevisionQuote) { confirmM.mutate({}); return; } handleConfirmIntent(); }} disabled={!canConfirm || confirmM.isPending || !pricingContextReady}>{confirmM.isPending ? "Confirmando..." : (isRevisionQuote ? "Enviar cotización final" : "Confirmar presupuesto")}</Button>) : null)}
+          ) : (!isAcopioRevision ? (<Button variant="primary" onClick={() => { if (isRevisionQuote) { confirmM.mutate({}); return; } handleConfirmIntent(); }} disabled={!canConfirm || confirmM.isPending || !pricingContextReady || hasSection37Mismatch}>{confirmM.isPending ? "Confirmando..." : (isRevisionQuote ? "Enviar cotización final" : "Confirmar presupuesto")}</Button>) : null)}
         </div>
       </div>
 
@@ -1784,7 +1806,7 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
           )}
         </div>
         <div className="card" style={{ flex: 2, minWidth: 560 }}>
-          <LinesTable financingPercent={quoteAdjustmentPercent} />
+          <LinesTable financingPercent={quoteAdjustmentPercent} section37MismatchIds={section37MismatchIds} />
           <div className="spacer" />
           <SummaryBox totals={totals} paymentMethod={paymentMethod} />
           {canRefreshSavedQuote ? (
