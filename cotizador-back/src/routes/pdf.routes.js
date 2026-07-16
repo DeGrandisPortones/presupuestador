@@ -335,7 +335,7 @@ async function buildLines(payload, { useBasePrice, odoo, displayNetPrices = fals
       const payloadName = safeStr(l?.name || l?.raw_name || l?.display_name || l?.alias);
       const resolvedName = overrideName || liveTemplateName || liveVariantName || payloadName;
       if (!resolvedName) throw new Error(`No se pudo resolver el nombre para la línea ${productId || variantId || "sin id"}.`);
-      return { qty, name: resolvedName, unit, total, totalNet, productId };
+      return { qty, name: resolvedName, unit, total, totalNet, productId, previouslyBilledLine: isPreviouslyBilled };
     })
     .filter((l) => l.qty > 0);
 
@@ -837,12 +837,38 @@ function drawBudgetSectorSummaryPage(doc, { title, payload, margin, innerW, date
     doc.addPage();
     y = margin + 20;
   }
+  // Si hay "Facturado previamente" (presupuesto editado tras generar la NP), el total de
+  // los 3 sectores pasa a ser un subtotal: se muestra la resta en rojo debajo y despues el
+  // TOTAL real (subtotal - facturado previamente).
+  const hasPreviouslyBilled = !!summary.previouslyBilled;
   doc.save().fillColor("#F3F4F6").rect(margin, y, innerW, 36).fill().restore();
   doc.save().strokeColor("#111827").lineWidth(1.6).rect(margin, y, innerW, 36).stroke().restore();
   doc.font("Helvetica-Bold").fontSize(12).fillColor("#111827")
-    .text("TOTAL", margin + 10, y + 11, { width: innerW * 0.68 - 10 })
+    .text(hasPreviouslyBilled ? "SUBTOTAL" : "TOTAL", margin + 10, y + 11, { width: innerW * 0.68 - 10 })
     .text(`$ ${formatMoney(summary.grandTotal)}`, margin + innerW * 0.68, y + 11, { width: innerW * 0.32 - 10, align: "right" });
   y += 36 + 16;
+
+  if (hasPreviouslyBilled) {
+    if (y + 24 > pageBottom()) {
+      doc.addPage();
+      y = margin + 20;
+    }
+    doc.font("Helvetica-Bold").fontSize(11).fillColor("#B91C1C")
+      .text(summary.previouslyBilled.productName, margin + 10, y, { width: innerW * 0.68 - 10 })
+      .text(`- $ ${formatMoney(Math.abs(summary.previouslyBilled.amount))}`, margin + innerW * 0.68, y, { width: innerW * 0.32 - 10, align: "right" });
+    y += 24 + 12;
+
+    if (y + 36 > pageBottom()) {
+      doc.addPage();
+      y = margin + 20;
+    }
+    doc.save().fillColor("#F3F4F6").rect(margin, y, innerW, 36).fill().restore();
+    doc.save().strokeColor("#111827").lineWidth(1.6).rect(margin, y, innerW, 36).stroke().restore();
+    doc.font("Helvetica-Bold").fontSize(12).fillColor("#111827")
+      .text("TOTAL", margin + 10, y + 11, { width: innerW * 0.68 - 10 })
+      .text(`$ ${formatMoney(summary.finalTotal)}`, margin + innerW * 0.68, y + 11, { width: innerW * 0.32 - 10, align: "right" });
+    y += 36 + 16;
+  }
 
   if (summary.unassigned) {
     drawSectorItemsBlock(doc, {

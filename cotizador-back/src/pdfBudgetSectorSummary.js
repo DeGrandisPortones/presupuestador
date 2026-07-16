@@ -39,6 +39,10 @@ export function computeBudgetSectorSummary({ sections, products, lines }) {
   const unassignedItems = [];
   let unassignedTotal = 0;
   let hasUnassignedLines = false;
+  // "Facturado previamente" (deposito de un presupuesto anterior, monto negativo): no es
+  // parte de ningun sector, va aparte como resta del subtotal, nunca listado como item.
+  let previouslyBilledAmount = 0;
+  let previouslyBilledName = "";
 
   for (const line of Array.isArray(lines) ? lines : []) {
     const productId = Number(line?.productId || 0);
@@ -46,6 +50,12 @@ export function computeBudgetSectorSummary({ sections, products, lines }) {
     const productName = (productId && aliasByProductId.get(productId)) || String(line?.name || "").trim();
     const lineTotal = Number(line?.total || 0);
     if (!productName) continue;
+
+    if (line?.previouslyBilledLine) {
+      previouslyBilledAmount += lineTotal;
+      previouslyBilledName = productName;
+      continue;
+    }
 
     if (HIDDEN_SUM_ONLY_PRODUCT_IDS.has(productId)) {
       buckets.get("producto").total += lineTotal;
@@ -86,6 +96,8 @@ export function computeBudgetSectorSummary({ sections, products, lines }) {
     // budget_show_detail lo deje sin ningun item listado (para que el subtotal
     // no desaparezca en silencio de la hoja).
     unassigned: hasUnassignedLines ? { items: unassignedItems, total: unassignedTotal } : null,
+    previouslyBilled: previouslyBilledAmount !== 0 ? { productName: previouslyBilledName, amount: previouslyBilledAmount } : null,
+    finalTotal: grandTotal + previouslyBilledAmount,
   };
 }
 
