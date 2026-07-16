@@ -1,4 +1,5 @@
 import express from "express";
+import { getPriceUpdaterCategoryMap, setPriceUpdaterCategoryMap } from "../settingsDb.js";
 
 function toId(value) {
   const n = Number(value);
@@ -274,7 +275,92 @@ async function getPricelistItems(odoo, pricelistId, context) {
   );
 }
 
-async function productTemplatesForCompany(odoo, companyId) {
+function relationLooksLikeTag(fieldName, meta = {}) {
+  const name = String(fieldName || "").toLowerCase();
+  const relation = String(meta?.relation || "").toLowerCase();
+  const label = String(meta?.string || "").toLowerCase();
+  if (String(meta?.type || "") !== "many2many") return false;
+  return name.includes("tag") || relation.includes("tag") || label.includes("tag") || label.includes("etiqueta");
+}
+
+// Metadata del campo de tags (nombre + modelo relacionado) no cambia por empresa,
+// así que este cache global es seguro a diferencia de los datos de productos, que sí son por empresa.
+let tagFieldCache = null;
+
+async function detectProductTagField(odoo) {
+  if (tagFieldCache !== null) return tagFieldCache;
+  try {
+    const meta = await odoo.executeKw("product.template", "fields_get", [], {
+      attributes: ["string", "type", "relation"],
+    });
+    const preferred = ["product_tag_ids", "product_template_tag_ids", "tag_ids"];
+    let found = null;
+    for (const field of preferred) {
+      if (meta?.[field] && relationLooksLikeTag(field, meta[field])) {
+        found = { field, relation: meta[field].relation };
+        break;
+      }
+    }
+    if (!found) {
+      for (const [field, info] of Object.entries(meta || {})) {
+        if (relationLooksLikeTag(field, info)) {
+          found = { field, relation: info.relation };
+          break;
+        }
+      }
+    }
+    tagFieldCache = found;
+  } catch (_e) {
+    tagFieldCache = null;
+  }
+  return tagFieldCache;
+}
+
+async function loadAllProductTags(odoo) {
+  const detected = await detectProductTagField(odoo);
+  if (!detected) return [];
+  try {
+    const rows = await searchRead(
+      odoo,
+      detected.relation,
+      [],
+      ["id", "name", "display_name"],
+      { order: "name asc", context: companyContext(null), limit: 2000 }
+    );
+    return asArray(rows)
+      .map((r) => ({ id: toId(r.id), name: cleanText(r.display_name || r.name) }))
+      .filter((t) => t.id)
+      .sort((a, b) => a.name.localeCompare(b.name, "es"));
+  } catch (_e) {
+    return [];
+  }
+}
+
+async function loadTemplateTagMap(odoo, companyId) {
+  const detected = await detectProductTagField(odoo);
+  const map = new Map();
+  if (!detected) return map;
+  try {
+    const rows = await searchRead(
+      odoo,
+      "product.template",
+      [],
+      ["id", detected.field],
+      { context: companyContext(companyId), limit: 10000 }
+    );
+    for (const row of asArray(rows)) {
+      const id = toId(row.id);
+      if (!id) continue;
+      const tagIds = uniqNumbers(row[detected.field]);
+      if (tagIds.length) map.set(id, tagIds);
+    }
+  } catch (_e) {
+    // Si falla la lectura del campo de tags, seguimos sin categorías en vez de romper la pantalla de precios.
+  }
+  return map;
+}
+
+async function productTemplatesForCompany(odoo, companyId, templateTagMap = new Map()) {
   const context = companyContext(companyId);
   const domain = [["sale_ok", "=", true]];
   const rows = await searchRead(
@@ -306,10 +392,11 @@ async function productTemplatesForCompany(odoo, companyId) {
       min_quantity: 0,
       date_start: null,
       date_end: null,
+      tag_ids: templateTagMap.get(Number(p.id)) || [],
     }));
 }
 
-async function normalizePricelistItems(odoo, items, pricelistId, pricelistName, context) {
+async function normalizePricelistItems(odoo, items, pricelistId, pricelistName, context, templateTagMap = new Map()) {
   const productVariantIds = items.map((it) => m2oId(it.product_id)).filter(Boolean);
   const variants = await readRecords(odoo, "product.product", productVariantIds, ["id", "display_name", "default_code", "product_tmpl_id"], context);
   const variantById = new Map(variants.map((v) => [Number(v.id), v]));
@@ -354,6 +441,7 @@ async function normalizePricelistItems(odoo, items, pricelistId, pricelistName, 
       min_quantity: Number(it.min_quantity || 0),
       date_start: it.date_start || null,
       date_end: it.date_end || null,
+      tag_ids: templateTagMap.get(Number(tmplId)) || [],
     };
   });
 }
@@ -362,15 +450,16 @@ async function productsForPricelist(odoo, pricelist) {
   const companyId = pricelist.company_resolved_id || null;
   const context = companyContext(companyId);
   const items = await getPricelistItems(odoo, pricelist.id, context);
+  const templateTagMap = await loadTemplateTagMap(odoo, companyId);
 
   if (Array.isArray(items) && items.length) {
-    return normalizePricelistItems(odoo, items, pricelist.id, pricelist.name, context);
+    return normalizePricelistItems(odoo, items, pricelist.id, pricelist.name, context, templateTagMap);
   }
 
   // En Odoo, la lista Predeterminado suele usar el precio base del producto
   // y no genera reglas product.pricelist.item. Para esa lista mostramos productos.
   if (pricelist.is_default_pricelist) {
-    return productTemplatesForCompany(odoo, companyId);
+    return productTemplatesForCompany(odoo, companyId, templateTagMap);
   }
 
   return [];
@@ -485,6 +574,33 @@ export function buildPriceListsRouter(odoo) {
 
       const out = Array.from(byId.values()).sort((a, b) => String(a.name).localeCompare(String(b.name), "es"));
       res.json({ ok: true, companies: out });
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  router.get("/tags", async (_req, res, next) => {
+    try {
+      const tags = await loadAllProductTags(odoo);
+      res.json({ ok: true, tags });
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  router.get("/category-map", async (_req, res, next) => {
+    try {
+      const map = await getPriceUpdaterCategoryMap();
+      res.json({ ok: true, map });
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  router.put("/category-map", async (req, res, next) => {
+    try {
+      const map = await setPriceUpdaterCategoryMap(req.body?.map || {});
+      res.json({ ok: true, map });
     } catch (e) {
       next(e);
     }
