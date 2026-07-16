@@ -319,10 +319,15 @@ async function buildLines(payload, { useBasePrice, odoo, displayNetPrices = fals
         ? (isShippingLine(l) && envioOdooPriceSnapshot != null ? envioOdooPriceSnapshot : 0)
         : rawBasePrice;
       // "Facturado previamente" (deposito ya cobrado): dato duro, no se le aplica
-      // coeficiente/margen ni IVA ni recargo por forma de pago. Pasa tal cual.
+      // coeficiente/margen ni recargo por forma de pago. Si lleva IVA si depende de la
+      // condicion con la que se envio a Odoo (calcOdooUnitPrice/getOdooConditionPriceFactor
+      // en quotes.routes.js): Condicion 1 manda el neto sin IVA, asi que hay que sumarle el
+      // 21% aca para que reste correctamente contra el total con IVA del presupuesto nuevo.
+      // Condicion 2 ya manda neto+10,5%, pasa tal cual.
       const isPreviouslyBilled = !!l?.previously_billed_line;
+      const previouslyBilledUnit = isCondition2(payload) ? basePrice : basePrice * (1 + IVA_RATE);
       const unitNet = isPreviouslyBilled ? basePrice : (useBasePrice ? basePrice : basePrice * coefFactor);
-      const unit = isPreviouslyBilled ? basePrice : (displayNetPrices ? unitNet : unitNet * (1 + effectiveTaxRate));
+      const unit = isPreviouslyBilled ? previouslyBilledUnit : (displayNetPrices ? unitNet : unitNet * (1 + effectiveTaxRate));
       const totalNet = unitNet * qty;
       const total = unit * qty;
       const productId = toPositiveInt(l?.product_id);
