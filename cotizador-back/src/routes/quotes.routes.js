@@ -476,6 +476,7 @@ function normalizeMeasurementMode(value) {
 function normalizeMeasurementSubtype(value) {
   return String(value || "normal").toLowerCase().trim() === "sin_medicion" ? "sin_medicion" : "normal";
 }
+const ACTIVE_MEASUREMENT_WORKFLOW_STATUSES = ["returned_to_seller", "submitted", "approved", "needs_fix"];
 function quoteNeedsMeasurement(quote) {
   const kind = String(quote?.catalog_kind || quote?.payload?.catalog_kind || "porton").toLowerCase().trim();
   if (kind === "otros") return false;
@@ -2210,6 +2211,14 @@ export function buildQuotesRouter(odoo) {
 
       const nextLines = body.lines !== undefined ? body.lines : quote.lines;
       const measurementFlow = getMeasurementFlowForQuote({ catalog_kind, fulfillment_mode, lines: nextLines });
+      // No pisar measurement_status si el presupuesto ya está en un estado activo del circuito de
+      // medición (p.ej. devuelto al vendedor por el medidor/técnica): ese devuelve status='draft'
+      // a propósito para que se pueda editar, y un guardado normal no debe perder esa marca.
+      const currentMeasurementStatus = String(quote.measurement_status || "none").toLowerCase().trim();
+      const nextMeasurementStatus =
+        quote.status === "draft" && !ACTIVE_MEASUREMENT_WORKFLOW_STATUSES.includes(currentMeasurementStatus)
+          ? measurementFlow.measurement_status
+          : quote.measurement_status;
       // El precio de Envío congelado solo se recalcula cuando el usuario aprieta
       // explícitamente "Actualizar presupuesto" (refresh_emission_date). En
       // cualquier otro guardado se mantiene el valor ya congelado tal cual estaba.
@@ -2231,7 +2240,7 @@ export function buildQuotesRouter(odoo) {
                 requires_measurement=$10,
                 measurement_mode=$11,
                 measurement_subtype=$12,
-                measurement_status=case when status='draft' then $13 else measurement_status end,
+                measurement_status=$13,
                 acopio_to_produccion_status=$14,
                 created_at=case when $15::boolean then now() else created_at end,
                 envio_odoo_price_snapshot=$16
@@ -2250,7 +2259,7 @@ export function buildQuotesRouter(odoo) {
           measurementFlow.requires_measurement,
           measurementFlow.measurement_mode,
           measurementFlow.measurement_subtype,
-          quote.status === "draft" ? measurementFlow.measurement_status : quote.measurement_status,
+          nextMeasurementStatus,
           nextAcopioStatus,
           isRefreshEmissionDate,
           envioOdooPriceSnapshot,
