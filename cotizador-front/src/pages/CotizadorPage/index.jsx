@@ -1156,11 +1156,14 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
     const wireLines = Array.isArray(payloadLines) ? payloadLines : [];
     if (!shouldApplySection37VendorExtra()) return wireLines;
     const srcLines = Array.isArray(sourceLines) ? sourceLines : [];
-    const hasSection37Line = srcLines.some((l) => SECTION_37_PRODUCT_IDS.includes(Number(l.product_id)));
-    if (!hasSection37Line) return wireLines;
+    const targetLine = srcLines.find((l) => SECTION_37_PRODUCT_IDS.includes(Number(l.product_id)));
+    if (!targetLine) return wireLines;
     const alreadyRealLine = srcLines.some((l) => Number(l.product_id) === SECTION_37_EXTRA_PRODUCT_ID);
     if (alreadyRealLine) return wireLines;
-    return [...wireLines, { product_id: SECTION_37_EXTRA_PRODUCT_ID, qty: 1 }];
+    // La lista de precios de Instalacion es "por m2": pedirla con qty:1 devuelve
+    // precio $0 (no matchea el min_quantity de la regla en Odoo), por eso el extra
+    // nunca se sumaba. Hay que pedirla con la misma qty (superficie) que el portón.
+    return [...wireLines, { product_id: SECTION_37_EXTRA_PRODUCT_ID, qty: targetLine.qty }];
   }
   function mergeSection37VendorExtra(pricesData, sourceLines) {
     if (!shouldApplySection37VendorExtra()) return pricesData;
