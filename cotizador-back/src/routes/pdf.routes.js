@@ -842,14 +842,19 @@ function drawBudgetSectorSummaryPage(doc, { title, payload, margin, innerW, date
     });
   }
 
-  if (y + 36 > pageBottom()) {
+  // Si hay "Facturado previamente" (presupuesto editado tras generar la NP), el total de
+  // los 3 sectores pasa a ser un subtotal: se muestra la resta en rojo debajo y despues el
+  // TOTAL real (subtotal - facturado previamente). Todo este bloque final tiene que quedar
+  // junto: si no entra completo en lo que resta de la hoja, se manda entero a una hoja nueva
+  // (nunca se parte a la mitad — antes cada pieza chequeaba espacio por separado y el
+  // SUBTOTAL podia terminar pegado al borde, dejando la resta y el TOTAL solos en la
+  // siguiente hoja).
+  const hasPreviouslyBilled = !!summary.previouslyBilled;
+  const finalBlockH = hasPreviouslyBilled ? (36 + 16) + (24 + 12) + (36 + 16) : (36 + 16);
+  if (y + finalBlockH > pageBottom()) {
     doc.addPage();
     y = margin + 20;
   }
-  // Si hay "Facturado previamente" (presupuesto editado tras generar la NP), el total de
-  // los 3 sectores pasa a ser un subtotal: se muestra la resta en rojo debajo y despues el
-  // TOTAL real (subtotal - facturado previamente).
-  const hasPreviouslyBilled = !!summary.previouslyBilled;
   doc.save().fillColor("#F3F4F6").rect(margin, y, innerW, 36).fill().restore();
   doc.save().strokeColor("#111827").lineWidth(1.6).rect(margin, y, innerW, 36).stroke().restore();
   doc.font("Helvetica-Bold").fontSize(12).fillColor("#111827")
@@ -858,19 +863,11 @@ function drawBudgetSectorSummaryPage(doc, { title, payload, margin, innerW, date
   y += 36 + 16;
 
   if (hasPreviouslyBilled) {
-    if (y + 24 > pageBottom()) {
-      doc.addPage();
-      y = margin + 20;
-    }
     doc.font("Helvetica-Bold").fontSize(11).fillColor("#B91C1C")
       .text(summary.previouslyBilled.productName, margin + 10, y, { width: innerW * 0.68 - 10 })
       .text(`- $ ${formatMoney(Math.abs(summary.previouslyBilled.amount))}`, margin + innerW * 0.68, y, { width: innerW * 0.32 - 10, align: "right" });
     y += 24 + 12;
 
-    if (y + 36 > pageBottom()) {
-      doc.addPage();
-      y = margin + 20;
-    }
     doc.save().fillColor("#F3F4F6").rect(margin, y, innerW, 36).fill().restore();
     doc.save().strokeColor("#111827").lineWidth(1.6).rect(margin, y, innerW, 36).stroke().restore();
     doc.font("Helvetica-Bold").fontSize(12).fillColor("#111827")
