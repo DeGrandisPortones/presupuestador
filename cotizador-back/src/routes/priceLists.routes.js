@@ -360,7 +360,7 @@ async function loadTemplateTagMap(odoo, companyId) {
   return map;
 }
 
-async function productTemplatesForCompany(odoo, companyId) {
+async function productTemplatesForCompany(odoo, companyId, templateTagMap = new Map()) {
   const context = companyContext(companyId);
   const domain = [["sale_ok", "=", true]];
   const rows = await searchRead(
@@ -392,10 +392,11 @@ async function productTemplatesForCompany(odoo, companyId) {
       min_quantity: 0,
       date_start: null,
       date_end: null,
+      tag_ids: templateTagMap.get(Number(p.id)) || [],
     }));
 }
 
-async function normalizePricelistItems(odoo, items, pricelistId, pricelistName, context) {
+async function normalizePricelistItems(odoo, items, pricelistId, pricelistName, context, templateTagMap = new Map()) {
   const productVariantIds = items.map((it) => m2oId(it.product_id)).filter(Boolean);
   const variants = await readRecords(odoo, "product.product", productVariantIds, ["id", "display_name", "default_code", "product_tmpl_id"], context);
   const variantById = new Map(variants.map((v) => [Number(v.id), v]));
@@ -440,6 +441,7 @@ async function normalizePricelistItems(odoo, items, pricelistId, pricelistName, 
       min_quantity: Number(it.min_quantity || 0),
       date_start: it.date_start || null,
       date_end: it.date_end || null,
+      tag_ids: templateTagMap.get(Number(tmplId)) || [],
     };
   });
 }
@@ -448,33 +450,19 @@ async function productsForPricelist(odoo, pricelist) {
   const companyId = pricelist.company_resolved_id || null;
   const context = companyContext(companyId);
   const items = await getPricelistItems(odoo, pricelist.id, context);
+  const templateTagMap = await loadTemplateTagMap(odoo, companyId);
 
   if (Array.isArray(items) && items.length) {
-    return normalizePricelistItems(odoo, items, pricelist.id, pricelist.name, context);
+    return normalizePricelistItems(odoo, items, pricelist.id, pricelist.name, context, templateTagMap);
   }
 
   // En Odoo, la lista Predeterminado suele usar el precio base del producto
   // y no genera reglas product.pricelist.item. Para esa lista mostramos productos.
   if (pricelist.is_default_pricelist) {
-    return productTemplatesForCompany(odoo, companyId);
+    return productTemplatesForCompany(odoo, companyId, templateTagMap);
   }
 
   return [];
-}
-
-// Variante usada solo por la pestaña de categorías del actualizador de precios (listas-precios.html).
-// Llama a productsForPricelist (intacta, sin modificar) y le suma tag_ids por afuera.
-// El presupuestador (getPrices en cotizador-front) sigue usando productsForPricelist directo, sin pasar por acá.
-async function productsForPricelistWithTags(odoo, pricelist) {
-  const [products, templateTagMap] = await Promise.all([
-    productsForPricelist(odoo, pricelist),
-    loadTemplateTagMap(odoo, pricelist.company_resolved_id || null),
-  ]);
-
-  return products.map((p) => ({
-    ...p,
-    tag_ids: templateTagMap.get(Number(p.product_tmpl_id)) || [],
-  }));
 }
 
 async function updateItemRef(odoo, ref, fixedPrice, companyId = null) {
@@ -640,21 +628,6 @@ export function buildPriceListsRouter(odoo) {
 
       const pricelist = await getPricelistOrFail(odoo, pricelistId);
       const products = await productsForPricelist(odoo, pricelist);
-
-      res.json({ ok: true, pricelist, products });
-    } catch (e) {
-      next(e);
-    }
-  });
-
-  // Solo para la pestaña de categorías del actualizador de precios: mismos productos que arriba, más tag_ids.
-  router.get("/:pricelistId/products-with-tags", async (req, res, next) => {
-    try {
-      const pricelistId = toId(req.params.pricelistId);
-      if (!pricelistId) return res.status(400).json({ ok: false, error: "Lista inválida." });
-
-      const pricelist = await getPricelistOrFail(odoo, pricelistId);
-      const products = await productsForPricelistWithTags(odoo, pricelist);
 
       res.json({ ok: true, pricelist, products });
     } catch (e) {
