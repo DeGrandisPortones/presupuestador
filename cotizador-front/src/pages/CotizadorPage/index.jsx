@@ -1065,9 +1065,18 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
     async function run() {
       if (!pricingContextReady || !pricelistId || !lines.length) return;
       const isPersistedQuote = !!(quoteQ.data?.id || quoteId || idParam);
-      const linesToPrice = isPersistedQuote
+      let linesToPrice = isPersistedQuote
         ? lines.filter(lineNeedsPriceRefresh)
         : lines.filter((line) => !line?.previously_billed_line);
+      // El portón Coplanar/Clasico SIEMPRE debe llevar sumada la instalacion (vendedores,
+      // desde el corte). Si ya tenia precio de una tanda anterior, "no necesita refresh" y
+      // el merge nunca se recalcula - lo forzamos a entrar siempre que aplique la regla.
+      if (isPersistedQuote && shouldApplySection37VendorExtra()) {
+        const section37TargetLine = lines.find((l) => SECTION_37_PRODUCT_IDS.includes(Number(l.product_id)));
+        if (section37TargetLine && !linesToPrice.includes(section37TargetLine)) {
+          linesToPrice = [...linesToPrice, section37TargetLine];
+        }
+      }
       if (!linesToPrice.length) return;
       linesBeingPricedRef.current = linesToPrice.map((l) => Number(l.product_id)).filter(Boolean);
       const payload = {
@@ -1147,38 +1156,31 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
   function shouldApplySection37VendorExtra() {
     return resolveEffectiveRoleForPricing() === "vendedor" && quoteUsesNewPricingRules();
   }
-  // sourceLines: lineas reales del presupuesto que se estan pidiendo en esta
-  // tanda (siempre tienen product_id, sin importar el formato del pedido de
-  // precio de cada llamador) - se usan solo para decidir si corresponde
-  // agregar el extra, y si la instalacion YA es una linea real propia (el
-  // vendedor la eligio aparte) para no duplicar el pedido ni pisar su precio.
+  // sourceLines: lineas reales del presupuesto que se estan pidiendo en esta tanda
+  // (siempre tienen product_id, sin importar el formato del pedido de precio de cada
+  // llamador) - se usan solo para decidir si corresponde agregar el extra.
+  // El precio base de Coplanar/Clasico SIEMPRE lleva sumada la instalacion (vendedores,
+  // desde el corte) - si el vendedor TAMBIEN agrega Instalacion como linea propia, esa
+  // linea se cobra aparte igual, sin tocarla ni pisarla (es intencional, no un bug).
   function withSection37ExtraLine(sourceLines, payloadLines) {
     const wireLines = Array.isArray(payloadLines) ? payloadLines : [];
     if (!shouldApplySection37VendorExtra()) return wireLines;
     const srcLines = Array.isArray(sourceLines) ? sourceLines : [];
     const targetLine = srcLines.find((l) => SECTION_37_PRODUCT_IDS.includes(Number(l.product_id)));
     if (!targetLine) return wireLines;
-    const alreadyRealLine = srcLines.some((l) => Number(l.product_id) === SECTION_37_EXTRA_PRODUCT_ID);
-    if (alreadyRealLine) return wireLines;
     // La lista de precios de Instalacion es "por m2": pedirla con qty:1 devuelve
     // precio $0 (no matchea el min_quantity de la regla en Odoo), por eso el extra
     // nunca se sumaba. Hay que pedirla con la misma qty (superficie) que el portón.
     return [...wireLines, { product_id: SECTION_37_EXTRA_PRODUCT_ID, qty: targetLine.qty }];
   }
-  function mergeSection37VendorExtra(pricesData, sourceLines) {
+  function mergeSection37VendorExtra(pricesData) {
     if (!shouldApplySection37VendorExtra()) return pricesData;
-    // Si la instalacion YA es una linea real (el vendedor la eligio aparte, visible en
-    // el presupuesto), NO hay que sumarla tambien al precio del portón - se cobraria
-    // dos veces (una como linea propia, otra mezclada en el precio de Coplanar/Clasico).
-    // El merge silencioso es solo para cuando Instalacion NO aparece como linea propia.
-    const isRealLine = (Array.isArray(sourceLines) ? sourceLines : []).some((l) => Number(l.product_id) === SECTION_37_EXTRA_PRODUCT_ID);
-    if (isRealLine) return pricesData;
     const prices = Array.isArray(pricesData?.prices) ? pricesData.prices : [];
     const extraEntry = prices.find((p) => Number(p.product_id) === SECTION_37_EXTRA_PRODUCT_ID);
     if (!extraEntry) return pricesData;
     const target = prices.find((p) => SECTION_37_PRODUCT_IDS.includes(Number(p.product_id)));
     if (target) target.price = Number(target.price || 0) + Number(extraEntry.price || 0);
-    return { ...pricesData, prices: prices.filter((p) => Number(p.product_id) !== SECTION_37_EXTRA_PRODUCT_ID) };
+    return pricesData;
   }
   function normalizeNoteWithSeller(note) {
     const sellerLabel = String(user?.full_name || user?.username || "").trim();
