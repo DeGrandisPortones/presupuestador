@@ -1167,17 +1167,17 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
   }
   function mergeSection37VendorExtra(pricesData, sourceLines) {
     if (!shouldApplySection37VendorExtra()) return pricesData;
+    // Si la instalacion YA es una linea real (el vendedor la eligio aparte, visible en
+    // el presupuesto), NO hay que sumarla tambien al precio del portón - se cobraria
+    // dos veces (una como linea propia, otra mezclada en el precio de Coplanar/Clasico).
+    // El merge silencioso es solo para cuando Instalacion NO aparece como linea propia.
+    const isRealLine = (Array.isArray(sourceLines) ? sourceLines : []).some((l) => Number(l.product_id) === SECTION_37_EXTRA_PRODUCT_ID);
+    if (isRealLine) return pricesData;
     const prices = Array.isArray(pricesData?.prices) ? pricesData.prices : [];
     const extraEntry = prices.find((p) => Number(p.product_id) === SECTION_37_EXTRA_PRODUCT_ID);
     if (!extraEntry) return pricesData;
     const target = prices.find((p) => SECTION_37_PRODUCT_IDS.includes(Number(p.product_id)));
     if (target) target.price = Number(target.price || 0) + Number(extraEntry.price || 0);
-    // Si la instalacion tambien es una linea real (el vendedor la eligio en su
-    // propia seccion), su entrada de precio tiene que seguir en la respuesta
-    // para que esa linea se resuelva normal - solo se saca cuando la agregamos
-    // nosotros como sintetica, para no dejar una linea real sin precio nunca.
-    const isRealLine = (Array.isArray(sourceLines) ? sourceLines : []).some((l) => Number(l.product_id) === SECTION_37_EXTRA_PRODUCT_ID);
-    if (isRealLine) return pricesData;
     return { ...pricesData, prices: prices.filter((p) => Number(p.product_id) !== SECTION_37_EXTRA_PRODUCT_ID) };
   }
   function normalizeNoteWithSeller(note) {
