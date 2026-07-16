@@ -816,9 +816,13 @@ function drawBudgetSectorSummaryPage(doc, { title, payload, margin, innerW, date
   doc.font("Helvetica-Bold").fontSize(13).fillColor("#111827").text("Presupuesto", margin, y, { width: innerW, align: "center" });
   y = doc.y + 12;
 
-  // Los 3 sectores (y su TOTAL) tienen que entrar en esta misma hoja: se mide
-  // el alto disponible y se elige la config mas espaciosa que alcance.
-  const availableForSectors = pageBottom() - y - (36 + 16);
+  // Los 3 sectores (y su TOTAL/SUBTOTAL) tienen que entrar en esta misma hoja: se mide
+  // el alto disponible y se elige la config mas espaciosa que alcance. Si hay "Facturado
+  // previamente" hay que reservar tambien el espacio de esa fila y del TOTAL real de abajo,
+  // sino esas dos filas terminan solas en la hoja siguiente.
+  const totalBoxH = 36 + 16;
+  const previouslyBilledExtraH = summary.previouslyBilled ? (24 + 12) + totalBoxH : 0;
+  const availableForSectors = pageBottom() - y - totalBoxH - previouslyBilledExtraH;
   const sectorCfg = pickSectorBlockCfg(doc, { innerW, sectors: summary.sectors, availableH: availableForSectors });
 
   for (const sector of summary.sectors) {
