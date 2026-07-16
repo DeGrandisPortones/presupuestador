@@ -846,34 +846,46 @@ function drawBudgetSectorSummaryPage(doc, { title, payload, margin, innerW, date
   // los 3 sectores pasa a ser un subtotal: se muestra la resta en rojo debajo y despues el
   // TOTAL real (subtotal - facturado previamente). Todo este bloque final tiene que quedar
   // junto: si no entra completo en lo que resta de la hoja, se manda entero a una hoja nueva
-  // (nunca se parte a la mitad — antes cada pieza chequeaba espacio por separado y el
-  // SUBTOTAL podia terminar pegado al borde, dejando la resta y el TOTAL solos en la
-  // siguiente hoja).
+  // (nunca se parte a la mitad). Antes de resignarse a saltar de hoja, se prueba una version
+  // mas compacta del bloque (presupuestos con muchos items, con los 3 sectores ya al maximo
+  // de compactos, pueden dejar poco lugar) - misma logica que SECTOR_BLOCK_CFGS.
   const hasPreviouslyBilled = !!summary.previouslyBilled;
-  const finalBlockH = hasPreviouslyBilled ? (36 + 16) + (24 + 12) + (36 + 16) : (36 + 16);
-  if (y + finalBlockH > pageBottom()) {
+  const TOTALS_BLOCK_SIZES = {
+    normal: { boxH: 36, boxGap: 16, lineH: 24, lineGap: 12, boxFont: 12, lineFont: 11 },
+    compact: { boxH: 20, boxGap: 4, lineH: 13, lineGap: 3, boxFont: 9, lineFont: 8.5 },
+  };
+  function totalsBlockH(size) {
+    return hasPreviouslyBilled
+      ? (size.boxH + size.boxGap) * 2 + (size.lineH + size.lineGap)
+      : (size.boxH + size.boxGap);
+  }
+  const remainingH = pageBottom() - y;
+  const totalsSize = totalsBlockH(TOTALS_BLOCK_SIZES.normal) <= remainingH
+    ? TOTALS_BLOCK_SIZES.normal
+    : (totalsBlockH(TOTALS_BLOCK_SIZES.compact) <= remainingH ? TOTALS_BLOCK_SIZES.compact : TOTALS_BLOCK_SIZES.normal);
+  if (totalsBlockH(totalsSize) > remainingH) {
     doc.addPage();
     y = margin + 20;
   }
-  doc.save().fillColor("#F3F4F6").rect(margin, y, innerW, 36).fill().restore();
-  doc.save().strokeColor("#111827").lineWidth(1.6).rect(margin, y, innerW, 36).stroke().restore();
-  doc.font("Helvetica-Bold").fontSize(12).fillColor("#111827")
-    .text(hasPreviouslyBilled ? "SUBTOTAL" : "TOTAL", margin + 10, y + 11, { width: innerW * 0.68 - 10 })
-    .text(`$ ${formatMoney(summary.grandTotal)}`, margin + innerW * 0.68, y + 11, { width: innerW * 0.32 - 10, align: "right" });
-  y += 36 + 16;
+  doc.save().fillColor("#F3F4F6").rect(margin, y, innerW, totalsSize.boxH).fill().restore();
+  doc.save().strokeColor("#111827").lineWidth(1.6).rect(margin, y, innerW, totalsSize.boxH).stroke().restore();
+  doc.font("Helvetica-Bold").fontSize(totalsSize.boxFont).fillColor("#111827")
+    .text(hasPreviouslyBilled ? "SUBTOTAL" : "TOTAL", margin + 10, y + (totalsSize.boxH - totalsSize.boxFont) / 2, { width: innerW * 0.68 - 10 })
+    .text(`$ ${formatMoney(summary.grandTotal)}`, margin + innerW * 0.68, y + (totalsSize.boxH - totalsSize.boxFont) / 2, { width: innerW * 0.32 - 10, align: "right" });
+  y += totalsSize.boxH + totalsSize.boxGap;
 
   if (hasPreviouslyBilled) {
-    doc.font("Helvetica-Bold").fontSize(11).fillColor("#B91C1C")
+    doc.font("Helvetica-Bold").fontSize(totalsSize.lineFont).fillColor("#B91C1C")
       .text(summary.previouslyBilled.productName, margin + 10, y, { width: innerW * 0.68 - 10 })
       .text(`- $ ${formatMoney(Math.abs(summary.previouslyBilled.amount))}`, margin + innerW * 0.68, y, { width: innerW * 0.32 - 10, align: "right" });
-    y += 24 + 12;
+    y += totalsSize.lineH + totalsSize.lineGap;
 
-    doc.save().fillColor("#F3F4F6").rect(margin, y, innerW, 36).fill().restore();
-    doc.save().strokeColor("#111827").lineWidth(1.6).rect(margin, y, innerW, 36).stroke().restore();
-    doc.font("Helvetica-Bold").fontSize(12).fillColor("#111827")
-      .text("TOTAL", margin + 10, y + 11, { width: innerW * 0.68 - 10 })
-      .text(`$ ${formatMoney(summary.finalTotal)}`, margin + innerW * 0.68, y + 11, { width: innerW * 0.32 - 10, align: "right" });
-    y += 36 + 16;
+    doc.save().fillColor("#F3F4F6").rect(margin, y, innerW, totalsSize.boxH).fill().restore();
+    doc.save().strokeColor("#111827").lineWidth(1.6).rect(margin, y, innerW, totalsSize.boxH).stroke().restore();
+    doc.font("Helvetica-Bold").fontSize(totalsSize.boxFont).fillColor("#111827")
+      .text("TOTAL", margin + 10, y + (totalsSize.boxH - totalsSize.boxFont) / 2, { width: innerW * 0.68 - 10 })
+      .text(`$ ${formatMoney(summary.finalTotal)}`, margin + innerW * 0.68, y + (totalsSize.boxH - totalsSize.boxFont) / 2, { width: innerW * 0.32 - 10, align: "right" });
+    y += totalsSize.boxH + totalsSize.boxGap;
   }
 
   if (summary.unassigned) {
