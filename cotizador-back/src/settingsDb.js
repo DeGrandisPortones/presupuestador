@@ -8,7 +8,6 @@ const DOOR_QUOTE_SETTINGS_KEY = "door_quote_settings";
 const TECHNICAL_MEASUREMENT_RULES_KEY = "technical_measurement_rules";
 const TECHNICAL_MEASUREMENT_FIELDS_KEY = "technical_measurement_fields";
 const PRODUCTION_PLANNING_SETTINGS_KEY = "production_planning";
-const PRICE_UPDATER_CATEGORY_MAP_KEY = "price_updater_category_map";
 const DEFAULT_SURFACE_FINAL_FORMULA = "surface_automatica_m2";
 const CATALOG_KINDS = new Set(["porton", "ipanel", "plegados", "otros", "puerta"]);
 
@@ -40,7 +39,6 @@ export async function ensureSettingsTable() {
     }],
     [TECHNICAL_MEASUREMENT_FIELDS_KEY, { fields: [] }],
     [PRODUCTION_PLANNING_SETTINGS_KEY, { years: {} }],
-    [PRICE_UPDATER_CATEGORY_MAP_KEY, { map: {} }],
   ]) {
     await dbQuery(
       `insert into public.presupuestador_settings (key, value_json) values ($1, $2::jsonb) on conflict (key) do nothing`,
@@ -514,29 +512,3 @@ export async function setProductionPlanningYear({ year, weeks = [] } = {}) {
   return getPlanningYear(saved, numericYear);
 }
 export async function getCommercialFinalTolerancePercent() { return 0; }
-
-export async function getPriceUpdaterCategoryMap() {
-  const raw = await getSetting(PRICE_UPDATER_CATEGORY_MAP_KEY, { map: {} });
-  const source = raw && typeof raw === "object" && raw.map && typeof raw.map === "object" ? raw.map : {};
-  const out = {};
-  for (const [tagId, kind] of Object.entries(source)) {
-    const id = Number(tagId);
-    const k = String(kind || "").trim().toLowerCase();
-    if (!Number.isFinite(id) || id <= 0 || !CATALOG_KINDS.has(k)) continue;
-    out[String(id)] = k;
-  }
-  return out;
-}
-export async function setPriceUpdaterCategoryMap(map = {}) {
-  const source = map && typeof map === "object" ? map : {};
-  const out = {};
-  for (const [tagId, kind] of Object.entries(source)) {
-    const id = Number(tagId);
-    const k = String(kind || "").trim().toLowerCase();
-    if (!Number.isFinite(id) || id <= 0 || !k) continue;
-    if (!CATALOG_KINDS.has(k)) continue;
-    out[String(id)] = k;
-  }
-  await setSetting(PRICE_UPDATER_CATEGORY_MAP_KEY, { map: out });
-  return out;
-}
