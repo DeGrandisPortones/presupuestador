@@ -331,7 +331,7 @@ export default function PresupuestosPage() {
   const showAcceptanceColumn = filter === "produccion" && !!user?.is_distribuidor;
 
   const quotesQ = useQuery({ queryKey: ["quotes", "mine"], queryFn: () => listQuotes({ scope: "mine" }) });
-  const doorsQ = useQuery({ queryKey: ["doors", "mine", "presupuestos"], queryFn: () => listDoors({ scope: "mine" }), enabled: !!user?.is_vendedor || !!user?.is_distribuidor });
+  const doorsQ = { data: [], isLoading: false, error: null }; // flujo legacy de puertas desactivado; las puertas nuevas entran como presupuestos
   const qc = useQueryClient();
   const moveM = useMutation({ mutationFn: (id) => requestProductionFromAcopio(id), onSuccess: () => qc.invalidateQueries({ queryKey: ["quotes", "mine"] }) });
   const canDownloadQuoteProforma = !!user?.is_distribuidor && !user?.is_vendedor;
@@ -346,9 +346,7 @@ export default function PresupuestosPage() {
     const key = `proforma-${quoteId}`;
     setDownloadingPdfKey(key);
     try { await downloadListingQuoteProformaPdf(quoteId); } catch (e) { toast.error(e?.message || "No se pudo descargar la proforma"); } finally { setDownloadingPdfKey(""); }
-  }
-
-  const linkedDoorQuoteIds = useMemo(() => new Set((doorsQ.data || []).map((d) => String(d?.linked_quote_id || "").trim()).filter(Boolean)), [doorsQ.data]);
+  }
   useEffect(() => { setPage(1); }, [filter, typeFilter, searchText]);
 
   // Resetear el filtro de estado si el tipo seleccionado no lo soporta
@@ -413,8 +411,8 @@ export default function PresupuestosPage() {
 
   useEffect(() => { const totalPages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE)); if (page > totalPages) setPage(totalPages); }, [rows.length, page]);
   const visibleRows = useMemo(() => { const start = (page - 1) * PAGE_SIZE; return rows.slice(start, start + PAGE_SIZE); }, [rows, page]);
-  const isLoading = quotesQ.isLoading || doorsQ.isLoading;
-  const error = quotesQ.error || doorsQ.error;
+  const isLoading = quotesQ.isLoading;
+  const error = quotesQ.error;
 
   return (
     <div className="container">
@@ -508,8 +506,7 @@ export default function PresupuestosPage() {
                   const finalProformaPdfKey = r.final_copy_id ? `proforma-${r.final_copy_id}` : "";
                   const canRequestProduction = r.fulfillment_mode === "acopio" && r.status === "synced_odoo" && r.acopio_to_produccion_status !== "pending";
                   const hasFinal = !!r.final_copy_id;
-                  const finalDraft = hasFinal && !["syncing_odoo", "synced_odoo"].includes(String(r.final_copy_status || ""));
-                  const canAddDoor = effectiveQuoteKind(r) === "porton" && r.status === "draft" && !linkedDoorQuoteIds.has(String(r.id));
+                  const finalDraft = hasFinal && !["syncing_odoo", "synced_odoo"].includes(String(r.final_copy_status || ""));
                   const hasMeasurementDetail = effectiveQuoteKind(r) === "porton" && (r?.requires_measurement === true || String(r?.measurement_mode || "").toLowerCase() === "tecnica_only" || String(r?.measurement_subtype || "").toLowerCase() === "sin_medicion" || !["", "none"].includes(String(r?.measurement_status || "").toLowerCase()));
                   const isMeasurementApproved = String(r?.measurement_status || "").toLowerCase() === "approved";
                   const isTechnicalOnly = String(r?.measurement_subtype || "").toLowerCase() === "sin_medicion" || String(r?.measurement_mode || "").toLowerCase() === "tecnica_only";
@@ -579,8 +576,7 @@ export default function PresupuestosPage() {
                         {canDownloadQuoteProforma && hasFinal ? <Button variant="ghost" disabled={downloadingPdfKey === finalProformaPdfKey} onClick={() => handleDownloadQuoteProformaPdf(r.final_copy_id)}>Proforma final</Button> : null}
                         {hasMeasurementDetail ? (() => { const canViewMeasurement = isMeasurementApproved || isReturnedFromMeasurement(r); return <Button variant="ghost" disabled={!canViewMeasurement} title={canViewMeasurement ? "" : "Disponible cuando Técnica apruebe la medición / detalle técnico"} onClick={() => { if (!canViewMeasurement) return; navigate(`/mediciones/${r.id}`, isReturnedFromMeasurement(r) && !isMeasurementApproved ? { state: { readOnlyMeasurement: true } } : undefined); }}>{measurementLabel}</Button>; })() : null}
                         {effectiveQuoteKind(r) === "plegados" ? <Button variant="ghost" onClick={() => setPlegadoModal(r)}>Plano / comentarios</Button> : null}
-                        {r.status === "draft" ? <Button onClick={() => navigate(quoteEditorPath(r))}>Editar</Button> : null}
-                        {canAddDoor ? <Button variant="ghost" onClick={() => navigate(`/puertas/nuevo/${r.id}`)}>Agregar puerta</Button> : null}
+                        {r.status === "draft" ? <Button onClick={() => navigate(quoteEditorPath(r))}>Editar</Button> : null}
                         {hasFinal && finalDraft ? <Button onClick={() => navigate(quoteEditorPath({ ...r, id: r.final_copy_id }))}>Editar final</Button> : null}
                         {filter === "acopio" ? <Button disabled={moveM.isPending || !canRequestProduction} title={canRequestProduction ? "Solicitar paso a Producción" : "Solo disponible cuando el presupuesto original ya fue aprobado y enviado a Odoo"} onClick={() => moveM.mutate(r.id)}>{r.acopio_to_produccion_status === "pending" ? "Solicitud en revisión" : "Solicitar paso a Producción"}</Button> : null}
                       </td>

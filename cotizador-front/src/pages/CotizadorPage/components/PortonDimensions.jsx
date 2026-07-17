@@ -803,11 +803,11 @@ function ParantesSketchModal({
   const reverseAxis = !isHorizontal && !!hasFixedVerticalReference && fixedSide === "derecho";
   const { displayed: displayMarkers, segments: dimensionSegments } = buildDimensionSegments(markers, effectiveSpan, reverseAxis);
   const finalLateralGapMm = getFinalLateralGapMm(markers, baseDimensionMm, tube);
-  const width = 720;
+  const width = 780;
   const height = 360;
   const rectX = 70;
   const rectY = 55;
-  const rectW = 560;
+  const rectW = 500;
   const rectH = 220;
   const axisLength = isHorizontal ? rectH : rectW;
   const scale = axisLength / effectiveSpan;
