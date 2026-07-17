@@ -428,7 +428,7 @@ export const useQuoteStore = create((set, get) => ({
     set((s) => {
       const existing = s.lines.find((l) => l.product_id === id && !l.previously_billed_line);
       const isSurfaceQuantity = !!p.uses_surface_quantity;
-      const isIntegerQty = !!p.integer_qty || !!p.auto_parantes_pricing_line || isIntegerQtyProductId(id);
+      const isIntegerQty = isIntegerQtyProductId(id);
       const isFreeQuantity = isShippingProductId(id) || !!p.free_quantity || !!p.quantity_editable || String(p.quantity_mode || "").toLowerCase() === "free";
       const productPricePending = !!p.price_pending || !!p.price_unresolved;
       const skipOdooPricing = isDistributorOwnSupplyProductId(id) || !!p.manual_price;

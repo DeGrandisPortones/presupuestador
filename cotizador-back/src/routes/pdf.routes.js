@@ -319,15 +319,10 @@ async function buildLines(payload, { useBasePrice, odoo, displayNetPrices = fals
         ? (isShippingLine(l) && envioOdooPriceSnapshot != null ? envioOdooPriceSnapshot : 0)
         : rawBasePrice;
       // "Facturado previamente" (deposito ya cobrado): dato duro, no se le aplica
-      // coeficiente/margen ni recargo por forma de pago. Si lleva IVA si depende de la
-      // condicion con la que se envio a Odoo (calcOdooUnitPrice/getOdooConditionPriceFactor
-      // en quotes.routes.js): Condicion 1 manda el neto sin IVA, asi que hay que sumarle el
-      // 21% aca para que reste correctamente contra el total con IVA del presupuesto nuevo.
-      // Condicion 2 ya manda neto+10,5%, pasa tal cual.
+      // coeficiente/margen ni IVA ni recargo por forma de pago. Pasa tal cual.
       const isPreviouslyBilled = !!l?.previously_billed_line;
-      const previouslyBilledUnit = isCondition2(payload) ? basePrice : basePrice * (1 + IVA_RATE);
       const unitNet = isPreviouslyBilled ? basePrice : (useBasePrice ? basePrice : basePrice * coefFactor);
-      const unit = isPreviouslyBilled ? previouslyBilledUnit : (displayNetPrices ? unitNet : unitNet * (1 + effectiveTaxRate));
+      const unit = isPreviouslyBilled ? basePrice : (displayNetPrices ? unitNet : unitNet * (1 + effectiveTaxRate));
       const totalNet = unitNet * qty;
       const total = unit * qty;
       const productId = toPositiveInt(l?.product_id);
@@ -340,7 +335,7 @@ async function buildLines(payload, { useBasePrice, odoo, displayNetPrices = fals
       const payloadName = safeStr(l?.name || l?.raw_name || l?.display_name || l?.alias);
       const resolvedName = overrideName || liveTemplateName || liveVariantName || payloadName;
       if (!resolvedName) throw new Error(`No se pudo resolver el nombre para la línea ${productId || variantId || "sin id"}.`);
-      return { qty, name: resolvedName, unit, total, totalNet, productId, previouslyBilledLine: isPreviouslyBilled };
+      return { qty, name: resolvedName, unit, total, totalNet, productId };
     })
     .filter((l) => l.qty > 0);
 
@@ -821,13 +816,9 @@ function drawBudgetSectorSummaryPage(doc, { title, payload, margin, innerW, date
   doc.font("Helvetica-Bold").fontSize(13).fillColor("#111827").text("Presupuesto", margin, y, { width: innerW, align: "center" });
   y = doc.y + 12;
 
-  // Los 3 sectores (y su TOTAL/SUBTOTAL) tienen que entrar en esta misma hoja: se mide
-  // el alto disponible y se elige la config mas espaciosa que alcance. Si hay "Facturado
-  // previamente" hay que reservar tambien el espacio de esa fila y del TOTAL real de abajo,
-  // sino esas dos filas terminan solas en la hoja siguiente.
-  const totalBoxH = 36 + 16;
-  const previouslyBilledExtraH = summary.previouslyBilled ? (24 + 12) + totalBoxH : 0;
-  const availableForSectors = pageBottom() - y - totalBoxH - previouslyBilledExtraH;
+  // Los 3 sectores (y su TOTAL) tienen que entrar en esta misma hoja: se mide
+  // el alto disponible y se elige la config mas espaciosa que alcance.
+  const availableForSectors = pageBottom() - y - (36 + 16);
   const sectorCfg = pickSectorBlockCfg(doc, { innerW, sectors: summary.sectors, availableH: availableForSectors });
 
   for (const sector of summary.sectors) {
@@ -842,51 +833,16 @@ function drawBudgetSectorSummaryPage(doc, { title, payload, margin, innerW, date
     });
   }
 
-  // Si hay "Facturado previamente" (presupuesto editado tras generar la NP), el total de
-  // los 3 sectores pasa a ser un subtotal: se muestra la resta en rojo debajo y despues el
-  // TOTAL real (subtotal - facturado previamente). Todo este bloque final tiene que quedar
-  // junto: si no entra completo en lo que resta de la hoja, se manda entero a una hoja nueva
-  // (nunca se parte a la mitad). Antes de resignarse a saltar de hoja, se prueba una version
-  // mas compacta del bloque (presupuestos con muchos items, con los 3 sectores ya al maximo
-  // de compactos, pueden dejar poco lugar) - misma logica que SECTOR_BLOCK_CFGS.
-  const hasPreviouslyBilled = !!summary.previouslyBilled;
-  const TOTALS_BLOCK_SIZES = {
-    normal: { boxH: 36, boxGap: 16, lineH: 24, lineGap: 12, boxFont: 12, lineFont: 11 },
-    compact: { boxH: 20, boxGap: 4, lineH: 13, lineGap: 3, boxFont: 9, lineFont: 8.5 },
-  };
-  function totalsBlockH(size) {
-    return hasPreviouslyBilled
-      ? (size.boxH + size.boxGap) * 2 + (size.lineH + size.lineGap)
-      : (size.boxH + size.boxGap);
-  }
-  const remainingH = pageBottom() - y;
-  const totalsSize = totalsBlockH(TOTALS_BLOCK_SIZES.normal) <= remainingH
-    ? TOTALS_BLOCK_SIZES.normal
-    : (totalsBlockH(TOTALS_BLOCK_SIZES.compact) <= remainingH ? TOTALS_BLOCK_SIZES.compact : TOTALS_BLOCK_SIZES.normal);
-  if (totalsBlockH(totalsSize) > remainingH) {
+  if (y + 36 > pageBottom()) {
     doc.addPage();
     y = margin + 20;
   }
-  doc.save().fillColor("#F3F4F6").rect(margin, y, innerW, totalsSize.boxH).fill().restore();
-  doc.save().strokeColor("#111827").lineWidth(1.6).rect(margin, y, innerW, totalsSize.boxH).stroke().restore();
-  doc.font("Helvetica-Bold").fontSize(totalsSize.boxFont).fillColor("#111827")
-    .text(hasPreviouslyBilled ? "SUBTOTAL" : "TOTAL", margin + 10, y + (totalsSize.boxH - totalsSize.boxFont) / 2, { width: innerW * 0.68 - 10 })
-    .text(`$ ${formatMoney(summary.grandTotal)}`, margin + innerW * 0.68, y + (totalsSize.boxH - totalsSize.boxFont) / 2, { width: innerW * 0.32 - 10, align: "right" });
-  y += totalsSize.boxH + totalsSize.boxGap;
-
-  if (hasPreviouslyBilled) {
-    doc.font("Helvetica-Bold").fontSize(totalsSize.lineFont).fillColor("#B91C1C")
-      .text(summary.previouslyBilled.productName, margin + 10, y, { width: innerW * 0.68 - 10 })
-      .text(`- $ ${formatMoney(Math.abs(summary.previouslyBilled.amount))}`, margin + innerW * 0.68, y, { width: innerW * 0.32 - 10, align: "right" });
-    y += totalsSize.lineH + totalsSize.lineGap;
-
-    doc.save().fillColor("#F3F4F6").rect(margin, y, innerW, totalsSize.boxH).fill().restore();
-    doc.save().strokeColor("#111827").lineWidth(1.6).rect(margin, y, innerW, totalsSize.boxH).stroke().restore();
-    doc.font("Helvetica-Bold").fontSize(totalsSize.boxFont).fillColor("#111827")
-      .text("TOTAL", margin + 10, y + (totalsSize.boxH - totalsSize.boxFont) / 2, { width: innerW * 0.68 - 10 })
-      .text(`$ ${formatMoney(summary.finalTotal)}`, margin + innerW * 0.68, y + (totalsSize.boxH - totalsSize.boxFont) / 2, { width: innerW * 0.32 - 10, align: "right" });
-    y += totalsSize.boxH + totalsSize.boxGap;
-  }
+  doc.save().fillColor("#F3F4F6").rect(margin, y, innerW, 36).fill().restore();
+  doc.save().strokeColor("#111827").lineWidth(1.6).rect(margin, y, innerW, 36).stroke().restore();
+  doc.font("Helvetica-Bold").fontSize(12).fillColor("#111827")
+    .text("TOTAL", margin + 10, y + 11, { width: innerW * 0.68 - 10 })
+    .text(`$ ${formatMoney(summary.grandTotal)}`, margin + innerW * 0.68, y + 11, { width: innerW * 0.32 - 10, align: "right" });
+  y += 36 + 16;
 
   if (summary.unassigned) {
     drawSectorItemsBlock(doc, {

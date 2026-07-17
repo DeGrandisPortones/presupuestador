@@ -7,7 +7,6 @@ function formatIvaLabel(rate) {
 }
 
 export default function SummaryBox({ totals }) {
-  const hasPreviouslyBilled = Number.isFinite(totals?.previouslyBilled) && totals.previouslyBilled !== 0;
   return (
     <div style={{ display: "flex", justifyContent: "flex-end" }}>
       <div style={{ minWidth: 320 }}>
@@ -19,12 +18,6 @@ export default function SummaryBox({ totals }) {
           <div className="muted">{formatIvaLabel(totals.ivaRate)}</div>
           <div>{formatARS(totals.iva)}</div>
         </div>
-        {hasPreviouslyBilled ? (
-          <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 0" }}>
-            <div style={{ color: "#B91C1C", fontWeight: 700 }}>Facturado previamente</div>
-            <div style={{ color: "#B91C1C", fontWeight: 700 }}>{formatARS(totals.previouslyBilled)}</div>
-          </div>
-        ) : null}
         <div style={{ display: "flex", justifyContent: "space-between", padding: "10px 0", borderTop: "1px solid #eee", fontWeight: 800 }}>
           <div>Total</div>
           <div>{formatARS(totals.total)}</div>

@@ -216,8 +216,6 @@ export default function DashboardPage() {
   const [savingInitialSection, setSavingInitialSection] = useState(false);
   const [savingDependencies, setSavingDependencies] = useState(false);
   const [savingSystems, setSavingSystems] = useState(false);
-  const [parantesPricingProductId, setParantesPricingProductId] = useState("");
-  const [savingParantesPricing, setSavingParantesPricing] = useState(false);
   const [pdfDrafts, setPdfDrafts] = useState({});
 
   const catalogQ = useQuery({
@@ -284,9 +282,6 @@ export default function DashboardPage() {
       derived_porton_type: String(rule.derived_porton_type || ""),
       sort_order: Number(rule.sort_order || index + 1) || index + 1,
     })));
-
-    const surfaceParams = rules.surface_parameters || rules.surface_calc_params || rules.parantes_config || {};
-    setParantesPricingProductId(String(surfaceParams.parantes_pricing_product_id || surfaceParams.parantes_price_product_id || ""));
   }, [technicalRulesQ.data]);
 
   useEffect(() => {
@@ -435,23 +430,6 @@ export default function DashboardPage() {
       alert("Tipos o sistemas guardados.");
     } finally {
       setSavingSystems(false);
-    }
-  }
-
-  async function onSaveParantesPricingProduct() {
-    setSavingParantesPricing(true);
-    try {
-      const numericId = Number(String(parantesPricingProductId || "").replace(/[^0-9]/g, "")) || null;
-      await adminSaveTechnicalMeasurementRules("porton", {
-        parantes_pricing_product_id: numericId || "",
-        surface_parameters: {
-          parantes_pricing_product_id: numericId || "",
-        },
-      });
-      invalidateTechnicalRules();
-      alert("Producto de precio de parantes guardado.");
-    } finally {
-      setSavingParantesPricing(false);
     }
   }
 
