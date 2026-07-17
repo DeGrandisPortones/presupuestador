@@ -32,6 +32,14 @@ export async function createTechnicalConsult(payload = {}) {
   return data.ticket;
 }
 
+export async function searchTechnicalConsultRequesters(q) {
+  const { data } = await http.get("/api/technical-consults/requesters/search", {
+    params: { q: q || "" },
+  });
+  if (!data?.ok) throw new Error(data?.error || "No se pudo buscar vendedores/distribuidores");
+  return data.requesters || [];
+}
+
 export async function addTechnicalConsultMessage(id, payload = {}) {
   const { data } = await http.post(`/api/technical-consults/${encodeURIComponent(String(id))}/messages`, payload || {});
   if (!data?.ok) throw new Error(data?.error || "No se pudo enviar el mensaje");
