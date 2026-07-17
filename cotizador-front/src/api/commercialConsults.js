@@ -32,6 +32,14 @@ export async function createCommercialConsult(payload = {}) {
   return data.ticket;
 }
 
+export async function searchCommercialConsultRequesters(q) {
+  const { data } = await http.get("/api/commercial-consults/requesters/search", {
+    params: { q: q || "" },
+  });
+  if (!data?.ok) throw new Error(data?.error || "No se pudo buscar vendedores/distribuidores");
+  return data.requesters || [];
+}
+
 export async function addCommercialConsultMessage(id, payload = {}) {
   const { data } = await http.post(`/api/commercial-consults/${encodeURIComponent(String(id))}/messages`, payload || {});
   if (!data?.ok) throw new Error(data?.error || "No se pudo enviar el mensaje");

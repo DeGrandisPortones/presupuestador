@@ -1,4 +1,5 @@
 import { dbQuery, getPool } from "./db.js";
+import { getActiveRequesterById } from "./usersDb.js";
 
 let ensured = false;
 
@@ -43,7 +44,8 @@ function toId(value) {
 function canAccessTicket(user, ticket) {
   if (!ticket) return false;
   if (isTechnicalUser(user)) return true;
-  return Number(ticket.created_by_user_id || 0) === Number(user?.user_id || user?.id || 0);
+  const uid = Number(user?.user_id || user?.id || 0);
+  return Number(ticket.created_by_user_id || 0) === uid || Number(ticket.on_behalf_of_user_id || 0) === uid;
 }
 
 async function withTx(fn) {
@@ -70,6 +72,7 @@ export async function ensureTechnicalConsultTables() {
     create table if not exists public.presupuestador_technical_tickets (
       id bigserial primary key,
       created_by_user_id bigint not null references public.presupuestador_users(id),
+      on_behalf_of_user_id bigint null references public.presupuestador_users(id),
       assigned_to_user_id bigint null references public.presupuestador_users(id),
       status text not null default 'pending',
       subject text not null,
@@ -98,7 +101,10 @@ export async function ensureTechnicalConsultTables() {
     );
   `);
 
+  await dbQuery(`alter table public.presupuestador_technical_tickets add column if not exists on_behalf_of_user_id bigint null references public.presupuestador_users(id);`);
+
   await dbQuery(`create index if not exists presupuestador_technical_tickets_created_by_idx on public.presupuestador_technical_tickets(created_by_user_id);`);
+  await dbQuery(`create index if not exists presupuestador_technical_tickets_on_behalf_of_idx on public.presupuestador_technical_tickets(on_behalf_of_user_id);`);
   await dbQuery(`create index if not exists presupuestador_technical_tickets_status_idx on public.presupuestador_technical_tickets(status, last_message_at desc nulls last);`);
   await dbQuery(`create index if not exists presupuestador_technical_ticket_messages_ticket_idx on public.presupuestador_technical_ticket_messages(ticket_id, created_at asc, id asc);`);
 
@@ -118,7 +124,8 @@ function buildListWhere({ user, scope, status, paramOffset = 0 }) {
   } else {
     const userId = toId(user?.user_id || user?.id);
     if (!userId) throw new Error("Usuario inválido");
-    where.push(`t.created_by_user_id = $${nextParam(userId)}`);
+    const uidParam = nextParam(userId);
+    where.push(`(t.created_by_user_id = $${uidParam} or t.on_behalf_of_user_id = $${uidParam})`);
   }
 
   if (status === "open") {
@@ -136,6 +143,7 @@ function listSql({ scope, viewerIdParamPos }) {
     select
       t.id,
       t.created_by_user_id,
+      t.on_behalf_of_user_id,
       t.assigned_to_user_id,
       t.status,
       t.subject,
@@ -152,8 +160,15 @@ function listSql({ scope, viewerIdParamPos }) {
       case
         when coalesce(creator.is_distribuidor, false) then 'distribuidor'
         when coalesce(creator.is_vendedor, false) then 'vendedor'
+        when coalesce(creator.is_rev_tecnica, false) or coalesce(creator.is_superuser, false) then 'rev_tecnica'
         else 'usuario'
       end as created_by_role,
+      coalesce(nullif(onbehalf.full_name, ''), onbehalf.username, '') as on_behalf_of_name,
+      case
+        when coalesce(onbehalf.is_distribuidor, false) then 'distribuidor'
+        when coalesce(onbehalf.is_vendedor, false) then 'vendedor'
+        else null
+      end as on_behalf_of_role,
       coalesce(nullif(assignee.full_name, ''), assignee.username, '') as assigned_to_name,
       coalesce(nullif(closer.full_name, ''), closer.username, '') as closed_by_name,
       (
@@ -186,6 +201,7 @@ function listSql({ scope, viewerIdParamPos }) {
       ) as has_unread
     from public.presupuestador_technical_tickets t
     join public.presupuestador_users creator on creator.id = t.created_by_user_id
+    left join public.presupuestador_users onbehalf on onbehalf.id = t.on_behalf_of_user_id
     left join public.presupuestador_users assignee on assignee.id = t.assigned_to_user_id
     left join public.presupuestador_users closer on closer.id = t.closed_by_user_id
   `;
@@ -221,12 +237,20 @@ async function getTicketRow(clientOrDb, id) {
              case
                when coalesce(creator.is_distribuidor, false) then 'distribuidor'
                when coalesce(creator.is_vendedor, false) then 'vendedor'
+               when coalesce(creator.is_rev_tecnica, false) or coalesce(creator.is_superuser, false) then 'rev_tecnica'
                else 'usuario'
              end as created_by_role,
+             coalesce(nullif(onbehalf.full_name, ''), onbehalf.username, '') as on_behalf_of_name,
+             case
+               when coalesce(onbehalf.is_distribuidor, false) then 'distribuidor'
+               when coalesce(onbehalf.is_vendedor, false) then 'vendedor'
+               else null
+             end as on_behalf_of_role,
              coalesce(nullif(assignee.full_name, ''), assignee.username, '') as assigned_to_name,
              coalesce(nullif(closer.full_name, ''), closer.username, '') as closed_by_name
         from public.presupuestador_technical_tickets t
         join public.presupuestador_users creator on creator.id = t.created_by_user_id
+        left join public.presupuestador_users onbehalf on onbehalf.id = t.on_behalf_of_user_id
         left join public.presupuestador_users assignee on assignee.id = t.assigned_to_user_id
         left join public.presupuestador_users closer on closer.id = t.closed_by_user_id
        where t.id = $1
@@ -306,24 +330,41 @@ export async function getTechnicalConsultDetail(user, id) {
   };
 }
 
-export async function createTechnicalConsult(user, { subject, message } = {}) {
+export async function createTechnicalConsult(user, { subject, message, target_user_id } = {}) {
   await ensureTechnicalConsultTables();
-  if (!isRequesterUser(user)) throw new Error("Solo vendedor o distribuidor puede crear consultas técnicas");
+  const staffCreating = isTechnicalUser(user);
+  if (!staffCreating && !isRequesterUser(user)) {
+    throw new Error("Solo vendedor, distribuidor o Rev. Técnica puede crear consultas técnicas");
+  }
 
   const cleanSubject = normalizeSubject(subject);
   const cleanMessage = normalizeMessage(message);
   if (!cleanSubject) throw new Error("Falta asunto");
   if (!cleanMessage) throw new Error("Falta mensaje");
 
+  let targetUserId = null;
+  if (staffCreating) {
+    targetUserId = toId(target_user_id);
+    if (!targetUserId) throw new Error("Falta seleccionar vendedor o distribuidor");
+    const target = await getActiveRequesterById(targetUserId);
+    if (!target) throw new Error("Vendedor o distribuidor no encontrado o inactivo");
+  }
+
   const userId = toId(user?.user_id || user?.id);
   const now = new Date().toISOString();
-  const authorRole = requesterRoleForUser(user);
+  const authorRole = staffCreating ? "rev_tecnica" : requesterRoleForUser(user);
+  const initialStatus = staffCreating ? "in_progress" : "pending";
+  const requesterLastReadAt = staffCreating ? null : now;
+  const technicalLastReadAt = staffCreating ? now : null;
+  const assignedToUserId = staffCreating ? userId : null;
 
   const ticketId = await withTx(async (client) => {
     const createdTicket = await client.query(
       `
         insert into public.presupuestador_technical_tickets (
           created_by_user_id,
+          on_behalf_of_user_id,
+          assigned_to_user_id,
           status,
           subject,
           requester_last_read_at,
@@ -333,10 +374,10 @@ export async function createTechnicalConsult(user, { subject, message } = {}) {
           created_at,
           updated_at
         )
-        values ($1, 'pending', $2, $3, null, $3, $1, $3, $3)
+        values ($1, $2, $3, $4, $5, $6, $7, $8, $1, $8, $8)
         returning id
       `,
-      [userId, cleanSubject, now]
+      [userId, targetUserId, assignedToUserId, initialStatus, cleanSubject, requesterLastReadAt, technicalLastReadAt, now]
     );
     const ticketIdValue = Number(createdTicket.rows?.[0]?.id || 0);
     if (!ticketIdValue) throw new Error("No se pudo crear la consulta técnica");
@@ -537,7 +578,7 @@ export async function getTechnicalConsultUnreadSummary(user) {
         )::int as mine_unread_count,
         count(*) filter (where t.status in ('pending', 'in_progress'))::int as mine_open_count
       from public.presupuestador_technical_tickets t
-      where t.created_by_user_id = $1
+      where t.created_by_user_id = $1 or t.on_behalf_of_user_id = $1
     `,
     [userId]
   );

@@ -11,6 +11,7 @@ import {
   getTechnicalConsult,
   listTechnicalConsults,
   markTechnicalConsultRead,
+  searchTechnicalConsultRequesters,
 } from "../../api/technicalConsults.js";
 
 function fmtDateTime(value) {
@@ -83,9 +84,44 @@ export default function TechnicalConsultsPage() {
   const [resolutionText, setResolutionText] = useState("");
   const [searchText, setSearchText] = useState("");
 
+  const [showNewForm, setShowNewForm] = useState(false);
+  const [targetSearch, setTargetSearch] = useState("");
+  const [targetResults, setTargetResults] = useState([]);
+  const [targetSearching, setTargetSearching] = useState(false);
+  const [selectedTarget, setSelectedTarget] = useState(null);
+
+  function closeNewForm() {
+    setShowNewForm(false);
+    setSelectedTarget(null);
+    setTargetSearch("");
+    setTargetResults([]);
+  }
+
   useEffect(() => {
     setStatus(isTechnical ? "pending" : "open");
   }, [isTechnical]);
+
+  useEffect(() => {
+    if (!isTechnical || !showNewForm) return;
+    const term = targetSearch.trim();
+    if (term.length < 2) {
+      setTargetResults([]);
+      setTargetSearching(false);
+      return;
+    }
+    setTargetSearching(true);
+    const t = setTimeout(async () => {
+      try {
+        const results = await searchTechnicalConsultRequesters(term);
+        setTargetResults(results);
+      } catch {
+        setTargetResults([]);
+      } finally {
+        setTargetSearching(false);
+      }
+    }, 300);
+    return () => clearTimeout(t);
+  }, [targetSearch, isTechnical, showNewForm]);
 
   const scope = isTechnical ? "technical" : "mine";
 
@@ -109,6 +145,7 @@ export default function TechnicalConsultsPage() {
         ticket.created_by_role,
         ticket.created_by_username,
         ticket.assigned_to_name,
+        ticket.on_behalf_of_name,
         ticket.last_message_text,
       ].join(" "));
       return haystack.includes(term);
@@ -157,11 +194,17 @@ export default function TechnicalConsultsPage() {
   }, [selectedListTicket, markReadM]);
 
   const createM = useMutation({
-    mutationFn: () => createTechnicalConsult({ subject, message: newMessage }),
+    mutationFn: () =>
+      createTechnicalConsult(
+        isTechnical
+          ? { subject, message: newMessage, target_user_id: selectedTarget?.id }
+          : { subject, message: newMessage }
+      ),
     onSuccess: (ticket) => {
       setSubject("");
       setNewMessage("");
       setSelectedId(ticket.id);
+      closeNewForm();
       qc.invalidateQueries({ queryKey: ["technicalConsults"] });
       qc.invalidateQueries({ queryKey: ["technicalConsultUnreadSummary"] });
       qc.setQueryData(["technicalConsult", ticket.id], ticket);
@@ -250,7 +293,17 @@ export default function TechnicalConsultsPage() {
         <div className="card" style={{ flex: 1, minWidth: 340 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
             <h3 style={{ marginTop: 0, marginBottom: 0 }}>{isTechnical ? "Tickets" : "Mis tickets"}</h3>
-            <div className="muted" style={{ fontSize: 12 }}>{tickets.length} item(s)</div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <div className="muted" style={{ fontSize: 12 }}>{tickets.length} item(s)</div>
+              {isTechnical ? (
+                <Button
+                  variant={showNewForm ? "ghost" : "primary"}
+                  onClick={() => (showNewForm ? closeNewForm() : setShowNewForm(true))}
+                >
+                  {showNewForm ? "Cancelar" : "+ Nuevo"}
+                </Button>
+              ) : null}
+            </div>
           </div>
 
           {isTechnical ? (
@@ -262,6 +315,100 @@ export default function TechnicalConsultsPage() {
                 placeholder="Buscar por ticket, asunto, vendedor, distribuidor o mensaje"
                 style={{ width: "100%" }}
               />
+            </>
+          ) : null}
+
+          {isTechnical && showNewForm ? (
+            <>
+              <div className="spacer" />
+              <div style={{ border: "1px solid #eee", borderRadius: 14, padding: 12 }}>
+                <div className="muted" style={{ marginBottom: 6 }}>Nuevo ticket a vendedor/distribuidor</div>
+
+                {!selectedTarget ? (
+                  <>
+                    <Input
+                      value={targetSearch}
+                      onChange={setTargetSearch}
+                      placeholder="Buscar vendedor o distribuidor (mín. 2 letras)"
+                      style={{ width: "100%" }}
+                      autoFocus
+                    />
+                    <div style={{ height: 8 }} />
+                    {targetSearching ? <div className="muted" style={{ fontSize: 13 }}>Buscando…</div> : null}
+                    {!targetSearching && targetSearch.trim().length >= 2 && !targetResults.length ? (
+                      <div className="muted" style={{ fontSize: 13 }}>Sin resultados.</div>
+                    ) : null}
+                    {!targetSearching && targetResults.length ? (
+                      <div style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: 220, overflowY: "auto" }}>
+                        {targetResults.map((r) => (
+                          <button
+                            key={r.id}
+                            type="button"
+                            onClick={() => {
+                              setSelectedTarget(r);
+                              setTargetResults([]);
+                              setTargetSearch("");
+                            }}
+                            style={{
+                              textAlign: "left",
+                              border: "1px solid #e6e6e6",
+                              background: "#fff",
+                              borderRadius: 10,
+                              padding: "8px 10px",
+                              cursor: "pointer",
+                            }}
+                          >
+                            <div style={{ fontWeight: 700 }}>{r.full_name || r.username}</div>
+                            <div className="muted" style={{ fontSize: 12 }}>
+                              {r.is_distribuidor ? "Distribuidor" : "Vendedor"} · {r.username}
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    ) : null}
+                  </>
+                ) : (
+                  <>
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                        gap: 8,
+                        border: "1px solid #01a39f",
+                        borderRadius: 10,
+                        padding: "8px 10px",
+                        background: "rgba(1,163,159,0.06)",
+                      }}
+                    >
+                      <div>
+                        <div style={{ fontWeight: 700 }}>{selectedTarget.full_name || selectedTarget.username}</div>
+                        <div className="muted" style={{ fontSize: 12 }}>
+                          {selectedTarget.is_distribuidor ? "Distribuidor" : "Vendedor"} · {selectedTarget.username}
+                        </div>
+                      </div>
+                      <Button variant="ghost" onClick={() => setSelectedTarget(null)}>Cambiar</Button>
+                    </div>
+                    <div style={{ height: 8 }} />
+                    <Input value={subject} onChange={setSubject} placeholder="Asunto" style={{ width: "100%" }} />
+                    <div style={{ height: 8 }} />
+                    <textarea
+                      value={newMessage}
+                      onChange={(e) => setNewMessage(e.target.value)}
+                      placeholder="Describí la consulta técnica"
+                      style={{ width: "100%", minHeight: 120, padding: 10, borderRadius: 10, border: "1px solid #ddd", resize: "vertical" }}
+                    />
+                    <div style={{ height: 8 }} />
+                    <Button
+                      onClick={() => createM.mutate()}
+                      disabled={createM.isPending || !subject.trim() || !newMessage.trim()}
+                    >
+                      {createM.isPending ? "Creando…" : "Crear ticket"}
+                    </Button>
+                    {createM.isError ? <div style={{ color: "#d93025", fontSize: 13, marginTop: 8 }}>{createM.error.message}</div> : null}
+                  </>
+                )}
+              </div>
             </>
           ) : null}
 
@@ -325,6 +472,11 @@ export default function TechnicalConsultsPage() {
                         <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>
                           {isTechnical ? `${ticket.created_by_name} · ${ticket.created_by_role}` : fmtDateTime(ticket.created_at)}
                         </div>
+                        {ticket.on_behalf_of_name ? (
+                          <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>
+                            Dirigido a: {ticket.on_behalf_of_name}
+                          </div>
+                        ) : null}
                       </div>
                       <div
                         style={{
@@ -396,6 +548,11 @@ export default function TechnicalConsultsPage() {
                   <div className="muted" style={{ fontSize: 13 }}>
                     Creada por {selectedTicket.created_by_name} ({selectedTicket.created_by_role}) · {fmtDateTime(selectedTicket.created_at)}
                   </div>
+                  {selectedTicket.on_behalf_of_name ? (
+                    <div className="muted" style={{ fontSize: 13, marginTop: 4 }}>
+                      Dirigido a: {selectedTicket.on_behalf_of_name}
+                    </div>
+                  ) : null}
                   {selectedTicket.assigned_to_name ? (
                     <div className="muted" style={{ fontSize: 13, marginTop: 4 }}>
                       Técnico asignado: {selectedTicket.assigned_to_name}

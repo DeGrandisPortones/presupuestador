@@ -9,6 +9,11 @@ import {
   listCommercialConsults,
   markCommercialConsultRead,
 } from "../commercialConsultsDb.js";
+import { searchActiveRequesters } from "../usersDb.js";
+
+function isCommercialUser(user) {
+  return !!(user?.is_superuser || user?.is_enc_comercial);
+}
 
 function normalizeScope(user, value) {
   const requested = String(value || "").trim().toLowerCase();
@@ -51,6 +56,16 @@ export function buildCommercialConsultsRouter() {
     try {
       const ticket = await createCommercialConsult(req.user, req.body || {});
       res.json({ ok: true, ticket });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  router.get("/requesters/search", async (req, res, next) => {
+    try {
+      if (!isCommercialUser(req.user)) return res.status(403).json({ ok: false, error: "No autorizado" });
+      const requesters = await searchActiveRequesters({ q: req.query?.q || "" });
+      res.json({ ok: true, requesters });
     } catch (err) {
       next(err);
     }

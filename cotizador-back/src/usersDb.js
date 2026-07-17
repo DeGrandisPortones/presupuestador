@@ -82,6 +82,42 @@ async function assertValidSellerUserId(sellerUserId) {
   return sellerId;
 }
 
+export async function searchActiveRequesters({ q = "" } = {}) {
+  const query = String(q || "").trim();
+  if (query.length < 2) return [];
+
+  const r = await dbQuery(
+    `
+    select id, username, full_name, is_vendedor, is_distribuidor
+      from public.presupuestador_users
+     where coalesce(is_active, true) = true
+       and (coalesce(is_vendedor, false) = true or coalesce(is_distribuidor, false) = true)
+       and (username ilike $1 or coalesce(full_name, '') ilike $1)
+     order by coalesce(nullif(full_name, ''), username) asc
+     limit 20
+    `,
+    [`%${query}%`]
+  );
+  return r.rows || [];
+}
+
+export async function getActiveRequesterById(id) {
+  const uid = Number(id || 0);
+  if (!uid) return null;
+  const r = await dbQuery(
+    `
+    select id, username, full_name, is_vendedor, is_distribuidor
+      from public.presupuestador_users
+     where id = $1
+       and coalesce(is_active, true) = true
+       and (coalesce(is_vendedor, false) = true or coalesce(is_distribuidor, false) = true)
+     limit 1
+    `,
+    [uid]
+  );
+  return r.rows?.[0] || null;
+}
+
 export async function listUsers({ role = "all", q = "", active = "all" } = {}) {
   await ensureUsersAdminColumns();
 
