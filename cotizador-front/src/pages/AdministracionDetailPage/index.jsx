@@ -80,8 +80,8 @@ function LinesTable({ lines }) {
         <tbody>
           {lines.map((l, i) => {
             const qty = l.qty ?? l.quantity ?? 1;
-            const price = l.basePrice ?? l.base_price ?? l.price ?? l.price_unit ?? l.unit_price ?? 0;
-            const sub = price * qty;
+            const price = l.official_unit_price ?? (l.basePrice ?? l.base_price ?? l.price ?? l.price_unit ?? l.unit_price ?? 0);
+            const sub = l.official_subtotal ?? (price * qty);
             return (
               <tr key={i} style={{ borderBottom: "1px solid #f0f0f0" }}>
                 <td style={{ padding: "6px 10px" }}>{l.name || l.raw_name || l.display_name || String(l.product_id || "—")}</td>
@@ -174,7 +174,14 @@ export default function AdministracionDetailPage() {
   const kindLabel = KIND_LABELS[quote.catalog_kind] || quote.catalog_kind || "—";
   const modeLabel = quote.fulfillment_mode === "acopio" ? "Acopio" : quote.fulfillment_mode === "produccion" ? "Producción" : "—";
 
+  // official_total_with_iva viene del backend usando la misma formula que arma la
+  // proforma y el pedido real en Odoo (incluye el snapshot de envio para distribuidor,
+  // margen para vendedor, condicion de venta e IVA). Si no esta disponible (falla el
+  // calculo o es una respuesta vieja), se cae a la suma bruta de las lineas como antes.
+  const officialTotal = Number(quote.official_total_with_iva);
+  const hasOfficialTotal = Number.isFinite(officialTotal) && officialTotal > 0;
   const totalAmount = (() => {
+    if (hasOfficialTotal) return officialTotal;
     const lines = Array.isArray(quote.lines) ? quote.lines : [];
     const sum = lines.reduce((acc, l) => {
       const price = Number(l.basePrice ?? l.base_price ?? l.price ?? l.price_unit ?? l.unit_price ?? 0) || 0;
@@ -207,7 +214,7 @@ export default function AdministracionDetailPage() {
           <div style={{ marginTop: 6, display: "flex", gap: 16, flexWrap: "wrap", alignItems: "center" }}>
             {totalAmount && (
               <span style={{ fontSize: 15, fontWeight: 700, color: "#1b5e20", background: "#e8f5e9", padding: "3px 10px", borderRadius: 6 }}>
-                Total: {fmtMoney(totalAmount)}
+                {hasOfficialTotal ? "Total (IVA incluido)" : "Total"}: {fmtMoney(totalAmount)}
               </span>
             )}
             {quote.payload?.condition_text && (

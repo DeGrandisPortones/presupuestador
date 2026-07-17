@@ -25,6 +25,7 @@ import {
   listProductionPropertyAssignments,
   setProductionPropertyAssignment,
 } from "../productionPropertyAssignments.js";
+import { calcOdooUnitPrice, calcQuoteSubtotal, round2, IVA_RATE } from "./quotes.routes.js";
 
 function requireEncComercial(req, res, next) { if (!req.user?.is_enc_comercial) return res.status(403).json({ ok: false, error: "No autorizado" }); next(); }
 function requireSuperuser(req, res, next) { if (!req.user?.is_superuser) return res.status(403).json({ ok: false, error: "No autorizado" }); next(); }
@@ -631,7 +632,38 @@ export function buildAdminRouter(odoo) {
       const r = await dbQuery(sql, [id]);
       const quote = r.rows?.[0] || null;
       if (!quote) return res.status(404).json({ ok: false, error: "No encontrado" });
-      res.json({ ok: true, quote });
+
+      // Total "oficial" = misma formula que arma la proforma y el pedido real en Odoo
+      // (calcOdooUnitPrice/calcQuoteSubtotal de quotes.routes.js), en vez de sumar a lo
+      // bruto basePrice*qty de cada linea. Para distribuidor esto respeta el snapshot
+      // congelado de envio (envio_odoo_price_snapshot) en vez del precio editable de la
+      // linea, y para vendedor aplica el margen/condicion igual que al vender. Se agrega
+      // como campos nuevos sin tocar los existentes, y con fallback si algo falla, para
+      // no romper el detalle si una quote vieja tiene datos con forma inesperada.
+      let officialSubtotalNet = null;
+      let officialTotalWithIva = null;
+      let officialLines = null;
+      try {
+        officialSubtotalNet = calcQuoteSubtotal({ lines: quote.lines, payload: quote.payload, quote });
+        officialTotalWithIva = round2(officialSubtotalNet * (1 + IVA_RATE));
+        officialLines = (Array.isArray(quote.lines) ? quote.lines : []).map((l) => {
+          const qty = Number(l?.qty || 0) || 0;
+          const unit = calcOdooUnitPrice(l, quote.payload || {}, quote);
+          return { ...l, official_unit_price: unit, official_subtotal: round2(unit * qty) };
+        });
+      } catch (e) {
+        console.error("[admin/history/:id] calculo de total oficial fallo:", e?.message || e);
+      }
+
+      res.json({
+        ok: true,
+        quote: {
+          ...quote,
+          official_subtotal_net: officialSubtotalNet,
+          official_total_with_iva: officialTotalWithIva,
+          lines: officialLines || quote.lines,
+        },
+      });
     } catch (e) { next(e); }
   });
 

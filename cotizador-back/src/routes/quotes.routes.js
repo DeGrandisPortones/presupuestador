@@ -12,7 +12,7 @@ const IPANEL_ACOPIO_PRODUCT_ID = Number(process.env.ODOO_IPANEL_ACOPIO_PRODUCT_I
 const PLEGADOS_ACOPIO_PRODUCT_ID = Number(process.env.ODOO_PLEGADOS_ACOPIO_PRODUCT_ID || IPANEL_ACOPIO_PRODUCT_ID);
 const PUERTA_ACOPIO_PRODUCT_ID = Number(process.env.ODOO_PUERTA_ACOPIO_PRODUCT_ID || 3558);
 const DEFAULT_PRICELIST_ID = Number(process.env.ODOO_DEFAULT_PRICELIST_ID || 1);
-const IVA_RATE = 0.21;
+export const IVA_RATE = 0.21;
 const TACA_TACA_PLAN_NAME = String(process.env.ODOO_TACA_TACA_PLAN_NAME || "Taca Taca").trim();
 const SHIPPING_PRODUCT_IDS = new Set([2842]);
 const DISTRIBUTOR_OWN_SUPPLY_PRODUCT_IDS = new Set([3956, 3957, 3961, 3962, 3963, 3966, 4037, 3991, 3992, 3993, 3994, 3995, 3996, 3485, 3486, 3490, 3491, 3492, 3495, 3566, 3520, 3521, 3522, 3523, 3524, 3525]);
@@ -136,7 +136,7 @@ function getEnvioOdooPriceSnapshot(quote = {}) {
 }
 function toText(v) { const x = toScalar(v); return x === null || x === undefined ? "" : String(x).trim(); }
 function isUuid(v) { return /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(String(v || "").trim()); }
-function round2(n) { return Math.round(Number(n || 0) * 100) / 100; }
+export function round2(n) { return Math.round(Number(n || 0) * 100) / 100; }
 function getHardcodedOdooOverride(quote, stage = null) {
   const id = String(quote?.id || quote?.parent_quote_id || "").toLowerCase().trim();
   const forced = HARDCODED_ODOO_QUOTES[id] || null;
@@ -577,7 +577,7 @@ function getLineBasePriceForOdoo(line = {}) {
   const n = Number(String(value ?? 0).replace(",", "."));
   return Number.isFinite(n) ? round2(n) : 0;
 }
-function calcOdooUnitPrice(line, payload, quote = null) {
+export function calcOdooUnitPrice(line, payload, quote = null) {
   if (shouldZeroShippingForOdoo(quote, line)) return 0;
 
   // Envío: si ya existe el precio de Odoo congelado (envio_odoo_price_snapshot),
@@ -609,7 +609,7 @@ function calcOdooUnitPrice(line, payload, quote = null) {
   const adjustment = getPayloadQuoteAdjustmentPercent(payload || {});
   return round2(base * (1 + margin / 100) * (1 + adjustment / 100) * getOdooConditionPriceFactor(payload || {}));
 }
-function calcQuoteSubtotal({ lines, payload, quote = null }) {
+export function calcQuoteSubtotal({ lines, payload, quote = null }) {
   const arr = Array.isArray(lines) ? lines : [];
   return round2(arr.reduce((acc, l) => {
     const qty = Number(l?.qty || 0) || 0;
