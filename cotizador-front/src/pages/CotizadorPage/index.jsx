@@ -1178,16 +1178,15 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
   // El precio base de Coplanar/Clasico SIEMPRE lleva sumada la instalacion (vendedores,
   // desde el corte) - si el vendedor TAMBIEN agrega Instalacion como linea propia, esa
   // linea se cobra aparte igual, sin tocarla ni pisarla (es intencional, no un bug).
+  // Instalacion (2865) es precio fijo con min_quantity 0 en las 3 listas (verificado por
+  // shell de Odoo) - no depende de la cantidad pedida, asi que se pide siempre con qty:1.
   function withSection37ExtraLine(sourceLines, payloadLines) {
     const wireLines = Array.isArray(payloadLines) ? payloadLines : [];
     if (!shouldApplySection37VendorExtra()) return wireLines;
     const srcLines = Array.isArray(sourceLines) ? sourceLines : [];
-    const targetLine = srcLines.find((l) => SECTION_37_PRODUCT_IDS.includes(Number(l.product_id)));
-    if (!targetLine) return wireLines;
-    // La lista de precios de Instalacion es "por m2": pedirla con qty:1 devuelve
-    // precio $0 (no matchea el min_quantity de la regla en Odoo), por eso el extra
-    // nunca se sumaba. Hay que pedirla con la misma qty (superficie) que el portón.
-    return [...wireLines, { product_id: SECTION_37_EXTRA_PRODUCT_ID, qty: targetLine.qty }];
+    const hasSection37Line = srcLines.some((l) => SECTION_37_PRODUCT_IDS.includes(Number(l.product_id)));
+    if (!hasSection37Line) return wireLines;
+    return [...wireLines, { product_id: SECTION_37_EXTRA_PRODUCT_ID, qty: 1 }];
   }
   function mergeSection37VendorExtra(pricesData) {
     if (!shouldApplySection37VendorExtra()) return pricesData;
@@ -1254,6 +1253,11 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
     if (errs.length) throw new Error(errs[0]);
     validateDimensionsRequired(payload, catalogKind);
     validateCustomerContact(c, { requirePhone: true, requireMaps: false, requireCity: false });
+    // Repetido a proposito (tambien esta en validatePricingContextReady): validateDraft
+    // es el camino comun de Guardar y de "Actualizar presupuesto", que no siempre pasan
+    // por validatePricingContextReady antes de persistir. No puede quedar ninguna via
+    // para guardar un precio de Coplanar/Clasico sin la instalacion sumada.
+    if (hasSection37Mismatch) throw new Error("El precio de Coplanar/Clásico no tiene la instalación sumada correctamente. Recargá la página (Shift+F5) e intentá de nuevo antes de continuar.");
   }
   function validatePricingContextReady() {
     if (!pricingContextReady) throw new Error(pricingContextMessage || "Esperá a que se aplique la lista de precios correcta antes de continuar.");
@@ -1350,6 +1354,13 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
 
     if (!hasAutosaveCustomerMinimum(payload)) {
       setAutosaveState({ status: "waiting-minimum", message: "Borrador local. Completá nombre, apellido y teléfono para autoguardar en Mis presupuestos.", savedAt: new Date().toISOString() });
+      return null;
+    }
+    // El autoguardado corre solo, sin pasar por validateDraft - no puede persistir
+    // el precio de Coplanar/Clasico sin la instalacion sumada. Se queda como borrador
+    // local (ya escrito arriba) hasta que el precio se recalcule bien.
+    if (hasSection37Mismatch) {
+      setAutosaveState({ status: "waiting-pricing", message: "Borrador local. Verificando el precio de Instalación antes de autoguardar en Mis presupuestos.", savedAt: new Date().toISOString() });
       return null;
     }
     if (!pricingContextReady) {
@@ -1527,12 +1538,15 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
       const pricesPayload = {
         pricelist_id: refreshPricelistId,
         partner_id: partnerId,
-        lines: buildPriceRefreshLines(currentLines),
+        // withSection37ExtraLine agrega la linea sintetica de Instalacion si corresponde
+        // (vendedor + Coplanar/Clasico) - sin esto, "Actualizar presupuesto" pisaba el
+        // precio base con el del portón solo, sin la instalacion sumada.
+        lines: withSection37ExtraLine(currentLines, buildPriceRefreshLines(currentLines)),
         // "Actualizar presupuesto" tiene que traer el precio real de Odoo, no la cache
         // local de precios (dura 12hs) que usa el resto del cotizador.
         force: true,
       };
-      const prices = await getPrices(pricesPayload);
+      const prices = mergeSection37VendorExtra(await getPrices(pricesPayload));
       const refreshedLines = mergeUpdatedBasePrices(currentLines, prices);
 
       setPricelist(refreshPricelist);
@@ -1773,8 +1787,8 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
               />
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 14 }}>
-              <div style={{ border: "1px solid #d9e5f7", background: "#f7fbff", borderRadius: 14, padding: 16 }}><div style={{ fontWeight: 900, fontSize: 18, marginBottom: 8 }}>Acopio</div><div className="muted" style={{ marginBottom: 14 }}>El portón queda en espera. Se podrá seguir gestionando desde <b>Acopio → Producción</b> y mantiene una instancia de edición.</div><Button onClick={() => confirmM.mutate({ fulfillmentMode: "acopio", budgetObservation: confirmBudgetObservation })} disabled={confirmM.isPending || !pricingContextReady}>{confirmM.isPending ? "Confirmando..." : "Confirmar en Acopio"}</Button></div>
-              <div style={{ border: "1px solid #f2d3bf", background: "#fff8f3", borderRadius: 14, padding: 16 }}><div style={{ fontWeight: 900, fontSize: 18, marginBottom: 8 }}>Producción</div><div className="muted" style={{ marginBottom: 14 }}>El portón entra directo en circuito productivo. Ya no podrá editarse desde <b>Presupuestos</b>.</div><Button variant="primary" onClick={() => confirmM.mutate({ fulfillmentMode: "produccion", budgetObservation: confirmBudgetObservation })} disabled={confirmM.isPending || !pricingContextReady}>{confirmM.isPending ? "Confirmando..." : "Confirmar en Producción"}</Button></div>
+              <div style={{ border: "1px solid #d9e5f7", background: "#f7fbff", borderRadius: 14, padding: 16 }}><div style={{ fontWeight: 900, fontSize: 18, marginBottom: 8 }}>Acopio</div><div className="muted" style={{ marginBottom: 14 }}>El portón queda en espera. Se podrá seguir gestionando desde <b>Acopio → Producción</b> y mantiene una instancia de edición.</div><Button onClick={() => confirmM.mutate({ fulfillmentMode: "acopio", budgetObservation: confirmBudgetObservation })} disabled={confirmM.isPending || !pricingContextReady || hasSection37Mismatch}>{confirmM.isPending ? "Confirmando..." : "Confirmar en Acopio"}</Button></div>
+              <div style={{ border: "1px solid #f2d3bf", background: "#fff8f3", borderRadius: 14, padding: 16 }}><div style={{ fontWeight: 900, fontSize: 18, marginBottom: 8 }}>Producción</div><div className="muted" style={{ marginBottom: 14 }}>El portón entra directo en circuito productivo. Ya no podrá editarse desde <b>Presupuestos</b>.</div><Button variant="primary" onClick={() => confirmM.mutate({ fulfillmentMode: "produccion", budgetObservation: confirmBudgetObservation })} disabled={confirmM.isPending || !pricingContextReady || hasSection37Mismatch}>{confirmM.isPending ? "Confirmando..." : "Confirmar en Producción"}</Button></div>
             </div>
             <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 16 }}><Button variant="ghost" onClick={() => setConfirmChoiceOpen(false)} disabled={confirmM.isPending}>Cancelar</Button></div>
           </div>
