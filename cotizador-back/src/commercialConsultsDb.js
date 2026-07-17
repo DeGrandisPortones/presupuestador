@@ -1,0 +1,552 @@
+import { dbQuery, getPool } from "./db.js";
+
+let ensured = false;
+
+function isCommercialUser(user) {
+  return !!(user?.is_superuser || user?.is_enc_comercial);
+}
+
+function isRequesterUser(user) {
+  return !!(user?.is_vendedor || user?.is_distribuidor);
+}
+
+function normalizeStatus(value, fallback = "all") {
+  const v = String(value || fallback).trim().toLowerCase();
+  if (["all", "open", "pending", "in_progress", "closed"].includes(v)) return v;
+  return fallback;
+}
+
+function normalizeSubject(value) {
+  return String(value || "").trim().replace(/\s+/g, " ").slice(0, 180);
+}
+
+function normalizeMessage(value) {
+  return String(value || "").trim();
+}
+
+function requesterRoleForUser(user) {
+  if (user?.is_distribuidor) return "distribuidor";
+  return "vendedor";
+}
+
+function ticketStatusLabel(status) {
+  const s = String(status || "pending").trim().toLowerCase();
+  if (["pending", "in_progress", "closed"].includes(s)) return s;
+  return "pending";
+}
+
+function toId(value) {
+  const n = Number(value || 0);
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
+function canAccessTicket(user, ticket) {
+  if (!ticket) return false;
+  if (isCommercialUser(user)) return true;
+  return Number(ticket.created_by_user_id || 0) === Number(user?.user_id || user?.id || 0);
+}
+
+async function withTx(fn) {
+  const client = await getPool().connect();
+  try {
+    await client.query("begin");
+    const out = await fn(client);
+    await client.query("commit");
+    return out;
+  } catch (err) {
+    try {
+      await client.query("rollback");
+    } catch {}
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+export async function ensureCommercialConsultTables() {
+  if (ensured) return;
+
+  await dbQuery(`
+    create table if not exists public.presupuestador_commercial_tickets (
+      id bigserial primary key,
+      created_by_user_id bigint not null references public.presupuestador_users(id),
+      assigned_to_user_id bigint null references public.presupuestador_users(id),
+      status text not null default 'pending',
+      subject text not null,
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now(),
+      closed_at timestamptz null,
+      closed_by_user_id bigint null references public.presupuestador_users(id),
+      requester_last_read_at timestamptz null,
+      commercial_last_read_at timestamptz null,
+      last_message_at timestamptz null,
+      last_message_by_user_id bigint null references public.presupuestador_users(id),
+      constraint presupuestador_commercial_tickets_status_chk check (status in ('pending', 'in_progress', 'closed'))
+    );
+  `);
+
+  await dbQuery(`
+    create table if not exists public.presupuestador_commercial_ticket_messages (
+      id bigserial primary key,
+      ticket_id bigint not null references public.presupuestador_commercial_tickets(id) on delete cascade,
+      author_user_id bigint not null references public.presupuestador_users(id),
+      author_role text not null,
+      message_text text not null,
+      message_type text not null default 'message',
+      created_at timestamptz not null default now(),
+      constraint presupuestador_commercial_ticket_messages_type_chk check (message_type in ('message', 'resolution'))
+    );
+  `);
+
+  await dbQuery(`create index if not exists presupuestador_commercial_tickets_created_by_idx on public.presupuestador_commercial_tickets(created_by_user_id);`);
+  await dbQuery(`create index if not exists presupuestador_commercial_tickets_status_idx on public.presupuestador_commercial_tickets(status, last_message_at desc nulls last);`);
+  await dbQuery(`create index if not exists presupuestador_commercial_ticket_messages_ticket_idx on public.presupuestador_commercial_ticket_messages(ticket_id, created_at asc, id asc);`);
+
+  ensured = true;
+}
+
+function buildListWhere({ user, scope, status, paramOffset = 0 }) {
+  const params = [];
+  const where = [];
+  const nextParam = (value) => {
+    params.push(value);
+    return params.length + paramOffset;
+  };
+
+  if (scope === "commercial") {
+    if (!isCommercialUser(user)) throw new Error("No autorizado");
+  } else {
+    const userId = toId(user?.user_id || user?.id);
+    if (!userId) throw new Error("Usuario inválido");
+    where.push(`t.created_by_user_id = $${nextParam(userId)}`);
+  }
+
+  if (status === "open") {
+    where.push(`t.status in ('pending', 'in_progress')`);
+  } else if (["pending", "in_progress", "closed"].includes(status)) {
+    where.push(`t.status = $${nextParam(status)}`);
+  }
+
+  return { whereSql: where.length ? `where ${where.join(" and ")}` : "", params };
+}
+
+function listSql({ scope, viewerIdParamPos }) {
+  const viewerReadField = scope === "commercial" ? "t.commercial_last_read_at" : "t.requester_last_read_at";
+  return `
+    select
+      t.id,
+      t.created_by_user_id,
+      t.assigned_to_user_id,
+      t.status,
+      t.subject,
+      t.created_at,
+      t.updated_at,
+      t.closed_at,
+      t.closed_by_user_id,
+      t.requester_last_read_at,
+      t.commercial_last_read_at,
+      t.last_message_at,
+      t.last_message_by_user_id,
+      coalesce(nullif(creator.full_name, ''), creator.username, concat('#', t.created_by_user_id::text)) as created_by_name,
+      creator.username as created_by_username,
+      case
+        when coalesce(creator.is_distribuidor, false) then 'distribuidor'
+        when coalesce(creator.is_vendedor, false) then 'vendedor'
+        else 'usuario'
+      end as created_by_role,
+      coalesce(nullif(assignee.full_name, ''), assignee.username, '') as assigned_to_name,
+      coalesce(nullif(closer.full_name, ''), closer.username, '') as closed_by_name,
+      (
+        select m.message_text
+        from public.presupuestador_commercial_ticket_messages m
+        where m.ticket_id = t.id
+        order by m.created_at desc, m.id desc
+        limit 1
+      ) as last_message_text,
+      (
+        select m.message_type
+        from public.presupuestador_commercial_ticket_messages m
+        where m.ticket_id = t.id
+        order by m.created_at desc, m.id desc
+        limit 1
+      ) as last_message_type,
+      (
+        select count(*)::int
+        from public.presupuestador_commercial_ticket_messages m
+        where m.ticket_id = t.id
+          and m.author_user_id <> $${viewerIdParamPos}
+          and m.created_at > coalesce(${viewerReadField}, to_timestamp(0))
+      ) as unread_count,
+      exists(
+        select 1
+        from public.presupuestador_commercial_ticket_messages m
+        where m.ticket_id = t.id
+          and m.author_user_id <> $${viewerIdParamPos}
+          and m.created_at > coalesce(${viewerReadField}, to_timestamp(0))
+      ) as has_unread
+    from public.presupuestador_commercial_tickets t
+    join public.presupuestador_users creator on creator.id = t.created_by_user_id
+    left join public.presupuestador_users assignee on assignee.id = t.assigned_to_user_id
+    left join public.presupuestador_users closer on closer.id = t.closed_by_user_id
+  `;
+}
+
+export async function listCommercialConsults(user, { scope = "mine", status = "all" } = {}) {
+  await ensureCommercialConsultTables();
+  const normalizedScope = scope === "commercial" ? "commercial" : "mine";
+  const normalizedStatus = normalizeStatus(status, normalizedScope === "commercial" ? "pending" : "open");
+  const viewerId = toId(user?.user_id || user?.id);
+  const { whereSql, params } = buildListWhere({ user, scope: normalizedScope, status: normalizedStatus, paramOffset: 1 });
+  const allParams = [viewerId, ...params];
+  const orderBySql = normalizedScope === "commercial" && normalizedStatus === "pending"
+    ? "order by t.created_at desc, t.id desc"
+    : "order by coalesce(t.last_message_at, t.created_at) desc, t.id desc";
+
+  const q = await dbQuery(
+    `${listSql({ scope: normalizedScope, viewerIdParamPos: 1 })}
+     ${whereSql}
+     ${orderBySql}`,
+    allParams
+  );
+
+  return q.rows || [];
+}
+
+async function getTicketRow(clientOrDb, id) {
+  const q = await clientOrDb.query(
+    `
+      select t.*,
+             coalesce(nullif(creator.full_name, ''), creator.username, concat('#', t.created_by_user_id::text)) as created_by_name,
+             creator.username as created_by_username,
+             case
+               when coalesce(creator.is_distribuidor, false) then 'distribuidor'
+               when coalesce(creator.is_vendedor, false) then 'vendedor'
+               else 'usuario'
+             end as created_by_role,
+             coalesce(nullif(assignee.full_name, ''), assignee.username, '') as assigned_to_name,
+             coalesce(nullif(closer.full_name, ''), closer.username, '') as closed_by_name
+        from public.presupuestador_commercial_tickets t
+        join public.presupuestador_users creator on creator.id = t.created_by_user_id
+        left join public.presupuestador_users assignee on assignee.id = t.assigned_to_user_id
+        left join public.presupuestador_users closer on closer.id = t.closed_by_user_id
+       where t.id = $1
+       limit 1
+    `,
+    [Number(id)]
+  );
+  return q.rows?.[0] || null;
+}
+
+async function getTicketMessages(clientOrDb, ticketId) {
+  const q = await clientOrDb.query(
+    `
+      select
+        m.id,
+        m.ticket_id,
+        m.author_user_id,
+        m.author_role,
+        m.message_text,
+        m.message_type,
+        m.created_at,
+        coalesce(nullif(u.full_name, ''), u.username, concat('#', m.author_user_id::text)) as author_name,
+        u.username as author_username
+      from public.presupuestador_commercial_ticket_messages m
+      join public.presupuestador_users u on u.id = m.author_user_id
+      where m.ticket_id = $1
+      order by m.created_at asc, m.id asc
+    `,
+    [Number(ticketId)]
+  );
+  return q.rows || [];
+}
+
+
+async function getUnreadInfo(clientOrDb, user, ticket) {
+  const viewerId = toId(user?.user_id || user?.id);
+  const readField = isCommercialUser(user) ? "commercial_last_read_at" : "requester_last_read_at";
+  const q = await clientOrDb.query(
+    `
+      select
+        count(*)::int as unread_count,
+        exists(
+          select 1
+          from public.presupuestador_commercial_ticket_messages m
+          where m.ticket_id = $1
+            and m.author_user_id <> $2
+            and m.created_at > coalesce($3::timestamptz, to_timestamp(0))
+        ) as has_unread
+      from public.presupuestador_commercial_ticket_messages m
+      where m.ticket_id = $1
+        and m.author_user_id <> $2
+        and m.created_at > coalesce($3::timestamptz, to_timestamp(0))
+    `,
+    [Number(ticket.id), viewerId, ticket?.[readField] || null]
+  );
+  return {
+    unread_count: Number(q.rows?.[0]?.unread_count || 0),
+    has_unread: !!q.rows?.[0]?.has_unread,
+  };
+}
+
+export async function getCommercialConsultDetail(user, id) {
+  await ensureCommercialConsultTables();
+  const ticket = await getTicketRow({ query: dbQuery }, id);
+  if (!ticket) throw new Error("Consulta comercial no encontrada");
+  if (!canAccessTicket(user, ticket)) throw new Error("No autorizado");
+  const messages = await getTicketMessages({ query: dbQuery }, ticket.id);
+  const unreadInfo = await getUnreadInfo({ query: dbQuery }, user, ticket);
+  const viewerIsCommercial = isCommercialUser(user);
+  return {
+    ...ticket,
+    ...unreadInfo,
+    status: ticketStatusLabel(ticket.status),
+    messages,
+    can_reply: ticket.status !== "closed",
+    viewer_role: viewerIsCommercial ? "commercial" : "requester",
+  };
+}
+
+export async function createCommercialConsult(user, { subject, message } = {}) {
+  await ensureCommercialConsultTables();
+  if (!isRequesterUser(user)) throw new Error("Solo vendedor o distribuidor puede crear consultas comerciales");
+
+  const cleanSubject = normalizeSubject(subject);
+  const cleanMessage = normalizeMessage(message);
+  if (!cleanSubject) throw new Error("Falta asunto");
+  if (!cleanMessage) throw new Error("Falta mensaje");
+
+  const userId = toId(user?.user_id || user?.id);
+  const now = new Date().toISOString();
+  const authorRole = requesterRoleForUser(user);
+
+  const ticketId = await withTx(async (client) => {
+    const createdTicket = await client.query(
+      `
+        insert into public.presupuestador_commercial_tickets (
+          created_by_user_id,
+          status,
+          subject,
+          requester_last_read_at,
+          commercial_last_read_at,
+          last_message_at,
+          last_message_by_user_id,
+          created_at,
+          updated_at
+        )
+        values ($1, 'pending', $2, $3, null, $3, $1, $3, $3)
+        returning id
+      `,
+      [userId, cleanSubject, now]
+    );
+    const ticketIdValue = Number(createdTicket.rows?.[0]?.id || 0);
+    if (!ticketIdValue) throw new Error("No se pudo crear la consulta comercial");
+
+    await client.query(
+      `
+        insert into public.presupuestador_commercial_ticket_messages (
+          ticket_id,
+          author_user_id,
+          author_role,
+          message_text,
+          message_type,
+          created_at
+        )
+        values ($1, $2, $3, $4, 'message', $5)
+      `,
+      [ticketIdValue, userId, authorRole, cleanMessage, now]
+    );
+
+    return ticketIdValue;
+  });
+
+  return getCommercialConsultDetail(user, ticketId);
+}
+
+export async function addCommercialConsultMessage(user, id, { message } = {}) {
+  await ensureCommercialConsultTables();
+  const cleanMessage = normalizeMessage(message);
+  if (!cleanMessage) throw new Error("Falta mensaje");
+
+  const ticketId = Number(id || 0);
+  const userId = toId(user?.user_id || user?.id);
+  const viewerIsCommercial = isCommercialUser(user);
+  const viewerIsRequester = isRequesterUser(user);
+  if (!ticketId) throw new Error("Consulta comercial inválida");
+
+  await withTx(async (client) => {
+    const ticket = await getTicketRow(client, ticketId);
+    if (!ticket) throw new Error("Consulta comercial no encontrada");
+    if (!canAccessTicket(user, ticket)) throw new Error("No autorizado");
+    if (!viewerIsCommercial && !viewerIsRequester) throw new Error("No autorizado");
+    if (ticket.status === "closed") throw new Error("La consulta está cerrada");
+
+    const now = new Date().toISOString();
+    const authorRole = viewerIsCommercial ? "enc_comercial" : requesterRoleForUser(user);
+
+    await client.query(
+      `
+        insert into public.presupuestador_commercial_ticket_messages (
+          ticket_id,
+          author_user_id,
+          author_role,
+          message_text,
+          message_type,
+          created_at
+        )
+        values ($1, $2, $3, $4, 'message', $5)
+      `,
+      [ticketId, userId, authorRole, cleanMessage, now]
+    );
+
+    const nextStatus = viewerIsCommercial && ticket.status === "pending" ? "in_progress" : ticket.status;
+    const assignedToUserId = viewerIsCommercial ? userId : (ticket.assigned_to_user_id ? Number(ticket.assigned_to_user_id) : null);
+
+    await client.query(
+      `
+        update public.presupuestador_commercial_tickets
+           set status = $2,
+               assigned_to_user_id = $3,
+               updated_at = $4,
+               last_message_at = $4,
+               last_message_by_user_id = $5,
+               requester_last_read_at = case when $6 then requester_last_read_at else $4 end,
+               commercial_last_read_at = case when $6 then $4 else commercial_last_read_at end
+         where id = $1
+      `,
+      [ticketId, nextStatus, assignedToUserId, now, userId, viewerIsCommercial]
+    );
+  });
+
+  return getCommercialConsultDetail(user, ticketId);
+}
+
+export async function markCommercialConsultRead(user, id) {
+  await ensureCommercialConsultTables();
+  const ticketId = Number(id || 0);
+  if (!ticketId) throw new Error("Consulta comercial inválida");
+
+  const ticket = await getTicketRow({ query: dbQuery }, ticketId);
+  if (!ticket) throw new Error("Consulta comercial no encontrada");
+  if (!canAccessTicket(user, ticket)) throw new Error("No autorizado");
+
+  const field = isCommercialUser(user) ? "commercial_last_read_at" : "requester_last_read_at";
+  await dbQuery(
+    `update public.presupuestador_commercial_tickets set ${field} = now() where id = $1`,
+    [ticketId]
+  );
+  return true;
+}
+
+export async function closeCommercialConsult(user, id, { resolution } = {}) {
+  await ensureCommercialConsultTables();
+  if (!isCommercialUser(user)) throw new Error("Solo Enc. Comercial puede cerrar consultas");
+  const cleanResolution = normalizeMessage(resolution);
+  if (!cleanResolution) throw new Error("Falta la resolución final");
+
+  const ticketId = Number(id || 0);
+  const userId = toId(user?.user_id || user?.id);
+  if (!ticketId) throw new Error("Consulta comercial inválida");
+
+  await withTx(async (client) => {
+    const ticket = await getTicketRow(client, ticketId);
+    if (!ticket) throw new Error("Consulta comercial no encontrada");
+    if (!canAccessTicket(user, ticket)) throw new Error("No autorizado");
+    if (ticket.status === "closed") throw new Error("La consulta ya está cerrada");
+
+    const now = new Date().toISOString();
+
+    await client.query(
+      `
+        insert into public.presupuestador_commercial_ticket_messages (
+          ticket_id,
+          author_user_id,
+          author_role,
+          message_text,
+          message_type,
+          created_at
+        )
+        values ($1, $2, 'enc_comercial', $3, 'resolution', $4)
+      `,
+      [ticketId, userId, cleanResolution, now]
+    );
+
+    await client.query(
+      `
+        update public.presupuestador_commercial_tickets
+           set status = 'closed',
+               assigned_to_user_id = coalesce(assigned_to_user_id, $2),
+               closed_at = $3,
+               closed_by_user_id = $2,
+               updated_at = $3,
+               last_message_at = $3,
+               last_message_by_user_id = $2,
+               commercial_last_read_at = $3
+         where id = $1
+      `,
+      [ticketId, userId, now]
+    );
+  });
+
+  return getCommercialConsultDetail(user, ticketId);
+}
+
+export async function getCommercialConsultUnreadSummary(user) {
+  await ensureCommercialConsultTables();
+  const userId = toId(user?.user_id || user?.id);
+  const isCommercial = isCommercialUser(user);
+
+  if (isCommercial) {
+    const q = await dbQuery(
+      `
+        select
+          count(*) filter (where t.status = 'pending')::int as commercial_pending_count,
+          count(*) filter (
+            where exists (
+              select 1
+              from public.presupuestador_commercial_ticket_messages m
+              where m.ticket_id = t.id
+                and m.author_user_id <> $1
+                and m.created_at > coalesce(t.commercial_last_read_at, to_timestamp(0))
+            )
+          )::int as commercial_unread_count,
+          count(*) filter (where t.status in ('pending', 'in_progress'))::int as commercial_open_count
+        from public.presupuestador_commercial_tickets t
+      `,
+      [userId]
+    );
+    return {
+      mine_unread_count: 0,
+      mine_open_count: 0,
+      commercial_pending_count: Number(q.rows?.[0]?.commercial_pending_count || 0),
+      commercial_unread_count: Number(q.rows?.[0]?.commercial_unread_count || 0),
+      commercial_open_count: Number(q.rows?.[0]?.commercial_open_count || 0),
+    };
+  }
+
+  const q = await dbQuery(
+    `
+      select
+        count(*) filter (
+          where exists (
+            select 1
+            from public.presupuestador_commercial_ticket_messages m
+            where m.ticket_id = t.id
+              and m.author_user_id <> $1
+              and m.created_at > coalesce(t.requester_last_read_at, to_timestamp(0))
+          )
+        )::int as mine_unread_count,
+        count(*) filter (where t.status in ('pending', 'in_progress'))::int as mine_open_count
+      from public.presupuestador_commercial_tickets t
+      where t.created_by_user_id = $1
+    `,
+    [userId]
+  );
+
+  return {
+    mine_unread_count: Number(q.rows?.[0]?.mine_unread_count || 0),
+    mine_open_count: Number(q.rows?.[0]?.mine_open_count || 0),
+    commercial_pending_count: 0,
+    commercial_unread_count: 0,
+    commercial_open_count: 0,
+  };
+}

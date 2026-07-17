@@ -34,6 +34,7 @@ import PuertaChecklistPage from "./pages/PuertaChecklistPage/index.jsx";
 import PuertaWorkflowPage from "./pages/PuertaWorkflowPage/index.jsx";
 import PuertaPanelPage from "./pages/PuertaPanelPage/index.jsx";
 import TechnicalConsultsPage from "./pages/TechnicalConsultsPage/index.jsx";
+import CommercialConsultsPage from "./pages/CommercialConsultsPage/index.jsx";
 import QuoteHistoryViewerPage from "./pages/QuoteHistoryViewerPage/index.jsx";
 import SalesActorActivityPage from "./pages/SalesActorActivityPage/index.jsx";
 import FinanciamientoPage from "./pages/FinanciamientoPage/index.jsx";
@@ -114,6 +115,7 @@ export default function App() {
           <Route path="aprobacion/tecnica/portones-estado" element={<PortonesEstadoPage />} />
           <Route path="aprobacion/tecnica" element={<AprobacionTecnicaPage />} />
           <Route path="consultas-tecnicas" element={<TechnicalConsultsPage />} />
+          <Route path="consultas-comerciales" element={<CommercialConsultsPage />} />
           <Route path="usuarios" element={<UsersAdminPage />} />
           <Route path="dashboard" element={<DashboardPage />} />
           <Route path="planificacion" element={<PlanificacionPage />} />
