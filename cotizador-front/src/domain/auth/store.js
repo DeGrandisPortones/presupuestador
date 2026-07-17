@@ -42,5 +42,12 @@ export const useAuthStore = create((set) => ({
     localStorage.removeItem(TOKEN_KEY);
     clearAllBootstraps();
     set({ token: null, user: null, odooStatus: "offline" });
+    // Hard navigation a propósito (no react-router): un logout que solo
+    // cambia el estado de React deja la pestaña corriendo el mismo bundle
+    // JS que ya tenía cargado. Recargando de verdad, el próximo login entra
+    // con el JS deployado más reciente.
+    if (typeof window !== "undefined" && !window.location.pathname.startsWith("/login")) {
+      window.location.href = "/login";
+    }
   },
 }));

@@ -50,6 +50,7 @@ import { useAuthStore } from "./domain/auth/store.js";
 import { getMe } from "./api/auth.js";
 import { prefetchOdooBootstrapInBackground } from "./domain/odoo/prefetch.js";
 import { preloadEffectivePriceCache } from "./api/odoo.js";
+import { useVersionUpdateWatcher } from "./version-check.jsx";
 
 const PRICE_REFRESH_INTERVAL_MS = 60 * 60 * 1000;
 
@@ -58,6 +59,8 @@ export default function App() {
   const user = useAuthStore((s) => s.user);
   const setUser = useAuthStore((s) => s.setUser);
   const logout = useAuthStore((s) => s.logout);
+
+  useVersionUpdateWatcher();
 
   useEffect(() => {
     if (!token) return;

@@ -54,7 +54,11 @@ export function signToken(user) {
   };
 
   return jwt.sign(payload, process.env.JWT_SECRET, {
-    expiresIn: process.env.JWT_EXPIRES_IN || "7d",
+    // Vencimiento corto a proposito: fuerza un re-login diario para que el
+    // navegador termine haciendo un reload real y levante el JS deployado
+    // mas reciente, en vez de quedar corriendo un bundle viejo en una pestaña
+    // que nunca se cierra.
+    expiresIn: process.env.JWT_EXPIRES_IN || "16h",
   });
 }
 
