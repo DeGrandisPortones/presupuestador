@@ -13,6 +13,14 @@ const EMPTY_CUSTOMER = {
 
 const INTEGER_QTY_PRODUCT_IDS = new Set([3582, 3251]);
 const SHIPPING_PRODUCT_IDS = new Set([2842]);
+// Porton Coplanar (3008) / Clasico (3009): para vendedores, el precio base real
+// SIEMPRE lleva la Instalacion sumada (ver CotizadorPage/index.jsx, SECTION_37_*).
+// Esa suma solo se puede saber despues de pedirle el precio a Odoo - si al agregar
+// la linea le pusieramos ya el precio "de catalogo" (sin sumar), se veria ese precio
+// de menos por un instante hasta que el fetch real lo corrija. Para que eso nunca
+// se llegue a pintar, estos dos productos arrancan siempre en price_pending, sin
+// importar que el catalogo ya traiga un precio.
+const FORCE_PENDING_PRICE_PRODUCT_IDS = new Set([3008, 3009]);
 // Productos que el distribuidor puede valorizar para su presupuesto al cliente,
 // pero que De Grandis no debe cobrar: en proforma/Odoo van siempre a $0.
 const DISTRIBUTOR_OWN_SUPPLY_PRODUCT_IDS = new Set([2842, 3956, 3957, 3961, 3962, 3963, 3966, 4037, 3991, 3992, 3993, 3994, 3995, 3996, 3485, 3486, 3490, 3491, 3492, 3495, 3566, 3520, 3521, 3522, 3523, 3524, 3525]);
@@ -430,7 +438,7 @@ export const useQuoteStore = create((set, get) => ({
       const isSurfaceQuantity = !!p.uses_surface_quantity;
       const isIntegerQty = isIntegerQtyProductId(id);
       const isFreeQuantity = isShippingProductId(id) || !!p.free_quantity || !!p.quantity_editable || String(p.quantity_mode || "").toLowerCase() === "free";
-      const productPricePending = !!p.price_pending || !!p.price_unresolved;
+      const productPricePending = !!p.price_pending || !!p.price_unresolved || FORCE_PENDING_PRICE_PRODUCT_IDS.has(id);
       const skipOdooPricing = isDistributorOwnSupplyProductId(id) || !!p.manual_price;
       const surfaceQty = getSurfaceQuantity(s.dimensions);
 

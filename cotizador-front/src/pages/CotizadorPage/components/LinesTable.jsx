@@ -4,7 +4,7 @@ import { calcLineTotal, formatARS, resolveLineFinalUnitPrice, resolveQuoteAdjust
 import { getFinancingPreview } from "../../../api/odoo";
 import LineRow from "./LineRow";
 
-export default function LinesTable({ financingPercent = null }) {
+export default function LinesTable({ financingPercent = null, section37MismatchIds = null }) {
   const { lines, marginPercent, paymentMethod, conditionMode } = useQuoteStore();
   const shouldResolveFinancing = financingPercent === null || financingPercent === undefined;
   const financingQ = useQuery({
@@ -45,7 +45,8 @@ export default function LinesTable({ financingPercent = null }) {
           {lines.map((l) => {
             const finalUnit = resolveLineFinalUnitPrice(l, marginPercent, effectiveFinancingPercent, conditionMode);
             const total = calcLineTotal(l.qty, finalUnit);
-            return <LineRow key={l.product_id} line={l} finalUnit={finalUnit} total={total} formatARS={formatARS} />;
+            const hasSection37Mismatch = !!section37MismatchIds?.has(Number(l.product_id));
+            return <LineRow key={l.product_id} line={l} finalUnit={finalUnit} total={total} formatARS={formatARS} hasSection37Mismatch={hasSection37Mismatch} />;
           })}
         </tbody>
       </table>
