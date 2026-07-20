@@ -1964,7 +1964,7 @@ export function buildQuotesRouter(odoo) {
                ${lateralFinal}
                where ${onlyOriginal} and q.created_by_user_id = $1
                order by q.created_at desc nulls last, q.id desc
-               limit 200`;
+               limit 10000`;
         params = [Number(u.user_id)];
       } else if (scope === "commercial_inbox") {
         if (!u.is_enc_comercial) return res.status(403).json({ ok: false, error: "No autorizado" });
