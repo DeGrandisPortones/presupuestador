@@ -30,6 +30,11 @@ function computeStatusInfo(q) {
   if (q.measurement_status === "returned_to_seller") {
     return { label: "Devuelto al vendedor — medida distinta a lo presupuestado", color: "orange" };
   }
+  // El vendedor ya reenvio el ajuste (measurement_status volvio a "submitted"), pero
+  // antes de que Tecnica lo revise tiene que pasar por Comercial.
+  if (q.measurement_commercial_review_status === "pending") {
+    return { label: "Reenviado — esperando aprobación comercial", color: "yellow" };
+  }
 
   if (q.status === "draft") {
     if (q.technical_decision === "rejected")

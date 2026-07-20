@@ -7,7 +7,7 @@ import Input from "../../ui/Input.jsx";
 import PaginationControls from "../../ui/PaginationControls.jsx";
 import { listQuotes, reviewAcopioCommercial } from "../../api/quotes.js";
 import { listDoors, reviewDoorCommercial } from "../../api/doors.js";
-import { listMeasurements } from "../../api/measurements.js";
+import { listMeasurements, reviewCommercialMeasurement } from "../../api/measurements.js";
 import { useAuthStore } from "../../domain/auth/store.js";
 import { downloadListingDoorPdf, downloadListingQuotePdf, downloadListingQuoteProformaPdf } from "../../utils/listingPdf.js";
 import { downloadPlegadoAttachment, formatPlegadoAttachmentMeta, getPlegadoAttachment, openPlegadoAttachment } from "../../utils/plegadoAttachment.js";
@@ -91,6 +91,7 @@ function rowLabel(r) {
   // measurement_status lo distingue (mismo criterio que PresupuestosPage/
   // PortonesEstadoPage).
   if (r.measurement_status === "returned_to_seller") return "Devuelto al vendedor — medida distinta a lo presupuestado";
+  if (r.measurement_commercial_review_status === "pending") return "Reenviado — esperando tu aprobación (ver pestaña Mediciones)";
   if (r.status === "pending_approvals") {
     if (r.commercial_decision === "pending") return "Pendiente tu decisión";
     if (r.commercial_decision === "approved" && r.technical_decision === "pending") return "Aprobado por Comercial · Pendiente Técnica";
@@ -103,8 +104,8 @@ function rowLabel(r) {
   return r.status;
 }
 function measurementRowLabel(r) {
+  if (String(r?.measurement_commercial_review_status || "") === "pending") return "Pendiente tu aprobación";
   const status = String(r?.measurement_status || "");
-  if (status === "commercial_review") return "Revisión comercial de medición";
   if (status === "submitted") return "Pendiente técnica";
   if (status === "needs_fix") return "Devuelto para corregir";
   if (status === "approved") return "Aprobada";
@@ -381,6 +382,14 @@ export default function AprobacionComercialPage() {
 
   const acopioM = useMutation({ mutationFn: ({ id, action, notes }) => reviewAcopioCommercial(id, { action, notes }), onSuccess: () => acopioQ.refetch() });
   const doorM = useMutation({ mutationFn: ({ id, action, notes }) => reviewDoorCommercial(id, { action, notes }), onSuccess: () => doorsQ.refetch() });
+  const medicionComercialM = useMutation({
+    mutationFn: ({ id, action, notes }) => reviewCommercialMeasurement(id, { action, notes }),
+    onSuccess: (_data, variables) => {
+      toast.success(variables?.action === "approve" ? "Aprobado. Ya pasó a la cola de Técnica." : "Devuelto al vendedor.");
+      medicionesQ.refetch();
+    },
+    onError: (e) => toast.error(e?.message || "No se pudo procesar"),
+  });
   const visibleTabKeys = COMMERCIAL_TABS_BY_SECTION[approvalSection] || COMMERCIAL_TABS_BY_SECTION.all;
 
   function goToTab(nextTab) {
@@ -672,7 +681,11 @@ export default function AprobacionComercialPage() {
                         <td>{measurementRowLabel(r)}</td>
                         <td><OdooReferenceCell value={quoteOdooReference(r)} /></td>
                         <td>{Array.isArray(r?.measurement_commercial_diff_json) && r.measurement_commercial_diff_json.length ? r.measurement_commercial_diff_json.map((item) => item?.label || item?.key).filter(Boolean).join(", ") : "—"}</td>
-                        <td className="right"><Button onClick={() => navigate(`/mediciones/${r.id}`, { state: { from: "/aprobacion/comercial" } })}>Abrir</Button></td>
+                        <td className="right" style={{ display: "flex", gap: 6, justifyContent: "flex-end", flexWrap: "wrap" }}>
+                          <Button variant="ghost" onClick={() => navigate(`/mediciones/${r.id}`, { state: { from: "/aprobacion/comercial" } })}>Abrir</Button>
+                          <Button disabled={medicionComercialM.isPending} onClick={() => medicionComercialM.mutate({ id: r.id, action: "approve", notes: null })}>Aprobar</Button>
+                          <Button variant="ghost" disabled={medicionComercialM.isPending} onClick={() => { const msg = window.prompt("Motivo de la devolución al vendedor:", ""); if (msg !== null) medicionComercialM.mutate({ id: r.id, action: "reject", notes: msg }); }}>Devolver</Button>
+                        </td>
                       </tr>
                     ))}
                   </tbody>

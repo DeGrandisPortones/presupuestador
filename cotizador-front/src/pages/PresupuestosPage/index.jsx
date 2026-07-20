@@ -28,8 +28,12 @@ function quoteEditorPath(q) {
 function isReturnedFromMeasurement(q) {
   return String(q?.measurement_status || "").toLowerCase() === "returned_to_seller";
 }
+function isPendingCommercialReviewAfterReturn(q) {
+  return String(q?.measurement_commercial_review_status || "").toLowerCase() === "pending";
+}
 
 function labelMeasurementStatus(q) {
+  if (isPendingCommercialReviewAfterReturn(q)) return "Reenviado, esperando aprobación comercial";
   const s = String(q?.measurement_status || "none").toLowerCase();
   if (s === "pending") return "Pendiente";
   if (s === "submitted") return "Enviada a técnica";
@@ -44,6 +48,7 @@ function quoteWaitingMeasurement(q) {
 }
 function labelQuoteStatus(q) {
   if (isReturnedFromMeasurement(q)) return "Pendiente por hacer cambios postmedición";
+  if (isPendingCommercialReviewAfterReturn(q)) return "Reenviado, esperando aprobación comercial";
   const s = q?.status;
   const c = q?.commercial_decision;
   const t = q?.technical_decision;
