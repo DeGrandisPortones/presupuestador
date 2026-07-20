@@ -328,7 +328,7 @@ export default function PresupuestosPage() {
   const [plegadoModal, setPlegadoModal] = useState(null);
   const [linkPopupId, setLinkPopupId] = useState(null);
 
-  const showAcceptanceColumn = filter === "produccion" && !!user?.is_distribuidor;
+  const showAcceptanceColumn = filter === "produccion" && !!(user?.is_distribuidor || user?.is_vendedor);
 
   const quotesQ = useQuery({ queryKey: ["quotes", "mine"], queryFn: () => listQuotes({ scope: "mine" }) });
   const doorsQ = useQuery({ queryKey: ["doors", "mine", "presupuestos"], queryFn: () => listDoors({ scope: "mine" }), enabled: !!user?.is_vendedor || !!user?.is_distribuidor });
