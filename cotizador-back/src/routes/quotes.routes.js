@@ -2100,7 +2100,7 @@ export function buildQuotesRouter(odoo) {
                ) fc on true
                where q.quote_kind = 'original'
                  and coalesce(q.catalog_kind, 'porton') = 'porton'
-                 and q.status != 'draft'
+                 and (q.status != 'draft' or q.measurement_status = 'returned_to_seller')
                order by q.updated_at desc nulls last, q.id desc
                limit 500`;
       } else {

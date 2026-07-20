@@ -22,6 +22,15 @@ function computeStatusInfo(q) {
   if (q.final_logistics_decision === "rejected")
     return { label: "Rechazado en logística", color: "red" };
 
+  // Ya estaba aprobado (comercial y tecnica) pero la medicion salio con una
+  // superficie mayor a la presupuestada, asi que volvio al vendedor para que
+  // lo revise. El backend resetea status a "draft" en ese caso (mismo status
+  // que un borrador nunca confirmado), pero measurement_status lo distingue
+  // - mismo chequeo que ya usa PresupuestosPage (isReturnedFromMeasurement).
+  if (q.measurement_status === "returned_to_seller") {
+    return { label: "Devuelto al vendedor — medida distinta a lo presupuestado", color: "orange" };
+  }
+
   if (q.status === "draft") {
     if (q.technical_decision === "rejected")
       return { label: "Rechazado en revisión técnica", color: "red" };
