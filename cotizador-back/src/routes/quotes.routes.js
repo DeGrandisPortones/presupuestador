@@ -1989,7 +1989,7 @@ export function buildQuotesRouter(odoo) {
                left join public.presupuestador_users u on u.id = q.created_by_user_id
                where ${onlyOriginal}
                  and q.commercial_decision = 'approved'
-                 and q.status not in ('pending_approvals', 'draft')
+                 and (q.status not in ('pending_approvals', 'draft') or q.measurement_status = 'returned_to_seller')
                order by q.commercial_at desc nulls last, q.id desc limit 200`;
       } else if (scope === "technical_approved") {
         if (!u.is_rev_tecnica) return res.status(403).json({ ok: false, error: "No autorizado" });

@@ -85,6 +85,12 @@ function acopioReqLabel(r) {
   return `C:${cL} · T:${tL}`;
 }
 function rowLabel(r) {
+  // Ya estaba aprobado (comercial y tecnica) pero la medicion salio con una
+  // superficie mayor a la presupuestada, asi que volvio al vendedor para que
+  // lo revise - mismo status='draft' que un borrador nunca confirmado, pero
+  // measurement_status lo distingue (mismo criterio que PresupuestosPage/
+  // PortonesEstadoPage).
+  if (r.measurement_status === "returned_to_seller") return "Devuelto al vendedor — medida distinta a lo presupuestado";
   if (r.status === "pending_approvals") {
     if (r.commercial_decision === "pending") return "Pendiente tu decisión";
     if (r.commercial_decision === "approved" && r.technical_decision === "pending") return "Aprobado por Comercial · Pendiente Técnica";
