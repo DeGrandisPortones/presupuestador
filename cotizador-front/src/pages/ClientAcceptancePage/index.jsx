@@ -342,12 +342,7 @@ function pushTechnicalDetailEntry(rows, label, entry) {
   if (!entry) return;
   pushTechnicalDetailRow(rows, label, entry.value);
 }
-function formatMeters(valueM) {
-  const n = toNumberLike(valueM);
-  if (!Number.isFinite(n) || n <= 0) return "";
-  return `${n.toLocaleString("es-AR", { maximumFractionDigits: 3 })} m`;
-}
-function buildBudgetTechnicalDetailRows(quote, form, technicalSummary = {}) {
+function buildBudgetTechnicalDetailRows(quote, form, technicalSummary = {}, stored = {}) {
   const payload = quote?.payload && typeof quote.payload === "object" ? quote.payload : {};
   const dimensions = payload?.dimensions && typeof payload.dimensions === "object" ? payload.dimensions : {};
   const measurementForm = form && typeof form === "object" ? form : {};
@@ -367,8 +362,17 @@ function buildBudgetTechnicalDetailRows(quote, form, technicalSummary = {}) {
     measurementForm?.automatic_context,
   ].filter(Boolean);
   const rows = [];
-  pushTechnicalDetailRow(rows, "Ancho", formatMeters(dimensions?.width ?? dimensions?.ancho ?? payload?.width ?? payload?.ancho));
-  pushTechnicalDetailRow(rows, "Alto", formatMeters(dimensions?.height ?? dimensions?.alto ?? payload?.height ?? payload?.alto));
+  // Medidas del PORTON calculado (vano + ajuste "detras del vano" si corresponde) - no confundir
+  // con el vano en si, que se muestra aparte en la tarjeta "Esquema de medidas".
+  pushTechnicalDetailRow(
+    rows,
+    "Medidas del Portón (calculadas)",
+    stored?.portonMm
+      ? `${formatMm(stored.portonMm.anchoMm)} x ${formatMm(stored.portonMm.altoMm)}`
+      : technicalSummary.ancho_calculado_mm && technicalSummary.alto_calculado_mm
+        ? `${formatMm(technicalSummary.ancho_calculado_mm)} x ${formatMm(technicalSummary.alto_calculado_mm)}`
+        : "",
+  );
   pushTechnicalDetailEntry(rows, "Tipología / sistema", firstTechnicalEntry(sources, ["tipologia_sistema", "tipologia", "tipología", "sistema", "system", "system_type", "tipo_sistema", "porton_type", "tipo_porton", "levadizo"]));
   pushTechnicalDetailEntry(rows, "Color", firstTechnicalEntry(sources, ["color", "color_porton", "color_portón", "color_chapa", "color_revestimiento", "color_pintura", "pintura_color", "ral", "color_ral"]));
   pushTechnicalDetailEntry(rows, "Tipo de revestimiento", firstTechnicalEntry(sources, ["tipo_revestimiento", "revestimiento", "revestimiento_tipo", "material_revestimiento", "cladding", "cladding_type", "apto_revestimiento", "apto_para_revestir"]));
@@ -377,7 +381,12 @@ function buildBudgetTechnicalDetailRows(quote, form, technicalSummary = {}) {
   pushTechnicalDetailEntry(rows, "Lado del motor", firstTechnicalEntry(sources, ["lado_motor", "motor_lado", "lado_del_motor"]));
   pushTechnicalDetailEntry(rows, "Lado del soporte", firstTechnicalEntry(sources, ["lado_soporte", "soporte_lado", "lado_del_soporte"]));
   pushTechnicalDetailEntry(rows, "Kg/m² efectivo", firstTechnicalEntry(sources, ["kg_m2", "kg_m2_entry", "peso_m2", "custom_kg_m2"]));
-  pushTechnicalDetailRow(rows, "Medidas de paso", technicalSummary.alto_paso_mm && technicalSummary.ancho_paso_mm ? `${formatMm(technicalSummary.ancho_paso_mm)} x ${formatMm(technicalSummary.alto_paso_mm)}` : "");
+  pushTechnicalDetailRow(
+    rows,
+    "Medidas de Paso (calculadas)",
+    stored?.pasoText || (technicalSummary.alto_paso_mm && technicalSummary.ancho_paso_mm ? `${formatMm(technicalSummary.ancho_paso_mm)} x ${formatMm(technicalSummary.alto_paso_mm)}` : ""),
+  );
+  pushTechnicalDetailRow(rows, "Medidas de Hoja (calculada)", stored?.hojaText || "");
   pushTechnicalDetailRow(rows, "Peso aproximado", formatKg(technicalSummary.peso_estimado_kg));
   pushTechnicalDetailRow(rows, "Tipo de piernas", formatPiernas(technicalSummary.piernas_tipo));
   pushTechnicalDetailRow(rows, "Ancho de pierna", formatMm(technicalSummary.ancho_pierna_mm));
@@ -686,9 +695,31 @@ export default function ClientAcceptancePage() {
     if (anchoM > 0 && altoM > 0) return `${anchoM.toFixed(2)} m x ${altoM.toFixed(2)} m`;
     return "";
   }, [quote]);
+  // Medidas del porton CALCULADO (vano + ajuste "detras del vano" si corresponde), distinto
+  // del vano en si (dato duro medido). Mismo criterio que storedMedidasPasoText: preferir lo
+  // que ya calculo el backend con la formula oficial antes que la aproximacion local.
+  const storedMedidasPortonMm = useMemo(() => {
+    const dims = quote?.payload?.dimensions || {};
+    const anchoM = toNumberLike(dims?.width);
+    const altoM = toNumberLike(dims?.height);
+    if (anchoM > 0 && altoM > 0) return { anchoMm: Math.round(anchoM * 1000), altoMm: Math.round(altoM * 1000) };
+    return null;
+  }, [quote]);
+  const storedMedidasHojaText = useMemo(() => {
+    const dims = quote?.payload?.dimensions || {};
+    if (dims?.medidas_hoja_text) return String(dims.medidas_hoja_text).trim();
+    const anchoM = toNumberLike(dims?.hoja_ancho_m);
+    const altoM = toNumberLike(dims?.hoja_alto_m);
+    if (anchoM > 0 && altoM > 0) return `${anchoM.toFixed(2)} m x ${altoM.toFixed(2)} m`;
+    return "";
+  }, [quote]);
   const budgetTechnicalRows = useMemo(
-    () => buildBudgetTechnicalDetailRows(quote, form, technicalSummary),
-    [quote, form, technicalSummary],
+    () => buildBudgetTechnicalDetailRows(quote, form, technicalSummary, {
+      portonMm: storedMedidasPortonMm,
+      pasoText: storedMedidasPasoText,
+      hojaText: storedMedidasHojaText,
+    }),
+    [quote, form, technicalSummary, storedMedidasPortonMm, storedMedidasPasoText, storedMedidasHojaText],
   );
   const budgetDetailLines = useMemo(
     () => buildBudgetDetailLines(quote?.lines || [], catalogQ.data || {}),
@@ -735,15 +766,9 @@ export default function ClientAcceptancePage() {
         <MeasurementSchemeVisual form={form} />
         <div className="spacer" />
         <Row>
-          <StaticField label="Ancho final" value={formatMm(form?.ancho_final_mm || technicalSummary.ancho_calculado_mm)} />
-          <StaticField label="Alto final" value={formatMm(form?.alto_final_mm || technicalSummary.alto_calculado_mm)} />
+          <StaticField label="Ancho de Vano" value={formatMm(form?.ancho_final_mm || technicalSummary.ancho_calculado_mm)} />
+          <StaticField label="Alto de Vano" value={formatMm(form?.alto_final_mm || technicalSummary.alto_calculado_mm)} />
           <StaticField label="Cantidad de parantes" value={text(form?.cantidad_parantes)} />
-        </Row>
-        <div className="spacer" />
-        <Row>
-          <StaticField label="Medidas de paso" value={storedMedidasPasoText || (technicalSummary.alto_paso_mm && technicalSummary.ancho_paso_mm ? `${formatMm(technicalSummary.ancho_paso_mm)} x ${formatMm(technicalSummary.alto_paso_mm)}` : "")} />
-          <StaticField label="Peso aproximado" value={formatKg(technicalSummary.peso_estimado_kg)} />
-          <StaticField label="Tipo de piernas" value={formatPiernas(technicalSummary.piernas_tipo)} />
         </Row>
       </Card>
 

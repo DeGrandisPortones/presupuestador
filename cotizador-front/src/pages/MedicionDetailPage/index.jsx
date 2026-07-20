@@ -1085,6 +1085,24 @@ export default function MedicionDetailPage() {
     if (anchoM > 0 && altoM > 0) return `${anchoM.toFixed(2)} m x ${altoM.toFixed(2)} m`;
     return "";
   }, [quote]);
+  // Medidas del porton CALCULADO (vano + ajuste "detras del vano" si corresponde), no confundir
+  // con el vano en si (dato duro que carga el medidor). Mismo criterio que storedMedidasPasoText:
+  // preferir lo que ya calculo el backend con la formula oficial antes que la aproximacion local.
+  const storedMedidasPortonMm = useMemo(() => {
+    const dims = quote?.payload?.dimensions || {};
+    const anchoM = toNumberLike(dims?.width);
+    const altoM = toNumberLike(dims?.height);
+    if (anchoM > 0 && altoM > 0) return { anchoMm: Math.round(anchoM * 1000), altoMm: Math.round(altoM * 1000) };
+    return null;
+  }, [quote]);
+  const storedMedidasHojaText = useMemo(() => {
+    const dims = quote?.payload?.dimensions || {};
+    if (dims?.medidas_hoja_text) return String(dims.medidas_hoja_text).trim();
+    const anchoM = toNumberLike(dims?.hoja_ancho_m);
+    const altoM = toNumberLike(dims?.hoja_alto_m);
+    if (anchoM > 0 && altoM > 0) return `${anchoM.toFixed(2)} m x ${altoM.toFixed(2)} m`;
+    return "";
+  }, [quote]);
   const measuredFinalDimensions = useMemo(
     () => getFinalDimensionsFromScheme(form),
     [form?.esquema?.alto, form?.esquema?.ancho],
@@ -1497,7 +1515,7 @@ export default function MedicionDetailPage() {
         <Section title="Esquema de medidas">
           <MeasurementSchemeVisual form={form} pointCount={pointCount} />
           <Row>
-            <Field label="Ancho final editable (mm)">
+            <Field label="Ancho de Vano (mm)">
               {isTechnical ? (
                 <Input
                   value={form.ancho_final_mm || ""}
@@ -1508,7 +1526,7 @@ export default function MedicionDetailPage() {
                 <StaticValue value={formatMm(form.ancho_final_mm || measuredFinalDimensions.ancho_final_mm || technicalSummary.ancho_calculado_mm)} />
               )}
             </Field>
-            <Field label="Alto final editable (mm)">
+            <Field label="Alto de Vano (mm)">
               {isTechnical ? (
                 <Input
                   value={form.alto_final_mm || ""}
@@ -1519,22 +1537,6 @@ export default function MedicionDetailPage() {
                 <StaticValue value={formatMm(form.alto_final_mm || measuredFinalDimensions.alto_final_mm || technicalSummary.alto_calculado_mm)} />
               )}
             </Field>
-          </Row>
-          <div className="spacer" />
-          <Row>
-            {Array.from({ length: pointCount }, (_, idx) => idx).map((idx) => (
-              <Field key={`alto-${idx}`} label={`Alto ${idx + 1} (mm)`}>
-                {isReadOnlyMeasurement ? (
-                  <StaticValue value={form.esquema?.alto?.[idx] || ""} />
-                ) : (
-                  <Input
-                    value={form.esquema?.alto?.[idx] || ""}
-                    onChange={(v) => setForm((prev) => updateSchemeValue(prev, "alto", idx, v, pointCount))}
-                    style={{ width: "100%" }}
-                  />
-                )}
-              </Field>
-            ))}
           </Row>
           <div className="spacer" />
           <Row>
@@ -1552,20 +1554,36 @@ export default function MedicionDetailPage() {
               </Field>
             ))}
           </Row>
+          <div className="spacer" />
+          <Row>
+            {Array.from({ length: pointCount }, (_, idx) => idx).map((idx) => (
+              <Field key={`alto-${idx}`} label={`Alto ${idx + 1} (mm)`}>
+                {isReadOnlyMeasurement ? (
+                  <StaticValue value={form.esquema?.alto?.[idx] || ""} />
+                ) : (
+                  <Input
+                    value={form.esquema?.alto?.[idx] || ""}
+                    onChange={(v) => setForm((prev) => updateSchemeValue(prev, "alto", idx, v, pointCount))}
+                    style={{ width: "100%" }}
+                  />
+                )}
+              </Field>
+            ))}
+          </Row>
         </Section>
 
         <Section title="Cálculo técnico automático">
           <Row>
-            <Field label={`Medidas finales del ${kindLabel}`}>
+            <Field label={`Medidas del ${kindLabel} (calculadas)`}>
               <StaticValue value={
-                form.alto_final_mm && form.ancho_final_mm
-                  ? `${formatMm(form.ancho_final_mm)} x ${formatMm(form.alto_final_mm)}`
-                  : technicalSummary.alto_calculado_mm && technicalSummary.ancho_calculado_mm
+                storedMedidasPortonMm
+                  ? `${formatMm(storedMedidasPortonMm.anchoMm)} x ${formatMm(storedMedidasPortonMm.altoMm)}`
+                  : technicalSummary.ancho_calculado_mm && technicalSummary.alto_calculado_mm
                     ? `${formatMm(technicalSummary.ancho_calculado_mm)} x ${formatMm(technicalSummary.alto_calculado_mm)}`
                     : ""
               } />
             </Field>
-            <Field label="Medidas de paso">
+            <Field label="Medidas de Paso (calculadas)">
               <StaticValue value={
                 storedMedidasPasoText || (
                   technicalSummary.alto_paso_mm && technicalSummary.ancho_paso_mm
@@ -1573,6 +1591,9 @@ export default function MedicionDetailPage() {
                     : ""
                 )
               } />
+            </Field>
+            <Field label="Medidas de Hoja (calculada)">
+              <StaticValue value={storedMedidasHojaText} />
             </Field>
           </Row>
           <div className="spacer" />
