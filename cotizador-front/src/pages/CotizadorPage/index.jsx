@@ -1479,7 +1479,7 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
   });
 
   const resetReturnedM = useMutation({ mutationFn: async () => { if (!quoteId) throw new Error("Quote inválida"); return await resetReturnedMeasurementQuote(quoteId); }, onSuccess: async () => { await qc.invalidateQueries({ queryKey: ["quote", quoteId] }); toast.success("Se restablecieron los productos originales del presupuesto."); }, onError: (e) => toast.error(e?.message || "No se pudo restablecer") });
-  const confirmReturnedM = useMutation({ mutationFn: async () => { const payload = getDraftPayload(); validateConfirm(payload); if (!quoteId) throw new Error("Quote inválida"); await updateQuote(quoteId, payload); return await confirmReturnedMeasurementQuote(quoteId); }, onSuccess: async () => { await qc.invalidateQueries({ queryKey: ["quote", quoteId] }); await qc.invalidateQueries({ queryKey: ["quotes", "mine"] }); navigate("/menu", { replace: true }); toast.success("Se envió a su aprobación técnica final."); }, onError: (e) => toast.error(e?.message || "No se pudo enviar a técnica") });
+  const confirmReturnedM = useMutation({ mutationFn: async () => { const payload = getDraftPayload(); validateConfirm(payload); if (!quoteId) throw new Error("Quote inválida"); await updateQuote(quoteId, payload); return await confirmReturnedMeasurementQuote(quoteId); }, onSuccess: async () => { await qc.invalidateQueries({ queryKey: ["quote", quoteId] }); await qc.invalidateQueries({ queryKey: ["quotes", "mine"] }); navigate("/menu", { replace: true }); toast.success("Se envió a Comercial para su aprobación."); }, onError: (e) => toast.error(e?.message || "No se pudo enviar a Comercial") });
 
   function resolveRefreshPricelist() {
     const assignedPricelistId = getAssignedPricelistIdFromUser(user);
@@ -1682,7 +1682,7 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
           {isReturnedMeasurementQuote ? (
             <>
               <Button variant="ghost" onClick={() => resetReturnedM.mutate()} disabled={resetReturnedM.isPending || confirmReturnedM.isPending}>{resetReturnedM.isPending ? "Restableciendo..." : "Restablecer al original"}</Button>
-              <Button variant="primary" onClick={() => confirmReturnedM.mutate()} disabled={confirmReturnedM.isPending || resetReturnedM.isPending || !pricingContextReady || hasSection37Mismatch}>{confirmReturnedM.isPending ? "Enviando..." : "Confirmar y volver a Técnica"}</Button>
+              <Button variant="primary" onClick={() => confirmReturnedM.mutate()} disabled={confirmReturnedM.isPending || resetReturnedM.isPending || !pricingContextReady || hasSection37Mismatch}>{confirmReturnedM.isPending ? "Enviando..." : "Confirmar y enviar a Comercial"}</Button>
             </>
           ) : (!isAcopioRevision ? (<Button variant="primary" onClick={() => { if (isRevisionQuote) { confirmM.mutate({}); return; } handleConfirmIntent(); }} disabled={!canConfirm || confirmM.isPending || !pricingContextReady || hasSection37Mismatch}>{confirmM.isPending ? "Confirmando..." : (isRevisionQuote ? "Enviar cotización final" : "Confirmar presupuesto")}</Button>) : null)}
         </div>
@@ -1704,7 +1704,8 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
         <><div className="spacer" /><div className="card" style={{ background: "#fff8f3", border: "1px solid #f2d3bf" }}>
           <div style={{ fontWeight: 900, marginBottom: 6 }}>Presupuesto devuelto desde medición / datos técnicos</div>
           <div className="muted" style={{ marginBottom: 8 }}>{returnedMeasurementReason || "El medidor o técnica devolvió este portón para que ajustes el presupuesto antes de continuar."}</div>
-          {returnedMeasurementForced ? <div className="muted">Este caso quedó bloqueado por superficie final mayor a la presupuestada fuera de tolerancia. Después de ajustar, usá <b>Confirmar y volver a Técnica</b>.</div> : <div className="muted">Podés ajustar los ítems del presupuesto. El ítem <b>Facturado previamente</b> queda visible para calcular la diferencia. Cuando termines, usá <b>Confirmar y volver a Técnica</b>.</div>}
+          {returnedMeasurementForced ? <div className="muted">Este caso quedó bloqueado por superficie final mayor a la presupuestada fuera de tolerancia. Después de ajustar, usá <b>Confirmar y enviar a Comercial</b>.</div> : <div className="muted">Podés ajustar los ítems del presupuesto. El ítem <b>Facturado previamente</b> queda visible para calcular la diferencia. Cuando termines, usá <b>Confirmar y enviar a Comercial</b>.</div>}
+          <div className="muted" style={{ marginTop: 4 }}>Antes de volver a Técnica, Comercial tiene que aprobar el presupuesto ajustado.</div>
         </div></>
       ) : null}
 

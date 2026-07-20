@@ -74,6 +74,11 @@ export async function confirmReturnedMeasurementQuote(id) {
   return res.data;
 }
 
+export async function reviewCommercialMeasurement(id, { action, notes } = {}) {
+  const res = await http.post(`/api/measurements/${id}/commercial-review`, { action, notes });
+  return res.data;
+}
+
 export async function getPublicMeasurementAcceptance(token) {
   const res = await http.get(`/api/client-acceptance/${token}`);
   if (!res.data?.ok) throw new Error(res.data?.error || "No se pudo cargar la aceptación del cliente");

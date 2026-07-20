@@ -42,6 +42,10 @@ function requireTechnicalReviewer(req, res, next) {
   if (!req.user?.is_rev_tecnica) return res.status(403).json({ ok: false, error: "No autorizado" });
   next();
 }
+function requireCommercialReviewer(req, res, next) {
+  if (!req.user?.is_enc_comercial) return res.status(403).json({ ok: false, error: "No autorizado" });
+  next();
+}
 function isUuid(v) {
   return /^[0-9a-fA-F-]{36}$/.test(String(v || "").trim());
 }
@@ -53,7 +57,7 @@ function onlyDigits(v) {
 }
 function normalizeStatus(s) {
   const v = String(s || "pending").toLowerCase().trim();
-  return ["pending", "needs_fix", "submitted", "approved", "returned_to_seller", "all"].includes(v)
+  return ["pending", "needs_fix", "submitted", "approved", "returned_to_seller", "commercial_review", "all"].includes(v)
     ? v
     : "pending";
 }
@@ -444,7 +448,17 @@ export function buildMeasurementsRouter(odoo = null) {
         }
       }
 
-      if (status !== "all") {
+      // Cuando el vendedor arregla un porton devuelto por medicion y lo reenvia, primero
+      // tiene que pasar por Comercial (measurement_commercial_review_status='pending')
+      // antes de que Tecnica lo pueda revisar - aunque measurement_status ya diga
+      // 'submitted'. Por eso Tecnica no ve estos casos en su cola de "submitted".
+      if (viewer === "tecnica" && status === "submitted") {
+        where.push(`coalesce(q.measurement_commercial_review_status, '') <> 'pending'`);
+      }
+
+      if (status === "commercial_review") {
+        where.push(`q.measurement_commercial_review_status = 'pending'`);
+      } else if (status !== "all") {
         params.push(status);
         where.push(`q.measurement_status = $${params.length}`);
       } else {
@@ -615,7 +629,9 @@ export function buildMeasurementsRouter(odoo = null) {
                   measurement_review_at=now(),
                   measurement_by_user_id=coalesce(measurement_by_user_id, $8),
                   measurement_assigned_to_user_id=coalesce(measurement_assigned_to_user_id, $8),
-                  measurement_at=coalesce(measurement_at, now())
+                  measurement_at=coalesce(measurement_at, now()),
+                  measurement_commercial_review_required=false,
+                  measurement_commercial_review_status=null
             where id=$1
             returning *`,
           [
@@ -695,6 +711,12 @@ export function buildMeasurementsRouter(odoo = null) {
       if (!["submitted", "approved"].includes(currentMeasurementStatus) && act !== "return_to_seller" && !isTechnicalOnlyFinalApproval) {
         return res.status(409).json({ ok: false, error: "La medición no está lista para revisar" });
       }
+      // Si el vendedor reenvió esto tras un "devuelto al vendedor", primero tiene que
+      // aprobarlo Comercial - Tecnica no puede actuar hasta que eso pase, aunque el
+      // measurement_status ya diga 'submitted'.
+      if (String(quote.measurement_commercial_review_status || "") === "pending") {
+        return res.status(409).json({ ok: false, error: "Está pendiente de aprobación comercial, todavía no lo podés revisar." });
+      }
 
       if (act === "return_to_seller") {
         const reason = String(notes || "").trim() || "Devuelto por Técnica";
@@ -704,7 +726,7 @@ export function buildMeasurementsRouter(odoo = null) {
         const payloadSource = quote.payload && typeof quote.payload === "object" ? { ...quote.payload } : {};
         const nextPayload = payloadWithReturnContext(payloadWithoutReturnContext(payloadSource), ctx);
         const upd = await dbQuery(
-          `update public.presupuestador_quotes set status='draft', lines=$2::jsonb, payload=$3::jsonb, measurement_status='returned_to_seller', measurement_review_notes=$4, measurement_review_by_user_id=$5, measurement_review_at=now() where id=$1 returning *`,
+          `update public.presupuestador_quotes set status='draft', lines=$2::jsonb, payload=$3::jsonb, measurement_status='returned_to_seller', measurement_review_notes=$4, measurement_review_by_user_id=$5, measurement_review_at=now(), measurement_commercial_review_required=false, measurement_commercial_review_status=null where id=$1 returning *`,
           [id, JSON.stringify(nextLines), JSON.stringify(nextPayload), reason, Number(u.user_id)],
         );
         return res.json({ ok: true, quote: upd.rows?.[0] || null, returned_to_seller: true });
@@ -717,7 +739,7 @@ export function buildMeasurementsRouter(odoo = null) {
         const finalDimsErr = validateFinalDimensions(form);
         if (finalDimsErr) return res.status(400).json({ ok: false, error: finalDimsErr });
         const upd = await dbQuery(
-          `update public.presupuestador_quotes set measurement_status='approved', measurement_review_by_user_id=$2, measurement_review_at=now(), measurement_review_notes=null, status='synced_odoo' where id=$1 returning *`,
+          `update public.presupuestador_quotes set measurement_status='approved', measurement_review_by_user_id=$2, measurement_review_at=now(), measurement_review_notes=null, status='synced_odoo', measurement_commercial_review_required=false where id=$1 returning *`,
           [id, Number(u.user_id)],
         );
         const savedQuote = upd.rows?.[0] || null;
@@ -818,7 +840,9 @@ export function buildMeasurementsRouter(odoo = null) {
                 note=$8,
                 catalog_kind=$9,
                 measurement_status='submitted',
-                measurement_review_notes=null
+                measurement_review_notes=null,
+                measurement_commercial_review_required=true,
+                measurement_commercial_review_status='pending'
           where id=$1
           returning *`,
         [
@@ -833,7 +857,69 @@ export function buildMeasurementsRouter(odoo = null) {
           nextCatalogKind,
         ],
       );
-      return res.json({ ok: true, quote: upd.rows?.[0] || null, moved_to_tecnica: true });
+      return res.json({ ok: true, quote: upd.rows?.[0] || null, moved_to_comercial: true });
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  // Paso intermedio: cuando el vendedor reenvia un porton devuelto por medicion
+  // (ver /:id/return/confirm), antes de que Tecnica lo pueda revisar tiene que
+  // pasar por Comercial. Aprobar deja measurement_status tal cual ('submitted')
+  // asi que ahora si entra en la cola de Tecnica; rechazar lo manda de nuevo al
+  // vendedor con el mismo mecanismo que usa Tecnica (return_to_seller).
+  router.post("/:id/commercial-review", requireCommercialReviewer, async (req, res, next) => {
+    try {
+      const u = req.user;
+      const id = String(req.params.id || "").trim();
+      if (!isUuid(id)) return res.status(400).json({ ok: false, error: "id inválido" });
+      const { action, notes } = req.body || {};
+      const act = String(action || "").toLowerCase().trim();
+      if (!["approve", "reject"].includes(act)) {
+        return res.status(400).json({ ok: false, error: "action inválida" });
+      }
+      const cur = await dbQuery(`select * from public.presupuestador_quotes where id=$1 limit 1`, [id]);
+      const quote = cur.rows?.[0];
+      if (!quote) return res.status(404).json({ ok: false, error: "Presupuesto no encontrado" });
+      if (String(quote.measurement_commercial_review_status || "") !== "pending") {
+        return res.status(409).json({ ok: false, error: "Esto no está pendiente de aprobación comercial" });
+      }
+
+      if (act === "approve") {
+        const upd = await dbQuery(
+          `update public.presupuestador_quotes
+              set measurement_commercial_review_status='approved',
+                  measurement_commercial_review_by_user_id=$2,
+                  measurement_commercial_review_at=now()
+            where id=$1
+            returning *`,
+          [id, Number(u.user_id)],
+        );
+        return res.json({ ok: true, quote: upd.rows?.[0] || null });
+      }
+
+      const reason = String(notes || "").trim() || "Devuelto por Comercial";
+      const ctx = buildReturnContext(quote);
+      const cleanLines = stripPreviouslyBilledLines(ctx.original_lines || quote.lines);
+      const nextLines = [...cleanLines, buildPreviouslyBilledLine(quote)];
+      const payloadSource = quote.payload && typeof quote.payload === "object" ? { ...quote.payload } : {};
+      const nextPayload = payloadWithReturnContext(payloadWithoutReturnContext(payloadSource), ctx);
+      const upd = await dbQuery(
+        `update public.presupuestador_quotes
+            set status='draft',
+                lines=$2::jsonb,
+                payload=$3::jsonb,
+                measurement_status='returned_to_seller',
+                measurement_review_notes=$4,
+                measurement_review_by_user_id=$5,
+                measurement_review_at=now(),
+                measurement_commercial_review_required=false,
+                measurement_commercial_review_status=null
+          where id=$1
+          returning *`,
+        [id, JSON.stringify(nextLines), JSON.stringify(nextPayload), reason, Number(u.user_id)],
+      );
+      return res.json({ ok: true, quote: upd.rows?.[0] || null, returned_to_seller: true });
     } catch (e) {
       next(e);
     }
