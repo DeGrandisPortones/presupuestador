@@ -451,8 +451,9 @@ export function buildMeasurementsRouter(odoo = null) {
       // Cuando el vendedor arregla un porton devuelto por medicion y lo reenvia, primero
       // tiene que pasar por Comercial (measurement_commercial_review_status='pending')
       // antes de que Tecnica lo pueda revisar - aunque measurement_status ya diga
-      // 'submitted'. Por eso Tecnica no ve estos casos en su cola de "submitted".
-      if (viewer === "tecnica" && status === "submitted") {
+      // 'submitted'. Se aplica sin importar el status pedido (AprobacionTecnicaPage usa
+      // status=all y filtra "submitted" en el propio navegador, no solo status=submitted).
+      if (viewer === "tecnica") {
         where.push(`coalesce(q.measurement_commercial_review_status, '') <> 'pending'`);
       }
 
