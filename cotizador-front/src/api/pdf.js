@@ -20,7 +20,8 @@ function buildPdfFilename(payload, kind = "presupuesto") {
       payload?.id,
     kind
   );
-  return `${customerName}_${quoteNumber}.pdf`;
+  const prefix = kind === "proforma" ? "Proforma_" : "";
+  return `${prefix}${customerName}_${quoteNumber}.pdf`;
 }
 
 function triggerDownload(blob, filename) {

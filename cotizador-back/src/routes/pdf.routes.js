@@ -177,10 +177,10 @@ function sanitizeFilenamePart(value, fallback = "archivo") {
     .trim();
   return normalized || fallback;
 }
-function buildDownloadFilename(payload, fallbackPrefix = "presupuesto") {
+function buildDownloadFilename(payload, fallbackPrefix = "presupuesto", namePrefix = "") {
   const customerName = sanitizeFilenamePart(payload?.end_customer?.name, "cliente");
   const quoteNo = sanitizeFilenamePart(getQuoteNumber(payload), fallbackPrefix);
-  return `${customerName}_${quoteNo}.pdf`;
+  return `${namePrefix}${customerName}_${quoteNo}.pdf`;
 }
 function stripSellerLines(value) {
   return String(value || "")
@@ -1155,7 +1155,7 @@ export function buildPdfRouter(odoo = null) {
       const payload = { ...rawPayload, seller_name: resolveLoggedUserSellerName(req.user, rawPayload) };
       const pdf = await renderPdf({ title: "PROFORMA", payload, useBasePrice: true, odoo, displayNetPrices: true, taxRate: isCondition2(payload) ? 0.105 : IVA_RATE, allowNewBudgetFormat: false });
       res.setHeader("Content-Type", "application/pdf");
-      res.setHeader("Content-Disposition", `attachment; filename="${buildDownloadFilename(payload, "proforma")}"`);
+      res.setHeader("Content-Disposition", `attachment; filename="${buildDownloadFilename(payload, "proforma", "Proforma_")}"`);
       res.send(pdf);
     } catch (e) { next(e); }
   });
