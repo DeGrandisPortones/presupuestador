@@ -25,7 +25,7 @@ import {
   listProductionPropertyAssignments,
   setProductionPropertyAssignment,
 } from "../productionPropertyAssignments.js";
-import { calcOdooUnitPrice, calcQuoteSubtotal, round2, IVA_RATE } from "./quotes.routes.js";
+import { calcOdooUnitPrice, calcQuoteSubtotal, round2, IVA_RATE, getPayloadConditionMode } from "./quotes.routes.js";
 
 function requireEncComercial(req, res, next) { if (!req.user?.is_enc_comercial) return res.status(403).json({ ok: false, error: "No autorizado" }); next(); }
 function requireSuperuser(req, res, next) { if (!req.user?.is_superuser) return res.status(403).json({ ok: false, error: "No autorizado" }); next(); }
@@ -645,7 +645,11 @@ export function buildAdminRouter(odoo) {
       let officialLines = null;
       try {
         officialSubtotalNet = calcQuoteSubtotal({ lines: quote.lines, payload: quote.payload, quote });
-        officialTotalWithIva = round2(officialSubtotalNet * (1 + IVA_RATE));
+        // Condicion 2 ya manda a Odoo el neto con el recargo de 10,5% adentro (via
+        // getOdooConditionPriceFactor en calcOdooUnitPrice) en vez de IVA formal - no hay
+        // que sumarle un 21% mas arriba de eso. Solo Condicion 1 lleva el +21% acá.
+        const isCond2 = getPayloadConditionMode(quote.payload) === "cond2";
+        officialTotalWithIva = isCond2 ? officialSubtotalNet : round2(officialSubtotalNet * (1 + IVA_RATE));
         officialLines = (Array.isArray(quote.lines) ? quote.lines : []).map((l) => {
           const qty = Number(l?.qty || 0) || 0;
           const unit = calcOdooUnitPrice(l, quote.payload || {}, quote);

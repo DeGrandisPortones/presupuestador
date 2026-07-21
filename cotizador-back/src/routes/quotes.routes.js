@@ -624,7 +624,7 @@ export function calcQuoteSubtotal({ lines, payload, quote = null }) {
     return acc + (qty * unit);
   }, 0));
 }
-function getPayloadConditionMode(payload) {
+export function getPayloadConditionMode(payload) {
   return String(payload?.condition_mode || "cond1").trim().toLowerCase();
 }
 function getOdooConditionPriceFactor(payload) {
