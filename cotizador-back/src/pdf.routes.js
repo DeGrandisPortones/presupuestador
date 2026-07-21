@@ -258,7 +258,12 @@ async function buildLines(payload, { useBasePrice, odoo }) {
     .map((l) => {
       const qty = n2(l?.qty);
       const basePrice = n2(l?.base_price ?? l?.basePrice ?? l?.base_price_unit ?? l?.price_unit ?? l?.priceUnit ?? l?.price ?? 0);
-      const unitNet = useBasePrice ? basePrice : basePrice * coefFactor;
+      // "Facturado previamente" es un dato duro (ya facturado antes, guardado como el neto
+      // equivalente antes de IVA) - no se le aplica el coeficiente/margen del vendedor. El +IVA
+      // de abajo si se le aplica igual que a cualquier linea, para llegar al monto final ya
+      // facturado (con impuestos) que se guardo como referencia.
+      const isPreviouslyBilled = l?.previously_billed_line === true;
+      const unitNet = isPreviouslyBilled ? basePrice : (useBasePrice ? basePrice : basePrice * coefFactor);
       const unit = unitNet * (1 + IVA_RATE);
       const totalNet = unitNet * qty;
       const total = unit * qty;

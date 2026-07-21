@@ -580,6 +580,11 @@ function getLineBasePriceForOdoo(line = {}) {
   return Number.isFinite(n) ? round2(n) : 0;
 }
 export function calcOdooUnitPrice(line, payload, quote = null) {
+  // "Facturado previamente" es un dato duro (el neto equivalente a lo ya facturado antes,
+  // ver buildPreviouslyBilledLine) - no se le aplica coeficiente/margen, ajuste por forma de
+  // pago ni factor de condicion. Bypass total, antes que cualquier otra regla (envio,
+  // distribuidor, etc).
+  if (line?.previously_billed_line === true) return round2(Number(line.basePrice ?? line.base_price ?? 0));
   if (shouldZeroShippingForOdoo(quote, line)) return 0;
 
   // Envío: si ya existe el precio de Odoo congelado (envio_odoo_price_snapshot),
