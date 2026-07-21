@@ -430,17 +430,19 @@ function buildCatalogSectionHelpers(catalog = {}) {
   const sections = Array.isArray(catalog?.sections) ? catalog.sections : [];
   const products = Array.isArray(catalog?.products) ? catalog.products : [];
   const sectionNameById = new Map();
+  const sectionPositionById = new Map();
   const productById = new Map();
   for (const section of sections) {
     const id = Number(section?.id || 0);
     const name = text(section?.name || section?.display_name || section?.label);
     if (id && name) sectionNameById.set(id, name);
+    if (id) sectionPositionById.set(id, Number(section?.position ?? 0) || 0);
   }
   for (const product of products) {
     const id = Number(product?.id || product?.product_id || 0);
     if (id) productById.set(id, product);
   }
-  return { sectionNameById, productById };
+  return { sectionNameById, sectionPositionById, productById };
 }
 function lineExplicitSectionNames(line = {}) {
   const direct = [
@@ -455,21 +457,28 @@ function lineExplicitSectionNames(line = {}) {
     .filter(Boolean);
   return Array.from(new Set(direct));
 }
-function sectionNamesForBudgetLine(line = {}, catalogProduct = null, sectionNameById = new Map()) {
-  const names = lineExplicitSectionNames(line);
-  const sectionIds = [
-    ...(Array.isArray(line?.section_ids) ? line.section_ids : []),
-    ...(Array.isArray(catalogProduct?.section_ids) ? catalogProduct.section_ids : []),
-  ];
-  for (const rawId of sectionIds) {
-    const sectionName = sectionNameById.get(Number(rawId || 0));
-    if (sectionName) names.push(sectionName);
-  }
-  const unique = Array.from(new Set(names.map(text).filter(Boolean)));
-  return unique.length ? unique : ["Detalle del presupuesto"];
+// Un producto de catálogo puede estar etiquetado bajo varias secciones (ej. "Tipo de
+// anclajes" y "Tipo de anclajes para instalar"), pero cada línea del presupuesto debe
+// listarse una sola vez en este resumen. Se elige la sección de menor "position".
+function primarySectionNameForBudgetLine(line = {}, catalogProduct = null, sectionNameById = new Map(), sectionPositionById = new Map()) {
+  const explicit = lineExplicitSectionNames(line);
+  if (explicit.length) return explicit[0];
+  const sectionIds = Array.from(
+    new Set(
+      [
+        ...(Array.isArray(line?.section_ids) ? line.section_ids : []),
+        ...(Array.isArray(catalogProduct?.section_ids) ? catalogProduct.section_ids : []),
+      ]
+        .map((rawId) => Number(rawId || 0))
+        .filter((id) => sectionNameById.has(id)),
+    ),
+  );
+  if (!sectionIds.length) return "Detalle del presupuesto";
+  sectionIds.sort((a, b) => (sectionPositionById.get(a) ?? 0) - (sectionPositionById.get(b) ?? 0));
+  return sectionNameById.get(sectionIds[0]);
 }
 function buildBudgetDetailLines(lines = [], catalog = {}) {
-  const { sectionNameById, productById } = buildCatalogSectionHelpers(catalog);
+  const { sectionNameById, sectionPositionById, productById } = buildCatalogSectionHelpers(catalog);
   const grouped = new Map();
   const sourceLines = Array.isArray(lines) ? lines : [];
   for (let idx = 0; idx < sourceLines.length; idx += 1) {
@@ -481,21 +490,20 @@ function buildBudgetDetailLines(lines = [], catalog = {}) {
     if (!name) continue;
     const qty = Number(line?.qty || 1) || 1;
     const code = text(line?.code || catalogProduct?.code);
-    for (const sectionName of sectionNamesForBudgetLine(line, catalogProduct, sectionNameById)) {
-      const key = `${sectionName}::${name}::${code}`;
-      const existing = grouped.get(key);
-      if (existing) {
-        existing.qty += qty;
-        continue;
-      }
-      grouped.set(key, {
-        key: `${line?.product_id || "line"}-${idx}-${sectionName}`,
-        sectionName,
-        name,
-        qty,
-        code,
-      });
+    const sectionName = primarySectionNameForBudgetLine(line, catalogProduct, sectionNameById, sectionPositionById);
+    const key = `${sectionName}::${name}::${code}`;
+    const existing = grouped.get(key);
+    if (existing) {
+      existing.qty += qty;
+      continue;
     }
+    grouped.set(key, {
+      key: `${line?.product_id || "line"}-${idx}-${sectionName}`,
+      sectionName,
+      name,
+      qty,
+      code,
+    });
   }
   return Array.from(grouped.values()).sort((a, b) => {
     const sectionCmp = String(a.sectionName || "").localeCompare(String(b.sectionName || ""), "es");
