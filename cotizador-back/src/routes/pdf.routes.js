@@ -20,7 +20,10 @@ const DOOR_PANEL_CONFIGS = [
     key: "exterior",
     title: "Panel Exterior",
     prefix: "puerta_panel_exterior_lamas",
-    productIds: new Set([4108, 3637]),
+    // 4108/3637 = "Panel Lamas 22mm" (discontinuado en Odoo, se deja por compatibilidad
+    // con presupuestos viejos ya guardados con ese producto). 4227/3756 = su reemplazo,
+    // "Panel en Lamas 22mm".
+    productIds: new Set([4108, 3637, 4227, 3756]),
   },
   {
     key: "interior",
