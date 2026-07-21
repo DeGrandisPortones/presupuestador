@@ -5,11 +5,11 @@ import { useQuoteStore } from "../../../domain/quote/store.js";
 const DOOR_LAMAS_WIDTH_MAX_M = 2;
 const DOOR_LAMAS_HEIGHT_MAX_M = 3;
 const DOOR_LAMAS_DIVIDER_LINE_MM = 10;
-// 4108/3637 = "Panel Lamas 22mm" (discontinuado en Odoo, se deja por compatibilidad
-// con presupuestos viejos ya guardados con ese producto). 4227/3756 = su reemplazo,
-// "Panel en Lamas 22mm".
-const DOOR_LAMAS_EXTERIOR_PRODUCT_IDS = new Set([4108, 3637, 4227, 3756]);
-const DOOR_LAMAS_INTERIOR_PRODUCT_IDS = new Set([4061, 3590]);
+const DOOR_LAMAS_EXTERIOR_PRODUCT_IDS = new Set([4108, 3637]);
+// 4061/3590 = "Panel en Lamas 22mm" viejo (discontinuado en Odoo, se deja por
+// compatibilidad con presupuestos ya guardados con ese producto). 4227/3756 = su
+// reemplazo, mismo nombre "Panel en Lamas 22mm".
+const DOOR_LAMAS_INTERIOR_PRODUCT_IDS = new Set([4061, 3590, 4227, 3756]);
 
 const DOOR_PANEL_CONFIGS = {
   exterior: {
