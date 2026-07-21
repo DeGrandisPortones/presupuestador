@@ -22,19 +22,23 @@ const PLACEHOLDER_PRODUCT_ID = Number(
   process.env.ODOO_PLACEHOLDER_PRODUCT_ID || 3575,
 );
 function parseMeasurementProductIds(raw) {
-  return String(raw || "2865,2961")
+  return String(raw || "2865,2961,4229")
     .split(",")
     .map((item) => Number(String(item || "").trim()))
     .filter((item) => Number.isFinite(item) && item > 0);
 }
 
+// 4229 = "Servicio de Medicion y Relevamiento" de Puertas (duplicado dedicado, antes
+// compartia el 2961 con Portones).
 const MEASUREMENT_PRODUCT_IDS = parseMeasurementProductIds(
   process.env.ODOO_MEASUREMENT_PRODUCT_IDS ||
     process.env.ODOO_MEASUREMENT_PRODUCT_ID ||
-    "2865,2961",
+    "2865,2961,4229",
 );
 const IVA_RATE = 0.21;
-const SHIPPING_PRODUCT_IDS = new Set([2842]);
+// 4230 = "Servicio de Traslado a destino" de Puertas (duplicado dedicado, antes
+// compartia el 2842 con Portones).
+const SHIPPING_PRODUCT_IDS = new Set([2842, 4230]);
 // El envío (2842) lo sigue cobrando De Grandis al distribuidor, a diferencia del
 // resto de esta lista que sí provee el distribuidor por su cuenta: no debe ir a $0
 // en la orden real de Odoo. Mismo criterio ya aplicado en quotes.routes.js.

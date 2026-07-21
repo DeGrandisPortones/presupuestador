@@ -12,7 +12,9 @@ const EMPTY_CUSTOMER = {
 };
 
 const INTEGER_QTY_PRODUCT_IDS = new Set([3582, 3251]);
-const SHIPPING_PRODUCT_IDS = new Set([2842]);
+// 4230 = "Servicio de Traslado a destino" de Puertas (duplicado dedicado, antes
+// compartia el 2842 con Portones).
+const SHIPPING_PRODUCT_IDS = new Set([2842, 4230]);
 // Porton Coplanar (3008) / Clasico (3009): para vendedores, el precio base real
 // SIEMPRE lleva la Instalacion sumada (ver CotizadorPage/index.jsx, SECTION_37_*).
 // Esa suma solo se puede saber despues de pedirle el precio a Odoo - si al agregar
@@ -23,7 +25,7 @@ const SHIPPING_PRODUCT_IDS = new Set([2842]);
 const FORCE_PENDING_PRICE_PRODUCT_IDS = new Set([3008, 3009]);
 // Productos que el distribuidor puede valorizar para su presupuesto al cliente,
 // pero que De Grandis no debe cobrar: en proforma/Odoo van siempre a $0.
-const DISTRIBUTOR_OWN_SUPPLY_PRODUCT_IDS = new Set([2842, 3956, 3957, 3961, 3962, 3963, 3966, 4037, 3991, 3992, 3993, 3994, 3995, 3996, 3485, 3486, 3490, 3491, 3492, 3495, 3566, 3520, 3521, 3522, 3523, 3524, 3525]);
+const DISTRIBUTOR_OWN_SUPPLY_PRODUCT_IDS = new Set([2842, 4230, 3956, 3957, 3961, 3962, 3963, 3966, 4037, 3991, 3992, 3993, 3994, 3995, 3996, 3485, 3486, 3490, 3491, 3492, 3495, 3566, 3520, 3521, 3522, 3523, 3524, 3525]);
 
 function normMarginInput(v) {
   return String(v ?? "").replace(",", ".").trim();

@@ -267,11 +267,13 @@ function resolveLinePricingProductId(line) {
   }
   return 0;
 }
-const SHIPPING_PRODUCT_IDS = new Set([2842]);
+// 4230 = "Servicio de Traslado a destino" de Puertas (duplicado dedicado, antes
+// compartia el 2842 con Portones).
+const SHIPPING_PRODUCT_IDS = new Set([2842, 4230]);
 // Productos que el distribuidor puede cotizar al cliente, pero que en proforma/Odoo
-// se informan a $0 porque los provee/cobra directamente el distribuidor. Envio (2842) no va a $0.
+// se informan a $0 porque los provee/cobra directamente el distribuidor. Envio (2842/4230) no va a $0.
 const DISTRIBUTOR_OWN_SUPPLY_PRODUCT_IDS = new Set([3956, 3957, 3961, 3962, 3963, 3966, 4037, 3991, 3992, 3993, 3994, 3995, 3996, 3485, 3486, 3490, 3491, 3492, 3495, 3566, 3520, 3521, 3522, 3523, 3524, 3525]);
-const STABLE_EDITABLE_QTY_PRODUCT_IDS = new Set([2842, 2927]);
+const STABLE_EDITABLE_QTY_PRODUCT_IDS = new Set([2842, 2927, 4230]);
 
 function dflexCotizadorDebugEnabled() {
   try {

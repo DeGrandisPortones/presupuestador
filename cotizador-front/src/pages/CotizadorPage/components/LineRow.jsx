@@ -5,11 +5,13 @@ import { useAuthStore } from "../../../domain/auth/store.js";
 
 const SYSTEM_PRODUCT_IDS = new Set([3008, 3009]);
 const INTEGER_QTY_PRODUCT_IDS = new Set([3582, 3251]);
-const SHIPPING_PRODUCT_IDS = new Set([2842]);
+// 4230 = "Servicio de Traslado a destino" de Puertas (duplicado dedicado, antes
+// compartia el 2842 con Portones).
+const SHIPPING_PRODUCT_IDS = new Set([2842, 4230]);
 // Revestimientos propios del distribuidor: se cobran en el presupuesto al cliente,
-// pero no en proforma/Odoo. Envio (2842) queda fuera: usa precio de lista y cantidad editable.
+// pero no en proforma/Odoo. Envio (2842/4230) queda fuera: usa precio de lista y cantidad editable.
 const DISTRIBUTOR_OWN_SUPPLY_PRODUCT_IDS = new Set([3956, 3957, 3961, 3962, 3963, 3966, 4037, 3991, 3992, 3993, 3994, 3995, 3996, 3485, 3486, 3490, 3491, 3492, 3495, 3566, 3520, 3521, 3522, 3523, 3524, 3525]);
-const STABLE_EDITABLE_QTY_PRODUCT_IDS = new Set([2842, 2927]);
+const STABLE_EDITABLE_QTY_PRODUCT_IDS = new Set([2842, 2927, 4230]);
 
 function isStableEditableQtyLine(line) {
   const ids = [line?.product_id, line?.odoo_id, line?.odoo_template_id, line?.odoo_variant_id, line?.odoo_external_id];

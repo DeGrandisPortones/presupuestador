@@ -10,16 +10,18 @@ import {
 } from "../settingsDb.js";
 
 function parseMeasurementProductIds(raw) {
-  return String(raw || "2865,2961")
+  return String(raw || "2865,2961,4229")
     .split(",")
     .map((item) => Number(String(item || "").trim()))
     .filter((item) => Number.isFinite(item) && item > 0);
 }
 
+// 4229 = "Servicio de Medicion y Relevamiento" de Puertas (duplicado dedicado, antes
+// compartia el 2961 con Portones).
 const MEASUREMENT_PRODUCT_IDS = parseMeasurementProductIds(
   process.env.ODOO_MEASUREMENT_PRODUCT_IDS ||
     process.env.ODOO_MEASUREMENT_PRODUCT_ID ||
-    "2865,2961",
+    "2865,2961,4229",
 );
 const PREVIOUSLY_BILLED_PRODUCT_ID = -900001;
 const DEFAULT_RETURN_REASON = "El tamaño del portón es mayor al presupuestado originalmente";
