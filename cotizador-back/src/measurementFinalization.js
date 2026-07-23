@@ -1,4 +1,5 @@
 import { randomBytes } from "crypto";
+import axios from "axios";
 import { dbQuery } from "./db.js";
 import {
   getCommercialFinalToleranceAreaM2,
@@ -532,6 +533,58 @@ async function buildPreproduccionPayload({ originalQuote, sourceQuote, revisionQ
     ...sectionValues,
   };
 }
+// URL base del backend de Planificación Planta. Configurable por env porque ya
+// migró de host una vez (Render) y puede volver a pasar.
+const PLANTA_API_BASE = String(
+  process.env.PLANTA_API_BASE || "https://planificacion-uprm.onrender.com",
+).replace(/\/+$/, "");
+
+function getFieldCI(obj, keys) {
+  for (const k of keys) {
+    const v = obj?.[k];
+    if (v !== null && v !== undefined && String(v).trim() !== "") return v;
+  }
+  return null;
+}
+
+// Cuando el cliente acepta el presupuesto final, el portón debe entrar solo al
+// flujo de producción de Planta (fecha_prod = fecha de aceptación), sin que
+// nadie tenga que cargarla a mano en "Autorizaciones · Preproducción Portones".
+// Reusa el mismo endpoint público POST /portones que ya usa esa pantalla, así
+// la lógica de creación/ruteo inicial de etapas vive en un solo lugar (Planta).
+async function autoCreatePortonFromClientAcceptance({ nv, nvTipo, finalPayload, acceptedAt }) {
+  if (!acceptedAt) return { ok: false, skipped: true, reason: "no_accepted_at" };
+  if (nvTipo === "INV") return { ok: false, skipped: true, reason: "ipanel_no_aplica" };
+
+  const fecha10 = formatDateOnly(acceptedAt);
+  if (!fecha10) return { ok: false, skipped: true, reason: "invalid_date" };
+
+  const nlista = Number(getFieldCI(finalPayload, ["NLista", "nlista", "NLISTA"])) || nv;
+  const partidaRaw = Number(getFieldCI(finalPayload, ["PARTIDA", "partida", "Partida"]));
+  const partida = Number.isInteger(partidaRaw) ? partidaRaw : 800;
+  const sistemaRaw = getFieldCI(finalPayload, ["Sistema", "sistema", "SISTEMA", "Sistemas", "sistemas"]);
+  const sistema = sistemaRaw ? String(sistemaRaw).trim() : null;
+
+  try {
+    await axios.post(
+      `${PLANTA_API_BASE}/portones`,
+      { nv, nlista, partida, fecha_prod: fecha10, sistema, nv_tipo: nvTipo },
+      { timeout: 15000 },
+    );
+    return { ok: true };
+  } catch (err) {
+    if (err?.response?.status === 409) {
+      // Ya existe (ej. resync manual sobre un NV ya creado): no es un error.
+      return { ok: true, already_exists: true };
+    }
+    console.error(
+      "[measurementFinalization] auto-creación de portón en Planta falló:",
+      err?.response?.data || err.message,
+    );
+    return { ok: false, error: err?.response?.data?.error || err.message };
+  }
+}
+
 async function upsertPreproduccionValoresForNv({ originalQuote, sourceQuote, revisionQuote, order, metrics, generatedLines, odoo }) {
   const basePayload = await buildPreproduccionPayload({
     originalQuote,
@@ -639,12 +692,20 @@ async function upsertPreproduccionValoresForNv({ originalQuote, sourceQuote, rev
     [nv, nvTipo, JSON.stringify(finalPayload), JSON.stringify(nvLines)],
   );
 
+  const autoPorton = await autoCreatePortonFromClientAcceptance({
+    nv,
+    nvTipo,
+    finalPayload,
+    acceptedAt: originalQuote?.measurement_client_accepted_at,
+  });
+
   return {
     ok: true,
     id: q.rows?.[0]?.id ?? null,
     nv: q.rows?.[0]?.nv ?? nv,
     nv_tipo: q.rows?.[0]?.nv_tipo ?? nvTipo,
     updated_at: q.rows?.[0]?.updated_at || null,
+    auto_porton: autoPorton,
   };
 }
 function getPayloadConditionMode(payload) {
