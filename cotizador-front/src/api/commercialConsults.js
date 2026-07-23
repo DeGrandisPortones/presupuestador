@@ -29,6 +29,7 @@ export async function getCommercialConsult(id) {
 export async function createCommercialConsult(payload = {}) {
   const { data } = await http.post("/api/commercial-consults", payload || {});
   if (!data?.ok) throw new Error(data?.error || "No se pudo crear la consulta comercial");
+  if (data.bulk) return { bulk: true, audience: data.audience, count: data.count, tickets: data.tickets || [] };
   return data.ticket;
 }
 

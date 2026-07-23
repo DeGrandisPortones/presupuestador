@@ -29,6 +29,7 @@ export async function getTechnicalConsult(id) {
 export async function createTechnicalConsult(payload = {}) {
   const { data } = await http.post("/api/technical-consults", payload || {});
   if (!data?.ok) throw new Error(data?.error || "No se pudo crear la consulta técnica");
+  if (data.bulk) return { bulk: true, audience: data.audience, count: data.count, tickets: data.tickets || [] };
   return data.ticket;
 }
 

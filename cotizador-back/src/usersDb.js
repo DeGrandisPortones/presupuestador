@@ -101,6 +101,24 @@ export async function searchActiveRequesters({ q = "" } = {}) {
   return r.rows || [];
 }
 
+export async function listActiveRequestersByAudience(audience) {
+  const cond =
+    audience === "vendedores"
+      ? "coalesce(is_vendedor, false) = true"
+      : audience === "distribuidores"
+      ? "coalesce(is_distribuidor, false) = true"
+      : "(coalesce(is_vendedor, false) = true or coalesce(is_distribuidor, false) = true)";
+
+  const r = await dbQuery(`
+    select id, username, full_name, is_vendedor, is_distribuidor
+      from public.presupuestador_users
+     where coalesce(is_active, true) = true
+       and ${cond}
+     order by coalesce(nullif(full_name, ''), username) asc
+  `);
+  return r.rows || [];
+}
+
 export async function getActiveRequesterById(id) {
   const uid = Number(id || 0);
   if (!uid) return null;

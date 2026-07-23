@@ -1,5 +1,5 @@
 import { dbQuery, getPool } from "./db.js";
-import { getActiveRequesterById } from "./usersDb.js";
+import { getActiveRequesterById, listActiveRequestersByAudience } from "./usersDb.js";
 
 let ensured = false;
 
@@ -39,6 +39,12 @@ function ticketStatusLabel(status) {
 function toId(value) {
   const n = Number(value || 0);
   return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
+function normalizeAudience(value) {
+  const v = String(value || "target").trim().toLowerCase();
+  if (["vendedores", "distribuidores", "todos"].includes(v)) return v;
+  return "target";
 }
 
 function canAccessTicket(user, ticket) {
@@ -330,7 +336,60 @@ export async function getTechnicalConsultDetail(user, id) {
   };
 }
 
-export async function createTechnicalConsult(user, { subject, message, target_user_id } = {}) {
+async function insertTechnicalTicket(client, {
+  creatorUserId,
+  targetUserId,
+  assignedToUserId,
+  status,
+  subject,
+  message,
+  authorRole,
+  requesterLastReadAt,
+  technicalLastReadAt,
+  now,
+}) {
+  const createdTicket = await client.query(
+    `
+      insert into public.presupuestador_technical_tickets (
+        created_by_user_id,
+        on_behalf_of_user_id,
+        assigned_to_user_id,
+        status,
+        subject,
+        requester_last_read_at,
+        technical_last_read_at,
+        last_message_at,
+        last_message_by_user_id,
+        created_at,
+        updated_at
+      )
+      values ($1, $2, $3, $4, $5, $6, $7, $8, $1, $8, $8)
+      returning id
+    `,
+    [creatorUserId, targetUserId, assignedToUserId, status, subject, requesterLastReadAt, technicalLastReadAt, now]
+  );
+  const ticketIdValue = Number(createdTicket.rows?.[0]?.id || 0);
+  if (!ticketIdValue) throw new Error("No se pudo crear la consulta técnica");
+
+  await client.query(
+    `
+      insert into public.presupuestador_technical_ticket_messages (
+        ticket_id,
+        author_user_id,
+        author_role,
+        message_text,
+        message_type,
+        created_at
+      )
+      values ($1, $2, $3, $4, 'message', $5)
+    `,
+    [ticketIdValue, creatorUserId, authorRole, message, now]
+  );
+
+  return ticketIdValue;
+}
+
+export async function createTechnicalConsult(user, { subject, message, target_user_id, audience } = {}) {
   await ensureTechnicalConsultTables();
   const staffCreating = isTechnicalUser(user);
   if (!staffCreating && !isRequesterUser(user)) {
@@ -342,6 +401,41 @@ export async function createTechnicalConsult(user, { subject, message, target_us
   if (!cleanSubject) throw new Error("Falta asunto");
   if (!cleanMessage) throw new Error("Falta mensaje");
 
+  const userId = toId(user?.user_id || user?.id);
+  const normalizedAudience = staffCreating ? normalizeAudience(audience) : "target";
+
+  if (staffCreating && normalizedAudience !== "target") {
+    const targets = await listActiveRequestersByAudience(normalizedAudience);
+    if (!targets.length) throw new Error("No hay destinatarios activos para el envío masivo");
+
+    const now = new Date().toISOString();
+    const ticketIds = await withTx(async (client) => {
+      const ids = [];
+      for (const target of targets) {
+        const id = await insertTechnicalTicket(client, {
+          creatorUserId: userId,
+          targetUserId: target.id,
+          assignedToUserId: userId,
+          status: "in_progress",
+          subject: cleanSubject,
+          message: cleanMessage,
+          authorRole: "rev_tecnica",
+          requesterLastReadAt: null,
+          technicalLastReadAt: now,
+          now,
+        });
+        ids.push(id);
+      }
+      return ids;
+    });
+
+    const tickets = [];
+    for (const id of ticketIds) {
+      tickets.push(await getTechnicalConsultDetail(user, id));
+    }
+    return { bulk: true, audience: normalizedAudience, count: tickets.length, tickets };
+  }
+
   let targetUserId = null;
   if (staffCreating) {
     targetUserId = toId(target_user_id);
@@ -350,7 +444,6 @@ export async function createTechnicalConsult(user, { subject, message, target_us
     if (!target) throw new Error("Vendedor o distribuidor no encontrado o inactivo");
   }
 
-  const userId = toId(user?.user_id || user?.id);
   const now = new Date().toISOString();
   const authorRole = staffCreating ? "rev_tecnica" : requesterRoleForUser(user);
   const initialStatus = staffCreating ? "in_progress" : "pending";
@@ -358,47 +451,20 @@ export async function createTechnicalConsult(user, { subject, message, target_us
   const technicalLastReadAt = staffCreating ? now : null;
   const assignedToUserId = staffCreating ? userId : null;
 
-  const ticketId = await withTx(async (client) => {
-    const createdTicket = await client.query(
-      `
-        insert into public.presupuestador_technical_tickets (
-          created_by_user_id,
-          on_behalf_of_user_id,
-          assigned_to_user_id,
-          status,
-          subject,
-          requester_last_read_at,
-          technical_last_read_at,
-          last_message_at,
-          last_message_by_user_id,
-          created_at,
-          updated_at
-        )
-        values ($1, $2, $3, $4, $5, $6, $7, $8, $1, $8, $8)
-        returning id
-      `,
-      [userId, targetUserId, assignedToUserId, initialStatus, cleanSubject, requesterLastReadAt, technicalLastReadAt, now]
-    );
-    const ticketIdValue = Number(createdTicket.rows?.[0]?.id || 0);
-    if (!ticketIdValue) throw new Error("No se pudo crear la consulta técnica");
-
-    await client.query(
-      `
-        insert into public.presupuestador_technical_ticket_messages (
-          ticket_id,
-          author_user_id,
-          author_role,
-          message_text,
-          message_type,
-          created_at
-        )
-        values ($1, $2, $3, $4, 'message', $5)
-      `,
-      [ticketIdValue, userId, authorRole, cleanMessage, now]
-    );
-
-    return ticketIdValue;
-  });
+  const ticketId = await withTx((client) =>
+    insertTechnicalTicket(client, {
+      creatorUserId: userId,
+      targetUserId,
+      assignedToUserId,
+      status: initialStatus,
+      subject: cleanSubject,
+      message: cleanMessage,
+      authorRole,
+      requesterLastReadAt,
+      technicalLastReadAt,
+      now,
+    })
+  );
 
   return getTechnicalConsultDetail(user, ticketId);
 }

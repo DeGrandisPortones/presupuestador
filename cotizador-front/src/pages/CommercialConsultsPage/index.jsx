@@ -89,12 +89,15 @@ export default function CommercialConsultsPage() {
   const [targetResults, setTargetResults] = useState([]);
   const [targetSearching, setTargetSearching] = useState(false);
   const [selectedTarget, setSelectedTarget] = useState(null);
+  const [audienceMode, setAudienceMode] = useState("target");
+  const [bulkNotice, setBulkNotice] = useState("");
 
   function closeNewForm() {
     setShowNewForm(false);
     setSelectedTarget(null);
     setTargetSearch("");
     setTargetResults([]);
+    setAudienceMode("target");
   }
 
   useEffect(() => {
@@ -197,17 +200,30 @@ export default function CommercialConsultsPage() {
     mutationFn: () =>
       createCommercialConsult(
         isCommercial
-          ? { subject, message: newMessage, target_user_id: selectedTarget?.id }
+          ? audienceMode === "target"
+            ? { subject, message: newMessage, target_user_id: selectedTarget?.id }
+            : { subject, message: newMessage, audience: audienceMode }
           : { subject, message: newMessage }
       ),
-    onSuccess: (ticket) => {
+    onSuccess: (result) => {
       setSubject("");
       setNewMessage("");
-      setSelectedId(ticket.id);
       closeNewForm();
       qc.invalidateQueries({ queryKey: ["commercialConsults"] });
       qc.invalidateQueries({ queryKey: ["commercialConsultUnreadSummary"] });
-      qc.setQueryData(["commercialConsult", ticket.id], ticket);
+      if (result?.bulk) {
+        const audienceLabel = result.audience === "vendedores" ? "vendedores" : "distribuidores";
+        setBulkNotice(`Se creó ${result.count} ticket(s) para todos los ${audienceLabel}.`);
+        const first = result.tickets?.[0];
+        if (first) {
+          setSelectedId(first.id);
+          qc.setQueryData(["commercialConsult", first.id], first);
+        }
+      } else {
+        setBulkNotice("");
+        setSelectedId(result.id);
+        qc.setQueryData(["commercialConsult", result.id], result);
+      }
     },
   });
 
@@ -322,74 +338,121 @@ export default function CommercialConsultsPage() {
             <>
               <div className="spacer" />
               <div style={{ border: "1px solid #eee", borderRadius: 14, padding: 12 }}>
-                <div className="muted" style={{ marginBottom: 6 }}>Nuevo ticket a vendedor/distribuidor</div>
+                <div className="muted" style={{ marginBottom: 6 }}>Nuevo ticket</div>
 
-                {!selectedTarget ? (
-                  <>
-                    <Input
-                      value={targetSearch}
-                      onChange={setTargetSearch}
-                      placeholder="Buscar vendedor o distribuidor (mín. 2 letras)"
-                      style={{ width: "100%" }}
-                      autoFocus
-                    />
-                    <div style={{ height: 8 }} />
-                    {targetSearching ? <div className="muted" style={{ fontSize: 13 }}>Buscando…</div> : null}
-                    {!targetSearching && targetSearch.trim().length >= 2 && !targetResults.length ? (
-                      <div className="muted" style={{ fontSize: 13 }}>Sin resultados.</div>
-                    ) : null}
-                    {!targetSearching && targetResults.length ? (
-                      <div style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: 220, overflowY: "auto" }}>
-                        {targetResults.map((r) => (
-                          <button
-                            key={r.id}
-                            type="button"
-                            onClick={() => {
-                              setSelectedTarget(r);
-                              setTargetResults([]);
-                              setTargetSearch("");
-                            }}
-                            style={{
-                              textAlign: "left",
-                              border: "1px solid #e6e6e6",
-                              background: "#fff",
-                              borderRadius: 10,
-                              padding: "8px 10px",
-                              cursor: "pointer",
-                            }}
-                          >
-                            <div style={{ fontWeight: 700 }}>{r.full_name || r.username}</div>
-                            <div className="muted" style={{ fontSize: 12 }}>
-                              {r.is_distribuidor ? "Distribuidor" : "Vendedor"} · {r.username}
-                            </div>
-                          </button>
-                        ))}
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
+                  <Button
+                    variant={audienceMode === "target" ? "primary" : "ghost"}
+                    onClick={() => setAudienceMode("target")}
+                  >
+                    Puntual
+                  </Button>
+                  <Button
+                    variant={audienceMode === "vendedores" ? "primary" : "ghost"}
+                    onClick={() => setAudienceMode("vendedores")}
+                  >
+                    Todos los vendedores
+                  </Button>
+                  <Button
+                    variant={audienceMode === "distribuidores" ? "primary" : "ghost"}
+                    onClick={() => setAudienceMode("distribuidores")}
+                  >
+                    Todos los distribuidores
+                  </Button>
+                </div>
+
+                {audienceMode === "target" ? (
+                  !selectedTarget ? (
+                    <>
+                      <Input
+                        value={targetSearch}
+                        onChange={setTargetSearch}
+                        placeholder="Buscar vendedor o distribuidor (mín. 2 letras)"
+                        style={{ width: "100%" }}
+                        autoFocus
+                      />
+                      <div style={{ height: 8 }} />
+                      {targetSearching ? <div className="muted" style={{ fontSize: 13 }}>Buscando…</div> : null}
+                      {!targetSearching && targetSearch.trim().length >= 2 && !targetResults.length ? (
+                        <div className="muted" style={{ fontSize: 13 }}>Sin resultados.</div>
+                      ) : null}
+                      {!targetSearching && targetResults.length ? (
+                        <div style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: 220, overflowY: "auto" }}>
+                          {targetResults.map((r) => (
+                            <button
+                              key={r.id}
+                              type="button"
+                              onClick={() => {
+                                setSelectedTarget(r);
+                                setTargetResults([]);
+                                setTargetSearch("");
+                              }}
+                              style={{
+                                textAlign: "left",
+                                border: "1px solid #e6e6e6",
+                                background: "#fff",
+                                borderRadius: 10,
+                                padding: "8px 10px",
+                                cursor: "pointer",
+                              }}
+                            >
+                              <div style={{ fontWeight: 700 }}>{r.full_name || r.username}</div>
+                              <div className="muted" style={{ fontSize: 12 }}>
+                                {r.is_distribuidor ? "Distribuidor" : "Vendedor"} · {r.username}
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                      ) : null}
+                    </>
+                  ) : (
+                    <>
+                      <div
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "center",
+                          gap: 8,
+                          border: "1px solid #01a39f",
+                          borderRadius: 10,
+                          padding: "8px 10px",
+                          background: "rgba(1,163,159,0.06)",
+                        }}
+                      >
+                        <div>
+                          <div style={{ fontWeight: 700 }}>{selectedTarget.full_name || selectedTarget.username}</div>
+                          <div className="muted" style={{ fontSize: 12 }}>
+                            {selectedTarget.is_distribuidor ? "Distribuidor" : "Vendedor"} · {selectedTarget.username}
+                          </div>
+                        </div>
+                        <Button variant="ghost" onClick={() => setSelectedTarget(null)}>Cambiar</Button>
                       </div>
-                    ) : null}
-                  </>
+                      <div style={{ height: 8 }} />
+                      <Input value={subject} onChange={setSubject} placeholder="Asunto" style={{ width: "100%" }} />
+                      <div style={{ height: 8 }} />
+                      <textarea
+                        value={newMessage}
+                        onChange={(e) => setNewMessage(e.target.value)}
+                        placeholder="Describí la consulta comercial"
+                        style={{ width: "100%", minHeight: 120, padding: 10, borderRadius: 10, border: "1px solid #ddd", resize: "vertical" }}
+                      />
+                      <div style={{ height: 8 }} />
+                      <Button
+                        onClick={() => createM.mutate()}
+                        disabled={createM.isPending || !subject.trim() || !newMessage.trim()}
+                      >
+                        {createM.isPending ? "Creando…" : "Crear ticket"}
+                      </Button>
+                      {createM.isError ? <div style={{ color: "#d93025", fontSize: 13, marginTop: 8 }}>{createM.error.message}</div> : null}
+                    </>
+                  )
                 ) : (
                   <>
-                    <div
-                      style={{
-                        display: "flex",
-                        justifyContent: "space-between",
-                        alignItems: "center",
-                        gap: 8,
-                        border: "1px solid #01a39f",
-                        borderRadius: 10,
-                        padding: "8px 10px",
-                        background: "rgba(1,163,159,0.06)",
-                      }}
-                    >
-                      <div>
-                        <div style={{ fontWeight: 700 }}>{selectedTarget.full_name || selectedTarget.username}</div>
-                        <div className="muted" style={{ fontSize: 12 }}>
-                          {selectedTarget.is_distribuidor ? "Distribuidor" : "Vendedor"} · {selectedTarget.username}
-                        </div>
-                      </div>
-                      <Button variant="ghost" onClick={() => setSelectedTarget(null)}>Cambiar</Button>
+                    <div className="muted" style={{ fontSize: 13, marginBottom: 8 }}>
+                      {audienceMode === "vendedores"
+                        ? "Se creará un ticket individual para cada vendedor activo."
+                        : "Se creará un ticket individual para cada distribuidor activo."}
                     </div>
-                    <div style={{ height: 8 }} />
                     <Input value={subject} onChange={setSubject} placeholder="Asunto" style={{ width: "100%" }} />
                     <div style={{ height: 8 }} />
                     <textarea
@@ -403,11 +466,44 @@ export default function CommercialConsultsPage() {
                       onClick={() => createM.mutate()}
                       disabled={createM.isPending || !subject.trim() || !newMessage.trim()}
                     >
-                      {createM.isPending ? "Creando…" : "Crear ticket"}
+                      {createM.isPending
+                        ? "Enviando…"
+                        : audienceMode === "vendedores"
+                        ? "Enviar a todos los vendedores"
+                        : "Enviar a todos los distribuidores"}
                     </Button>
                     {createM.isError ? <div style={{ color: "#d93025", fontSize: 13, marginTop: 8 }}>{createM.error.message}</div> : null}
                   </>
                 )}
+              </div>
+            </>
+          ) : null}
+
+          {isCommercial && bulkNotice ? (
+            <>
+              <div className="spacer" />
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  gap: 8,
+                  border: "1px solid #1f7a45",
+                  background: "#eaf8ef",
+                  color: "#1f7a45",
+                  borderRadius: 10,
+                  padding: "8px 12px",
+                  fontSize: 13,
+                }}
+              >
+                <span>{bulkNotice}</span>
+                <button
+                  type="button"
+                  onClick={() => setBulkNotice("")}
+                  style={{ background: "none", border: "none", cursor: "pointer", color: "#1f7a45", fontWeight: 800 }}
+                >
+                  ×
+                </button>
               </div>
             </>
           ) : null}

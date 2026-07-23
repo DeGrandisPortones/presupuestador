@@ -54,8 +54,12 @@ export function buildCommercialConsultsRouter() {
 
   router.post("/", async (req, res, next) => {
     try {
-      const ticket = await createCommercialConsult(req.user, req.body || {});
-      res.json({ ok: true, ticket });
+      const result = await createCommercialConsult(req.user, req.body || {});
+      if (result?.bulk) {
+        res.json({ ok: true, bulk: true, audience: result.audience, count: result.count, tickets: result.tickets });
+      } else {
+        res.json({ ok: true, ticket: result });
+      }
     } catch (err) {
       next(err);
     }
