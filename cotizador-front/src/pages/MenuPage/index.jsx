@@ -39,6 +39,7 @@ export default function MenuPage() {
   const showTechInbox = !!(isSuperuser || user?.is_rev_tecnica);
   const showDoors = !!(isSuperuser || user?.is_vendedor || user?.is_distribuidor);
   const showMyDistributors = !!(isSuperuser || user?.is_enc_comercial || (user?.is_vendedor && !user?.is_distribuidor));
+  const showMyCommissions = !!(user?.is_vendedor && !user?.is_distribuidor);
   const showMediciones = !!(isSuperuser || user?.is_medidor);
   const showTechnicalRules = !!isSuperuser;
   const showQuoteViewer = !!isSuperuser;
@@ -119,6 +120,15 @@ export default function MenuPage() {
             title="Mis distribuidores"
             buttonText="Ver distribuidores"
             onClick={() => navigate("/mis-distribuidores")}
+            icon=""
+          />
+        )}
+
+        {showMyCommissions && (
+          <MenuTile
+            title="Mis comisiones"
+            buttonText="Ver comisiones"
+            onClick={() => navigate("/mis-comisiones")}
             icon=""
           />
         )}
