@@ -119,7 +119,7 @@ export async function loadCatalogBootstrap(odoo, kind = "porton") {
     const inheritedAlias = cleanText(inheritedAliasMap.get(productId) || "");
     const alias = ownAlias || inheritedAlias;
     const odooName = cleanText(product?.name);
-    const visibility = visibilityMap.get(productId) || { disable_for_vendedor: false, disable_for_distribuidor: false };
+    const visibility = visibilityMap.get(productId) || { disable_for_vendedor: false, disable_for_distribuidor: false, no_permanent_stock: false };
     const tagIds = productTagIds(product);
     const sectionIds = [...new Set(tagIds.map((tagId) => resolveSectionIdForTag(tagId)).filter(Boolean).map(Number))];
     const sectionNames = sectionIds.map((sectionId) => sectionById.get(Number(sectionId))?.name).filter(Boolean);
@@ -140,6 +140,7 @@ export async function loadCatalogBootstrap(odoo, kind = "porton") {
       uses_surface_quantity: usesSurfaceQuantity,
       disable_for_vendedor: !!visibility.disable_for_vendedor,
       disable_for_distribuidor: !!visibility.disable_for_distribuidor,
+      no_permanent_stock: !!visibility.no_permanent_stock,
     };
   });
 

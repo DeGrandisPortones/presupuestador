@@ -280,6 +280,7 @@ export default function SuperuserPuertasCatalogPage() {
                   <th style={thStyle}>Alias presupuestador</th>
                   <th style={thStyle}>Secciones / tags</th>
                   <th style={thStyle}>Visibilidad</th>
+                  <th style={thStyle}>Sin stock permanente</th>
                 </tr>
               </thead>
               <tbody>
@@ -428,13 +429,15 @@ function EditableSectionRow({ section, qc }) {
 function ProductConfigRow({ product, qc }) {
   const [alias, setAlias] = useState(product.alias || product.internal_alias || "");
   const [visibility, setVisibility] = useState(visibilityFromProduct(product));
+  const [noPermanentStock, setNoPermanentStock] = useState(!!product.no_permanent_stock);
   const [savingAlias, setSavingAlias] = useState(false);
   const [savingVisibility, setSavingVisibility] = useState(false);
 
   useEffect(() => {
     setAlias(product.alias || product.internal_alias || "");
     setVisibility(visibilityFromProduct(product));
-  }, [product.id, product.alias, product.internal_alias, product.disable_for_vendedor, product.disable_for_distribuidor]);
+    setNoPermanentStock(!!product.no_permanent_stock);
+  }, [product.id, product.alias, product.internal_alias, product.disable_for_vendedor, product.disable_for_distribuidor, product.no_permanent_stock]);
 
   return (
     <tr>
@@ -478,7 +481,7 @@ function ProductConfigRow({ product, qc }) {
         <Button variant="secondary" disabled={savingVisibility} onClick={async () => {
           setSavingVisibility(true);
           try {
-            await adminSetProductVisibility(KIND, product.id, visibilityPayload(visibility));
+            await adminSetProductVisibility(KIND, product.id, { ...visibilityPayload(visibility), no_permanent_stock: noPermanentStock });
             await qc.invalidateQueries({ queryKey: ["adminCatalog", KIND] });
             toast.success("Visibilidad guardada.");
           } catch (e) {
@@ -487,6 +490,12 @@ function ProductConfigRow({ product, qc }) {
             setSavingVisibility(false);
           }
         }}>Guardar visibilidad</Button>
+      </td>
+      <td style={tdStyle}>
+        <label style={{ display: "flex", alignItems: "center", gap: 6, whiteSpace: "nowrap" }}>
+          <input type="checkbox" checked={noPermanentStock} onChange={(e) => setNoPermanentStock(e.target.checked)} />
+          <span className="muted" style={{ fontSize: 12 }}>Sin stock permanente</span>
+        </label>
       </td>
     </tr>
   );

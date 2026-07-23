@@ -802,6 +802,7 @@ function AliasesTab({ catalogKind, products, productQuery, setProductQuery, sect
               <th style={thStyle}>Producto</th>
               <th style={thStyle}>Alias visible</th>
               <th style={thStyle}>Visibilidad</th>
+              <th style={thStyle}>Sin stock permanente</th>
               <th style={thStyle}>Acción</th>
             </tr>
           </thead>
@@ -818,10 +819,12 @@ function AliasesTab({ catalogKind, products, productQuery, setProductQuery, sect
 function AliasRow({ catalogKind, product, invalidateCatalog }) {
   const [alias, setAlias] = useState(product.alias || product.internal_alias || "");
   const [visibility, setVisibility] = useState(visibilityModeFromProduct(product));
+  const [noPermanentStock, setNoPermanentStock] = useState(!!product.no_permanent_stock);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => setAlias(product.alias || product.internal_alias || ""), [product.id, product.alias, product.internal_alias]);
   useEffect(() => setVisibility(visibilityModeFromProduct(product)), [product]);
+  useEffect(() => setNoPermanentStock(!!product.no_permanent_stock), [product.id, product.no_permanent_stock]);
 
   return (
     <tr>
@@ -845,6 +848,12 @@ function AliasRow({ catalogKind, product, invalidateCatalog }) {
         </select>
       </td>
       <td style={tdStyle}>
+        <label style={{ display: "flex", alignItems: "center", gap: 6, whiteSpace: "nowrap" }}>
+          <input type="checkbox" checked={noPermanentStock} onChange={(event) => setNoPermanentStock(event.target.checked)} />
+          <span className="muted" style={{ fontSize: 12 }}>Sin stock permanente</span>
+        </label>
+      </td>
+      <td style={tdStyle}>
         <Button
           variant="primary"
           disabled={saving}
@@ -852,7 +861,7 @@ function AliasRow({ catalogKind, product, invalidateCatalog }) {
             setSaving(true);
             try {
               await adminSetProductAlias(catalogKind, product.id, alias);
-              await adminSetProductVisibility(catalogKind, product.id, flagsFromVisibilityMode(visibility));
+              await adminSetProductVisibility(catalogKind, product.id, { ...flagsFromVisibilityMode(visibility), no_permanent_stock: noPermanentStock });
               invalidateCatalog();
               alert("Producto actualizado.");
             } finally {

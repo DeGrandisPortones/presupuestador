@@ -379,6 +379,12 @@ export default function PuertaCatalog() {
 
     addLine({ ...product, name: getProductLabel(product), raw_name: getClientFacingProductName(product) });
 
+    if (product?.no_permanent_stock) {
+      window.alert(
+        "El producto seleccionado no se encuentra en stock permanente. Los tiempos de producción pueden extenderse considerablemente."
+      );
+    }
+
     const nextOrderedIds = computeVisibleDoorSectionIds({
       sections,
       initialSectionId,
@@ -452,7 +458,26 @@ export default function PuertaCatalog() {
                         return (
                           <div key={product.id} className="dg-product-card" style={disabledForUser ? { opacity: 0.55, background: "#f3f4f6" } : isSelected ? { border: "1px solid #60a5fa", background: "#eff6ff" } : undefined}>
                             <div className="dg-product-info">
-                              <div className="dg-product-name">{getProductLabel(product)}</div>
+                              <div className="dg-product-name" style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                                {getProductLabel(product)}
+                                {product.no_permanent_stock ? (
+                                  <span
+                                    style={{
+                                      fontSize: 10,
+                                      fontWeight: 800,
+                                      color: "#92400e",
+                                      background: "#fef3c7",
+                                      border: "1px solid #f59e0b",
+                                      borderRadius: 999,
+                                      padding: "2px 8px",
+                                      whiteSpace: "nowrap",
+                                    }}
+                                    title="Este producto no se encuentra en stock permanente"
+                                  >
+                                    Sin stock permanente
+                                  </span>
+                                ) : null}
+                              </div>
                               <div className="muted" style={{ fontSize: 12 }}>
                                 ID Presupuestador: {product.id} · ID Odoo: {getVisibleOdooId(product) || product.id}{product.code ? ` · ${product.code}` : ""}{disabledForUser ? " · No habilitado para tu rol" : ""}
                               </div>

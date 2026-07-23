@@ -1168,6 +1168,13 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
       name: getProductLabel(product),
       raw_name: getClientFacingProductName(product),
     });
+
+    if (product?.no_permanent_stock) {
+      window.alert(
+        "El producto seleccionado no se encuentra en stock permanente. Los tiempos de producción pueden extenderse considerablemente."
+      );
+    }
+
     nextSelectionMap.set(Number(sectionId), new Set([targetProductId]));
 
     const nextOrderedIds = computeOrderedSectionIds({
@@ -1377,8 +1384,25 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
                             }
                           >
                             <div className="dg-product-info">
-                              <div className="dg-product-name">
+                              <div className="dg-product-name" style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
                                 {getProductLabel(product)}
+                                {product.no_permanent_stock ? (
+                                  <span
+                                    style={{
+                                      fontSize: 10,
+                                      fontWeight: 800,
+                                      color: "#92400e",
+                                      background: "#fef3c7",
+                                      border: "1px solid #f59e0b",
+                                      borderRadius: 999,
+                                      padding: "2px 8px",
+                                      whiteSpace: "nowrap",
+                                    }}
+                                    title="Este producto no se encuentra en stock permanente"
+                                  >
+                                    Sin stock permanente
+                                  </span>
+                                ) : null}
                               </div>
                               <div className="muted" style={{ fontSize: 12 }}>
                                 ID Presupuestador: {product.id}

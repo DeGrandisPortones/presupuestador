@@ -59,7 +59,7 @@ async function seedPlegadosFromIpanelControls() {
   }
 
   await dbQuery(`insert into public.presupuestador_product_aliases (catalog_kind, product_id, alias) select 'plegados', product_id, alias from public.presupuestador_product_aliases where catalog_kind='ipanel' on conflict (catalog_kind, product_id) do nothing`);
-  await dbQuery(`insert into public.presupuestador_product_visibility (catalog_kind, product_id, disable_for_vendedor, disable_for_distribuidor) select 'plegados', product_id, disable_for_vendedor, disable_for_distribuidor from public.presupuestador_product_visibility where catalog_kind='ipanel' on conflict (catalog_kind, product_id) do nothing`);
+  await dbQuery(`insert into public.presupuestador_product_visibility (catalog_kind, product_id, disable_for_vendedor, disable_for_distribuidor, no_permanent_stock) select 'plegados', product_id, disable_for_vendedor, disable_for_distribuidor, no_permanent_stock from public.presupuestador_product_visibility where catalog_kind='ipanel' on conflict (catalog_kind, product_id) do nothing`);
   await dbQuery(`insert into public.presupuestador_type_visibility (catalog_kind, type_key, disable_for_vendedor, disable_for_distribuidor) select 'plegados', type_key, disable_for_vendedor, disable_for_distribuidor from public.presupuestador_type_visibility where catalog_kind='ipanel' on conflict (catalog_kind, type_key) do nothing`);
   await dbQuery(`insert into public.presupuestador_product_pdf_names (catalog_kind, product_id, pdf_name) select 'plegados', product_id, pdf_name from public.presupuestador_product_pdf_names where catalog_kind='ipanel' on conflict (catalog_kind, product_id) do nothing`);
 }
@@ -124,11 +124,13 @@ async function ensureCatalogControls() {
       product_id integer not null,
       disable_for_vendedor boolean not null default false,
       disable_for_distribuidor boolean not null default false,
+      no_permanent_stock boolean not null default false,
       created_at timestamptz not null default now(),
       updated_at timestamptz not null default now(),
       primary key (catalog_kind, product_id)
     );
   `);
+  await dbQuery(`alter table public.presupuestador_product_visibility add column if not exists no_permanent_stock boolean not null default false;`);
 
   await dbQuery(`
     create table if not exists public.presupuestador_type_visibility (
@@ -298,17 +300,17 @@ export async function setProductAlias(kind, productId, alias) {
 
 export async function getProductVisibilityMap(kind) {
   await ensureCatalogControls();
-  const q = await dbQuery(`select product_id, disable_for_vendedor, disable_for_distribuidor from public.presupuestador_product_visibility where catalog_kind=$1`, [normKind(kind)]);
+  const q = await dbQuery(`select product_id, disable_for_vendedor, disable_for_distribuidor, no_permanent_stock from public.presupuestador_product_visibility where catalog_kind=$1`, [normKind(kind)]);
   const map = new Map();
-  for (const r of q.rows || []) map.set(Number(r.product_id), { disable_for_vendedor: !!r.disable_for_vendedor, disable_for_distribuidor: !!r.disable_for_distribuidor });
+  for (const r of q.rows || []) map.set(Number(r.product_id), { disable_for_vendedor: !!r.disable_for_vendedor, disable_for_distribuidor: !!r.disable_for_distribuidor, no_permanent_stock: !!r.no_permanent_stock });
   return map;
 }
 
 export async function setProductVisibility(kind, productId, patch = {}) {
   await ensureCatalogControls();
   const k = normKind(kind); const pid = Number(productId); if (!pid) throw new Error("productId inválido");
-  const v = { disable_for_vendedor: !!patch.disable_for_vendedor, disable_for_distribuidor: !!patch.disable_for_distribuidor };
-  await dbQuery(`insert into public.presupuestador_product_visibility (catalog_kind, product_id, disable_for_vendedor, disable_for_distribuidor) values ($1,$2,$3,$4) on conflict (catalog_kind, product_id) do update set disable_for_vendedor=excluded.disable_for_vendedor, disable_for_distribuidor=excluded.disable_for_distribuidor, updated_at=now()`, [k, pid, v.disable_for_vendedor, v.disable_for_distribuidor]);
+  const v = { disable_for_vendedor: !!patch.disable_for_vendedor, disable_for_distribuidor: !!patch.disable_for_distribuidor, no_permanent_stock: !!patch.no_permanent_stock };
+  await dbQuery(`insert into public.presupuestador_product_visibility (catalog_kind, product_id, disable_for_vendedor, disable_for_distribuidor, no_permanent_stock) values ($1,$2,$3,$4,$5) on conflict (catalog_kind, product_id) do update set disable_for_vendedor=excluded.disable_for_vendedor, disable_for_distribuidor=excluded.disable_for_distribuidor, no_permanent_stock=excluded.no_permanent_stock, updated_at=now()`, [k, pid, v.disable_for_vendedor, v.disable_for_distribuidor, v.no_permanent_stock]);
   return { catalog_kind: k, product_id: pid, ...v };
 }
 
