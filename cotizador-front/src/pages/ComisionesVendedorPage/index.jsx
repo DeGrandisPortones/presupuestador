@@ -49,8 +49,8 @@ function ClaimsNotice({ onOpenTicket }) {
         Si necesitás hacer un reclamo sobre el cálculo de las comisiones, debe realizarlo por medio de un ticket a Comercial hasta:
       </div>
       <ul style={{ color: "#1e3a8a", fontSize: 14, margin: "8px 0 0", paddingLeft: 20 }}>
-        <li><b>Primera quincena:</b> día 20 del mes (5 días antes del pago).</li>
-        <li><b>Segunda quincena:</b> día 05 del mes (5 días antes del pago).</li>
+        <li><b>Primera quincena:</b> día 05 del mes siguiente (5 días antes del pago).</li>
+        <li><b>Segunda quincena:</b> día 20 del mes siguiente (5 días antes del pago).</li>
       </ul>
       <div style={{ marginTop: 12 }}>
         <Button variant="secondary" onClick={onOpenTicket}>Abrir ticket a Comercial</Button>
