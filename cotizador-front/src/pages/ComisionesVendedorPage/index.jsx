@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { useNavigate } from "react-router-dom";
 
 import Button from "../../ui/Button.jsx";
 import Input from "../../ui/Input.jsx";
@@ -38,8 +39,29 @@ function StatCard({ label, value, accent }) {
   );
 }
 
+function ClaimsNotice({ onOpenTicket }) {
+  return (
+    <div className="card" style={{ border: "1px solid #dbeafe", background: "#eff6ff" }}>
+      <div style={{ fontWeight: 800, color: "#1e3a8a", marginBottom: 6 }}>
+        ¿Un reclamo sobre el cálculo de tu comisión?
+      </div>
+      <div style={{ color: "#1e3a8a", fontSize: 14 }}>
+        Si necesitás hacer un reclamo sobre el cálculo de las comisiones, debe realizarlo por medio de un ticket a Comercial hasta:
+      </div>
+      <ul style={{ color: "#1e3a8a", fontSize: 14, margin: "8px 0 0", paddingLeft: 20 }}>
+        <li><b>Primera quincena:</b> día 20 del mes (5 días antes del pago).</li>
+        <li><b>Segunda quincena:</b> día 05 del mes (5 días antes del pago).</li>
+      </ul>
+      <div style={{ marginTop: 12 }}>
+        <Button variant="secondary" onClick={onOpenTicket}>Abrir ticket a Comercial</Button>
+      </div>
+    </div>
+  );
+}
+
 export default function ComisionesVendedorPage() {
   const user = useAuthStore((s) => s.user);
+  const navigate = useNavigate();
   const isVendedor = !!(user?.is_vendedor && !user?.is_distribuidor);
   const isFlavio = /flavio/i.test(String(user?.full_name || ""));
 
@@ -127,6 +149,9 @@ export default function ComisionesVendedorPage() {
           </div>
         </div>
       ) : null}
+
+      <div className="spacer" />
+      <ClaimsNotice onOpenTicket={() => navigate("/consultas-comerciales")} />
     </div>
   );
 }
