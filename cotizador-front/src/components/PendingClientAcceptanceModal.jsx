@@ -68,9 +68,39 @@ function buildAcceptanceUrl(token) {
   return `${window.location.origin}/aceptacion-cliente/${token}`;
 }
 
+function daysSince(dateStr) {
+  if (!dateStr) return null;
+  const then = new Date(dateStr).getTime();
+  if (Number.isNaN(then)) return null;
+  return Math.max(0, Math.floor((Date.now() - then) / (24 * 60 * 60 * 1000)));
+}
+
+function daysBadgeColor(days) {
+  if (days === null) return { color: "#555", background: "#f1f1f1", border: "#ddd" };
+  if (days >= 7) return { color: "#a12626", background: "#fdecec", border: "#f3b9b9" };
+  if (days >= 3) return { color: "#a66300", background: "#fff3e0", border: "#f3d19a" };
+  return { color: "#1f7a45", background: "#eaf8ef", border: "#bfe6c8" };
+}
+
+function DaysPendingBadge({ dateStr }) {
+  const days = daysSince(dateStr);
+  const tone = daysBadgeColor(days);
+  return (
+    <div style={{ textAlign: "center", flexShrink: 0 }}>
+      <div style={{ fontSize: 26, fontWeight: 900, lineHeight: 1, color: tone.color }}>
+        {days === null ? "—" : days}
+      </div>
+      <div style={{ fontSize: 11, fontWeight: 700, color: tone.color, whiteSpace: "nowrap" }}>
+        {days === 1 ? "día sin firmar" : "días sin firmar"}
+      </div>
+    </div>
+  );
+}
+
 function PendingItemRow({ quote, showOwner }) {
   const [copied, setCopied] = useState(false);
   const url = buildAcceptanceUrl(quote?.measurement_share_token);
+  const tone = daysBadgeColor(daysSince(quote?.measurement_share_enabled_at));
 
   function copyLink() {
     if (!url) return;
@@ -81,14 +111,15 @@ function PendingItemRow({ quote, showOwner }) {
   }
 
   return (
-    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, border: "1px solid #eee", borderRadius: 10, padding: "8px 12px" }}>
-      <div style={{ minWidth: 0 }}>
+    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, border: `1px solid ${tone.border}`, background: tone.background, borderRadius: 10, padding: "8px 12px" }}>
+      <div style={{ minWidth: 0, flex: 1 }}>
         <div style={{ fontWeight: 800 }}>{nvReference(quote)} · {quote?.end_customer?.name || "Cliente sin nombre"}</div>
         <div className="muted" style={{ fontSize: 12 }}>
           {quote?.end_customer?.city || ""}
           {showOwner ? `${quote?.end_customer?.city ? " · " : ""}Distribuidor: ${quote?.created_by_full_name || quote?.created_by_username || "—"}` : ""}
         </div>
       </div>
+      <DaysPendingBadge dateStr={quote?.measurement_share_enabled_at} />
       {url ? (
         <Button variant="ghost" onClick={copyLink}>{copied ? "✓ Copiado" : "Copiar link"}</Button>
       ) : null}
@@ -169,11 +200,14 @@ export default function PendingClientAcceptanceModal() {
         style={{ maxWidth: 620, width: "100%", maxHeight: "88vh", overflowY: "auto", borderRadius: 16, boxShadow: "0 20px 50px rgba(0,0,0,0.25)" }}
         onClick={(e) => e.stopPropagation()}
       >
-        <div style={{ fontWeight: 900, fontSize: 19, color: "#111827" }}>
+        <div style={{ fontWeight: 900, fontSize: 23, color: "#111827" }}>
           Clientes con firma pendiente ({total})
         </div>
-        <div className="muted" style={{ fontSize: 13.5, marginTop: 6 }}>
+        <div style={{ fontSize: 15, marginTop: 6 }}>
           Estas notas de venta ya tienen el link de aceptación enviado, pero el cliente todavía no firmó.
+        </div>
+        <div style={{ marginTop: 10, border: "1px solid #f3b9b9", background: "#fdecec", color: "#a12626", borderRadius: 10, padding: "10px 12px", fontWeight: 800, fontSize: 14 }}>
+          ⚠️ El producto no ingresa a producción hasta que el cliente complete la aceptación.
         </div>
 
         {isVendedor ? (
