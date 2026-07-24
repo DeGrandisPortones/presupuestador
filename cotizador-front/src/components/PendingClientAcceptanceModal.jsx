@@ -110,6 +110,26 @@ function PendingSection({ title, items, showOwner }) {
   );
 }
 
+const isDevEnv = !!import.meta.env.VITE_API_URL?.includes("dev");
+
+function ForceShowButton({ onClick }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title="Solo en dev: fuerza el popup de firmas pendientes sin esperar al horario"
+      style={{
+        position: "fixed", bottom: 20, right: 20, zIndex: 999,
+        background: "#7a1a1a", color: "#fff", border: 0, borderRadius: 999,
+        padding: "10px 16px", fontWeight: 800, fontSize: 13, cursor: "pointer",
+        boxShadow: "0 6px 18px rgba(0,0,0,0.25)",
+      }}
+    >
+      🔔 Forzar popup firmas (dev)
+    </button>
+  );
+}
+
 export default function PendingClientAcceptanceModal() {
   const user = useAuthStore((s) => s.user);
   const navigate = useNavigate();
@@ -122,18 +142,20 @@ export default function PendingClientAcceptanceModal() {
   const activeSlotKey = useCurrentSlotKey();
   const storageKey = userId ? `pending_client_acceptance_last_slot_${userId}` : null;
   const [dismissedSlotKey, setDismissedSlotKey] = useState(() => readStoredSlot(storageKey));
+  const [forceOpen, setForceOpen] = useState(false);
 
   useEffect(() => {
     setDismissedSlotKey(readStoredSlot(storageKey));
   }, [storageKey]);
 
   const shouldCheck = shouldTrack && !!activeSlotKey && activeSlotKey !== dismissedSlotKey;
+  const queryEnabled = shouldCheck || forceOpen;
 
   const pendingQ = useQuery({
-    queryKey: ["pendingClientAcceptance", userId, activeSlotKey],
+    queryKey: ["pendingClientAcceptance", userId, activeSlotKey, forceOpen],
     queryFn: getPendingClientAcceptance,
-    enabled: shouldCheck,
-    staleTime: 5 * 60 * 1000,
+    enabled: queryEnabled,
+    staleTime: forceOpen ? 0 : 5 * 60 * 1000,
   });
 
   const own = pendingQ.data?.own || [];
@@ -145,14 +167,30 @@ export default function PendingClientAcceptanceModal() {
     setDismissedSlotKey(activeSlotKey);
   }
 
-  // Si no hay nada pendiente, el slot igual se marca como consultado para no
-  // reintentar en loop hasta el proximo horario (09/12/17).
-  useEffect(() => {
-    if (shouldCheck && pendingQ.isSuccess && total === 0) dismiss();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [shouldCheck, pendingQ.isSuccess, total]);
+  function close() {
+    if (forceOpen) {
+      setForceOpen(false);
+      return;
+    }
+    dismiss();
+  }
 
-  if (!shouldCheck || !pendingQ.isSuccess || total === 0) return null;
+  // Si no hay nada pendiente, el slot igual se marca como consultado para no
+  // reintentar en loop hasta el proximo horario (09/12/17). No aplica cuando
+  // es un forzado manual (dev): ese no debe consumir el slot real.
+  useEffect(() => {
+    if (shouldCheck && !forceOpen && pendingQ.isSuccess && total === 0) dismiss();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shouldCheck, forceOpen, pendingQ.isSuccess, total]);
+
+  const shouldShowBySlot = shouldCheck && !forceOpen && pendingQ.isSuccess && total > 0;
+  const shouldShowForced = forceOpen && pendingQ.isSuccess;
+  const shouldShow = shouldShowBySlot || shouldShowForced;
+
+  if (!shouldShow) {
+    if (isDevEnv && shouldTrack && !forceOpen) return <ForceShowButton onClick={() => setForceOpen(true)} />;
+    return null;
+  }
 
   return (
     <div
@@ -162,13 +200,16 @@ export default function PendingClientAcceptanceModal() {
         display: "flex", alignItems: "center", justifyContent: "center",
         padding: 16,
       }}
-      onClick={dismiss}
+      onClick={close}
     >
       <div
         className="card"
         style={{ maxWidth: 620, width: "100%", maxHeight: "88vh", overflowY: "auto", borderRadius: 16, boxShadow: "0 20px 50px rgba(0,0,0,0.25)" }}
         onClick={(e) => e.stopPropagation()}
       >
+        {forceOpen ? (
+          <div className="muted" style={{ fontSize: 12, marginBottom: 8 }}>⚠️ Vista forzada (dev) - no cuenta como el aviso real de esta franja horaria.</div>
+        ) : null}
         <div style={{ fontWeight: 900, fontSize: 19, color: "#111827" }}>
           Clientes con firma pendiente ({total})
         </div>
@@ -176,7 +217,9 @@ export default function PendingClientAcceptanceModal() {
           Estas notas de venta ya tienen el link de aceptación enviado, pero el cliente todavía no firmó.
         </div>
 
-        {isVendedor ? (
+        {total === 0 ? (
+          <div className="muted" style={{ marginTop: 14 }}>No hay clientes con firma pendiente en este momento.</div>
+        ) : isVendedor ? (
           <>
             <PendingSection title="Portones propios" items={own} showOwner={false} />
             <PendingSection title="Portones de distribuidores" items={distributors} showOwner />
@@ -186,8 +229,8 @@ export default function PendingClientAcceptanceModal() {
         )}
 
         <div style={{ marginTop: 18, display: "flex", justifyContent: "flex-end", gap: 8 }}>
-          <Button variant="ghost" onClick={() => { dismiss(); navigate("/presupuestos"); }}>Ver mis presupuestos</Button>
-          <Button onClick={dismiss}>Cerrar</Button>
+          <Button variant="ghost" onClick={() => { close(); navigate("/presupuestos"); }}>Ver mis presupuestos</Button>
+          <Button onClick={close}>Cerrar</Button>
         </div>
       </div>
     </div>
