@@ -65,6 +65,12 @@ export async function listPortonesEstado() {
   return data.quotes || [];
 }
 
+export async function getPendingClientAcceptance() {
+  const { data } = await http.get(`/api/quotes/pending-client-acceptance`);
+  if (!data?.ok) throw new Error(data?.error || "No se pudo cargar las aceptaciones pendientes");
+  return { own: data.own || [], distributors: data.distributors || [] };
+}
+
 export async function confirmMeasurementLinkSent(id) {
   const { data } = await http.post(`/api/quotes/${id}/measurement-link-sent-confirm`, {});
   if (!data?.ok) throw new Error(data?.error || "No se pudo confirmar el envío del link");
