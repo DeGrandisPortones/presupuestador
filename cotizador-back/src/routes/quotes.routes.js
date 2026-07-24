@@ -2130,6 +2130,10 @@ export function buildQuotesRouter(odoo) {
         return res.status(403).json({ ok: false, error: "No autorizado" });
       }
 
+      // Ojo: hay NP/NV viejas donde el cliente ya acepto pero measurement_client_accepted_at
+      // quedo en null (la columna se sumo despues); igual que isClientAlreadyAccepted en
+      // measurementFinalization.js, hay que chequear tambien el payload para no mostrarlas
+      // como pendientes por error.
       const baseSelect = `
         select q.id, q.quote_number, q.final_sale_order_name, q.odoo_sale_order_name,
                q.measurement_share_token, q.measurement_share_enabled_at, q.measurement_client_accepted_at,
@@ -2142,6 +2146,7 @@ export function buildQuotesRouter(odoo) {
            and q.fulfillment_mode = 'produccion'
            and q.measurement_share_enabled_at is not null
            and q.measurement_client_accepted_at is null
+           and q.payload->'measurement_client_acceptance'->>'accepted_at' is null
       `;
 
       const ownQ = await dbQuery(
