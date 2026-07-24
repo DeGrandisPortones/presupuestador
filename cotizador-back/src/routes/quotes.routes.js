@@ -2114,6 +2114,50 @@ export function buildQuotesRouter(odoo) {
     } catch (e) { next(e); }
   });
 
+  // Popup periodico (3 veces al dia, ver PendingClientAcceptanceModal en el
+  // front) que avisa que hay NV con link de aceptacion enviado pero el
+  // cliente todavia no firmo. Distribuidor ve solo lo suyo; vendedor ve lo
+  // propio y aparte lo de los distribuidores que tiene asignados.
+  router.get("/pending-client-acceptance", async (req, res, next) => {
+    try {
+      const u = req.user || {};
+      const userId = Number(u.user_id || 0);
+      if (!userId || (!u.is_vendedor && !u.is_distribuidor)) {
+        return res.status(403).json({ ok: false, error: "No autorizado" });
+      }
+
+      const baseSelect = `
+        select q.id, q.quote_number, q.final_sale_order_name, q.odoo_sale_order_name,
+               q.measurement_share_token, q.measurement_share_enabled_at, q.measurement_client_accepted_at,
+               q.end_customer, q.catalog_kind, q.fulfillment_mode,
+               q.created_by_user_id, q.created_by_role,
+               u.username as created_by_username, u.full_name as created_by_full_name
+          from public.presupuestador_quotes q
+          join public.presupuestador_users u on u.id = q.created_by_user_id
+         where q.quote_kind = 'original'
+           and q.fulfillment_mode = 'produccion'
+           and q.measurement_share_enabled_at is not null
+           and q.measurement_client_accepted_at is null
+      `;
+
+      const ownQ = await dbQuery(
+        `${baseSelect} and q.created_by_user_id = $1 order by q.measurement_share_enabled_at asc`,
+        [userId],
+      );
+
+      let distributorRows = [];
+      if (u.is_vendedor) {
+        const distQ = await dbQuery(
+          `${baseSelect} and u.assigned_seller_user_id = $1 and coalesce(u.is_distribuidor, false) = true order by q.measurement_share_enabled_at asc`,
+          [userId],
+        );
+        distributorRows = distQ.rows || [];
+      }
+
+      res.json({ ok: true, own: ownQ.rows || [], distributors: distributorRows });
+    } catch (e) { next(e); }
+  });
+
   // Control manual (no automatico) para "Estado de Portones": el usuario confirma a mano
   // que ya le mando el link de aceptacion al cliente. Mismos roles que pueden ver esa pantalla.
   router.post("/:id/measurement-link-sent-confirm", async (req, res, next) => {

@@ -6,7 +6,7 @@ import { useAuthStore } from "../domain/auth/store.js";
 import { getTechnicalConsultUnreadSummary } from "../api/technicalConsults.js";
 import { getCommercialConsultUnreadSummary } from "../api/commercialConsults.js";
 import AptoKgProductSectionFilterPatch from "../components/AptoKgProductSectionFilterPatch.jsx";
-import PdfFormatAnnouncementModal from "../components/PdfFormatAnnouncementModal.jsx";
+import PendingClientAcceptanceModal from "../components/PendingClientAcceptanceModal.jsx";
 
 const DROPDOWN_ITEM_STYLE = {
   display: "block",
@@ -313,7 +313,6 @@ export default function AppLayout() {
 
   const showDashboard = !!(isSuperuser || user?.is_enc_comercial || user?.see_all_distributors);
   const showUsers = !!(isSuperuser || user?.is_enc_comercial);
-  const canQuote = !!(isSuperuser || user?.is_vendedor || user?.is_distribuidor);
   const showPresupuestar = !!(isSuperuser || user?.is_vendedor || user?.is_distribuidor || user?.is_enc_comercial);
   const showMyDistributors = !!(isSuperuser || user?.is_enc_comercial || (user?.is_vendedor && !user?.is_distribuidor));
   const showMediciones = !!(isSuperuser || user?.is_medidor) && !user?.is_rev_tecnica;
@@ -411,7 +410,7 @@ export default function AppLayout() {
       </div>
 
       <AptoKgProductSectionFilterPatch />
-      {canQuote ? <PdfFormatAnnouncementModal /> : null}
+      <PendingClientAcceptanceModal />
       <Outlet />
       </div>
     </div>
