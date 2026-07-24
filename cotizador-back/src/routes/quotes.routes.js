@@ -545,17 +545,13 @@ function isDirectProductionTechnicalOnlyQuote(quote) {
     );
 }
 function shouldDeferSyncUntilMeasurement(quote) {
-  const forced = getHardcodedOdooOverride(quote);
-  if (forced?.stage === "nv") return false;
-  // Porton a produccion sin medicion: se crea la NV en la aprobacion inicial,
-  // pero queda en circuito tecnico para la aprobacion final/WhatsApp.
-  if (isDirectProductionTechnicalOnlyQuote(quote)) return false;
-  return ["porton", "puerta", "ipanel"].includes(String(quote?.catalog_kind || "porton").toLowerCase().trim())
-    && String(quote?.fulfillment_mode || "").trim() === "produccion"
-    && (
-      quote?.requires_measurement === true
-      || hasMeasurementLine(quote?.lines)
-    );
+  // Porton/puerta/ipanel a produccion siempre genera su orden en Odoo apenas
+  // aprueban Comercial + Tecnica: la NV directa si es "sin medicion"/tecnica_only
+  // (ver isDirectProductionTechnicalOnlyQuote/directFinal en handleReadyQuoteSync),
+  // o la NP si todavia tiene medicion pendiente - la NV final para este ultimo caso
+  // se genera despues, al aprobar la medicion en Tecnica (finalizeMeasurementToRevisionQuote).
+  // Nunca se difiere el envio a Odoo hasta que termine la medicion.
+  return false;
 }
 function getPayloadQuoteAdjustmentPercent(payload) {
   const candidates = [
