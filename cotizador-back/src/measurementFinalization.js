@@ -547,6 +547,45 @@ function getFieldCI(obj, keys) {
   return null;
 }
 
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// Reintenta el POST a Planta antes de darse por vencido: una falla de red o un
+// pico de conexiones en el pooler de Supabase (los backends de Presupuestador,
+// Planta e Integrador comparten el mismo pool con tope de 15) puede tirar un
+// solo intento sin que el portón esté realmente inalcanzable.
+// OJO: esto corre sincrónicamente dentro de POST /:token/accept, el endpoint
+// público que espera el CLIENTE final en el navegador para aceptar el
+// presupuesto - no un empleado. Peor caso acá = 10 + 2 + 10 = 22s (antes: 15s
+// fijo). No subir MAX_ATTEMPTS/TIMEOUT_MS sin mover este POST fuera del
+// camino síncrono de esa respuesta, para no dejar al cliente esperando.
+const PLANTA_PORTON_POST_MAX_ATTEMPTS = 2;
+const PLANTA_PORTON_POST_TIMEOUT_MS = 10000;
+const PLANTA_PORTON_POST_RETRY_DELAY_MS = 2000;
+
+async function postPortonToPlantaWithRetry(body) {
+  let lastErr = null;
+  for (let attempt = 1; attempt <= PLANTA_PORTON_POST_MAX_ATTEMPTS; attempt++) {
+    try {
+      await axios.post(`${PLANTA_API_BASE}/portones`, body, { timeout: PLANTA_PORTON_POST_TIMEOUT_MS });
+      return { ok: true };
+    } catch (err) {
+      if (err?.response?.status === 409) {
+        // Ya existe (ej. resync manual sobre un NV ya creado): no es un error.
+        return { ok: true, already_exists: true };
+      }
+      lastErr = err;
+      console.error(
+        `[measurementFinalization] intento ${attempt}/${PLANTA_PORTON_POST_MAX_ATTEMPTS} de creación de portón en Planta falló (NV ${body?.nv}):`,
+        err?.response?.data || err.message,
+      );
+      if (attempt < PLANTA_PORTON_POST_MAX_ATTEMPTS) await sleep(PLANTA_PORTON_POST_RETRY_DELAY_MS);
+    }
+  }
+  return { ok: false, error: lastErr?.response?.data?.error || lastErr?.message || "Error desconocido" };
+}
+
 // Cuando el cliente acepta el presupuesto final, el portón debe entrar solo al
 // flujo de producción de Planta (fecha_prod = fecha de aceptación), sin que
 // nadie tenga que cargarla a mano en "Autorizaciones · Preproducción Portones".
@@ -565,24 +604,7 @@ async function autoCreatePortonFromClientAcceptance({ nv, nvTipo, finalPayload, 
   const sistemaRaw = getFieldCI(finalPayload, ["Sistema", "sistema", "SISTEMA", "Sistemas", "sistemas"]);
   const sistema = sistemaRaw ? String(sistemaRaw).trim() : null;
 
-  try {
-    await axios.post(
-      `${PLANTA_API_BASE}/portones`,
-      { nv, nlista, partida, fecha_prod: fecha10, sistema, nv_tipo: nvTipo },
-      { timeout: 15000 },
-    );
-    return { ok: true };
-  } catch (err) {
-    if (err?.response?.status === 409) {
-      // Ya existe (ej. resync manual sobre un NV ya creado): no es un error.
-      return { ok: true, already_exists: true };
-    }
-    console.error(
-      "[measurementFinalization] auto-creación de portón en Planta falló:",
-      err?.response?.data || err.message,
-    );
-    return { ok: false, error: err?.response?.data?.error || err.message };
-  }
+  return postPortonToPlantaWithRetry({ nv, nlista, partida, fecha_prod: fecha10, sistema, nv_tipo: nvTipo });
 }
 
 async function upsertPreproduccionValoresForNv({ originalQuote, sourceQuote, revisionQuote, order, metrics, generatedLines, odoo }) {
@@ -1837,13 +1859,26 @@ export async function finalizeMeasurementToRevisionQuote({ odoo, originalQuote, 
     [revisionQuote.id],
   );
   const qSync = updSync.rows?.[0] || revisionQuote;
-  const { order, metrics } = await syncFinalQuoteToOdoo({
-    odoo,
-    revisionQuote: qSync,
-    originalQuote,
-    sourceQuote: base.source_quote,
-    precomputedMetrics: base.metrics,
-  });
+  let order;
+  let metrics;
+  try {
+    ({ order, metrics } = await syncFinalQuoteToOdoo({
+      odoo,
+      revisionQuote: qSync,
+      originalQuote,
+      sourceQuote: base.source_quote,
+      precomputedMetrics: base.metrics,
+    }));
+  } catch (e) {
+    // Igual que en /:id/final/submit: si Odoo no llego a crear la NV, volver a
+    // draft para que un reintento (re-aprobar la medicion) no quede trabado
+    // para siempre en "syncing_odoo" sin poder reintentar.
+    await dbQuery(
+      `update public.presupuestador_quotes set status='draft', final_status='draft' where id=$1 and coalesce(final_sale_order_id, 0) = 0`,
+      [qSync.id],
+    );
+    throw e;
+  }
   const updFinal = await dbQuery(
     `update public.presupuestador_quotes
         set status='synced_odoo',
