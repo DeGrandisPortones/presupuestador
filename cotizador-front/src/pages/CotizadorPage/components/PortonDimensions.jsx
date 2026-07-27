@@ -582,6 +582,12 @@ function getParantesCount(value) {
   const n = Number(String(value ?? "").replace(",", "."));
   return Number.isFinite(n) ? Math.max(0, Math.trunc(n)) : 0;
 }
+// Distingue "el vendedor todavia no cargo nada" (string vacio, corresponde auto-sugerir)
+// de "el vendedor cargo un valor explicito" (incluido "0" - un porton apto para revestir
+// puede no llevar parantes internos - que no debe pisarse con el auto-calculo).
+function hasExplicitParantesCount(value) {
+  return String(value ?? "").trim() !== "";
+}
 function normalizeDistanceList(value) {
   if (Array.isArray(value)) return value.map((item) => String(item ?? "").trim());
   if (value && typeof value === "object") return Object.values(value).map((item) => String(item ?? "").trim());
@@ -651,7 +657,9 @@ export function computeParantesSchemeProps({ dimensions = {}, lines = [], params
   const effectiveParantesOrientation = isNonAptoPorton && nonAptoConfiguredOrientation ? nonAptoConfiguredOrientation : orientation;
   const distribution = normalizeDistribution(dimensions?.distribucion_parantes);
   const autoParantesCount = computeAutomaticParantesCount({ orientation: effectiveParantesOrientation, widthM: width, heightM: height, lines });
-  const parantesCount = getParantesCount(dimensions?.cantidad_parantes) || autoParantesCount;
+  const parantesCount = hasExplicitParantesCount(dimensions?.cantidad_parantes)
+    ? getParantesCount(dimensions?.cantidad_parantes)
+    : autoParantesCount;
   const tubeDiscountMm = getParantesTubeDiscountMm(params);
   const baseParantesDimensionMm = effectiveParantesOrientation === "horizontal"
     ? Math.max(0, Number(preview?.altoHojaMm || preview?.altoPasoMm || 0))
@@ -2063,7 +2071,6 @@ export default function PortonDimensions({ kind = "porton" }) {
     const currentOrientationRaw = String(dimensions?.orientacion_parantes || "").trim();
     const currentDistributionRaw = String(dimensions?.distribucion_parantes || "").trim();
     const currentCountRaw = String(dimensions?.cantidad_parantes ?? "").trim();
-    const currentCountNumber = getParantesCount(dimensions?.cantidad_parantes);
     const shouldAutoManageNonAptoParantes = isNonAptoPorton;
 
     if (shouldAutoManageNonAptoParantes && nonAptoConfiguredOrientation && orientation !== nonAptoConfiguredOrientation) patch.orientacion_parantes = nonAptoConfiguredOrientation;
@@ -2073,7 +2080,10 @@ export default function PortonDimensions({ kind = "porton" }) {
     else if (!currentDistributionRaw) patch.distribucion_parantes = "repartido";
 
     const nextCount = String(autoParantesCount);
-    const shouldUpdateParantesCount = isNonAptoPorton || !currentCountRaw || currentCountNumber <= 0;
+    // Para aptos-para-revestir: solo auto-completar mientras el campo esta vacio (nunca
+    // tocado). Un "0" explicito es una eleccion valida del vendedor (porton apto para
+    // revestir sin parantes internos) y no debe pisarse con el valor sugerido.
+    const shouldUpdateParantesCount = isNonAptoPorton || !currentCountRaw;
     if (shouldUpdateParantesCount && currentCountRaw !== nextCount) patch.cantidad_parantes = nextCount;
     if (Object.keys(patch).length) setDimensions(patch);
   }, [isPorton, isNonAptoPorton, nonAptoConfiguredOrientation, orientation, distribution, autoParantesCount, dimensions?.orientacion_parantes, dimensions?.distribucion_parantes, dimensions?.cantidad_parantes, setDimensions]);
