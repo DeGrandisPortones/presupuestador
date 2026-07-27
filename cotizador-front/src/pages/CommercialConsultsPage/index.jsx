@@ -13,6 +13,14 @@ import {
   markCommercialConsultRead,
   searchCommercialConsultRequesters,
 } from "../../api/commercialConsults.js";
+import {
+  downloadTicketAttachment,
+  fileToTicketAttachment,
+  formatTicketAttachmentMeta,
+  isImageTicketAttachment,
+  isVideoTicketAttachment,
+  openTicketAttachment,
+} from "../../utils/ticketAttachment.js";
 
 function fmtDateTime(value) {
   if (!value) return "—";
@@ -67,6 +75,89 @@ function normalizeSearch(value) {
   return String(value || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").trim();
 }
 
+// Selector de adjunto reusado en los 3 formularios de "nuevo ticket" + respuesta + cierre,
+// todos comparten la misma forma (imagen/pdf/video, ver utils/ticketAttachment.js).
+function AttachmentField({ attachment, error, attaching, onSelectFile, onRemove }) {
+  return (
+    <div style={{ marginTop: 8, marginBottom: 8 }}>
+      {!attachment ? (
+        <label
+          style={{
+            display: "inline-flex", alignItems: "center", gap: 6, border: "1px dashed #bbb",
+            borderRadius: 8, padding: "6px 10px", cursor: "pointer", fontSize: 13, color: "#555",
+          }}
+        >
+          📎 Adjuntar imagen, PDF o video
+          <input type="file" accept="image/*,application/pdf,video/*" onChange={onSelectFile} style={{ display: "none" }} />
+        </label>
+      ) : (
+        <div
+          style={{
+            display: "inline-flex", alignItems: "center", gap: 8, border: "1px solid #01a39f",
+            borderRadius: 8, padding: "6px 10px", fontSize: 13, background: "rgba(1,163,159,0.06)",
+          }}
+        >
+          <span>📎 {formatTicketAttachmentMeta(attachment)}</span>
+          <button type="button" onClick={onRemove} style={{ border: "none", background: "none", cursor: "pointer", color: "#d93025", fontWeight: 800 }}>×</button>
+        </div>
+      )}
+      {attaching ? <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>Adjuntando…</div> : null}
+      {error ? <div style={{ color: "#d93025", fontSize: 12, marginTop: 4 }}>{error}</div> : null}
+    </div>
+  );
+}
+
+function MessageAttachment({ attachment }) {
+  if (!attachment?.data_url) return null;
+  if (isImageTicketAttachment(attachment)) {
+    return (
+      <div style={{ marginTop: 8 }}>
+        <img
+          src={attachment.data_url}
+          alt={attachment.name || "adjunto"}
+          onClick={() => openTicketAttachment(attachment)}
+          style={{ maxWidth: "100%", maxHeight: 260, borderRadius: 10, cursor: "pointer", display: "block" }}
+        />
+      </div>
+    );
+  }
+  if (isVideoTicketAttachment(attachment)) {
+    return (
+      <div style={{ marginTop: 8 }}>
+        <video controls src={attachment.data_url} style={{ maxWidth: "100%", maxHeight: 260, borderRadius: 10, display: "block" }} />
+      </div>
+    );
+  }
+  return (
+    <div style={{ marginTop: 8, display: "flex", alignItems: "center", gap: 10 }}>
+      <button
+        type="button"
+        onClick={() => openTicketAttachment(attachment)}
+        style={{ border: "1px solid #ddd", borderRadius: 8, background: "#fff", padding: "5px 10px", cursor: "pointer", fontSize: 12 }}
+      >
+        📎 {formatTicketAttachmentMeta(attachment)}
+      </button>
+      <button type="button" onClick={() => downloadTicketAttachment(attachment)} style={{ border: "none", background: "none", cursor: "pointer", fontSize: 12, color: "#01a39f", fontWeight: 700 }}>
+        Descargar
+      </button>
+    </div>
+  );
+}
+
+async function handleTicketAttachmentFile(file, { setAttachment, setError, setAttaching }) {
+  setError("");
+  if (!file) return;
+  setAttaching(true);
+  try {
+    const attachment = await fileToTicketAttachment(file);
+    setAttachment(attachment);
+  } catch (err) {
+    setError(err?.message || "No se pudo adjuntar el archivo.");
+  } finally {
+    setAttaching(false);
+  }
+}
+
 export default function CommercialConsultsPage() {
   const user = useAuthStore((s) => s.user);
   const qc = useQueryClient();
@@ -92,12 +183,24 @@ export default function CommercialConsultsPage() {
   const [audienceMode, setAudienceMode] = useState("target");
   const [bulkNotice, setBulkNotice] = useState("");
 
+  const [newAttachment, setNewAttachment] = useState(null);
+  const [newAttachmentError, setNewAttachmentError] = useState("");
+  const [newAttaching, setNewAttaching] = useState(false);
+  const [replyAttachment, setReplyAttachment] = useState(null);
+  const [replyAttachmentError, setReplyAttachmentError] = useState("");
+  const [replyAttaching, setReplyAttaching] = useState(false);
+  const [resolutionAttachment, setResolutionAttachment] = useState(null);
+  const [resolutionAttachmentError, setResolutionAttachmentError] = useState("");
+  const [resolutionAttaching, setResolutionAttaching] = useState(false);
+
   function closeNewForm() {
     setShowNewForm(false);
     setSelectedTarget(null);
     setTargetSearch("");
     setTargetResults([]);
     setAudienceMode("target");
+    setNewAttachment(null);
+    setNewAttachmentError("");
   }
 
   useEffect(() => {
@@ -201,9 +304,9 @@ export default function CommercialConsultsPage() {
       createCommercialConsult(
         isCommercial
           ? audienceMode === "target"
-            ? { subject, message: newMessage, target_user_id: selectedTarget?.id }
-            : { subject, message: newMessage, audience: audienceMode }
-          : { subject, message: newMessage }
+            ? { subject, message: newMessage, target_user_id: selectedTarget?.id, attachment: newAttachment }
+            : { subject, message: newMessage, audience: audienceMode, attachment: newAttachment }
+          : { subject, message: newMessage, attachment: newAttachment }
       ),
     onSuccess: (result) => {
       setSubject("");
@@ -228,9 +331,11 @@ export default function CommercialConsultsPage() {
   });
 
   const replyM = useMutation({
-    mutationFn: () => addCommercialConsultMessage(selectedId, { message: replyMessage }),
+    mutationFn: () => addCommercialConsultMessage(selectedId, { message: replyMessage, attachment: replyAttachment }),
     onSuccess: (ticket) => {
       setReplyMessage("");
+      setReplyAttachment(null);
+      setReplyAttachmentError("");
       qc.invalidateQueries({ queryKey: ["commercialConsults"] });
       qc.invalidateQueries({ queryKey: ["commercialConsultUnreadSummary"] });
       qc.setQueryData(["commercialConsult", ticket.id], ticket);
@@ -238,9 +343,11 @@ export default function CommercialConsultsPage() {
   });
 
   const closeM = useMutation({
-    mutationFn: () => closeCommercialConsult(selectedId, { resolution: resolutionText }),
+    mutationFn: () => closeCommercialConsult(selectedId, { resolution: resolutionText, attachment: resolutionAttachment }),
     onSuccess: (ticket) => {
       setResolutionText("");
+      setResolutionAttachment(null);
+      setResolutionAttachmentError("");
       qc.invalidateQueries({ queryKey: ["commercialConsults"] });
       qc.invalidateQueries({ queryKey: ["commercialConsultUnreadSummary"] });
       qc.setQueryData(["commercialConsult", ticket.id], ticket);
@@ -436,7 +543,17 @@ export default function CommercialConsultsPage() {
                         placeholder="Describí la consulta comercial"
                         style={{ width: "100%", minHeight: 120, padding: 10, borderRadius: 10, border: "1px solid #ddd", resize: "vertical" }}
                       />
-                      <div style={{ height: 8 }} />
+                      <AttachmentField
+                        attachment={newAttachment}
+                        error={newAttachmentError}
+                        attaching={newAttaching}
+                        onSelectFile={(e) => {
+                          const file = e.target.files?.[0] || null;
+                          handleTicketAttachmentFile(file, { setAttachment: setNewAttachment, setError: setNewAttachmentError, setAttaching: setNewAttaching });
+                          e.target.value = "";
+                        }}
+                        onRemove={() => { setNewAttachment(null); setNewAttachmentError(""); }}
+                      />
                       <Button
                         onClick={() => createM.mutate()}
                         disabled={createM.isPending || !subject.trim() || !newMessage.trim()}
@@ -461,7 +578,17 @@ export default function CommercialConsultsPage() {
                       placeholder="Describí la consulta comercial"
                       style={{ width: "100%", minHeight: 120, padding: 10, borderRadius: 10, border: "1px solid #ddd", resize: "vertical" }}
                     />
-                    <div style={{ height: 8 }} />
+                    <AttachmentField
+                      attachment={newAttachment}
+                      error={newAttachmentError}
+                      attaching={newAttaching}
+                      onSelectFile={(e) => {
+                        const file = e.target.files?.[0] || null;
+                        handleTicketAttachmentFile(file, { setAttachment: setNewAttachment, setError: setNewAttachmentError, setAttaching: setNewAttaching });
+                        e.target.value = "";
+                      }}
+                      onRemove={() => { setNewAttachment(null); setNewAttachmentError(""); }}
+                    />
                     <Button
                       onClick={() => createM.mutate()}
                       disabled={createM.isPending || !subject.trim() || !newMessage.trim()}
@@ -521,7 +648,17 @@ export default function CommercialConsultsPage() {
                   placeholder="Describí la consulta comercial"
                   style={{ width: "100%", minHeight: 120, padding: 10, borderRadius: 10, border: "1px solid #ddd", resize: "vertical" }}
                 />
-                <div style={{ height: 8 }} />
+                <AttachmentField
+                  attachment={newAttachment}
+                  error={newAttachmentError}
+                  attaching={newAttaching}
+                  onSelectFile={(e) => {
+                    const file = e.target.files?.[0] || null;
+                    handleTicketAttachmentFile(file, { setAttachment: setNewAttachment, setError: setNewAttachmentError, setAttaching: setNewAttaching });
+                    e.target.value = "";
+                  }}
+                  onRemove={() => { setNewAttachment(null); setNewAttachmentError(""); }}
+                />
                 <Button
                   onClick={() => createM.mutate()}
                   disabled={createM.isPending || !subject.trim() || !newMessage.trim()}
@@ -692,6 +829,7 @@ export default function CommercialConsultsPage() {
                       </div>
                       {isResolution ? <div style={{ fontSize: 12, fontWeight: 800, marginBottom: 6 }}>Resolución final</div> : null}
                       <div style={{ whiteSpace: "pre-wrap" }}>{message.message_text}</div>
+                      <MessageAttachment attachment={message.attachment} />
                     </div>
                   );
                 })}
@@ -707,6 +845,17 @@ export default function CommercialConsultsPage() {
                       onChange={(e) => setReplyMessage(e.target.value)}
                       placeholder={isCommercial ? "Escribí la respuesta comercial" : "Escribí tu mensaje"}
                       style={{ width: "100%", minHeight: 120, padding: 10, borderRadius: 10, border: "1px solid #ddd", resize: "vertical" }}
+                    />
+                    <AttachmentField
+                      attachment={replyAttachment}
+                      error={replyAttachmentError}
+                      attaching={replyAttaching}
+                      onSelectFile={(e) => {
+                        const file = e.target.files?.[0] || null;
+                        handleTicketAttachmentFile(file, { setAttachment: setReplyAttachment, setError: setReplyAttachmentError, setAttaching: setReplyAttaching });
+                        e.target.value = "";
+                      }}
+                      onRemove={() => { setReplyAttachment(null); setReplyAttachmentError(""); }}
                     />
                     <div style={{ marginTop: 8, display: "flex", gap: 8, flexWrap: "wrap" }}>
                       <Button onClick={() => replyM.mutate()} disabled={replyM.isPending || !replyMessage.trim()}>
@@ -736,6 +885,17 @@ export default function CommercialConsultsPage() {
                       onChange={(e) => setResolutionText(e.target.value)}
                       placeholder="Detalle de la resolución final"
                       style={{ width: "100%", minHeight: 110, padding: 10, borderRadius: 10, border: "1px solid #ddd", resize: "vertical" }}
+                    />
+                    <AttachmentField
+                      attachment={resolutionAttachment}
+                      error={resolutionAttachmentError}
+                      attaching={resolutionAttaching}
+                      onSelectFile={(e) => {
+                        const file = e.target.files?.[0] || null;
+                        handleTicketAttachmentFile(file, { setAttachment: setResolutionAttachment, setError: setResolutionAttachmentError, setAttaching: setResolutionAttaching });
+                        e.target.value = "";
+                      }}
+                      onRemove={() => { setResolutionAttachment(null); setResolutionAttachmentError(""); }}
                     />
                     <div style={{ marginTop: 8 }}>
                       <Button variant="ghost" onClick={() => closeM.mutate()} disabled={closeM.isPending || !resolutionText.trim()}>

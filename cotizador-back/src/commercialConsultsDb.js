@@ -25,6 +25,38 @@ function normalizeMessage(value) {
   return String(value || "").trim();
 }
 
+const MAX_TICKET_ATTACHMENT_BYTES = 15 * 1024 * 1024;
+const ALLOWED_TICKET_ATTACHMENT_TYPES = new Set([
+  "application/pdf",
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "image/gif",
+  "video/mp4",
+  "video/quicktime",
+  "video/webm",
+]);
+
+// Revalida en el server lo que ya valido el navegador (tipo/tamaño) - no confiar
+// solo en el front, alguien podria pegarle directo a la API.
+function normalizeAttachment(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  const dataUrl = String(raw.data_url || "").trim();
+  if (!dataUrl) return null;
+  if (!dataUrl.startsWith("data:")) throw new Error("Adjunto inválido");
+  const type = String(raw.type || "").trim().toLowerCase();
+  if (!ALLOWED_TICKET_ATTACHMENT_TYPES.has(type)) throw new Error("El adjunto debe ser una imagen, un PDF o un video");
+  const size = Number(raw.size || 0) || 0;
+  if (size > MAX_TICKET_ATTACHMENT_BYTES) throw new Error("El adjunto no puede superar 15 MB");
+  return {
+    name: String(raw.name || "").trim().slice(0, 200) || "archivo",
+    type,
+    size,
+    data_url: dataUrl,
+    uploaded_at: raw.uploaded_at || new Date().toISOString(),
+  };
+}
+
 function requesterRoleForUser(user) {
   if (user?.is_distribuidor) return "distribuidor";
   return "vendedor";
@@ -108,6 +140,7 @@ export async function ensureCommercialConsultTables() {
   `);
 
   await dbQuery(`alter table public.presupuestador_commercial_tickets add column if not exists on_behalf_of_user_id bigint null references public.presupuestador_users(id);`);
+  await dbQuery(`alter table public.presupuestador_commercial_ticket_messages add column if not exists attachment jsonb null;`);
 
   await dbQuery(`create index if not exists presupuestador_commercial_tickets_created_by_idx on public.presupuestador_commercial_tickets(created_by_user_id);`);
   await dbQuery(`create index if not exists presupuestador_commercial_tickets_on_behalf_of_idx on public.presupuestador_commercial_tickets(on_behalf_of_user_id);`);
@@ -277,6 +310,7 @@ async function getTicketMessages(clientOrDb, ticketId) {
         m.author_role,
         m.message_text,
         m.message_type,
+        m.attachment,
         m.created_at,
         coalesce(nullif(u.full_name, ''), u.username, concat('#', m.author_user_id::text)) as author_name,
         u.username as author_username
@@ -343,6 +377,7 @@ async function insertCommercialTicket(client, {
   status,
   subject,
   message,
+  attachment,
   authorRole,
   requesterLastReadAt,
   commercialLastReadAt,
@@ -379,17 +414,18 @@ async function insertCommercialTicket(client, {
         author_role,
         message_text,
         message_type,
+        attachment,
         created_at
       )
-      values ($1, $2, $3, $4, 'message', $5)
+      values ($1, $2, $3, $4, 'message', $5::jsonb, $6)
     `,
-    [ticketIdValue, creatorUserId, authorRole, message, now]
+    [ticketIdValue, creatorUserId, authorRole, message, attachment ? JSON.stringify(attachment) : null, now]
   );
 
   return ticketIdValue;
 }
 
-export async function createCommercialConsult(user, { subject, message, target_user_id, audience } = {}) {
+export async function createCommercialConsult(user, { subject, message, target_user_id, audience, attachment } = {}) {
   await ensureCommercialConsultTables();
   const staffCreating = isCommercialUser(user);
   if (!staffCreating && !isRequesterUser(user)) {
@@ -400,6 +436,7 @@ export async function createCommercialConsult(user, { subject, message, target_u
   const cleanMessage = normalizeMessage(message);
   if (!cleanSubject) throw new Error("Falta asunto");
   if (!cleanMessage) throw new Error("Falta mensaje");
+  const cleanAttachment = normalizeAttachment(attachment);
 
   const userId = toId(user?.user_id || user?.id);
   const normalizedAudience = staffCreating ? normalizeAudience(audience) : "target";
@@ -419,6 +456,7 @@ export async function createCommercialConsult(user, { subject, message, target_u
           status: "in_progress",
           subject: cleanSubject,
           message: cleanMessage,
+          attachment: cleanAttachment,
           authorRole: "enc_comercial",
           requesterLastReadAt: null,
           commercialLastReadAt: now,
@@ -459,6 +497,7 @@ export async function createCommercialConsult(user, { subject, message, target_u
       status: initialStatus,
       subject: cleanSubject,
       message: cleanMessage,
+      attachment: cleanAttachment,
       authorRole,
       requesterLastReadAt,
       commercialLastReadAt,
@@ -469,10 +508,11 @@ export async function createCommercialConsult(user, { subject, message, target_u
   return getCommercialConsultDetail(user, ticketId);
 }
 
-export async function addCommercialConsultMessage(user, id, { message } = {}) {
+export async function addCommercialConsultMessage(user, id, { message, attachment } = {}) {
   await ensureCommercialConsultTables();
   const cleanMessage = normalizeMessage(message);
   if (!cleanMessage) throw new Error("Falta mensaje");
+  const cleanAttachment = normalizeAttachment(attachment);
 
   const ticketId = Number(id || 0);
   const userId = toId(user?.user_id || user?.id);
@@ -498,11 +538,12 @@ export async function addCommercialConsultMessage(user, id, { message } = {}) {
           author_role,
           message_text,
           message_type,
+          attachment,
           created_at
         )
-        values ($1, $2, $3, $4, 'message', $5)
+        values ($1, $2, $3, $4, 'message', $5::jsonb, $6)
       `,
-      [ticketId, userId, authorRole, cleanMessage, now]
+      [ticketId, userId, authorRole, cleanMessage, cleanAttachment ? JSON.stringify(cleanAttachment) : null, now]
     );
 
     const nextStatus = viewerIsCommercial && ticket.status === "pending" ? "in_progress" : ticket.status;
@@ -544,11 +585,12 @@ export async function markCommercialConsultRead(user, id) {
   return true;
 }
 
-export async function closeCommercialConsult(user, id, { resolution } = {}) {
+export async function closeCommercialConsult(user, id, { resolution, attachment } = {}) {
   await ensureCommercialConsultTables();
   if (!isCommercialUser(user)) throw new Error("Solo Enc. Comercial puede cerrar consultas");
   const cleanResolution = normalizeMessage(resolution);
   if (!cleanResolution) throw new Error("Falta la resolución final");
+  const cleanAttachment = normalizeAttachment(attachment);
 
   const ticketId = Number(id || 0);
   const userId = toId(user?.user_id || user?.id);
@@ -570,11 +612,12 @@ export async function closeCommercialConsult(user, id, { resolution } = {}) {
           author_role,
           message_text,
           message_type,
+          attachment,
           created_at
         )
-        values ($1, $2, 'enc_comercial', $3, 'resolution', $4)
+        values ($1, $2, 'enc_comercial', $3, 'resolution', $4::jsonb, $5)
       `,
-      [ticketId, userId, cleanResolution, now]
+      [ticketId, userId, cleanResolution, cleanAttachment ? JSON.stringify(cleanAttachment) : null, now]
     );
 
     await client.query(

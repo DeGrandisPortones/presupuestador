@@ -38,7 +38,10 @@ const { buildQuotesRouter } = await import("./routes/quotes.routes.js");
 const app = express();
 
 app.use(cors({ origin: true }));
-app.use(express.json({ limit: "15mb" }));
+// 25mb: deja lugar a un adjunto de ticket de hasta 15MB en base64 (~20MB
+// codificado) mas el resto del payload. Ver src/utils/ticketAttachment.js
+// en el front para el limite/validacion del lado del cliente.
+app.use(express.json({ limit: "25mb" }));
 app.use(morgan("dev"));
 
 console.log("[ODOO ENV]", {
