@@ -1,14 +1,28 @@
 const MAX_TICKET_ATTACHMENT_BYTES = 15 * 1024 * 1024;
+const MAX_TICKET_VIDEO_ATTACHMENT_BYTES = 5 * 1024 * 1024;
+const VIDEO_TICKET_ATTACHMENT_TYPES = new Set(["video/mp4", "video/quicktime", "video/webm"]);
 const ALLOWED_TICKET_ATTACHMENT_TYPES = new Set([
   "application/pdf",
   "image/jpeg",
   "image/png",
   "image/webp",
   "image/gif",
-  "video/mp4",
-  "video/quicktime",
-  "video/webm",
+  ...VIDEO_TICKET_ATTACHMENT_TYPES,
 ]);
+
+function isVideoFile(file) {
+  const type = safeText(file?.type).toLowerCase();
+  if (type) return VIDEO_TICKET_ATTACHMENT_TYPES.has(type);
+  return ["mp4", "mov", "webm"].includes(extensionFromName(file?.name));
+}
+
+function maxBytesForFile(file) {
+  return isVideoFile(file) ? MAX_TICKET_VIDEO_ATTACHMENT_BYTES : MAX_TICKET_ATTACHMENT_BYTES;
+}
+
+function formatMb(bytes) {
+  return `${Math.round((bytes / (1024 * 1024)) * 10) / 10} MB`;
+}
 
 function safeText(value) {
   return String(value ?? "").trim();
@@ -91,8 +105,11 @@ export function fileToTicketAttachment(file) {
       reject(new Error("El adjunto debe ser una imagen, un PDF o un video."));
       return;
     }
-    if (Number(file.size || 0) > MAX_TICKET_ATTACHMENT_BYTES) {
-      reject(new Error("El adjunto no puede superar 15 MB."));
+    // Validacion previa por tamaño, antes de leer el archivo: video tiene un tope
+    // mas chico (5MB) que imagen/PDF (15MB) porque un video pesa mucho mas rapido.
+    const maxBytes = maxBytesForFile(file);
+    if (Number(file.size || 0) > maxBytes) {
+      reject(new Error(`El archivo excede el tamaño permitido (máximo ${formatMb(maxBytes)}).`));
       return;
     }
     const reader = new FileReader();

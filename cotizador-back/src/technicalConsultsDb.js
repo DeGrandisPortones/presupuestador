@@ -26,16 +26,20 @@ function normalizeMessage(value) {
 }
 
 const MAX_TICKET_ATTACHMENT_BYTES = 15 * 1024 * 1024;
+const MAX_TICKET_VIDEO_ATTACHMENT_BYTES = 5 * 1024 * 1024;
+const VIDEO_TICKET_ATTACHMENT_TYPES = new Set(["video/mp4", "video/quicktime", "video/webm"]);
 const ALLOWED_TICKET_ATTACHMENT_TYPES = new Set([
   "application/pdf",
   "image/jpeg",
   "image/png",
   "image/webp",
   "image/gif",
-  "video/mp4",
-  "video/quicktime",
-  "video/webm",
+  ...VIDEO_TICKET_ATTACHMENT_TYPES,
 ]);
+
+function formatMb(bytes) {
+  return `${Math.round((bytes / (1024 * 1024)) * 10) / 10} MB`;
+}
 
 // Revalida en el server lo que ya valido el navegador (tipo/tamaño) - no confiar
 // solo en el front, alguien podria pegarle directo a la API.
@@ -47,7 +51,8 @@ function normalizeAttachment(raw) {
   const type = String(raw.type || "").trim().toLowerCase();
   if (!ALLOWED_TICKET_ATTACHMENT_TYPES.has(type)) throw new Error("El adjunto debe ser una imagen, un PDF o un video");
   const size = Number(raw.size || 0) || 0;
-  if (size > MAX_TICKET_ATTACHMENT_BYTES) throw new Error("El adjunto no puede superar 15 MB");
+  const maxBytes = VIDEO_TICKET_ATTACHMENT_TYPES.has(type) ? MAX_TICKET_VIDEO_ATTACHMENT_BYTES : MAX_TICKET_ATTACHMENT_BYTES;
+  if (size > maxBytes) throw new Error(`El archivo excede el tamaño permitido (máximo ${formatMb(maxBytes)})`);
   return {
     name: String(raw.name || "").trim().slice(0, 200) || "archivo",
     type,

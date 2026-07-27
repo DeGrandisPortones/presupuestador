@@ -79,30 +79,33 @@ function normalizeSearch(value) {
 // todos comparten la misma forma (imagen/pdf/video, ver utils/ticketAttachment.js).
 function AttachmentField({ attachment, error, attaching, onSelectFile, onRemove }) {
   return (
-    <div style={{ marginTop: 8, marginBottom: 8 }}>
+    <div style={{ marginTop: 10, marginBottom: 10 }}>
       {!attachment ? (
-        <label
-          style={{
-            display: "inline-flex", alignItems: "center", gap: 6, border: "1px dashed #bbb",
-            borderRadius: 8, padding: "6px 10px", cursor: "pointer", fontSize: 13, color: "#555",
-          }}
-        >
-          📎 Adjuntar imagen, PDF o video
-          <input type="file" accept="image/*,application/pdf,video/*" onChange={onSelectFile} style={{ display: "none" }} />
-        </label>
+        <>
+          <label
+            className="btn btn--secondary"
+            style={{ display: "inline-flex", alignItems: "center", gap: 8, margin: 0, cursor: attaching ? "wait" : "pointer" }}
+          >
+            <span aria-hidden="true" style={{ fontSize: 15 }}>📎</span>
+            <span>{attaching ? "Adjuntando…" : "Adjuntar imagen, PDF o video"}</span>
+            <input type="file" accept="image/*,application/pdf,video/*" onChange={onSelectFile} disabled={attaching} style={{ display: "none" }} />
+          </label>
+          <div className="muted" style={{ fontSize: 11.5, marginTop: 5 }}>Imagen o PDF hasta 15 MB · Video hasta 5 MB</div>
+        </>
       ) : (
         <div
           style={{
-            display: "inline-flex", alignItems: "center", gap: 8, border: "1px solid #01a39f",
-            borderRadius: 8, padding: "6px 10px", fontSize: 13, background: "rgba(1,163,159,0.06)",
+            display: "inline-flex", alignItems: "center", gap: 10, border: "1px solid var(--dg-teal)",
+            borderRadius: 10, padding: "8px 12px", fontSize: 13, background: "rgba(1,163,159,0.08)",
           }}
         >
-          <span>📎 {formatTicketAttachmentMeta(attachment)}</span>
-          <button type="button" onClick={onRemove} style={{ border: "none", background: "none", cursor: "pointer", color: "#d93025", fontWeight: 800 }}>×</button>
+          <span style={{ fontWeight: 700, color: "var(--dg-petrol)" }}>📎 {formatTicketAttachmentMeta(attachment)}</span>
+          <button type="button" onClick={onRemove} className="btn btn--ghost" style={{ padding: "3px 9px", fontSize: 12 }}>
+            Quitar
+          </button>
         </div>
       )}
-      {attaching ? <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>Adjuntando…</div> : null}
-      {error ? <div style={{ color: "#d93025", fontSize: 12, marginTop: 4 }}>{error}</div> : null}
+      {error ? <div style={{ color: "#d93025", fontSize: 12, marginTop: 6, fontWeight: 700 }}>{error}</div> : null}
     </div>
   );
 }
