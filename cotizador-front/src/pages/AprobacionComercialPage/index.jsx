@@ -682,7 +682,10 @@ export default function AprobacionComercialPage() {
                         <td><OdooReferenceCell value={quoteOdooReference(r)} /></td>
                         <td>{Array.isArray(r?.measurement_commercial_diff_json) && r.measurement_commercial_diff_json.length ? r.measurement_commercial_diff_json.map((item) => item?.label || item?.key).filter(Boolean).join(", ") : "—"}</td>
                         <td className="right" style={{ display: "flex", gap: 6, justifyContent: "flex-end", flexWrap: "wrap" }}>
-                          <Button variant="ghost" onClick={() => navigate(`/mediciones/${r.id}`, { state: { from: "/aprobacion/comercial" } })}>Abrir</Button>
+                          {/* Misma vista que usa la aprobacion comercial inicial (montos, detalle
+                              tecnico y detalle del presupuesto) - antes mandaba a /mediciones/:id,
+                              que solo muestra el formulario tecnico de medicion sin precios. */}
+                          <Button variant="ghost" onClick={() => navigate(`/presupuestos/${r.id}`, { state: { from: "/aprobacion/comercial" } })}>Abrir</Button>
                           <Button disabled={medicionComercialM.isPending} onClick={() => medicionComercialM.mutate({ id: r.id, action: "approve", notes: null })}>Aprobar</Button>
                           <Button variant="ghost" disabled={medicionComercialM.isPending} onClick={() => { const msg = window.prompt("Motivo de la devolución al vendedor:", ""); if (msg !== null) medicionComercialM.mutate({ id: r.id, action: "reject", notes: msg }); }}>Devolver</Button>
                         </td>
