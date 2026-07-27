@@ -86,11 +86,10 @@ function AttachmentField({ attachment, error, attaching, onSelectFile, onRemove 
             className="btn btn--secondary"
             style={{ display: "inline-flex", alignItems: "center", gap: 8, margin: 0, cursor: attaching ? "wait" : "pointer" }}
           >
-            <span aria-hidden="true" style={{ fontSize: 15 }}>\ud83d\udcce</span>
-            <span>{attaching ? "Adjuntando\u2026" : "Adjuntar imagen, PDF o video"}</span>
+            <span>{attaching ? "Adjuntando..." : "Adjuntar imagen, PDF o video"}</span>
             <input type="file" accept="image/*,application/pdf,video/*" onChange={onSelectFile} disabled={attaching} style={{ display: "none" }} />
           </label>
-          <div className="muted" style={{ fontSize: 11.5, marginTop: 5 }}>Imagen o PDF hasta 15 MB \u00b7 Video hasta 5 MB</div>
+          <div className="muted" style={{ fontSize: 11.5, marginTop: 5 }}>Imagen o PDF hasta 15 MB - Video hasta 5 MB</div>
         </>
       ) : (
         <div
@@ -99,7 +98,7 @@ function AttachmentField({ attachment, error, attaching, onSelectFile, onRemove 
             borderRadius: 10, padding: "8px 12px", fontSize: 13, background: "rgba(1,163,159,0.08)",
           }}
         >
-          <span style={{ fontWeight: 700, color: "var(--dg-petrol)" }}>\ud83d\udcce {formatTicketAttachmentMeta(attachment)}</span>
+          <span style={{ fontWeight: 700, color: "var(--dg-petrol)" }}>{formatTicketAttachmentMeta(attachment)}</span>
           <button type="button" onClick={onRemove} className="btn btn--ghost" style={{ padding: "3px 9px", fontSize: 12 }}>
             Quitar
           </button>
@@ -138,7 +137,7 @@ function MessageAttachment({ attachment }) {
         onClick={() => openTicketAttachment(attachment)}
         style={{ border: "1px solid #ddd", borderRadius: 8, background: "#fff", padding: "5px 10px", cursor: "pointer", fontSize: 12 }}
       >
-        \ud83d\udcce {formatTicketAttachmentMeta(attachment)}
+        {formatTicketAttachmentMeta(attachment)}
       </button>
       <button type="button" onClick={() => downloadTicketAttachment(attachment)} style={{ border: "none", background: "none", cursor: "pointer", fontSize: 12, color: "#01a39f", fontWeight: 700 }}>
         Descargar
