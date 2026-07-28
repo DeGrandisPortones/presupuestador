@@ -256,6 +256,32 @@ function minMm(values = []) {
 function round4(n) {
   return Math.round(Number(n || 0) * 10000) / 10000;
 }
+function round2(n) {
+  return Math.round(Number(n || 0) * 100) / 100;
+}
+function sumLinesBaseAmount(lines) {
+  return round2(
+    (Array.isArray(lines) ? lines : []).reduce((acc, l) => {
+      const qty = Number(l?.qty || 0) || 0;
+      const basePrice = Number(l?.basePrice ?? l?.base_price ?? l?.price ?? 0) || 0;
+      return acc + qty * basePrice;
+    }, 0),
+  );
+}
+// Snapshot de las lineas "originales" (antes de la edicion del vendedor) para
+// que Comercial pueda comparar contra lo editado al momento de aprobar. Se
+// captura acá (cuando se marca returned_to_seller), no en /return/confirm,
+// porque para ese momento el vendedor ya guardo su edicion via PUT /api/quotes/:id
+// y ese guardado no preserva measurement_return_context (solo preserva claves de
+// linked_porton en preserveLinkedPortonPayload) - el original ya se perdio ahi.
+function buildCommercialDiffSnapshot(ctx) {
+  const originalLines = ctx?.original_lines || [];
+  return {
+    original_lines: originalLines,
+    original_total: sumLinesBaseAmount(originalLines),
+    captured_at: new Date().toISOString(),
+  };
+}
 function deriveMeasurementPrefill(quote) {
   const payload = quote?.payload || {};
   const lines = Array.isArray(quote?.lines) ? quote.lines : [];
@@ -450,14 +476,12 @@ export function buildMeasurementsRouter(odoo = null) {
         }
       }
 
-      // Cuando el vendedor arregla un porton devuelto por medicion y lo reenvia, primero
-      // tiene que pasar por Comercial (measurement_commercial_review_status='pending')
-      // antes de que Tecnica lo pueda revisar - aunque measurement_status ya diga
-      // 'submitted'. Se aplica sin importar el status pedido (AprobacionTecnicaPage usa
-      // status=all y filtra "submitted" en el propio navegador, no solo status=submitted).
-      if (viewer === "tecnica") {
-        where.push(`coalesce(q.measurement_commercial_review_status, '') <> 'pending'`);
-      }
+      // Antes esto ocultaba a Tecnica los presupuestos con
+      // measurement_commercial_review_status='pending' (cuando el vendedor arregla un
+      // porton devuelto por medicion y lo reenvia, primero tiene que pasar por Comercial).
+      // Ahora se los deja ver (en modo solo lectura desde el frontend) para que sepan que
+      // existen y por que todavia no pueden actuar - la proteccion real sigue estando en
+      // POST /:id/review (mas abajo), que sigue rechazando la accion mientras este 'pending'.
 
       if (status === "commercial_review") {
         where.push(`q.measurement_commercial_review_status = 'pending'`);
@@ -618,6 +642,7 @@ export function buildMeasurementsRouter(odoo = null) {
         const payloadSource = quote.payload && typeof quote.payload === "object" ? { ...quote.payload } : {};
         const payloadWithExtra = extraContact ? { ...payloadSource, extra_contact: extraContact } : payloadSource;
         const nextPayload = payloadWithReturnContext(payloadWithoutReturnContext(payloadWithExtra), ctx);
+        const commercialDiffSnapshot = buildCommercialDiffSnapshot(ctx);
         const upd = await dbQuery(
           `update public.presupuestador_quotes
               set status='draft',
@@ -634,7 +659,8 @@ export function buildMeasurementsRouter(odoo = null) {
                   measurement_assigned_to_user_id=coalesce(measurement_assigned_to_user_id, $8),
                   measurement_at=coalesce(measurement_at, now()),
                   measurement_commercial_review_required=false,
-                  measurement_commercial_review_status=null
+                  measurement_commercial_review_status=null,
+                  measurement_commercial_diff_json=$9::jsonb
             where id=$1
             returning *`,
           [
@@ -646,6 +672,7 @@ export function buildMeasurementsRouter(odoo = null) {
             JSON.stringify(quote.measurement_original_form || quote.measurement_form || {}),
             reason,
             Number(u.user_id),
+            JSON.stringify(commercialDiffSnapshot),
           ],
         );
         return res.json({
@@ -728,9 +755,10 @@ export function buildMeasurementsRouter(odoo = null) {
         const nextLines = [...cleanLines, buildPreviouslyBilledLine(quote)];
         const payloadSource = quote.payload && typeof quote.payload === "object" ? { ...quote.payload } : {};
         const nextPayload = payloadWithReturnContext(payloadWithoutReturnContext(payloadSource), ctx);
+        const commercialDiffSnapshot = buildCommercialDiffSnapshot(ctx);
         const upd = await dbQuery(
-          `update public.presupuestador_quotes set status='draft', lines=$2::jsonb, payload=$3::jsonb, measurement_status='returned_to_seller', measurement_review_notes=$4, measurement_review_by_user_id=$5, measurement_review_at=now(), measurement_commercial_review_required=false, measurement_commercial_review_status=null where id=$1 returning *`,
-          [id, JSON.stringify(nextLines), JSON.stringify(nextPayload), reason, Number(u.user_id)],
+          `update public.presupuestador_quotes set status='draft', lines=$2::jsonb, payload=$3::jsonb, measurement_status='returned_to_seller', measurement_review_notes=$4, measurement_review_by_user_id=$5, measurement_review_at=now(), measurement_commercial_review_required=false, measurement_commercial_review_status=null, measurement_commercial_diff_json=$6::jsonb where id=$1 returning *`,
+          [id, JSON.stringify(nextLines), JSON.stringify(nextPayload), reason, Number(u.user_id), JSON.stringify(commercialDiffSnapshot)],
         );
         return res.json({ ok: true, quote: upd.rows?.[0] || null, returned_to_seller: true });
       }
@@ -907,6 +935,7 @@ export function buildMeasurementsRouter(odoo = null) {
       const nextLines = [...cleanLines, buildPreviouslyBilledLine(quote)];
       const payloadSource = quote.payload && typeof quote.payload === "object" ? { ...quote.payload } : {};
       const nextPayload = payloadWithReturnContext(payloadWithoutReturnContext(payloadSource), ctx);
+      const commercialDiffSnapshot = buildCommercialDiffSnapshot(ctx);
       const upd = await dbQuery(
         `update public.presupuestador_quotes
             set status='draft',
@@ -917,10 +946,11 @@ export function buildMeasurementsRouter(odoo = null) {
                 measurement_review_by_user_id=$5,
                 measurement_review_at=now(),
                 measurement_commercial_review_required=false,
-                measurement_commercial_review_status=null
+                measurement_commercial_review_status=null,
+                measurement_commercial_diff_json=$6::jsonb
           where id=$1
           returning *`,
-        [id, JSON.stringify(nextLines), JSON.stringify(nextPayload), reason, Number(u.user_id)],
+        [id, JSON.stringify(nextLines), JSON.stringify(nextPayload), reason, Number(u.user_id), JSON.stringify(commercialDiffSnapshot)],
       );
       return res.json({ ok: true, quote: upd.rows?.[0] || null, returned_to_seller: true });
     } catch (e) {

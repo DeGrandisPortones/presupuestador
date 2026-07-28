@@ -7,10 +7,11 @@ import Input from "../../ui/Input.jsx";
 import PaginationControls from "../../ui/PaginationControls.jsx";
 import { listQuotes, reviewAcopioCommercial } from "../../api/quotes.js";
 import { listDoors, reviewDoorCommercial } from "../../api/doors.js";
-import { listMeasurements, reviewCommercialMeasurement } from "../../api/measurements.js";
+import { listMeasurements } from "../../api/measurements.js";
 import { useAuthStore } from "../../domain/auth/store.js";
 import { downloadListingDoorPdf, downloadListingQuotePdf, downloadListingQuoteProformaPdf } from "../../utils/listingPdf.js";
 import { downloadPlegadoAttachment, formatPlegadoAttachmentMeta, getPlegadoAttachment, openPlegadoAttachment } from "../../utils/plegadoAttachment.js";
+import { computeCommercialLinesDiff } from "../../domain/quote/commercialDiff.js";
 
 const PAGE_SIZE = 25;
 const COMMERCIAL_TAB_LABELS = {
@@ -110,6 +111,16 @@ function measurementRowLabel(r) {
   if (status === "needs_fix") return "Devuelto para corregir";
   if (status === "approved") return "Aprobada";
   return status || "—";
+}
+function measurementQuickDiffLabel(row) {
+  const snapshot = row?.measurement_commercial_diff_json;
+  if (!snapshot || typeof snapshot !== "object" || !Array.isArray(snapshot.original_lines)) return "—";
+  const diff = computeCommercialLinesDiff(snapshot.original_lines, row?.lines || []);
+  if (!diff.hasChanges) return "Sin cambios";
+  const sign = diff.diffAmount > 0 ? "+" : diff.diffAmount < 0 ? "-" : "";
+  const amountText = `${sign}$${Math.abs(diff.diffAmount).toLocaleString("es-AR")}`;
+  const percentText = diff.diffPercent === null ? "" : ` (${sign}${Math.abs(diff.diffPercent).toLocaleString("es-AR", { maximumFractionDigits: 1 })}%)`;
+  return `${amountText}${percentText}`;
 }
 function fmtDate(iso) {
   if (!iso) return "—";
@@ -382,14 +393,6 @@ export default function AprobacionComercialPage() {
 
   const acopioM = useMutation({ mutationFn: ({ id, action, notes }) => reviewAcopioCommercial(id, { action, notes }), onSuccess: () => acopioQ.refetch() });
   const doorM = useMutation({ mutationFn: ({ id, action, notes }) => reviewDoorCommercial(id, { action, notes }), onSuccess: () => doorsQ.refetch() });
-  const medicionComercialM = useMutation({
-    mutationFn: ({ id, action, notes }) => reviewCommercialMeasurement(id, { action, notes }),
-    onSuccess: (_data, variables) => {
-      toast.success(variables?.action === "approve" ? "Aprobado. Ya pasó a la cola de Técnica." : "Devuelto al vendedor.");
-      medicionesQ.refetch();
-    },
-    onError: (e) => toast.error(e?.message || "No se pudo procesar"),
-  });
   const visibleTabKeys = COMMERCIAL_TABS_BY_SECTION[approvalSection] || COMMERCIAL_TABS_BY_SECTION.all;
 
   function goToTab(nextTab) {
@@ -500,9 +503,6 @@ export default function AprobacionComercialPage() {
             r?.end_customer?.address,
             measurementRowLabel(r),
             quoteOdooReference(r),
-            ...(Array.isArray(r?.measurement_commercial_diff_json)
-              ? r.measurement_commercial_diff_json.map((item) => item?.label || item?.key)
-              : []),
           ],
           searchText,
         ),
@@ -670,7 +670,7 @@ export default function AprobacionComercialPage() {
             {!!medicionesRows.length && (
               <>
                 <table>
-                  <thead><tr><th>Fecha</th><th>Vendedor/Distribuidor</th><th>Cliente</th><th>Dirección</th><th>Estado</th><th>NP/NV Odoo</th><th>Campos modificados</th><th></th></tr></thead>
+                  <thead><tr><th>Fecha</th><th>Vendedor/Distribuidor</th><th>Cliente</th><th>Dirección</th><th>Estado</th><th>NP/NV Odoo</th><th>Diferencia</th><th></th></tr></thead>
                   <tbody>
                     {visibleMedicionesRows.map((r) => (
                       <tr key={r.id}>
@@ -680,14 +680,12 @@ export default function AprobacionComercialPage() {
                         <td>{r.end_customer?.address || "—"}</td>
                         <td>{measurementRowLabel(r)}</td>
                         <td><OdooReferenceCell value={quoteOdooReference(r)} /></td>
-                        <td>{Array.isArray(r?.measurement_commercial_diff_json) && r.measurement_commercial_diff_json.length ? r.measurement_commercial_diff_json.map((item) => item?.label || item?.key).filter(Boolean).join(", ") : "—"}</td>
+                        <td>{measurementQuickDiffLabel(r)}</td>
                         <td className="right" style={{ display: "flex", gap: 6, justifyContent: "flex-end", flexWrap: "wrap" }}>
-                          {/* Misma vista que usa la aprobacion comercial inicial (montos, detalle
-                              tecnico y detalle del presupuesto) - antes mandaba a /mediciones/:id,
-                              que solo muestra el formulario tecnico de medicion sin precios. */}
-                          <Button variant="ghost" onClick={() => navigate(`/presupuestos/${r.id}`, { state: { from: "/aprobacion/comercial" } })}>Abrir</Button>
-                          <Button disabled={medicionComercialM.isPending} onClick={() => medicionComercialM.mutate({ id: r.id, action: "approve", notes: null })}>Aprobar</Button>
-                          <Button variant="ghost" disabled={medicionComercialM.isPending} onClick={() => { const msg = window.prompt("Motivo de la devolución al vendedor:", ""); if (msg !== null) medicionComercialM.mutate({ id: r.id, action: "reject", notes: msg }); }}>Devolver</Button>
+                          {/* La aprobacion/devolucion se hace desde el detalle del presupuesto
+                              (/presupuestos/:id), donde se ve el detalle completo de la diferencia
+                              contra el presupuesto original antes de decidir. */}
+                          <Button onClick={() => navigate(`/presupuestos/${r.id}`, { state: { from: "/aprobacion/comercial" } })}>Abrir</Button>
                         </td>
                       </tr>
                     ))}

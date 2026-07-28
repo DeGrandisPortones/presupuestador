@@ -1,15 +1,17 @@
 import { useEffect, useMemo, useState } from "react";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 
 import Button from "../../ui/Button.jsx";
 import Input from "../../ui/Input.jsx";
 import { getQuote, reviewCommercial, reviewTechnical, createRevisionQuote } from "../../api/quotes.js";
+import { reviewCommercialMeasurement } from "../../api/measurements.js";
 import { listDoorsByQuote } from "../../api/doors.js";
 import { downloadMedicionPdf } from "../../api/pdf.js";
 import { findBillingCustomerByVat, getBillingOptions, getFinancingPreview } from "../../api/odoo.js";
 import { useAuthStore } from "../../domain/auth/store.js";
 import { formatARS, calcTotals, calcLineTotal, resolveLineFinalUnitPrice } from "../../domain/quote/pricing.js";
+import { computeCommercialLinesDiff } from "../../domain/quote/commercialDiff.js";
 import { downloadPlegadoAttachment, formatPlegadoAttachmentMeta, getPlegadoAttachment, openPlegadoAttachment } from "../../utils/plegadoAttachment.js";
 import MeasurementReadOnlyView from "../../components/MeasurementReadOnlyView.jsx";
 import { ParantesDistributionButton } from "../../components/ParantesDistributionScheme.jsx";
@@ -906,6 +908,103 @@ function ApprovalContextCard({ quote, commercialRows, technicalRows }) {
   );
 }
 
+function formatSignedPercentForApproval(value) {
+  if (value === null || value === undefined || Number.isNaN(Number(value))) return "—";
+  const n = Number(value);
+  const formatted = `${Math.abs(n).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%`;
+  if (n > 0) return `+ ${formatted}`;
+  if (n < 0) return `- ${formatted}`;
+  return formatted;
+}
+
+function CommercialLinesDiffTable({ diff }) {
+  if (!diff || !diff.hasChanges) {
+    return <div className="muted">Sin cambios detectados en productos, cantidades o precios.</div>;
+  }
+  const rows = [
+    ...diff.added.map((l) => ({ ...l, kind: "Agregado" })),
+    ...diff.removed.map((l) => ({ ...l, kind: "Quitado" })),
+    ...diff.changed.map((l) => ({ ...l, kind: "Modificado" })),
+  ];
+  return (
+    <table>
+      <thead><tr><th>Cambio</th><th>Producto</th><th className="right">Cant.</th><th className="right">Monto</th></tr></thead>
+      <tbody>
+        {rows.map((r) => (
+          <tr key={`${r.kind}-${r.key}`}>
+            <td>{r.kind}</td>
+            <td>{r.name}</td>
+            <td className="right">
+              {r.kind === "Modificado" ? `${r.original_qty} → ${r.current_qty}` : r.qty}
+            </td>
+            <td className="right">
+              {r.kind === "Modificado" ? `${formatARS(r.original_amount)} → ${formatARS(r.current_amount)}` : formatARS(r.amount)}
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+function CommercialMeasurementReviewCard({
+  diff,
+  notes,
+  onNotesChange,
+  canAct,
+  onApprove,
+  onReject,
+  isPending,
+  isError,
+  errorMessage,
+}) {
+  return (
+    <div className="card" style={{ background: "#fff8e1", border: "1px solid #f2d08a" }}>
+      <div style={{ fontWeight: 900, marginBottom: 6 }}>Revisión comercial de medición</div>
+      <div className="muted" style={{ marginBottom: 10 }}>
+        El vendedor editó este presupuesto después de la medición. Esta es la diferencia respecto al presupuesto original antes de aprobar.
+      </div>
+      {!diff ? (
+        <div className="muted" style={{ marginBottom: 10 }}>
+          No se pudo calcular el detalle de cambios para este presupuesto porque quedó pendiente de aprobación comercial
+          antes de esta funcionalidad. Revisá manualmente el listado de ítems y observaciones más abajo antes de decidir.
+        </div>
+      ) : (
+        <>
+          <ApprovalRowsGrid
+            rows={[
+              { label: "Total original", value: formatARS(diff.originalTotal) },
+              { label: "Total editado", value: formatARS(diff.currentTotal) },
+              { label: "Diferencia", value: formatSignedARSForApproval(diff.diffAmount) },
+              { label: "Diferencia %", value: formatSignedPercentForApproval(diff.diffPercent) },
+            ]}
+          />
+          <div className="spacer" />
+          <CommercialLinesDiffTable diff={diff} />
+        </>
+      )}
+      {canAct ? (
+        <>
+          <div className="spacer" />
+          <div className="muted">Observaciones</div>
+          <textarea
+            value={notes}
+            onChange={(e) => onNotesChange(e.target.value)}
+            placeholder="Motivo si devolvés al vendedor / notas si aprobás…"
+            style={{ width: "100%", minHeight: 60, padding: "8px 10px", borderRadius: 8, border: "1px solid #ddd", outline: "none", resize: "vertical" }}
+          />
+          <div className="spacer" />
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <Button disabled={isPending} onClick={onApprove}>{isPending ? "Procesando..." : "Aprobar"}</Button>
+            <Button variant="danger" disabled={isPending} onClick={onReject}>Devolver al vendedor</Button>
+          </div>
+          {isError ? <div style={{ color: "#d93025", fontSize: 13, marginTop: 10 }}>{errorMessage}</div> : null}
+        </>
+      ) : null}
+    </div>
+  );
+}
+
 function ProformaTotalsCard({ quote, conditionMode, financingPercent = 0 }) {
   if (!quote) return null;
   const financedSubtotal = round2ForApproval(getQuoteBaseSubtotalForApproval(quote) * (1 + (Number(financingPercent || 0) || 0) / 100));
@@ -1063,8 +1162,10 @@ export default function QuoteDetailPage() {
   const quoteId = params.id ? String(params.id) : null;
   const navigate = useNavigate();
   const location = useLocation();
+  const qc = useQueryClient();
   const user = useAuthStore((s) => s.user);
   const [notes, setNotes] = useState("");
+  const [commercialMeasurementNotes, setCommercialMeasurementNotes] = useState("");
   const [billingModalOpen, setBillingModalOpen] = useState(false);
   const [billingCustomer, setBillingCustomer] = useState(emptyBillingCustomer());
 
@@ -1106,8 +1207,20 @@ export default function QuoteDetailPage() {
   const commercialM = useMutation({ mutationFn: ({ action, billingCustomer: nextBillingCustomer }) => reviewCommercial(quoteId, { action, notes, billingCustomer: nextBillingCustomer }), onSuccess: () => navigate(approvalReturnPath) });
   const revisionM = useMutation({ mutationFn: () => createRevisionQuote(quoteId), onSuccess: (newQuote) => { if (newQuote?.id) navigate(quoteEditorPath(newQuote)); } });
   const techM = useMutation({ mutationFn: ({ action }) => reviewTechnical(quoteId, { action, notes }), onSuccess: () => navigate(approvalReturnPath) });
+  const commercialMeasurementM = useMutation({
+    mutationFn: ({ action, notes: reviewNotes }) => reviewCommercialMeasurement(quoteId, { action, notes: reviewNotes }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["quote", quoteId] }); navigate(approvalReturnPath); },
+  });
+
+  const showCommercialDiffPanel = !isRevision && quote?.measurement_commercial_review_status === "pending";
+  const canActOnCommercialReview = showCommercialDiffPanel && !!user?.is_enc_comercial;
+  const commercialDiffSnapshot = quote?.measurement_commercial_diff_json && typeof quote.measurement_commercial_diff_json === "object" ? quote.measurement_commercial_diff_json : null;
 
   const lines = Array.isArray(quote?.lines) ? quote.lines : [];
+  const commercialLinesDiff = useMemo(() => {
+    if (!showCommercialDiffPanel || !Array.isArray(commercialDiffSnapshot?.original_lines)) return null;
+    return computeCommercialLinesDiff(commercialDiffSnapshot.original_lines, lines);
+  }, [showCommercialDiffPanel, commercialDiffSnapshot, lines]);
   const approvalLineRows = useMemo(() => buildApprovalLineRows(lines, getQuoteMarginPercentForApproval(quote), approvalFinancingPercent, conditionMode), [lines, quote, approvalFinancingPercent, conditionMode]);
   const rejectionBoxes = useMemo(() => {
     if (!quote) return [];
@@ -1239,6 +1352,22 @@ export default function QuoteDetailPage() {
             <div className="spacer" />
             {!isRevision ? <div className="card" style={{ background: "#fafafa" }}><div style={{ fontWeight: 900, marginBottom: 6 }}>Aprobaciones</div><div className="muted" style={{ display: "flex", gap: 12, flexWrap: "wrap" }}><span>Comercial: <b>{decisionLabel(quote.commercial_decision)}</b>{quote.commercial_decision === "rejected" && quote.commercial_notes ? ` · ${quote.commercial_notes}` : ""}</span><span>Técnica: <b>{decisionLabel(quote.technical_decision)}</b>{quote.technical_decision === "rejected" && quote.technical_notes ? ` · ${quote.technical_notes}` : ""}</span></div></div> : null}
             {(!!approvalCommercialRows.length || !!approvalTechnicalRows.length) ? <><div className="spacer" /><ApprovalContextCard quote={quote} commercialRows={approvalCommercialRows} technicalRows={approvalTechnicalRows} /></> : null}
+            {showCommercialDiffPanel ? (
+              <>
+                <div className="spacer" />
+                <CommercialMeasurementReviewCard
+                  diff={commercialLinesDiff}
+                  notes={commercialMeasurementNotes}
+                  onNotesChange={setCommercialMeasurementNotes}
+                  canAct={canActOnCommercialReview}
+                  onApprove={() => commercialMeasurementM.mutate({ action: "approve", notes: commercialMeasurementNotes || null })}
+                  onReject={() => commercialMeasurementM.mutate({ action: "reject", notes: commercialMeasurementNotes || null })}
+                  isPending={commercialMeasurementM.isPending}
+                  isError={commercialMeasurementM.isError}
+                  errorMessage={commercialMeasurementM.error?.message}
+                />
+              </>
+            ) : null}
             {showMeasurement && !isRevision ? <><div className="spacer" /><div className="card" style={{ background: "#fafafa" }}><div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}><div><div style={{ fontWeight: 900 }}>Planilla de medición</div><div className="muted">Estado: <b>{measurementStatusLabel(quote.measurement_status)}</b></div></div>{hasMeasurementForPdf(quote) ? <Button variant="secondary" onClick={() => downloadMedicionPdf(quote.id)}>Descargar PDF</Button> : null}</div><div className="spacer" />{quote.measurement_form ? <MeasurementReadOnlyView quote={quote} /> : null}</div></> : null}
             <h3 style={{ marginTop: 0 }}>Ítems</h3>
             {!lines.length ? <div className="muted">Sin ítems</div> : null}
