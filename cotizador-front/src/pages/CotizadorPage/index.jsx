@@ -42,7 +42,10 @@ import SectionCatalog from "./components/SectionCatalog";
 import LinesTable from "./components/LinesTable";
 import SummaryBox from "./components/SummaryBox";
 
-const WIDTH_MIN_M = 2.3;
+// TEMPORAL 2026-07-28: bajado de 2.3 a 1.99 para poder guardar el presupuesto
+// 7348 (Jose Luis Lopez, porton de 2.00 x 2.35 m). Volver a 2.3 cuando ya no
+// haga falta la excepcion.
+const WIDTH_MIN_M = 1.99;
 const WIDTH_MAX_M = 7;
 const HEIGHT_MIN_M = 2;
 const HEIGHT_MAX_M = 3;
