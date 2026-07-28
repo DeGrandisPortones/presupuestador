@@ -304,6 +304,7 @@ function productionStatusLabel(row) {
   return ref ? `Enviado a producción · ${ref}` : "Enviado a producción";
 }
 function measurementStatusLabel(s, row) {
+  if (String(row?.measurement_commercial_review_status || "") === "pending") return "Pendiente aprob. comercial postmedición";
   if (s === "pending") return String(row?.measurement_subtype || "").toLowerCase().trim() === "sin_medicion" ? "Pendiente detalle técnico" : "Pendiente";
   if (s === "needs_fix") return "A corregir";
   if (s === "submitted") return "Pendiente aprobación final";
@@ -650,7 +651,8 @@ export default function AprobacionTecnicaPage() {
                 <table><thead><tr><th>Cliente</th><th>Localidad</th><th>Dirección</th><th>Estado</th><th>NP/NV Odoo</th><th>Obs. presupuesto</th><th></th></tr></thead><tbody>
                   {visibleIpanelDetails.map((r) => {
                     const isSubmitted = String(r?.measurement_status || "").toLowerCase().trim() === "submitted";
-                    return <tr key={r.id}><td style={{ fontWeight: 800 }}>{r.end_customer?.name || "(sin nombre)"}</td><td>{localityLabel(r)}</td><td>{r.end_customer?.address || "—"}</td><td>{measurementStatusLabel(r.measurement_status, r)}</td><td><OdooReferenceCell value={quoteOdooReference(r)} /></td><td><BudgetObservationCell row={r} /></td><td className="right"><div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}><Button variant={isSubmitted ? "primary" : "ghost"} onClick={() => navigate(`/mediciones/${r.id}`, { state: { from: "/aprobacion/tecnica" } })}>{isSubmitted ? "Aprobar detalle" : "Completar detalle técnico"}</Button></div></td></tr>;
+                    const isPendingComercial = String(r?.measurement_commercial_review_status || "") === "pending";
+                    return <tr key={r.id}><td style={{ fontWeight: 800 }}>{r.end_customer?.name || "(sin nombre)"}</td><td>{localityLabel(r)}</td><td>{r.end_customer?.address || "—"}</td><td>{measurementStatusLabel(r.measurement_status, r)}</td><td><OdooReferenceCell value={quoteOdooReference(r)} /></td><td><BudgetObservationCell row={r} /></td><td className="right"><div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>{isPendingComercial ? <Button variant="ghost" disabled title="Pendiente de aprobación comercial post-medición">Bloqueado</Button> : <Button variant={isSubmitted ? "primary" : "ghost"} onClick={() => navigate(`/mediciones/${r.id}`, { state: { from: "/aprobacion/tecnica" } })}>{isSubmitted ? "Aprobar detalle" : "Completar detalle técnico"}</Button>}</div></td></tr>;
                   })}
                 </tbody></table>
                 <PaginationControls page={pageIpanelDetalles} totalItems={ipanelDetailRows.length} pageSize={PAGE_SIZE} onPageChange={setPageIpanelDetalles} />
@@ -676,6 +678,7 @@ export default function AprobacionTecnicaPage() {
                       const dateValue = measurementDates[r.id] ?? r.measurement_scheduled_for ?? "";
                       const isSinMedicion = String(r?.measurement_subtype || "normal").toLowerCase().trim() === "sin_medicion";
                       const isSubmitted = String(r?.measurement_status || "").toLowerCase().trim() === "submitted";
+                      const isPendingComercial = String(r?.measurement_commercial_review_status || "") === "pending";
                       return (
                         <tr key={r.id}>
                           <td style={{ fontWeight: 800 }}>{r.end_customer?.name || "(sin nombre)"}</td>
@@ -685,8 +688,8 @@ export default function AprobacionTecnicaPage() {
                           <td>{measurementStatusLabel(r.measurement_status, r)}</td>
                           <td><OdooReferenceCell value={quoteOdooReference(r)} /></td>
                           {!hideScheduleColumns ? <td>{fmtDate(r.measurement_scheduled_for)}</td> : null}
-                          {!hideScheduleColumns ? <td style={{ minWidth: 220 }}><div style={{ display: "flex", gap: 8, alignItems: "center" }}><Input type="date" value={dateValue} onChange={(v) => setMeasurementDates((prev) => ({ ...prev, [r.id]: v }))} style={{ width: "100%" }} /><Button disabled={scheduleM.isPending || !dateValue} onClick={() => scheduleM.mutate({ id: r.id, scheduledFor: dateValue })}>Guardar</Button></div></td> : null}
-                          <td className="right"><div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}><Button variant={isSubmitted ? "primary" : "ghost"} onClick={() => navigate(`/mediciones/${r.id}`, { state: { from: "/aprobacion/tecnica" } })}>{isSinMedicion ? "Completar detalle técnico" : (isSubmitted ? "Aprobar final" : "Abrir")}</Button></div></td>
+                          {!hideScheduleColumns ? <td style={{ minWidth: 220 }}><div style={{ display: "flex", gap: 8, alignItems: "center" }}><Input type="date" value={dateValue} disabled={isPendingComercial} onChange={(v) => setMeasurementDates((prev) => ({ ...prev, [r.id]: v }))} style={{ width: "100%" }} /><Button disabled={isPendingComercial || scheduleM.isPending || !dateValue} onClick={() => scheduleM.mutate({ id: r.id, scheduledFor: dateValue })}>Guardar</Button></div></td> : null}
+                          <td className="right"><div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>{isPendingComercial ? <Button variant="ghost" disabled title="Pendiente de aprobación comercial post-medición">Bloqueado</Button> : <Button variant={isSubmitted ? "primary" : "ghost"} onClick={() => navigate(`/mediciones/${r.id}`, { state: { from: "/aprobacion/tecnica" } })}>{isSinMedicion ? "Completar detalle técnico" : (isSubmitted ? "Aprobar final" : "Abrir")}</Button>}</div></td>
                         </tr>
                       );
                     })}
