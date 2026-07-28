@@ -309,6 +309,19 @@ async function findOrCreateCustomerPartner(odoo, customer) {
   const name = toText(customer?.name);
   if (!name) throw new Error("Falta end_customer.name (vendedor)");
 
+  // Buscar primero por CUIT/VAT: es el identificador mas fuerte (email/telefono
+  // pueden cambiar entre pedidos del mismo cliente). Sin esto, un cliente ya
+  // cargado en Odoo con otro email/telefono termina intentando crearse de nuevo
+  // con el mismo VAT y Odoo lo rechaza (contacto duplicado).
+  const vat = toText(customer?.vat);
+  if (vat) {
+    const idsVat = await odoo.executeKw("res.partner", "search", [[["vat", "=", vat]]], { limit: 5 });
+    for (const candidateId of idsVat || []) {
+      const partner = await readPartnerLite(odoo, candidateId);
+      if (partnerLooksLikeSameCustomer(partner, customer)) return await applyCustomerPartnerFiscalVals(odoo, candidateId, customer);
+    }
+  }
+
   const email = toText(customer?.email).toLowerCase();
   if (email) {
     const ids = await odoo.executeKw("res.partner", "search", [[["email", "=", email]]], { limit: 5 });
