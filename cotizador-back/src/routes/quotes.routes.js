@@ -2041,7 +2041,10 @@ export function buildQuotesRouter(odoo) {
                       fc.final_copy_sale_order_name,
                       fc.final_copy_quote_status,
                       fc.final_copy_synced_at,
-                      coalesce(q.final_sale_order_name, fc.final_copy_sale_order_name, q.odoo_sale_order_name) as production_sale_order_name,
+                      -- La copia final es la mas autoritativa cuando existe: en Ipanel,
+                      -- final_sale_order_name de la fila original queda "provisorio" (el mismo
+                      -- NP inicial) y nunca se actualiza cuando Tecnica genera la copia con el NV real.
+                      coalesce(fc.final_copy_sale_order_name, q.final_sale_order_name, q.odoo_sale_order_name) as production_sale_order_name,
                       coalesce(q.measurement_review_at, fc.final_copy_synced_at, q.final_synced_at, q.production_delivery_committed_at, q.confirmed_at) as production_sent_at
                  from public.presupuestador_quotes q
                  left join public.presupuestador_users u on u.id = q.created_by_user_id
@@ -2138,14 +2141,26 @@ export function buildQuotesRouter(odoo) {
       // quedo en null (la columna se sumo despues); igual que isClientAlreadyAccepted en
       // measurementFinalization.js, hay que chequear tambien el payload para no mostrarlas
       // como pendientes por error.
+      // La copia final (quote_kind='copy') es la mas autoritativa cuando existe: en Ipanel,
+      // final_sale_order_name de la fila original queda "provisorio" (el mismo NP inicial)
+      // y nunca se actualiza cuando Tecnica genera despues la copia con el NV real.
       const baseSelect = `
-        select q.id, q.quote_number, q.final_sale_order_name, q.odoo_sale_order_name,
+        select q.id, q.quote_number,
+               coalesce(fc.final_copy_sale_order_name, q.final_sale_order_name) as final_sale_order_name,
+               q.odoo_sale_order_name,
                q.measurement_share_token, q.measurement_share_enabled_at, q.measurement_client_accepted_at,
                q.end_customer, q.catalog_kind, q.fulfillment_mode,
                q.created_by_user_id, q.created_by_role,
                u.username as created_by_username, u.full_name as created_by_full_name
           from public.presupuestador_quotes q
           join public.presupuestador_users u on u.id = q.created_by_user_id
+          left join lateral (
+            select c.final_sale_order_name as final_copy_sale_order_name
+              from public.presupuestador_quotes c
+             where c.quote_kind = 'copy' and c.parent_quote_id = q.id
+             order by c.final_synced_at desc nulls last, c.created_at desc nulls last, c.id desc
+             limit 1
+          ) fc on true
          where q.quote_kind = 'original'
            and q.fulfillment_mode = 'produccion'
            and q.measurement_share_enabled_at is not null

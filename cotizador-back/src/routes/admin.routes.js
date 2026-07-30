@@ -69,7 +69,10 @@ function decorateAdminQuote(row = {}) {
   const hasGeneratedOdoo = adminQuoteHasGeneratedOdoo(row);
   return {
     ...row,
-    production_sale_order_name: row.production_sale_order_name || row.final_sale_order_name || row.final_copy_sale_order_name || row.odoo_sale_order_name || null,
+    // final_copy_sale_order_name antes que final_sale_order_name: en Ipanel la fila
+    // original queda con un final_sale_order_name "provisorio" (el mismo NP inicial)
+    // que nunca se actualiza cuando Tecnica genera la copia con el NV real.
+    production_sale_order_name: row.production_sale_order_name || row.final_copy_sale_order_name || row.final_sale_order_name || row.odoo_sale_order_name || null,
     can_delete: !hasGeneratedOdoo,
     has_generated_odoo: hasGeneratedOdoo,
   };
@@ -399,7 +402,11 @@ export function buildAdminRouter(odoo) {
                           fc.final_copy_status,
                           fc.final_copy_sale_order_id,
                           fc.final_copy_sale_order_name,
-                          coalesce(q.final_sale_order_name, fc.final_copy_sale_order_name, q.odoo_sale_order_name) as production_sale_order_name
+                          -- La copia final (quote_kind='copy') es la mas autoritativa cuando existe: en
+                          -- Ipanel, final_sale_order_name de la fila original queda "provisorio" (el
+                          -- mismo NP inicial) y nunca se actualiza cuando Tecnica genera la copia con
+                          -- el NV real, asi que no puede ir primero en este coalesce.
+                          coalesce(fc.final_copy_sale_order_name, q.final_sale_order_name, q.odoo_sale_order_name) as production_sale_order_name
                      from public.presupuestador_quotes q
                      left join public.presupuestador_users u on u.id = q.created_by_user_id
                      left join lateral (

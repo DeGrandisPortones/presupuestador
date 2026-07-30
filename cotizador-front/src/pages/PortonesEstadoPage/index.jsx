@@ -367,8 +367,13 @@ export default function PortonesEstadoPage() {
       statusInfo: computeStatusInfo(quote),
       customerName: quote.end_customer?.name || "—",
       sellerName: quote.created_by_full_name || quote.created_by_username || "—",
-      displayRef: quote.final_sale_order_name
-        || quote.final_copy_sale_order_name
+      // La copia final (quote_kind='copy') es siempre la mas autoritativa cuando existe.
+      // En Ipanel, la fila original queda con un final_sale_order_name "provisorio" (el
+      // mismo NP inicial, escrito al aprobar Comercial) que nunca se actualiza aunque
+      // despues Tecnica genere la copia con el NV real - por eso no se puede confiar en
+      // final_sale_order_name de la fila original por sobre el de la copia.
+      displayRef: quote.final_copy_sale_order_name
+        || quote.final_sale_order_name
         || quote.odoo_sale_order_name
         || `#${quote.quote_number || "—"}`,
       extra_contact: quote.extra_contact || null,

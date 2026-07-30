@@ -168,7 +168,10 @@ export default function AdministracionDetailPage() {
   if (!quote) return null;
 
   const npRef = quote.odoo_sale_order_name;
-  const nvRef = quote.final_sale_order_name || quote.final_copy_sale_order_name;
+  // La copia final (quote_kind='copy') es la mas autoritativa cuando existe: en Ipanel,
+  // final_sale_order_name de la fila original queda "provisorio" (el mismo NP inicial) y
+  // nunca se actualiza cuando Tecnica genera despues la copia con el NV real.
+  const nvRef = quote.final_copy_sale_order_name || quote.final_sale_order_name;
   const customerName = quote.end_customer?.name || "—";
   const sellerName = quote.seller_full_name || quote.seller_username || "—";
   const kindLabel = KIND_LABELS[quote.catalog_kind] || quote.catalog_kind || "—";
