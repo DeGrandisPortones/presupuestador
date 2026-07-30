@@ -51,8 +51,11 @@ function displayQuoteNumber(row) {
   return String(row?.id || "").slice(0, 8) || "—";
 }
 
+// final_copy_sale_order_name antes que final_sale_order_name: en Ipanel la fila original
+// queda con un final_sale_order_name "provisorio" (el mismo NP inicial) que nunca se
+// actualiza cuando Tecnica genera despues la copia con el NV real.
 function displayOdooReference(row) {
-  return row?.production_sale_order_name || row?.final_sale_order_name || row?.final_copy_sale_order_name || row?.odoo_sale_order_name || "—";
+  return row?.production_sale_order_name || row?.final_copy_sale_order_name || row?.final_sale_order_name || row?.odoo_sale_order_name || "—";
 }
 
 function statusText(row) {
