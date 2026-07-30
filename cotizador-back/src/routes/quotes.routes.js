@@ -503,7 +503,7 @@ function getMeasurementFlowForQuote({ catalog_kind, fulfillment_mode, lines }) {
     };
   }
 
-  if (kind === "ipanel") {
+  if (kind === "ipanel" || kind === "plegados") {
     if (mode === "produccion") {
       return {
         requires_measurement: true,
@@ -2075,6 +2075,14 @@ export function buildQuotesRouter(odoo) {
                 limit 500`;
       } else if (scope === "portones_estado") {
         if (!u.is_rev_tecnica && !u.is_superuser && !u.is_enc_comercial && !u.is_logistica) return res.status(403).json({ ok: false, error: "No autorizado" });
+        // "Estado Productos" (ex "Estado Portones"): Otros queda afuera a proposito
+        // (pedido explicito), el resto se puede filtrar por kind o ver todos juntos.
+        const PRODUCTOS_ESTADO_KINDS = ["porton", "ipanel", "puerta", "plegados"];
+        const requestedKind = String(req.query.kind || "").toLowerCase().trim();
+        const kindWhere = PRODUCTOS_ESTADO_KINDS.includes(requestedKind)
+          ? "coalesce(q.catalog_kind, 'porton') = $1"
+          : "coalesce(q.catalog_kind, 'porton') = any($1::text[])";
+        params = [PRODUCTOS_ESTADO_KINDS.includes(requestedKind) ? requestedKind : PRODUCTOS_ESTADO_KINDS];
         sql = `select q.id, q.quote_number, q.odoo_sale_order_name, q.final_sale_order_name,
                       q.status, q.commercial_decision, q.technical_decision,
                       q.measurement_status, q.requires_measurement, q.measurement_review_at,
@@ -2102,7 +2110,7 @@ export function buildQuotesRouter(odoo) {
                  limit 1
                ) fc on true
                where q.quote_kind = 'original'
-                 and coalesce(q.catalog_kind, 'porton') = 'porton'
+                 and ${kindWhere}
                  and (q.status != 'draft' or q.measurement_status = 'returned_to_seller')
                order by q.updated_at desc nulls last, q.id desc
                limit 500`;

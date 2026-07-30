@@ -37,8 +37,8 @@ function ApprovalMenuCard({ card, onOpen }) {
 
 const ESTADO_PORTONES_CARD = {
   key: "_estado_portones",
-  title: "Estado de Portones",
-  description: "Vista general del estado actual de todos los portones: aprobaciones, acopio, mediciones y producción.",
+  title: "Estado de Productos",
+  description: "Vista general del estado actual de los presupuestos (portones, ipanels, puertas y plegados): aprobaciones, acopio, mediciones y producción.",
   iconSrc: "/menu-icons/aprobacion-portones.png",
 };
 

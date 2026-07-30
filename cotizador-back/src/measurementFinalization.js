@@ -1552,7 +1552,11 @@ function isDirectNvAlreadyCreated(originalQuote) {
 
 async function buildMeasurementFinalizationBase({ odoo, originalQuote, measurementForm, allowLegsOverride = false }) {
   const sourceQuote = await resolveBaseSourceQuote(originalQuote);
-  if (String(originalQuote?.catalog_kind || sourceQuote?.catalog_kind || "").toLowerCase().trim() === "ipanel") {
+  const quoteKind = String(originalQuote?.catalog_kind || sourceQuote?.catalog_kind || "").toLowerCase().trim();
+  // Ipanel y Plegados nunca se miden en obra (siempre "tecnica_only"/sin_medicion):
+  // el presupuesto final es el mismo que el original, sin escalar por superficie
+  // medida ni aplicar reglas tecnicas de porton/puerta.
+  if (quoteKind === "ipanel" || quoteKind === "plegados") {
     const pricingPayload = sourceQuote?.payload || originalQuote?.payload || {};
     const positiveLines = buildBasePositiveLinesFromQuote(sourceQuote || originalQuote);
     const positiveTotal = totalLinesAmount(positiveLines, pricingPayload, sourceQuote || originalQuote);
@@ -1592,7 +1596,13 @@ async function buildMeasurementFinalizationBase({ odoo, originalQuote, measureme
     };
   }
   const legacyMappings = await getMeasurementProductMappings();
-  const technicalRules = await getTechnicalMeasurementRules();
+  // Antes se llamaba sin argumento y siempre traia las reglas de "porton" (default
+  // del parametro), asi que una puerta terminaba con productos de porton inyectados
+  // en sus lineas -> Odoo rechazaba la NV al no encontrar/validar ese producto para
+  // una puerta, y la finalizacion quedaba a mitad de camino (aprobado pero sin NV
+  // final ni link). Pasando el kind real, puerta usa sus propias reglas configuradas
+  // o un set vacio (default seguro) en vez de las de porton.
+  const technicalRules = await getTechnicalMeasurementRules(quoteKind || "porton");
   const technicalFieldsPayload = await getTechnicalMeasurementFieldDefinitions();
   const technicalFields = Array.isArray(technicalFieldsPayload?.fields) ? technicalFieldsPayload.fields : [];
 
@@ -1742,6 +1752,27 @@ async function saveShareTokenToOriginalQuote(originalQuoteId, existingToken) {
   return token;
 }
 
+// Genera/guarda el link de aceptacion y dispara el WhatsApp, sin dejar que un
+// fallo puntual aca (ej. timeout de conexion a la base) tire abajo la
+// aprobacion entera: la NV/copia final ya quedo confirmada en Odoo antes de
+// llegar a este paso, asi que no tiene sentido que la respuesta sea un error
+// si lo unico que fallo es la generacion del link. saveShareTokenToOriginalQuote
+// es idempotente (coalesce), asi que un reintento posterior no duplica nada.
+async function saveTokenAndNotify(odoo, originalQuote) {
+  try {
+    const savedToken = await saveShareTokenToOriginalQuote(originalQuote.id, originalQuote.measurement_share_token);
+    const quoteWithToken = { ...originalQuote, measurement_share_token: savedToken };
+    const whatsappNotification = await maybeSendMeasurementApprovedWhatsApp({ odoo, quote: quoteWithToken });
+    return { whatsappNotification };
+  } catch (e) {
+    console.error(
+      "[measurementFinalization] saveTokenAndNotify fallo (NV ya confirmada, no se reintenta la NV):",
+      e?.message || e,
+    );
+    return { whatsappNotification: null };
+  }
+}
+
 function mergeDimensionsPatch(payload, dimensionsPatch) {
   if (!dimensionsPatch || typeof dimensionsPatch !== "object" || !Object.keys(dimensionsPatch).length) return payload;
   const base = payload && typeof payload === "object" ? payload : {};
@@ -1787,9 +1818,7 @@ export async function finalizeMeasurementToRevisionQuote({ odoo, originalQuote, 
       id: Number(originalQuote?.final_sale_order_id || originalQuote?.odoo_sale_order_id || 0) || null,
       name: toText(originalQuote?.final_sale_order_name || originalQuote?.odoo_sale_order_name),
     };
-    const savedToken = await saveShareTokenToOriginalQuote(originalQuote.id, originalQuote.measurement_share_token);
-    const quoteWithToken = { ...originalQuote, measurement_share_token: savedToken };
-    const whatsappNotification = await maybeSendMeasurementApprovedWhatsApp({ odoo, quote: quoteWithToken });
+    const { whatsappNotification } = await saveTokenAndNotify(odoo, originalQuote);
     return {
       revisionQuote: null,
       generated_lines: finalLines,
@@ -1905,9 +1934,7 @@ export async function finalizeMeasurementToRevisionQuote({ odoo, originalQuote, 
   const finalRevisionQuote = updFinal.rows?.[0] || qSync;
 
   // Generar token DESPUÉS de confirmar la NV en Odoo: el cliente no puede aceptar antes de que exista la NV
-  const savedToken = await saveShareTokenToOriginalQuote(originalQuote.id, originalQuote.measurement_share_token);
-  const quoteWithToken = { ...originalQuote, measurement_share_token: savedToken };
-  const whatsappNotification = await maybeSendMeasurementApprovedWhatsApp({ odoo, quote: quoteWithToken });
+  const { whatsappNotification } = await saveTokenAndNotify(odoo, originalQuote);
 
   return {
     revisionQuote: finalRevisionQuote,

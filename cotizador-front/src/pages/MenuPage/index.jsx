@@ -156,7 +156,7 @@ export default function MenuPage() {
           </>
         )}
         {showPortonesEstadoStandalone && (
-          <MenuTile title="Estado Portones" buttonText="Ver estado" onClick={() => navigate("/aprobacion/tecnica/portones-estado")} iconSrc="/menu-icons/aprobacion-portones.png" />
+          <MenuTile title="Estado Productos" buttonText="Ver estado" onClick={() => navigate("/aprobacion/tecnica/portones-estado")} iconSrc="/menu-icons/aprobacion-portones.png" />
         )}
         {showAdministracion && (
           <MenuTile title="Administración" buttonText="Abrir administración" onClick={() => navigate("/administracion")} icon="" />

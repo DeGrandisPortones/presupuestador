@@ -62,7 +62,7 @@ function AprobacionesDropdown({ show, showCommercial, showTechnical, showPortone
   const items = [
     showCommercial && { to: "/aprobacion/comercial/menu", label: "Aprobacion Comercial" },
     showTechnical && { to: "/aprobacion/tecnica/menu", label: "Revision Tecnica" },
-    showPortonesEstado && { to: "/aprobacion/tecnica/portones-estado", label: "Estado Portones" },
+    showPortonesEstado && { to: "/aprobacion/tecnica/portones-estado", label: "Estado Productos" },
   ].filter(Boolean);
   const lastIdx = items.length - 1;
   return (

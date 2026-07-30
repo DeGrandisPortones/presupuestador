@@ -59,9 +59,10 @@ export async function getQuoteViewer({ reference = "", quoteId = "" } = {}) {
   return data;
 }
 
-export async function listPortonesEstado() {
-  const { data } = await http.get(`/api/quotes?scope=portones_estado`);
-  if (!data?.ok) throw new Error(data?.error || "No se pudo cargar el estado de portones");
+export async function listPortonesEstado(kind = "") {
+  const qs = kind ? `&kind=${encodeURIComponent(kind)}` : "";
+  const { data } = await http.get(`/api/quotes?scope=portones_estado${qs}`);
+  if (!data?.ok) throw new Error(data?.error || "No se pudo cargar el estado de productos");
   return data.quotes || [];
 }
 
