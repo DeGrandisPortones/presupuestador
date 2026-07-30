@@ -205,7 +205,8 @@ function quoteRequiresMeasurementWorkflow(quote) {
 }
 function quoteAllowsMeasurementWorkflow(quote) {
   const kind = String(quote?.catalog_kind || "porton").toLowerCase().trim();
-  const kindAllowsCircuit = ["porton", "puerta"].includes(kind) || (kind === "ipanel" && isTecnicaOnlyQuote(quote));
+  const kindAllowsCircuit =
+    ["porton", "puerta"].includes(kind) || (["ipanel", "plegados"].includes(kind) && isTecnicaOnlyQuote(quote));
   return (
     kindAllowsCircuit &&
     isMeasurementReadyQuote(quote) &&
@@ -448,7 +449,7 @@ export function buildMeasurementsRouter(odoo = null) {
         return res.status(403).json({ ok: false, error: "No autorizado" });
       }
       const where = [
-        "coalesce(q.catalog_kind, 'porton') in ('porton', 'puerta', 'ipanel')",
+        "coalesce(q.catalog_kind, 'porton') in ('porton', 'puerta', 'ipanel', 'plegados')",
         "(q.status = 'synced_odoo' or (q.status = 'pending_approvals' and q.commercial_decision = 'approved' and q.technical_decision = 'approved') or (q.status = 'draft' and q.measurement_status = 'returned_to_seller'))",
         `(
           exists (select 1 from jsonb_array_elements(coalesce(q.lines, '[]'::jsonb)) elem where (elem->>'product_id') = any($1::text[]))

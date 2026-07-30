@@ -369,6 +369,7 @@ export default function AprobacionTecnicaPage() {
   const [pagePlegados, setPagePlegados] = useState(1);
   const [pageOtros, setPageOtros] = useState(1);
   const [pageIpanelDetalles, setPageIpanelDetalles] = useState(1);
+  const [pagePlegadoDetalles, setPagePlegadoDetalles] = useState(1);
   const [pageMediciones, setPageMediciones] = useState(1);
   const [pageAcopio, setPageAcopio] = useState(1);
   const [pageAcopioListado, setPageAcopioListado] = useState(1);
@@ -388,7 +389,7 @@ export default function AprobacionTecnicaPage() {
   const acopioListadoQ = useQuery({ queryKey: ["quotes", "technical_acopio_all"], queryFn: () => listQuotes({ scope: "technical_acopio_all" }), enabled: tab === "acopio_listado" && !!user?.is_rev_tecnica });
   const produccionQ = useQuery({ queryKey: ["quotes", "production_sent", "technical", tab], queryFn: () => listQuotes({ scope: "production_sent" }), enabled: ["produccion", "produccion_ipanels", "produccion_puertas"].includes(tab) && !!user?.is_rev_tecnica });
   const doorsQ = useQuery({ queryKey: ["doors", "technical_inbox"], queryFn: () => listDoors({ scope: "technical_inbox" }), enabled: tab === "aprobaciones_puertas" && !!user?.is_rev_tecnica });
-  const measQ = useQuery({ queryKey: ["measurements", "tecnica", tab, measurementStatus], queryFn: () => listMeasurements({ status: "all", viewer: "tecnica" }), enabled: ["aprobaciones_mediciones", "aprobaciones_ipanels"].includes(tab) && !!user?.is_rev_tecnica });
+  const measQ = useQuery({ queryKey: ["measurements", "tecnica", tab, measurementStatus], queryFn: () => listMeasurements({ status: "all", viewer: "tecnica" }), enabled: ["aprobaciones_mediciones", "aprobaciones_ipanels", "aprobaciones_plegados"].includes(tab) && !!user?.is_rev_tecnica });
   const aprobadosQ = useQuery({ queryKey: ["quotes", "technical_approved"], queryFn: () => listQuotes({ scope: "technical_approved" }), enabled: tab === "aprobados" && !!user?.is_rev_tecnica });
 
   const acopioM = useMutation({ mutationFn: ({ id, action, notes }) => reviewAcopioTechnical(id, { action, notes }), onSuccess: () => acopioQ.refetch() });
@@ -452,7 +453,7 @@ export default function AprobacionTecnicaPage() {
   const otrosRows = useMemo(() => approvalBaseRows.filter(isOtrosRow), [approvalBaseRows]);
 
   const measurementRows = useMemo(() => {
-    let arr = (measQ.data || []).slice().filter((r) => !isIpanelRow(r)).filter((r) => rowMatchesApprovalSection(r, approvalSection));
+    let arr = (measQ.data || []).slice().filter((r) => !isIpanelRow(r) && !isPlegadosRow(r)).filter((r) => rowMatchesApprovalSection(r, approvalSection));
     if (measurementStatus === "por_realizar") arr = arr.filter((x) => ["pending", "needs_fix"].includes(String(x?.measurement_status || "")));
     else if (measurementStatus === "por_controlar") arr = arr.filter((x) => String(x?.measurement_status || "") === "submitted");
     else if (measurementStatus === "returned_to_seller") arr = arr.filter((x) => String(x?.measurement_status || "") === "returned_to_seller");
@@ -471,6 +472,19 @@ export default function AprobacionTecnicaPage() {
     return (measQ.data || [])
       .slice()
       .filter((r) => isIpanelRow(r))
+      .filter((r) => String(r?.measurement_subtype || "normal").toLowerCase().trim() === "sin_medicion")
+      .filter((r) => matchesSearch([r?.end_customer?.name, r?.end_customer?.city, r?.end_customer?.address, measurementStatusLabel(r?.measurement_status, r), createdByLabel(r), quoteOdooReference(r), budgetObservation(r)], searchText))
+      .sort((a, b) => {
+        const weightDiff = measurementSortWeight(a) - measurementSortWeight(b);
+        if (weightDiff !== 0) return weightDiff;
+        return toTimeDesc(b?.measurement_review_at || b?.created_at) - toTimeDesc(a?.measurement_review_at || a?.created_at);
+      });
+  }, [measQ.data, searchText]);
+
+  const plegadoDetailRows = useMemo(() => {
+    return (measQ.data || [])
+      .slice()
+      .filter((r) => isPlegadosRow(r))
       .filter((r) => String(r?.measurement_subtype || "normal").toLowerCase().trim() === "sin_medicion")
       .filter((r) => matchesSearch([r?.end_customer?.name, r?.end_customer?.city, r?.end_customer?.address, measurementStatusLabel(r?.measurement_status, r), createdByLabel(r), quoteOdooReference(r), budgetObservation(r)], searchText))
       .sort((a, b) => {
@@ -516,6 +530,7 @@ export default function AprobacionTecnicaPage() {
   useEffect(() => { const total = Math.max(1, Math.ceil(plegadoRows.length / PAGE_SIZE)); if (pagePlegados > total) setPagePlegados(total); }, [plegadoRows.length, pagePlegados]);
   useEffect(() => { const total = Math.max(1, Math.ceil(otrosRows.length / PAGE_SIZE)); if (pageOtros > total) setPageOtros(total); }, [otrosRows.length, pageOtros]);
   useEffect(() => { const total = Math.max(1, Math.ceil(ipanelDetailRows.length / PAGE_SIZE)); if (pageIpanelDetalles > total) setPageIpanelDetalles(total); }, [ipanelDetailRows.length, pageIpanelDetalles]);
+  useEffect(() => { const total = Math.max(1, Math.ceil(plegadoDetailRows.length / PAGE_SIZE)); if (pagePlegadoDetalles > total) setPagePlegadoDetalles(total); }, [plegadoDetailRows.length, pagePlegadoDetalles]);
   useEffect(() => { const total = Math.max(1, Math.ceil(measurementRows.length / PAGE_SIZE)); if (pageMediciones > total) setPageMediciones(total); }, [measurementRows.length, pageMediciones]);
   useEffect(() => { const total = Math.max(1, Math.ceil(acopioRows.length / PAGE_SIZE)); if (pageAcopio > total) setPageAcopio(total); }, [acopioRows.length, pageAcopio]);
   useEffect(() => { const total = Math.max(1, Math.ceil(acopioListadoRows.length / PAGE_SIZE)); if (pageAcopioListado > total) setPageAcopioListado(total); }, [acopioListadoRows.length, pageAcopioListado]);
@@ -531,6 +546,7 @@ export default function AprobacionTecnicaPage() {
   const visiblePlegados = paged(plegadoRows, pagePlegados);
   const visibleOtros = paged(otrosRows, pageOtros);
   const visibleIpanelDetails = paged(ipanelDetailRows, pageIpanelDetalles);
+  const visiblePlegadoDetails = paged(plegadoDetailRows, pagePlegadoDetalles);
   const visibleMeasurements = paged(measurementRows, pageMediciones);
   const visibleAcopio = paged(acopioRows, pageAcopio);
   const visibleAcopioListado = paged(acopioListadoRows, pageAcopioListado);
@@ -661,7 +677,30 @@ export default function AprobacionTecnicaPage() {
           </>
         )}
 
-        {tab === "aprobaciones_plegados" && renderApprovalRows(visiblePlegados, plegadoRows.length, pagePlegados, setPagePlegados, "Sin plegados pendientes", true)}
+        {tab === "aprobaciones_plegados" && (
+          <>
+            <h3 style={{ marginTop: 0 }}>Aprobaciones Plegados</h3>
+            {renderApprovalRows(visiblePlegados, plegadoRows.length, pagePlegados, setPagePlegados, "Sin plegados pendientes", true)}
+            <div className="spacer" />
+            <h3 style={{ marginBottom: 8 }}>Detalles técnicos Plegados sin medición</h3>
+            <div className="muted" style={{ marginBottom: 12 }}>Los Plegados no pasan por medidor. Se aprueban directo desde esta sección.</div>
+            {measQ.isLoading && <div className="muted">Cargando detalles técnicos...</div>}
+            {measQ.isError && <div style={{ color: "#d93025", fontSize: 13 }}>{measQ.error.message}</div>}
+            {!measQ.isLoading && !plegadoDetailRows.length && <div className="muted">Sin detalles técnicos de Plegados</div>}
+            {!!plegadoDetailRows.length && (
+              <>
+                <table><thead><tr><th>Cliente</th><th>Localidad</th><th>Dirección</th><th>Estado</th><th>NP/NV Odoo</th><th>Obs. presupuesto</th><th></th></tr></thead><tbody>
+                  {visiblePlegadoDetails.map((r) => {
+                    const isSubmitted = String(r?.measurement_status || "").toLowerCase().trim() === "submitted";
+                    const isPendingComercial = String(r?.measurement_commercial_review_status || "") === "pending";
+                    return <tr key={r.id}><td style={{ fontWeight: 800 }}>{r.end_customer?.name || "(sin nombre)"}</td><td>{localityLabel(r)}</td><td>{r.end_customer?.address || "—"}</td><td>{measurementStatusLabel(r.measurement_status, r)}</td><td><OdooReferenceCell value={quoteOdooReference(r)} /></td><td><BudgetObservationCell row={r} /></td><td className="right"><div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>{isPendingComercial ? <Button variant="ghost" disabled title="Pendiente de aprobación comercial post-medición">Bloqueado</Button> : <Button variant={isSubmitted ? "primary" : "ghost"} onClick={() => navigate(`/mediciones/${r.id}`, { state: { from: "/aprobacion/tecnica" } })}>{isSubmitted ? "Aprobar detalle" : "Completar detalle técnico"}</Button>}</div></td></tr>;
+                  })}
+                </tbody></table>
+                <PaginationControls page={pagePlegadoDetalles} totalItems={plegadoDetailRows.length} pageSize={PAGE_SIZE} onPageChange={setPagePlegadoDetalles} />
+              </>
+            )}
+          </>
+        )}
         {tab === "aprobaciones_otros" && renderApprovalRows(visibleOtros, otrosRows.length, pageOtros, setPageOtros, "Sin presupuestos Otros pendientes", false)}
 
         {tab === "aprobaciones_mediciones" && (

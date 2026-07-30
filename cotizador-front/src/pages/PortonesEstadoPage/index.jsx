@@ -1,6 +1,6 @@
 import { useState, useMemo, useRef, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import toast from "react-hot-toast";
 import { listPortonesEstado, confirmMeasurementLinkSent } from "../../api/quotes.js";
 import { useAuthStore } from "../../domain/auth/store.js";
@@ -15,6 +15,19 @@ const STATUS_COLORS = {
   red:    { bg: "#ffebee", text: "#b71c1c", border: "#ef9a9a" },
   gray:   { bg: "#f5f5f5", text: "#424242", border: "#e0e0e0" },
 };
+
+const PRODUCT_KIND_LABELS = {
+  "": "Todos",
+  porton: "Portones",
+  ipanel: "Ipanels",
+  puerta: "Puertas",
+  plegados: "Plegados",
+};
+const VALID_PRODUCT_KINDS = new Set(Object.keys(PRODUCT_KIND_LABELS));
+function normalizeProductKind(raw) {
+  const value = String(raw || "").trim().toLowerCase();
+  return VALID_PRODUCT_KINDS.has(value) ? value : "";
+}
 
 function computeStatusInfo(q) {
   if (q.final_technical_decision === "rejected")
@@ -315,14 +328,22 @@ export default function PortonesEstadoPage() {
   const user = useAuthStore((s) => s.user);
   const allowed = !!(user?.is_rev_tecnica || user?.is_superuser || user?.is_enc_comercial || user?.is_logistica);
 
+  const [searchParams, setSearchParams] = useSearchParams();
+  const productKind = normalizeProductKind(searchParams.get("kind"));
+  function setProductKind(nextKind) {
+    const next = new URLSearchParams(searchParams);
+    if (nextKind) next.set("kind", nextKind); else next.delete("kind");
+    setSearchParams(next, { replace: true });
+  }
+
   const [filterColor, setFilterColor] = useState("all");
   const [search, setSearch] = useState("");
   const [linkPopupId, setLinkPopupId] = useState(null);
   const [phoneModalRow, setPhoneModalRow] = useState(null);
 
   const q = useQuery({
-    queryKey: ["portones_estado"],
-    queryFn: listPortonesEstado,
+    queryKey: ["portones_estado", productKind],
+    queryFn: () => listPortonesEstado(productKind),
     staleTime: 30000,
     refetchInterval: 60000,
   });
@@ -380,14 +401,24 @@ export default function PortonesEstadoPage() {
 
       <div className="card" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
         <div>
-          <h2 style={{ margin: 0 }}>Estado de Portones</h2>
+          <h2 style={{ margin: 0 }}>Estado de Productos</h2>
           <div className="muted" style={{ marginTop: 4 }}>
-            Vista general del estado actual de todos los portones en el sistema.
+            Vista general del estado actual de los presupuestos en el sistema.
           </div>
         </div>
         <Button variant="ghost" onClick={() => navigate("/aprobacion/tecnica/menu")}>
           ← Volver al menú
         </Button>
+      </div>
+
+      <div className="spacer" />
+
+      <div className="card" style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+        {Object.entries(PRODUCT_KIND_LABELS).map(([key, label]) => (
+          <Button key={key || "todos"} variant={productKind === key ? "primary" : "ghost"} onClick={() => setProductKind(key)}>
+            {label}
+          </Button>
+        ))}
       </div>
 
       <div className="spacer" />
