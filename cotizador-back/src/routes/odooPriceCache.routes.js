@@ -16,6 +16,12 @@ function toPositiveInt(value) {
   return Number.isFinite(n) && n > 0 ? Math.trunc(n) : 0;
 }
 
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+const ASSIGNED_PRICELIST_RETRY_DELAY_MS = 1000;
+
 function round2(n) {
   return Math.round(Number(n || 0) * 100) / 100;
 }
@@ -58,6 +64,33 @@ async function readPricelistById(odoo, pricelistId) {
     return normalizePricelist(p);
   } catch {
     return null;
+  }
+}
+
+// A diferencia de readPricelistById, esta NO le devuelve un valor "no encontrado" a la
+// llamada que falla por un error de Odoo (timeout, red, etc.). Un distribuidor con lista
+// asignada nunca debe terminar viendo precios de la lista Predeterminada por un hipo
+// transitorio: reintenta una vez a 1s y, si sigue fallando, propaga el error para que el
+// caller no arme precios con la lista equivocada.
+async function readAssignedPricelistOrThrow(odoo, pricelistId, { retried = false } = {}) {
+  const id = toPositiveInt(pricelistId);
+  if (!id) return null;
+
+  try {
+    const rows = await odoo.executeKw(
+      "product.pricelist",
+      "read",
+      [[id]],
+      { fields: ["id", "name", "currency_id", "active"] }
+    );
+    const p = Array.isArray(rows) ? rows[0] || null : null;
+    return p?.id ? normalizePricelist(p) : null;
+  } catch (err) {
+    if (retried) {
+      throw new Error("No se pudo confirmar tu lista de precios asignada en Odoo. Reintentá en unos segundos.");
+    }
+    await sleep(ASSIGNED_PRICELIST_RETRY_DELAY_MS);
+    return readAssignedPricelistOrThrow(odoo, id, { retried: true });
   }
 }
 
@@ -133,13 +166,13 @@ async function resolveEffectivePricelistForUser(odoo, user, explicitPricelistId 
   if (userCanUseAssignedPricelist(user)) {
     const explicit = toPositiveInt(explicitPricelistId);
     if (explicit) {
-      const explicitPricelist = await readPricelistById(odoo, explicit);
+      const explicitPricelist = await readAssignedPricelistOrThrow(odoo, explicit);
       if (explicitPricelist?.id) return explicitPricelist;
     }
 
     const assigned = getAssignedPricelistIdFromUser(user);
     if (assigned) {
-      const assignedPricelist = await readPricelistById(odoo, assigned);
+      const assignedPricelist = await readAssignedPricelistOrThrow(odoo, assigned);
       if (assignedPricelist?.id) return assignedPricelist;
     }
   }
