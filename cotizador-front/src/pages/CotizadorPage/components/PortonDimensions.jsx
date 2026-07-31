@@ -652,9 +652,12 @@ export function computeParantesSchemeProps({ dimensions = {}, lines = [], params
   const detectedDoorSide = resolveDoorSideForParantes(lines, params);
   const detectedDoorLabel = detectedDoorSide === "izquierdo" ? "Puerta Izquierda" : (detectedDoorSide === "derecho" ? "Puerta Derecha" : "");
   const hasDoorParantesConfig = !!detectedDoorSide;
-  const nonAptoConfiguredOrientation = isNonAptoPorton ? resolveNonAptoParantesOrientation(lines, params) : "";
+  // resolveNonAptoParantesOrientation no es exclusiva de portones "no apto para revestir":
+  // tambien resuelve reglas por producto (parantes_horizontal_product_ids / parantes_vertical_product_ids)
+  // que aplican sin importar el tipo, por eso ya no se gatea por isNonAptoPorton.
+  const nonAptoConfiguredOrientation = resolveNonAptoParantesOrientation(lines, params);
   const orientation = normalizeOrientation(dimensions?.orientacion_parantes);
-  const effectiveParantesOrientation = isNonAptoPorton && nonAptoConfiguredOrientation ? nonAptoConfiguredOrientation : orientation;
+  const effectiveParantesOrientation = nonAptoConfiguredOrientation || orientation;
   const distribution = normalizeDistribution(dimensions?.distribucion_parantes);
   const autoParantesCount = computeAutomaticParantesCount({ orientation: effectiveParantesOrientation, widthM: width, heightM: height, lines });
   const parantesCount = hasExplicitParantesCount(dimensions?.cantidad_parantes)
@@ -1930,11 +1933,14 @@ export default function PortonDimensions({ kind = "porton" }) {
   const detectedDoorSide = useMemo(() => isPorton ? resolveDoorSideForParantes(lines, params) : "", [isPorton, lines, params]);
   const detectedDoorLabel = detectedDoorSide === "izquierdo" ? "Puerta Izquierda" : (detectedDoorSide === "derecho" ? "Puerta Derecha" : "");
   const hasDoorParantesConfig = !!detectedDoorSide;
-  const nonAptoConfiguredOrientation = isNonAptoPorton ? resolveNonAptoParantesOrientation(lines, params) : "";
+  // Igual que en computeParantesSchemeProps: esto no es exclusivo de "no apto para
+  // revestir", tambien cubre reglas por producto (ej. Revest Varillado WPC) que
+  // fuerzan la orientacion de parantes en portones aptos para revestir.
+  const nonAptoConfiguredOrientation = isPorton ? resolveNonAptoParantesOrientation(lines, params) : "";
   const orientation = normalizeOrientation(dimensions?.orientacion_parantes);
-  const effectiveParantesOrientation = isNonAptoPorton && nonAptoConfiguredOrientation ? nonAptoConfiguredOrientation : orientation;
+  const effectiveParantesOrientation = nonAptoConfiguredOrientation || orientation;
   const distribution = normalizeDistribution(dimensions?.distribucion_parantes);
-  const parantesFieldsReadOnly = isNonAptoPorton;
+  const parantesFieldsReadOnly = isNonAptoPorton || !!nonAptoConfiguredOrientation;
   const autoParantesCount = computeAutomaticParantesCount({ orientation: effectiveParantesOrientation, widthM: width, heightM: height, lines });
   const parantesCount = getParantesCount(dimensions?.cantidad_parantes);
   const tubeDiscountMm = getParantesTubeDiscountMm(params);
@@ -2073,7 +2079,10 @@ export default function PortonDimensions({ kind = "porton" }) {
     const currentCountRaw = String(dimensions?.cantidad_parantes ?? "").trim();
     const shouldAutoManageNonAptoParantes = isNonAptoPorton;
 
-    if (shouldAutoManageNonAptoParantes && nonAptoConfiguredOrientation && orientation !== nonAptoConfiguredOrientation) patch.orientacion_parantes = nonAptoConfiguredOrientation;
+    // La orientacion forzada por producto (nonAptoConfiguredOrientation) aplica siempre
+    // que exista, sea o no "apto para revestir" (ver comentario mas arriba). El resto
+    // (distribucion, cantidad) sigue reservado al manejo automatico de no-apto.
+    if (nonAptoConfiguredOrientation && orientation !== nonAptoConfiguredOrientation) patch.orientacion_parantes = nonAptoConfiguredOrientation;
     else if (!currentOrientationRaw) patch.orientacion_parantes = "verticales";
 
     if (shouldAutoManageNonAptoParantes && distribution !== "repartido") patch.distribucion_parantes = "repartido";
