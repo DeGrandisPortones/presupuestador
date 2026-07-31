@@ -18,6 +18,11 @@ import {
 } from "./ipanelPropertyAssignments.js";
 import { loadCatalogBootstrap } from "./catalogBootstrap.js";
 import { computeOfficialPortonMeasurements } from "./portonVanoMeasurements.js";
+import {
+  buildFinancingSaleOrderVals,
+  appendPaymentMethodToNote,
+  appendBudgetObservationToNote,
+} from "./routes/quotes.routes.js";
 
 const PLACEHOLDER_PRODUCT_ID = Number(
   process.env.ODOO_PLACEHOLDER_PRODUCT_ID || 3575,
@@ -1390,7 +1395,14 @@ async function syncFinalQuoteToOdoo({ odoo, revisionQuote, originalQuote, source
   const conditionPayload = revisionQuote?.payload?.condition_mode
     ? revisionQuote.payload
     : (sourceQuote?.payload?.condition_mode ? sourceQuote.payload : (originalQuote?.payload || {}));
-  const note = `Condición vendida: ${getOdooConditionLabel(conditionPayload)}`;
+  let note = `Condición vendida: ${getOdooConditionLabel(conditionPayload)}`;
+  note = appendBudgetObservationToNote(note, revisionQuote || sourceQuote || originalQuote);
+  note = appendPaymentMethodToNote(note, conditionPayload?.payment_method);
+
+  // Mismos campos de financiación (TacaTaca) que en quotes.routes.js: sin esto,
+  // una NV de este flujo con pago financiado queda en Odoo como si no tuviera
+  // plan/tasa asociada.
+  const financingVals = await buildFinancingSaleOrderVals(odoo, conditionPayload?.payment_method);
 
   const createdOrderId = await odoo.executeKw("sale.order", "create", [{
     partner_id: partnerId,
@@ -1403,6 +1415,7 @@ async function syncFinalQuoteToOdoo({ odoo, revisionQuote, originalQuote, source
     origin: referenceNv,
     client_order_ref: referenceNv,
     note,
+    ...financingVals,
   }]);
 
   const orderId = Number(createdOrderId);

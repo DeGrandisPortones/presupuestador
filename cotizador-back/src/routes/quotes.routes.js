@@ -976,7 +976,7 @@ async function resolveTacaTacaRate(odoo, { planId, cardType, installments }) {
   }
 }
 
-async function buildFinancingSaleOrderVals(odoo, paymentMethod) {
+export async function buildFinancingSaleOrderVals(odoo, paymentMethod) {
   const fieldMeta = await resolveSaleOrderFinancingFieldMeta(odoo);
   if (!fieldMeta) return {};
 
@@ -1031,7 +1031,7 @@ async function submitLinkedDoorsForQuote({ quote }) {
   }
 }
 
-function appendPaymentMethodToNote(note, paymentMethod) {
+export function appendPaymentMethodToNote(note, paymentMethod) {
   const pm = toText(paymentMethod);
   if (!pm) return note;
   return `${note}\nForma de pago: ${pm}`;
@@ -1040,7 +1040,7 @@ function getBudgetObservation(quote) {
   const payload = quote?.payload && typeof quote.payload === "object" ? quote.payload : {};
   return toText(quote?.budget_observation || payload?.budget_observation || payload?.presupuesto_observacion || payload?.quote_observation || "");
 }
-function appendBudgetObservationToNote(note, quote) {
+export function appendBudgetObservationToNote(note, quote) {
   const observation = getBudgetObservation(quote);
   if (!observation) return note;
   return `${note}\nObservación presupuesto / NP / NV: ${observation}`;
