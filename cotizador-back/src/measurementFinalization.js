@@ -1245,6 +1245,99 @@ async function getOrCreateRevisionQuote({ originalQuote, sourceQuote, finalLines
   );
   return ins.rows?.[0] || null;
 }
+
+// Mismo mecanismo que quotes.routes.js (resolveSellerDisplayNameForOdoo /
+// applySellerToSaleOrder): acá faltaba por completo, así que ninguna NV
+// generada por este flujo (medición aprobada -> NV final) llevaba vendedor a
+// Odoo, sin importar el rol de quien creó el presupuesto original.
+function normalizeSellerDisplayNameLocal(value) {
+  return String(value || "").trim();
+}
+async function getCreatorDisplayDataLocal(createdByUserId) {
+  try {
+    const r = await dbQuery(`select full_name, username from public.presupuestador_users where id=$1 limit 1`, [Number(createdByUserId)]);
+    const row = r.rows?.[0] || {};
+    return {
+      full_name: normalizeSellerDisplayNameLocal(row.full_name),
+      username: normalizeSellerDisplayNameLocal(row.username),
+    };
+  } catch {
+    return { full_name: "", username: "" };
+  }
+}
+async function resolveSellerDisplayNameForQuoteLocal(quote) {
+  const directFullName = normalizeSellerDisplayNameLocal(quote?.created_by_full_name || quote?.seller_name || quote?.sellerName);
+  if (directFullName) return directFullName;
+  const directUsername = normalizeSellerDisplayNameLocal(quote?.created_by_username);
+  if (directUsername) return directUsername;
+  const created = await getCreatorDisplayDataLocal(quote?.created_by_user_id);
+  if (created.full_name) return created.full_name;
+  return created.username;
+}
+async function resolveSellerDisplayNameForOdooLocal(quote) {
+  if (String(quote?.created_by_role || "").trim().toLowerCase() === "distribuidor") return "";
+  return await resolveSellerDisplayNameForQuoteLocal(quote);
+}
+const ODOO_SALE_ORDER_VENDOR_FIELD_CANDIDATES_LOCAL = Object.freeze([
+  "x_studio_vendedora",
+  "x_studio_vendedor",
+  "x_vendedor",
+  "x_vendedor_presupuestador",
+]);
+let saleOrderVendorFieldCacheLocal = undefined;
+async function resolveSaleOrderVendorFieldMetaLocal(odoo) {
+  if (saleOrderVendorFieldCacheLocal !== undefined) return saleOrderVendorFieldCacheLocal;
+  const preferred = normalizeSellerDisplayNameLocal(process.env.ODOO_SALE_ORDER_VENDOR_FIELD);
+  const candidates = [preferred, ...ODOO_SALE_ORDER_VENDOR_FIELD_CANDIDATES_LOCAL].filter(Boolean);
+  try {
+    const fields = await odoo.executeKw("sale.order", "fields_get", [], { attributes: ["string", "type", "relation"] });
+    for (const fieldName of candidates) {
+      const meta = fields?.[fieldName];
+      if (!meta) continue;
+      saleOrderVendorFieldCacheLocal = {
+        name: fieldName,
+        type: String(meta.type || "").trim(),
+        relation: String(meta.relation || "").trim(),
+      };
+      return saleOrderVendorFieldCacheLocal;
+    }
+  } catch {}
+  saleOrderVendorFieldCacheLocal = null;
+  return saleOrderVendorFieldCacheLocal;
+}
+async function resolveEmployeeIdByNameLocal(odoo, employeeName) {
+  const name = normalizeSellerDisplayNameLocal(employeeName);
+  if (!name) return null;
+  try {
+    const exactIds = await odoo.executeKw("hr.employee", "search", [[["name", "=", name]]], { limit: 1 });
+    const exactId = toIntId(exactIds?.[0]);
+    if (exactId) return exactId;
+  } catch {}
+  try {
+    const ilikeIds = await odoo.executeKw("hr.employee", "search", [[["name", "ilike", name]]], { limit: 1 });
+    return toIntId(ilikeIds?.[0]);
+  } catch {
+    return null;
+  }
+}
+async function applySellerToSaleOrderLocal(odoo, orderId, sellerName) {
+  const cleanName = normalizeSellerDisplayNameLocal(sellerName);
+  if (!orderId || !cleanName) return;
+  const fieldMeta = await resolveSaleOrderVendorFieldMetaLocal(odoo);
+  if (!fieldMeta?.name) return;
+  try {
+    if (fieldMeta.type === "many2one" && ["hr.employee", "hr.employee.public"].includes(fieldMeta.relation)) {
+      const employeeId = await resolveEmployeeIdByNameLocal(odoo, cleanName);
+      if (!employeeId) return;
+      await odoo.executeKw("sale.order", "write", [[Number(orderId)], { [fieldMeta.name]: employeeId }]);
+      return;
+    }
+    await odoo.executeKw("sale.order", "write", [[Number(orderId)], { [fieldMeta.name]: cleanName }]);
+  } catch (e) {
+    console.error("[measurementFinalization] applySellerToSaleOrder fallo:", e?.message || e);
+  }
+}
+
 async function syncFinalQuoteToOdoo({ odoo, revisionQuote, originalQuote, sourceQuote, precomputedMetrics }) {
   // Reutiliza el mismo partner que ya se uso para la NP inicial. Antes, si no habia
   // ninguno guardado (pasaba con presupuestos de vendedor, que resuelven el cliente
@@ -1314,6 +1407,9 @@ async function syncFinalQuoteToOdoo({ odoo, revisionQuote, originalQuote, source
 
   const orderId = Number(createdOrderId);
   if (!orderId) throw new Error("No se pudo crear sale.order final en Odoo");
+
+  const sellerName = await resolveSellerDisplayNameForOdooLocal(originalQuote);
+  await applySellerToSaleOrderLocal(odoo, orderId, sellerName);
 
   let order = { id: orderId, name: referenceNv };
   try {
