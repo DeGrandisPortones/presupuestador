@@ -1219,8 +1219,19 @@ export default function QuoteDetailPage() {
   const lines = Array.isArray(quote?.lines) ? quote.lines : [];
   const commercialLinesDiff = useMemo(() => {
     if (!showCommercialDiffPanel || !Array.isArray(commercialDiffSnapshot?.original_lines)) return null;
-    return computeCommercialLinesDiff(commercialDiffSnapshot.original_lines, lines);
-  }, [showCommercialDiffPanel, commercialDiffSnapshot, lines]);
+    // Si el snapshot es viejo y no guardó original_payload, usamos el payload actual
+    // como mejor aproximación (margen/condición rara vez cambian al editar post-medición).
+    const originalPayload = commercialDiffSnapshot?.original_payload || quote?.payload || {};
+    const originalConditionMode = String(originalPayload?.condition_mode || "cond1").trim();
+    return computeCommercialLinesDiff(commercialDiffSnapshot.original_lines, lines, {
+      originalMarginPercent: getQuoteMarginPercentForApproval({ payload: originalPayload }),
+      currentMarginPercent: getQuoteMarginPercentForApproval(quote),
+      originalConditionMode,
+      currentConditionMode: conditionMode,
+      originalFinancingPercent: approvalFinancingPercent,
+      currentFinancingPercent: approvalFinancingPercent,
+    });
+  }, [showCommercialDiffPanel, commercialDiffSnapshot, lines, quote, conditionMode, approvalFinancingPercent]);
   const approvalLineRows = useMemo(() => buildApprovalLineRows(lines, getQuoteMarginPercentForApproval(quote), approvalFinancingPercent, conditionMode), [lines, quote, approvalFinancingPercent, conditionMode]);
   const rejectionBoxes = useMemo(() => {
     if (!quote) return [];

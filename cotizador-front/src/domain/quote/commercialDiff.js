@@ -1,7 +1,15 @@
 // Diff entre las lineas "originales" (antes de que el vendedor edite un
 // presupuesto devuelto por medicion/tecnica/comercial) y las lineas actuales,
 // para mostrarle a Comercial que cambio antes de aprobar.
+//
+// Los montos usan resolveLineFinalUnitPrice/calcTotals (mismas funciones que arma
+// el resto de la pantalla de aprobación) para que "Total original"/"Total editado"
+// coincidan con lo que realmente se sincroniza a Odoo (margen del vendedor +
+// condición de venta) en vez de una suma cruda de qty*basePrice.
+import { calcTotals, calcLineTotal, resolveLineFinalUnitPrice } from "./pricing.js";
+
 const PREVIOUSLY_BILLED_PRODUCT_ID = -900001;
+const IVA_RATE_FOR_DIFF = 0.21;
 
 function round2(n) {
   return Math.round((Number(n) || 0) * 100) / 100;
@@ -13,12 +21,6 @@ function isPreviouslyBilledLine(line) {
 
 function stripPreviouslyBilledLines(lines) {
   return (Array.isArray(lines) ? lines : []).filter((line) => !isPreviouslyBilledLine(line));
-}
-
-function lineAmount(line) {
-  const qty = Number(line?.qty || 0) || 0;
-  const basePrice = Number(line?.basePrice ?? line?.base_price ?? line?.price ?? 0) || 0;
-  return qty * basePrice;
 }
 
 function lineDisplayName(line) {
@@ -34,12 +36,13 @@ function lineDiffKey(line) {
 }
 
 // Agrupa por key para tolerar lineas duplicadas del mismo producto.
-function aggregateLines(lines) {
+function aggregateLines(lines, marginPercent, financingPercent, conditionMode) {
   const map = new Map();
   for (const line of lines) {
     const key = lineDiffKey(line);
     const qty = Number(line?.qty || 0) || 0;
-    const amount = round2(lineAmount(line));
+    const unit = resolveLineFinalUnitPrice(line, marginPercent, financingPercent, conditionMode);
+    const amount = calcLineTotal(qty, unit);
     const prev = map.get(key);
     map.set(
       key,
@@ -51,16 +54,26 @@ function aggregateLines(lines) {
   return map;
 }
 
-export function computeCommercialLinesDiff(originalLines, currentLines) {
+export function computeCommercialLinesDiff(originalLines, currentLines, opts = {}) {
+  const {
+    originalMarginPercent = 0,
+    currentMarginPercent = 0,
+    originalConditionMode = "cond1",
+    currentConditionMode = "cond1",
+    originalFinancingPercent = 0,
+    currentFinancingPercent = 0,
+  } = opts;
+
   const cleanOriginal = stripPreviouslyBilledLines(originalLines);
   const cleanCurrent = stripPreviouslyBilledLines(currentLines);
-  const originalTotal = round2(cleanOriginal.reduce((acc, l) => acc + lineAmount(l), 0));
-  const currentTotal = round2(cleanCurrent.reduce((acc, l) => acc + lineAmount(l), 0));
+
+  const originalTotal = calcTotals(cleanOriginal, originalMarginPercent, IVA_RATE_FOR_DIFF, originalFinancingPercent, originalConditionMode).total;
+  const currentTotal = calcTotals(cleanCurrent, currentMarginPercent, IVA_RATE_FOR_DIFF, currentFinancingPercent, currentConditionMode).total;
   const diffAmount = round2(currentTotal - originalTotal);
   const diffPercent = originalTotal !== 0 ? round2((diffAmount / Math.abs(originalTotal)) * 100) : null;
 
-  const originalMap = aggregateLines(cleanOriginal);
-  const currentMap = aggregateLines(cleanCurrent);
+  const originalMap = aggregateLines(cleanOriginal, originalMarginPercent, originalFinancingPercent, originalConditionMode);
+  const currentMap = aggregateLines(cleanCurrent, currentMarginPercent, currentFinancingPercent, currentConditionMode);
   const added = [];
   const removed = [];
   const changed = [];

@@ -275,10 +275,16 @@ function sumLinesBaseAmount(lines) {
 // porque para ese momento el vendedor ya guardo su edicion via PUT /api/quotes/:id
 // y ese guardado no preserva measurement_return_context (solo preserva claves de
 // linked_porton en preserveLinkedPortonPayload) - el original ya se perdio ahi.
+//
+// original_total (sumLinesBaseAmount) es solo informativo/legacy: es la suma cruda
+// qty*basePrice, SIN margen ni condición de venta, así que no coincide con lo que
+// realmente se sincroniza a Odoo. El frontend no debe usarlo para mostrar montos -
+// recalcula con el margen/condición correctos a partir de original_payload.
 function buildCommercialDiffSnapshot(ctx) {
   const originalLines = ctx?.original_lines || [];
   return {
     original_lines: originalLines,
+    original_payload: ctx?.original_payload || null,
     original_total: sumLinesBaseAmount(originalLines),
     captured_at: new Date().toISOString(),
   };
