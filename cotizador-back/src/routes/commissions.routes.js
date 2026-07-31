@@ -53,6 +53,7 @@ function emptyCommissionSummary() {
     porton_count_vend: 0,
     total_commission_ars: 0,
     matched: false,
+    invoices: [],
   };
 }
 
@@ -106,6 +107,7 @@ export function buildCommissionsRouter() {
               porton_count_vend: Number(match.porton_count_vend || 0),
               total_commission_ars: Number(match.total_commission_ars || 0),
               matched: true,
+              invoices: Array.isArray(match.invoices) ? match.invoices : [],
             }
           : emptyCommissionSummary()),
       });

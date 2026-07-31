@@ -19,6 +19,98 @@ function money(value) {
   return Number(value || 0).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
+const CATEGORIA_LABELS = {
+  porton: "Portón",
+  ipanel: "Panel",
+  puerta: "Puerta",
+  plegados: "Plegado",
+  otros: "Otros",
+};
+
+function categoriaLabel(categoria) {
+  return CATEGORIA_LABELS[categoria] || categoria || "—";
+}
+
+function docLabel(moveType) {
+  return moveType === "out_refund" ? "NC" : "FV";
+}
+
+function ComisionDetalleModal({ sellerName, invoices, onClose }) {
+  const portonCount = new Set(
+    invoices.filter((i) => i.categoria === "porton" && i.counts_as_porton).map((i) => i.invoice_origin),
+  ).size;
+
+  return (
+    <div
+      style={{
+        position: "fixed", inset: 0, zIndex: 1000,
+        background: "rgba(17,24,39,0.55)",
+        display: "flex", alignItems: "center", justifyContent: "center",
+        padding: 16,
+      }}
+      onClick={onClose}
+    >
+      <div
+        className="card"
+        style={{ maxWidth: 960, width: "100%", maxHeight: "88vh", overflowY: "auto", borderRadius: 16, boxShadow: "0 20px 50px rgba(0,0,0,0.25)" }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
+          <div>
+            <div style={{ fontWeight: 900, fontSize: 20, color: "#111827" }}>Facturas — {sellerName}</div>
+            <div className="muted" style={{ fontSize: 13, marginTop: 2 }}>
+              {portonCount} portón(es) · {invoices.length} comprobante(s)
+            </div>
+          </div>
+          <Button variant="ghost" onClick={onClose}>Cerrar</Button>
+        </div>
+
+        <div className="spacer" />
+
+        <div style={{ overflowX: "auto" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+            <thead>
+              <tr style={{ textAlign: "left", borderBottom: "1px solid #eee" }}>
+                <th style={{ padding: "8px 10px" }}>Fecha</th>
+                <th style={{ padding: "8px 10px" }}>Doc.</th>
+                <th style={{ padding: "8px 10px" }}>Comprobante</th>
+                <th style={{ padding: "8px 10px" }}>Origen</th>
+                <th style={{ padding: "8px 10px" }}>Cliente</th>
+                <th style={{ padding: "8px 10px" }}>Tipo</th>
+                <th style={{ padding: "8px 10px" }}>Cuenta</th>
+                <th style={{ padding: "8px 10px", textAlign: "right" }}>Neto ARS</th>
+                <th style={{ padding: "8px 10px", textAlign: "right" }}>Neto USD</th>
+              </tr>
+            </thead>
+            <tbody>
+              {invoices.map((inv, i) => (
+                <tr key={`${inv.move_name}-${i}`} style={{ borderBottom: "1px solid #f3f4f6" }}>
+                  <td style={{ padding: "8px 10px" }}>{inv.invoice_date}</td>
+                  <td style={{ padding: "8px 10px" }}>{docLabel(inv.move_type)}</td>
+                  <td style={{ padding: "8px 10px" }}>{inv.move_name || "—"}</td>
+                  <td style={{ padding: "8px 10px" }}>{inv.invoice_origin || "—"}</td>
+                  <td style={{ padding: "8px 10px" }}>{inv.partner_name || "—"}</td>
+                  <td style={{ padding: "8px 10px" }}>{categoriaLabel(inv.categoria)}</td>
+                  <td style={{ padding: "8px 10px" }}>
+                    {inv.counts_as_porton ? (
+                      <span style={{ background: "#2563eb", color: "#fff", borderRadius: 999, padding: "2px 10px", fontWeight: 700, fontSize: 12 }}>Sí</span>
+                    ) : "—"}
+                  </td>
+                  <td style={{ padding: "8px 10px", textAlign: "right" }}>{money(inv.neto_ars)}</td>
+                  <td style={{ padding: "8px 10px", textAlign: "right" }}>{inv.neto_usd != null ? money(inv.neto_usd) : "—"}</td>
+                </tr>
+              ))}
+              {!invoices.length ? (
+                <tr><td colSpan={9} style={{ padding: 16, textAlign: "center" }} className="muted">Sin comprobantes en este período.</td></tr>
+              ) : null}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function StatCard({ label, value, accent }) {
   return (
     <div
@@ -67,6 +159,7 @@ export default function ComisionesVendedorPage() {
 
   const [month, setMonth] = useState(toYyyyMm());
   const [period, setPeriod] = useState(currentQuincena());
+  const [detailOpen, setDetailOpen] = useState(false);
 
   const commQ = useQuery({
     queryKey: ["myCommission", month, period],
@@ -147,11 +240,25 @@ export default function ComisionesVendedorPage() {
             <StatCard label="Cant. portones por distribuidor" value={data.porton_count_dist} />
             <StatCard label="Monto comisionado" value={`$ ${money(data.total_commission_ars)}`} accent />
           </div>
+
+          {data.matched && data.invoices?.length ? (
+            <div style={{ marginTop: 14 }}>
+              <Button variant="ghost" onClick={() => setDetailOpen(true)}>Ver detalle / composición</Button>
+            </div>
+          ) : null}
         </div>
       ) : null}
 
       <div className="spacer" />
       <ClaimsNotice onOpenTicket={() => navigate("/consultas-comerciales")} />
+
+      {detailOpen && data ? (
+        <ComisionDetalleModal
+          sellerName={data.seller_name}
+          invoices={data.invoices || []}
+          onClose={() => setDetailOpen(false)}
+        />
+      ) : null}
     </div>
   );
 }
