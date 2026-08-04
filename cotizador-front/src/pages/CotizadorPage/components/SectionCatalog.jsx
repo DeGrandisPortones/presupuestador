@@ -13,7 +13,10 @@ import Button from "../../../ui/Button";
 const CATALOG_KINDS = new Set(["porton", "ipanel", "plegados", "otros", "puerta"]);
 const APTOS_PARA_REVESTIR_TYPE = "para_revestir_con_al_pvc_otros";
 const IPANEL_BLOCKED_PLEGADO_PRODUCT_IDS = new Set([4036, 3565]);
-const IPANEL_LAMAS_RANGE_MIN_WIDTH_M = 1.13;
+// Limites del panel liso (deben coincidir con IPANEL_WIDTH_MAX_M/IPANEL_HEIGHT_MAX_M
+// de CotizadorPage/index.jsx): 1.16 y 2.45 son inclusivos para liso, asi que el rango
+// de lamas empieza estrictamente por encima.
+const IPANEL_LAMAS_RANGE_MIN_WIDTH_M = 1.16;
 const IPANEL_LAMAS_RANGE_MAX_WIDTH_M = 2;
 const IPANEL_LAMAS_RANGE_MIN_HEIGHT_M = 2.45;
 const IPANEL_LAMAS_RANGE_MAX_HEIGHT_M = 3;
@@ -235,9 +238,9 @@ function parseDimensionNumber(value) {
 function isIpanelLamasMeasureRange(dimensions = {}) {
   const width = parseDimensionNumber(dimensions?.width);
   const height = parseDimensionNumber(dimensions?.height);
-  return width >= IPANEL_LAMAS_RANGE_MIN_WIDTH_M
+  return width > IPANEL_LAMAS_RANGE_MIN_WIDTH_M
     && width <= IPANEL_LAMAS_RANGE_MAX_WIDTH_M
-    && height >= IPANEL_LAMAS_RANGE_MIN_HEIGHT_M
+    && height > IPANEL_LAMAS_RANGE_MIN_HEIGHT_M
     && height <= IPANEL_LAMAS_RANGE_MAX_HEIGHT_M;
 }
 function productMatchesIdSet(product = {}, idSet) {
