@@ -42,10 +42,35 @@ function localityLabel(r) {
   return r?.end_customer?.city || "—";
 }
 
+function nvLabel(r) {
+  return r?.odoo_sale_order_name || (r?.quote_number ? `#${r.quote_number}` : "—");
+}
+
+function NvPill({ value }) {
+  const text = String(value || "").trim();
+  if (!text || text === "—") return <span className="muted">—</span>;
+  return (
+    <span
+      style={{
+        display: "inline-flex",
+        fontWeight: 900,
+        background: "#e7f7ed",
+        border: "1px solid #bfe6c8",
+        borderRadius: 999,
+        padding: "3px 8px",
+        whiteSpace: "nowrap",
+      }}
+    >
+      {text}
+    </span>
+  );
+}
+
 function matchesSearch(r, searchText) {
   const s = String(searchText || "").trim().toLowerCase();
   if (!s) return true;
   const haystack = [
+    nvLabel(r),
     r?.end_customer?.name,
     r?.end_customer?.city,
     r?.end_customer?.address,
@@ -149,6 +174,7 @@ function MeasurementCard({ row, onOpen }) {
 
       <div className="spacer" />
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+        <MobileField label="NV"><NvPill value={nvLabel(row)} /></MobileField>
         <MobileField label="Fecha visita" value={fmtDate(row?.measurement_scheduled_for)} />
         <MobileField label="Alta" value={fmtDate(row?.created_at)} />
       </div>
@@ -280,6 +306,7 @@ export default function MedicionesPage() {
                 <table style={{ minWidth: 920 }}>
                   <thead>
                     <tr>
+                      <th>NV</th>
                       <th>Fecha visita</th>
                       <th>Alta</th>
                       <th>Cliente</th>
@@ -294,6 +321,7 @@ export default function MedicionesPage() {
                   <tbody>
                     {visibleRows.map((r) => (
                       <tr key={r.id}>
+                        <td><NvPill value={nvLabel(r)} /></td>
                         <td>{fmtDate(r.measurement_scheduled_for)}</td>
                         <td>{fmtDate(r.created_at)}</td>
                         <td style={{ fontWeight: 800 }}>{r.end_customer?.name || "(sin nombre)"}</td>
