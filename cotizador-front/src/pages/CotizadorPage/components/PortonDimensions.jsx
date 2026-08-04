@@ -12,8 +12,10 @@ const HEIGHT_MAX_M = 3;
 const PORTON_MAX_WEIGHT_KG = 350;
 const IPANEL_WIDTH_MAX_M = 1.16;
 const IPANEL_HEIGHT_MAX_M = 2.45;
-const IPANEL_LAMAS_WIDTH_MAX_M = 4;
-const IPANEL_LAMAS_HEIGHT_MAX_M = 4;
+// Panel en lamas/varillado: no tiene un maximo cuadrado fijo. Alcanza con que uno de
+// los dos lados quede por debajo de este valor; el otro lado puede tomar la medida
+// que se necesite.
+const IPANEL_EXTENDED_MAX_M = 4;
 const IPANEL_LAMAS_22_PRODUCT_IDS = new Set([4061, 3590]);
 const IPANEL_DIVIDER_LINE_MM = 10;
 const PARANTES_SPECIAL_PRODUCT_ID = 3006;
@@ -1392,8 +1394,14 @@ function IpanelLamasSetupModal({
 
   const modalWidthValue = parseOptionalNumber(normalizeDecimalWithDot(widthMeters));
   const modalHeightValue = parseOptionalNumber(normalizeDecimalWithDot(heightMeters));
-  const widthInvalid = modalWidthValue === null || !(modalWidthValue > 0) || modalWidthValue > IPANEL_LAMAS_WIDTH_MAX_M;
-  const heightInvalid = modalHeightValue === null || !(modalHeightValue > 0) || modalHeightValue > IPANEL_LAMAS_HEIGHT_MAX_M;
+  const modalWidthPositive = modalWidthValue !== null && modalWidthValue > 0;
+  const modalHeightPositive = modalHeightValue !== null && modalHeightValue > 0;
+  // Regla conjunta: no hace falta que ambos lados queden por debajo del maximo, alcanza
+  // con que uno de los dos sea menor a IPANEL_EXTENDED_MAX_M; el otro no tiene limite.
+  const modalSizeRuleOk = modalWidthPositive && modalHeightPositive
+    && (modalWidthValue < IPANEL_EXTENDED_MAX_M || modalHeightValue < IPANEL_EXTENDED_MAX_M);
+  const widthInvalid = !modalWidthPositive || !modalSizeRuleOk;
+  const heightInvalid = !modalHeightPositive || !modalSizeRuleOk;
   const modalWidthM = Number(modalWidthValue || 0);
   const modalHeightM = Number(modalHeightValue || 0);
 
@@ -1466,7 +1474,7 @@ function IpanelLamasSetupModal({
 
   function handleSave() {
     if (widthInvalid || heightInvalid) {
-      setError(`Completá ancho y alto del Ipanel. Panel en lamas permite hasta ${IPANEL_LAMAS_WIDTH_MAX_M.toFixed(2)} m de ancho y ${IPANEL_LAMAS_HEIGHT_MAX_M.toFixed(2)} m de alto.`);
+      setError(`Completá ancho y alto del Ipanel. En lamas/varillado, al menos uno de los dos lados tiene que ser menor a ${IPANEL_EXTENDED_MAX_M.toFixed(2)} m; el otro no tiene límite.`);
       return;
     }
     if (divisionsOutOfBounds) {
@@ -1542,7 +1550,7 @@ function IpanelLamasSetupModal({
         </div>
 
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 12, alignItems: "start" }}>
-          <FieldBox label="Ancho del Ipanel (m)" helper={`Panel en lamas max ${IPANEL_LAMAS_WIDTH_MAX_M.toFixed(2)} m.`} helperColor={widthInvalid ? "#b91c1c" : undefined}>
+          <FieldBox label="Ancho del Ipanel (m)" helper={`Sin límite si el alto es menor a ${IPANEL_EXTENDED_MAX_M.toFixed(2)} m.`} helperColor={widthInvalid ? "#b91c1c" : undefined}>
             <Input
               type="text"
               inputMode="decimal"
@@ -1557,7 +1565,7 @@ function IpanelLamasSetupModal({
               style={inputStateStyle(widthInvalid)}
             />
           </FieldBox>
-          <FieldBox label="Alto del Ipanel (m)" helper={`Panel en lamas max ${IPANEL_LAMAS_HEIGHT_MAX_M.toFixed(2)} m.`} helperColor={heightInvalid ? "#b91c1c" : undefined}>
+          <FieldBox label="Alto del Ipanel (m)" helper={`Sin límite si el ancho es menor a ${IPANEL_EXTENDED_MAX_M.toFixed(2)} m.`} helperColor={heightInvalid ? "#b91c1c" : undefined}>
             <Input
               type="text"
               inputMode="decimal"
@@ -1728,13 +1736,22 @@ export default function PortonDimensions({ kind = "porton" }) {
   const hasIpanelLamas22Panel = isIpanel && [...IPANEL_LAMAS_22_PRODUCT_IDS].some((id) => selectedProductIdsForIpanel.has(id));
   const hasIpanelVarilladoPanel = isIpanel && hasIpanelVarilladoProduct(lines);
   const hasIpanelExtendedAllowedPanel = hasIpanelLamas22Panel || hasIpanelVarilladoPanel;
-  const ipanelWidthMaxForSelection = hasIpanelExtendedAllowedPanel ? IPANEL_LAMAS_WIDTH_MAX_M : IPANEL_WIDTH_MAX_M;
-  const ipanelHeightMaxForSelection = hasIpanelExtendedAllowedPanel ? IPANEL_LAMAS_HEIGHT_MAX_M : IPANEL_HEIGHT_MAX_M;
-  const widthOutOfBounds = widthValue !== null && (isPorton ? (widthValue < WIDTH_MIN_M || widthValue > WIDTH_MAX_M) : (isIpanel ? widthValue > ipanelWidthMaxForSelection : false));
-  const heightOutOfBounds = heightValue !== null && (isPorton ? (heightValue < HEIGHT_MIN_M || heightValue > HEIGHT_MAX_M) : (isIpanel ? heightValue > ipanelHeightMaxForSelection : false));
+  // Lamas/varillado: regla conjunta, alcanza con que uno de los dos lados quede por
+  // debajo de IPANEL_EXTENDED_MAX_M; el otro lado no tiene limite. El panel liso (sin
+  // producto de lamas/varillado seleccionado) sigue con su tope fijo de 1.16 x 2.45.
+  const ipanelExtendedSizeInvalid = isIpanel && hasIpanelExtendedAllowedPanel
+    && widthValue !== null && widthValue > 0 && heightValue !== null && heightValue > 0
+    ? !(widthValue < IPANEL_EXTENDED_MAX_M || heightValue < IPANEL_EXTENDED_MAX_M)
+    : false;
+  const widthOutOfBounds = widthValue !== null && (isPorton
+    ? (widthValue < WIDTH_MIN_M || widthValue > WIDTH_MAX_M)
+    : (isIpanel ? (hasIpanelExtendedAllowedPanel ? ipanelExtendedSizeInvalid : widthValue > IPANEL_WIDTH_MAX_M) : false));
+  const heightOutOfBounds = heightValue !== null && (isPorton
+    ? (heightValue < HEIGHT_MIN_M || heightValue > HEIGHT_MAX_M)
+    : (isIpanel ? (hasIpanelExtendedAllowedPanel ? ipanelExtendedSizeInvalid : heightValue > IPANEL_HEIGHT_MAX_M) : false));
   const hasSizeError = (isPorton || isIpanel) && (widthOutOfBounds || heightOutOfBounds);
-  const widthHelper = isPorton ? "Minimo 2.4 m - Maximo 7 m" : (isIpanel ? "Panel simple max 1.16 m. Lamas y varillado max 2.00 m" : "");
-  const heightHelper = isPorton ? "Minimo 2 m - Maximo 3 m" : (isIpanel ? "Maximo 2.45 m (245 cm)" : "");
+  const widthHelper = isPorton ? "Minimo 2.4 m - Maximo 7 m" : (isIpanel ? "Panel simple max 1.16 m. Lamas/varillado: sin límite si el otro lado es menor a 4.00 m" : "");
+  const heightHelper = isPorton ? "Minimo 2 m - Maximo 3 m" : (isIpanel ? "Panel simple max 2.45 m. Lamas/varillado: sin límite si el otro lado es menor a 4.00 m" : "");
   const widthPlaceholder = isIpanel ? "Ej: 1.16" : "Ej: 3.2";
   const heightPlaceholder = isIpanel ? "Ej: 2.45" : "Ej: 2.1";
   const area = useMemo(() => {

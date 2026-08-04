@@ -13,13 +13,12 @@ import Button from "../../../ui/Button";
 const CATALOG_KINDS = new Set(["porton", "ipanel", "plegados", "otros", "puerta"]);
 const APTOS_PARA_REVESTIR_TYPE = "para_revestir_con_al_pvc_otros";
 const IPANEL_BLOCKED_PLEGADO_PRODUCT_IDS = new Set([4036, 3565]);
-// Limites del panel liso (deben coincidir con IPANEL_WIDTH_MAX_M/IPANEL_HEIGHT_MAX_M
-// de CotizadorPage/index.jsx): 1.16 y 2.45 son inclusivos para liso, asi que el rango
-// de lamas empieza estrictamente por encima.
-const IPANEL_LAMAS_RANGE_MIN_WIDTH_M = 1.16;
-const IPANEL_LAMAS_RANGE_MAX_WIDTH_M = 2;
-const IPANEL_LAMAS_RANGE_MIN_HEIGHT_M = 2.45;
-const IPANEL_LAMAS_RANGE_MAX_HEIGHT_M = 3;
+// Limites del panel liso (deben coincidir con IPANEL_WIDTH_MAX_M/IPANEL_HEIGHT_MAX_M de
+// CotizadorPage/index.jsx y PortonDimensions.jsx): 1.16 y 2.45 son inclusivos para liso.
+// Fuera de eso el catalogo esconde el liso, sin importar cuanto se pase: en lamas/varillado
+// no hay tope cuadrado, alcanza con que uno de los dos lados quede por debajo de 4 m.
+const IPANEL_LISO_MAX_WIDTH_M = 1.16;
+const IPANEL_LISO_MAX_HEIGHT_M = 2.45;
 const CATALOG_PRICING_VERSION = 3;
 // "Revestimiento especial x m2": al elegirlo pide los kg/m2 al vendedor y ese valor
 // reemplaza el peso calculado del porton (y por lo tanto el tipo de piernas).
@@ -235,13 +234,11 @@ function parseDimensionNumber(value) {
   const n = Number(raw);
   return Number.isFinite(n) ? n : 0;
 }
-function isIpanelLamasMeasureRange(dimensions = {}) {
+function isIpanelBeyondLisoLimits(dimensions = {}) {
   const width = parseDimensionNumber(dimensions?.width);
   const height = parseDimensionNumber(dimensions?.height);
-  return width > IPANEL_LAMAS_RANGE_MIN_WIDTH_M
-    && width <= IPANEL_LAMAS_RANGE_MAX_WIDTH_M
-    && height > IPANEL_LAMAS_RANGE_MIN_HEIGHT_M
-    && height <= IPANEL_LAMAS_RANGE_MAX_HEIGHT_M;
+  if (!(width > 0) || !(height > 0)) return false;
+  return width > IPANEL_LISO_MAX_WIDTH_M || height > IPANEL_LISO_MAX_HEIGHT_M;
 }
 function productMatchesIdSet(product = {}, idSet) {
   return collectProductIdsFromProduct(product).some((id) => idSet.has(Number(id)));
@@ -696,7 +693,7 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
   const catalogPricingReady = !!user
     && !!Number(pricelistId || 0)
     && (!user?.is_distribuidor || !user?.odoo_partner_id || !!partnerId);
-  const shouldHideIpanelPlegado4036 = catalogKind === "ipanel" && isIpanelLamasMeasureRange(dimensions);
+  const shouldHideIpanelPlegado4036 = catalogKind === "ipanel" && isIpanelBeyondLisoLimits(dimensions);
 
   const scrollToSection = useCallback((sectionId) => {
     const id = Number(sectionId || 0);

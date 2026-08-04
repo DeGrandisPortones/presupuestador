@@ -49,8 +49,10 @@ const HEIGHT_MAX_M = 3;
 const PORTON_MAX_WEIGHT_KG = 350;
 const IPANEL_WIDTH_MAX_M = 1.16;
 const IPANEL_HEIGHT_MAX_M = 2.45;
-const IPANEL_LAMAS_WIDTH_MAX_M = 2;
-const IPANEL_LAMAS_HEIGHT_MAX_M = 3;
+// Panel en lamas/varillado: no tiene un maximo cuadrado fijo. Alcanza con que uno de
+// los dos lados quede por debajo de este valor; el otro lado puede tomar la medida
+// que se necesite.
+const IPANEL_EXTENDED_MAX_M = 4;
 const IPANEL_LAMAS_PRODUCT_ID = 4061;
 const IPANEL_LAMAS_ODOO_ID = 3590;
 const IPANEL_NON_LAMAS_PLEGADO_PRODUCT_IDS = [4036, 3565];
@@ -207,8 +209,16 @@ function isIpanelExtendedLamasDimensions(dimensions = {}) {
   const height = parseNum(dimensions?.height);
   if (!(width > 0) || !(height > 0)) return false;
   const exceedsNormalLimit = width > IPANEL_WIDTH_MAX_M || height > IPANEL_HEIGHT_MAX_M;
-  const withinLamasLimit = width <= IPANEL_LAMAS_WIDTH_MAX_M && height <= IPANEL_LAMAS_HEIGHT_MAX_M;
-  return exceedsNormalLimit && withinLamasLimit;
+  const withinExtendedLimit = width < IPANEL_EXTENDED_MAX_M || height < IPANEL_EXTENDED_MAX_M;
+  return exceedsNormalLimit && withinExtendedLimit;
+}
+function isIpanelSizeAllowed(width, height) {
+  const w = Number(width) || 0;
+  const h = Number(height) || 0;
+  if (!(w > 0) || !(h > 0)) return true;
+  const withinNormalLimit = w <= IPANEL_WIDTH_MAX_M && h <= IPANEL_HEIGHT_MAX_M;
+  const withinExtendedLimit = w < IPANEL_EXTENDED_MAX_M || h < IPANEL_EXTENDED_MAX_M;
+  return withinNormalLimit || withinExtendedLimit;
 }
 function patchIpanelLamasOnlyUi(enabled) {
   if (typeof document === "undefined") return;
@@ -427,20 +437,19 @@ function patchIpanelDimensionValidationUi(dimensions) {
 
   const width = parseOptionalDimensionForUiPatch(dimensions?.width);
   const height = parseOptionalDimensionForUiPatch(dimensions?.height);
-  const widthOk = width === null || width <= IPANEL_LAMAS_WIDTH_MAX_M;
-  const heightOk = height === null || height <= IPANEL_LAMAS_HEIGHT_MAX_M;
-  const mustUseLamas = isIpanelExtendedLamasDimensions(dimensions);
-  const allOk = widthOk && heightOk;
+  const allOk = isIpanelSizeAllowed(width, height);
+  const widthOk = allOk;
+  const heightOk = allOk;
 
   const helperNodes = Array.from(root.querySelectorAll("*"));
   for (const node of helperNodes) {
     const text = String(node.textContent || "").trim();
     if (/^(?:Maximo\s+1\.(?:13|16)\s*m|Panel\s+simple\s+max\s+1\.(?:13|16)\s*m)/i.test(text)) {
-      node.textContent = mustUseLamas ? "Panel simple max 1.16 m. Lamas y varillado max 2.00 m" : "Panel simple max 1.16 m. Lamas y varillado max 2.00 m";
+      node.textContent = "Panel simple max 1.16 m. Lamas y varillado: sin límite si el otro lado es menor a 4.00 m";
       if (widthOk) node.style.color = "#6b7280";
     }
     if (/^Maximo\s+2\.45\s*m/i.test(text)) {
-      node.textContent = mustUseLamas ? "Panel simple max 2.45 m. Lamas y varillado max 3.00 m" : "Panel simple max 2.45 m. Lamas y varillado max 3.00 m";
+      node.textContent = "Panel simple max 2.45 m. Lamas y varillado: sin límite si el otro lado es menor a 4.00 m";
       if (heightOk) node.style.color = "#6b7280";
     }
   }
@@ -558,8 +567,9 @@ function validateDimensionsRequired(payload, kind = "porton") {
   }
 
   if (normalizedKind === "ipanel") {
-    if (width > IPANEL_LAMAS_WIDTH_MAX_M) throw new Error(`El ancho del ${itemLabel} no puede superar 2.00 m. Entre 1.16 m y 2.00 m sólo se puede producir en lamas o varillado.`);
-    if (height > IPANEL_LAMAS_HEIGHT_MAX_M) throw new Error(`El alto del ${itemLabel} no puede superar 3.00 m. Entre 2.45 m y 3.00 m sólo se puede producir en lamas o varillado.`);
+    if (!(width < IPANEL_EXTENDED_MAX_M || height < IPANEL_EXTENDED_MAX_M)) {
+      throw new Error(`El ${itemLabel} no puede tener el ancho y el alto en 4.00 m o más al mismo tiempo. Al menos uno de los dos lados tiene que ser menor a 4.00 m; el otro no tiene límite.`);
+    }
 
     if (hasIpanelLamasProduct(payload)) {
       const lamasSetupCompleted = dims?.ipanel_lamas_popup_completed === true
