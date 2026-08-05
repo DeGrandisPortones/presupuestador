@@ -9,10 +9,15 @@ import {
   listCommercialConsults,
   markCommercialConsultRead,
 } from "../commercialConsultsDb.js";
-import { searchActiveRequesters } from "../usersDb.js";
+import { listActiveRequestersByAudience, searchActiveRequesters } from "../usersDb.js";
 
 function isCommercialUser(user) {
   return !!(user?.is_superuser || user?.is_enc_comercial);
+}
+
+function normalizeRequestersAudience(value) {
+  const v = String(value || "todos").trim().toLowerCase();
+  return ["vendedores", "distribuidores", "todos"].includes(v) ? v : "todos";
 }
 
 function normalizeScope(user, value) {
@@ -69,6 +74,18 @@ export function buildCommercialConsultsRouter() {
     try {
       if (!isCommercialUser(req.user)) return res.status(403).json({ ok: false, error: "No autorizado" });
       const requesters = await searchActiveRequesters({ q: req.query?.q || "" });
+      res.json({ ok: true, requesters });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  // Lista completa (no busqueda) para el popup de "elegir varios destinatarios".
+  router.get("/requesters/list", async (req, res, next) => {
+    try {
+      if (!isCommercialUser(req.user)) return res.status(403).json({ ok: false, error: "No autorizado" });
+      const audience = normalizeRequestersAudience(req.query?.audience);
+      const requesters = await listActiveRequestersByAudience(audience);
       res.json({ ok: true, requesters });
     } catch (err) {
       next(err);

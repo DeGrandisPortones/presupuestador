@@ -41,6 +41,14 @@ export async function searchTechnicalConsultRequesters(q) {
   return data.requesters || [];
 }
 
+export async function listTechnicalConsultRequesters(audience = "todos") {
+  const { data } = await http.get("/api/technical-consults/requesters/list", {
+    params: { audience },
+  });
+  if (!data?.ok) throw new Error(data?.error || "No se pudo cargar la lista de vendedores/distribuidores");
+  return data.requesters || [];
+}
+
 export async function addTechnicalConsultMessage(id, payload = {}) {
   const { data } = await http.post(`/api/technical-consults/${encodeURIComponent(String(id))}/messages`, payload || {});
   if (!data?.ok) throw new Error(data?.error || "No se pudo enviar el mensaje");

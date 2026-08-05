@@ -9,6 +9,7 @@ import {
   closeTechnicalConsult,
   createTechnicalConsult,
   getTechnicalConsult,
+  listTechnicalConsultRequesters,
   listTechnicalConsults,
   markTechnicalConsultRead,
   searchTechnicalConsultRequesters,
@@ -146,6 +147,88 @@ function MessageAttachment({ attachment }) {
   );
 }
 
+// Popup para elegir a mano un subconjunto de vendedores/distribuidores a los que
+// mandarles el mismo ticket (uno por destinatario, igual que "Todos los vendedores"
+// pero con seleccion puntual en vez de toda la audiencia).
+function RequesterPickerModal({ open, requesters, isLoading, error, initialSelectedIds, onConfirm, onClose }) {
+  const [search, setSearch] = useState("");
+  const [checkedIds, setCheckedIds] = useState(() => new Set(initialSelectedIds));
+
+  useEffect(() => {
+    if (open) setCheckedIds(new Set(initialSelectedIds));
+    else setSearch("");
+    // Solo re-sincronizar la seleccion de trabajo cuando el popup se abre.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
+  if (!open) return null;
+
+  const term = normalizeSearch(search);
+  const filtered = term
+    ? requesters.filter((r) => normalizeSearch(`${r.full_name || ""} ${r.username || ""}`).includes(term))
+    : requesters;
+
+  function toggle(id) {
+    setCheckedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.55)", zIndex: 10000, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}
+      onClick={onClose}
+    >
+      <div
+        style={{ width: "min(480px, 96vw)", maxHeight: "88vh", display: "flex", flexDirection: "column", background: "#fff", borderRadius: 18, padding: 18, boxShadow: "0 22px 70px rgba(15,23,42,0.35)", border: "1px solid #e5e7eb" }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div style={{ fontWeight: 900, fontSize: 18, marginBottom: 10 }}>Elegir destinatarios</div>
+        <Input value={search} onChange={setSearch} placeholder="Buscar por nombre o usuario" style={{ width: "100%" }} autoFocus />
+        <div style={{ height: 8 }} />
+        <div style={{ flex: 1, minHeight: 120, overflowY: "auto", border: "1px solid #eee", borderRadius: 10 }}>
+          {isLoading ? <div className="muted" style={{ padding: 12 }}>Cargando…</div> : null}
+          {error ? <div style={{ color: "#d93025", fontSize: 13, padding: 12 }}>{error}</div> : null}
+          {!isLoading && !error && !filtered.length ? <div className="muted" style={{ padding: 12 }}>Sin resultados.</div> : null}
+          {!isLoading && !error && filtered.map((r) => {
+            const checked = checkedIds.has(r.id);
+            return (
+              <label
+                key={r.id}
+                style={{
+                  display: "flex", alignItems: "center", gap: 10, padding: "9px 12px",
+                  borderBottom: "1px solid #f0f0f0", cursor: "pointer",
+                  background: checked ? "rgba(1,163,159,0.06)" : "transparent",
+                }}
+              >
+                <input type="checkbox" checked={checked} onChange={() => toggle(r.id)} />
+                <div>
+                  <div style={{ fontWeight: 700 }}>{r.full_name || r.username}</div>
+                  <div className="muted" style={{ fontSize: 12 }}>
+                    {r.is_distribuidor ? "Distribuidor" : "Vendedor"} · {r.username}
+                  </div>
+                </div>
+              </label>
+            );
+          })}
+        </div>
+        <div style={{ marginTop: 12, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
+          <div className="muted" style={{ fontSize: 13 }}>{checkedIds.size} seleccionado(s)</div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <Button variant="ghost" onClick={onClose}>Cancelar</Button>
+            <Button onClick={() => onConfirm([...checkedIds])} disabled={!checkedIds.size}>Confirmar</Button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 async function handleTicketAttachmentFile(file, { setAttachment, setError, setAttaching }) {
   setError("");
   if (!file) return;
@@ -184,6 +267,8 @@ export default function TechnicalConsultsPage() {
   const [selectedTarget, setSelectedTarget] = useState(null);
   const [audienceMode, setAudienceMode] = useState("target");
   const [bulkNotice, setBulkNotice] = useState("");
+  const [selectedMultiTargets, setSelectedMultiTargets] = useState([]);
+  const [showPicker, setShowPicker] = useState(false);
 
   const [newAttachment, setNewAttachment] = useState(null);
   const [newAttachmentError, setNewAttachmentError] = useState("");
@@ -201,6 +286,8 @@ export default function TechnicalConsultsPage() {
     setTargetSearch("");
     setTargetResults([]);
     setAudienceMode("target");
+    setSelectedMultiTargets([]);
+    setShowPicker(false);
     setNewAttachment(null);
     setNewAttachmentError("");
   }
@@ -230,6 +317,13 @@ export default function TechnicalConsultsPage() {
     }, 300);
     return () => clearTimeout(t);
   }, [targetSearch, isTechnical, showNewForm]);
+
+  const pickerQ = useQuery({
+    queryKey: ["technicalConsultRequestersList"],
+    queryFn: () => listTechnicalConsultRequesters("todos"),
+    enabled: isTechnical && showPicker,
+    staleTime: 30000,
+  });
 
   const scope = isTechnical ? "technical" : "mine";
 
@@ -307,6 +401,8 @@ export default function TechnicalConsultsPage() {
         isTechnical
           ? audienceMode === "target"
             ? { subject, message: newMessage, target_user_id: selectedTarget?.id, attachment: newAttachment }
+            : audienceMode === "selected"
+            ? { subject, message: newMessage, target_user_ids: selectedMultiTargets.map((t) => t.id), attachment: newAttachment }
             : { subject, message: newMessage, audience: audienceMode, attachment: newAttachment }
           : { subject, message: newMessage, attachment: newAttachment }
       ),
@@ -317,8 +413,11 @@ export default function TechnicalConsultsPage() {
       qc.invalidateQueries({ queryKey: ["technicalConsults"] });
       qc.invalidateQueries({ queryKey: ["technicalConsultUnreadSummary"] });
       if (result?.bulk) {
-        const audienceLabel = result.audience === "vendedores" ? "vendedores" : "distribuidores";
-        setBulkNotice(`Se creó ${result.count} ticket(s) para todos los ${audienceLabel}.`);
+        const audienceLabel =
+          result.audience === "vendedores" ? "todos los vendedores"
+          : result.audience === "distribuidores" ? "todos los distribuidores"
+          : "los destinatarios elegidos";
+        setBulkNotice(`Se creó ${result.count} ticket(s) para ${audienceLabel}.`);
         const first = result.tickets?.[0];
         if (first) {
           setSelectedId(first.id);
@@ -468,9 +567,78 @@ export default function TechnicalConsultsPage() {
                   >
                     Todos los distribuidores
                   </Button>
+                  <Button
+                    variant={audienceMode === "selected" ? "primary" : "ghost"}
+                    onClick={() => setAudienceMode("selected")}
+                  >
+                    Elegir varios
+                  </Button>
                 </div>
 
-                {audienceMode === "target" ? (
+                {audienceMode === "selected" ? (
+                  <>
+                    <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 10 }}>
+                      <Button variant="ghost" onClick={() => setShowPicker(true)}>
+                        {selectedMultiTargets.length ? "Editar destinatarios" : "Elegir destinatarios"}
+                      </Button>
+                      <div className="muted" style={{ fontSize: 13 }}>
+                        {selectedMultiTargets.length
+                          ? `${selectedMultiTargets.length} seleccionado(s)`
+                          : "Ningún destinatario elegido todavía"}
+                      </div>
+                    </div>
+                    {selectedMultiTargets.length ? (
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 10 }}>
+                        {selectedMultiTargets.map((t) => (
+                          <span
+                            key={t.id}
+                            style={{
+                              display: "inline-flex", alignItems: "center", gap: 6,
+                              border: "1px solid #01a39f", borderRadius: 999, padding: "4px 10px",
+                              fontSize: 12, background: "rgba(1,163,159,0.06)",
+                            }}
+                          >
+                            {t.full_name || t.username}
+                            <button
+                              type="button"
+                              onClick={() => setSelectedMultiTargets((prev) => prev.filter((x) => x.id !== t.id))}
+                              style={{ border: "none", background: "none", cursor: "pointer", fontWeight: 800, color: "#01a39f", padding: 0, lineHeight: 1 }}
+                              aria-label={`Quitar ${t.full_name || t.username}`}
+                            >
+                              ×
+                            </button>
+                          </span>
+                        ))}
+                      </div>
+                    ) : null}
+                    <Input value={subject} onChange={setSubject} placeholder="Asunto" style={{ width: "100%" }} />
+                    <div style={{ height: 8 }} />
+                    <textarea
+                      value={newMessage}
+                      onChange={(e) => setNewMessage(e.target.value)}
+                      placeholder="Describí la consulta técnica"
+                      style={{ width: "100%", minHeight: 120, padding: 10, borderRadius: 10, border: "1px solid #ddd", resize: "vertical" }}
+                    />
+                    <AttachmentField
+                      attachment={newAttachment}
+                      error={newAttachmentError}
+                      attaching={newAttaching}
+                      onSelectFile={(e) => {
+                        const file = e.target.files?.[0] || null;
+                        handleTicketAttachmentFile(file, { setAttachment: setNewAttachment, setError: setNewAttachmentError, setAttaching: setNewAttaching });
+                        e.target.value = "";
+                      }}
+                      onRemove={() => { setNewAttachment(null); setNewAttachmentError(""); }}
+                    />
+                    <Button
+                      onClick={() => createM.mutate()}
+                      disabled={createM.isPending || !subject.trim() || !newMessage.trim() || !selectedMultiTargets.length}
+                    >
+                      {createM.isPending ? "Enviando…" : `Enviar a ${selectedMultiTargets.length || ""} destinatario(s)`}
+                    </Button>
+                    {createM.isError ? <div style={{ color: "#d93025", fontSize: 13, marginTop: 8 }}>{createM.error.message}</div> : null}
+                  </>
+                ) : audienceMode === "target" ? (
                   !selectedTarget ? (
                     <>
                       <Input
@@ -912,6 +1080,22 @@ export default function TechnicalConsultsPage() {
           ) : null}
         </div>
       </div>
+
+      {isTechnical ? (
+        <RequesterPickerModal
+          open={showPicker}
+          requesters={pickerQ.data || []}
+          isLoading={pickerQ.isLoading}
+          error={pickerQ.isError ? pickerQ.error.message : ""}
+          initialSelectedIds={selectedMultiTargets.map((t) => t.id)}
+          onClose={() => setShowPicker(false)}
+          onConfirm={(ids) => {
+            const byId = new Map((pickerQ.data || []).map((r) => [r.id, r]));
+            setSelectedMultiTargets(ids.map((id) => byId.get(id)).filter(Boolean));
+            setShowPicker(false);
+          }}
+        />
+      ) : null}
     </div>
   );
 }

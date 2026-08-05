@@ -430,7 +430,7 @@ async function insertTechnicalTicket(client, {
   return ticketIdValue;
 }
 
-export async function createTechnicalConsult(user, { subject, message, target_user_id, audience, attachment } = {}) {
+export async function createTechnicalConsult(user, { subject, message, target_user_id, target_user_ids, audience, attachment } = {}) {
   await ensureTechnicalConsultTables();
   const staffCreating = isTechnicalUser(user);
   if (!staffCreating && !isRequesterUser(user)) {
@@ -445,10 +445,30 @@ export async function createTechnicalConsult(user, { subject, message, target_us
 
   const userId = toId(user?.user_id || user?.id);
   const normalizedAudience = staffCreating ? normalizeAudience(audience) : "target";
+  // Envio a una seleccion puntual de vendedores/distribuidores (popup con checkboxes),
+  // distinto de "audience" (toda la audiencia) y de "target" (uno solo).
+  const cleanTargetIds = staffCreating
+    ? [...new Set((Array.isArray(target_user_ids) ? target_user_ids : []).map((v) => toId(v)).filter(Boolean))]
+    : [];
+  const useSelectedTargets = cleanTargetIds.length > 0;
+  const useAudienceTargets = !useSelectedTargets && staffCreating && normalizedAudience !== "target";
 
-  if (staffCreating && normalizedAudience !== "target") {
-    const targets = await listActiveRequestersByAudience(normalizedAudience);
-    if (!targets.length) throw new Error("No hay destinatarios activos para el envío masivo");
+  if (useSelectedTargets || useAudienceTargets) {
+    let targets;
+    let resultAudienceLabel;
+    if (useSelectedTargets) {
+      targets = [];
+      for (const id of cleanTargetIds) {
+        const target = await getActiveRequesterById(id);
+        if (target) targets.push(target);
+      }
+      if (!targets.length) throw new Error("Los destinatarios seleccionados no están activos");
+      resultAudienceLabel = "selected";
+    } else {
+      targets = await listActiveRequestersByAudience(normalizedAudience);
+      if (!targets.length) throw new Error("No hay destinatarios activos para el envío masivo");
+      resultAudienceLabel = normalizedAudience;
+    }
 
     const now = new Date().toISOString();
     const ticketIds = await withTx(async (client) => {
@@ -476,7 +496,7 @@ export async function createTechnicalConsult(user, { subject, message, target_us
     for (const id of ticketIds) {
       tickets.push(await getTechnicalConsultDetail(user, id));
     }
-    return { bulk: true, audience: normalizedAudience, count: tickets.length, tickets };
+    return { bulk: true, audience: resultAudienceLabel, count: tickets.length, tickets };
   }
 
   let targetUserId = null;

@@ -41,6 +41,14 @@ export async function searchCommercialConsultRequesters(q) {
   return data.requesters || [];
 }
 
+export async function listCommercialConsultRequesters(audience = "todos") {
+  const { data } = await http.get("/api/commercial-consults/requesters/list", {
+    params: { audience },
+  });
+  if (!data?.ok) throw new Error(data?.error || "No se pudo cargar la lista de vendedores/distribuidores");
+  return data.requesters || [];
+}
+
 export async function addCommercialConsultMessage(id, payload = {}) {
   const { data } = await http.post(`/api/commercial-consults/${encodeURIComponent(String(id))}/messages`, payload || {});
   if (!data?.ok) throw new Error(data?.error || "No se pudo enviar el mensaje");
