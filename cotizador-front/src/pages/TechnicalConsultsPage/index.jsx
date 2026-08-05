@@ -147,10 +147,11 @@ function MessageAttachment({ attachment }) {
   );
 }
 
-// Popup para elegir a mano un subconjunto de vendedores/distribuidores a los que
-// mandarles el mismo ticket (uno por destinatario, igual que "Todos los vendedores"
-// pero con seleccion puntual en vez de toda la audiencia).
-function RequesterPickerModal({ open, requesters, isLoading, error, initialSelectedIds, onConfirm, onClose }) {
+// Popup para elegir a mano un subconjunto de vendedores O distribuidores (primero se
+// elige el rol, la lista de abajo solo muestra ese rol) a los que mandarles el mismo
+// ticket (uno por destinatario, igual que "Todos los vendedores" pero con seleccion
+// puntual en vez de toda la audiencia).
+function RequesterPickerModal({ open, role, onRoleChange, requesters, isLoading, error, initialSelectedIds, onConfirm, onClose }) {
   const [search, setSearch] = useState("");
   const [checkedIds, setCheckedIds] = useState(() => new Set(initialSelectedIds));
 
@@ -177,6 +178,12 @@ function RequesterPickerModal({ open, requesters, isLoading, error, initialSelec
     });
   }
 
+  function changeRole(nextRole) {
+    if (nextRole === role) return;
+    setCheckedIds(new Set());
+    onRoleChange(nextRole);
+  }
+
   return (
     <div
       role="dialog"
@@ -189,6 +196,14 @@ function RequesterPickerModal({ open, requesters, isLoading, error, initialSelec
         onClick={(e) => e.stopPropagation()}
       >
         <div style={{ fontWeight: 900, fontSize: 18, marginBottom: 10 }}>Elegir destinatarios</div>
+        <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+          <Button variant={role === "vendedores" ? "primary" : "ghost"} onClick={() => changeRole("vendedores")}>
+            Vendedores
+          </Button>
+          <Button variant={role === "distribuidores" ? "primary" : "ghost"} onClick={() => changeRole("distribuidores")}>
+            Distribuidores
+          </Button>
+        </div>
         <Input value={search} onChange={setSearch} placeholder="Buscar por nombre o usuario" style={{ width: "100%" }} autoFocus />
         <div style={{ height: 8 }} />
         <div style={{ flex: 1, minHeight: 120, overflowY: "auto", border: "1px solid #eee", borderRadius: 10 }}>
@@ -209,9 +224,7 @@ function RequesterPickerModal({ open, requesters, isLoading, error, initialSelec
                 <input type="checkbox" checked={checked} onChange={() => toggle(r.id)} />
                 <div>
                   <div style={{ fontWeight: 700 }}>{r.full_name || r.username}</div>
-                  <div className="muted" style={{ fontSize: 12 }}>
-                    {r.is_distribuidor ? "Distribuidor" : "Vendedor"} · {r.username}
-                  </div>
+                  <div className="muted" style={{ fontSize: 12 }}>{r.username}</div>
                 </div>
               </label>
             );
@@ -269,6 +282,7 @@ export default function TechnicalConsultsPage() {
   const [bulkNotice, setBulkNotice] = useState("");
   const [selectedMultiTargets, setSelectedMultiTargets] = useState([]);
   const [showPicker, setShowPicker] = useState(false);
+  const [pickerRole, setPickerRole] = useState("vendedores");
 
   const [newAttachment, setNewAttachment] = useState(null);
   const [newAttachmentError, setNewAttachmentError] = useState("");
@@ -288,6 +302,7 @@ export default function TechnicalConsultsPage() {
     setAudienceMode("target");
     setSelectedMultiTargets([]);
     setShowPicker(false);
+    setPickerRole("vendedores");
     setNewAttachment(null);
     setNewAttachmentError("");
   }
@@ -319,8 +334,8 @@ export default function TechnicalConsultsPage() {
   }, [targetSearch, isTechnical, showNewForm]);
 
   const pickerQ = useQuery({
-    queryKey: ["technicalConsultRequestersList"],
-    queryFn: () => listTechnicalConsultRequesters("todos"),
+    queryKey: ["technicalConsultRequestersList", pickerRole],
+    queryFn: () => listTechnicalConsultRequesters(pickerRole),
     enabled: isTechnical && showPicker,
     staleTime: 30000,
   });
@@ -1084,6 +1099,8 @@ export default function TechnicalConsultsPage() {
       {isTechnical ? (
         <RequesterPickerModal
           open={showPicker}
+          role={pickerRole}
+          onRoleChange={setPickerRole}
           requesters={pickerQ.data || []}
           isLoading={pickerQ.isLoading}
           error={pickerQ.isError ? pickerQ.error.message : ""}
