@@ -313,13 +313,17 @@ async function findOrCreateCustomerPartner(odoo, customer) {
   // pueden cambiar entre pedidos del mismo cliente). Sin esto, un cliente ya
   // cargado en Odoo con otro email/telefono termina intentando crearse de nuevo
   // con el mismo VAT y Odoo lo rechaza (contacto duplicado).
+  // A diferencia de email/telefono/nombre (mas abajo), un VAT exacto NO se
+  // revalida contra partnerLooksLikeSameCustomer: un CUIT/CUIL identifica una
+  // sola persona/entidad fiscal por definicion, y exigir ademas que el nombre
+  // coincida (p.ej. "Orsi Joaquin" vs "Joaquin Orsi") rechazaba coincidencias
+  // reales de VAT y terminaba intentando crear un contacto duplicado, que Odoo
+  // rechaza igual (por el VAT) dejando el presupuesto sin sincronizar.
   const vat = toText(customer?.vat);
   if (vat) {
     const idsVat = await odoo.executeKw("res.partner", "search", [[["vat", "=", vat]]], { limit: 5 });
-    for (const candidateId of idsVat || []) {
-      const partner = await readPartnerLite(odoo, candidateId);
-      if (partnerLooksLikeSameCustomer(partner, customer)) return await applyCustomerPartnerFiscalVals(odoo, candidateId, customer);
-    }
+    const firstVatId = toIntId((idsVat || [])[0]);
+    if (firstVatId) return await applyCustomerPartnerFiscalVals(odoo, firstVatId, customer);
   }
 
   const email = toText(customer?.email).toLowerCase();
