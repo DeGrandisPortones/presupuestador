@@ -409,7 +409,7 @@ export default function PortonesEstadoPage() {
   const qc = useQueryClient();
   const user = useAuthStore((s) => s.user);
   const allowed = !!(user?.is_rev_tecnica || user?.is_superuser || user?.is_enc_comercial || user?.is_logistica || user?.is_administracion);
-  const canCancelNv = !!(user?.is_administracion || user?.is_superuser);
+  const canCancelNv = !!(user?.is_administracion || user?.is_enc_comercial || user?.is_rev_tecnica || user?.is_superuser);
 
   const [searchParams, setSearchParams] = useSearchParams();
   const productKind = normalizeProductKind(searchParams.get("kind"));
