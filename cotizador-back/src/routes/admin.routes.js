@@ -1,7 +1,7 @@
 import express from "express";
 import { requireAuth } from "../auth.js";
 import { loadCatalogBootstrap, clearCatalogBootstrapCache } from "../catalogBootstrap.js";
-import { normKind, createSection, updateSection, deleteSection, setTagSection, setProductAlias, setProductVisibility, setTypeVisibility, getProductPdfNameMap, setProductPdfName } from "../catalogDb.js";
+import { normKind, normBrand, createSection, updateSection, deleteSection, setTagSection, setProductAlias, setProductVisibility, setTypeVisibility, getProductPdfNameMap, setProductPdfName } from "../catalogDb.js";
 import { dbQuery } from "../db.js";
 import { listUsers, createUser, updateUser } from "../usersDb.js";
 import { triggerPreproductionForClientAcceptance, formatPortonTypeLabel, resyncPortonMeasurements } from "../measurementFinalization.js";
@@ -164,8 +164,9 @@ export function buildAdminRouter(odoo) {
   router.get("/product-pdf-names", requireAuth, requireEncComercialOrSuperuserOrDashboardViewer, async (req, res, next) => {
     try {
       const kind = normKind(req.query.kind || "porton");
+      const brand = normBrand(req.query.brand);
       const data = await loadCatalogBootstrap(odoo, kind);
-      const pdfNameMap = await getProductPdfNameMap(kind);
+      const pdfNameMap = await getProductPdfNameMap(kind, null, brand);
 
       const items = (Array.isArray(data?.products) ? data.products : [])
         .map((product) => ({
@@ -185,15 +186,16 @@ export function buildAdminRouter(odoo) {
           ) || Number(a.product_id || 0) - Number(b.product_id || 0)
         );
 
-      res.json({ ok: true, kind, items });
+      res.json({ ok: true, kind, brand, items });
     } catch (e) { next(e); }
   });
 
   router.put("/products/:productId/pdf-name", requireAuth, requireEncComercialOrSuperuserOrDashboardViewer, async (req, res, next) => {
     try {
       const kind = normKind(req.query.kind || req.body?.kind || "porton");
+      const brand = normBrand(req.query.brand || req.body?.brand);
       const pdfName = req.body?.pdf_name ?? "";
-      const saved = await setProductPdfName(kind, req.params.productId, pdfName);
+      const saved = await setProductPdfName(kind, req.params.productId, pdfName, brand);
       res.json({ ok: true, pdf_name: saved.pdf_name || null });
     } catch (e) { next(e); }
   });

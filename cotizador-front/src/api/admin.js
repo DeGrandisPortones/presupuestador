@@ -28,14 +28,14 @@ export async function adminDebugOdooProduct({ templateId, productId, query } = {
   return data;
 }
 
-export async function adminGetProductPdfNames(kind = "porton") {
-  const { data } = await http.get(`/api/admin/product-pdf-names?kind=${encodeURIComponent(kind)}`);
+export async function adminGetProductPdfNames(kind = "porton", brand = "default") {
+  const { data } = await http.get(`/api/admin/product-pdf-names?kind=${encodeURIComponent(kind)}&brand=${encodeURIComponent(brand)}`);
   if (!data?.ok) throw new Error(data?.error || "No se pudieron cargar los nombres PDF");
   return data.items || [];
 }
 
-export async function adminSetProductPdfName(kind = "porton", productId, pdf_name) {
-  const { data } = await http.put(`/api/admin/products/${encodeURIComponent(String(productId))}/pdf-name?kind=${encodeURIComponent(kind)}`, { pdf_name });
+export async function adminSetProductPdfName(kind = "porton", productId, pdf_name, brand = "default") {
+  const { data } = await http.put(`/api/admin/products/${encodeURIComponent(String(productId))}/pdf-name?kind=${encodeURIComponent(kind)}&brand=${encodeURIComponent(brand)}`, { pdf_name });
   if (!data?.ok) throw new Error(data?.error || "No se pudo guardar el nombre PDF");
   return data.pdf_name || null;
 }

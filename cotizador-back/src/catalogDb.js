@@ -10,6 +10,15 @@ export function normKind(kind) {
   return k;
 }
 
+// "default" = branding estandar De Grandis (lo que ve todo el mundo salvo un
+// vendedor con marca propia, ver PDF_BRANDS en routes/pdf.routes.js). Cualquier
+// otro valor es una marca propia (ej. "duret") con su propia lista de nombres
+// de producto para el PDF, totalmente separada de la default.
+export function normBrand(brand) {
+  const b = String(brand || "default").toLowerCase().trim();
+  return b || "default";
+}
+
 async function dropCatalogKindChecks(tableNames = []) {
   await dbQuery(`
     do $$
@@ -61,7 +70,7 @@ async function seedPlegadosFromIpanelControls() {
   await dbQuery(`insert into public.presupuestador_product_aliases (catalog_kind, product_id, alias) select 'plegados', product_id, alias from public.presupuestador_product_aliases where catalog_kind='ipanel' on conflict (catalog_kind, product_id) do nothing`);
   await dbQuery(`insert into public.presupuestador_product_visibility (catalog_kind, product_id, disable_for_vendedor, disable_for_distribuidor, no_permanent_stock) select 'plegados', product_id, disable_for_vendedor, disable_for_distribuidor, no_permanent_stock from public.presupuestador_product_visibility where catalog_kind='ipanel' on conflict (catalog_kind, product_id) do nothing`);
   await dbQuery(`insert into public.presupuestador_type_visibility (catalog_kind, type_key, disable_for_vendedor, disable_for_distribuidor) select 'plegados', type_key, disable_for_vendedor, disable_for_distribuidor from public.presupuestador_type_visibility where catalog_kind='ipanel' on conflict (catalog_kind, type_key) do nothing`);
-  await dbQuery(`insert into public.presupuestador_product_pdf_names (catalog_kind, product_id, pdf_name) select 'plegados', product_id, pdf_name from public.presupuestador_product_pdf_names where catalog_kind='ipanel' on conflict (catalog_kind, product_id) do nothing`);
+  await dbQuery(`insert into public.presupuestador_product_pdf_names (catalog_kind, product_id, brand, pdf_name) select 'plegados', product_id, brand, pdf_name from public.presupuestador_product_pdf_names where catalog_kind='ipanel' on conflict (catalog_kind, product_id, brand) do nothing`);
 }
 
 async function ensureCatalogControls() {
@@ -154,6 +163,15 @@ async function ensureCatalogControls() {
       primary key (catalog_kind, product_id)
     );
   `);
+  // "brand" separa los nombres PDF por marca (ver normBrand mas arriba): las filas
+  // viejas ya migran solas a brand='default' (branding estandar De Grandis), y una
+  // marca como 'duret' arranca sin ninguna fila, todo cae al nombre de Odoo hasta
+  // que se cargue algo puntual para esa marca. La PK original era (catalog_kind,
+  // product_id); se re-crea con brand para permitir un nombre distinto por marca
+  // para el mismo producto.
+  await dbQuery(`alter table public.presupuestador_product_pdf_names add column if not exists brand text not null default 'default';`);
+  await dbQuery(`alter table public.presupuestador_product_pdf_names drop constraint if exists presupuestador_product_pdf_names_pkey;`);
+  await dbQuery(`alter table public.presupuestador_product_pdf_names add constraint presupuestador_product_pdf_names_pkey primary key (catalog_kind, product_id, brand);`);
 
   for (const table of [
     "presupuestador_sections",
@@ -314,23 +332,25 @@ export async function setProductVisibility(kind, productId, patch = {}) {
   return { catalog_kind: k, product_id: pid, ...v };
 }
 
-export async function getProductPdfNameMap(kind, productIds = null) {
+export async function getProductPdfNameMap(kind, productIds = null, brand = "default") {
   await ensureCatalogControls();
   const k = normKind(kind);
+  const b = normBrand(brand);
   const ids = Array.isArray(productIds) ? productIds.map(Number).filter(Boolean) : [];
   const q = ids.length
-    ? await dbQuery(`select product_id, pdf_name from public.presupuestador_product_pdf_names where catalog_kind=$1 and product_id=any($2::int[])`, [k, ids])
-    : await dbQuery(`select product_id, pdf_name from public.presupuestador_product_pdf_names where catalog_kind=$1`, [k]);
+    ? await dbQuery(`select product_id, pdf_name from public.presupuestador_product_pdf_names where catalog_kind=$1 and brand=$3 and product_id=any($2::int[])`, [k, ids, b])
+    : await dbQuery(`select product_id, pdf_name from public.presupuestador_product_pdf_names where catalog_kind=$1 and brand=$2`, [k, b]);
   return new Map((q.rows || []).map((r) => [Number(r.product_id), String(r.pdf_name || "")]));
 }
 
-export async function setProductPdfName(kind, productId, pdfName) {
+export async function setProductPdfName(kind, productId, pdfName, brand = "default") {
   await ensureCatalogControls();
   const k = normKind(kind); const pid = Number(productId); if (!pid) throw new Error("productId inválido");
+  const b = normBrand(brand);
   const value = String(pdfName || "").trim();
-  if (!value) { await dbQuery(`delete from public.presupuestador_product_pdf_names where catalog_kind=$1 and product_id=$2`, [k, pid]); return { catalog_kind: k, product_id: pid, pdf_name: null }; }
-  await dbQuery(`insert into public.presupuestador_product_pdf_names (catalog_kind, product_id, pdf_name) values ($1,$2,$3) on conflict (catalog_kind, product_id) do update set pdf_name=excluded.pdf_name, updated_at=now()`, [k, pid, value]);
-  return { catalog_kind: k, product_id: pid, pdf_name: value };
+  if (!value) { await dbQuery(`delete from public.presupuestador_product_pdf_names where catalog_kind=$1 and product_id=$2 and brand=$3`, [k, pid, b]); return { catalog_kind: k, product_id: pid, brand: b, pdf_name: null }; }
+  await dbQuery(`insert into public.presupuestador_product_pdf_names (catalog_kind, product_id, brand, pdf_name) values ($1,$2,$3,$4) on conflict (catalog_kind, product_id, brand) do update set pdf_name=excluded.pdf_name, updated_at=now()`, [k, pid, b, value]);
+  return { catalog_kind: k, product_id: pid, brand: b, pdf_name: value };
 }
 
 export async function getTypeVisibilityMap(kind) {

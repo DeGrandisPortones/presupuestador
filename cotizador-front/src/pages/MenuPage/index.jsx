@@ -45,6 +45,7 @@ export default function MenuPage() {
   const showQuoteViewer = !!isSuperuser;
   const showSellerActivity = !!isSuperuser;
   const showPdfNamesAdmin = !!isSuperuser;
+  const showDuretAdmin = !!isSuperuser;
   const showProductionAssignments = !!isSuperuser;
   const showQuotesAdmin = !!isSuperuser;
   const showAdministracion = !!(isSuperuser || user?.is_administracion);
@@ -143,6 +144,7 @@ export default function MenuPage() {
         {showFinancing && <MenuTile title="Financiamiento" buttonText="Abrir financiamiento" onClick={() => navigate("/financiamiento")} icon="" />}
         {showTechnicalRules && <MenuTile title="Reglas Tecnicas" buttonText="Abrir reglas" onClick={() => navigate("/dashboard/reglas-tecnicas")} iconSrc="/menu-icons/reglas-tecnicas.png" />}
         {showPdfNamesAdmin && <MenuTile title="Nombres PDF productos" buttonText="Abrir nombres PDF" onClick={() => navigate("/superuser/nombres-pdf")} icon="" />}
+        {showDuretAdmin && <MenuTile title="Duret" buttonText="Abrir Duret" onClick={() => navigate("/superuser/duret")} icon="" />}
         {showProductionAssignments && <MenuTile title="Asignacion de propiedades a produccion" buttonText="Abrir asignacion" onClick={() => navigate("/superuser/asignacion-produccion")} icon="" />}
         {showQuotesAdmin && <MenuTile title="Admin presupuestos y Odoo" buttonText="Abrir listado" onClick={() => navigate("/superuser/presupuestos-admin")} icon="" />}
         {showQuoteViewer && <MenuTile title="Visualizador de portones" buttonText="Abrir visualizador" onClick={() => navigate("/superuser/visualizador-porton")} icon="" />}

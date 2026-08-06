@@ -17,6 +17,10 @@ export async function ensureUsersAdminColumns() {
   await dbQuery(`alter table public.presupuestador_users add column if not exists assigned_seller_user_id integer null;`);
   await dbQuery(`alter table public.presupuestador_users add column if not exists visible_password text null;`);
   await dbQuery(`alter table public.presupuestador_users add column if not exists see_all_distributors boolean not null default false;`);
+  // Marca/branding del PDF de presupuesto que emite este vendedor (null = branding
+  // estandar De Grandis). Ver PDF_BRANDS en routes/pdf.routes.js para las marcas
+  // disponibles y como se arma cada una.
+  await dbQuery(`alter table public.presupuestador_users add column if not exists pdf_brand text null;`);
   await dbQuery(`create index if not exists presupuestador_users_assigned_seller_idx on public.presupuestador_users(assigned_seller_user_id);`);
 
   try {
@@ -204,6 +208,7 @@ export async function createUser({
   default_maps_url = null,
   assigned_seller_user_id = null,
   is_active = true,
+  pdf_brand = null,
 } = {}) {
   await ensureUsersAdminColumns();
 
@@ -229,23 +234,25 @@ export async function createUser({
   const sellerUserId = dist ? await assertValidSellerUserId(assigned_seller_user_id) : null;
   if (dist && !sellerUserId) throw new Error("Falta vendedor asignado para el distribuidor");
 
+  const brand = String(pdf_brand || "").trim().toLowerCase() || null;
+
   const r = await dbQuery(
     `
     insert into public.presupuestador_users
       (username, password_hash, visible_password, full_name, is_active,
        is_distribuidor, is_vendedor, is_medidor, is_logistica, is_superuser, is_administracion,
        is_enc_comercial, is_rev_tecnica,
-       odoo_partner_id, odoo_pricelist_id, default_maps_url, assigned_seller_user_id)
+       odoo_partner_id, odoo_pricelist_id, default_maps_url, assigned_seller_user_id, pdf_brand)
     values
       ($1, crypt($2, gen_salt('bf')), $3, $4, $5,
        $6, $7, $8, $9, $10, $11,
        false, false,
-       $12, $13, $14, $15)
+       $12, $13, $14, $15, $16)
     returning id, username, full_name,
               is_distribuidor, is_vendedor, is_medidor, is_logistica, is_superuser, is_administracion,
               is_enc_comercial, is_rev_tecnica,
               is_active, odoo_partner_id, odoo_pricelist_id, default_maps_url,
-              assigned_seller_user_id, visible_password, created_at, updated_at
+              assigned_seller_user_id, visible_password, pdf_brand, created_at, updated_at
     `,
     [
       u,
@@ -263,6 +270,7 @@ export async function createUser({
       pricelistId,
       (default_maps_url ? String(default_maps_url).trim() : null),
       sellerUserId,
+      brand,
     ]
   );
 
@@ -284,6 +292,7 @@ export async function updateUser(id, {
   assigned_seller_user_id,
   is_active,
   see_all_distributors,
+  pdf_brand,
 } = {}) {
   await ensureUsersAdminColumns();
 
@@ -291,7 +300,7 @@ export async function updateUser(id, {
   if (!userId) throw new Error("id inválido");
 
   const cur = await dbQuery(
-    `select id, is_distribuidor, is_vendedor, is_medidor, is_logistica, is_superuser, is_administracion, is_active, full_name, odoo_partner_id, odoo_pricelist_id, default_maps_url, assigned_seller_user_id, visible_password, coalesce(see_all_distributors,false) as see_all_distributors
+    `select id, is_distribuidor, is_vendedor, is_medidor, is_logistica, is_superuser, is_administracion, is_active, full_name, odoo_partner_id, odoo_pricelist_id, default_maps_url, assigned_seller_user_id, visible_password, coalesce(see_all_distributors,false) as see_all_distributors, pdf_brand
        from public.presupuestador_users where id=$1 limit 1`,
     [userId]
   );
@@ -329,6 +338,7 @@ export async function updateUser(id, {
   const pass = password !== undefined ? String(password || "") : "";
   const visiblePassword = pass ? pass : "";
   const seeAll = see_all_distributors !== undefined ? !!see_all_distributors : !!current.see_all_distributors;
+  const brand = pdf_brand !== undefined ? (String(pdf_brand || "").trim().toLowerCase() || null) : (current.pdf_brand ?? null);
 
   const r = await dbQuery(
     `
@@ -348,6 +358,7 @@ export async function updateUser(id, {
         visible_password = case when $14::text is null or $14::text = '' then visible_password else $14::text end,
         assigned_seller_user_id = $15,
         see_all_distributors = $16,
+        pdf_brand = $17,
         updated_at = now()
     where id = $1
     returning id, username, full_name,
@@ -356,9 +367,10 @@ export async function updateUser(id, {
               is_active, odoo_partner_id, odoo_pricelist_id, default_maps_url,
               assigned_seller_user_id, visible_password,
               coalesce(see_all_distributors, false) as see_all_distributors,
+              pdf_brand,
               created_at, updated_at
     `,
-    [userId, name, active, dist, vend, med, log, sup, adm, pid, pricelistId, mapsUrl, pass, visiblePassword, sellerUserId, seeAll]
+    [userId, name, active, dist, vend, med, log, sup, adm, pid, pricelistId, mapsUrl, pass, visiblePassword, sellerUserId, seeAll, brand]
   );
 
   return r.rows?.[0] || null;

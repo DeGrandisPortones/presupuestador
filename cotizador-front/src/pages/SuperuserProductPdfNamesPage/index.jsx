@@ -19,7 +19,11 @@ function buildSearchText(item = {}) {
   ].join(" ").toLowerCase();
 }
 
-export default function SuperuserProductPdfNamesPage() {
+// brand: "default" = branding estandar De Grandis (pagina "Nombres PDF productos").
+// Cualquier otro valor (ej. "duret") es la lista de nombres propia de esa marca,
+// totalmente separada de la default - ver PDF_BRANDS en el backend
+// (routes/pdf.routes.js) y la seccion "Duret" del menu.
+export default function SuperuserProductPdfNamesPage({ brand = "default", title = "Nombres PDF productos", subtitle }) {
   const user = useAuthStore((s) => s.user);
   const qc = useQueryClient();
 
@@ -28,8 +32,8 @@ export default function SuperuserProductPdfNamesPage() {
   const [drafts, setDrafts] = useState({});
 
   const itemsQ = useQuery({
-    queryKey: ["adminProductPdfNames", kind],
-    queryFn: () => adminGetProductPdfNames(kind),
+    queryKey: ["adminProductPdfNames", kind, brand],
+    queryFn: () => adminGetProductPdfNames(kind, brand),
     enabled: !!user?.is_superuser,
   });
 
@@ -42,10 +46,10 @@ export default function SuperuserProductPdfNamesPage() {
   }, [itemsQ.data]);
 
   const saveM = useMutation({
-    mutationFn: async ({ productId, pdfName }) => adminSetProductPdfName(kind, productId, pdfName),
+    mutationFn: async ({ productId, pdfName }) => adminSetProductPdfName(kind, productId, pdfName, brand),
     onSuccess: (_saved, variables) => {
       toast.success(`Nombre PDF guardado para producto ${variables.productId}`);
-      qc.invalidateQueries({ queryKey: ["adminProductPdfNames", kind] });
+      qc.invalidateQueries({ queryKey: ["adminProductPdfNames", kind, brand] });
     },
     onError: (e) => toast.error(e?.message || "No se pudo guardar"),
   });
@@ -62,7 +66,7 @@ export default function SuperuserProductPdfNamesPage() {
       <div className="container">
         <div className="spacer" />
         <div className="card">
-          <h2 style={{ marginTop: 0 }}>Nombres PDF productos</h2>
+          <h2 style={{ marginTop: 0 }}>{title}</h2>
           <div className="muted">No tenés permisos (solo superusuario).</div>
         </div>
       </div>
@@ -75,9 +79,9 @@ export default function SuperuserProductPdfNamesPage() {
 
       <div className="card" style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
         <div>
-          <h2 style={{ margin: 0 }}>Nombres PDF productos</h2>
+          <h2 style={{ margin: 0 }}>{title}</h2>
           <div className="muted" style={{ marginTop: 6 }}>
-            Acá definís qué nombre exacto querés que salga en el PDF. Si queda vacío, usa el nombre que devuelve Odoo.
+            {subtitle || "Acá definís qué nombre exacto querés que salga en el PDF. Si queda vacío, usa el nombre que devuelve Odoo."}
           </div>
         </div>
 

@@ -209,6 +209,18 @@ async function resolveQuoteSource(payload) {
     catalog_kind: payload?.catalog_kind || payload?.payload?.catalog_kind || "porton",
   };
 }
+// Usar las medidas de paso guardadas por el frontend (que el usuario ve), con
+// fallback al cálculo propio. Factoreado aparte de buildBudgetExtraSummaryLines
+// para que getBudgetLuzDimensionsMm (marca Duret, mismo dato con otro nombre)
+// no tenga que duplicar la logica de fallback.
+function resolvePasoDimensionsMm(quote, calculated) {
+  const dims = quote?.payload?.dimensions || {};
+  const storedAnchoMm = Number(dims?.paso_ancho_mm || dims?.medidas_paso_ancho_mm || 0);
+  const storedAltoMm = Number(dims?.paso_alto_mm || dims?.medidas_paso_alto_mm || 0);
+  const anchoMm = storedAnchoMm > 0 ? storedAnchoMm : (calculated?.ancho_paso_mm || calculated?.ancho_calculado_mm || 0);
+  const altoMm = storedAltoMm > 0 ? storedAltoMm : (calculated?.alto_paso_mm || calculated?.alto_calculado_mm || 0);
+  return { anchoMm: Math.round(Number(anchoMm) || 0), altoMm: Math.round(Number(altoMm) || 0) };
+}
 export async function buildBudgetExtraSummaryLines(payload) {
   const quote = await resolveQuoteSource(payload || {});
   if (String(quote?.catalog_kind || "porton").toLowerCase().trim() !== "porton") return [];
@@ -221,12 +233,9 @@ export async function buildBudgetExtraSummaryLines(payload) {
   const portonTypeLabel = getPortonTypeLabelFromQuote(quote);
   if (portonTypeLabel) lines.push(`Sistema: ${portonTypeLabel}`);
   const sellerDimensionsLine = buildSellerDimensionsLine(quote);
-  // Usar las medidas de paso guardadas por el frontend (que el usuario ve), con fallback al cálculo propio
-  const dims = quote?.payload?.dimensions || {};
-  const storedAnchoMm = Number(dims?.paso_ancho_mm || dims?.medidas_paso_ancho_mm || 0);
-  const storedAltoMm = Number(dims?.paso_alto_mm || dims?.medidas_paso_alto_mm || 0);
-  const ancho = formatMm(storedAnchoMm > 0 ? storedAnchoMm : (calculated?.ancho_paso_mm || calculated?.ancho_calculado_mm));
-  const alto = formatMm(storedAltoMm > 0 ? storedAltoMm : (calculated?.alto_paso_mm || calculated?.alto_calculado_mm));
+  const { anchoMm, altoMm } = resolvePasoDimensionsMm(quote, calculated);
+  const ancho = formatMm(anchoMm);
+  const alto = formatMm(altoMm);
   const peso = formatKg(calculated?.peso_estimado_kg);
   const piernas = formatPiernas(calculated?.piernas_tipo);
 
@@ -237,6 +246,18 @@ export async function buildBudgetExtraSummaryLines(payload) {
   if (piernas) lines.push(`Piernas: ${piernas}`);
 
   return lines;
+}
+
+// Mismo dato que "Medidas de paso" de arriba, pero devuelto crudo (sin armar el
+// texto) para que un branding distinto (ej. Duret) lo pueda mostrar con otro
+// nombre ("Medidas de luz") sin duplicar el calculo de piernas/instalacion/etc.
+export async function getBudgetLuzDimensionsMm(payload) {
+  const quote = await resolveQuoteSource(payload || {});
+  if (String(quote?.catalog_kind || "porton").toLowerCase().trim() !== "porton") return { anchoMm: 0, altoMm: 0 };
+  const technicalSettings = await getTechnicalMeasurementRules();
+  const surfaceParameters = technicalSettings?.surface_parameters || {};
+  const calculated = computeSurfaceAutomaticContext({ quote, form: quote?.measurement_form || {}, surfaceParameters });
+  return resolvePasoDimensionsMm(quote, calculated);
 }
 
 // Membrete tecnico de la primera hoja (resumen por sector): a diferencia de

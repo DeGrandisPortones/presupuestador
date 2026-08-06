@@ -6,9 +6,20 @@ import { fileURLToPath } from "url";
 import { dbQuery } from "../db.js";
 import { requireAuth } from "../auth.js";
 import { ensureQuotesMeasurementColumns } from "../quotesSchema.js";
-import { buildBudgetExtraSummaryLines, buildBudgetVanoTechnicalLines } from "../pdfBudgetExtras.js";
+import { buildBudgetExtraSummaryLines, buildBudgetVanoTechnicalLines, getBudgetLuzDimensionsMm } from "../pdfBudgetExtras.js";
 import { getProductPdfNameMap, normKind } from "../catalogDb.js";
 import { resolveBudgetSectorSummary } from "../pdfBudgetSectorSummary.js";
+
+// Marcas de PDF por vendedor (ver users.pdf_brand): un vendedor con marca propia
+// recibe un presupuesto completamente distinto (logo/colores/formato propios),
+// como si fuera otra empresa. "default" (o cualquier valor no listado acá) usa
+// el PDF estandar De Grandis de siempre. Para sumar una marca nueva alcanza con
+// agregarla acá y escribir su propio renderBrandedPresupuestoPdf.
+const PDF_BRANDS = new Set(["duret"]);
+function resolvePdfBrand(user) {
+  const raw = String(user?.pdf_brand || "").toLowerCase().trim();
+  return PDF_BRANDS.has(raw) ? raw : "default";
+}
 
 const IVA_RATE = 0.21;
 // 4230 = "Servicio de Traslado a destino" de Puertas (duplicado dedicado, antes
@@ -297,7 +308,7 @@ async function readOdooNamesFlexible(odoo, rawLines = []) {
   }
   return out;
 }
-async function buildLines(payload, { useBasePrice, odoo, displayNetPrices = false, taxRate = IVA_RATE }) {
+async function buildLines(payload, { useBasePrice, odoo, displayNetPrices = false, taxRate = IVA_RATE, brand = "default" }) {
   const effectiveTaxRate = Number.isFinite(Number(taxRate)) ? Number(taxRate) : IVA_RATE;
   const coefPct = getMarginPct(payload);
   const coefFactor = 1 + coefPct / 100;
@@ -306,7 +317,7 @@ async function buildLines(payload, { useBasePrice, odoo, displayNetPrices = fals
     try { return normKind(payload?.catalog_kind || "porton"); } catch { return "porton"; }
   })();
   const productIds = collectUniquePositiveInts(rawLines.map((line) => line?.product_id));
-  const pdfNameMap = await getProductPdfNameMap(catalogKind, productIds);
+  const pdfNameMap = await getProductPdfNameMap(catalogKind, productIds, brand);
   const odooNames = await readOdooNamesFlexible(odoo, rawLines);
   const distributorPayload = isDistributorPayload(payload);
   // El envío lo sigue cobrando De Grandis aunque sea "provisión propia" del
@@ -919,7 +930,7 @@ function quoteUsesNewBudgetFormat(payload) {
   return createdAt.getTime() >= NEW_BUDGET_FORMAT_CUTOFF_MS;
 }
 
-async function renderPdf({ title, payload, useBasePrice, odoo, includeTerms = false, hideIvaBreakdown = false, displayNetPrices = false, taxRate = IVA_RATE, hideAllPrices = false, hideDetailPrices = false, allowNewBudgetFormat = true }) {
+async function renderPdf({ title, payload, useBasePrice, odoo, includeTerms = false, hideIvaBreakdown = false, displayNetPrices = false, taxRate = IVA_RATE, hideAllPrices = false, hideDetailPrices = false, allowNewBudgetFormat = true, brand = "default" }) {
   // La proforma nunca debe tocarse por el corte de fecha - pasa allowNewBudgetFormat:false
   // explicitamente para que jamas le aparezca el resumen por sector/membrete, sin importar
   // la fecha de creacion del presupuesto.
@@ -941,7 +952,7 @@ async function renderPdf({ title, payload, useBasePrice, odoo, includeTerms = fa
   const paymentMethod = safeStr(payload?.payload?.payment_method ?? payload?.payment_method);
   const productionPlanningText = getProductionPlanningText(payload);
   const obs = stripSellerLines(safeStr(payload?.note));
-  const { lines, grandTotal, subtotalNet, ivaAmount, taxRate: effectiveTaxRate, catalogKind } = await buildLines(payload, { useBasePrice, odoo, displayNetPrices, taxRate });
+  const { lines, grandTotal, subtotalNet, ivaAmount, taxRate: effectiveTaxRate, catalogKind } = await buildLines(payload, { useBasePrice, odoo, displayNetPrices, taxRate, brand });
 
   const commercialInfoLines = [];
   if (paymentMethod) commercialInfoLines.push(`Forma de pago: ${paymentMethod}`);
@@ -1063,6 +1074,240 @@ async function renderPdf({ title, payload, useBasePrice, odoo, includeTerms = fa
   return new Promise((resolve) => doc.on("end", () => resolve(Buffer.concat(buffers))));
 }
 
+// ============================================================================
+// Marca DURET: presupuesto con formato propio (logo, colores y estructura
+// distintos al estandar De Grandis), simple a proposito - por ahora solo
+// ancho/alto del porton y "Medidas de luz" (= lo mismo que "medidas de paso"
+// en el formato estandar, con otro nombre). Los nombres de producto en el
+// detalle se resuelven con brand:"duret" (getProductPdfNameMap), configurables
+// desde el dashboard en la seccion "Duret" -> se puede armar una descripcion
+// distinta a la que ve un vendedor comun para el mismo producto.
+// Paleta monocromatica (negro/blanco/gris) y tipografia de palo seco con
+// tracking ancho, acorde al isotipo real de Duret (wordmark geometrico en
+// negro puro + "PORTONES LEVADIZOS" en versalitas muy espaciadas). Nada de
+// color: Helvetica es la fuente de PDFKit mas parecida a un geometric sans.
+const DURET_BLACK = "#111111";
+const DURET_GRAY = "#6B6B6B";
+const DURET_LINE = "#D9D9D9";
+const DURET_BG = "#F5F5F5";
+const DURET_FONT = "Helvetica";
+const DURET_FONT_BOLD = "Helvetica-Bold";
+const DURET_TRACK_WIDE = 2.4;
+const DURET_TRACK_MED = 0.8;
+function getDuretLogoPath() {
+  const __filename = fileURLToPath(import.meta.url);
+  const __dirname = path.dirname(__filename);
+  const logoPath = path.join(__dirname, "../assets/logo-duret.png");
+  return fs.existsSync(logoPath) ? logoPath : null;
+}
+// Logo generico (placeholder) dibujado a mano: un cuadrado negro con "D"
+// blanca, para no depender de ningun archivo hasta que llegue el logo real.
+// En cuanto se guarde cotizador-back/src/assets/logo-duret.png, esta funcion
+// deja de usarse (getDuretLogoPath lo encuentra y drawDuretHeader dibuja la
+// imagen real en su lugar).
+function drawDuretPlaceholderMark(doc, x, y, size = 40) {
+  doc.save();
+  doc.rect(x, y, size, size).fill(DURET_BLACK);
+  doc.font(DURET_FONT_BOLD).fontSize(size * 0.55).fillColor("#FFFFFF")
+    .text("D", x, y + size * 0.22, { width: size, align: "center" });
+  doc.restore();
+}
+function drawDuretHeader(doc, { payload, margin, innerW, dateStr, validStr }) {
+  const top = margin;
+  const logoPath = getDuretLogoPath();
+  if (logoPath) {
+    doc.image(logoPath, margin, top, { fit: [170, 56], align: "left", valign: "top" });
+  } else {
+    drawDuretPlaceholderMark(doc, margin, top, 40);
+    doc.font(DURET_FONT_BOLD).fontSize(21).fillColor(DURET_BLACK)
+      .text("DURET", margin + 50, top, { width: 220, characterSpacing: DURET_TRACK_WIDE });
+    doc.font(DURET_FONT).fontSize(7.5).fillColor(DURET_GRAY)
+      .text("PORTONES LEVADIZOS", margin + 50, top + 26, { width: 220, characterSpacing: DURET_TRACK_MED });
+  }
+  doc.font(DURET_FONT_BOLD).fontSize(15).fillColor(DURET_BLACK)
+    .text("PRESUPUESTO", margin, top + 2, { width: innerW, align: "right", characterSpacing: DURET_TRACK_WIDE });
+  doc.font(DURET_FONT).fontSize(9).fillColor(DURET_GRAY)
+    .text(`Fecha: ${dateStr}   ·   Válido hasta: ${validStr}`, margin, top + 24, { width: innerW, align: "right" });
+  const quoteNo = getQuoteNumber(payload);
+  if (quoteNo) {
+    doc.font(DURET_FONT_BOLD).fontSize(9.5).fillColor(DURET_BLACK).text(`#${quoteNo}`, margin, top + 38, { width: innerW, align: "right" });
+  }
+  const headerBottom = top + 62;
+  doc.save().lineWidth(1.6).strokeColor(DURET_BLACK).moveTo(margin, headerBottom).lineTo(margin + innerW, headerBottom).stroke().restore();
+  return headerBottom + 16;
+}
+function drawDuretCard(doc, { x, y, width, title, drawContent }) {
+  let cy = y;
+  if (title) {
+    doc.font(DURET_FONT_BOLD).fontSize(8.5).fillColor(DURET_BLACK).text(title.toUpperCase(), x + 2, cy, { characterSpacing: DURET_TRACK_MED });
+    cy = doc.y + 6;
+  }
+  const contentTop = cy;
+  const contentBottom = drawContent(x + 14, contentTop + 10, width - 28);
+  const boxH = contentBottom - contentTop + 10;
+  doc.save().fillColor(DURET_BG).rect(x, contentTop, width, boxH).fill().restore();
+  doc.save().lineWidth(1).strokeColor(DURET_BLACK).rect(x, contentTop, width, boxH).stroke().restore();
+  drawContent(x + 14, contentTop + 10, width - 28);
+  return contentTop + boxH + 14;
+}
+function drawDuretInfoCard(doc, { payload, x, y, width }) {
+  const c = payload?.end_customer || {};
+  const customerName = c.name || [c.first_name, c.last_name].filter(Boolean).join(" ") || "-";
+  const rows = [
+    ["Cliente", customerName],
+    ["Teléfono", c.phone || "-"],
+    ["Dirección", [c.address, c.city].filter(Boolean).join(" - ") || "-"],
+    ["Vendedor", resolveLoggedUserSellerName(null, payload) || "Duret"],
+  ];
+  return drawDuretCard(doc, {
+    x, y, width, title: "Datos del cliente",
+    drawContent: (cx, cy, cw) => {
+      const colW = cw / 2;
+      rows.forEach(([label, value], i) => {
+        const rx = cx + (i % 2) * colW;
+        const ry = cy + Math.floor(i / 2) * 34;
+        doc.font(DURET_FONT_BOLD).fontSize(7.5).fillColor(DURET_GRAY).text(label.toUpperCase(), rx, ry, { width: colW - 14, characterSpacing: 0.6 });
+        doc.font(DURET_FONT).fontSize(10.5).fillColor(DURET_BLACK).text(value, rx, ry + 12, { width: colW - 14 });
+      });
+      return cy + 34 * Math.ceil(rows.length / 2);
+    },
+  });
+}
+function drawDuretDimensionsCard(doc, { payload, x, y, width, luzMm }) {
+  const dims = getDimensions(payload);
+  const widthM = parsePositiveNumber(dims?.width);
+  const heightM = parsePositiveNumber(dims?.height);
+  if (!widthM && !heightM && !luzMm.anchoMm && !luzMm.altoMm) return y;
+  const items = [];
+  if (widthM || heightM) items.push(["Ancho del portón", formatMeters(widthM)], ["Alto del portón", formatMeters(heightM)]);
+  if (luzMm.anchoMm || luzMm.altoMm) items.push(["Medidas de luz", `${formatMmValue(luzMm.anchoMm)} x ${formatMmValue(luzMm.altoMm)}`]);
+  return drawDuretCard(doc, {
+    x, y, width, title: "Medidas",
+    drawContent: (cx, cy, cw) => {
+      const colW = cw / Math.max(1, items.length);
+      items.forEach(([label, value], i) => {
+        const rx = cx + i * colW;
+        doc.font(DURET_FONT_BOLD).fontSize(7.5).fillColor(DURET_GRAY).text(label.toUpperCase(), rx, cy, { width: colW - 10, characterSpacing: 0.6 });
+        doc.font(DURET_FONT).fontSize(11.5).fillColor(DURET_BLACK).text(value, rx, cy + 12, { width: colW - 10 });
+      });
+      return cy + 30;
+    },
+  });
+}
+function drawDuretFooter(doc, { margin, pageNo, pageCount }) {
+  const w = doc.page.width;
+  const h = doc.page.height;
+  doc.save().lineWidth(1).strokeColor(DURET_BLACK).moveTo(margin, h - margin - 24).lineTo(w - margin, h - margin - 24).stroke().restore();
+  doc.save().font(DURET_FONT_BOLD).fontSize(8).fillColor(DURET_BLACK)
+    .text("DURET", margin, h - margin - 16, { width: w - margin * 2, align: "left", characterSpacing: DURET_TRACK_MED });
+  doc.font(DURET_FONT).fontSize(9).fillColor(DURET_GRAY)
+    .text(`Página ${pageNo} de ${pageCount}`, margin, h - margin - 16, { width: w - margin * 2, align: "right" });
+  doc.restore();
+}
+async function renderDuretPresupuestoPdf({ payload, odoo }) {
+  const doc = new PDFDocument({ size: "A4", margin: 0, bufferPages: true });
+  const buffers = [];
+  doc.on("data", buffers.push.bind(buffers));
+  const margin = 32;
+  const innerW = doc.page.width - margin * 2;
+  const now = new Date();
+  const dateStr = now.toLocaleDateString("es-AR");
+  const validityDays = n2(payload?.payload?.validity_days ?? payload?.validity_days ?? 1);
+  const validUntil = (payload?.payload?.valid_until || payload?.valid_until)
+    ? new Date(payload?.payload?.valid_until || payload?.valid_until)
+    : new Date(now.getTime() + validityDays * 86400000);
+  const validStr = validUntil.toLocaleDateString("es-AR");
+
+  const luzMm = await getBudgetLuzDimensionsMm(payload);
+  const taxRate = isCondition2(payload) ? 0.105 : IVA_RATE;
+  const { lines, grandTotal, subtotalNet, ivaAmount } = await buildLines(payload, { useBasePrice: false, odoo, displayNetPrices: false, taxRate, brand: "duret" });
+
+  function pageBottom() {
+    return doc.page.height - margin - 56;
+  }
+
+  let y = drawDuretHeader(doc, { payload, margin, innerW, dateStr, validStr });
+  y = drawDuretInfoCard(doc, { payload, x: margin, y, width: innerW });
+  y = drawDuretDimensionsCard(doc, { payload, x: margin, y, width: innerW, luzMm });
+
+  const paymentMethod = safeStr(payload?.payload?.payment_method ?? payload?.payment_method);
+  if (paymentMethod) {
+    doc.font(DURET_FONT).fontSize(10).fillColor(DURET_BLACK).text(`Forma de pago: ${paymentMethod}`, margin, y, { width: innerW });
+    y = doc.y + 14;
+  }
+
+  const colDesc = innerW * 0.52;
+  const colQty = innerW * 0.12;
+  const colUnit = innerW * 0.18;
+  const colTot = innerW * 0.18;
+  let tableY = y;
+  function drawTableHeader() {
+    doc.save().fillColor(DURET_BLACK).rect(margin, tableY, innerW, 26).fill().restore();
+    const headers = [
+      [margin + 10, colDesc - 16, "DESCRIPCIÓN", "left"],
+      [margin + colDesc, colQty - 10, "CANT", "right"],
+      [margin + colDesc + colQty, colUnit - 10, "PRECIO", "right"],
+      [margin + colDesc + colQty + colUnit, colTot - 16, "TOTAL", "right"],
+    ];
+    doc.font(DURET_FONT_BOLD).fontSize(9).fillColor("#FFFFFF");
+    headers.forEach(([x, w, text, align]) => doc.text(text, x, tableY + 8, { width: w, align, characterSpacing: 0.6 }));
+    tableY += 26;
+  }
+  function ensureSpace(h) {
+    if (tableY + h <= pageBottom()) return;
+    doc.addPage();
+    tableY = margin + 20;
+    drawTableHeader();
+  }
+
+  drawTableHeader();
+  lines.forEach((line, idx) => {
+    const rowH = Math.max(26, doc.heightOfString(line.name, { width: colDesc - 16 }) + 14);
+    ensureSpace(rowH);
+    if (idx % 2 === 1) doc.save().fillColor(DURET_BG).rect(margin, tableY, innerW, rowH).fill().restore();
+    doc.save().strokeColor(DURET_LINE).rect(margin, tableY, innerW, rowH).stroke().restore();
+    doc.font(DURET_FONT).fontSize(9.5).fillColor(DURET_BLACK)
+      .text(line.name, margin + 10, tableY + 7, { width: colDesc - 16 })
+      .text(formatQty(line.qty), margin + colDesc, tableY + 7, { width: colQty - 10, align: "right" })
+      .text(`$ ${formatMoney(line.unit)}`, margin + colDesc + colQty, tableY + 7, { width: colUnit - 10, align: "right" })
+      .text(`$ ${formatMoney(line.total)}`, margin + colDesc + colQty + colUnit, tableY + 7, { width: colTot - 16, align: "right" });
+    tableY += rowH;
+  });
+
+  ensureSpace(100);
+  const summaryX = margin + innerW * 0.64;
+  const summaryW = innerW * 0.36;
+  const totalsRows = [
+    ["Subtotal s/IVA", subtotalNet, 26, false],
+    ["IVA", ivaAmount, 26, false],
+    ["TOTAL", grandTotal, 34, true],
+  ];
+  for (const [label, amount, h, bold] of totalsRows) {
+    doc.save().fillColor(bold ? DURET_BLACK : DURET_BG).rect(margin, tableY, innerW, h).fill().restore();
+    doc.save().strokeColor(DURET_BLACK).rect(margin, tableY, innerW, h).stroke().restore();
+    doc.font(bold ? DURET_FONT_BOLD : DURET_FONT).fontSize(bold ? 12 : 10).fillColor(bold ? "#FFFFFF" : DURET_BLACK)
+      .text(label, margin + 10, tableY + (h - 11) / 2, { width: innerW * 0.64 - 16, align: "right", characterSpacing: bold ? DURET_TRACK_MED : 0 })
+      .text(`$ ${formatMoney(amount)}`, summaryX, tableY + (h - 11) / 2, { width: summaryW - 16, align: "right" });
+    tableY += h;
+  }
+
+  const obs = stripSellerLines(safeStr(payload?.note));
+  if (obs) {
+    tableY += 14;
+    ensureSpace(40);
+    doc.font(DURET_FONT_BOLD).fontSize(8.5).fillColor(DURET_BLACK).text("OBSERVACIONES", margin, tableY, { characterSpacing: DURET_TRACK_MED });
+    doc.font(DURET_FONT).fontSize(9.5).fillColor(DURET_BLACK).text(obs, margin, tableY + 12, { width: innerW, lineGap: 2 });
+  }
+
+  const range = doc.bufferedPageRange();
+  for (let i = range.start; i < range.start + range.count; i += 1) {
+    doc.switchToPage(i);
+    drawDuretFooter(doc, { margin, pageNo: i + 1, pageCount: range.count });
+  }
+  doc.end();
+  return new Promise((resolve) => doc.on("end", () => resolve(Buffer.concat(buffers))));
+}
+
 function prettyMeasurementValue(key, value) {
   const raw = safeStr(value);
   const maps = {
@@ -1107,6 +1352,10 @@ async function renderMeasurementPdf({ quote, form }) {
   return new Promise((resolve) => doc.on("end", () => resolve(Buffer.concat(buffers))));
 }
 
+// Exportado (ademas de usarse solo internamente en /presupuesto) para poder
+// probarlo de forma aislada con un payload de prueba, sin levantar el server.
+export { renderDuretPresupuestoPdf };
+
 export function buildPdfRouter(odoo = null) {
   const router = express.Router();
 
@@ -1142,7 +1391,10 @@ export function buildPdfRouter(odoo = null) {
     try {
       const rawPayload = req.body || {};
       const payload = { ...rawPayload, seller_name: resolveLoggedUserSellerName(req.user, rawPayload) };
-      const pdf = await renderPdf({ title: "PRESUPUESTO", payload, useBasePrice: false, odoo, includeTerms: true, hideIvaBreakdown: true, taxRate: isCondition2(payload) ? 0.105 : IVA_RATE, hideDetailPrices: true });
+      const brand = resolvePdfBrand(req.user);
+      const pdf = brand === "duret"
+        ? await renderDuretPresupuestoPdf({ payload, odoo })
+        : await renderPdf({ title: "PRESUPUESTO", payload, useBasePrice: false, odoo, includeTerms: true, hideIvaBreakdown: true, taxRate: isCondition2(payload) ? 0.105 : IVA_RATE, hideDetailPrices: true });
       res.setHeader("Content-Type", "application/pdf");
       res.setHeader("Content-Disposition", `attachment; filename="${buildDownloadFilename(payload, "presupuesto")}"`);
       res.send(pdf);

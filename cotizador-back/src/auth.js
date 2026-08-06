@@ -51,6 +51,7 @@ export function signToken(user) {
 
     full_name: u.full_name ?? null,
     default_maps_url: u.default_maps_url ?? null,
+    pdf_brand: u.pdf_brand ?? null,
   };
 
   return jwt.sign(payload, process.env.JWT_SECRET, {
@@ -86,7 +87,8 @@ export async function requireAuth(req, res, next) {
                odoo_pricelist_id,
                default_maps_url,
                coalesce(is_active, true) as is_active,
-               coalesce(see_all_distributors, false) as see_all_distributors
+               coalesce(see_all_distributors, false) as see_all_distributors,
+               pdf_brand
         from public.presupuestador_users
         where id = $1
         limit 1
@@ -118,6 +120,7 @@ export async function requireAuth(req, res, next) {
           default_maps_url: fresh.default_maps_url ?? null,
           is_active: !!fresh.is_active,
           see_all_distributors: !!fresh.see_all_distributors,
+          pdf_brand: fresh.pdf_brand ?? null,
         })
       : sanitizeUserForPricing({ ...decoded, is_active: decoded.is_active ?? true });
 
