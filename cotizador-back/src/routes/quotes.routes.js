@@ -2246,16 +2246,16 @@ export function buildQuotesRouter(odoo) {
     } catch (e) { next(e); }
   });
 
-  // Cancelacion de NV a mano (rol Administracion): terminal, sin vuelta atras y sin tocar
-  // nada en Odoo (la nota de credito la gestiona Administracion aparte). Solo marca el
-  // presupuesto como cancelado: "Estado de Productos" lo muestra en rojo con el motivo, y
-  // si ya tenia link de aceptacion del cliente, ese link deja de permitir aceptar y avisa
-  // la cancelacion (misma fila que consulta clientAcceptance.routes.js, ver
-  // ensureQuotesMeasurementColumns en quotesSchema.js).
+  // Cancelacion de NV a mano (Administracion, Enc. Comercial y Rev. Tecnica): terminal, sin
+  // vuelta atras y sin tocar nada en Odoo (la nota de credito la gestiona Administracion
+  // aparte). Solo marca el presupuesto como cancelado: "Estado de Productos" lo muestra en
+  // rojo con el motivo, y si ya tenia link de aceptacion del cliente, ese link deja de
+  // permitir aceptar y avisa la cancelacion (misma fila que consulta
+  // clientAcceptance.routes.js, ver ensureQuotesMeasurementColumns en quotesSchema.js).
   router.post("/:id/cancel-nv", async (req, res, next) => {
     try {
       const u = req.user;
-      if (!u.is_administracion && !u.is_superuser) {
+      if (!u.is_administracion && !u.is_enc_comercial && !u.is_rev_tecnica && !u.is_superuser) {
         return res.status(403).json({ ok: false, error: "No autorizado" });
       }
       const id = String(req.params.id || "").trim();
