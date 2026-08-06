@@ -78,6 +78,14 @@ export async function confirmMeasurementLinkSent(id) {
   return data.quote;
 }
 
+// Cancelacion de NV a mano (rol Administracion): terminal, sin vuelta atras. No toca nada
+// en Odoo. Ver POST /:id/cancel-nv en quotes.routes.js.
+export async function cancelQuoteNv(id, reason) {
+  const { data } = await http.post(`/api/quotes/${id}/cancel-nv`, { reason });
+  if (!data?.ok) throw new Error(data?.error || "No se pudo cancelar la NV");
+  return data.quote;
+}
+
 export async function searchExistingCustomers({ query = "", limit = 25 } = {}) {
   const params = new URLSearchParams();
   params.set("query", String(query || ""));

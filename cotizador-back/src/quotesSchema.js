@@ -141,6 +141,15 @@ export async function ensureQuotesMeasurementColumns() {
   await dbQuery(`alter table public.presupuestador_quotes add column if not exists production_delivery_committed_count int null;`);
   await dbQuery(`alter table public.presupuestador_quotes add column if not exists production_delivery_committed_at timestamptz null;`);
 
+  // Cancelacion de NV (rol Administracion, ver POST /:id/cancel-nv en quotes.routes.js):
+  // terminal, sin vuelta atras. Vive en la fila "original" aunque la NV real este en la
+  // copia final (quote_kind='copy') porque measurement_share_token tambien vive siempre
+  // ahi - asi el link de aceptacion del cliente puede avisar la cancelacion consultando
+  // la misma fila que ya usa hoy (ver clientAcceptance.routes.js).
+  await dbQuery(`alter table public.presupuestador_quotes add column if not exists cancelled_at timestamptz null;`);
+  await dbQuery(`alter table public.presupuestador_quotes add column if not exists cancelled_by_user_id int null;`);
+  await dbQuery(`alter table public.presupuestador_quotes add column if not exists cancellation_reason text null;`);
+
   const measurementProductIds = MEASUREMENT_PRODUCT_IDS.map(String);
   await dbQuery(
     `

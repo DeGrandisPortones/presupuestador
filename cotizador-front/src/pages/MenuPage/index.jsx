@@ -48,7 +48,7 @@ export default function MenuPage() {
   const showProductionAssignments = !!isSuperuser;
   const showQuotesAdmin = !!isSuperuser;
   const showAdministracion = !!(isSuperuser || user?.is_administracion);
-  const showPortonesEstado = !!(isSuperuser || user?.is_rev_tecnica || user?.is_enc_comercial || user?.is_logistica);
+  const showPortonesEstado = !!(isSuperuser || user?.is_rev_tecnica || user?.is_enc_comercial || user?.is_logistica || user?.is_administracion);
   const showPortonesEstadoStandalone = showPortonesEstado && !showTechInbox;
 
   return (

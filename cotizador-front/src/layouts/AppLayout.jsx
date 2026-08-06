@@ -318,7 +318,7 @@ export default function AppLayout() {
   const showMediciones = !!(isSuperuser || user?.is_medidor) && !user?.is_rev_tecnica;
   const showCommercial = !!(isSuperuser || user?.is_enc_comercial);
   const showTechnical = !!(isSuperuser || user?.is_rev_tecnica);
-  const showPortonesEstado = !!(isSuperuser || user?.is_rev_tecnica || user?.is_enc_comercial || user?.is_logistica);
+  const showPortonesEstado = !!(isSuperuser || user?.is_rev_tecnica || user?.is_enc_comercial || user?.is_logistica || user?.is_administracion);
   const showAdministracion = !!(isSuperuser || user?.is_administracion);
   const showPlanning = !!(isSuperuser || user?.is_enc_comercial);
   const showFinancing = !!(isSuperuser || user?.is_enc_comercial);

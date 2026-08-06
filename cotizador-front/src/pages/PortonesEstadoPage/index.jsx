@@ -2,7 +2,7 @@ import { useState, useMemo, useRef, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import toast from "react-hot-toast";
-import { listPortonesEstado, confirmMeasurementLinkSent } from "../../api/quotes.js";
+import { listPortonesEstado, confirmMeasurementLinkSent, cancelQuoteNv } from "../../api/quotes.js";
 import { useAuthStore } from "../../domain/auth/store.js";
 import Button from "../../ui/Button.jsx";
 
@@ -30,6 +30,10 @@ function normalizeProductKind(raw) {
 }
 
 function computeStatusInfo(q) {
+  // Cancelacion (rol Administracion): terminal, pisa cualquier otro estado del pipeline.
+  if (q.cancelled_at) {
+    return { label: `Cancelado${q.cancellation_reason ? ` — ${q.cancellation_reason}` : ""}`, color: "red" };
+  }
   if (q.final_technical_decision === "rejected")
     return { label: "Rechazado en revisión técnica final", color: "red" };
   if (q.final_logistics_decision === "rejected")
@@ -322,11 +326,90 @@ function PhoneModal({ row, onClose }) {
   );
 }
 
+function CancelNvModal({ row, onClose, onConfirm, pending }) {
+  const [reason, setReason] = useState("");
+
+  useEffect(() => {
+    function handleKey(e) { if (e.key === "Escape") onClose(); }
+    document.addEventListener("keydown", handleKey);
+    return () => document.removeEventListener("keydown", handleKey);
+  }, [onClose]);
+
+  const canConfirm = reason.trim().length > 0 && !pending;
+
+  return (
+    <div
+      onClick={onClose}
+      style={{
+        position: "fixed", inset: 0, zIndex: 1000,
+        background: "rgba(0,0,0,0.45)",
+        display: "flex", alignItems: "center", justifyContent: "center",
+        padding: 16,
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          background: "#fff", borderRadius: 12, boxShadow: "0 8px 32px rgba(0,0,0,0.25)",
+          padding: "24px 26px", width: "100%", maxWidth: 480,
+        }}
+      >
+        <div style={{ fontWeight: 800, fontSize: 16, marginBottom: 10, color: "#b71c1c" }}>
+          Cancelar {row?.displayRef}
+        </div>
+        <div style={{ fontSize: 13.5, color: "#333", lineHeight: 1.6, marginBottom: 14 }}>
+          La cancelación se debe reflejar en la nota de crédito correspondiente. En Odoo esta NV no se modifica —
+          eso queda a cargo de Administración por separado.
+        </div>
+        <div style={{ fontSize: 13.5, fontWeight: 700, color: "#b71c1c", marginBottom: 16 }}>
+          Esta acción no tiene vuelta atrás.
+        </div>
+        <div className="muted" style={{ marginBottom: 6, fontSize: 13, fontWeight: 600 }}>Motivo de la cancelación</div>
+        <textarea
+          value={reason}
+          onChange={(e) => setReason(e.target.value)}
+          placeholder="Ej: el cliente desistió de la compra"
+          autoFocus
+          style={{
+            width: "100%", minHeight: 80, padding: 10, borderRadius: 8,
+            border: "1px solid #ddd", fontFamily: "inherit", fontSize: 13.5, resize: "vertical",
+          }}
+        />
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 18 }}>
+          <button
+            onClick={onClose}
+            disabled={pending}
+            style={{
+              padding: "8px 16px", borderRadius: 8, border: "1px solid #e0e0e0",
+              background: "#f5f5f5", cursor: "pointer", fontSize: 13.5, fontWeight: 600, color: "#555",
+            }}
+          >
+            Volver
+          </button>
+          <button
+            onClick={() => canConfirm && onConfirm(reason.trim())}
+            disabled={!canConfirm}
+            style={{
+              padding: "8px 18px", borderRadius: 8, border: "none",
+              background: canConfirm ? "#b71c1c" : "#eecccc",
+              cursor: canConfirm ? "pointer" : "not-allowed",
+              fontSize: 13.5, fontWeight: 700, color: "#fff",
+            }}
+          >
+            {pending ? "Cancelando..." : "Cancelar NV definitivamente"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function PortonesEstadoPage() {
   const navigate = useNavigate();
   const qc = useQueryClient();
   const user = useAuthStore((s) => s.user);
-  const allowed = !!(user?.is_rev_tecnica || user?.is_superuser || user?.is_enc_comercial || user?.is_logistica);
+  const allowed = !!(user?.is_rev_tecnica || user?.is_superuser || user?.is_enc_comercial || user?.is_logistica || user?.is_administracion);
+  const canCancelNv = !!(user?.is_administracion || user?.is_superuser);
 
   const [searchParams, setSearchParams] = useSearchParams();
   const productKind = normalizeProductKind(searchParams.get("kind"));
@@ -340,6 +423,7 @@ export default function PortonesEstadoPage() {
   const [search, setSearch] = useState("");
   const [linkPopupId, setLinkPopupId] = useState(null);
   const [phoneModalRow, setPhoneModalRow] = useState(null);
+  const [cancelModalRow, setCancelModalRow] = useState(null);
 
   const q = useQuery({
     queryKey: ["portones_estado", productKind],
@@ -352,6 +436,16 @@ export default function PortonesEstadoPage() {
     mutationFn: (id) => confirmMeasurementLinkSent(id),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["portones_estado"] }),
     onError: (e) => toast.error(e?.message || "No se pudo confirmar el envío del link"),
+  });
+
+  const cancelNvM = useMutation({
+    mutationFn: ({ id, reason }) => cancelQuoteNv(id, reason),
+    onSuccess: () => {
+      toast.success(`${cancelModalRow?.displayRef || "NV"} cancelada`);
+      setCancelModalRow(null);
+      qc.invalidateQueries({ queryKey: ["portones_estado"] });
+    },
+    onError: (e) => toast.error(e?.message || "No se pudo cancelar la NV"),
   });
 
   function handleConfirmLinkSent(row) {
@@ -498,6 +592,7 @@ export default function PortonesEstadoPage() {
                 const acceptanceUrl = r.measurement_share_token ? buildClientAcceptanceUrl(r.measurement_share_token) : null;
                 const acceptance = r.measurement_client_acceptance;
                 const showLinkPopup = linkPopupId === r.id;
+                const hasNv = !!(r.final_copy_sale_order_name || r.final_sale_order_name || r.odoo_sale_order_name);
                 return (
                   <tr
                     key={r.id}
@@ -506,7 +601,22 @@ export default function PortonesEstadoPage() {
                     onMouseLeave={(e) => { e.currentTarget.style.background = ""; }}
                   >
                     <td style={tdStyle}>
-                      <span style={{ fontWeight: 700, color: "#333" }}>{r.displayRef}</span>
+                      <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                        <span style={{ fontWeight: 700, color: "#333" }}>{r.displayRef}</span>
+                        {canCancelNv && hasNv && !r.cancelled_at && (
+                          <button
+                            onClick={() => setCancelModalRow(r)}
+                            title="Cancelar esta NV"
+                            style={{
+                              padding: "2px 8px", borderRadius: 5, border: "1px solid #ef9a9a",
+                              background: "#ffebee", color: "#b71c1c", cursor: "pointer",
+                              fontSize: 11, fontWeight: 700, lineHeight: 1.4, whiteSpace: "nowrap",
+                            }}
+                          >
+                            Cancelar
+                          </button>
+                        )}
+                      </span>
                     </td>
                     <td style={tdStyle}>
                       <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
@@ -624,6 +734,15 @@ export default function PortonesEstadoPage() {
 
       {phoneModalRow && (
         <PhoneModal row={phoneModalRow} onClose={() => setPhoneModalRow(null)} />
+      )}
+
+      {cancelModalRow && (
+        <CancelNvModal
+          row={cancelModalRow}
+          pending={cancelNvM.isPending}
+          onClose={() => { if (!cancelNvM.isPending) setCancelModalRow(null); }}
+          onConfirm={(reason) => cancelNvM.mutate({ id: cancelModalRow.id, reason })}
+        />
       )}
     </div>
   );
