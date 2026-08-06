@@ -1379,6 +1379,17 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
       setAutosaveState({ status: "waiting-pricing", message: pricingContextMessage || "Borrador local. Esperando lista de precios correcta para autoguardar en Mis presupuestos.", savedAt: new Date().toISOString() });
       return null;
     }
+    // pricingContextReady solo indica que la LISTA de precios de Odoo esta lista - los
+    // precios de las lineas puntuales del presupuesto se piden aparte (ver el efecto de
+    // refresco de precios mas abajo) y puede seguir en curso. Autoguardar en ese momento
+    // persistia lineas en $0 al backend; si despues se recargaba la pagina justo en esa
+    // ventana, el presupuesto quedaba disponible para imprimir/confirmar con precio $0
+    // (ver price_pending en loadFromQuote, domain/quote/store.js).
+    const hasLinesAwaitingPrice = lines.some((l) => !l.previously_billed_line && !l.manual_price && (l.price_pending || l.price_error));
+    if (hasLinesAwaitingPrice) {
+      setAutosaveState({ status: "waiting-pricing", message: "Borrador local. Esperando el precio de Odoo de los productos agregados antes de autoguardar en Mis presupuestos.", savedAt: new Date().toISOString() });
+      return null;
+    }
     if (!canRemoteAutosaveQuote({ status, fulfillmentMode: payload.fulfillment_mode })) return null;
     if (isRevisionQuote || isReturnedMeasurementQuote || isAcopioRevision || confirmChoiceOpen) return null;
 

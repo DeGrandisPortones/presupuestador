@@ -272,6 +272,18 @@ export const useQuoteStore = create((set, get) => ({
         const visibleName =
           cleanText(l.name || l.display_name || l.alias || rawName) || `Producto ${l.product_id || idx}`;
         const freeQuantity = isShippingProductId(l.product_id) || !!l.free_quantity || !!l.quantity_editable || String(l.quantity_mode || "").toLowerCase() === "free";
+        const previouslyBilledLine = !!l.previously_billed_line;
+        const manualPrice = !!l.manual_price;
+        const loadedBasePrice = Number(l.basePrice ?? l.base_price ?? l.price ?? 0) || 0;
+        // Un presupuesto guardado puede traer una linea en $0 (se autoguardo mientras el
+        // precio de Odoo todavia se estaba resolviendo - ver el efecto de refresco de
+        // precios en CotizadorPage). Antes esto quedaba SIEMPRE como price_pending:false /
+        // price_resolved:true sin importar el precio real, asi que al recargar la pagina
+        // (getQuote -> loadFromQuote) el gate de confirmar/imprimir (que solo mira
+        // price_pending/price_error, no basePrice) dejaba pasar presupuestos en $0 mientras
+        // el refresco en segundo plano todavia no habia terminado. Mismo criterio que
+        // lineNeedsPriceRefresh/el filtro "unresolved" de validatePricingContextReady.
+        const priceNeedsRefresh = !previouslyBilledLine && !manualPrice && !(loadedBasePrice > 0);
         return {
           product_id: Number(l.product_id ?? idx + 1),
           odoo_external_id: resolveOdooExternalId(l),
@@ -288,17 +300,17 @@ export const useQuoteStore = create((set, get) => ({
             freeQuantity,
             lockedLine: !!l.locked_line,
           }),
-          basePrice: Number(l.basePrice ?? l.base_price ?? l.price ?? 0) || 0,
+          basePrice: loadedBasePrice,
           auto_system_item: !!l.auto_system_item,
           surface_quantity: !!l.surface_quantity,
           free_quantity: freeQuantity,
           quantity_editable: freeQuantity,
           price_editable: isDistributorOwnSupplyProductId(l.product_id) || !!l.price_editable,
-          manual_price: !!l.manual_price,
-          price_pending: false,
-          price_resolved: true,
+          manual_price: manualPrice,
+          price_pending: priceNeedsRefresh,
+          price_resolved: !priceNeedsRefresh,
           price_pricelist_id: q.pricelist_id ?? l.price_pricelist_id ?? null,
-          previously_billed_line: !!l.previously_billed_line,
+          previously_billed_line: previouslyBilledLine,
           locked_line: !!l.locked_line,
           locked_qty: !!l.locked_qty,
           auto_parantes_pricing_line: !!l.auto_parantes_pricing_line,
