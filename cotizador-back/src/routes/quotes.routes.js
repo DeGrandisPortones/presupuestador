@@ -6,7 +6,21 @@ import { getCommercialFinalTolerancePercent } from "../settingsDb.js";
 import { commitQuoteProductionWeek } from "../productionPlanning.js";
 import { triggerPreproductionForClientAcceptance } from "../measurementFinalization.js";
 
-const MEASUREMENT_PRODUCT_ID = Number(process.env.ODOO_MEASUREMENT_PRODUCT_ID || 2865);
+function parseMeasurementProductIds(raw) {
+  return String(raw || "2865,2961,4229")
+    .split(",")
+    .map((item) => Number(String(item || "").trim()))
+    .filter((item) => Number.isFinite(item) && item > 0);
+}
+// 2865/2961/4229 son variantes del mismo "Servicio de Medicion y Relevamiento"
+// (2961 = Portones, 4229 = duplicado dedicado de Puertas). Deben coincidir con la
+// misma lista usada en measurements.routes.js y quotesSchema.js: si un producto de
+// medicion queda afuera de esta lista, hasMeasurementLine no lo reconoce y el
+// presupuesto se manda como "tecnica_only" (sin pasar por el medidor) en vez de
+// "medidor", aunque el presupuesto SI tenga el servicio de medicion.
+const MEASUREMENT_PRODUCT_IDS = parseMeasurementProductIds(
+  process.env.ODOO_MEASUREMENT_PRODUCT_IDS || process.env.ODOO_MEASUREMENT_PRODUCT_ID || "2865,2961,4229",
+);
 const PLACEHOLDER_PRODUCT_ID = Number(process.env.ODOO_PLACEHOLDER_PRODUCT_ID || 3575);
 const IPANEL_ACOPIO_PRODUCT_ID = Number(process.env.ODOO_IPANEL_ACOPIO_PRODUCT_ID || 3607);
 const PLEGADOS_ACOPIO_PRODUCT_ID = Number(process.env.ODOO_PLEGADOS_ACOPIO_PRODUCT_ID || IPANEL_ACOPIO_PRODUCT_ID);
@@ -485,9 +499,10 @@ function validateIpanelLamasLogicalMeasuresForQuote(quote = {}) {
   if (diff < -0.5) return `Las divisiones del Ipanel superan la medida disponible. Sobran ${Math.abs(diff)} mm.`;
   return null;
 }
+const MEASUREMENT_PRODUCT_ID_SET = new Set(MEASUREMENT_PRODUCT_IDS);
 function hasMeasurementLine(lines) {
   const arr = Array.isArray(lines) ? lines : [];
-  return arr.some((l) => toIntId(l?.product_id) === MEASUREMENT_PRODUCT_ID);
+  return arr.some((l) => MEASUREMENT_PRODUCT_ID_SET.has(toIntId(l?.product_id)));
 }
 function normalizeMeasurementMode(value) {
   return String(value || "medidor").toLowerCase().trim() === "tecnica_only" ? "tecnica_only" : "medidor";
@@ -2497,7 +2512,7 @@ export function buildQuotesRouter(odoo) {
                 when exists (
                   select 1
                   from jsonb_array_elements(coalesce(lines, '[]'::jsonb)) elem
-                  where (elem->>'product_id') = $5
+                  where (elem->>'product_id') = any($5::text[])
                 ) then true
                 else requires_measurement
               end,
@@ -2508,7 +2523,7 @@ export function buildQuotesRouter(odoo) {
                    or exists (
                      select 1
                      from jsonb_array_elements(coalesce(lines, '[]'::jsonb)) elem
-                     where (elem->>'product_id') = $5
+                     where (elem->>'product_id') = any($5::text[])
                    )
                  )
                  and (measurement_status is null or measurement_status='none')
@@ -2517,7 +2532,7 @@ export function buildQuotesRouter(odoo) {
               end
         where id=$1 and status='syncing_odoo'
         returning *`,
-        [qSync.id, Number(order.id), order.name, deposit_amount, String(MEASUREMENT_PRODUCT_ID)]
+        [qSync.id, Number(order.id), order.name, deposit_amount, MEASUREMENT_PRODUCT_IDS.map(String)]
       );
       return { quote: upd2.rows?.[0] || qSync, order, directFinal: false };
   }
