@@ -71,6 +71,7 @@ async function seedPlegadosFromIpanelControls() {
   await dbQuery(`insert into public.presupuestador_product_visibility (catalog_kind, product_id, disable_for_vendedor, disable_for_distribuidor, no_permanent_stock) select 'plegados', product_id, disable_for_vendedor, disable_for_distribuidor, no_permanent_stock from public.presupuestador_product_visibility where catalog_kind='ipanel' on conflict (catalog_kind, product_id) do nothing`);
   await dbQuery(`insert into public.presupuestador_type_visibility (catalog_kind, type_key, disable_for_vendedor, disable_for_distribuidor) select 'plegados', type_key, disable_for_vendedor, disable_for_distribuidor from public.presupuestador_type_visibility where catalog_kind='ipanel' on conflict (catalog_kind, type_key) do nothing`);
   await dbQuery(`insert into public.presupuestador_product_pdf_names (catalog_kind, product_id, brand, pdf_name) select 'plegados', product_id, brand, pdf_name from public.presupuestador_product_pdf_names where catalog_kind='ipanel' on conflict (catalog_kind, product_id, brand) do nothing`);
+  await dbQuery(`insert into public.presupuestador_product_pdf_content (catalog_kind, product_id, brand, section_title, section_order, block_title, block_description, price_group, tag, detail_bullet) select 'plegados', product_id, brand, section_title, section_order, block_title, block_description, price_group, tag, detail_bullet from public.presupuestador_product_pdf_content where catalog_kind='ipanel' on conflict (catalog_kind, product_id, brand) do nothing`);
 }
 
 async function ensureCatalogControls() {
@@ -173,6 +174,30 @@ async function ensureCatalogControls() {
   await dbQuery(`alter table public.presupuestador_product_pdf_names drop constraint if exists presupuestador_product_pdf_names_pkey;`);
   await dbQuery(`alter table public.presupuestador_product_pdf_names add constraint presupuestador_product_pdf_names_pkey primary key (catalog_kind, product_id, brand);`);
 
+  // Contenido "rico" por producto para marcas con PDF propio (ver PDF_BRANDS en
+  // routes/pdf.routes.js). A diferencia de product_pdf_names (un nombre plano
+  // para una tabla de detalle), esto arma bloques de marketing agrupados por
+  // seccion ("01 / ESTRUCTURA", etc.) y un grupo de precio para el desglose
+  // economico de 3 bloques - todo por producto, para que el PDF se arme solo
+  // segun lo que cada presupuesto realmente incluya.
+  await dbQuery(`
+    create table if not exists public.presupuestador_product_pdf_content (
+      catalog_kind text not null,
+      product_id integer not null,
+      brand text not null default 'default',
+      section_title text null,
+      section_order integer not null default 100,
+      block_title text null,
+      block_description text null,
+      price_group text null,
+      tag text null,
+      detail_bullet text null,
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now(),
+      primary key (catalog_kind, product_id, brand)
+    );
+  `);
+
   for (const table of [
     "presupuestador_sections",
     "presupuestador_tag_sections",
@@ -181,6 +206,7 @@ async function ensureCatalogControls() {
     "presupuestador_product_visibility",
     "presupuestador_type_visibility",
     "presupuestador_product_pdf_names",
+    "presupuestador_product_pdf_content",
   ]) {
     await dbQuery(`alter table public.${table} add column if not exists created_at timestamptz not null default now();`);
     await dbQuery(`alter table public.${table} add column if not exists updated_at timestamptz not null default now();`);
@@ -194,6 +220,7 @@ async function ensureCatalogControls() {
     "presupuestador_product_visibility",
     "presupuestador_type_visibility",
     "presupuestador_product_pdf_names",
+    "presupuestador_product_pdf_content",
   ]);
 
   for (const [table, constraint] of [
@@ -204,6 +231,7 @@ async function ensureCatalogControls() {
     ["presupuestador_product_visibility", "presupuestador_product_visibility_catalog_kind_check"],
     ["presupuestador_type_visibility", "presupuestador_type_visibility_catalog_kind_check"],
     ["presupuestador_product_pdf_names", "presupuestador_product_pdf_names_catalog_kind_check"],
+    ["presupuestador_product_pdf_content", "presupuestador_product_pdf_content_catalog_kind_check"],
   ]) {
     await dbQuery(`alter table public.${table} add constraint ${constraint} check (catalog_kind in (${KIND_SQL}));`);
   }
@@ -351,6 +379,59 @@ export async function setProductPdfName(kind, productId, pdfName, brand = "defau
   if (!value) { await dbQuery(`delete from public.presupuestador_product_pdf_names where catalog_kind=$1 and product_id=$2 and brand=$3`, [k, pid, b]); return { catalog_kind: k, product_id: pid, brand: b, pdf_name: null }; }
   await dbQuery(`insert into public.presupuestador_product_pdf_names (catalog_kind, product_id, brand, pdf_name) values ($1,$2,$3,$4) on conflict (catalog_kind, product_id, brand) do update set pdf_name=excluded.pdf_name, updated_at=now()`, [k, pid, b, value]);
   return { catalog_kind: k, product_id: pid, brand: b, pdf_name: value };
+}
+
+// Contenido rico por producto (ver comentario en la creacion de la tabla, mas
+// arriba): section_title/section_order arman los bloques de "solucion
+// propuesta" (uno por seccion distinta encontrada entre los productos del
+// presupuesto), price_group agrupa el monto en el desglose economico de 3
+// bloques, tag alimenta los chips y detail_bullet la lista de "Detalle
+// incluido". Todos los campos son opcionales: un producto sin nada configurado
+// simplemente no aporta nada a esas partes del PDF (sigue existiendo la fila
+// de detalle si el brand la usa en otro lado, ver product_pdf_names).
+function normalizeProductPdfContentRow(row = {}) {
+  const orderRaw = Number(row?.section_order);
+  return {
+    section_title: String(row?.section_title || "").trim() || null,
+    section_order: Number.isFinite(orderRaw) && orderRaw > 0 ? Math.trunc(orderRaw) : 100,
+    block_title: String(row?.block_title || "").trim() || null,
+    block_description: String(row?.block_description || "").trim() || null,
+    price_group: String(row?.price_group || "").trim() || null,
+    tag: String(row?.tag || "").trim() || null,
+    detail_bullet: String(row?.detail_bullet || "").trim() || null,
+  };
+}
+export async function getProductPdfContentMap(kind, productIds = null, brand = "default") {
+  await ensureCatalogControls();
+  const k = normKind(kind);
+  const b = normBrand(brand);
+  const ids = Array.isArray(productIds) ? productIds.map(Number).filter(Boolean) : [];
+  const q = ids.length
+    ? await dbQuery(`select * from public.presupuestador_product_pdf_content where catalog_kind=$1 and brand=$3 and product_id=any($2::int[])`, [k, ids, b])
+    : await dbQuery(`select * from public.presupuestador_product_pdf_content where catalog_kind=$1 and brand=$2`, [k, b]);
+  return new Map((q.rows || []).map((r) => [Number(r.product_id), normalizeProductPdfContentRow(r)]));
+}
+export async function setProductPdfContent(kind, productId, patch = {}, brand = "default") {
+  await ensureCatalogControls();
+  const k = normKind(kind); const pid = Number(productId); if (!pid) throw new Error("productId inválido");
+  const b = normBrand(brand);
+  const value = normalizeProductPdfContentRow(patch);
+  const hasAnything = value.section_title || value.block_title || value.block_description || value.price_group || value.tag || value.detail_bullet;
+  if (!hasAnything) {
+    await dbQuery(`delete from public.presupuestador_product_pdf_content where catalog_kind=$1 and product_id=$2 and brand=$3`, [k, pid, b]);
+    return { catalog_kind: k, product_id: pid, brand: b, ...normalizeProductPdfContentRow({}) };
+  }
+  await dbQuery(
+    `insert into public.presupuestador_product_pdf_content
+       (catalog_kind, product_id, brand, section_title, section_order, block_title, block_description, price_group, tag, detail_bullet)
+     values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+     on conflict (catalog_kind, product_id, brand) do update set
+       section_title=excluded.section_title, section_order=excluded.section_order, block_title=excluded.block_title,
+       block_description=excluded.block_description, price_group=excluded.price_group, tag=excluded.tag,
+       detail_bullet=excluded.detail_bullet, updated_at=now()`,
+    [k, pid, b, value.section_title, value.section_order, value.block_title, value.block_description, value.price_group, value.tag, value.detail_bullet],
+  );
+  return { catalog_kind: k, product_id: pid, brand: b, ...value };
 }
 
 export async function getTypeVisibilityMap(kind) {

@@ -40,6 +40,36 @@ export async function adminSetProductPdfName(kind = "porton", productId, pdf_nam
   return data.pdf_name || null;
 }
 
+// Contenido rico por producto para marcas con PDF propio (ej. Duret): en que
+// sección de "la solución propuesta" aparece, a qué grupo de precio suma su
+// importe, qué tag/bullet aporta. Ver presupuestador_product_pdf_content en
+// catalogDb.js.
+export async function adminGetProductPdfContent(kind = "porton", brand = "default") {
+  const { data } = await http.get(`/api/admin/product-pdf-content?kind=${encodeURIComponent(kind)}&brand=${encodeURIComponent(brand)}`);
+  if (!data?.ok) throw new Error(data?.error || "No se pudo cargar el contenido PDF");
+  return data.items || [];
+}
+
+export async function adminSetProductPdfContent(kind = "porton", productId, payload = {}, brand = "default") {
+  const { data } = await http.put(`/api/admin/products/${encodeURIComponent(String(productId))}/pdf-content?kind=${encodeURIComponent(kind)}&brand=${encodeURIComponent(brand)}`, payload);
+  if (!data?.ok) throw new Error(data?.error || "No se pudo guardar el contenido PDF");
+  return data.content || null;
+}
+
+// Plantilla (textos fijos, no dependen del producto) del PDF de Duret. Ver
+// duret_pdf_template en settingsDb.js.
+export async function adminGetDuretPdfTemplate() {
+  const { data } = await http.get(`/api/admin/duret-pdf-template`);
+  if (!data?.ok) throw new Error(data?.error || "No se pudo cargar la plantilla de Duret");
+  return data.settings || null;
+}
+
+export async function adminSaveDuretPdfTemplate(payload = {}) {
+  const { data } = await http.put(`/api/admin/duret-pdf-template`, payload);
+  if (!data?.ok) throw new Error(data?.error || "No se pudo guardar la plantilla de Duret");
+  return data.settings || null;
+}
+
 export async function adminGetProductionPropertyAssignments() {
   const { data } = await http.get(`/api/admin/production-property-assignments`);
   if (!data?.ok) throw new Error(data?.error || "No se pudieron cargar las asignaciones de producción");

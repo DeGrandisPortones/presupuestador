@@ -7,8 +7,9 @@ import { dbQuery } from "../db.js";
 import { requireAuth } from "../auth.js";
 import { ensureQuotesMeasurementColumns } from "../quotesSchema.js";
 import { buildBudgetExtraSummaryLines, buildBudgetVanoTechnicalLines, getBudgetLuzDimensionsMm } from "../pdfBudgetExtras.js";
-import { getProductPdfNameMap, normKind } from "../catalogDb.js";
+import { getProductPdfNameMap, getProductPdfContentMap, normKind } from "../catalogDb.js";
 import { resolveBudgetSectorSummary } from "../pdfBudgetSectorSummary.js";
+import { getDuretPdfTemplateSettings } from "../settingsDb.js";
 
 // Marcas de PDF por vendedor (ver users.pdf_brand): un vendedor con marca propia
 // recibe un presupuesto completamente distinto (logo/colores/formato propios),
@@ -1075,13 +1076,18 @@ async function renderPdf({ title, payload, useBasePrice, odoo, includeTerms = fa
 }
 
 // ============================================================================
-// Marca DURET: presupuesto con formato propio (logo, colores y estructura
-// distintos al estandar De Grandis), simple a proposito - por ahora solo
-// ancho/alto del porton y "Medidas de luz" (= lo mismo que "medidas de paso"
-// en el formato estandar, con otro nombre). Los nombres de producto en el
-// detalle se resuelven con brand:"duret" (getProductPdfNameMap), configurables
-// desde el dashboard en la seccion "Duret" -> se puede armar una descripcion
-// distinta a la que ve un vendedor comun para el mismo producto.
+// Marca DURET: propuesta comercial de 2 paginas con formato totalmente propio
+// (logo, colores, tipografia y estructura editorial distintos al estandar De
+// Grandis), inspirada en un modelo de referencia que el cliente proveyo.
+// Casi todo el contenido es configurable desde el dashboard, seccion "Duret":
+//   - presupuestador_product_pdf_content (catalogDb.js): por producto, en que
+//     "seccion" de la solucion propuesta aparece (con su titulo/descripcion),
+//     a que "grupo" del desglose economico de 3 bloques suma su precio, que
+//     tag de la fila de chips aporta y que bullet de "Detalle incluido".
+//     El PDF arma todo eso solo, segun lo que el presupuesto puntual incluya.
+//   - duret_pdf_template (settingsDb.js): los textos fijos que no dependen de
+//     que se vendio (encabezados, textos de "alcance economico", condiciones
+//     y aclaraciones, etc.)
 // Paleta monocromatica (negro/blanco/gris) y tipografia de palo seco con
 // tracking ancho, acorde al isotipo real de Duret (wordmark geometrico en
 // negro puro + "PORTONES LEVADIZOS" en versalitas muy espaciadas). Nada de
@@ -1103,7 +1109,7 @@ function getDuretLogoPath() {
 // Logo generico (placeholder) dibujado a mano: un cuadrado negro con "D"
 // blanca, para no depender de ningun archivo hasta que llegue el logo real.
 // En cuanto se guarde cotizador-back/src/assets/logo-duret.png, esta funcion
-// deja de usarse (getDuretLogoPath lo encuentra y drawDuretHeader dibuja la
+// deja de usarse (getDuretLogoPath lo encuentra y los headers dibujan la
 // imagen real en su lugar).
 function drawDuretPlaceholderMark(doc, x, y, size = 40) {
   doc.save();
@@ -1112,7 +1118,25 @@ function drawDuretPlaceholderMark(doc, x, y, size = 40) {
     .text("D", x, y + size * 0.22, { width: size, align: "center" });
   doc.restore();
 }
-function drawDuretHeader(doc, { payload, margin, innerW, dateStr, validStr }) {
+function formatDuretDate(value) {
+  const d = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(d.getTime())) return "-";
+  const dd = String(d.getDate()).padStart(2, "0");
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  return `${dd}.${mm}.${d.getFullYear()}`;
+}
+function fillDuretTemplate(template, vars = {}) {
+  return String(template || "").replace(/\{(\w+)\}/g, (match, key) => (key in vars ? String(vars[key] ?? "") : match));
+}
+function joinDuretItemsWithY(items = []) {
+  const clean = items.map((item) => String(item || "").trim()).filter(Boolean);
+  if (!clean.length) return "";
+  if (clean.length === 1) return clean[0];
+  return `${clean.slice(0, -1).join(", ")} y ${clean[clean.length - 1]}`;
+}
+
+// ---- Encabezados/pie ----
+function drawDuretProposalHeader(doc, { payload, margin, innerW, template, emittedStr, validStr }) {
   const top = margin;
   const logoPath = getDuretLogoPath();
   if (logoPath) {
@@ -1124,86 +1148,265 @@ function drawDuretHeader(doc, { payload, margin, innerW, dateStr, validStr }) {
     doc.font(DURET_FONT).fontSize(7.5).fillColor(DURET_GRAY)
       .text("PORTONES LEVADIZOS", margin + 50, top + 26, { width: 220, characterSpacing: DURET_TRACK_MED });
   }
-  doc.font(DURET_FONT_BOLD).fontSize(15).fillColor(DURET_BLACK)
-    .text("PRESUPUESTO", margin, top + 2, { width: innerW, align: "right", characterSpacing: DURET_TRACK_WIDE });
-  doc.font(DURET_FONT).fontSize(9).fillColor(DURET_GRAY)
-    .text(`Fecha: ${dateStr}   ·   Válido hasta: ${validStr}`, margin, top + 24, { width: innerW, align: "right" });
   const quoteNo = getQuoteNumber(payload);
-  if (quoteNo) {
-    doc.font(DURET_FONT_BOLD).fontSize(9.5).fillColor(DURET_BLACK).text(`#${quoteNo}`, margin, top + 38, { width: innerW, align: "right" });
-  }
+  const docLabel = template.document_label || "Propuesta";
+  doc.font(DURET_FONT_BOLD).fontSize(13).fillColor(DURET_BLACK)
+    .text(quoteNo ? `${docLabel} P-${quoteNo}` : docLabel, margin, top + 2, { width: innerW, align: "right" });
+  doc.font(DURET_FONT).fontSize(9).fillColor(DURET_GRAY)
+    .text(`Emitida ${emittedStr}`, margin, top + 20, { width: innerW, align: "right" })
+    .text(`Vigencia hasta ${validStr}`, margin, top + 32, { width: innerW, align: "right" });
   const headerBottom = top + 62;
   doc.save().lineWidth(1.6).strokeColor(DURET_BLACK).moveTo(margin, headerBottom).lineTo(margin + innerW, headerBottom).stroke().restore();
-  return headerBottom + 16;
+  return headerBottom + 18;
 }
-function drawDuretCard(doc, { x, y, width, title, drawContent }) {
-  let cy = y;
-  if (title) {
-    doc.font(DURET_FONT_BOLD).fontSize(8.5).fillColor(DURET_BLACK).text(title.toUpperCase(), x + 2, cy, { characterSpacing: DURET_TRACK_MED });
-    cy = doc.y + 6;
+function drawDuretCompactHeader(doc, { payload, margin, innerW }) {
+  const top = margin;
+  const logoPath = getDuretLogoPath();
+  if (logoPath) {
+    doc.image(logoPath, margin, top, { fit: [130, 40], align: "left", valign: "top" });
+  } else {
+    drawDuretPlaceholderMark(doc, margin, top, 30);
+    doc.font(DURET_FONT_BOLD).fontSize(15).fillColor(DURET_BLACK)
+      .text("DURET", margin + 38, top, { width: 200, characterSpacing: DURET_TRACK_WIDE });
   }
-  const contentTop = cy;
-  const contentBottom = drawContent(x + 14, contentTop + 10, width - 28);
-  const boxH = contentBottom - contentTop + 10;
-  doc.save().fillColor(DURET_BG).rect(x, contentTop, width, boxH).fill().restore();
-  doc.save().lineWidth(1).strokeColor(DURET_BLACK).rect(x, contentTop, width, boxH).stroke().restore();
-  drawContent(x + 14, contentTop + 10, width - 28);
-  return contentTop + boxH + 14;
-}
-function drawDuretInfoCard(doc, { payload, x, y, width }) {
+  const quoteNo = getQuoteNumber(payload);
   const c = payload?.end_customer || {};
-  const customerName = c.name || [c.first_name, c.last_name].filter(Boolean).join(" ") || "-";
-  const rows = [
-    ["Cliente", customerName],
-    ["Teléfono", c.phone || "-"],
-    ["Dirección", [c.address, c.city].filter(Boolean).join(" - ") || "-"],
-    ["Vendedor", resolveLoggedUserSellerName(null, payload) || "Duret"],
-  ];
-  return drawDuretCard(doc, {
-    x, y, width, title: "Datos del cliente",
-    drawContent: (cx, cy, cw) => {
-      const colW = cw / 2;
-      rows.forEach(([label, value], i) => {
-        const rx = cx + (i % 2) * colW;
-        const ry = cy + Math.floor(i / 2) * 34;
-        doc.font(DURET_FONT_BOLD).fontSize(7.5).fillColor(DURET_GRAY).text(label.toUpperCase(), rx, ry, { width: colW - 14, characterSpacing: 0.6 });
-        doc.font(DURET_FONT).fontSize(10.5).fillColor(DURET_BLACK).text(value, rx, ry + 12, { width: colW - 14 });
-      });
-      return cy + 34 * Math.ceil(rows.length / 2);
-    },
-  });
+  const customerName = c.name || [c.first_name, c.last_name].filter(Boolean).join(" ") || "";
+  doc.font(DURET_FONT_BOLD).fontSize(11).fillColor(DURET_BLACK)
+    .text(quoteNo ? `P-${quoteNo}` : "", margin, top + 2, { width: innerW, align: "right" });
+  if (customerName) {
+    doc.font(DURET_FONT).fontSize(9.5).fillColor(DURET_GRAY)
+      .text(customerName, margin, top + 16, { width: innerW, align: "right" });
+  }
+  const headerBottom = top + 44;
+  doc.save().lineWidth(1.6).strokeColor(DURET_BLACK).moveTo(margin, headerBottom).lineTo(margin + innerW, headerBottom).stroke().restore();
+  return headerBottom + 18;
 }
-function drawDuretDimensionsCard(doc, { payload, x, y, width, luzMm }) {
-  const dims = getDimensions(payload);
-  const widthM = parsePositiveNumber(dims?.width);
-  const heightM = parsePositiveNumber(dims?.height);
-  if (!widthM && !heightM && !luzMm.anchoMm && !luzMm.altoMm) return y;
-  const items = [];
-  if (widthM || heightM) items.push(["Ancho del portón", formatMeters(widthM)], ["Alto del portón", formatMeters(heightM)]);
-  if (luzMm.anchoMm || luzMm.altoMm) items.push(["Medidas de luz", `${formatMmValue(luzMm.anchoMm)} x ${formatMmValue(luzMm.altoMm)}`]);
-  return drawDuretCard(doc, {
-    x, y, width, title: "Medidas",
-    drawContent: (cx, cy, cw) => {
-      const colW = cw / Math.max(1, items.length);
-      items.forEach(([label, value], i) => {
-        const rx = cx + i * colW;
-        doc.font(DURET_FONT_BOLD).fontSize(7.5).fillColor(DURET_GRAY).text(label.toUpperCase(), rx, cy, { width: colW - 10, characterSpacing: 0.6 });
-        doc.font(DURET_FONT).fontSize(11.5).fillColor(DURET_BLACK).text(value, rx, cy + 12, { width: colW - 10 });
-      });
-      return cy + 30;
-    },
-  });
-}
-function drawDuretFooter(doc, { margin, pageNo, pageCount }) {
+function drawDuretFooter(doc, { margin, pageNo, pageCount, footerLabel }) {
   const w = doc.page.width;
   const h = doc.page.height;
   doc.save().lineWidth(1).strokeColor(DURET_BLACK).moveTo(margin, h - margin - 24).lineTo(w - margin, h - margin - 24).stroke().restore();
-  doc.save().font(DURET_FONT_BOLD).fontSize(8).fillColor(DURET_BLACK)
-    .text("DURET", margin, h - margin - 16, { width: w - margin * 2, align: "left", characterSpacing: DURET_TRACK_MED });
+  doc.save().font(DURET_FONT).fontSize(8.5).fillColor(DURET_GRAY)
+    .text(footerLabel || "Duret", margin, h - margin - 16, { width: w - margin * 2, align: "left" });
   doc.font(DURET_FONT).fontSize(9).fillColor(DURET_GRAY)
     .text(`Página ${pageNo} de ${pageCount}`, margin, h - margin - 16, { width: w - margin * 2, align: "right" });
   doc.restore();
 }
+
+// ---- Agregacion de contenido por linea (ver presupuestador_product_pdf_content) ----
+function enrichDuretLinesWithContent(lines, contentMap) {
+  return (Array.isArray(lines) ? lines : []).map((line) => ({
+    ...line,
+    content: contentMap.get(Number(line.productId)) || null,
+  }));
+}
+function collectDuretSections(enrichedLines) {
+  const seen = new Map();
+  for (const line of enrichedLines) {
+    const c = line.content;
+    if (!c?.section_title) continue;
+    const key = c.section_title.trim().toLowerCase();
+    if (seen.has(key)) continue;
+    seen.set(key, {
+      section_title: c.section_title,
+      section_order: c.section_order ?? 100,
+      block_title: c.block_title || line.name,
+      block_description: c.block_description || "",
+    });
+  }
+  return [...seen.values()].sort((a, b) => a.section_order - b.section_order);
+}
+function collectDuretTags(enrichedLines) {
+  const seen = new Set();
+  const out = [];
+  for (const line of enrichedLines) {
+    const tag = line.content?.tag;
+    if (!tag) continue;
+    const key = tag.trim().toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(tag);
+  }
+  return out;
+}
+function collectDuretDetailBullets(enrichedLines) {
+  const seen = new Set();
+  const out = [];
+  for (const line of enrichedLines) {
+    const bullet = line.content?.detail_bullet;
+    if (!bullet) continue;
+    const key = bullet.trim().toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(bullet);
+  }
+  return out;
+}
+// Suma el total (con IVA, igual que el resto de la propuesta) de cada linea al
+// grupo de precio configurado en su producto. Una linea sin grupo asignado no
+// se pierde: cae en "Otros conceptos" para que los 3 bloques + eventual otros
+// siempre sumen exactamente el total real del presupuesto.
+function groupDuretPriceTotals(enrichedLines, priceGroupLabels) {
+  const groups = {
+    grupo_1: { label: priceGroupLabels.grupo_1, amount: 0, items: [] },
+    grupo_2: { label: priceGroupLabels.grupo_2, amount: 0, items: [] },
+    grupo_3: { label: priceGroupLabels.grupo_3, amount: 0, items: [] },
+  };
+  let unclassifiedAmount = 0;
+  const unclassifiedItems = [];
+  for (const line of enrichedLines) {
+    const groupKey = line.content?.price_group;
+    const amount = Number(line.total || 0) || 0;
+    const label = line.content?.block_title || line.name;
+    if (groupKey && groups[groupKey]) {
+      groups[groupKey].amount += amount;
+      if (label) groups[groupKey].items.push(label);
+    } else {
+      unclassifiedAmount += amount;
+      if (label) unclassifiedItems.push(label);
+    }
+  }
+  const result = Object.values(groups).filter((g) => Math.abs(g.amount) > 0.005);
+  if (Math.abs(unclassifiedAmount) > 0.005) {
+    result.push({ label: "Otros conceptos", amount: unclassifiedAmount, items: unclassifiedItems });
+  }
+  return result;
+}
+
+// ---- Bloques de la pagina 1 ----
+function drawDuretStatTiles(doc, { x, y, width, items }) {
+  if (!items.length) return y;
+  const gap = 12;
+  const tileW = (width - gap * (items.length - 1)) / items.length;
+  const tileH = 58;
+  items.forEach((item, i) => {
+    const tx = x + i * (tileW + gap);
+    doc.save().fillColor(DURET_BG).rect(tx, y, tileW, tileH).fill().restore();
+    doc.font(DURET_FONT_BOLD).fontSize(15).fillColor(DURET_BLACK).text(item.value, tx + 12, y + 11, { width: tileW - 24 });
+    doc.font(DURET_FONT).fontSize(8).fillColor(DURET_GRAY).text(item.label, tx + 12, y + 33, { width: tileW - 24 });
+  });
+  return y + tileH + 24;
+}
+function drawDuretSolutionSections(doc, { x, y, width, sections }) {
+  if (!sections.length) return y;
+  doc.font(DURET_FONT_BOLD).fontSize(13).fillColor(DURET_BLACK).text("La solución propuesta", x, y);
+  y = doc.y + 14;
+  const colGap = 24;
+  const colW = (width - colGap) / 2;
+  const colBottoms = [y, y];
+  sections.forEach((section, i) => {
+    const col = i % 2;
+    const cx = x + col * (colW + colGap);
+    let cy = colBottoms[col];
+    const sectionIndex = String(i + 1).padStart(2, "0");
+    doc.font(DURET_FONT_BOLD).fontSize(7.5).fillColor(DURET_GRAY)
+      .text(`${sectionIndex} / ${section.section_title.toUpperCase()}`, cx, cy, { width: colW, characterSpacing: 0.6 });
+    cy = doc.y + 4;
+    doc.font(DURET_FONT_BOLD).fontSize(11).fillColor(DURET_BLACK).text(section.block_title, cx, cy, { width: colW });
+    cy = doc.y + 3;
+    if (section.block_description) {
+      doc.font(DURET_FONT).fontSize(9).fillColor(DURET_GRAY).text(section.block_description, cx, cy, { width: colW, lineGap: 1.5 });
+      cy = doc.y;
+    }
+    colBottoms[col] = cy + 18;
+  });
+  return Math.max(colBottoms[0], colBottoms[1]) + 8;
+}
+function drawDuretTagsRow(doc, { x, y, width, tags }) {
+  if (!tags.length) return y;
+  const padX = 10;
+  const padY = 5;
+  const gap = 8;
+  const fontSize = 8.5;
+  doc.font(DURET_FONT).fontSize(fontSize);
+  let cx = x;
+  let cy = y;
+  let rowH = 0;
+  for (const tag of tags) {
+    const w = doc.widthOfString(tag) + padX * 2;
+    const h = fontSize + padY * 2;
+    if (cx + w > x + width) {
+      cx = x;
+      cy += rowH + gap;
+      rowH = 0;
+    }
+    doc.save().lineWidth(1).strokeColor(DURET_BLACK).roundedRect(cx, cy, w, h, h / 2).stroke().restore();
+    doc.fillColor(DURET_BLACK).text(tag, cx + padX, cy + padY, { width: w - padX * 2, lineBreak: false });
+    cx += w + gap;
+    rowH = Math.max(rowH, h);
+  }
+  return cy + rowH + 20;
+}
+function drawDuretInvestmentBox(doc, { x, y, width, title, description, total }) {
+  const padX = 16;
+  const padY = 14;
+  const leftW = width * 0.6 - padX;
+  doc.font(DURET_FONT).fontSize(9);
+  const descH = description ? doc.heightOfString(description, { width: leftW, lineGap: 2 }) : 0;
+  const boxH = Math.max(76, padY * 2 + 22 + descH + 4);
+  doc.save().fillColor(DURET_BLACK).rect(x, y, width, boxH).fill().restore();
+  doc.font(DURET_FONT_BOLD).fontSize(13).fillColor("#FFFFFF").text(title, x + padX, y + padY, { width: leftW });
+  if (description) {
+    doc.font(DURET_FONT).fontSize(9).fillColor("#C7C7C7").text(description, x + padX, doc.y + 5, { width: leftW, lineGap: 2 });
+  }
+  doc.font(DURET_FONT).fontSize(8.5).fillColor("#C7C7C7")
+    .text("IVA INCLUIDO", x, y + padY, { width: width - padX, align: "right", characterSpacing: 0.6 });
+  doc.font(DURET_FONT_BOLD).fontSize(20).fillColor("#FFFFFF")
+    .text(`$ ${formatMoney(total)}`, x, y + padY + 16, { width: width - padX, align: "right" });
+  return y + boxH;
+}
+
+// ---- Bloques de la pagina 2 ----
+function drawDuretPriceGroupRow(doc, { x, y, width, label, description, amount }) {
+  doc.font(DURET_FONT_BOLD).fontSize(11).fillColor(DURET_BLACK).text(label, x, y, { width: width * 0.62 });
+  doc.font(DURET_FONT_BOLD).fontSize(12).fillColor(DURET_BLACK).text(`$ ${formatMoney(amount)}`, x, y, { width, align: "right" });
+  let cy = doc.y + 3;
+  if (description) {
+    doc.font(DURET_FONT).fontSize(9).fillColor(DURET_GRAY).text(description, x, cy, { width: width * 0.62, lineGap: 1.5 });
+    cy = doc.y;
+  }
+  cy += 10;
+  doc.save().strokeColor(DURET_LINE).moveTo(x, cy).lineTo(x + width, cy).stroke().restore();
+  return cy + 16;
+}
+function drawDuretTotalsBlock(doc, { x, y, width, subtotalNet, ivaAmount, grandTotal }) {
+  let cy = y;
+  const labelW = width * 0.6;
+  for (const [label, amount] of [["Subtotal sin IVA", subtotalNet], ["IVA", ivaAmount]]) {
+    doc.font(DURET_FONT).fontSize(10).fillColor(DURET_GRAY).text(label, x, cy, { width: labelW });
+    doc.font(DURET_FONT_BOLD).fontSize(10).fillColor(DURET_BLACK).text(`$ ${formatMoney(amount)}`, x, cy, { width, align: "right" });
+    cy += 22;
+  }
+  doc.save().lineWidth(1.6).strokeColor(DURET_BLACK).moveTo(x + width * 0.55, cy).lineTo(x + width, cy).stroke().restore();
+  cy += 10;
+  doc.font(DURET_FONT_BOLD).fontSize(14).fillColor(DURET_BLACK).text("Total", x, cy, { width: labelW });
+  doc.font(DURET_FONT_BOLD).fontSize(14).fillColor(DURET_BLACK).text(`$ ${formatMoney(grandTotal)}`, x, cy, { width, align: "right" });
+  return cy + 28;
+}
+function drawDuretBulletList(doc, { x, y, width, title, items }) {
+  doc.font(DURET_FONT_BOLD).fontSize(11).fillColor(DURET_BLACK).text(title, x, y, { width });
+  let cy = doc.y + 10;
+  doc.font(DURET_FONT).fontSize(9);
+  for (const item of items) {
+    doc.save().fillColor(DURET_BLACK).circle(x + 3, cy + 5, 1.6).fill().restore();
+    doc.font(DURET_FONT).fontSize(9).fillColor(DURET_BLACK).text(item, x + 12, cy, { width: width - 12, lineGap: 1.5 });
+    cy = doc.y + 7;
+  }
+  return cy;
+}
+function drawDuretConditionsList(doc, { x, y, width, title, items }) {
+  doc.font(DURET_FONT_BOLD).fontSize(11).fillColor(DURET_BLACK).text(title, x, y, { width });
+  let cy = doc.y + 10;
+  for (const item of items) {
+    if (!item.label && !item.text) continue;
+    doc.font(DURET_FONT_BOLD).fontSize(9).fillColor(DURET_BLACK).text(item.label, x, cy, { width });
+    cy = doc.y + 2;
+    doc.font(DURET_FONT).fontSize(9).fillColor(DURET_GRAY).text(item.text, x, cy, { width, lineGap: 1.5 });
+    cy = doc.y + 11;
+  }
+  return cy;
+}
+
 async function renderDuretPresupuestoPdf({ payload, odoo }) {
   const doc = new PDFDocument({ size: "A4", margin: 0, bufferPages: true });
   const buffers = [];
@@ -1211,98 +1414,101 @@ async function renderDuretPresupuestoPdf({ payload, odoo }) {
   const margin = 32;
   const innerW = doc.page.width - margin * 2;
   const now = new Date();
-  const dateStr = now.toLocaleDateString("es-AR");
+  const emittedStr = formatDuretDate(now);
   const validityDays = n2(payload?.payload?.validity_days ?? payload?.validity_days ?? 1);
   const validUntil = (payload?.payload?.valid_until || payload?.valid_until)
     ? new Date(payload?.payload?.valid_until || payload?.valid_until)
     : new Date(now.getTime() + validityDays * 86400000);
-  const validStr = validUntil.toLocaleDateString("es-AR");
+  const validStr = formatDuretDate(validUntil);
 
+  const template = await getDuretPdfTemplateSettings();
   const luzMm = await getBudgetLuzDimensionsMm(payload);
   const taxRate = isCondition2(payload) ? 0.105 : IVA_RATE;
+  const catalogKindForContent = (() => {
+    try { return normKind(payload?.catalog_kind || "porton"); } catch { return "porton"; }
+  })();
   const { lines, grandTotal, subtotalNet, ivaAmount } = await buildLines(payload, { useBasePrice: false, odoo, displayNetPrices: false, taxRate, brand: "duret" });
+  const productIds = [...new Set(lines.map((l) => Number(l.productId)).filter(Boolean))];
+  const contentMap = await getProductPdfContentMap(catalogKindForContent, productIds, "duret");
+  const enrichedLines = enrichDuretLinesWithContent(lines, contentMap);
 
-  function pageBottom() {
-    return doc.page.height - margin - 56;
-  }
+  const sections = collectDuretSections(enrichedLines);
+  const tags = collectDuretTags(enrichedLines);
+  const detailBullets = collectDuretDetailBullets(enrichedLines);
+  const priceGroups = groupDuretPriceTotals(enrichedLines, template.price_group_labels);
 
-  let y = drawDuretHeader(doc, { payload, margin, innerW, dateStr, validStr });
-  y = drawDuretInfoCard(doc, { payload, x: margin, y, width: innerW });
-  y = drawDuretDimensionsCard(doc, { payload, x: margin, y, width: innerW, luzMm });
+  const c = payload?.end_customer || {};
+  const customerName = c.name || [c.first_name, c.last_name].filter(Boolean).join(" ") || "";
+  const city = c.city || "";
+  const dims = getDimensions(payload);
+  const widthM = parsePositiveNumber(dims?.width);
+  const heightM = parsePositiveNumber(dims?.height);
 
-  const paymentMethod = safeStr(payload?.payload?.payment_method ?? payload?.payment_method);
-  if (paymentMethod) {
-    doc.font(DURET_FONT).fontSize(10).fillColor(DURET_BLACK).text(`Forma de pago: ${paymentMethod}`, margin, y, { width: innerW });
-    y = doc.y + 14;
-  }
+  // ---- Página 1 ----
+  let y = drawDuretProposalHeader(doc, { payload, margin, innerW, template, emittedStr, validStr });
 
-  const colDesc = innerW * 0.52;
-  const colQty = innerW * 0.12;
-  const colUnit = innerW * 0.18;
-  const colTot = innerW * 0.18;
-  let tableY = y;
-  function drawTableHeader() {
-    doc.save().fillColor(DURET_BLACK).rect(margin, tableY, innerW, 26).fill().restore();
-    const headers = [
-      [margin + 10, colDesc - 16, "DESCRIPCIÓN", "left"],
-      [margin + colDesc, colQty - 10, "CANT", "right"],
-      [margin + colDesc + colQty, colUnit - 10, "PRECIO", "right"],
-      [margin + colDesc + colQty + colUnit, colTot - 16, "TOTAL", "right"],
-    ];
-    doc.font(DURET_FONT_BOLD).fontSize(9).fillColor("#FFFFFF");
-    headers.forEach(([x, w, text, align]) => doc.text(text, x, tableY + 8, { width: w, align, characterSpacing: 0.6 }));
-    tableY += 26;
-  }
-  function ensureSpace(h) {
-    if (tableY + h <= pageBottom()) return;
-    doc.addPage();
-    tableY = margin + 20;
-    drawTableHeader();
-  }
-
-  drawTableHeader();
-  lines.forEach((line, idx) => {
-    const rowH = Math.max(26, doc.heightOfString(line.name, { width: colDesc - 16 }) + 14);
-    ensureSpace(rowH);
-    if (idx % 2 === 1) doc.save().fillColor(DURET_BG).rect(margin, tableY, innerW, rowH).fill().restore();
-    doc.save().strokeColor(DURET_LINE).rect(margin, tableY, innerW, rowH).stroke().restore();
-    doc.font(DURET_FONT).fontSize(9.5).fillColor(DURET_BLACK)
-      .text(line.name, margin + 10, tableY + 7, { width: colDesc - 16 })
-      .text(formatQty(line.qty), margin + colDesc, tableY + 7, { width: colQty - 10, align: "right" })
-      .text(`$ ${formatMoney(line.unit)}`, margin + colDesc + colQty, tableY + 7, { width: colUnit - 10, align: "right" })
-      .text(`$ ${formatMoney(line.total)}`, margin + colDesc + colQty + colUnit, tableY + 7, { width: colTot - 16, align: "right" });
-    tableY += rowH;
+  doc.font(DURET_FONT_BOLD).fontSize(8.5).fillColor(DURET_BLACK)
+    .text(template.eyebrow_label, margin, y, { width: innerW, characterSpacing: DURET_TRACK_MED });
+  y = doc.y + 10;
+  doc.font(DURET_FONT_BOLD).fontSize(21).fillColor(DURET_BLACK).text(template.headline, margin, y, { width: innerW, lineGap: 2 });
+  y = doc.y + 10;
+  const subheadline = fillDuretTemplate(template.subheadline_template, {
+    cliente: customerName || "el cliente",
+    ubicacion: city || "la ubicación indicada",
   });
+  doc.font(DURET_FONT).fontSize(10.5).fillColor(DURET_GRAY).text(subheadline, margin, y, { width: innerW, lineGap: 2 });
+  y = doc.y + 22;
 
-  ensureSpace(100);
-  const summaryX = margin + innerW * 0.64;
-  const summaryW = innerW * 0.36;
-  const totalsRows = [
-    ["Subtotal s/IVA", subtotalNet, 26, false],
-    ["IVA", ivaAmount, 26, false],
-    ["TOTAL", grandTotal, 34, true],
-  ];
-  for (const [label, amount, h, bold] of totalsRows) {
-    doc.save().fillColor(bold ? DURET_BLACK : DURET_BG).rect(margin, tableY, innerW, h).fill().restore();
-    doc.save().strokeColor(DURET_BLACK).rect(margin, tableY, innerW, h).stroke().restore();
-    doc.font(bold ? DURET_FONT_BOLD : DURET_FONT).fontSize(bold ? 12 : 10).fillColor(bold ? "#FFFFFF" : DURET_BLACK)
-      .text(label, margin + 10, tableY + (h - 11) / 2, { width: innerW * 0.64 - 16, align: "right", characterSpacing: bold ? DURET_TRACK_MED : 0 })
-      .text(`$ ${formatMoney(amount)}`, summaryX, tableY + (h - 11) / 2, { width: summaryW - 16, align: "right" });
-    tableY += h;
-  }
+  const infoColW = innerW / 3;
+  [["Cliente", customerName || "-"], ["Ubicación", city || "-"], ["Contacto", c.phone || "-"]].forEach(([label, value], i) => {
+    const ix = margin + i * infoColW;
+    doc.font(DURET_FONT_BOLD).fontSize(7.5).fillColor(DURET_GRAY).text(label.toUpperCase(), ix, y, { width: infoColW - 10, characterSpacing: 0.6 });
+    doc.font(DURET_FONT_BOLD).fontSize(11).fillColor(DURET_BLACK).text(value, ix, y + 13, { width: infoColW - 10 });
+  });
+  y += 42;
+  doc.save().strokeColor(DURET_LINE).moveTo(margin, y).lineTo(margin + innerW, y).stroke().restore();
+  y += 22;
 
-  const obs = stripSellerLines(safeStr(payload?.note));
-  if (obs) {
-    tableY += 14;
-    ensureSpace(40);
-    doc.font(DURET_FONT_BOLD).fontSize(8.5).fillColor(DURET_BLACK).text("OBSERVACIONES", margin, tableY, { characterSpacing: DURET_TRACK_MED });
-    doc.font(DURET_FONT).fontSize(9.5).fillColor(DURET_BLACK).text(obs, margin, tableY + 12, { width: innerW, lineGap: 2 });
+  const tileItems = [];
+  if (widthM) tileItems.push({ value: formatMeters(widthM), label: "Ancho total del portón" });
+  if (heightM) tileItems.push({ value: formatMeters(heightM), label: "Alto total del portón" });
+  if (luzMm.anchoMm || luzMm.altoMm) tileItems.push({ value: `${Math.round(luzMm.anchoMm)} x ${Math.round(luzMm.altoMm)}`, label: "Luz disponible, en milímetros" });
+  y = drawDuretStatTiles(doc, { x: margin, y, width: innerW, items: tileItems });
+
+  y = drawDuretSolutionSections(doc, { x: margin, y, width: innerW, sections });
+  y = drawDuretTagsRow(doc, { x: margin, y, width: innerW, tags });
+  y = drawDuretInvestmentBox(doc, { x: margin, y, width: innerW, title: "Inversión total", description: template.investment_box_text, total: grandTotal });
+
+  // ---- Página 2 ----
+  doc.addPage();
+  let y2 = drawDuretCompactHeader(doc, { payload, margin, innerW });
+
+  doc.font(DURET_FONT_BOLD).fontSize(8.5).fillColor(DURET_BLACK)
+    .text(template.economico_eyebrow, margin, y2, { width: innerW, characterSpacing: DURET_TRACK_MED });
+  y2 = doc.y + 10;
+  doc.font(DURET_FONT_BOLD).fontSize(18).fillColor(DURET_BLACK).text(template.economico_headline, margin, y2, { width: innerW, lineGap: 2 });
+  y2 = doc.y + 8;
+  doc.font(DURET_FONT).fontSize(10).fillColor(DURET_GRAY).text(template.economico_subtext, margin, y2, { width: innerW, lineGap: 2 });
+  y2 = doc.y + 26;
+
+  for (const group of priceGroups) {
+    y2 = drawDuretPriceGroupRow(doc, { x: margin, y: y2, width: innerW, label: group.label, description: joinDuretItemsWithY(group.items), amount: group.amount });
   }
+  y2 += 8;
+  y2 = drawDuretTotalsBlock(doc, { x: margin, y: y2, width: innerW, subtotalNet, ivaAmount, grandTotal });
+  y2 += 22;
+
+  const colGap = 30;
+  const colW2 = (innerW - colGap) / 2;
+  const sellerName = resolveLoggedUserSellerName(null, payload);
+  const conditionItems = [...template.condiciones, { label: "Asesor comercial", text: sellerName || "-" }];
+  if (detailBullets.length) drawDuretBulletList(doc, { x: margin, y: y2, width: colW2, title: template.detalle_incluido_title, items: detailBullets });
+  drawDuretConditionsList(doc, { x: margin + colW2 + colGap, y: y2, width: colW2, title: template.condiciones_title, items: conditionItems });
 
   const range = doc.bufferedPageRange();
   for (let i = range.start; i < range.start + range.count; i += 1) {
     doc.switchToPage(i);
-    drawDuretFooter(doc, { margin, pageNo: i + 1, pageCount: range.count });
+    drawDuretFooter(doc, { margin, pageNo: i + 1, pageCount: range.count, footerLabel: template.footer_label });
   }
   doc.end();
   return new Promise((resolve) => doc.on("end", () => resolve(Buffer.concat(buffers))));

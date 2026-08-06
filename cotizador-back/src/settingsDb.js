@@ -8,6 +8,36 @@ const DOOR_QUOTE_SETTINGS_KEY = "door_quote_settings";
 const TECHNICAL_MEASUREMENT_RULES_KEY = "technical_measurement_rules";
 const TECHNICAL_MEASUREMENT_FIELDS_KEY = "technical_measurement_fields";
 const PRODUCTION_PLANNING_SETTINGS_KEY = "production_planning";
+const DURET_PDF_TEMPLATE_KEY = "duret_pdf_template";
+// Textos fijos de la plantilla del PDF de Duret (ver PDF_BRANDS en
+// routes/pdf.routes.js): todo lo que NO depende de que productos tenga el
+// presupuesto puntual (eso sale de presupuestador_product_pdf_content, ver
+// catalogDb.js) vive acá, editable desde el dashboard sin tocar codigo.
+const DURET_PDF_TEMPLATE_DEFAULT = {
+  eyebrow_label: "PROPUESTA DE FABRICACIÓN E INSTALACIÓN",
+  headline: "Un portón levadizo a medida, listo para usar.",
+  subheadline_template: "Solución automatizada para {cliente}, diseñada para el acceso de su propiedad en {ubicacion}.",
+  document_label: "Propuesta",
+  price_group_labels: {
+    grupo_1: "Fabricación y automatización",
+    grupo_2: "Revestimiento y diseño exterior",
+    grupo_3: "Servicios de obra y logística",
+  },
+  economico_eyebrow: "ALCANCE ECONÓMICO",
+  economico_headline: "Todo lo necesario, agrupado en tres bloques.",
+  economico_subtext: "En lugar de una lista extensa de conceptos, la inversión se presenta por etapas de la solución.",
+  investment_box_text: "Incluye fabricación, automatización, diseño, relevamiento, instalación y traslado detallados en la página siguiente.",
+  detalle_incluido_title: "Detalle incluido",
+  condiciones_title: "Condiciones y aclaraciones",
+  condiciones: [
+    { label: "Luceras", text: "El vidrio no está incluido." },
+    { label: "Instalación", text: "En caso de utilizar espuma de poliuretano, no se incluye el recorte del excedente a las 24 horas." },
+    { label: "Traslado", text: "El servicio no incluye la descarga en obra." },
+    { label: "Medición", text: "Se coordina en la etapa final de la obra con la persona responsable." },
+  ],
+  footer_label: "Duret - Propuesta comercial",
+  validity_days: 1,
+};
 const DEFAULT_SURFACE_FINAL_FORMULA = "surface_automatica_m2";
 const CATALOG_KINDS = new Set(["porton", "ipanel", "plegados", "otros", "puerta"]);
 
@@ -39,6 +69,7 @@ export async function ensureSettingsTable() {
     }],
     [TECHNICAL_MEASUREMENT_FIELDS_KEY, { fields: [] }],
     [PRODUCTION_PLANNING_SETTINGS_KEY, { years: {} }],
+    [DURET_PDF_TEMPLATE_KEY, DURET_PDF_TEMPLATE_DEFAULT],
   ]) {
     await dbQuery(
       `insert into public.presupuestador_settings (key, value_json) values ($1, $2::jsonb) on conflict (key) do nothing`,
@@ -512,3 +543,51 @@ export async function setProductionPlanningYear({ year, weeks = [] } = {}) {
   return getPlanningYear(saved, numericYear);
 }
 export async function getCommercialFinalTolerancePercent() { return 0; }
+
+function normalizeDuretPriceGroupLabels(value) {
+  const v = value && typeof value === "object" ? value : {};
+  const d = DURET_PDF_TEMPLATE_DEFAULT.price_group_labels;
+  return {
+    grupo_1: normalizeText(v.grupo_1) || d.grupo_1,
+    grupo_2: normalizeText(v.grupo_2) || d.grupo_2,
+    grupo_3: normalizeText(v.grupo_3) || d.grupo_3,
+  };
+}
+function normalizeDuretCondiciones(value) {
+  const arr = Array.isArray(value) ? value : [];
+  return arr
+    .map((item) => ({ label: normalizeText(item?.label), text: normalizeText(item?.text) }))
+    .filter((item) => item.label || item.text)
+    .slice(0, 20);
+}
+function normalizeDuretPdfTemplate(raw = {}) {
+  const d = DURET_PDF_TEMPLATE_DEFAULT;
+  const validityRaw = Number(raw?.validity_days);
+  return {
+    eyebrow_label: normalizeText(raw?.eyebrow_label) || d.eyebrow_label,
+    headline: normalizeText(raw?.headline) || d.headline,
+    subheadline_template: normalizeText(raw?.subheadline_template) || d.subheadline_template,
+    document_label: normalizeText(raw?.document_label) || d.document_label,
+    price_group_labels: normalizeDuretPriceGroupLabels(raw?.price_group_labels),
+    economico_eyebrow: normalizeText(raw?.economico_eyebrow) || d.economico_eyebrow,
+    economico_headline: normalizeText(raw?.economico_headline) || d.economico_headline,
+    economico_subtext: normalizeText(raw?.economico_subtext) || d.economico_subtext,
+    investment_box_text: normalizeText(raw?.investment_box_text) || d.investment_box_text,
+    detalle_incluido_title: normalizeText(raw?.detalle_incluido_title) || d.detalle_incluido_title,
+    condiciones_title: normalizeText(raw?.condiciones_title) || d.condiciones_title,
+    condiciones: normalizeDuretCondiciones(raw?.condiciones),
+    footer_label: normalizeText(raw?.footer_label) || d.footer_label,
+    validity_days: Number.isFinite(validityRaw) && validityRaw > 0 ? Math.trunc(validityRaw) : d.validity_days,
+  };
+}
+export async function getDuretPdfTemplateSettings() {
+  const raw = await getSetting(DURET_PDF_TEMPLATE_KEY, DURET_PDF_TEMPLATE_DEFAULT);
+  return normalizeDuretPdfTemplate(raw);
+}
+export async function setDuretPdfTemplateSettings(payload = {}) {
+  // Mergea contra lo persistido (no contra el default en memoria) para que un
+  // guardado parcial no borre el resto de la plantilla.
+  const current = await getDuretPdfTemplateSettings();
+  const normalized = normalizeDuretPdfTemplate({ ...current, ...payload });
+  return setSetting(DURET_PDF_TEMPLATE_KEY, normalized);
+}

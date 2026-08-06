@@ -1,7 +1,7 @@
 import express from "express";
 import { requireAuth } from "../auth.js";
 import { loadCatalogBootstrap, clearCatalogBootstrapCache } from "../catalogBootstrap.js";
-import { normKind, normBrand, createSection, updateSection, deleteSection, setTagSection, setProductAlias, setProductVisibility, setTypeVisibility, getProductPdfNameMap, setProductPdfName } from "../catalogDb.js";
+import { normKind, normBrand, createSection, updateSection, deleteSection, setTagSection, setProductAlias, setProductVisibility, setTypeVisibility, getProductPdfNameMap, setProductPdfName, getProductPdfContentMap, setProductPdfContent } from "../catalogDb.js";
 import { dbQuery } from "../db.js";
 import { listUsers, createUser, updateUser } from "../usersDb.js";
 import { triggerPreproductionForClientAcceptance, formatPortonTypeLabel, resyncPortonMeasurements } from "../measurementFinalization.js";
@@ -16,6 +16,8 @@ import {
   getTechnicalMeasurementFieldDefinitions,
   setTechnicalMeasurementFieldDefinitions,
   setProductionPlanningYear,
+  getDuretPdfTemplateSettings,
+  setDuretPdfTemplateSettings,
 } from "../settingsDb.js";
 import { getProductionPlanningWithUsage } from "../productionPlanning.js";
 import { getDoorTechnicalRules, setDoorTechnicalRules } from "../doorTechnicalRulesDb.js";
@@ -197,6 +199,68 @@ export function buildAdminRouter(odoo) {
       const pdfName = req.body?.pdf_name ?? "";
       const saved = await setProductPdfName(kind, req.params.productId, pdfName, brand);
       res.json({ ok: true, pdf_name: saved.pdf_name || null });
+    } catch (e) { next(e); }
+  });
+
+  // Contenido rico por producto (marcas con PDF propio, ej. Duret): ver
+  // presupuestador_product_pdf_content en catalogDb.js.
+  router.get("/product-pdf-content", requireAuth, requireEncComercialOrSuperuserOrDashboardViewer, async (req, res, next) => {
+    try {
+      const kind = normKind(req.query.kind || "porton");
+      const brand = normBrand(req.query.brand);
+      const data = await loadCatalogBootstrap(odoo, kind);
+      const contentMap = await getProductPdfContentMap(kind, null, brand);
+
+      const items = (Array.isArray(data?.products) ? data.products : [])
+        .map((product) => {
+          const productId = Number(product?.id || 0) || 0;
+          const content = contentMap.get(productId) || {};
+          return {
+            product_id: productId,
+            odoo_id: Number(product?.odoo_id || product?.odoo_template_id || 0) || 0,
+            odoo_name: getOdooName(product),
+            presupuestador_name: getPresupuestadorName(product),
+            alias: String(product?.alias || product?.internal_alias || "").trim(),
+            section_title: content.section_title || "",
+            section_order: content.section_order ?? 100,
+            block_title: content.block_title || "",
+            block_description: content.block_description || "",
+            price_group: content.price_group || "",
+            tag: content.tag || "",
+            detail_bullet: content.detail_bullet || "",
+          };
+        })
+        .sort((a, b) =>
+          String(a.presupuestador_name || a.odoo_name || "").localeCompare(
+            String(b.presupuestador_name || b.odoo_name || ""),
+            "es",
+          ) || Number(a.product_id || 0) - Number(b.product_id || 0)
+        );
+
+      res.json({ ok: true, kind, brand, items });
+    } catch (e) { next(e); }
+  });
+
+  router.put("/products/:productId/pdf-content", requireAuth, requireEncComercialOrSuperuserOrDashboardViewer, async (req, res, next) => {
+    try {
+      const kind = normKind(req.query.kind || req.body?.kind || "porton");
+      const brand = normBrand(req.query.brand || req.body?.brand);
+      const saved = await setProductPdfContent(kind, req.params.productId, req.body || {}, brand);
+      res.json({ ok: true, content: saved });
+    } catch (e) { next(e); }
+  });
+
+  router.get("/duret-pdf-template", requireAuth, requireEncComercialOrSuperuserOrDashboardViewer, async (_req, res, next) => {
+    try {
+      const settings = await getDuretPdfTemplateSettings();
+      res.json({ ok: true, settings });
+    } catch (e) { next(e); }
+  });
+
+  router.put("/duret-pdf-template", requireAuth, requireEncComercialOrSuperuserOrDashboardViewer, async (req, res, next) => {
+    try {
+      const settings = await setDuretPdfTemplateSettings(req.body || {});
+      res.json({ ok: true, settings });
     } catch (e) { next(e); }
   });
 
