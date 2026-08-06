@@ -744,6 +744,28 @@ export default function ClientAcceptancePage() {
     return <div className="container"><div className="card"><div className="muted">No se encontraron datos para esta aceptación.</div></div></div>;
   }
 
+  // El link queda vigente aunque el portón se haya cancelado (Estado de Productos ->
+  // botón de cancelación, rol Administración), pero deja de mostrar los datos técnicos y
+  // el botón de aceptar: solo informa la cancelación y a quién contactar.
+  if (acceptanceQ.data?.cancelled) {
+    const sellerLabel = quote?.created_by_full_name || quote?.created_by_username || "";
+    return (
+      <div className="container" style={{ maxWidth: 700, margin: "0 auto", padding: "24px 12px" }}>
+        <Card>
+          <h2 style={{ marginTop: 0, marginBottom: 8, color: "#b71c1c" }}>Portón cancelado</h2>
+          <div style={{ marginBottom: 4 }}>
+            {quote?.final_sale_order_name || quote?.odoo_sale_order_name
+              ? `El portón ${quote.final_sale_order_name || quote.odoo_sale_order_name} fue cancelado.`
+              : "Este portón fue cancelado."}
+          </div>
+          <div className="muted" style={{ marginTop: 10 }}>
+            Por favor, pónganse en contacto con {sellerLabel ? `su vendedor/a (${sellerLabel}${quote?.created_by_phone ? `, ${quote.created_by_phone}` : ""})` : "su vendedor/a"} para más información.
+          </div>
+        </Card>
+      </div>
+    );
+  }
+
   const canAccept = !accepted?.accepted_at;
   const submitError = acceptM.error?.message || "";
 

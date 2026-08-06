@@ -67,7 +67,8 @@ export function buildClientAcceptanceRouter(odoo) {
       if (!isShareToken(token)) return res.status(400).json({ ok: false, error: "token inválido" });
 
       const r = await dbQuery(
-        `select q.*, u.username as created_by_username, u.full_name as created_by_full_name
+        `select q.*, u.username as created_by_username, u.full_name as created_by_full_name,
+                u.phone as created_by_phone
            from public.presupuestador_quotes q
            left join public.presupuestador_users u on u.id = q.created_by_user_id
           where q.measurement_share_token = $1
@@ -77,6 +78,30 @@ export function buildClientAcceptanceRouter(odoo) {
       );
       const quote = r.rows?.[0] || null;
       if (!quote) return res.status(404).json({ ok: false, error: "Aceptación no encontrada" });
+
+      // El link queda vigente aunque el portón se haya cancelado (Estado de Productos ->
+      // botón de cancelación, rol Administración), pero deja de permitir aceptar: se avisa
+      // la cancelación y se corta acá, sin exigir measurementForm ni el resto de los datos
+      // técnicos (que ya no tiene sentido mostrar).
+      if (quote.cancelled_at) {
+        return res.json({
+          ok: true,
+          cancelled: true,
+          cancellation_reason: quote.cancellation_reason || null,
+          cancelled_at: quote.cancelled_at,
+          quote: {
+            id: quote.id,
+            quote_number: quote.quote_number,
+            final_sale_order_name: quote.final_sale_order_name,
+            odoo_sale_order_name: quote.odoo_sale_order_name,
+            end_customer: quote.end_customer,
+            created_by_username: quote.created_by_username,
+            created_by_full_name: quote.created_by_full_name,
+            created_by_phone: quote.created_by_phone,
+          },
+          acceptance: null,
+        });
+      }
 
       const measurementForm = await resolveMeasurementForm(quote);
       if (!measurementForm) return res.status(404).json({ ok: false, error: "Datos técnicos no disponibles" });
@@ -117,6 +142,9 @@ export function buildClientAcceptanceRouter(odoo) {
       );
       const quote = cur.rows?.[0] || null;
       if (!quote) return res.status(404).json({ ok: false, error: "Aceptación no encontrada" });
+      if (quote.cancelled_at) {
+        return res.status(400).json({ ok: false, error: "Este portón fue cancelado. No es posible registrar la aceptación." });
+      }
 
       const currentPayload = quote?.payload && typeof quote.payload === "object" ? { ...quote.payload } : {};
       const existingAcceptance = buildAcceptanceFromPayload(currentPayload);

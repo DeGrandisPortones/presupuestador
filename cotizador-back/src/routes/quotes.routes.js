@@ -2109,7 +2109,7 @@ export function buildQuotesRouter(odoo) {
                 order by coalesce(q.measurement_review_at, fc.final_copy_synced_at, q.final_synced_at, q.production_delivery_committed_at, q.confirmed_at) desc nulls last, q.id desc
                 limit 500`;
       } else if (scope === "portones_estado") {
-        if (!u.is_rev_tecnica && !u.is_superuser && !u.is_enc_comercial && !u.is_logistica) return res.status(403).json({ ok: false, error: "No autorizado" });
+        if (!u.is_rev_tecnica && !u.is_superuser && !u.is_enc_comercial && !u.is_logistica && !u.is_administracion) return res.status(403).json({ ok: false, error: "No autorizado" });
         // "Estado Productos" (ex "Estado Portones"): Otros queda afuera a proposito
         // (pedido explicito), el resto se puede filtrar por kind o ver todos juntos.
         const PRODUCTOS_ESTADO_KINDS = ["porton", "ipanel", "puerta", "plegados"];
@@ -2131,11 +2131,14 @@ export function buildQuotesRouter(odoo) {
                       q.end_customer, q.created_at, q.updated_at,
                       q.payload->'extra_contact' as extra_contact,
                       q.created_by_role,
+                      q.cancelled_at, q.cancellation_reason,
+                      cu.full_name as cancelled_by_full_name, cu.username as cancelled_by_username,
                       u.username as created_by_username, u.full_name as created_by_full_name,
                       u.phone as created_by_phone,
                       fc.final_copy_id, fc.final_copy_status, fc.final_copy_sale_order_name
                from public.presupuestador_quotes q
                left join public.presupuestador_users u on u.id = q.created_by_user_id
+               left join public.presupuestador_users cu on cu.id = q.cancelled_by_user_id
                left join lateral (
                  select c.id as final_copy_id, c.final_status as final_copy_status,
                         c.final_sale_order_name as final_copy_sale_order_name
@@ -2198,6 +2201,7 @@ export function buildQuotesRouter(odoo) {
            and q.measurement_share_enabled_at is not null
            and q.measurement_client_accepted_at is null
            and q.payload->'measurement_client_acceptance'->>'accepted_at' is null
+           and q.cancelled_at is null
       `;
 
       const ownQ = await dbQuery(
@@ -2239,6 +2243,57 @@ export function buildQuotesRouter(odoo) {
       const row = r.rows?.[0];
       if (!row) return res.status(404).json({ ok: false, error: "Presupuesto no encontrado" });
       res.json({ ok: true, quote: row });
+    } catch (e) { next(e); }
+  });
+
+  // Cancelacion de NV a mano (rol Administracion): terminal, sin vuelta atras y sin tocar
+  // nada en Odoo (la nota de credito la gestiona Administracion aparte). Solo marca el
+  // presupuesto como cancelado: "Estado de Productos" lo muestra en rojo con el motivo, y
+  // si ya tenia link de aceptacion del cliente, ese link deja de permitir aceptar y avisa
+  // la cancelacion (misma fila que consulta clientAcceptance.routes.js, ver
+  // ensureQuotesMeasurementColumns en quotesSchema.js).
+  router.post("/:id/cancel-nv", async (req, res, next) => {
+    try {
+      const u = req.user;
+      if (!u.is_administracion && !u.is_superuser) {
+        return res.status(403).json({ ok: false, error: "No autorizado" });
+      }
+      const id = String(req.params.id || "").trim();
+      if (!isUuid(id)) return res.status(400).json({ ok: false, error: "id invalido" });
+      const reason = String(req.body?.reason || "").trim();
+      if (!reason) return res.status(400).json({ ok: false, error: "Falta declarar el motivo de la cancelación" });
+
+      const cur = await dbQuery(
+        `select q.id, q.cancelled_at, q.odoo_sale_order_name, q.final_sale_order_name,
+                fc.final_copy_sale_order_name
+           from public.presupuestador_quotes q
+           left join lateral (
+             select c.final_sale_order_name as final_copy_sale_order_name
+               from public.presupuestador_quotes c
+              where c.quote_kind = 'copy' and c.parent_quote_id = q.id
+              order by c.created_at desc nulls last, c.id desc
+              limit 1
+           ) fc on true
+          where q.id = $1
+          limit 1`,
+        [id],
+      );
+      const row = cur.rows?.[0];
+      if (!row) return res.status(404).json({ ok: false, error: "Presupuesto no encontrado" });
+      if (row.cancelled_at) return res.status(400).json({ ok: false, error: "Esta NV ya fue cancelada" });
+      const nvRef = row.final_copy_sale_order_name || row.final_sale_order_name || row.odoo_sale_order_name;
+      if (!nvRef) return res.status(400).json({ ok: false, error: "Este presupuesto todavía no tiene una NV generada" });
+
+      const upd = await dbQuery(
+        `update public.presupuestador_quotes
+            set cancelled_at = now(),
+                cancelled_by_user_id = $2,
+                cancellation_reason = $3
+          where id = $1
+          returning id, cancelled_at, cancelled_by_user_id, cancellation_reason`,
+        [id, Number(u.user_id), reason],
+      );
+      res.json({ ok: true, quote: upd.rows?.[0] || null });
     } catch (e) { next(e); }
   });
 
