@@ -1356,7 +1356,33 @@ function drawDuretInvestmentBox(doc, { x, y, width, title, description, total })
   return y + boxH;
 }
 
-// ---- Bloques de la pagina 2 ----
+// ---- Bloques de la pagina 2 (y eventual pagina 3, ver duretEnsureSpace) ----
+// El contenido de estos bloques es variable (textos configurables desde el
+// dashboard, cantidad de condiciones, etc.) y puede no entrar en lo que queda
+// de una pagina. PDFKit, si no se le avisa, sigue escribiendo y crea solo una
+// pagina nueva a mitad de un item - eso dejaba, por ejemplo, "Asesor
+// comercial" con la etiqueta en una pagina y el nombre huerfano al principio
+// de la siguiente. Las funciones measureDuret* calculan la altura ANTES de
+// dibujar (mismos incrementos que su draw* correspondiente) para poder saltar
+// de pagina de forma prolija, con su propio encabezado, en vez de a mitad de
+// un item.
+function duretPageBottom(doc, margin) {
+  return doc.page.height - margin - 48; // deja lugar al pie (linea + texto)
+}
+function duretEnsureSpace(doc, { margin, innerW, y, height, payload }) {
+  if (y + height <= duretPageBottom(doc, margin)) return y;
+  doc.addPage();
+  return drawDuretCompactHeader(doc, { payload, margin, innerW });
+}
+function measureDuretPriceGroupRowHeight(doc, { width, label, description }) {
+  doc.font(DURET_FONT_BOLD).fontSize(11);
+  let h = doc.heightOfString(label, { width: width * 0.62 }) + 3;
+  if (description) {
+    doc.font(DURET_FONT).fontSize(9);
+    h += doc.heightOfString(description, { width: width * 0.62, lineGap: 1.5 });
+  }
+  return h + 10 + 16;
+}
 function drawDuretPriceGroupRow(doc, { x, y, width, label, description, amount }) {
   doc.font(DURET_FONT_BOLD).fontSize(11).fillColor(DURET_BLACK).text(label, x, y, { width: width * 0.62 });
   doc.font(DURET_FONT_BOLD).fontSize(12).fillColor(DURET_BLACK).text(`$ ${formatMoney(amount)}`, x, y, { width, align: "right" });
@@ -1383,6 +1409,16 @@ function drawDuretTotalsBlock(doc, { x, y, width, subtotalNet, ivaAmount, grandT
   doc.font(DURET_FONT_BOLD).fontSize(14).fillColor(DURET_BLACK).text(`$ ${formatMoney(grandTotal)}`, x, cy, { width, align: "right" });
   return cy + 28;
 }
+function measureDuretBulletListHeight(doc, { width, title, items }) {
+  if (!items.length) return 0;
+  doc.font(DURET_FONT_BOLD).fontSize(11);
+  let h = doc.heightOfString(title, { width }) + 10;
+  doc.font(DURET_FONT).fontSize(9);
+  for (const item of items) {
+    h += doc.heightOfString(item, { width: width - 12, lineGap: 1.5 }) + 7;
+  }
+  return h;
+}
 function drawDuretBulletList(doc, { x, y, width, title, items }) {
   doc.font(DURET_FONT_BOLD).fontSize(11).fillColor(DURET_BLACK).text(title, x, y, { width });
   let cy = doc.y + 10;
@@ -1393,6 +1429,18 @@ function drawDuretBulletList(doc, { x, y, width, title, items }) {
     cy = doc.y + 7;
   }
   return cy;
+}
+function measureDuretConditionsListHeight(doc, { width, title, items }) {
+  doc.font(DURET_FONT_BOLD).fontSize(11);
+  let h = doc.heightOfString(title, { width }) + 10;
+  for (const item of items) {
+    if (!item.label && !item.text) continue;
+    doc.font(DURET_FONT_BOLD).fontSize(9);
+    h += doc.heightOfString(item.label, { width }) + 2;
+    doc.font(DURET_FONT).fontSize(9);
+    h += doc.heightOfString(item.text, { width, lineGap: 1.5 }) + 11;
+  }
+  return h;
 }
 function drawDuretConditionsList(doc, { x, y, width, title, items }) {
   doc.font(DURET_FONT_BOLD).fontSize(11).fillColor(DURET_BLACK).text(title, x, y, { width });
@@ -1492,9 +1540,13 @@ async function renderDuretPresupuestoPdf({ payload, odoo }) {
   y2 = doc.y + 26;
 
   for (const group of priceGroups) {
+    const rowH = measureDuretPriceGroupRowHeight(doc, { width: innerW, label: group.label, description: joinDuretItemsWithY(group.items) });
+    y2 = duretEnsureSpace(doc, { margin, innerW, y: y2, height: rowH, payload });
     y2 = drawDuretPriceGroupRow(doc, { x: margin, y: y2, width: innerW, label: group.label, description: joinDuretItemsWithY(group.items), amount: group.amount });
   }
   y2 += 8;
+  const TOTALS_BLOCK_HEIGHT = 90;
+  y2 = duretEnsureSpace(doc, { margin, innerW, y: y2, height: TOTALS_BLOCK_HEIGHT, payload });
   y2 = drawDuretTotalsBlock(doc, { x: margin, y: y2, width: innerW, subtotalNet, ivaAmount, grandTotal });
   y2 += 22;
 
@@ -1502,6 +1554,13 @@ async function renderDuretPresupuestoPdf({ payload, odoo }) {
   const colW2 = (innerW - colGap) / 2;
   const sellerName = resolveLoggedUserSellerName(null, payload);
   const conditionItems = [...template.condiciones, { label: "Asesor comercial", text: sellerName || "-" }];
+  // "Detalle incluido" y "Condiciones y aclaraciones" van en columnas paralelas, asi que
+  // deben quedar juntas en la misma pagina: se mide la mas alta de las dos y se decide UNA
+  // sola vez si hace falta pagina nueva (si se decidiera por separado, una podria terminar
+  // en una pagina y la otra en la siguiente).
+  const detailH = measureDuretBulletListHeight(doc, { width: colW2, title: template.detalle_incluido_title, items: detailBullets });
+  const conditionsH = measureDuretConditionsListHeight(doc, { width: colW2, title: template.condiciones_title, items: conditionItems });
+  y2 = duretEnsureSpace(doc, { margin, innerW, y: y2, height: Math.max(detailH, conditionsH), payload });
   if (detailBullets.length) drawDuretBulletList(doc, { x: margin, y: y2, width: colW2, title: template.detalle_incluido_title, items: detailBullets });
   drawDuretConditionsList(doc, { x: margin + colW2 + colGap, y: y2, width: colW2, title: template.condiciones_title, items: conditionItems });
 
