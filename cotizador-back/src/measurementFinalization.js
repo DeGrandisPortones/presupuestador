@@ -1,5 +1,4 @@
 import { randomBytes } from "crypto";
-import axios from "axios";
 import { dbQuery } from "./db.js";
 import {
   getCommercialFinalToleranceAreaM2,
@@ -538,80 +537,6 @@ async function buildPreproduccionPayload({ originalQuote, sourceQuote, revisionQ
     ...sectionValues,
   };
 }
-// URL base del backend de Planificación Planta. Configurable por env porque ya
-// migró de host una vez (Render) y puede volver a pasar.
-const PLANTA_API_BASE = String(
-  process.env.PLANTA_API_BASE || "https://planificacion-uprm.onrender.com",
-).replace(/\/+$/, "");
-
-function getFieldCI(obj, keys) {
-  for (const k of keys) {
-    const v = obj?.[k];
-    if (v !== null && v !== undefined && String(v).trim() !== "") return v;
-  }
-  return null;
-}
-
-function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-// Reintenta el POST a Planta antes de darse por vencido: una falla de red o un
-// pico de conexiones en el pooler de Supabase (los backends de Presupuestador,
-// Planta e Integrador comparten el mismo pool con tope de 15) puede tirar un
-// solo intento sin que el portón esté realmente inalcanzable.
-// OJO: esto corre sincrónicamente dentro de POST /:token/accept, el endpoint
-// público que espera el CLIENTE final en el navegador para aceptar el
-// presupuesto - no un empleado. Peor caso acá = 10 + 2 + 10 = 22s (antes: 15s
-// fijo). No subir MAX_ATTEMPTS/TIMEOUT_MS sin mover este POST fuera del
-// camino síncrono de esa respuesta, para no dejar al cliente esperando.
-const PLANTA_PORTON_POST_MAX_ATTEMPTS = 2;
-const PLANTA_PORTON_POST_TIMEOUT_MS = 10000;
-const PLANTA_PORTON_POST_RETRY_DELAY_MS = 2000;
-
-async function postPortonToPlantaWithRetry(body) {
-  let lastErr = null;
-  for (let attempt = 1; attempt <= PLANTA_PORTON_POST_MAX_ATTEMPTS; attempt++) {
-    try {
-      await axios.post(`${PLANTA_API_BASE}/portones`, body, { timeout: PLANTA_PORTON_POST_TIMEOUT_MS });
-      return { ok: true };
-    } catch (err) {
-      if (err?.response?.status === 409) {
-        // Ya existe (ej. resync manual sobre un NV ya creado): no es un error.
-        return { ok: true, already_exists: true };
-      }
-      lastErr = err;
-      console.error(
-        `[measurementFinalization] intento ${attempt}/${PLANTA_PORTON_POST_MAX_ATTEMPTS} de creación de portón en Planta falló (NV ${body?.nv}):`,
-        err?.response?.data || err.message,
-      );
-      if (attempt < PLANTA_PORTON_POST_MAX_ATTEMPTS) await sleep(PLANTA_PORTON_POST_RETRY_DELAY_MS);
-    }
-  }
-  return { ok: false, error: lastErr?.response?.data?.error || lastErr?.message || "Error desconocido" };
-}
-
-// Cuando el cliente acepta el presupuesto final, el portón debe entrar solo al
-// flujo de producción de Planta (fecha_prod = fecha de aceptación), sin que
-// nadie tenga que cargarla a mano en "Autorizaciones · Preproducción Portones".
-// Reusa el mismo endpoint público POST /portones que ya usa esa pantalla, así
-// la lógica de creación/ruteo inicial de etapas vive en un solo lugar (Planta).
-async function autoCreatePortonFromClientAcceptance({ nv, nvTipo, finalPayload, acceptedAt }) {
-  if (!acceptedAt) return { ok: false, skipped: true, reason: "no_accepted_at" };
-  if (nvTipo === "INV") return { ok: false, skipped: true, reason: "ipanel_no_aplica" };
-
-  const fecha10 = formatDateOnly(acceptedAt);
-  if (!fecha10) return { ok: false, skipped: true, reason: "invalid_date" };
-
-  const nlista = Number(getFieldCI(finalPayload, ["NLista", "nlista", "NLISTA"])) || nv;
-  const partidaRaw = Number(getFieldCI(finalPayload, ["PARTIDA", "partida", "Partida"]));
-  const partida = Number.isInteger(partidaRaw) ? partidaRaw : 800;
-  const sistemaRaw = getFieldCI(finalPayload, ["Sistema", "sistema", "SISTEMA", "Sistemas", "sistemas"]);
-  const sistema = sistemaRaw ? String(sistemaRaw).trim() : null;
-
-  return postPortonToPlantaWithRetry({ nv, nlista, partida, fecha_prod: fecha10, sistema, nv_tipo: nvTipo });
-}
-
 async function upsertPreproduccionValoresForNv({ originalQuote, sourceQuote, revisionQuote, order, metrics, generatedLines, odoo }) {
   const basePayload = await buildPreproduccionPayload({
     originalQuote,
@@ -719,20 +644,16 @@ async function upsertPreproduccionValoresForNv({ originalQuote, sourceQuote, rev
     [nv, nvTipo, JSON.stringify(finalPayload), JSON.stringify(nvLines)],
   );
 
-  const autoPorton = await autoCreatePortonFromClientAcceptance({
-    nv,
-    nvTipo,
-    finalPayload,
-    acceptedAt: originalQuote?.measurement_client_accepted_at,
-  });
-
+  // El portón queda en preproduccion_valores esperando que alguien le asigne
+  // Fecha Producción y lo mande a producción a mano desde "Autorizaciones ·
+  // Preproducción Portones" (revert del auto-envío directo a Planta que
+  // hacía esto solo al aceptar el cliente el link).
   return {
     ok: true,
     id: q.rows?.[0]?.id ?? null,
     nv: q.rows?.[0]?.nv ?? nv,
     nv_tipo: q.rows?.[0]?.nv_tipo ?? nvTipo,
     updated_at: q.rows?.[0]?.updated_at || null,
-    auto_porton: autoPorton,
   };
 }
 function getPayloadConditionMode(payload) {
