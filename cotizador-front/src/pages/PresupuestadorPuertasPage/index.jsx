@@ -427,10 +427,10 @@ export default function PresupuestadorPuertasPage() {
           .filter((line) => Number(line.product_id || 0) > 0),
       };
       if (!payload.lines.length) return;
-      // Presupuesto nuevo (sin guardar todavia, sin datos de cliente): siempre traemos
-      // el precio en vivo de Odoo, sin usar la cache local de 12hs, para no arrastrar
-      // precios viejos mientras el usuario todavia no puede usar "Actualizar presupuesto".
-      const data = await getPrices({ ...payload, force: !isPersistedQuote });
+      // Ver el mismo cambio (y su razon) en CotizadorPage/index.jsx: ya no se fuerza el
+      // pedido en vivo a Odoo para presupuestos nuevos, la cache precargada en el login
+      // alcanza (maximo 1h de antiguedad, ver PRICE_CACHE_TTL_MS en api/odoo.js).
+      const data = await getPrices({ ...payload, force: false });
       applyBasePrices(data);
       linesBeingPricedRef.current = [];
     }

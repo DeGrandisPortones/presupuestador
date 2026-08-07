@@ -1105,10 +1105,16 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
       };
       if (!payload.lines.length) return;
       payload.lines = withSection37ExtraLine(linesToPrice, payload.lines);
-      // Presupuesto nuevo (sin guardar todavia, sin datos de cliente): siempre traemos
-      // el precio en vivo de Odoo, sin usar la cache local de 12hs, para no arrastrar
-      // precios viejos mientras el usuario todavia no puede usar "Actualizar presupuesto".
-      const forcedPayload = { ...payload, force: !isPersistedQuote };
+      // Antes: un presupuesto nuevo (sin guardar todavia) siempre pedia el precio en vivo
+      // a Odoo, ignorando la cache, para no arrastrar un precio viejo antes de que el
+      // usuario pudiera usar "Actualizar presupuesto". Eso hacia esperar "Cargando precio"
+      // en el caso mas comun (armar un presupuesto nuevo) aunque la cache ya estuviera
+      // tibia. Ahora que la cache se precarga apenas el usuario se loguea (ver
+      // prefetchOdooBootstrapInBackground en domain/odoo/prefetch.js), su antiguedad
+      // maxima es la duracion de la sesion hasta este punto (nunca mas de 1h, el TTL de
+      // PRICE_CACHE_TTL_MS en api/odoo.js) - suficientemente fresca como para no forzar
+      // mas un pedido en vivo por cada linea de un presupuesto nuevo.
+      const forcedPayload = { ...payload, force: false };
       dflexCotizadorDebug("getPrices:auto", { payload: forcedPayload, linesKey, lines: summarizeLinesForDebug(lines), includeStack: true });
       const data = await getPrices(forcedPayload);
       dflexCotizadorDebug("getPrices:auto:response", { data, includeStack: false });
