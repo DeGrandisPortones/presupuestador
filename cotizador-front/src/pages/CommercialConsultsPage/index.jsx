@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useSearchParams } from "react-router-dom";
 
 import Button from "../../ui/Button.jsx";
 import Input from "../../ui/Input.jsx";
@@ -265,9 +266,11 @@ export default function CommercialConsultsPage() {
   const isRequester = !!(!isCommercial && (user?.is_vendedor || user?.is_distribuidor));
   const canAccess = isCommercial || isRequester;
 
+  const [searchParams, setSearchParams] = useSearchParams();
   const [status, setStatus] = useState(isCommercial ? "pending" : "open");
   const [selectedId, setSelectedId] = useState(null);
   const [subject, setSubject] = useState("");
+  const [referenceNumber, setReferenceNumber] = useState("");
   const [newMessage, setNewMessage] = useState("");
   const [replyMessage, setReplyMessage] = useState("");
   const [resolutionText, setResolutionText] = useState("");
@@ -305,7 +308,23 @@ export default function CommercialConsultsPage() {
     setPickerRole("vendedores");
     setNewAttachment(null);
     setNewAttachmentError("");
+    setReferenceNumber("");
   }
+
+  // Deep-link desde el detalle de un presupuesto/NV/NP (ver QuoteDetailPage, boton
+  // "Abrir consulta comercial"): ?ref=NV4304 precarga el numero y abre el formulario
+  // de "nuevo ticket" solo, sin que el usuario tenga que ir a buscarlo el mismo.
+  useEffect(() => {
+    const ref = searchParams.get("ref");
+    if (!ref) return;
+    setReferenceNumber(ref);
+    if (isCommercial) setShowNewForm(true);
+    const next = new URLSearchParams(searchParams);
+    next.delete("ref");
+    setSearchParams(next, { replace: true });
+    // Solo se consume una vez, al llegar con el parametro en la URL.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
 
   useEffect(() => {
     setStatus(isCommercial ? "pending" : "open");
@@ -358,6 +377,7 @@ export default function CommercialConsultsPage() {
       const haystack = normalizeSearch([
         ticket.id,
         ticket.subject,
+        ticket.reference_number,
         ticket.created_by_name,
         ticket.created_by_role,
         ticket.created_by_username,
@@ -415,11 +435,11 @@ export default function CommercialConsultsPage() {
       createCommercialConsult(
         isCommercial
           ? audienceMode === "target"
-            ? { subject, message: newMessage, target_user_id: selectedTarget?.id, attachment: newAttachment }
+            ? { subject, message: newMessage, target_user_id: selectedTarget?.id, attachment: newAttachment, reference_number: referenceNumber }
             : audienceMode === "selected"
-            ? { subject, message: newMessage, target_user_ids: selectedMultiTargets.map((t) => t.id), attachment: newAttachment }
-            : { subject, message: newMessage, audience: audienceMode, attachment: newAttachment }
-          : { subject, message: newMessage, attachment: newAttachment }
+            ? { subject, message: newMessage, target_user_ids: selectedMultiTargets.map((t) => t.id), attachment: newAttachment, reference_number: referenceNumber }
+            : { subject, message: newMessage, audience: audienceMode, attachment: newAttachment, reference_number: referenceNumber }
+          : { subject, message: newMessage, attachment: newAttachment, reference_number: referenceNumber }
       ),
     onSuccess: (result) => {
       setSubject("");
@@ -551,7 +571,7 @@ export default function CommercialConsultsPage() {
               <Input
                 value={searchText}
                 onChange={setSearchText}
-                placeholder="Buscar por ticket, asunto, vendedor, distribuidor o mensaje"
+                placeholder="Buscar por ticket, asunto, N° de venta/pedido, vendedor, distribuidor o mensaje"
                 style={{ width: "100%" }}
               />
             </>
@@ -627,6 +647,8 @@ export default function CommercialConsultsPage() {
                       </div>
                     ) : null}
                     <Input value={subject} onChange={setSubject} placeholder="Asunto" style={{ width: "100%" }} />
+                    <div style={{ height: 8 }} />
+                    <Input value={referenceNumber} onChange={setReferenceNumber} placeholder="N° de venta, de pedido o de presupuesto (opcional)" style={{ width: "100%" }} />
                     <div style={{ height: 8 }} />
                     <textarea
                       value={newMessage}
@@ -722,6 +744,8 @@ export default function CommercialConsultsPage() {
                       <div style={{ height: 8 }} />
                       <Input value={subject} onChange={setSubject} placeholder="Asunto" style={{ width: "100%" }} />
                       <div style={{ height: 8 }} />
+                      <Input value={referenceNumber} onChange={setReferenceNumber} placeholder="N° de venta, de pedido o de presupuesto (opcional)" style={{ width: "100%" }} />
+                      <div style={{ height: 8 }} />
                       <textarea
                         value={newMessage}
                         onChange={(e) => setNewMessage(e.target.value)}
@@ -756,6 +780,8 @@ export default function CommercialConsultsPage() {
                         : "Se creará un ticket individual para cada distribuidor activo."}
                     </div>
                     <Input value={subject} onChange={setSubject} placeholder="Asunto" style={{ width: "100%" }} />
+                    <div style={{ height: 8 }} />
+                    <Input value={referenceNumber} onChange={setReferenceNumber} placeholder="N° de venta, de pedido o de presupuesto (opcional)" style={{ width: "100%" }} />
                     <div style={{ height: 8 }} />
                     <textarea
                       value={newMessage}
@@ -827,6 +853,8 @@ export default function CommercialConsultsPage() {
                 <div className="muted" style={{ marginBottom: 6 }}>Nueva consulta</div>
                 <Input value={subject} onChange={setSubject} placeholder="Asunto" style={{ width: "100%" }} />
                 <div style={{ height: 8 }} />
+                <Input value={referenceNumber} onChange={setReferenceNumber} placeholder="N° de venta, de pedido o de presupuesto (opcional)" style={{ width: "100%" }} />
+                <div style={{ height: 8 }} />
                 <textarea
                   value={newMessage}
                   onChange={(e) => setNewMessage(e.target.value)}
@@ -887,6 +915,11 @@ export default function CommercialConsultsPage() {
                     <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "flex-start" }}>
                       <div>
                         <div style={{ fontWeight: 800 }}>#{ticket.id} · {ticket.subject}</div>
+                        {ticket.reference_number ? (
+                          <div style={{ display: "inline-block", marginTop: 4, padding: "1px 8px", borderRadius: 999, border: "1px solid #01a39f", color: "#01a39f", fontSize: 11, fontWeight: 800 }}>
+                            {ticket.reference_number}
+                          </div>
+                        ) : null}
                         <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>
                           {isCommercial ? `${ticket.created_by_name} · ${ticket.created_by_role}` : fmtDateTime(ticket.created_at)}
                         </div>
@@ -963,6 +996,11 @@ export default function CommercialConsultsPage() {
               <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start" }}>
                 <div>
                   <h3 style={{ marginTop: 0, marginBottom: 4 }}>#{selectedTicket.id} · {selectedTicket.subject}</h3>
+                  {selectedTicket.reference_number ? (
+                    <div style={{ display: "inline-block", marginBottom: 6, padding: "2px 10px", borderRadius: 999, border: "1px solid #01a39f", color: "#01a39f", fontSize: 12, fontWeight: 800 }}>
+                      {selectedTicket.reference_number}
+                    </div>
+                  ) : null}
                   <div className="muted" style={{ fontSize: 13 }}>
                     Creada por {selectedTicket.created_by_name} ({selectedTicket.created_by_role}) · {fmtDateTime(selectedTicket.created_at)}
                   </div>
