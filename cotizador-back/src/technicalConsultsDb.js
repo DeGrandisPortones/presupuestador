@@ -21,6 +21,15 @@ function normalizeSubject(value) {
   return String(value || "").trim().replace(/\s+/g, " ").slice(0, 180);
 }
 
+// N° de venta/pedido/presupuesto (NV/NP/#) que el usuario asocia al ticket para
+// identificarlo y filtrarlo despues - texto libre, no se valida contra Odoo (el
+// vendedor puede no tener el numero exacto a mano todavia). Cuando se abre el
+// ticket desde el detalle de un presupuesto (ver QuoteDetailPage) llega
+// autocompleto con la referencia real de esa fila.
+function normalizeReferenceNumber(value) {
+  return String(value || "").trim().replace(/\s+/g, " ").slice(0, 60) || null;
+}
+
 function normalizeMessage(value) {
   return String(value || "").trim();
 }
@@ -146,11 +155,13 @@ export async function ensureTechnicalConsultTables() {
 
   await dbQuery(`alter table public.presupuestador_technical_tickets add column if not exists on_behalf_of_user_id bigint null references public.presupuestador_users(id);`);
   await dbQuery(`alter table public.presupuestador_technical_ticket_messages add column if not exists attachment jsonb null;`);
+  await dbQuery(`alter table public.presupuestador_technical_tickets add column if not exists reference_number text null;`);
 
   await dbQuery(`create index if not exists presupuestador_technical_tickets_created_by_idx on public.presupuestador_technical_tickets(created_by_user_id);`);
   await dbQuery(`create index if not exists presupuestador_technical_tickets_on_behalf_of_idx on public.presupuestador_technical_tickets(on_behalf_of_user_id);`);
   await dbQuery(`create index if not exists presupuestador_technical_tickets_status_idx on public.presupuestador_technical_tickets(status, last_message_at desc nulls last);`);
   await dbQuery(`create index if not exists presupuestador_technical_ticket_messages_ticket_idx on public.presupuestador_technical_ticket_messages(ticket_id, created_at asc, id asc);`);
+  await dbQuery(`create index if not exists presupuestador_technical_tickets_reference_number_idx on public.presupuestador_technical_tickets(reference_number);`);
 
   ensured = true;
 }
@@ -191,6 +202,7 @@ function listSql({ scope, viewerIdParamPos }) {
       t.assigned_to_user_id,
       t.status,
       t.subject,
+      t.reference_number,
       t.created_at,
       t.updated_at,
       t.closed_at,
@@ -387,6 +399,7 @@ async function insertTechnicalTicket(client, {
   requesterLastReadAt,
   technicalLastReadAt,
   now,
+  referenceNumber,
 }) {
   const createdTicket = await client.query(
     `
@@ -396,6 +409,7 @@ async function insertTechnicalTicket(client, {
         assigned_to_user_id,
         status,
         subject,
+        reference_number,
         requester_last_read_at,
         technical_last_read_at,
         last_message_at,
@@ -403,10 +417,10 @@ async function insertTechnicalTicket(client, {
         created_at,
         updated_at
       )
-      values ($1, $2, $3, $4, $5, $6, $7, $8, $1, $8, $8)
+      values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $1, $9, $9)
       returning id
     `,
-    [creatorUserId, targetUserId, assignedToUserId, status, subject, requesterLastReadAt, technicalLastReadAt, now]
+    [creatorUserId, targetUserId, assignedToUserId, status, subject, referenceNumber, requesterLastReadAt, technicalLastReadAt, now]
   );
   const ticketIdValue = Number(createdTicket.rows?.[0]?.id || 0);
   if (!ticketIdValue) throw new Error("No se pudo crear la consulta técnica");
@@ -430,7 +444,7 @@ async function insertTechnicalTicket(client, {
   return ticketIdValue;
 }
 
-export async function createTechnicalConsult(user, { subject, message, target_user_id, target_user_ids, audience, attachment } = {}) {
+export async function createTechnicalConsult(user, { subject, message, target_user_id, target_user_ids, audience, attachment, reference_number } = {}) {
   await ensureTechnicalConsultTables();
   const staffCreating = isTechnicalUser(user);
   if (!staffCreating && !isRequesterUser(user)) {
@@ -442,6 +456,7 @@ export async function createTechnicalConsult(user, { subject, message, target_us
   if (!cleanSubject) throw new Error("Falta asunto");
   if (!cleanMessage) throw new Error("Falta mensaje");
   const cleanAttachment = normalizeAttachment(attachment);
+  const cleanReferenceNumber = normalizeReferenceNumber(reference_number);
 
   const userId = toId(user?.user_id || user?.id);
   const normalizedAudience = staffCreating ? normalizeAudience(audience) : "target";
@@ -486,6 +501,7 @@ export async function createTechnicalConsult(user, { subject, message, target_us
           requesterLastReadAt: null,
           technicalLastReadAt: now,
           now,
+          referenceNumber: cleanReferenceNumber,
         });
         ids.push(id);
       }
@@ -527,6 +543,7 @@ export async function createTechnicalConsult(user, { subject, message, target_us
       requesterLastReadAt,
       technicalLastReadAt,
       now,
+      referenceNumber: cleanReferenceNumber,
     })
   );
 

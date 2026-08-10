@@ -62,6 +62,16 @@ function displayQuoteNumber(quote, fallbackId = null) {
   return fallbackId ? String(fallbackId).slice(0, 8) : "—";
 }
 
+// Referencia que se autocompleta al abrir un ticket desde este presupuesto (ver
+// botones "Consultar a Comercial/Técnica" mas abajo y el ?ref= en
+// Commercial/TechnicalConsultsPage) - prioriza el N° de venta/pedido de Odoo ya
+// generado, que es lo que el equipo comercial/tecnico realmente reconoce.
+function buildQuoteReferenceLabel(quote, fallbackId) {
+  if (quote?.final_sale_order_name) return String(quote.final_sale_order_name);
+  if (quote?.odoo_sale_order_name) return String(quote.odoo_sale_order_name);
+  return `#${displayQuoteNumber(quote, fallbackId)}`;
+}
+
 function extractBudgetObservation(quote) {
   const payload = quote?.payload && typeof quote.payload === "object" ? quote.payload : {};
   return String(quote?.budget_observation || payload?.budget_observation || payload?.presupuesto_observacion || payload?.quote_observation || "").trim();
@@ -1298,6 +1308,26 @@ export default function QuoteDetailPage() {
               {quote.status === "syncing_odoo" ? <span style={pillStyle("#fff7e6", "#ffd9a8")}>Sincronizando a Odoo…</span> : null}
               {quote.status === "pending_approvals" && !isRevision ? <span style={pillStyle("#eef4ff", "#c7dafc")}>En aprobación</span> : null}
             </div>
+            {(user?.is_vendedor || user?.is_distribuidor || user?.is_enc_comercial || user?.is_rev_tecnica || user?.is_superuser) ? (
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
+                {(user?.is_vendedor || user?.is_distribuidor || user?.is_enc_comercial || user?.is_superuser) ? (
+                  <Button
+                    variant="ghost"
+                    onClick={() => navigate(`/consultas-comerciales?ref=${encodeURIComponent(buildQuoteReferenceLabel(quote, quoteId))}`)}
+                  >
+                    Consultar a Comercial
+                  </Button>
+                ) : null}
+                {(user?.is_vendedor || user?.is_distribuidor || user?.is_rev_tecnica || user?.is_superuser) ? (
+                  <Button
+                    variant="ghost"
+                    onClick={() => navigate(`/consultas-tecnicas?ref=${encodeURIComponent(buildQuoteReferenceLabel(quote, quoteId))}`)}
+                  >
+                    Consultar a Técnica
+                  </Button>
+                ) : null}
+              </div>
+            ) : null}
             {budgetObservation ? (
               <>
                 <div className="spacer" />
