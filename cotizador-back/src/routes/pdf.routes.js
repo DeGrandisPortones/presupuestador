@@ -310,8 +310,13 @@ async function buildLines(payload, { useBasePrice, odoo, displayNetPrices = fals
   const odooNames = await readOdooNamesFlexible(odoo, rawLines);
   const distributorPayload = isDistributorPayload(payload);
   // El envío lo sigue cobrando De Grandis aunque sea "provisión propia" del
-  // distribuidor: en la proforma va al precio de Odoo congelado en
-  // envio_odoo_price_snapshot, no a $0 ni al precio que cargó el distribuidor.
+  // distribuidor: en la proforma va al precio de la lista de precios del
+  // distribuidor en Odoo, congelado en envio_odoo_price_snapshot (ver
+  // computeEnvioOdooPriceSnapshot en quotes.routes.js - misma fuente que usa
+  // calcOdooUnitPrice para lo que realmente se manda a Odoo, así la proforma y
+  // la NV real nunca quedan desalineadas). Si por lo que sea todavía no se
+  // pudo calcular (quote muy vieja, o Odoo no respondió ni una vez), se cae al
+  // precio base de la línea - nunca a $0 silencioso.
   const envioOdooPriceSnapshot = getEnvioOdooPriceSnapshot(payload);
 
   const lines = rawLines
@@ -321,7 +326,7 @@ async function buildLines(payload, { useBasePrice, odoo, displayNetPrices = fals
       const variantId = resolveVariantId(l);
       const isDistOwnSupply = distributorPayload && isDistributorOwnSupplyLine(l);
       const basePrice = useBasePrice && isDistOwnSupply
-        ? (isShippingLine(l) && envioOdooPriceSnapshot != null ? envioOdooPriceSnapshot : 0)
+        ? (isShippingLine(l) && envioOdooPriceSnapshot != null ? envioOdooPriceSnapshot : (isShippingLine(l) ? rawBasePrice : 0))
         : rawBasePrice;
       // "Facturado previamente" (deposito ya cobrado): dato duro, no se le aplica
       // coeficiente/margen ni recargo por forma de pago. Si lleva IVA si depende de la

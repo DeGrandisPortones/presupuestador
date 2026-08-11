@@ -5,6 +5,7 @@ import { ensureQuotesMeasurementColumns } from "../quotesSchema.js";
 import { getCommercialFinalTolerancePercent } from "../settingsDb.js";
 import { commitQuoteProductionWeek } from "../productionPlanning.js";
 import { triggerPreproductionForClientAcceptance } from "../measurementFinalization.js";
+import { getPriceFromPricelist } from "./odoo.routes.js";
 
 function parseMeasurementProductIds(raw) {
   return String(raw || "2865,2961,4229")
@@ -124,27 +125,34 @@ function isDistributorQuote(quote = {}) {
 function shouldZeroShippingForOdoo(quote = {}, line = {}) {
   return isDistributorQuote(quote) && isDistributorOwnSupplyLine(line);
 }
-// Precio de Envío tomado de Odoo y congelado en envio_odoo_price_snapshot al crear
-// el presupuesto, o al apretar "Actualizar presupuesto" (refresh_emission_date) en
-// uno viejo. No se recalcula solo en ningun otro guardado, para no cambiarle el
-// numero a un presupuesto ya armado. Lo usan la proforma y el envio real a Odoo.
-async function fetchShippingOdooListPrice(odoo, productId) {
-  const id = Number(productId) || 0;
-  if (!odoo || !id) return null;
-  try {
-    const [row] = await odoo.executeKw("product.product", "read", [[id]], { fields: ["list_price"] });
-    const price = Number(row?.list_price);
-    return Number.isFinite(price) ? price : null;
-  } catch {
-    return null;
-  }
-}
-async function computeEnvioOdooPriceSnapshot({ odoo, createdByRole, lines }) {
+// Precio de Envío tomado de la LISTA DE PRECIOS del distribuidor en Odoo (no el
+// list_price plano) y congelado en envio_odoo_price_snapshot al crear el
+// presupuesto, o al apretar "Actualizar presupuesto" (refresh_emission_date) en
+// uno viejo. En cualquier otro guardado se preserva el valor ya congelado tal
+// cual estaba (para no cambiarle el numero a un presupuesto ya armado) - salvo
+// que todavia no se haya podido calcular nunca (null), en cuyo caso se
+// autocura reintentando, en vez de quedar roto para siempre.
+// Es la MISMA funcion (getPriceFromPricelist, de odoo.routes.js) que resuelve
+// el precio de cualquier otro producto - así el flete deja de ser un caso
+// aparte: lo que se manda a Odoo (calcOdooUnitPrice), lo que muestra la
+// proforma (pdf.routes.js) y lo que ve Enc. Comercial en Aprobaciones
+// (QuoteDetailPage.jsx, campo envio_odoo_price_snapshot del quote) leen
+// siempre este mismo numero.
+async function computeEnvioOdooPriceSnapshot({ odoo, createdByRole, pricelistId, lines }) {
   if (String(createdByRole || "").trim().toLowerCase() !== "distribuidor") return null;
   const shippingLine = (Array.isArray(lines) ? lines : []).find((l) => isShippingLine(l));
   if (!shippingLine) return null;
-  const productId = shippingLine?.odoo_variant_id || shippingLine?.product_id || shippingLine?.odoo_external_id;
-  return await fetchShippingOdooListPrice(odoo, productId);
+  const plId = toIntId(pricelistId);
+  const productId = toIntId(shippingLine?.odoo_variant_id || shippingLine?.product_id || shippingLine?.odoo_external_id);
+  if (!odoo || !plId || !productId) return null;
+  const templateId = toIntId(shippingLine?.odoo_template_id) || productId;
+  const qty = Number(shippingLine?.qty || 1) || 1;
+  try {
+    const price = await getPriceFromPricelist({ odoo, pricelistId: plId, productId, qty, templateId });
+    return Number.isFinite(price) && price > 0 ? round2(price) : null;
+  } catch {
+    return null;
+  }
 }
 function getEnvioOdooPriceSnapshot(quote = {}) {
   const n = Number(quote?.envio_odoo_price_snapshot);
@@ -1940,7 +1948,7 @@ export function buildQuotesRouter(odoo) {
       if (created_by_role === "distribuidor" && !bill_to_odoo_partner_id) bill_to_odoo_partner_id = u.odoo_partner_id ? Number(u.odoo_partner_id) : null;
 
       const measurementFlow = getMeasurementFlowForQuote({ catalog_kind, fulfillment_mode, lines });
-      const envioOdooPriceSnapshot = await computeEnvioOdooPriceSnapshot({ odoo, createdByRole: created_by_role, lines });
+      const envioOdooPriceSnapshot = await computeEnvioOdooPriceSnapshot({ odoo, createdByRole: created_by_role, pricelistId: pricelist_id, lines });
 
       const q = await dbQuery(
         `insert into public.presupuestador_quotes (
@@ -2381,13 +2389,17 @@ export function buildQuotesRouter(odoo) {
         quote.status === "draft" && !ACTIVE_MEASUREMENT_WORKFLOW_STATUSES.includes(currentMeasurementStatus)
           ? measurementFlow.measurement_status
           : quote.measurement_status;
-      // El precio de Envío congelado solo se recalcula cuando el usuario aprieta
-      // explícitamente "Actualizar presupuesto" (refresh_emission_date). En
-      // cualquier otro guardado se mantiene el valor ya congelado tal cual estaba.
+      const nextPricelistId = resolveQuotePricelistId(quote, body.pricelist_id, quote.pricelist_id);
+      // El precio de Envío congelado solo se recalcula a proposito cuando el usuario
+      // aprieta explícitamente "Actualizar presupuesto" (refresh_emission_date) - en
+      // cualquier otro guardado se mantiene el valor ya congelado tal cual estaba, para
+      // no cambiarle el numero a un presupuesto ya armado. Excepcion: si todavia nunca
+      // se pudo calcular (null - presupuesto viejo o un intento anterior fallo), se
+      // reintenta solo en cada guardado en vez de quedar roto para siempre.
       const isRefreshEmissionDate = body.refresh_emission_date === true;
       const envioOdooPriceSnapshot = isRefreshEmissionDate
-        ? await computeEnvioOdooPriceSnapshot({ odoo, createdByRole: quote.created_by_role, lines: nextLines })
-        : quote.envio_odoo_price_snapshot;
+        ? await computeEnvioOdooPriceSnapshot({ odoo, createdByRole: quote.created_by_role, pricelistId: nextPricelistId, lines: nextLines })
+        : (quote.envio_odoo_price_snapshot ?? await computeEnvioOdooPriceSnapshot({ odoo, createdByRole: quote.created_by_role, pricelistId: nextPricelistId, lines: nextLines }));
 
       const upd = await dbQuery(
         `update public.presupuestador_quotes
@@ -2411,7 +2423,7 @@ export function buildQuotesRouter(odoo) {
         [
           id,
           fulfillment_mode,
-          resolveQuotePricelistId(quote, body.pricelist_id, quote.pricelist_id),
+          nextPricelistId,
           body.bill_to_odoo_partner_id !== undefined ? (body.bill_to_odoo_partner_id ? Number(body.bill_to_odoo_partner_id) : null) : quote.bill_to_odoo_partner_id,
           JSON.stringify(body.end_customer !== undefined ? body.end_customer : quote.end_customer),
           JSON.stringify(nextLines),
