@@ -1019,7 +1019,7 @@ async function getPriceFromOdooPricelist({ odoo, pricelistId, productId, qty, pa
   return 0;
 }
 
-async function getPriceFromPricelist({ odoo, pricelistId, productId, qty, partnerId, templateId = null }) {
+export async function getPriceFromPricelist({ odoo, pricelistId, productId, qty, partnerId, templateId = null }) {
   const requestedProductId = toPositiveInt(productId);
   const explicitTemplateId = toPositiveInt(templateId);
   let variantTemplateId = null;

@@ -723,11 +723,29 @@ function round2ForApproval(value) {
   return Math.round(Number(value || 0) * 100) / 100;
 }
 
+// Flete (2842 porton / 4230 puerta): el distribuidor puede editar basePrice a
+// conveniencia para SU presupuesto al cliente, pero eso nunca debe tocar la
+// proforma - acá siempre entra el precio de la lista de precios del
+// distribuidor en Odoo, el mismo que ya usa calcOdooUnitPrice para lo que
+// realmente se manda a Odoo (ver envio_odoo_price_snapshot,
+// computeEnvioOdooPriceSnapshot en quotes.routes.js), para que Odoo, la
+// proforma y esta pantalla de Aprobación Comercial nunca queden desalineados.
+const SHIPPING_PRODUCT_IDS_FOR_APPROVAL = new Set([2842, 4230]);
+function isShippingLineForApproval(line = {}) {
+  const ids = [line?.product_id, line?.id, line?.odoo_id, line?.odoo_template_id, line?.odoo_variant_id, line?.odoo_external_id, line?.odoo_product_id];
+  return ids.some((v) => SHIPPING_PRODUCT_IDS_FOR_APPROVAL.has(Number(v || 0)));
+}
+function resolveApprovalProformaBasePrice(line, quote) {
+  const storedBasePrice = Number(line?.basePrice ?? line?.base_price ?? line?.price ?? 0) || 0;
+  if (!isShippingLineForApproval(line)) return storedBasePrice;
+  const snapshot = Number(quote?.envio_odoo_price_snapshot);
+  return Number.isFinite(snapshot) && snapshot > 0 ? snapshot : storedBasePrice;
+}
 function getQuoteBaseSubtotalForApproval(quote) {
   const lines = Array.isArray(quote?.lines) ? quote.lines : [];
   const linesSubtotal = lines.reduce((acc, line) => {
     const qty = Number(line?.qty || 0) || 0;
-    const basePrice = Number(line?.basePrice ?? line?.base_price ?? line?.price ?? 0) || 0;
+    const basePrice = resolveApprovalProformaBasePrice(line, quote);
     return acc + qty * basePrice;
   }, 0);
   const extraLines = Array.isArray(quote?.payload?.proforma_extra_lines) ? quote.payload.proforma_extra_lines : [];
@@ -764,18 +782,23 @@ function getQuoteCommercialTotalsForApproval(quote, conditionMode, financingPerc
   );
 }
 
-function buildApprovalLineRows(lines, marginPercent, financingPercent = 0, conditionMode = "cond1") {
+function buildApprovalLineRows(lines, marginPercent, financingPercent = 0, conditionMode = "cond1", quote = null) {
   return (Array.isArray(lines) ? lines : []).map((line, idx) => {
     const qty = Number(line?.qty || 0) || 0;
-    const basePrice = Number(line?.basePrice ?? line?.base_price ?? line?.price ?? 0) || 0;
-    const finalUnit = resolveLineFinalUnitPrice({ ...line, basePrice }, marginPercent, Number(financingPercent || 0) || 0, conditionMode);
+    // El propio presupuesto (con coeficiente, columna "final") sigue el precio que
+    // haya quedado cargado en la línea - el distribuidor lo puede editar a
+    // conveniencia sin que afecte la proforma. La columna de proforma sí usa el
+    // precio de Odoo cuando la línea es el flete (ver resolveApprovalProformaBasePrice).
+    const rawBasePrice = Number(line?.basePrice ?? line?.base_price ?? line?.price ?? 0) || 0;
+    const proformaBasePrice = resolveApprovalProformaBasePrice(line, quote);
+    const finalUnit = resolveLineFinalUnitPrice({ ...line, basePrice: rawBasePrice }, marginPercent, Number(financingPercent || 0) || 0, conditionMode);
     const total = calcLineTotal(qty, finalUnit);
     return {
       ...line,
       _approvalKey: `${line?.product_id || "line"}-${idx}`,
       _approvalQty: qty,
-      _approvalBasePrice: basePrice,
-      _approvalBaseTotal: calcLineTotal(qty, basePrice),
+      _approvalBasePrice: proformaBasePrice,
+      _approvalBaseTotal: calcLineTotal(qty, proformaBasePrice),
       _approvalFinalUnit: finalUnit,
       _approvalTotal: total,
     };
@@ -1242,7 +1265,7 @@ export default function QuoteDetailPage() {
       currentFinancingPercent: approvalFinancingPercent,
     });
   }, [showCommercialDiffPanel, commercialDiffSnapshot, lines, quote, conditionMode, approvalFinancingPercent]);
-  const approvalLineRows = useMemo(() => buildApprovalLineRows(lines, getQuoteMarginPercentForApproval(quote), approvalFinancingPercent, conditionMode), [lines, quote, approvalFinancingPercent, conditionMode]);
+  const approvalLineRows = useMemo(() => buildApprovalLineRows(lines, getQuoteMarginPercentForApproval(quote), approvalFinancingPercent, conditionMode, quote), [lines, quote, approvalFinancingPercent, conditionMode]);
   const rejectionBoxes = useMemo(() => {
     if (!quote) return [];
     const arr = [];
