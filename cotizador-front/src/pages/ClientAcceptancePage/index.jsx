@@ -19,6 +19,15 @@ function toNumberLike(value) {
 function round2(n) {
   return Math.round(Number(n || 0) * 100) / 100;
 }
+function formatProductionWeekLine(planning) {
+  if (!planning || typeof planning !== "object") return "";
+  const weekNumber = String(planning.week_number || planning.week || "").trim();
+  if (!weekNumber) return "";
+  const startLabel = String(planning.start_date_label || "").trim();
+  const endLabel = String(planning.end_date_label || "").trim();
+  if (!startLabel && !endLabel) return `Semana ${weekNumber}`;
+  return `Semana ${weekNumber}, desde ${startLabel || "—"} hasta ${endLabel || "—"}`;
+}
 function normalizeTriple(values = []) {
   const arr = Array.isArray(values) ? values.slice(0, 3).map((v) => text(v)) : [];
   while (arr.length < 3) arr.push("");
@@ -679,6 +688,11 @@ export default function ClientAcceptancePage() {
 
   const quote = acceptanceQ.data?.quote || null;
   const accepted = acceptanceQ.data?.acceptance || null;
+  // Solo la fecha de producción NUEVA: antes de firmar, la disponibilidad actual (puede
+  // moverse); una vez que el cliente firma, la semana que quedó reservada en ese momento
+  // (ver commitQuoteProductionWeek, llamado desde el POST /accept). No se muestra acá la
+  // fecha que se le había dicho en el presupuesto original.
+  const productionPlanning = acceptanceQ.data?.production_planning || null;
   const form = quote?.measurement_form || {};
   const catalogKind = String(quote?.payload?.quote_subkind || quote?.catalog_kind || "porton").toLowerCase();
   const catalogQ = useQuery({
@@ -832,6 +846,20 @@ export default function ClientAcceptancePage() {
       </Card>
 
       <Card title="Aceptación del cliente">
+        {productionPlanning ? (
+          <div style={{ background: "#f7fbff", border: "1px solid #d9e5f7", borderRadius: 10, padding: 12, marginBottom: 16 }}>
+            {accepted?.accepted_at ? (
+              <div>
+                <span className="muted">Fecha de finalización de producción estimada de su portón: </span>
+                <b>{formatProductionWeekLine(productionPlanning)}</b>
+              </div>
+            ) : (
+              <div className="muted" style={{ fontSize: 12 }}>
+                Disponibilidad actual: {formatProductionWeekLine(productionPlanning)} (se confirma al aceptar más abajo).
+              </div>
+            )}
+          </div>
+        ) : null}
         {accepted?.accepted_at ? (
           <>
             <div style={{ color: "#065f46", fontWeight: 800, marginBottom: 12 }}>
