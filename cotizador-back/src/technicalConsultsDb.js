@@ -8,7 +8,7 @@ function isTechnicalUser(user) {
 }
 
 function isRequesterUser(user) {
-  return !!(user?.is_vendedor || user?.is_distribuidor);
+  return !!(user?.is_vendedor || user?.is_distribuidor || user?.is_logistica);
 }
 
 function normalizeStatus(value, fallback = "all") {
@@ -72,6 +72,7 @@ function normalizeAttachment(raw) {
 }
 
 function requesterRoleForUser(user) {
+  if (user?.is_logistica) return "logistica";
   if (user?.is_distribuidor) return "distribuidor";
   return "vendedor";
 }
@@ -214,6 +215,7 @@ function listSql({ scope, viewerIdParamPos }) {
       coalesce(nullif(creator.full_name, ''), creator.username, concat('#', t.created_by_user_id::text)) as created_by_name,
       creator.username as created_by_username,
       case
+        when coalesce(creator.is_logistica, false) then 'logistica'
         when coalesce(creator.is_distribuidor, false) then 'distribuidor'
         when coalesce(creator.is_vendedor, false) then 'vendedor'
         when coalesce(creator.is_rev_tecnica, false) or coalesce(creator.is_superuser, false) then 'rev_tecnica'
@@ -291,6 +293,7 @@ async function getTicketRow(clientOrDb, id) {
              coalesce(nullif(creator.full_name, ''), creator.username, concat('#', t.created_by_user_id::text)) as created_by_name,
              creator.username as created_by_username,
              case
+               when coalesce(creator.is_logistica, false) then 'logistica'
                when coalesce(creator.is_distribuidor, false) then 'distribuidor'
                when coalesce(creator.is_vendedor, false) then 'vendedor'
                when coalesce(creator.is_rev_tecnica, false) or coalesce(creator.is_superuser, false) then 'rev_tecnica'
