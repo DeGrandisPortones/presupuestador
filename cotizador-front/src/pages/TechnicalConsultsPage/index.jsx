@@ -893,6 +893,7 @@ export default function TechnicalConsultsPage() {
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
               {tickets.map((ticket) => {
                 const isSelected = String(ticket.id) === String(selectedId);
+                const isLogistica = ticket.created_by_role === "logistica";
                 const tone = statusTone(ticket.status);
                 const unreadCount = Number(ticket.unread_count || 0);
                 return (
@@ -905,8 +906,8 @@ export default function TechnicalConsultsPage() {
                     }}
                     style={{
                       textAlign: "left",
-                      border: isSelected ? "2px solid #01a39f" : "1px solid #e6e6e6",
-                      background: isSelected ? "rgba(1,163,159,0.06)" : "#fff",
+                      border: isSelected ? "2px solid #01a39f" : isLogistica ? "2px solid #38bdf8" : "1px solid #e6e6e6",
+                      background: isSelected ? "rgba(1,163,159,0.06)" : isLogistica ? "#eff8ff" : "#fff",
                       borderRadius: 14,
                       padding: 12,
                       cursor: "pointer",
@@ -996,6 +997,11 @@ export default function TechnicalConsultsPage() {
               <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start" }}>
                 <div>
                   <h3 style={{ marginTop: 0, marginBottom: 4 }}>#{selectedTicket.id} · {selectedTicket.subject}</h3>
+                  {selectedTicket.created_by_role === "logistica" ? (
+                    <div style={{ display: "inline-block", marginBottom: 6, marginRight: 6, padding: "2px 10px", borderRadius: 999, border: "1px solid #38bdf8", background: "#eff8ff", color: "#0369a1", fontSize: 12, fontWeight: 800 }}>
+                      De Logística
+                    </div>
+                  ) : null}
                   {selectedTicket.reference_number ? (
                     <div style={{ display: "inline-block", marginBottom: 6, padding: "2px 10px", borderRadius: 999, border: "1px solid #01a39f", color: "#01a39f", fontSize: 12, fontWeight: 800 }}>
                       {selectedTicket.reference_number}
