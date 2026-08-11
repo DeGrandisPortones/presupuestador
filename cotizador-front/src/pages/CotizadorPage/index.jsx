@@ -1795,13 +1795,13 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
         <>
           <div className="spacer" />
           <div className="card" style={{ background: "#f7fbff", border: "1px solid #d9e5f7" }}>
-            <div style={{ fontWeight: 900, marginBottom: 8, color: "#111827" }}>Entrega estimada</div>
+            <div style={{ fontWeight: 900, marginBottom: 8, color: "#111827" }}>Producción estimada</div>
             <div style={{ fontWeight: 900, fontSize: 22, lineHeight: 1.25, color: "#111827" }}>
               {productionDelivery
                 ? formatProductionDeliveryDisplay(productionDelivery)
                 : (productionDeliveryQ.isLoading
                   ? "Calculando disponibilidad de producción..."
-                  : "No hay planificación de producción cargada para estimar la entrega.")}
+                  : "No hay planificación de producción cargada para estimar la producción.")}
             </div>
             {productionDeliveryQ.isError ? (
               <div style={{ color: "#d93025", fontSize: 13, marginTop: 8 }}>{productionDeliveryQ.error.message}</div>

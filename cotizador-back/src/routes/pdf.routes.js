@@ -37,7 +37,7 @@ const DOOR_PANEL_CONFIGS = [
 
 const TERMS_AND_CONDITIONS = [
   "1. Formas de Pago: Aceptamos pagos en efectivo (pesos o dólares billete), transferencia bancaria, cheques o tarjeta de crédito (consultar por planes vigentes). Para confirmar el pedido se requiere una seña del 70% del valor total. El saldo restante deberá abonarse en su totalidad antes de la fecha del despacho del mismo. Los productos con saldos pendientes o deuda no serán liberados para su retiro.",
-  "2. Plazos de Entrega: La fecha estimada de entrega será la estipulada una vez que el cliente confirme las medidas, especificaciones y demás características del pedido. El plazo de entrega comenzará a computarse a partir de la confirmación técnica del pedido y de la recepción del pago de la seña correspondiente.",
+  "2. Plazos de Entrega: La fecha estimada de producción será la estipulada una vez que el cliente confirme las medidas, especificaciones y demás características del pedido. El plazo de producción comenzará a computarse a partir de la confirmación técnica del pedido y de la recepción del pago de la seña correspondiente.",
   "Los plazos indicados son estimativos y podrán variar por causas ajenas al proveedor, tales como demoras en el suministro de materiales, inconvenientes logísticos, fuerza mayor u otras circunstancias imprevistas, las cuales serán comunicadas oportunamente al cliente.",
   "3. Garantía: Nuestros productos cuentan con una garantía de 60 meses contra defectos de fabricación. Esta garantía no cubre daños causados por uso inadecuado o negligencia del cliente.",
   "4. Responsabilidad del Cliente: El cliente es responsable de proporcionar información completa y precisa al momento de realizar el pedido. Cualquier error u omisión en los datos brindados será responsabilidad exclusiva del cliente, pudiendo afectar la correcta producción y entrega del portón. Asimismo, el cliente deberá garantizar que el lugar de instalación se encuentre limpio, ordenado y con libre acceso. No deben existir escombros, montículos de arena u otros obstáculos que dificulten el ingreso del personal o la manipulación del producto. En caso de ser necesario se deberá contar con personas disponibles al momento de la entrega para colaborar con la descarga del portón, desde el área de logística se dispondrá esta información.",
@@ -197,6 +197,11 @@ function formatShortDate(value) {
   return d.toLocaleDateString("es-AR");
 }
 function getProductionPlanningText(payload) {
+  // Siempre en vivo: cada vez que se regenera el presupuesto/proforma tiene que mostrar
+  // la estimación de producción ACTUAL según la disponibilidad de hoy, no una fecha
+  // congelada. El snapshot inmutable (quoted_delivery_*, ver captureQuotedProductionEstimate)
+  // existe aparte solo para poder consultar despues "qué le dijimos cuando confirmó" — no
+  // se usa acá.
   // Dos fuentes posibles: el boton "PDF presupuesto" del front pide una
   // estimacion en vivo (getProductionPlanningEstimate) y la manda como
   // payload.production_planning ({week_number, start_date_label, end_date_label}).
@@ -826,7 +831,7 @@ function drawBudgetSectorSummaryPage(doc, { title, payload, margin, innerW, date
     y = drawFramedBox(doc, { y, margin, innerW, headerLabel: "Datos técnicos", drawContent: (yy) => drawTwoColumnLinesBand(doc, { y: yy, margin, innerW, left: technicalLines.left, right: technicalLines.right }) });
   }
   if (paymentLines?.length) {
-    y = drawFramedBox(doc, { y, margin, innerW, headerLabel: "Forma de pago y entrega estimada", drawContent: (yy) => drawLinesBand(doc, { y: yy, margin, innerW, items: paymentLines }) });
+    y = drawFramedBox(doc, { y, margin, innerW, headerLabel: "Forma de pago y producción estimada", drawContent: (yy) => drawLinesBand(doc, { y: yy, margin, innerW, items: paymentLines }) });
   }
   doc.font("Helvetica-Bold").fontSize(13).fillColor("#111827").text("Presupuesto", margin, y, { width: innerW, align: "center" });
   y = doc.y + 12;
@@ -950,7 +955,7 @@ async function renderPdf({ title, payload, useBasePrice, odoo, includeTerms = fa
 
   const commercialInfoLines = [];
   if (paymentMethod) commercialInfoLines.push(`Forma de pago: ${paymentMethod}`);
-  if (productionPlanningText && getCatalogKindFromPayload(payload) !== "puerta") commercialInfoLines.push(`Fecha estimada de entrega "${productionPlanningText}"`);
+  if (productionPlanningText && getCatalogKindFromPayload(payload) !== "puerta") commercialInfoLines.push(`Fecha estimada de producción "${productionPlanningText}"`);
 
   const sectorSummary = (hideAllPrices || !usesNewBudgetFormat) ? null : await resolveBudgetSectorSummary({ catalogKind, lines, odoo });
   if (sectorSummary) {

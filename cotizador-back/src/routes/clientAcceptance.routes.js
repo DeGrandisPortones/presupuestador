@@ -3,6 +3,7 @@ import { dbQuery } from "../db.js";
 import { ensureQuotesMeasurementColumns } from "../quotesSchema.js";
 import { getTechnicalMeasurementRules } from "../settingsDb.js";
 import { triggerPreproductionForClientAcceptance } from "../measurementFinalization.js";
+import { commitQuoteProductionWeek, getQuoteProductionPlanning } from "../productionPlanning.js";
 
 function isShareToken(v) {
   const s = String(v || "").trim();
@@ -108,6 +109,7 @@ export function buildClientAcceptanceRouter(odoo) {
 
       const technicalRules = await getTechnicalMeasurementRules().catch(() => ({}));
       const acceptance = buildAcceptanceFromPayload(quote?.payload || {});
+      const productionPlanning = await getQuoteProductionPlanning(quote).catch(() => null);
       return res.json({
         ok: true,
         quote: {
@@ -117,6 +119,7 @@ export function buildClientAcceptanceRouter(odoo) {
           technical_rules: technicalRules || {},
         },
         acceptance,
+        production_planning: productionPlanning,
       });
     } catch (e) {
       next(e);
@@ -149,7 +152,8 @@ export function buildClientAcceptanceRouter(odoo) {
       const currentPayload = quote?.payload && typeof quote.payload === "object" ? { ...quote.payload } : {};
       const existingAcceptance = buildAcceptanceFromPayload(currentPayload);
       if (existingAcceptance?.accepted_at) {
-        return res.json({ ok: true, acceptance: existingAcceptance, already_accepted: true });
+        const productionPlanning = await getQuoteProductionPlanning(quote).catch(() => null);
+        return res.json({ ok: true, acceptance: existingAcceptance, already_accepted: true, production_planning: productionPlanning });
       }
 
       currentPayload.measurement_client_acceptance = {
@@ -169,6 +173,16 @@ export function buildClientAcceptanceRouter(odoo) {
       const updatedQuote = upd.rows?.[0] || null;
       const acceptance = buildAcceptanceFromPayload(updatedQuote?.payload || currentPayload);
 
+      // Recién ahora que el cliente firmó la aceptación se reserva la semana de
+      // producción (ver quotes.routes.js: para lo que ya reservaba en la aprobación
+      // interna, como catalog_kind='otros', esto es un no-op, ya estaba reservado).
+      let productionPlanning = null;
+      try {
+        productionPlanning = await commitQuoteProductionWeek(updatedQuote?.id || quote.id);
+      } catch (e) {
+        console.error("PRODUCTION COMMIT ERROR:", e?.message || e);
+      }
+
       // La NV ya fue generada al aprobar la medición. Ahora que el cliente aceptó, insertar en preproduccion_valores.
       let preproductionSync = null;
       if (odoo) {
@@ -180,7 +194,7 @@ export function buildClientAcceptanceRouter(odoo) {
         }
       }
 
-      return res.json({ ok: true, acceptance, preproductionSync });
+      return res.json({ ok: true, acceptance, preproductionSync, production_planning: productionPlanning });
     } catch (e) {
       next(e);
     }

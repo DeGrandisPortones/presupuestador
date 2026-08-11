@@ -141,6 +141,19 @@ export async function ensureQuotesMeasurementColumns() {
   await dbQuery(`alter table public.presupuestador_quotes add column if not exists production_delivery_committed_count int null;`);
   await dbQuery(`alter table public.presupuestador_quotes add column if not exists production_delivery_committed_at timestamptz null;`);
 
+  // Snapshot inmutable de la producción estimada que se le mostró al cliente en el
+  // presupuesto/proforma al confirmar (ver captureQuotedProductionEstimate en
+  // productionPlanning.js, llamado desde POST /:id/submit). Se escribe una sola vez y
+  // nunca se pisa, para no perder "lo que le dijimos al principio" aunque la semana
+  // finalmente reservada (production_delivery_*, recién al firmar el cliente el link)
+  // termine siendo otra por cambios de capacidad mientras tanto.
+  await dbQuery(`alter table public.presupuestador_quotes add column if not exists quoted_delivery_year int null;`);
+  await dbQuery(`alter table public.presupuestador_quotes add column if not exists quoted_delivery_week int null;`);
+  await dbQuery(`alter table public.presupuestador_quotes add column if not exists quoted_delivery_week_start date null;`);
+  await dbQuery(`alter table public.presupuestador_quotes add column if not exists quoted_delivery_week_end date null;`);
+  await dbQuery(`alter table public.presupuestador_quotes add column if not exists quoted_delivery_weeks_out int null;`);
+  await dbQuery(`alter table public.presupuestador_quotes add column if not exists quoted_delivery_captured_at timestamptz null;`);
+
   // Cancelacion de NV (rol Administracion, ver POST /:id/cancel-nv en quotes.routes.js):
   // terminal, sin vuelta atras. Vive en la fila "original" aunque la NV real este en la
   // copia final (quote_kind='copy') porque measurement_share_token tambien vive siempre

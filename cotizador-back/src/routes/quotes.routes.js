@@ -3,9 +3,17 @@ import { requireAuth } from "../auth.js";
 import { dbQuery } from "../db.js";
 import { ensureQuotesMeasurementColumns } from "../quotesSchema.js";
 import { getCommercialFinalTolerancePercent } from "../settingsDb.js";
-import { commitQuoteProductionWeek } from "../productionPlanning.js";
+import { commitQuoteProductionWeek, captureQuotedProductionEstimate } from "../productionPlanning.js";
 import { triggerPreproductionForClientAcceptance } from "../measurementFinalization.js";
 import { getPriceFromPricelist } from "./odoo.routes.js";
+
+// Un presupuesto que requiere medición reserva su semana de producción recién cuando el
+// CLIENTE firma el link de aceptación (ver clientAcceptance.routes.js), no en la
+// aprobación interna. No hace falta ningún corte por fecha: a este punto del código
+// (justo cuando comercial+técnica terminan de aprobar) solo se llega una vez por
+// presupuesto — commercial_decision/technical_decision ya no vuelven a 'pending' después,
+// así que un presupuesto que ya reservó semana antes de este cambio (ya "descontado")
+// nunca vuelve a pasar por acá; no hay nada que distinguir a mano.
 
 function parseMeasurementProductIds(raw) {
   return String(raw || "2865,2961,4229")
@@ -2510,6 +2518,16 @@ export function buildQuotesRouter(odoo) {
           if (!exists) await createEditCopyFromQuote(id);
         }
       } catch {}
+      // Snapshot inmutable de "la fecha que le dijimos al principio" (solo aplica a lo
+      // que confirma directo a producción; en acopio todavía no hay estimación de
+      // producción hasta que se convierta). No afecta la reserva real de capacidad.
+      if (fm === "produccion") {
+        try {
+          await captureQuotedProductionEstimate(id);
+        } catch (e) {
+          console.error("QUOTED ESTIMATE CAPTURE ERROR:", e?.message || e);
+        }
+      }
       res.json({ ok: true, quote: confirmed });
     } catch (e) { next(e); }
   });
@@ -2650,8 +2668,13 @@ export function buildQuotesRouter(odoo) {
       let qSync = await markSyncingIfReady(id);
       if (!qSync) return res.json({ ok: true, quote: q1 });
 
-      await commitQuoteProductionWeek(id);
-      qSync = (await dbQuery(`select * from public.presupuestador_quotes where id=$1`, [id])).rows?.[0] || qSync;
+      // La semana de producción solo se reserva acá para lo que NO pasa por medición
+      // (hoy, únicamente catalog_kind='otros'); el resto reserva recién cuando el cliente
+      // firma el link de aceptación (ver clientAcceptance.routes.js).
+      if (!qSync.requires_measurement) {
+        await commitQuoteProductionWeek(id);
+        qSync = (await dbQuery(`select * from public.presupuestador_quotes where id=$1`, [id])).rows?.[0] || qSync;
+      }
 
       if (vendedorNeedsEndCustomerName(qSync) && !getEndCustomerName(qSync)) {
         await dbQuery(`update public.presupuestador_quotes set status='draft', rejection_notes = concat_ws(E'\n', nullif(rejection_notes,''), 'VALIDACION: Falta end_customer.name (vendedor)') where id=$1 and status='syncing_odoo'`, [id]);
@@ -2699,8 +2722,12 @@ export function buildQuotesRouter(odoo) {
       let qSync = await markSyncingIfReady(id);
       if (!qSync) return res.json({ ok: true, quote: q1 });
 
-      await commitQuoteProductionWeek(id);
-      qSync = (await dbQuery(`select * from public.presupuestador_quotes where id=$1`, [id])).rows?.[0] || qSync;
+      // Ver comentario equivalente en /review/commercial: solo reserva acá si NO requiere
+      // medición (catalog_kind='otros'); el resto reserva al firmar el link de aceptación.
+      if (!qSync.requires_measurement) {
+        await commitQuoteProductionWeek(id);
+        qSync = (await dbQuery(`select * from public.presupuestador_quotes where id=$1`, [id])).rows?.[0] || qSync;
+      }
 
       if (vendedorNeedsEndCustomerName(qSync) && !getEndCustomerName(qSync)) {
         await dbQuery(`update public.presupuestador_quotes set status='draft', rejection_notes = concat_ws(E'\n', nullif(rejection_notes,''), 'VALIDACION: Falta end_customer.name (vendedor)') where id=$1 and status='syncing_odoo'`, [id]);
@@ -2805,6 +2832,13 @@ export function buildQuotesRouter(odoo) {
       const q1 = upd1.rows?.[0] || quote;
       let qFinal = await finalizeAcopioToProduccionIfReady(id);
       if (qFinal) {
+        // Recién acá (pasa de acopio a producción) tiene sentido una estimación de
+        // producción por primera vez: snapshot inmutable de "lo que dijimos al principio".
+        try { await captureQuotedProductionEstimate(id); } catch (e) { console.error("QUOTED ESTIMATE CAPTURE ERROR:", e?.message || e); }
+      }
+      // Ver comentario en /review/commercial: solo reserva acá si NO requiere medición; el
+      // resto reserva al firmar el link.
+      if (qFinal && !qFinal.requires_measurement) {
         await commitQuoteProductionWeek(id);
         qFinal = (await dbQuery(`select * from public.presupuestador_quotes where id=$1`, [id])).rows?.[0] || qFinal;
       }
@@ -2839,6 +2873,11 @@ export function buildQuotesRouter(odoo) {
       const q1 = upd1.rows?.[0] || quote;
       let qFinal = await finalizeAcopioToProduccionIfReady(id);
       if (qFinal) {
+        try { await captureQuotedProductionEstimate(id); } catch (e) { console.error("QUOTED ESTIMATE CAPTURE ERROR:", e?.message || e); }
+      }
+      // Ver comentario en /review/commercial: solo reserva acá si NO requiere medición; el
+      // resto reserva al firmar el link.
+      if (qFinal && !qFinal.requires_measurement) {
         await commitQuoteProductionWeek(id);
         qFinal = (await dbQuery(`select * from public.presupuestador_quotes where id=$1`, [id])).rows?.[0] || qFinal;
       }

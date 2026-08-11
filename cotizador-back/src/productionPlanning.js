@@ -60,7 +60,7 @@ function buildDisplay({ year, weekNumber, startDate, endDate, weeksOut, committe
     label: buildPlanningLabel(weekNumber, startDate, endDate),
     summary: safeWeeksOut === null
       ? buildPlanningLabel(weekNumber, startDate, endDate)
-      : `Entrega estimada: en ${buildWeeksText(safeWeeksOut)} · ${buildPlanningLabel(weekNumber, startDate, endDate)}`,
+      : `Producción estimada: en ${buildWeeksText(safeWeeksOut)} · ${buildPlanningLabel(weekNumber, startDate, endDate)}`,
     committed: committed === true,
     capacity: Number(capacity || 0),
     committed_count: Number(committedCount || 0),
@@ -141,6 +141,56 @@ async function computeEstimateWithClient(client, { quote = null, fromDate = null
   }
 
   return null;
+}
+
+// Lectura pura (sin DB) del snapshot ya capturado por captureQuotedProductionEstimate,
+// a partir de una fila de quote ya cargada. null si todavía no se capturó nada.
+export function getQuotedProductionEstimate(quote) {
+  if (!quote?.quoted_delivery_week) return null;
+  return {
+    year: quote.quoted_delivery_year,
+    week_number: quote.quoted_delivery_week,
+    start_date: formatDateIso(quote.quoted_delivery_week_start),
+    end_date: formatDateIso(quote.quoted_delivery_week_end),
+    start_date_label: formatDateAr(quote.quoted_delivery_week_start),
+    end_date_label: formatDateAr(quote.quoted_delivery_week_end),
+    weeks_out: quote.quoted_delivery_weeks_out,
+    label: buildPlanningLabel(quote.quoted_delivery_week, quote.quoted_delivery_week_start, quote.quoted_delivery_week_end),
+  };
+}
+
+// Congela, una sola vez, la producción estimada que se le mostró al cliente en el
+// presupuesto/proforma al confirmar (quoted_delivery_*), separada de la semana que
+// finalmente se reserva (production_delivery_*, ver commitQuoteProductionWeek). No la
+// pisa si ya estaba capturada: es un snapshot de "lo que dijimos al principio", no la
+// reserva real de capacidad — no toca production_delivery_committed_count.
+export async function captureQuotedProductionEstimate(quoteId) {
+  const client = await getPool().connect();
+  try {
+    const quote = await fetchQuote(client, quoteId);
+    if (!quote || !isOriginalProductionQuote(quote)) return null;
+    const existing = getQuotedProductionEstimate(quote);
+    if (existing) return existing;
+
+    const estimate = await computeEstimateWithClient(client, { quote });
+    if (!estimate) return null;
+
+    await client.query(
+      `update public.presupuestador_quotes
+          set quoted_delivery_year=$2,
+              quoted_delivery_week=$3,
+              quoted_delivery_week_start=$4,
+              quoted_delivery_week_end=$5,
+              quoted_delivery_weeks_out=$6,
+              quoted_delivery_captured_at=now()
+        where id=$1
+          and quoted_delivery_week is null`,
+      [quoteId, Number(estimate.year), Number(estimate.week_number), estimate.start_date, estimate.end_date, Number(estimate.weeks_out || 0)],
+    );
+    return estimate;
+  } finally {
+    client.release();
+  }
 }
 
 export async function getQuoteProductionPlanning(quote) {
