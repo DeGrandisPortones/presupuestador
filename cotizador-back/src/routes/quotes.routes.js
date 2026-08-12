@@ -326,15 +326,6 @@ function buildCustomerPartnerFiscalVals(customer, { includeName = false } = {}) 
   return vals;
 }
 
-async function applyCustomerPartnerFiscalVals(odoo, partnerId, customer) {
-  const id = toIntId(partnerId);
-  if (!id) return null;
-  const vals = buildCustomerPartnerFiscalVals(customer, { includeName: false });
-  if (Object.keys(vals).length <= 1) return id;
-  await odoo.executeKw("res.partner", "write", [[id], vals]);
-  return id;
-}
-
 async function findOrCreateCustomerPartner(odoo, customer) {
   const name = toText(customer?.name);
   if (!name) throw new Error("Falta end_customer.name (vendedor)");
@@ -349,11 +340,17 @@ async function findOrCreateCustomerPartner(odoo, customer) {
   // coincida (p.ej. "Orsi Joaquin" vs "Joaquin Orsi") rechazaba coincidencias
   // reales de VAT y terminaba intentando crear un contacto duplicado, que Odoo
   // rechaza igual (por el VAT) dejando el presupuesto sin sincronizar.
+  // Si el cliente YA existe en Odoo (por CUIT, email, telefono o nombre), no se le
+  // toca ningun dato - se usa el contacto tal cual esta. Antes reescribiamos sus
+  // datos fiscales (CUIT, tipo de responsabilidad AFIP) en cada sync, y Odoo
+  // rechaza esa escritura si el contacto ya tiene comprobantes (facturas)
+  // asociados - aunque el valor que mandemos sea identico al que ya tiene -,
+  // lo que frenaba TODO el presupuesto con un error silencioso (caso NP7833).
   const vat = toText(customer?.vat);
   if (vat) {
     const idsVat = await odoo.executeKw("res.partner", "search", [[["vat", "=", vat]]], { limit: 5 });
     const firstVatId = toIntId((idsVat || [])[0]);
-    if (firstVatId) return await applyCustomerPartnerFiscalVals(odoo, firstVatId, customer);
+    if (firstVatId) return firstVatId;
   }
 
   const email = toText(customer?.email).toLowerCase();
@@ -361,7 +358,7 @@ async function findOrCreateCustomerPartner(odoo, customer) {
     const ids = await odoo.executeKw("res.partner", "search", [[["email", "=", email]]], { limit: 5 });
     for (const candidateId of ids || []) {
       const partner = await readPartnerLite(odoo, candidateId);
-      if (partnerLooksLikeSameCustomer(partner, customer)) return await applyCustomerPartnerFiscalVals(odoo, candidateId, customer);
+      if (partnerLooksLikeSameCustomer(partner, customer)) return candidateId;
     }
   }
 
@@ -372,14 +369,14 @@ async function findOrCreateCustomerPartner(odoo, customer) {
       const idsPhone = await odoo.executeKw("res.partner", "search", [[["phone", "=", phone]]], { limit: 5 });
       for (const candidateId of idsPhone || []) {
         const partner = await readPartnerLite(odoo, candidateId);
-        if (partnerLooksLikeSameCustomer(partner, customer)) return await applyCustomerPartnerFiscalVals(odoo, candidateId, customer);
+        if (partnerLooksLikeSameCustomer(partner, customer)) return candidateId;
       }
     } catch {}
     try {
       const idsMobile = await odoo.executeKw("res.partner", "search", [[["mobile", "=", phone]]], { limit: 5 });
       for (const candidateId of idsMobile || []) {
         const partner = await readPartnerLite(odoo, candidateId);
-        if (partnerLooksLikeSameCustomer(partner, customer)) return await applyCustomerPartnerFiscalVals(odoo, candidateId, customer);
+        if (partnerLooksLikeSameCustomer(partner, customer)) return candidateId;
       }
     } catch {}
   }
@@ -389,7 +386,7 @@ async function findOrCreateCustomerPartner(odoo, customer) {
     const ids2 = await odoo.executeKw("res.partner", "search", [[["name", "=", name]]], { limit: 5 });
     for (const candidateId of ids2 || []) {
       const partner = await readPartnerLite(odoo, candidateId);
-      if (partnerLooksLikeSameCustomer(partner, customer)) return await applyCustomerPartnerFiscalVals(odoo, candidateId, customer);
+      if (partnerLooksLikeSameCustomer(partner, customer)) return candidateId;
     }
   }
 
