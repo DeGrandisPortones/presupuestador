@@ -357,10 +357,13 @@ function formatPlanning(planning) {
   if (!planning || typeof planning !== "object") return "";
   const week = String(planning.week_number || planning.week || "").trim();
   const start = String(planning.start_date_label || "").trim();
-  const end = String(planning.end_date_label || "").trim();
+  // Se informa la semana estimada MAS la siguiente (una semana extra de margen), salvo en
+  // la pantalla de aceptación del cliente que sigue mostrando una sola semana tal cual.
+  const end = String(planning.range_end_date_label || planning.end_date_label || "").trim();
+  const weekEnd = String(planning.week_number_end || (week ? Number(week) + 1 : "")).trim();
   if (!week && !start && !end) return "";
-  const weekPart = week ? `Semana ${week}` : "Semana estimada";
-  if (start || end) return `${weekPart}, entre ${start || "—"} y ${end || "—"}`;
+  const weekPart = week ? `Semana ${week}${weekEnd ? ` - ${weekEnd}` : ""}` : "Semana estimada";
+  if (start || end) return `${weekPart} (desde ${start || "—"} hasta ${end || "—"})`;
   return weekPart;
 }
 function normalizeOrientation(value) {

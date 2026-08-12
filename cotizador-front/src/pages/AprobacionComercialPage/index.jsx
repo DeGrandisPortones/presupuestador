@@ -602,7 +602,7 @@ export default function AprobacionComercialPage() {
                     <td>{r.end_customer?.name || <span className="muted">(sin nombre)</span>}</td>
                     <td>{r.end_customer?.address || "—"}</td>
                     <td>{productionReference(r) || "—"}</td>
-                    <td>{r.production_delivery_year && r.production_delivery_week ? `${r.production_delivery_year} · Semana ${r.production_delivery_week}` : "—"}</td>
+                    <td>{r.production_delivery_year && r.production_delivery_week ? `${r.production_delivery_year} · Semana ${r.production_delivery_week} - ${Number(r.production_delivery_week) + 1}` : "—"}</td>
                     <td><BudgetObservationCell row={r} /></td>
                     <td className="right">
                       <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
