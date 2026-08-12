@@ -14,6 +14,9 @@ function withEffectiveRoles(user) {
     is_medidor: isSuperuser || !!user?.is_medidor,
     is_logistica: isSuperuser || !!user?.is_logistica,
     is_administracion: isSuperuser || !!user?.is_administracion,
+    // Excepcion puntual de medidas (ver usersDb.js): superuser siempre la tiene, como
+    // el resto de los permisos.
+    unlimited_dimensions: isSuperuser || !!user?.unlimited_dimensions,
   };
 }
 
@@ -45,6 +48,7 @@ export function signToken(user) {
     is_medidor: !!u.is_medidor,
     is_logistica: !!u.is_logistica,
     is_administracion: !!u.is_administracion,
+    unlimited_dimensions: !!u.unlimited_dimensions,
 
     odoo_partner_id: u.odoo_partner_id ?? null,
     odoo_pricelist_id: u.odoo_pricelist_id ?? null,
@@ -86,7 +90,8 @@ export async function requireAuth(req, res, next) {
                odoo_pricelist_id,
                default_maps_url,
                coalesce(is_active, true) as is_active,
-               coalesce(see_all_distributors, false) as see_all_distributors
+               coalesce(see_all_distributors, false) as see_all_distributors,
+               coalesce(unlimited_dimensions, false) as unlimited_dimensions
         from public.presupuestador_users
         where id = $1
         limit 1
@@ -118,6 +123,7 @@ export async function requireAuth(req, res, next) {
           default_maps_url: fresh.default_maps_url ?? null,
           is_active: !!fresh.is_active,
           see_all_distributors: !!fresh.see_all_distributors,
+          unlimited_dimensions: !!fresh.unlimited_dimensions,
         })
       : sanitizeUserForPricing({ ...decoded, is_active: decoded.is_active ?? true });
 

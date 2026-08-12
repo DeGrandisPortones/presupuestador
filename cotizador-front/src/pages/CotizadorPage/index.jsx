@@ -387,7 +387,7 @@ function mergeUpdatedBasePrices(lines = [], pricesResponse = {}) {
 function todayIsoDate() {
   return new Date().toISOString().slice(0, 10);
 }
-function patchPortonDimensionValidationUi(dimensions) {
+function patchPortonDimensionValidationUi(dimensions, unlimitedDimensions = false) {
   if (typeof document === "undefined") return;
   const title = Array.from(document.querySelectorAll("div")).find((node) => node.textContent?.trim() === "Medidas del porton" || node.textContent?.trim() === "Medidas del Vano");
   const root = title?.parentElement || null;
@@ -395,15 +395,18 @@ function patchPortonDimensionValidationUi(dimensions) {
 
   const width = parseOptionalDimensionForUiPatch(dimensions?.width);
   const height = parseOptionalDimensionForUiPatch(dimensions?.height);
-  const widthOk = width === null || (width >= WIDTH_MIN_M && width <= WIDTH_MAX_M);
-  const heightOk = height === null || (height >= HEIGHT_MIN_M && height <= HEIGHT_MAX_M);
+  // Excepcion puntual por cuenta (ver PortonDimensions.jsx): con el flag prendido no hay
+  // minimo ni maximo, este patch de DOM tiene que respetar lo mismo o termina pisando el
+  // estado "ok" que ya calculo el componente con un banner/borde rojo igual.
+  const widthOk = unlimitedDimensions || width === null || (width >= WIDTH_MIN_M && width <= WIDTH_MAX_M);
+  const heightOk = unlimitedDimensions || height === null || (height >= HEIGHT_MIN_M && height <= HEIGHT_MAX_M);
   const allOk = widthOk && heightOk;
 
   const helperNodes = Array.from(root.querySelectorAll("*"));
   for (const node of helperNodes) {
     const text = String(node.textContent || "").trim();
-    if (/^Minimo\s+2\.4\s*m\s*-\s*Maximo\s+7\s*m$/i.test(text) || /^Minimo\s+2\.30?\s*m\s*-\s*Maximo\s+7\s*m$/i.test(text)) {
-      node.textContent = `Minimo ${WIDTH_MIN_M.toFixed(2)} m - Maximo ${WIDTH_MAX_M} m`;
+    if (/^Minimo\s+2\.4\s*m\s*-\s*Maximo\s+7\s*m$/i.test(text) || /^Minimo\s+2\.30?\s*m\s*-\s*Maximo\s+7\s*m$/i.test(text) || /^Sin límite para esta cuenta$/i.test(text)) {
+      node.textContent = unlimitedDimensions ? "Sin límite para esta cuenta" : `Minimo ${WIDTH_MIN_M.toFixed(2)} m - Maximo ${WIDTH_MAX_M} m`;
       if (widthOk) node.style.color = "#6b7280";
     }
   }
@@ -555,7 +558,12 @@ function validateDimensionsRequired(payload, kind = "porton") {
     if (!wantsToContinue) throw new Error("Adjuntá el plano del plegado.");
   }
 
-  if (normalizedKind === "porton") {
+  // Excepcion puntual por cuenta (superuser > Gestor de usuarios > "Sin límite de
+  // medidas"): pensada para casos de un presupuesto fuera de norma que hay que revertir
+  // despues, sin tocar código cada vez. Mientras esté prendida, el ancho/alto del portón
+  // solo tiene que ser positivo (ya validado arriba), sin los topes de 2.3-7m / 2-3m.
+  const unlimitedDimensions = !!useAuthStore.getState().user?.unlimited_dimensions;
+  if (normalizedKind === "porton" && !unlimitedDimensions) {
     if (width < WIDTH_MIN_M || width > WIDTH_MAX_M) throw new Error("El ancho debe estar entre 2.3 m y 7 m.");
     if (height < HEIGHT_MIN_M || height > HEIGHT_MAX_M) throw new Error("El alto debe estar entre 2 m y 3 m.");
     // Tope de peso desactivado a pedido (revertido en main, no borrado por si hay que
@@ -980,10 +988,11 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
 
   useEffect(() => {
     if (normalizedCatalogKind !== "porton") return;
-    patchPortonDimensionValidationUi(dimensions);
-    const timer = window.setTimeout(() => patchPortonDimensionValidationUi(dimensions), 0);
+    const unlimitedDimensions = !!user?.unlimited_dimensions;
+    patchPortonDimensionValidationUi(dimensions, unlimitedDimensions);
+    const timer = window.setTimeout(() => patchPortonDimensionValidationUi(dimensions, unlimitedDimensions), 0);
     return () => window.clearTimeout(timer);
-  }, [normalizedCatalogKind, dimensions?.width, dimensions?.height]);
+  }, [normalizedCatalogKind, dimensions?.width, dimensions?.height, user?.unlimited_dimensions]);
 
   useEffect(() => {
     if (normalizedCatalogKind !== "ipanel") {

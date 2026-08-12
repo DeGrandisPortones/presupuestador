@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useQuoteStore } from "../../../domain/quote/store";
+import { useAuthStore } from "../../../domain/auth/store.js";
 import { adminGetTechnicalMeasurementRules } from "../../../api/admin.js";
 import Input from "../../../ui/Input";
 import { downloadPlegadoAttachment, fileToPlegadoAttachment, formatPlegadoAttachmentMeta, getPlegadoAttachment, openPlegadoAttachment } from "../../../utils/plegadoAttachment.js";
@@ -1692,6 +1693,10 @@ export default function PortonDimensions({ kind = "porton" }) {
   const isPorton = normalizedKind === "porton";
   const isIpanel = normalizedKind === "ipanel";
   const isPlegados = normalizedKind === "plegados";
+  // Excepcion puntual por cuenta (superuser > Gestor de usuarios > "Sin límite de
+  // medidas"): saca el tope de 2.4-7m / 2-3m de portón, tanto acá (borde rojo mientras
+  // escribe) como en validateDimensionsRequired (bloqueo al guardar, en index.jsx).
+  const unlimitedDimensions = !!useAuthStore((s) => s.user?.unlimited_dimensions);
   const dimensions = useQuoteStore((s) => s.dimensions);
   const setDimensions = useQuoteStore((s) => s.setDimensions);
   const portonType = useQuoteStore((s) => s.portonType);
@@ -1744,14 +1749,14 @@ export default function PortonDimensions({ kind = "porton" }) {
     ? !(widthValue < IPANEL_EXTENDED_MAX_M || heightValue < IPANEL_EXTENDED_MAX_M)
     : false;
   const widthOutOfBounds = widthValue !== null && (isPorton
-    ? (widthValue < WIDTH_MIN_M || widthValue > WIDTH_MAX_M)
+    ? (!unlimitedDimensions && (widthValue < WIDTH_MIN_M || widthValue > WIDTH_MAX_M))
     : (isIpanel ? (hasIpanelExtendedAllowedPanel ? ipanelExtendedSizeInvalid : widthValue > IPANEL_WIDTH_MAX_M) : false));
   const heightOutOfBounds = heightValue !== null && (isPorton
-    ? (heightValue < HEIGHT_MIN_M || heightValue > HEIGHT_MAX_M)
+    ? (!unlimitedDimensions && (heightValue < HEIGHT_MIN_M || heightValue > HEIGHT_MAX_M))
     : (isIpanel ? (hasIpanelExtendedAllowedPanel ? ipanelExtendedSizeInvalid : heightValue > IPANEL_HEIGHT_MAX_M) : false));
   const hasSizeError = (isPorton || isIpanel) && (widthOutOfBounds || heightOutOfBounds);
-  const widthHelper = isPorton ? "Minimo 2.4 m - Maximo 7 m" : (isIpanel ? "Panel simple max 1.16 m. Lamas/varillado: sin límite si el otro lado es menor a 4.00 m" : "");
-  const heightHelper = isPorton ? "Minimo 2 m - Maximo 3 m" : (isIpanel ? "Panel simple max 2.45 m. Lamas/varillado: sin límite si el otro lado es menor a 4.00 m" : "");
+  const widthHelper = isPorton ? (unlimitedDimensions ? "Sin límite para esta cuenta" : "Minimo 2.4 m - Maximo 7 m") : (isIpanel ? "Panel simple max 1.16 m. Lamas/varillado: sin límite si el otro lado es menor a 4.00 m" : "");
+  const heightHelper = isPorton ? (unlimitedDimensions ? "Sin límite para esta cuenta" : "Minimo 2 m - Maximo 3 m") : (isIpanel ? "Panel simple max 2.45 m. Lamas/varillado: sin límite si el otro lado es menor a 4.00 m" : "");
   const widthPlaceholder = isIpanel ? "Ej: 1.16" : "Ej: 3.2";
   const heightPlaceholder = isIpanel ? "Ej: 2.45" : "Ej: 2.1";
   const area = useMemo(() => {
