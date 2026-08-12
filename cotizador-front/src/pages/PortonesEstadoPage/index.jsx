@@ -219,6 +219,17 @@ function formatDateTime(iso) {
   }
 }
 
+// Una semana extra de margen sobre la semana de producción reservada (pedido explícito:
+// en todo lo que no sea la pantalla de aceptación del cliente se informa la semana MAS la
+// siguiente). No cambia la semana realmente reservada, solo cómo se muestra acá.
+function addDaysIso(iso, days) {
+  if (!iso) return iso;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  d.setDate(d.getDate() + days);
+  return d.toISOString();
+}
+
 function buildClientAcceptanceUrl(token) {
   if (!token) return null;
   return `${window.location.origin}/aceptacion-cliente/${token}`;
@@ -695,7 +706,7 @@ export default function PortonesEstadoPage() {
                           <div style={{ color: "#888" }}>{formatDateTime(acceptance.accepted_at || r.measurement_client_accepted_at)}</div>
                           {r.production_delivery_week && (
                             <div style={{ color: "#0d47a1", fontWeight: 600, marginTop: 4 }}>
-                              Fin de producción estimada: Semana {r.production_delivery_week} ({formatDate(r.production_delivery_week_start)} al {formatDate(r.production_delivery_week_end)})
+                              Fin de producción estimada: Semana {r.production_delivery_week} - {Number(r.production_delivery_week) + 1} (desde {formatDate(r.production_delivery_week_start)} hasta {formatDate(addDaysIso(r.production_delivery_week_end, 7))})
                             </div>
                           )}
                         </div>

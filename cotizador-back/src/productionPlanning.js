@@ -3,6 +3,7 @@ import { getProductionPlanningSettings } from "./settingsDb.js";
 import {
   addDaysUtc,
   buildPlanningLabel,
+  buildPlanningRangeLabel,
   buildWeeksText,
   diffWeeksFromDate,
   formatDateAr,
@@ -48,6 +49,11 @@ function isAlreadyCommitted(quote) {
 
 function buildDisplay({ year, weekNumber, startDate, endDate, weeksOut, committed, capacity, committedCount }) {
   const safeWeeksOut = Number.isFinite(Number(weeksOut)) ? Number(weeksOut) : null;
+  // week_number/start_date/end_date siguen siendo SIEMPRE la semana real reservada/estimada
+  // (de eso depende toda la logica de capacidad); range_* son solo para mostrar "una semana
+  // mas" en las pantallas que lo piden (ver buildPlanningRangeLabel) - la pantalla de
+  // aceptacion del cliente sigue usando label/week_number/end_date_label tal cual, sin tocar.
+  const rangeEnd = addDaysUtc(endDate, 7);
   return {
     year: Number(year),
     week_number: Number(weekNumber),
@@ -61,6 +67,10 @@ function buildDisplay({ year, weekNumber, startDate, endDate, weeksOut, committe
     summary: safeWeeksOut === null
       ? buildPlanningLabel(weekNumber, startDate, endDate)
       : `Producción estimada: en ${buildWeeksText(safeWeeksOut)} · ${buildPlanningLabel(weekNumber, startDate, endDate)}`,
+    week_number_end: Number(weekNumber) + 1,
+    range_end_date: formatDateIso(rangeEnd),
+    range_end_date_label: formatDateAr(rangeEnd),
+    range_label: buildPlanningRangeLabel(weekNumber, startDate, endDate),
     committed: committed === true,
     capacity: Number(capacity || 0),
     committed_count: Number(committedCount || 0),

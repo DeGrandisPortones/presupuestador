@@ -760,10 +760,13 @@ function formatProductionDeliveryDisplay(planning) {
   if (!planning || typeof planning !== "object") return "";
   const weekNumber = String(planning.week_number || planning.week || "").trim();
   const startLabel = String(planning.start_date_label || "").trim();
-  const endLabel = String(planning.end_date_label || "").trim();
+  // Se informa la semana estimada MAS la siguiente (una semana extra de margen), salvo en
+  // la pantalla de aceptación del cliente que sigue mostrando una sola semana tal cual.
+  const endLabel = String(planning.range_end_date_label || planning.end_date_label || "").trim();
+  const weekEndNumber = String(planning.week_number_end || (weekNumber ? Number(weekNumber) + 1 : "")).trim();
   if (!weekNumber && !startLabel && !endLabel) return "";
-  const weekPart = weekNumber ? `Semana ${weekNumber}` : "Semana estimada";
-  if (startLabel || endLabel) return `${weekPart}, entre ${startLabel || "—"} y ${endLabel || "—"}`;
+  const weekPart = weekNumber ? `Semana ${weekNumber}${weekEndNumber ? ` - ${weekEndNumber}` : ""}` : "Semana estimada";
+  if (startLabel || endLabel) return `${weekPart} (desde ${startLabel || "—"} hasta ${endLabel || "—"})`;
   return weekPart;
 }
 function MeasurementSchemeVisual({ form, pointCount = 3 }) {

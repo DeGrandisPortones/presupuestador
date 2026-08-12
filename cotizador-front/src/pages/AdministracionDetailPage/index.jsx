@@ -27,6 +27,17 @@ function fmtMoney(n) {
   return num.toLocaleString("es-AR", { style: "currency", currency: "ARS", maximumFractionDigits: 0 });
 }
 
+// Una semana extra de margen sobre la semana de producción reservada (pedido explícito:
+// en todo lo que no sea la pantalla de aceptación del cliente se informa la semana MAS la
+// siguiente). No cambia la semana realmente reservada, solo cómo se muestra acá.
+function addDaysIso(iso, days) {
+  if (!iso) return iso;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  d.setDate(d.getDate() + days);
+  return d.toISOString();
+}
+
 function DecisionRow({ label, decision, at, byName, notes }) {
   const color = decision === "approved" ? "#1b5e20" : decision === "rejected" ? "#b71c1c" : "#888";
   const text = decision === "approved" ? "✓ Aprobado" : decision === "rejected" ? "✗ Rechazado" : decision === "pending" ? "Pendiente" : decision || "—";
@@ -346,8 +357,8 @@ export default function AdministracionDetailPage() {
         {quote.production_delivery_week && (
           <TimelineRow
             label="Semana de producción"
-            value={`Semana ${quote.production_delivery_week} / ${quote.production_delivery_year}`}
-            sub={quote.production_delivery_week_start ? `${fmtDate(quote.production_delivery_week_start)} — ${fmtDate(quote.production_delivery_week_end)}` : null}
+            value={`Semana ${quote.production_delivery_week} - ${Number(quote.production_delivery_week) + 1} / ${quote.production_delivery_year}`}
+            sub={quote.production_delivery_week_start ? `${fmtDate(quote.production_delivery_week_start)} — ${fmtDate(addDaysIso(quote.production_delivery_week_end, 7))}` : null}
           />
         )}
 

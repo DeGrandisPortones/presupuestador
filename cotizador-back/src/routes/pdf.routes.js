@@ -9,6 +9,7 @@ import { ensureQuotesMeasurementColumns } from "../quotesSchema.js";
 import { buildBudgetExtraSummaryLines, buildBudgetVanoTechnicalLines } from "../pdfBudgetExtras.js";
 import { getProductPdfNameMap, normKind } from "../catalogDb.js";
 import { resolveBudgetSectorSummary } from "../pdfBudgetSectorSummary.js";
+import { addDaysUtc, formatDateAr } from "../productionPlanningUtils.js";
 
 const IVA_RATE = 0.21;
 // 4230 = "Servicio de Traslado a destino" de Puertas (duplicado dedicado, antes
@@ -202,9 +203,12 @@ function getProductionPlanningText(payload) {
   // congelada. El snapshot inmutable (quoted_delivery_*, ver captureQuotedProductionEstimate)
   // existe aparte solo para poder consultar despues "qué le dijimos cuando confirmó" — no
   // se usa acá.
+  // Se informa la semana estimada MAS la siguiente (pedido explicito: en todo lo que no sea
+  // la pantalla de aceptacion del cliente se da un margen de una semana extra). No cambia la
+  // semana realmente reservada (production_delivery_*), solo el texto.
   // Dos fuentes posibles: el boton "PDF presupuesto" del front pide una
   // estimacion en vivo (getProductionPlanningEstimate) y la manda como
-  // payload.production_planning ({week_number, start_date_label, end_date_label}).
+  // payload.production_planning ({week_number, start_date_label, end_date_label, ...}).
   // Si el PDF se genera de otra forma (ej. regenerar desde la fila cruda de la
   // base, sin pasar por ese boton), esa estimacion en vivo no viene - ahi se
   // cae a las columnas ya persistidas en la quote (production_delivery_*).
@@ -212,20 +216,27 @@ function getProductionPlanningText(payload) {
   if (planning && typeof planning === "object") {
     const weekNumber = safeStr(planning.week_number || planning.week || "");
     const startLabel = safeStr(planning.start_date_label || formatShortDate(planning.start_date));
-    const endLabel = safeStr(planning.end_date_label || formatShortDate(planning.end_date));
+    // range_end_date_label ya viene calculado si el objeto lo trae buildDisplay() (estimacion
+    // en vivo); si viene de un objeto armado a mano sin ese campo (ver listingPdf.js en el
+    // front), se calcula acá mismo a partir de end_date + 7 dias.
+    const endLabel = safeStr(planning.range_end_date_label)
+      || (planning.end_date ? formatDateAr(addDaysUtc(planning.end_date, 7)) : "");
+    const weekEndNumber = safeStr(planning.week_number_end) || (weekNumber ? String(Number(weekNumber) + 1) : "");
     if (weekNumber || startLabel || endLabel) {
-      const weekPart = weekNumber ? `Semana ${weekNumber}` : "Semana estimada";
-      if (startLabel || endLabel) return `${weekPart}, entre ${startLabel || "-"} y ${endLabel || "-"}`;
+      const weekPart = weekNumber ? `Semana ${weekNumber}${weekEndNumber ? ` - ${weekEndNumber}` : ""}` : "Semana estimada";
+      if (startLabel || endLabel) return `${weekPart} (desde ${startLabel || "-"} hasta ${endLabel || "-"})`;
       return weekPart;
     }
   }
 
   const weekNumber = safeStr(payload?.production_delivery_week ?? payload?.payload?.production_delivery_week ?? "");
   const startLabel = formatShortDate(payload?.production_delivery_week_start ?? payload?.payload?.production_delivery_week_start);
-  const endLabel = formatShortDate(payload?.production_delivery_week_end ?? payload?.payload?.production_delivery_week_end);
+  const rawEndDate = payload?.production_delivery_week_end ?? payload?.payload?.production_delivery_week_end;
+  const endLabel = rawEndDate ? formatDateAr(addDaysUtc(rawEndDate, 7)) : "";
   if (!weekNumber && !startLabel && !endLabel) return "";
-  const weekPart = weekNumber ? `Semana ${weekNumber}` : "Semana estimada";
-  if (startLabel || endLabel) return `${weekPart}, entre ${startLabel || "-"} y ${endLabel || "-"}`;
+  const weekEndNumber = weekNumber ? String(Number(weekNumber) + 1) : "";
+  const weekPart = weekNumber ? `Semana ${weekNumber}${weekEndNumber ? ` - ${weekEndNumber}` : ""}` : "Semana estimada";
+  if (startLabel || endLabel) return `${weekPart} (desde ${startLabel || "-"} hasta ${endLabel || "-"})`;
   return weekPart;
 }
 async function resolveMeasurementForm(quote) {

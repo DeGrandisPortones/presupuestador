@@ -144,6 +144,16 @@ export function buildPlanningLabel(weekNumber, startDate, endDate) {
   return `Semana ${weekNumber} (${formatDateAr(startDate)} al ${formatDateAr(endDate)})`;
 }
 
+// Igual que buildPlanningLabel, pero informando una semana extra de margen (pedido
+// explicito: en todos lados donde se informa la semana de produccion estimada/reservada,
+// menos en la pantalla de aceptacion del cliente, se muestra el rango de esa semana MAS
+// la siguiente). No cambia nada de la reserva de capacidad real (esa sigue siendo de una
+// sola semana, ver commitQuoteProductionWeek en productionPlanning.js) - es solo texto.
+export function buildPlanningRangeLabel(weekNumber, startDate, endDate) {
+  const rangeEnd = addDaysUtc(endDate, 7);
+  return `Semana ${weekNumber} - ${Number(weekNumber) + 1} (desde ${formatDateAr(startDate)} hasta ${formatDateAr(rangeEnd)})`;
+}
+
 export function buildWeeksText(weeksOut) {
   const value = toInt(weeksOut, 0);
   if (value <= 0) return "esta semana";
