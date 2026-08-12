@@ -58,6 +58,7 @@ export default function UsersAdminPage() {
   const [fDefaultMapsUrl, setFDefaultMapsUrl] = useState("");
   const [fIsActive, setFIsActive] = useState(true);
   const [fSeeAllDistributors, setFSeeAllDistributors] = useState(false);
+  const [fUnlimitedDimensions, setFUnlimitedDimensions] = useState(false);
 
   const usersQ = useQuery({
     queryKey: ["adminUsers", roleTab, q, activeFilter],
@@ -120,6 +121,7 @@ export default function UsersAdminPage() {
     setFDefaultMapsUrl("");
     setFIsActive(true);
     setFSeeAllDistributors(false);
+    setFUnlimitedDimensions(false);
   };
 
   const loadEdit = (u) => {
@@ -139,6 +141,7 @@ export default function UsersAdminPage() {
     setFDefaultMapsUrl(u.default_maps_url ? String(u.default_maps_url) : "");
     setFIsActive(!!u.is_active);
     setFSeeAllDistributors(!!u.see_all_distributors);
+    setFUnlimitedDimensions(!!u.unlimited_dimensions);
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
@@ -183,6 +186,7 @@ export default function UsersAdminPage() {
         default_maps_url: fDefaultMapsUrl ? String(fDefaultMapsUrl) : null,
         is_active: fIsActive,
         see_all_distributors: fSeeAllDistributors,
+        unlimited_dimensions: fUnlimitedDimensions,
       }),
     onSuccess: () => {
       toast.success("Usuario creado");
@@ -208,6 +212,7 @@ export default function UsersAdminPage() {
         default_maps_url: fDefaultMapsUrl ? String(fDefaultMapsUrl) : null,
         is_active: fIsActive,
         see_all_distributors: fSeeAllDistributors,
+        unlimited_dimensions: fUnlimitedDimensions,
       }),
     onSuccess: () => {
       toast.success("Usuario actualizado");
@@ -397,6 +402,12 @@ export default function UsersAdminPage() {
                 Ver todos los distribuidores
               </label>
             )}
+            {(fIsVendedor || fIsDistribuidor) && (
+              <label style={{ display: "flex", gap: 8, alignItems: "center" }} title="Excepción puntual y reversible: le saca el límite de 2.3-7m de ancho y 2-3m de alto a los portones que presupuesta esta cuenta.">
+                <input type="checkbox" checked={fUnlimitedDimensions} onChange={(e) => setFUnlimitedDimensions(e.target.checked)} />
+                Sin límite de medidas (portón)
+              </label>
+            )}
           </div>
 
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
@@ -493,6 +504,11 @@ export default function UsersAdminPage() {
                       <td style={tableCellStyle}>
                         <div style={{ fontWeight: 900 }}>{u.username}</div>
                         {u.visible_password ? <div className="muted" style={{ fontSize: 12 }}>Pass: {u.visible_password}</div> : null}
+                        {u.unlimited_dimensions ? (
+                          <div style={{ fontSize: 11, fontWeight: 700, color: "#b45309", marginTop: 2 }} title="Excepción activa: sin límite de medidas en portón">
+                            ⚠ Sin límite de medidas
+                          </div>
+                        ) : null}
                       </td>
                       <td style={tableCellStyle}>{u.full_name || <span className="muted">Sin nombre</span>}</td>
                       <td style={tableCellStyle}>{getRolesText(u)}</td>

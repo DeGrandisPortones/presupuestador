@@ -21,6 +21,12 @@ export async function ensureUsersAdminColumns() {
   // estandar De Grandis). Ver PDF_BRANDS en routes/pdf.routes.js para las marcas
   // disponibles y como se arma cada una.
   await dbQuery(`alter table public.presupuestador_users add column if not exists pdf_brand text null;`);
+  // Excepcion puntual y reversible (Gestor de usuarios): mientras esté prendida, esta
+  // cuenta puede presupuestar portones fuera de los limites de medidas normales
+  // (2.3-7m de ancho, 2-3m de alto) sin tocar código - pensada para casos puntuales
+  // que despues hay que volver a como estaba. Ver validateDimensionsRequired en
+  // CotizadorPage/index.jsx.
+  await dbQuery(`alter table public.presupuestador_users add column if not exists unlimited_dimensions boolean not null default false;`);
   await dbQuery(`create index if not exists presupuestador_users_assigned_seller_idx on public.presupuestador_users(assigned_seller_user_id);`);
 
   try {
@@ -179,6 +185,7 @@ export async function listUsers({ role = "all", q = "", active = "all" } = {}) {
            u.assigned_seller_user_id,
            u.visible_password,
            coalesce(u.see_all_distributors, false) as see_all_distributors,
+           coalesce(u.unlimited_dimensions, false) as unlimited_dimensions,
            s.username as assigned_seller_username,
            s.full_name as assigned_seller_full_name,
            u.created_at, u.updated_at
@@ -209,6 +216,7 @@ export async function createUser({
   assigned_seller_user_id = null,
   is_active = true,
   pdf_brand = null,
+  unlimited_dimensions = false,
 } = {}) {
   await ensureUsersAdminColumns();
 
@@ -235,6 +243,7 @@ export async function createUser({
   if (dist && !sellerUserId) throw new Error("Falta vendedor asignado para el distribuidor");
 
   const brand = String(pdf_brand || "").trim().toLowerCase() || null;
+  const unlimitedDims = !!unlimited_dimensions;
 
   const r = await dbQuery(
     `
@@ -242,17 +251,19 @@ export async function createUser({
       (username, password_hash, visible_password, full_name, is_active,
        is_distribuidor, is_vendedor, is_medidor, is_logistica, is_superuser, is_administracion,
        is_enc_comercial, is_rev_tecnica,
-       odoo_partner_id, odoo_pricelist_id, default_maps_url, assigned_seller_user_id, pdf_brand)
+       odoo_partner_id, odoo_pricelist_id, default_maps_url, assigned_seller_user_id, pdf_brand,
+       unlimited_dimensions)
     values
       ($1, crypt($2, gen_salt('bf')), $3, $4, $5,
        $6, $7, $8, $9, $10, $11,
        false, false,
-       $12, $13, $14, $15, $16)
+       $12, $13, $14, $15, $16,
+       $17)
     returning id, username, full_name,
               is_distribuidor, is_vendedor, is_medidor, is_logistica, is_superuser, is_administracion,
               is_enc_comercial, is_rev_tecnica,
               is_active, odoo_partner_id, odoo_pricelist_id, default_maps_url,
-              assigned_seller_user_id, visible_password, pdf_brand, created_at, updated_at
+              assigned_seller_user_id, visible_password, pdf_brand, unlimited_dimensions, created_at, updated_at
     `,
     [
       u,
@@ -271,6 +282,7 @@ export async function createUser({
       (default_maps_url ? String(default_maps_url).trim() : null),
       sellerUserId,
       brand,
+      unlimitedDims,
     ]
   );
 
@@ -293,6 +305,7 @@ export async function updateUser(id, {
   is_active,
   see_all_distributors,
   pdf_brand,
+  unlimited_dimensions,
 } = {}) {
   await ensureUsersAdminColumns();
 
@@ -300,7 +313,7 @@ export async function updateUser(id, {
   if (!userId) throw new Error("id inválido");
 
   const cur = await dbQuery(
-    `select id, is_distribuidor, is_vendedor, is_medidor, is_logistica, is_superuser, is_administracion, is_active, full_name, odoo_partner_id, odoo_pricelist_id, default_maps_url, assigned_seller_user_id, visible_password, coalesce(see_all_distributors,false) as see_all_distributors, pdf_brand
+    `select id, is_distribuidor, is_vendedor, is_medidor, is_logistica, is_superuser, is_administracion, is_active, full_name, odoo_partner_id, odoo_pricelist_id, default_maps_url, assigned_seller_user_id, visible_password, coalesce(see_all_distributors,false) as see_all_distributors, pdf_brand, coalesce(unlimited_dimensions,false) as unlimited_dimensions
        from public.presupuestador_users where id=$1 limit 1`,
     [userId]
   );
@@ -339,6 +352,7 @@ export async function updateUser(id, {
   const visiblePassword = pass ? pass : "";
   const seeAll = see_all_distributors !== undefined ? !!see_all_distributors : !!current.see_all_distributors;
   const brand = pdf_brand !== undefined ? (String(pdf_brand || "").trim().toLowerCase() || null) : (current.pdf_brand ?? null);
+  const unlimitedDims = unlimited_dimensions !== undefined ? !!unlimited_dimensions : !!current.unlimited_dimensions;
 
   const r = await dbQuery(
     `
@@ -359,6 +373,7 @@ export async function updateUser(id, {
         assigned_seller_user_id = $15,
         see_all_distributors = $16,
         pdf_brand = $17,
+        unlimited_dimensions = $18,
         updated_at = now()
     where id = $1
     returning id, username, full_name,
@@ -368,9 +383,10 @@ export async function updateUser(id, {
               assigned_seller_user_id, visible_password,
               coalesce(see_all_distributors, false) as see_all_distributors,
               pdf_brand,
+              coalesce(unlimited_dimensions, false) as unlimited_dimensions,
               created_at, updated_at
     `,
-    [userId, name, active, dist, vend, med, log, sup, adm, pid, pricelistId, mapsUrl, pass, visiblePassword, sellerUserId, seeAll, brand]
+    [userId, name, active, dist, vend, med, log, sup, adm, pid, pricelistId, mapsUrl, pass, visiblePassword, sellerUserId, seeAll, brand, unlimitedDims]
   );
 
   return r.rows?.[0] || null;

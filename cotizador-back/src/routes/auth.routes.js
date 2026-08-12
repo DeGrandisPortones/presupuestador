@@ -15,6 +15,7 @@ function withEffectiveRoles(user) {
     is_medidor: isSuperuser || !!user?.is_medidor,
     is_logistica: isSuperuser || !!user?.is_logistica,
     is_administracion: isSuperuser || !!user?.is_administracion,
+    unlimited_dimensions: isSuperuser || !!user?.unlimited_dimensions,
   };
 }
 
@@ -38,7 +39,8 @@ export function buildAuthRouter() {
                odoo_partner_id,
                odoo_pricelist_id,
                default_maps_url,
-               coalesce(is_active, true) as is_active
+               coalesce(is_active, true) as is_active,
+               coalesce(unlimited_dimensions, false) as unlimited_dimensions
         from public.presupuestador_users
         where lower(username) = lower($1)
           and password_hash = crypt($2, password_hash)
