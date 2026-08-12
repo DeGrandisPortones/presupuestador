@@ -1960,9 +1960,10 @@ export function buildQuotesRouter(odoo) {
             quote_kind, parent_quote_id, created_by_user_id, created_by_role, fulfillment_mode, pricelist_id,
             bill_to_odoo_partner_id, end_customer, lines, payload, note, catalog_kind, status,
             commercial_decision, technical_decision, requires_measurement, measurement_mode, measurement_subtype,
-            envio_odoo_price_snapshot
+            envio_odoo_price_snapshot, production_set_at
          )
-         values ('original', null, $1, $2, $3, $4, $5, $6::jsonb, $7::jsonb, $8::jsonb, $9, $10, 'draft', 'pending', 'pending', $11, $12, $13, $14)
+         values ('original', null, $1, $2, $3, $4, $5, $6::jsonb, $7::jsonb, $8::jsonb, $9, $10, 'draft', 'pending', 'pending', $11, $12, $13, $14,
+                 case when $3::text = 'produccion' then now() else null end)
          returning *`,
         [
           Number(u.user_id),
@@ -2140,7 +2141,8 @@ export function buildQuotesRouter(odoo) {
                       q.payload->'measurement_client_acceptance' as measurement_client_acceptance,
                       q.measurement_commercial_review_required, q.measurement_commercial_review_status,
                       q.fulfillment_mode, q.final_status, q.final_technical_decision, q.final_logistics_decision,
-                      q.acopio_to_produccion_status, q.catalog_kind,
+                      q.acopio_to_produccion_status, q.catalog_kind, q.production_set_at,
+                      q.production_delivery_week, q.production_delivery_week_start, q.production_delivery_week_end,
                       q.end_customer, q.created_at, q.updated_at,
                       q.payload->'extra_contact' as extra_contact,
                       q.created_by_role,
@@ -2422,7 +2424,15 @@ export function buildQuotesRouter(odoo) {
                 measurement_status=$13,
                 acopio_to_produccion_status=$14,
                 created_at=case when $15::boolean then now() else created_at end,
-                envio_odoo_price_snapshot=$16
+                envio_odoo_price_snapshot=$16,
+                -- Fecha en que entro a produccion (ver comentario en quotesSchema.js): solo se
+                -- estampa la primera vez que pasa de no-produccion a produccion, y se limpia si
+                -- vuelve a acopio. Si ya estaba en produccion no se toca (no pisa una fecha vieja).
+                production_set_at=case
+                  when $2::text = 'produccion' and coalesce(fulfillment_mode, '') <> 'produccion' then now()
+                  when $2::text <> 'produccion' then null
+                  else production_set_at
+                end
           where id=$1
           returning *`,
         [
@@ -2496,7 +2506,14 @@ export function buildQuotesRouter(odoo) {
              technical_at=null,
              commercial_notes=null,
              technical_notes=null,
-             rejection_notes=null
+             rejection_notes=null,
+             -- Ver comentario en el PUT de edicion / quotesSchema.js: misma logica de
+             -- estampado de production_set_at.
+             production_set_at=case
+               when $2::text = 'produccion' and coalesce(fulfillment_mode, '') <> 'produccion' then now()
+               when $2::text <> 'produccion' then null
+               else production_set_at
+             end
          where id=$1
          returning *`,
         [
@@ -2791,7 +2808,11 @@ export function buildQuotesRouter(odoo) {
               requires_measurement=$2,
               measurement_mode=$3,
               measurement_subtype=$4,
-              measurement_status=$5
+              measurement_status=$5,
+              -- Ver comentario en quotesSchema.js: fecha en que paso a produccion. Acá el
+              -- where ya garantiza que antes estaba en 'acopio', asi que siempre es la
+              -- primera vez que entra a produccion.
+              production_set_at=now()
         where id=$1
           and fulfillment_mode='acopio'
           and acopio_to_produccion_status='pending'
@@ -2912,7 +2933,10 @@ export function buildQuotesRouter(odoo) {
                 requires_measurement=$2,
                 measurement_mode=$3,
                 measurement_subtype=$4,
-                measurement_status=$5
+                measurement_status=$5,
+                -- Ver comentario en quotesSchema.js. La ruta ya valida arriba que estaba en
+                -- 'acopio', asi que siempre es la primera vez que entra a produccion.
+                production_set_at=now()
           where id=$1
           returning *`,
         [

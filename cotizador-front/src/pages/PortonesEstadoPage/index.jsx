@@ -575,6 +575,7 @@ export default function PortonesEstadoPage() {
                 <th style={thStyle}>Cliente</th>
                 <th style={thStyle}>Vendedor / Distribuidor</th>
                 <th style={thStyle}>Estado</th>
+                <th style={thStyle}>En producción desde</th>
                 <th style={thStyle}>Aceptación del cliente</th>
                 <th style={{ ...thStyle, textAlign: "center" }}>Link enviado</th>
                 <th style={thStyle}>Actualizado</th>
@@ -583,7 +584,7 @@ export default function PortonesEstadoPage() {
             <tbody>
               {filtered.length === 0 && (
                 <tr>
-                  <td colSpan={7} style={{ textAlign: "center", padding: "24px 16px", color: "#888" }}>
+                  <td colSpan={8} style={{ textAlign: "center", padding: "24px 16px", color: "#888" }}>
                     No hay portones que coincidan con el filtro.
                   </td>
                 </tr>
@@ -664,6 +665,12 @@ export default function PortonesEstadoPage() {
                         <DaysBadge days={daysSince(r.measurement_review_at)} />
                       )}
                     </td>
+                    <td style={{ ...tdStyle, color: "#888", fontSize: 13 }}>
+                      {/* production_set_at es columna nueva (sin backfill a proposito): los que
+                          ya estaban en produccion antes de este cambio muestran "—" para siempre,
+                          solo se completa para transiciones a produccion de acá en adelante. */}
+                      {r.fulfillment_mode === "produccion" ? formatDate(r.production_set_at) : <span style={{ color: "#ccc" }}>—</span>}
+                    </td>
                     <td style={{ ...tdStyle, position: "relative" }}>
                       {acceptanceUrl && (
                         <div style={{ marginBottom: acceptance ? 8 : 0 }}>
@@ -686,6 +693,11 @@ export default function PortonesEstadoPage() {
                           <div style={{ fontWeight: 600 }}>{acceptance.full_name || "—"}</div>
                           <div style={{ color: "#666" }}>DNI: {acceptance.dni || "—"}</div>
                           <div style={{ color: "#888" }}>{formatDateTime(acceptance.accepted_at || r.measurement_client_accepted_at)}</div>
+                          {r.production_delivery_week && (
+                            <div style={{ color: "#0d47a1", fontWeight: 600, marginTop: 4 }}>
+                              Producción prometida: Semana {r.production_delivery_week} ({formatDate(r.production_delivery_week_start)} al {formatDate(r.production_delivery_week_end)})
+                            </div>
+                          )}
                         </div>
                       ) : r.measurement_share_enabled_at ? (
                         <div style={{ fontSize: 12, color: "#999", fontStyle: "italic" }}>Pendiente de aceptación</div>
