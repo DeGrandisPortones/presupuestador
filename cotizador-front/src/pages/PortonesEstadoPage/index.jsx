@@ -695,7 +695,7 @@ export default function PortonesEstadoPage() {
                           <div style={{ color: "#888" }}>{formatDateTime(acceptance.accepted_at || r.measurement_client_accepted_at)}</div>
                           {r.production_delivery_week && (
                             <div style={{ color: "#0d47a1", fontWeight: 600, marginTop: 4 }}>
-                              Producción prometida: Semana {r.production_delivery_week} ({formatDate(r.production_delivery_week_start)} al {formatDate(r.production_delivery_week_end)})
+                              Fin de producción estimada: Semana {r.production_delivery_week} ({formatDate(r.production_delivery_week_start)} al {formatDate(r.production_delivery_week_end)})
                             </div>
                           )}
                         </div>
