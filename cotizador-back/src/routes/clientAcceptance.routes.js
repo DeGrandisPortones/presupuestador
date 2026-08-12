@@ -50,6 +50,19 @@ function buildAcceptanceFromPayload(payload = {}) {
   };
 }
 
+// Corte por fecha (pedido explicito): el link de aceptacion del cliente muestra la
+// "semana de produccion" solo para links generados a partir de este cambio - un link ya
+// generado antes (aunque el cliente todavia no haya firmado, o ya haya firmado hace
+// semanas) tiene que seguir mostrando exactamente lo mismo que mostraba antes, sin este
+// campo nuevo. Nada de esto toca la reserva real de capacidad (ver commitQuoteProductionWeek
+// en productionPlanning.js, que ya es un no-op para lo que ya estaba reservado) - es solo
+// sobre que se le manda a MOSTRAR al cliente en esta pantalla puntual.
+const PRODUCTION_PLANNING_ON_LINK_CUTOFF_MS = Date.parse("2026-08-12T17:02:50.000Z");
+function shouldShowProductionPlanningOnLink(quote) {
+  const enabledAtMs = quote?.measurement_share_enabled_at ? Date.parse(quote.measurement_share_enabled_at) : NaN;
+  return Number.isFinite(enabledAtMs) && enabledAtMs >= PRODUCTION_PLANNING_ON_LINK_CUTOFF_MS;
+}
+
 export function buildClientAcceptanceRouter(odoo) {
   const router = express.Router();
 
@@ -109,7 +122,9 @@ export function buildClientAcceptanceRouter(odoo) {
 
       const technicalRules = await getTechnicalMeasurementRules().catch(() => ({}));
       const acceptance = buildAcceptanceFromPayload(quote?.payload || {});
-      const productionPlanning = await getQuoteProductionPlanning(quote).catch(() => null);
+      const productionPlanning = shouldShowProductionPlanningOnLink(quote)
+        ? await getQuoteProductionPlanning(quote).catch(() => null)
+        : null;
       return res.json({
         ok: true,
         quote: {
@@ -152,7 +167,9 @@ export function buildClientAcceptanceRouter(odoo) {
       const currentPayload = quote?.payload && typeof quote.payload === "object" ? { ...quote.payload } : {};
       const existingAcceptance = buildAcceptanceFromPayload(currentPayload);
       if (existingAcceptance?.accepted_at) {
-        const productionPlanning = await getQuoteProductionPlanning(quote).catch(() => null);
+        const productionPlanning = shouldShowProductionPlanningOnLink(quote)
+          ? await getQuoteProductionPlanning(quote).catch(() => null)
+          : null;
         return res.json({ ok: true, acceptance: existingAcceptance, already_accepted: true, production_planning: productionPlanning });
       }
 
@@ -175,10 +192,13 @@ export function buildClientAcceptanceRouter(odoo) {
 
       // Recién ahora que el cliente firmó la aceptación se reserva la semana de
       // producción (ver quotes.routes.js: para lo que ya reservaba en la aprobación
-      // interna, como catalog_kind='otros', esto es un no-op, ya estaba reservado).
+      // interna, como catalog_kind='otros', esto es un no-op, ya estaba reservado). Esto
+      // SIEMPRE se ejecuta, sea link viejo o nuevo - lo que se corta por fecha es solo si
+      // se lo mostramos al cliente en la respuesta (ver shouldShowProductionPlanningOnLink).
       let productionPlanning = null;
       try {
-        productionPlanning = await commitQuoteProductionWeek(updatedQuote?.id || quote.id);
+        const committed = await commitQuoteProductionWeek(updatedQuote?.id || quote.id);
+        if (shouldShowProductionPlanningOnLink(quote)) productionPlanning = committed;
       } catch (e) {
         console.error("PRODUCTION COMMIT ERROR:", e?.message || e);
       }
