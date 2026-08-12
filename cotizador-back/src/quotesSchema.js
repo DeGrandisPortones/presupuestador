@@ -249,6 +249,15 @@ export async function ensureQuotesMeasurementColumns() {
   // ningun otro guardado; lo usan la proforma y el envio real a Odoo por igual.
   await dbQuery(`alter table public.presupuestador_quotes add column if not exists envio_odoo_price_snapshot numeric(14,2) null;`);
 
+  // Fecha en la que fulfillment_mode paso a 'produccion' (directo al crearse, o via
+  // "pase a produccion" desde acopio). Columna nueva sin backfill a proposito: todo
+  // presupuesto que YA estaba en produccion antes de este deploy queda en null para
+  // siempre (no inventamos una fecha que no sabemos), y solo se completa hacia
+  // adelante, la primera vez que un presupuesto entra a produccion despues de este
+  // cambio. Ver los `case when ... then now() ...` sobre production_set_at en
+  // quotes.routes.js (create, PUT draft, submit, pase a produccion desde acopio).
+  await dbQuery(`alter table public.presupuestador_quotes add column if not exists production_set_at timestamptz null;`);
+
   await ensureSettingsTable();
   ensured = true;
 }
