@@ -45,9 +45,9 @@ export async function prefetchOdooBootstrapInBackground({ loginBootstrap = null 
   // en si de cada producto - eso lo pide aparte el cotizador (fetchPriceCacheForPricelist
   // en api/odoo.js) recien cuando el vendedor entra a cotizar, y esa espera es la que se
   // ve como "Cargando precio" en pantalla. Se precarga acá, en paralelo con el catalogo,
-  // para que ya este tibio en cache (localStorage, 1hs de validez) para cuando el usuario
+  // para que ya este tibio en cache (localStorage, 24hs de validez) para cuando el usuario
   // llegue al cotizador desde el menu - mismo mecanismo que ya usa App.jsx para el
-  // refresco horario, solo que ahora tambien corre apenas se loguea.
+  // refresco diario, solo que ahora tambien corre apenas se loguea.
   const [catalogResults] = await Promise.all([
     Promise.allSettled(KINDS.map((kind) => getCatalogBootstrap(kind))),
     preloadEffectivePriceCache().catch(() => null),
