@@ -991,6 +991,12 @@ function CommercialMeasurementReviewCard({
   isError,
   errorMessage,
 }) {
+  // Linea de descuento que agrega /return/confirm cuando la diferencia de medición
+  // (o parte de ella) cae dentro del rango de tolerancia exento (ver
+  // applyMeasurementToleranceAbsorption en measurements.routes.js) — se la busca acá
+  // para aclararle a Enc. Comercial por qué el total no subió (o subió menos).
+  const toleranceAbsorbedLine = diff?.added?.find((l) => String(l?.name || "").startsWith("Diferencia de medición absorbida"));
+  const fullyAbsorbed = toleranceAbsorbedLine && Math.abs(Number(diff?.diffAmount || 0)) < 1;
   return (
     <div className="card" style={{ background: "#fff8e1", border: "1px solid #f2d08a" }}>
       <div style={{ fontWeight: 900, marginBottom: 6 }}>Revisión comercial de medición</div>
@@ -1004,6 +1010,13 @@ function CommercialMeasurementReviewCard({
         </div>
       ) : (
         <>
+          {toleranceAbsorbedLine ? (
+            <div style={{ background: "#e8f5e9", border: "1px solid #a5d6a7", borderRadius: 8, padding: "10px 12px", marginBottom: 10, color: "#1b5e20", fontWeight: 700 }}>
+              {fullyAbsorbed
+                ? `✅ Ajustado a $0: ${toleranceAbsorbedLine.name.replace(/^Diferencia de medición absorbida /, "")} — la modificación de medidas está dentro del rango eximido, no se le cobra nada extra al cliente.`
+                : `✅ Se absorbió parte de la diferencia de medición (${toleranceAbsorbedLine.name.replace(/^Diferencia de medición absorbida /, "")}) por estar dentro del rango eximido; el resto de la diferencia sí se cobra (ver "Diferencia" abajo).`}
+            </div>
+          ) : null}
           <ApprovalRowsGrid
             rows={[
               { label: "Total original", value: formatARS(diff.originalTotal) },
