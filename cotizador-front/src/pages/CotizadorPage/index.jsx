@@ -1584,7 +1584,7 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
         // precio base con el del portón solo, sin la instalacion sumada.
         lines: withSection37ExtraLine(currentLines, buildPriceRefreshLines(currentLines)),
         // "Actualizar presupuesto" tiene que traer el precio real de Odoo, no la cache
-        // local de precios (dura 12hs) que usa el resto del cotizador.
+        // local de precios (dura 24hs) que usa el resto del cotizador.
         force: true,
       };
       const prices = mergeSection37VendorExtra(await getPrices(pricesPayload));

@@ -3,7 +3,10 @@ import { getOdooBootstrap } from "../domain/odoo/bootstrap.js";
 import { getFinancingPreviewFromSettings } from "./financingSettings.js";
 
 const PRICE_CACHE_VERSION = "v2_price_lists_fast";
-const PRICE_CACHE_TTL_MS = 60 * 60 * 1000;
+// 24hs: alcanza con traer los precios una vez por dia (en el login/primer mount del dia),
+// no hace falta pedirlos de nuevo en medio de una sesion larga - eso es lo que generaba
+// la espera de "Cargando precio" cuando la cache vencia a la hora.
+const PRICE_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 const PRICE_FETCH_RETRIES = 3;
 const PRICE_FETCH_RETRY_DELAY_MS = 800;
 const priceCachePromises = new Map();

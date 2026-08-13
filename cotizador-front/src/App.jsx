@@ -53,7 +53,7 @@ import { getMe } from "./api/auth.js";
 import { prefetchOdooBootstrapInBackground } from "./domain/odoo/prefetch.js";
 import { preloadEffectivePriceCache } from "./api/odoo.js";
 
-const PRICE_REFRESH_INTERVAL_MS = 60 * 60 * 1000;
+const PRICE_REFRESH_INTERVAL_MS = 24 * 60 * 60 * 1000;
 
 export default function App() {
   const token = useAuthStore((s) => s.token);
@@ -72,9 +72,9 @@ export default function App() {
     window.setTimeout(() => { prefetchOdooBootstrapInBackground().catch(() => {}); }, 0);
   }, [token, user]);
 
-  // Refresco proactivo de precios cada 1hs mientras la sesion sigue abierta, para que
-  // una sesion larga (vendedor con el cotizador abierto varias horas) no se quede
-  // cotizando con precios desactualizados sin que nadie vuelva a loguearse.
+  // Refresco proactivo de precios una vez por dia mientras la sesion sigue abierta, para
+  // que una sesion muy larga (vendedor con el cotizador abierto varios dias seguidos) no
+  // se quede cotizando con precios desactualizados sin que nadie vuelva a loguearse.
   useEffect(() => {
     if (!token || !user) return;
     const interval = window.setInterval(() => {

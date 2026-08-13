@@ -714,7 +714,7 @@ export default function PresupuestadorPuertasPage() {
         partner_id: partnerId,
         lines: buildPriceRefreshLines(currentLines),
         // "Actualizar presupuesto" tiene que traer el precio real de Odoo, no la cache
-        // local de precios (dura 12hs) que usa el resto del cotizador.
+        // local de precios (dura 24hs) que usa el resto del cotizador.
         force: true,
       };
       const prices = await getPrices(pricesPayload);
