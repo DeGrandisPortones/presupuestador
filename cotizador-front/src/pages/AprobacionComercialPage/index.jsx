@@ -730,7 +730,7 @@ export default function AprobacionComercialPage() {
                             <td className="right">
                               <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
                                 <Button variant="ghost" onClick={() => navigate(`/presupuestos/${r.id}`, { state: { from: "/aprobacion/comercial" } })}>Abrir</Button>
-                                {canAct ? <><Button disabled={acopioM.isPending} onClick={() => acopioM.mutate({ id: r.id, action: "approve", notes: null })}>OK</Button><Button variant="ghost" disabled={acopioM.isPending} onClick={() => { const msg = window.prompt("Motivo del rechazo:", ""); if (msg !== null) acopioM.mutate({ id: r.id, action: "reject", notes: msg }); }}>Rechazar</Button></> : <span className="muted">Ya decidiste</span>}
+                                {canAct ? <><Button disabled={acopioM.isPending} onClick={() => { const msg = window.prompt("Comentario interno para Odoo (opcional):", ""); acopioM.mutate({ id: r.id, action: "approve", notes: msg && msg.trim() ? msg.trim() : null }); }}>OK</Button><Button variant="ghost" disabled={acopioM.isPending} onClick={() => { const msg = window.prompt("Motivo del rechazo:", ""); if (msg !== null) acopioM.mutate({ id: r.id, action: "reject", notes: msg }); }}>Rechazar</Button></> : <span className="muted">Ya decidiste</span>}
                               </div>
                             </td>
                           </tr>

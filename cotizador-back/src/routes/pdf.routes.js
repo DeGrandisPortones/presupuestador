@@ -455,6 +455,26 @@ function drawInfoTable(doc, payload, y, margin, innerW, useBasePrice) {
   }
   return y + h + 10;
 }
+// Observación cargada por el vendedor/distribuidor al confirmar el presupuesto
+// (budget_observation). Va en su propio recuadro destacado, separado del resto
+// de la info tecnica/comercial, para que quede claramente identificable en el
+// documento (a diferencia de "Obs:" mas abajo, que es metadata tecnica auto-generada).
+function drawObservationBand(doc, { y, margin, innerW, text }) {
+  const clean = safeStr(text);
+  if (!clean) return y;
+  const padX = 10;
+  const padY = 8;
+  const labelH = 14;
+  const textW = innerW - padX * 2;
+  doc.font("Helvetica").fontSize(10);
+  const textH = doc.heightOfString(clean, { width: textW, lineGap: 2 });
+  const h = Math.max(28, Math.ceil(labelH + textH + padY * 2));
+  doc.save().fillColor("#FFF8E1").rect(margin, y, innerW, h).fill().restore();
+  doc.save().strokeColor("#F2D08A").rect(margin, y, innerW, h).stroke().restore();
+  doc.font("Helvetica-Bold").fontSize(10).fillColor("#111827").text("OBSERVACIÓN", margin + padX, y + padY);
+  doc.font("Helvetica").fontSize(10).fillColor("#111827").text(clean, margin + padX, y + padY + labelH, { width: textW, lineGap: 2 });
+  return y + h + 4;
+}
 function drawInfoBand(doc, { y, margin, innerW, items, fillColor = "#FFFFFF" }) {
   const cleanItems = (Array.isArray(items) ? items : []).map((item) => safeStr(item)).filter(Boolean);
   if (!cleanItems.length) return y;
@@ -974,6 +994,15 @@ async function renderPdf({ title, payload, useBasePrice, odoo, includeTerms = fa
   const paymentMethod = safeStr(payload?.payload?.payment_method ?? payload?.payment_method);
   const productionPlanningText = getProductionPlanningText(payload);
   const obs = stripSellerLines(safeStr(payload?.note));
+  // Observación cargada por vendedor/distribuidor (campo separado de "note": ver
+  // budget_observation en quotes.routes.js / CotizadorPage). Se muestra en un
+  // recuadro propio, no mezclada con la metadata tecnica de "Obs:" de arriba.
+  const budgetObservationText = safeStr(
+    payload?.payload?.budget_observation ??
+      payload?.budget_observation ??
+      payload?.payload?.presupuesto_observacion ??
+      payload?.presupuesto_observacion
+  );
   const { lines, grandTotal, subtotalNet, ivaAmount, taxRate: effectiveTaxRate, catalogKind } = await buildLines(payload, { useBasePrice, odoo, displayNetPrices, taxRate, brand });
 
   const commercialInfoLines = [];
@@ -998,6 +1027,7 @@ async function renderPdf({ title, payload, useBasePrice, odoo, includeTerms = fa
   const beforeInfoY = y;
   y = drawInfoBand(doc, { y, margin, innerW, items: commercialInfoLines, fillColor: "#FFFFFF" });
   y = drawInfoBand(doc, { y, margin, innerW, items: technicalInfoLines, fillColor: "#FFFFFF" });
+  y = drawObservationBand(doc, { y, margin, innerW, text: budgetObservationText });
   if (y !== beforeInfoY) y += 6;
 
   // hideDetailPrices: variante pedida para "PRESUPUESTO" - saca el precio SOLO de la
