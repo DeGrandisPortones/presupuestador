@@ -839,7 +839,7 @@ function replaceFallbackSectionProductsInBaseLines({ baseLines, measurementForm 
   }
   return nextBase;
 }
-function cloneBudgetLine(line = {}) {
+export function cloneBudgetLine(line = {}) {
   const productId = Number(line?.product_id || 0) || null;
   if (!productId) return null;
   return {
@@ -936,7 +936,7 @@ function totalLinesAmount(lines, payload, quote = null) {
     }, 0),
   );
 }
-function computeQuoteSurfaceM2(quote) {
+export function computeQuoteSurfaceM2(quote) {
   const dims = quote?.payload?.dimensions || {};
   const widthM = toNumberLike(dims?.width);
   const heightM = toNumberLike(dims?.height);
@@ -1036,7 +1036,7 @@ async function resolveBaseSourceQuote(originalQuote) {
     return originalQuote;
   }
 }
-function computeSurfacePricingMetrics({ sourceLines, finalLines, pricingPayload, sourceAreaM2, finalAreaM2, toleranceAreaM2, quote = null }) {
+export function computeSurfacePricingMetrics({ sourceLines, finalLines, pricingPayload, sourceAreaM2, finalAreaM2, toleranceAreaM2, quote = null }) {
   const safeSourceArea = round4(Math.max(0, Number(sourceAreaM2 || 0) || 0));
   const safeFinalArea = round4(Math.max(0, Number(finalAreaM2 || 0) || 0));
   const safeToleranceArea = round4(Math.max(0, Number(toleranceAreaM2 || 0) || 0));
