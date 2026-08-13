@@ -3,7 +3,12 @@ import express from "express";
 import { requireAuth } from "../auth.js";
 import { dbQuery } from "../db.js";
 import { ensureQuotesMeasurementColumns } from "../quotesSchema.js";
-import { finalizeMeasurementToRevisionQuote } from "../measurementFinalization.js";
+import {
+  finalizeMeasurementToRevisionQuote,
+  computeSurfacePricingMetrics,
+  computeQuoteSurfaceM2,
+  cloneBudgetLine,
+} from "../measurementFinalization.js";
 import {
   getCommercialFinalToleranceAreaM2,
   getTechnicalMeasurementFieldDefinitions,
@@ -24,6 +29,9 @@ const MEASUREMENT_PRODUCT_IDS = parseMeasurementProductIds(
     "2865,2961,4229",
 );
 const PREVIOUSLY_BILLED_PRODUCT_ID = -900001;
+// Mismo producto placeholder que usa measurementFinalization.js para lineas de
+// descuento con precio manual (price_unit explicito, sin recalcular margen/IVA).
+const PLACEHOLDER_PRODUCT_ID = Number(process.env.ODOO_PLACEHOLDER_PRODUCT_ID || 3575);
 const DEFAULT_RETURN_REASON = "El tamaño del portón es mayor al presupuestado originalmente";
 const DEFAULT_ITEM18_REASON = "El cambio en el item 18 puede ocasionar costos adicionales y debe pasar al vendedor.";
 const DEFAULT_OBSERVATION_REASON = "El medidor dejó observaciones y debe revisarlo el vendedor antes de seguir.";
@@ -363,6 +371,44 @@ async function buildMeasurementSurfaceGuard({ quote, form }) {
       ancho_min_mm: minMm(form?.esquema?.ancho || []),
     },
   };
+}
+// Cuando el vendedor corrige un presupuesto devuelto por medición (ver
+// buildMeasurementSurfaceGuard / /return/confirm), la diferencia de superficie
+// contra lo presupuestado ORIGINALMENTE (antes de la devolución) que caiga
+// dentro de la tolerancia configurada (getCommercialFinalToleranceAreaM2) no se
+// le tiene que cobrar al cliente: se absorbe agregando una línea de descuento,
+// mismo criterio que ya usa measurementFinalization.js para la medición final
+// post-producción (computeSurfacePricingMetrics + línea de descuento).
+// Devuelve { lines, metrics }: lines ya incluye la línea de descuento si corresponde.
+async function applyMeasurementToleranceAbsorption({ originalLines, originalPayload, finalLines, finalPayload, quote }) {
+  const toleranceAreaM2 = Number(await getCommercialFinalToleranceAreaM2()) || 0;
+  const sourceAreaM2 = computeQuoteSurfaceM2({ payload: originalPayload });
+  const finalAreaM2 = computeQuoteSurfaceM2({ payload: finalPayload });
+  const normalizedSourceLines = (Array.isArray(originalLines) ? originalLines : []).map(cloneBudgetLine).filter(Boolean);
+  const normalizedFinalLines = (Array.isArray(finalLines) ? finalLines : []).map(cloneBudgetLine).filter(Boolean);
+  const metrics = computeSurfacePricingMetrics({
+    sourceLines: normalizedSourceLines,
+    finalLines: normalizedFinalLines,
+    pricingPayload: finalPayload,
+    sourceAreaM2,
+    finalAreaM2,
+    toleranceAreaM2,
+    quote,
+  });
+  if (!(metrics.surface_absorbed_amount > 0)) {
+    return { lines: Array.isArray(finalLines) ? finalLines : [], metrics };
+  }
+  const discountLine = {
+    product_id: PLACEHOLDER_PRODUCT_ID,
+    qty: 1,
+    name: `Diferencia de medición absorbida (${metrics.surface_absorbed_diff_m2} m² dentro de tolerancia de ${toleranceAreaM2} m²)`,
+    raw_name: `Diferencia de medición absorbida (${metrics.surface_absorbed_diff_m2} m² dentro de tolerancia de ${toleranceAreaM2} m²)`,
+    code: null,
+    price_unit: round2(-metrics.surface_absorbed_amount),
+    basePrice: 0,
+    locked_line: true,
+  };
+  return { lines: [...(Array.isArray(finalLines) ? finalLines : []), discountLine], metrics };
 }
 function buildPreviouslyBilledLine(quote) {
   const amount = Number(quote?.deposit_amount || 0) || 0;
@@ -866,6 +912,19 @@ export function buildMeasurementsRouter(odoo = null) {
       const nextNote = quoteUpdate?.note !== undefined ? quoteUpdate.note : quote.note;
       const nextCatalogKind = quoteUpdate?.catalog_kind !== undefined ? quoteUpdate.catalog_kind : quote.catalog_kind;
 
+      // La diferencia de superficie contra lo presupuestado ANTES de la devolución
+      // (ctx.original_*, capturado por buildReturnContext cuando se devolvió) que
+      // caiga dentro de la tolerancia no se cobra: se agrega como línea de
+      // descuento (ver applyMeasurementToleranceAbsorption).
+      const ctx = buildReturnContext(quote);
+      const { lines: linesWithAbsorption, metrics: toleranceMetrics } = await applyMeasurementToleranceAbsorption({
+        originalLines: ctx.original_lines,
+        originalPayload: ctx.original_payload,
+        finalLines: cleanedLines,
+        finalPayload: nextPayload,
+        quote,
+      });
+
       const upd = await dbQuery(
         `update public.presupuestador_quotes
             set status='synced_odoo',
@@ -889,13 +948,13 @@ export function buildMeasurementsRouter(odoo = null) {
           nextPricelistId,
           nextBillToPartnerId,
           JSON.stringify(nextEndCustomer || {}),
-          JSON.stringify(cleanedLines),
+          JSON.stringify(linesWithAbsorption),
           JSON.stringify(nextPayload),
           nextNote,
           nextCatalogKind,
         ],
       );
-      return res.json({ ok: true, quote: upd.rows?.[0] || null, moved_to_comercial: true });
+      return res.json({ ok: true, quote: upd.rows?.[0] || null, moved_to_comercial: true, tolerance_metrics: toleranceMetrics });
     } catch (e) {
       next(e);
     }
