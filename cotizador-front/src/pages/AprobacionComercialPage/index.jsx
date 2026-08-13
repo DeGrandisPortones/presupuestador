@@ -117,10 +117,14 @@ function measurementQuickDiffLabel(row) {
   if (!snapshot || typeof snapshot !== "object" || !Array.isArray(snapshot.original_lines)) return "—";
   const diff = computeCommercialLinesDiff(snapshot.original_lines, row?.lines || []);
   if (!diff.hasChanges) return "Sin cambios";
+  // Linea que agrega /return/confirm cuando la diferencia de medicion cae dentro
+  // del rango de tolerancia exento (ver applyMeasurementToleranceAbsorption).
+  const hasToleranceAbsorption = diff.added?.some((l) => String(l?.name || "").startsWith("Diferencia de medición absorbida"));
   const sign = diff.diffAmount > 0 ? "+" : diff.diffAmount < 0 ? "-" : "";
   const amountText = `${sign}$${Math.abs(diff.diffAmount).toLocaleString("es-AR")}`;
   const percentText = diff.diffPercent === null ? "" : ` (${sign}${Math.abs(diff.diffPercent).toLocaleString("es-AR", { maximumFractionDigits: 1 })}%)`;
-  return `${amountText}${percentText}`;
+  const toleranceNote = hasToleranceAbsorption ? " ✅ dentro de tolerancia" : "";
+  return `${amountText}${percentText}${toleranceNote}`;
 }
 function fmtDate(iso) {
   if (!iso) return "—";
