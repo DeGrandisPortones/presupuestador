@@ -975,6 +975,7 @@ export function buildMeasurementsRouter(odoo = null) {
   // vendedor con el mismo mecanismo que usa Tecnica (return_to_seller).
   router.post("/:id/commercial-review", requireCommercialReviewer, async (req, res, next) => {
     try {
+      await ensureQuotesMeasurementColumns();
       const u = req.user;
       const id = String(req.params.id || "").trim();
       if (!isUuid(id)) return res.status(400).json({ ok: false, error: "id inválido" });
@@ -991,14 +992,19 @@ export function buildMeasurementsRouter(odoo = null) {
       }
 
       if (act === "approve") {
+        // Comentario interno de Comercial al aprobar (distinto del motivo de devolución
+        // al vendedor): viaja a la nota de la NV final en Odoo, ver
+        // syncFinalQuoteToOdoo en measurementFinalization.js.
+        const approveComment = String(notes || "").trim() || null;
         const upd = await dbQuery(
           `update public.presupuestador_quotes
               set measurement_commercial_review_status='approved',
                   measurement_commercial_review_by_user_id=$2,
-                  measurement_commercial_review_at=now()
+                  measurement_commercial_review_at=now(),
+                  measurement_commercial_review_notes=$3
             where id=$1
             returning *`,
-          [id, Number(u.user_id)],
+          [id, Number(u.user_id), approveComment],
         );
         return res.json({ ok: true, quote: upd.rows?.[0] || null });
       }

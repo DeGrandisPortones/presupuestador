@@ -21,6 +21,7 @@ import {
   buildFinancingSaleOrderVals,
   appendPaymentMethodToNote,
   appendBudgetObservationToNote,
+  appendCommercialCommentToNote,
 } from "./routes/quotes.routes.js";
 
 const PLACEHOLDER_PRODUCT_ID = Number(
@@ -1340,6 +1341,7 @@ async function syncFinalQuoteToOdoo({ odoo, revisionQuote, originalQuote, source
   let note = `Condición vendida: ${getOdooConditionLabel(conditionPayload)}`;
   note = appendBudgetObservationToNote(note, revisionQuote || sourceQuote || originalQuote);
   note = appendPaymentMethodToNote(note, conditionPayload?.payment_method);
+  note = appendCommercialCommentToNote(note, originalQuote?.measurement_commercial_review_notes);
 
   // Mismos campos de financiación (TacaTaca) que en quotes.routes.js: sin esto,
   // una NV de este flujo con pago financiado queda en Odoo como si no tuviera

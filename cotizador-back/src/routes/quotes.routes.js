@@ -1078,6 +1078,17 @@ export function appendBudgetObservationToNote(note, quote) {
   return `${note}\nObservación presupuesto / NP / NV: ${observation}`;
 }
 
+// Comentario interno que el Enc. Comercial deja al aprobar (distinto de
+// budget_observation, que carga el vendedor/distribuidor): pensado para
+// comunicarle algo puntual a quien gestiona Odoo. Se usa en las 3 instancias
+// de aprobación comercial (NP inicial, acopio->producción, revisión post-medición),
+// cada una pasando su propia columna de notas.
+export function appendCommercialCommentToNote(note, comment) {
+  const text = toText(comment);
+  if (!text) return note;
+  return `${note}\nComentario Comercial: ${text}`;
+}
+
 function normalizeBillingTypeKey(value) {
   return String(value || "")
     .normalize("NFD")
@@ -1421,6 +1432,7 @@ async function syncQuoteToOdoo({ odoo, quote, approverUser }) {
   if (forcedNp) note += formatHardcodedOdooNote(forcedNp);
   note = appendPaymentMethodToNote(note, quote?.payload?.payment_method);
   note = appendSaleConditionToNote(note, quote);
+  note = appendCommercialCommentToNote(note, quote?.commercial_notes);
 
   const financingVals = await buildFinancingSaleOrderVals(odoo, quote?.payload?.payment_method);
   const createdOrderId = await odoo.executeKw("sale.order", "create", [{
@@ -1563,6 +1575,7 @@ async function syncFinalQuoteToOdoo({ odoo, revisionQuote, originalQuote, approv
   note = appendBudgetObservationToNote(note, revisionQuote || originalQuote);
   note = appendPaymentMethodToNote(note, revisionQuote?.payload?.payment_method || originalQuote?.payload?.payment_method);
   note = appendSaleConditionToNote(note, revisionQuote?.payload?.condition_mode ? revisionQuote : originalQuote);
+  note = appendCommercialCommentToNote(note, originalQuote?.acopio_to_produccion_commercial_notes);
 
   const financingVals = await buildFinancingSaleOrderVals(odoo, revisionQuote?.payload?.payment_method || originalQuote?.payload?.payment_method);
   const createdOrderId = await odoo.executeKw("sale.order", "create", [{
@@ -1691,6 +1704,7 @@ async function syncDirectProductionFinalToOdoo({ odoo, quote, approverUser }) {
   if (forcedDirectNv) note += formatHardcodedOdooNote(forcedDirectNv);
   note = appendPaymentMethodToNote(note, quote?.payload?.payment_method);
   note = appendSaleConditionToNote(note, quote);
+  note = appendCommercialCommentToNote(note, quote?.commercial_notes);
 
   const financingVals = await buildFinancingSaleOrderVals(odoo, quote?.payload?.payment_method);
   const createdOrderId = await odoo.executeKw("sale.order", "create", [{

@@ -866,8 +866,8 @@ export default function PresupuestadorPuertasPage() {
             <div style={{ fontWeight: 900, fontSize: 22, marginBottom: 6 }}>Elegí el destino de la puerta</div>
             <div className="muted" style={{ marginBottom: 18 }}>La puerta usa el mismo circuito de aprobación que un portón.</div>
             <div style={{ border: "1px solid #f2d08a", background: "#fff8e1", borderRadius: 14, padding: 14, marginBottom: 16 }}>
-              <div style={{ fontWeight: 900, marginBottom: 6 }}>Observación del presupuesto / NP / NV</div>
-              <div className="muted" style={{ marginBottom: 8 }}>Opcional. Este comentario queda guardado en el presupuesto y visible para Comercial y Técnica.</div>
+              <div style={{ fontWeight: 900, marginBottom: 6 }}>Observación</div>
+              <div className="muted" style={{ marginBottom: 8 }}>Opcional. Queda impresa en el presupuesto/proforma y visible para Comercial y Técnica.</div>
               <textarea
                 value={confirmBudgetObservation}
                 onChange={(e) => setConfirmBudgetObservation(e.target.value)}

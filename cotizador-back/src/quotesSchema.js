@@ -113,6 +113,10 @@ export async function ensureQuotesMeasurementColumns() {
   await dbQuery(`alter table public.presupuestador_quotes add column if not exists measurement_commercial_review_status text null;`);
   await dbQuery(`alter table public.presupuestador_quotes add column if not exists measurement_commercial_review_by_user_id int null;`);
   await dbQuery(`alter table public.presupuestador_quotes add column if not exists measurement_commercial_review_at timestamptz null;`);
+  // Comentario interno de Comercial al aprobar la revision post-medicion (distinto de
+  // measurement_review_notes, que es del vendedor al devolver): viaja a la nota de Odoo
+  // de la NV final (ver syncFinalQuoteToOdoo en measurementFinalization.js).
+  await dbQuery(`alter table public.presupuestador_quotes add column if not exists measurement_commercial_review_notes text null;`);
   await dbQuery(`alter table public.presupuestador_quotes add column if not exists measurement_commercial_diff_json jsonb null;`);
 
   await dbQuery(`alter table public.presupuestador_quotes add column if not exists final_status text null;`);
