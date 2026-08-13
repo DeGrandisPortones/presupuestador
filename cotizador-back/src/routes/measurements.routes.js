@@ -897,7 +897,15 @@ export function buildMeasurementsRouter(odoo = null) {
       const quoteUpdate = req.body?.quote_update && typeof req.body.quote_update === "object" ? req.body.quote_update : null;
       const nextEndCustomer = quoteUpdate?.end_customer !== undefined ? quoteUpdate.end_customer : quote.end_customer;
       const nextLinesRaw = quoteUpdate?.lines !== undefined ? quoteUpdate.lines : quote.lines;
-      const cleanedLines = stripPreviouslyBilledLines(nextLinesRaw);
+      // Re-agregar "Facturado previamente" (mismo patron que /return/reset, unas lineas
+      // arriba): sin esto, la linea desaparecia justo al pasar a revision comercial y
+      // nunca volvia - ni en el presupuesto/proforma que se descarga desde ahi, ni en el
+      // "Actual/Facturado previamente/TOTAL" que necesita ver Comercial para saber cuanto
+      // hay que cobrar de mas (caso #6412). buildBasePositiveLinesFromQuote (usado recien
+      // en la aprobacion tecnica final) la vuelve a excluir explicitamente, asi que no se
+      // descuenta dos veces: el descuento real que se manda a Odoo sigue siendo el que arma
+      // buildDiscountPreviewLine a partir de deposit_amount.
+      const cleanedLines = [...stripPreviouslyBilledLines(nextLinesRaw), buildPreviouslyBilledLine(quote)];
       const payloadSource = quoteUpdate?.payload !== undefined ? quoteUpdate.payload : quote.payload;
       const nextPayload = payloadWithoutReturnContext(payloadSource && typeof payloadSource === "object" ? payloadSource : {});
       const nextFulfillmentMode = quoteUpdate?.fulfillment_mode !== undefined ? quoteUpdate.fulfillment_mode : quote.fulfillment_mode;

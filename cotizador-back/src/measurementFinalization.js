@@ -862,6 +862,13 @@ export function cloneBudgetLine(line = {}) {
 function buildBasePositiveLinesFromQuote(sourceQuote) {
   const rawLines = Array.isArray(sourceQuote?.lines) ? sourceQuote.lines : [];
   return rawLines
+    // "Facturado previamente" (product_id -900001, ver buildPreviouslyBilledLine en
+    // measurements.routes.js) puede seguir presente en quote.lines mientras el presupuesto
+    // esta en revision comercial post-medicion - tiene que quedar afuera ACA (antes de
+    // cloneBudgetLine, que no preserva el flag previously_billed_line) porque el descuento
+    // real que se manda a Odoo lo arma aparte buildDiscountPreviewLine a partir de
+    // deposit_amount; si esta linea colara para aca tambien, se descontaria dos veces.
+    .filter((line) => line?.previously_billed_line !== true && Number(line?.product_id) !== -900001)
     .map(cloneBudgetLine)
     .filter(Boolean)
     .filter((line) => {
