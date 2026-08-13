@@ -861,6 +861,15 @@ export function cloneBudgetLine(line = {}) {
 }
 function buildBasePositiveLinesFromQuote(sourceQuote) {
   const rawLines = Array.isArray(sourceQuote?.lines) ? sourceQuote.lines : [];
+  // Mapa producto_id(clonado) -> flag force_include_in_finalization de la linea CRUDA
+  // correspondiente (cloneBudgetLine no preserva flags custom, asi que hay que leerlo
+  // antes de clonar y volver a consultarlo despues).
+  const forceIncludeIds = new Set(
+    rawLines
+      .filter((line) => line?.force_include_in_finalization === true)
+      .map((line) => Number(line?.product_id || 0))
+      .filter((id) => id > 0)
+  );
   return rawLines
     // "Facturado previamente" (product_id -900001, ver buildPreviouslyBilledLine en
     // measurements.routes.js) puede seguir presente en quote.lines mientras el presupuesto
@@ -874,7 +883,12 @@ function buildBasePositiveLinesFromQuote(sourceQuote) {
     .filter((line) => {
       const productId = Number(line?.product_id || 0);
       if (!productId) return false;
-      if (MEASUREMENT_PRODUCT_IDS.includes(productId)) return false;
+      // force_include_in_finalization es un escape hatch puntual por presupuesto (no toca
+      // el comportamiento general): permite que una linea con un product_id de la lista
+      // MEASUREMENT_PRODUCT_IDS (ej. 2865, que en la practica tambien se usa como "Servicio
+      // de Instalacion" pago y no solo como medicion) SI se incluya en el total final. Sin
+      // el flag, el comportamiento es identico al de siempre para el resto de presupuestos.
+      if (MEASUREMENT_PRODUCT_IDS.includes(productId) && !forceIncludeIds.has(productId)) return false;
       if (productId === PLACEHOLDER_PRODUCT_ID) return false;
       return true;
     });
