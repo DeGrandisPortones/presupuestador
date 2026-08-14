@@ -1578,6 +1578,34 @@ async function syncFinalQuoteToOdoo({ odoo, revisionQuote, originalQuote, approv
   note = appendCommercialCommentToNote(note, originalQuote?.acopio_to_produccion_commercial_notes);
 
   const financingVals = await buildFinancingSaleOrderVals(odoo, revisionQuote?.payload?.payment_method || originalQuote?.payload?.payment_method);
+
+  // Salvaguarda anti-duplicados: ver comentario en measurementFinalization.js
+  // (mismo bug de fondo: create exitoso en Odoo + escritura del id en nuestra DB que
+  // no llega a confirmarse -> un reintento crea una segunda NV con la misma
+  // referencia). Se busca por "origin" (no client_order_ref, que despues queda
+  // pisado con "... Cliente <nombre>" para distribuidores).
+  const existingByReferenceAcopio = await odoo.executeKw(
+    "sale.order",
+    "search_read",
+    [[["origin", "=", referenceNv]]],
+    { fields: ["id", "name", "amount_total", "partner_id", "state", "pricelist_id", "origin", "client_order_ref"], order: "id asc", limit: 1 },
+  );
+  if (existingByReferenceAcopio?.length) {
+    return {
+      order: existingByReferenceAcopio[0],
+      metrics: {
+        detailed_total: detailedTotal,
+        advance_discounted_amount: round2(advanceToDiscount),
+        tolerance_percent: tolerancePercent,
+        tolerance_amount: toleranceAmount,
+        difference_amount: rawDifference,
+        absorbed_by_company: absorbedByCompany,
+        final_amount_to_charge: finalAmountToCharge,
+        reference_nv: referenceNv,
+      },
+    };
+  }
+
   const createdOrderId = await odoo.executeKw("sale.order", "create", [{
     partner_id: partnerId,
     pricelist_id: pricelistId,
