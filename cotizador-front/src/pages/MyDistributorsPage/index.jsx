@@ -377,18 +377,18 @@ export default function MyDistributorsPage() {
         {!q.isLoading && !!distributors.length && !filteredDistributors.length ? <div className="muted">No hay distribuidores que coincidan con la busqueda.</div> : null}
 
         {!!filteredDistributors.length ? (
-          <table style={{ width: "100%", minWidth: 1720, tableLayout: "fixed" }}>
+          <table style={{ width: "100%", minWidth: 1900, tableLayout: "fixed" }}>
             <colgroup>
-              <col style={{ width: "13%" }} />
-              <col style={{ width: "11%" }} />
               <col style={{ width: "12%" }} />
-              <col style={{ width: "8%" }} />
               <col style={{ width: "10%" }} />
-              <col style={{ width: "6%" }} />
-              <col style={{ width: "13%" }} />
-              <col style={{ width: "13%" }} />
-              <col style={{ width: "5%" }} />
+              <col style={{ width: "11%" }} />
+              <col style={{ width: "8%" }} />
               <col style={{ width: "9%" }} />
+              <col style={{ width: "5%" }} />
+              <col style={{ width: "14%" }} />
+              <col style={{ width: "14%" }} />
+              <col style={{ width: "5%" }} />
+              <col style={{ width: "12%" }} />
             </colgroup>
             <thead>
               <tr>

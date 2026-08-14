@@ -1747,6 +1747,17 @@ export function buildPdfRouter(odoo = null) {
       if (req.user?.is_distribuidor && req.user?.logo_data_url) {
         payload.__custom_logo_data_url = req.user.logo_data_url;
       }
+      // Para distribuidores, el PDF de PRESUPUESTO siempre dice "A convenir" en forma
+      // de pago sin importar la elegida - solo cambia este texto, no toca el calculo
+      // de precios/IVA (payment_method no se usa para eso en este archivo, ver
+      // isCondition2/condition_mode mas abajo) ni lo que se guarda en el presupuesto
+      // real ni lo que se sincroniza a Odoo (esto es una copia efimera solo para el PDF).
+      if (req.user?.is_distribuidor) {
+        payload.payment_method = "A convenir";
+        if (payload.payload && typeof payload.payload === "object") {
+          payload.payload = { ...payload.payload, payment_method: "A convenir" };
+        }
+      }
       const brand = resolvePdfBrand(req.user);
       const pdf = brand === "duret"
         ? await renderDuretPresupuestoPdf({ payload, odoo })
