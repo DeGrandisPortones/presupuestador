@@ -1348,6 +1348,32 @@ async function syncFinalQuoteToOdoo({ odoo, revisionQuote, originalQuote, source
   // plan/tasa asociada.
   const financingVals = await buildFinancingSaleOrderVals(odoo, conditionPayload?.payment_method);
 
+  // Salvaguarda anti-duplicados: si esta funcion se llama dos veces para la misma
+  // revisionQuote (ej. el create en Odoo salio bien pero el paso siguiente -escribir
+  // final_sale_order_id en nuestra DB- se corto por timeout/error de red, asi que el
+  // caller cree que fallo y deja reintentar), sin este chequeo se crea una SEGUNDA NV
+  // real en Odoo con la misma referencia (visto en vivo: NV4262, NV4407 con 2-3
+  // ordenes distintas). Se busca primero por "origin" (no client_order_ref: para
+  // distribuidores queda pisado mas abajo con "... Cliente <nombre>", asi que no
+  // sirve para matchear de forma estable) antes de crear.
+  const existingByReference = await odoo.executeKw(
+    "sale.order",
+    "search_read",
+    [[["origin", "=", referenceNv]]],
+    { fields: ["id", "name", "amount_total", "partner_id", "state", "pricelist_id", "origin", "client_order_ref"], order: "id asc", limit: 1 },
+  );
+  if (existingByReference?.length) {
+    return {
+      order: existingByReference[0],
+      metrics: {
+        ...(precomputedMetrics || {}),
+        final_amount_to_charge: round2(Math.max(0, totalToCharge)),
+        difference_amount: round2(Math.max(0, totalToCharge)),
+        reference_nv: referenceNv,
+      },
+    };
+  }
+
   const createdOrderId = await odoo.executeKw("sale.order", "create", [{
     partner_id: partnerId,
     pricelist_id:
