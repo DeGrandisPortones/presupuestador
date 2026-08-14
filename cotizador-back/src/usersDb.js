@@ -23,6 +23,11 @@ export async function ensureUsersAdminColumns() {
   // que despues hay que volver a como estaba. Ver validateDimensionsRequired en
   // CotizadorPage/index.jsx.
   await dbQuery(`alter table public.presupuestador_users add column if not exists unlimited_dimensions boolean not null default false;`);
+  // Logo propio de este distribuidor (data URL en base64), cargado por su vendedor
+  // asignado desde "Mis distribuidores". Si esta cargado, el PDF de PRESUPUESTO (no
+  // la proforma) usa este logo en vez del de De Grandis Portones - ver getLogoPath
+  // en routes/pdf.routes.js.
+  await dbQuery(`alter table public.presupuestador_users add column if not exists logo_data_url text null;`);
   await dbQuery(`create index if not exists presupuestador_users_assigned_seller_idx on public.presupuestador_users(assigned_seller_user_id);`);
 
   try {
