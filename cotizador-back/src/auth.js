@@ -93,7 +93,8 @@ export async function requireAuth(req, res, next) {
                coalesce(is_active, true) as is_active,
                coalesce(see_all_distributors, false) as see_all_distributors,
                pdf_brand,
-               coalesce(unlimited_dimensions, false) as unlimited_dimensions
+               coalesce(unlimited_dimensions, false) as unlimited_dimensions,
+               logo_data_url
         from public.presupuestador_users
         where id = $1
         limit 1
@@ -127,6 +128,10 @@ export async function requireAuth(req, res, next) {
           see_all_distributors: !!fresh.see_all_distributors,
           pdf_brand: fresh.pdf_brand ?? null,
           unlimited_dimensions: !!fresh.unlimited_dimensions,
+          // Deliberadamente NO va a signToken/el JWT (puede pesar varios KB en base64
+          // y se mandaria en cada request); solo se cuelga de req.user en esta
+          // relectura fresca de la DB, que ya se hace en cada request autenticado.
+          logo_data_url: fresh.logo_data_url ?? null,
         })
       : sanitizeUserForPricing({ ...decoded, is_active: decoded.is_active ?? true });
 

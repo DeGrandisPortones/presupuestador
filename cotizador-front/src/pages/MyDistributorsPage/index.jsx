@@ -4,7 +4,7 @@ import toast from "react-hot-toast";
 
 import Button from "../../ui/Button.jsx";
 import PaginationControls from "../../ui/PaginationControls.jsx";
-import { listMyDistributors, updateMyDistributorDefaultMapsUrl, updateMyDistributorPhone } from "../../api/sellerDistributors.js";
+import { listMyDistributors, updateMyDistributorDefaultMapsUrl, updateMyDistributorPhone, getMyDistributorLogo, updateMyDistributorLogo } from "../../api/sellerDistributors.js";
 import { getPricelists } from "../../api/odoo.js";
 import { useAuthStore } from "../../domain/auth/store.js";
 
@@ -123,6 +123,87 @@ function MapsCell({ distributor, value, onChange, onSave, saving }) {
   );
 }
 
+const MAX_LOGO_BYTES = 2 * 1024 * 1024;
+const ALLOWED_LOGO_TYPES = new Set(["image/png", "image/jpeg", "image/webp"]);
+
+function fileToLogoDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    if (!file) return resolve("");
+    if (!ALLOWED_LOGO_TYPES.has(String(file.type || "").toLowerCase())) {
+      reject(new Error("El logo debe ser una imagen PNG, JPG o WEBP."));
+      return;
+    }
+    if (Number(file.size || 0) > MAX_LOGO_BYTES) {
+      reject(new Error("El logo no puede superar 2 MB."));
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ""));
+    reader.onerror = () => reject(new Error("No se pudo leer el archivo del logo."));
+    reader.readAsDataURL(file);
+  });
+}
+
+function LogoCell({ distributor, onSave, saving }) {
+  const [previewUrl, setPreviewUrl] = useState(null);
+  const [loadingPreview, setLoadingPreview] = useState(false);
+  const inputId = `logo-input-${distributor.id}`;
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!distributor?.has_logo) {
+      setPreviewUrl(null);
+      return undefined;
+    }
+    setLoadingPreview(true);
+    getMyDistributorLogo(distributor.id)
+      .then((dataUrl) => { if (!cancelled) setPreviewUrl(dataUrl || null); })
+      .catch(() => { if (!cancelled) setPreviewUrl(null); })
+      .finally(() => { if (!cancelled) setLoadingPreview(false); });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [distributor.id, distributor.has_logo]);
+
+  async function handleFileChange(e) {
+    const file = e.target.files?.[0] || null;
+    e.target.value = "";
+    if (!file) return;
+    try {
+      const dataUrl = await fileToLogoDataUrl(file);
+      onSave(dataUrl);
+    } catch (err) {
+      toast.error(err?.message || "No se pudo cargar el logo");
+    }
+  }
+
+  return (
+    <div style={{ display: "grid", gap: 8, width: "100%" }}>
+      {distributor?.has_logo ? (
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          {loadingPreview ? (
+            <span className="muted" style={{ fontSize: 12 }}>Cargando...</span>
+          ) : previewUrl ? (
+            <img src={previewUrl} alt="Logo" style={{ maxWidth: 90, maxHeight: 32, objectFit: "contain", border: "1px solid #eee", borderRadius: 6, background: "#fff" }} />
+          ) : (
+            <span className="muted" style={{ fontSize: 12 }}>Sin vista previa</span>
+          )}
+        </div>
+      ) : (
+        <span className="muted" style={{ fontSize: 12 }}>Usa el logo de De Grandis Portones</span>
+      )}
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        <input id={inputId} type="file" accept="image/png,image/jpeg,image/webp" onChange={handleFileChange} disabled={saving} style={{ display: "none" }} />
+        <Button variant="secondary" disabled={saving} onClick={() => document.getElementById(inputId)?.click()}>
+          {saving ? "Guardando..." : distributor?.has_logo ? "Reemplazar" : "Subir logo"}
+        </Button>
+        {distributor?.has_logo ? (
+          <Button variant="ghost" disabled={saving} onClick={() => onSave("")}>Quitar</Button>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
 export default function MyDistributorsPage() {
   const user = useAuthStore((s) => s.user);
   const canAccess = !!(user?.is_superuser || user?.is_enc_comercial || (user?.is_vendedor && !user?.is_distribuidor));
@@ -162,6 +243,15 @@ export default function MyDistributorsPage() {
       qc.invalidateQueries({ queryKey: ["myDistributors"] });
     },
     onError: (e) => toast.error(e?.message || "No se pudo guardar el teléfono"),
+  });
+
+  const saveLogoM = useMutation({
+    mutationFn: ({ id, value }) => updateMyDistributorLogo(id, value),
+    onSuccess: (_data, variables) => {
+      toast.success(variables?.value ? "Logo guardado" : "Logo quitado");
+      qc.invalidateQueries({ queryKey: ["myDistributors"] });
+    },
+    onError: (e) => toast.error(e?.message || "No se pudo guardar el logo"),
   });
 
   const pricelistById = useMemo(() => {
@@ -287,17 +377,18 @@ export default function MyDistributorsPage() {
         {!q.isLoading && !!distributors.length && !filteredDistributors.length ? <div className="muted">No hay distribuidores que coincidan con la busqueda.</div> : null}
 
         {!!filteredDistributors.length ? (
-          <table style={{ width: "100%", minWidth: 1560, tableLayout: "fixed" }}>
+          <table style={{ width: "100%", minWidth: 1720, tableLayout: "fixed" }}>
             <colgroup>
-              <col style={{ width: "14%" }} />
-              <col style={{ width: "12%" }} />
               <col style={{ width: "13%" }} />
-              <col style={{ width: "9%" }} />
               <col style={{ width: "11%" }} />
-              <col style={{ width: "7%" }} />
-              <col style={{ width: "14%" }} />
-              <col style={{ width: "14%" }} />
+              <col style={{ width: "12%" }} />
+              <col style={{ width: "8%" }} />
+              <col style={{ width: "10%" }} />
               <col style={{ width: "6%" }} />
+              <col style={{ width: "13%" }} />
+              <col style={{ width: "13%" }} />
+              <col style={{ width: "5%" }} />
+              <col style={{ width: "9%" }} />
             </colgroup>
             <thead>
               <tr>
@@ -310,6 +401,7 @@ export default function MyDistributorsPage() {
                 <th>Teléfono</th>
                 <th>Maps por defecto</th>
                 <th>Estado</th>
+                <th>Logo presupuesto</th>
               </tr>
             </thead>
             <tbody>
@@ -350,6 +442,13 @@ export default function MyDistributorsPage() {
                       />
                     </td>
                     <td style={tableCellStyle}>{d.is_active ? "Activo" : "Inactivo"}</td>
+                    <td style={tableCellStyle}>
+                      <LogoCell
+                        distributor={d}
+                        onSave={(value) => saveLogoM.mutate({ id: d.id, value })}
+                        saving={saveLogoM.isPending && String(saveLogoM.variables?.id || "") === String(d.id)}
+                      />
+                    </td>
                   </tr>
                 );
               })}

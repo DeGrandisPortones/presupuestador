@@ -125,6 +125,26 @@ function getLogoPath(payload = null) {
   }
   return path.join(__dirname, "../assets/logo-degrandis.png");
 }
+function decodeLogoDataUrl(dataUrl) {
+  const raw = String(dataUrl || "").trim();
+  const match = raw.match(/^data:image\/(png|jpe?g|webp);base64,([a-zA-Z0-9+/=]+)$/i);
+  if (!match) return null;
+  try {
+    return Buffer.from(match[2], "base64");
+  } catch {
+    return null;
+  }
+}
+// Logo propio de un distribuidor (cargado por su vendedor en "Mis distribuidores",
+// ver seller-distributors.routes.js), dejado por la ruta /presupuesto en
+// payload.__custom_logo_data_url - la proforma nunca lo setea, asi que ahi siempre
+// cae al logo estandar de mas abajo (De Grandis o Ipanel).
+function resolveHeaderLogoSource(payload = null) {
+  const custom = decodeLogoDataUrl(payload?.__custom_logo_data_url);
+  if (custom) return custom;
+  const logoPath = getLogoPath(payload);
+  return fs.existsSync(logoPath) ? logoPath : null;
+}
 function getLogoDrawOptions(payload = null) {
   const catalogKind = getCatalogKindFromPayload(payload);
   if (catalogKind === "ipanel") return { fit: [142, 48], align: "left", valign: "center" };
@@ -410,12 +430,27 @@ function drawPageFrame(doc, margin, pageNo, pageCount, footerLeft = "De Grandis 
     .text(`Página ${pageNo} de ${pageCount}`, margin, h - margin - 16, { width: w - margin * 2, align: "right" })
     .restore();
 }
+// El logo custom de un distribuidor ya se valida (en un proceso hijo aislado) antes
+// de guardarse - ver seller-distributors.routes.js. Este try/catch es una segunda
+// linea de defensa barata (cubre corrupcion de datos en la DB, o cualquier otro
+// origen futuro de payload.__custom_logo_data_url que no haya pasado por esa
+// validacion) para que, en el peor caso, el PDF salga sin logo en vez de romperse.
+// No cubre el escenario async que sí requiere el proceso hijo (ver el comment en
+// pdfImageValidator.worker.mjs) - por eso la validacion previa sigue siendo necesaria.
+function drawLogoSafely(doc, source, payload, x, y) {
+  if (!source) return;
+  try {
+    doc.image(source, x, y, getLogoDrawOptions(payload));
+  } catch (e) {
+    console.error("[pdf] logo invalido al dibujar, se omite:", e?.message || e);
+  }
+}
 function drawHeader(doc, { title, payload, margin, innerW, dateStr, validStr, hideValidity = false }) {
-  const logoPath = getLogoPath(payload);
+  const logoSource = resolveHeaderLogoSource(payload);
   const headerH = 64;
   const quoteNo = getQuoteNumber(payload);
   doc.save().strokeColor("#111827").lineWidth(1.2).roundedRect(margin, margin, innerW, headerH, 10).stroke().restore();
-  if (fs.existsSync(logoPath)) doc.image(logoPath, margin + 14, margin + 9, getLogoDrawOptions(payload));
+  drawLogoSafely(doc, logoSource, payload, margin + 14, margin + 9);
   doc.font("Helvetica-Bold").fontSize(18).fillColor("#111827").text(title, margin + 205, margin + 12, { width: innerW - 360, align: "center" });
   doc.font("Helvetica").fontSize(9).fillColor("#374151").text(`Fecha: ${dateStr}`, margin + innerW - 135, margin + 14, { width: 120, align: "right" });
   if (!hideValidity) doc.text(`Válido hasta: ${validStr}`, margin + innerW - 135, margin + 28, { width: 120, align: "right" });
@@ -1707,6 +1742,11 @@ export function buildPdfRouter(odoo = null) {
     try {
       const rawPayload = req.body || {};
       const payload = { ...rawPayload, seller_name: resolveLoggedUserSellerName(req.user, rawPayload) };
+      // Logo propio del distribuidor (cargado por su vendedor en "Mis distribuidores"):
+      // solo en el PDF de PRESUPUESTO, nunca en la proforma (esa ruta no setea esto).
+      if (req.user?.is_distribuidor && req.user?.logo_data_url) {
+        payload.__custom_logo_data_url = req.user.logo_data_url;
+      }
       const brand = resolvePdfBrand(req.user);
       const pdf = brand === "duret"
         ? await renderDuretPresupuestoPdf({ payload, odoo })
