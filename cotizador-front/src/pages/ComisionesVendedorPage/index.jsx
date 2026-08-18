@@ -35,7 +35,60 @@ function docLabel(moveType) {
   return moveType === "out_refund" ? "NC" : "FV";
 }
 
-function ComisionDetalleModal({ sellerName, invoices, onClose }) {
+// Prefijo NP/NV del comprobante (o de su origen), para etiquetar el botón que
+// muestra el comprobante que ya contó el portón (ver claimed_by).
+function docPrefixLabel(claim) {
+  const s = String(claim?.invoice_origin || claim?.move_name || "").toUpperCase();
+  const m = s.match(/^N([VP])/);
+  if (!m) return "comprobante";
+  return m[1] === "P" ? "NP" : "NV";
+}
+
+function ClaimInfoModal({ row, onClose }) {
+  const claim = row?.claimed_by || null;
+  if (!row) return null;
+  return (
+    <div
+      style={{
+        position: "fixed", inset: 0, zIndex: 1100,
+        background: "rgba(17,24,39,0.55)",
+        display: "flex", alignItems: "center", justifyContent: "center",
+        padding: 16,
+      }}
+      onClick={onClose}
+    >
+      <div
+        className="card"
+        style={{ maxWidth: 420, width: "100%", borderRadius: 16, boxShadow: "0 20px 50px rgba(0,0,0,0.25)" }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
+          <div style={{ fontWeight: 900, fontSize: 18, color: "#111827" }}>Portón ya contado</div>
+          <Button variant="ghost" onClick={onClose}>Cerrar</Button>
+        </div>
+        <div className="muted" style={{ fontSize: 13, marginTop: 8, marginBottom: 10 }}>
+          {row.move_name} ({row.invoice_origin || "—"}) no suma como portón porque este número ya fue contado
+          por el siguiente comprobante:
+        </div>
+        {claim ? (
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+            <tbody>
+              <tr><td style={{ padding: "4px 0", fontWeight: 700, width: 110 }}>Comprobante</td><td>{claim.move_name}</td></tr>
+              <tr><td style={{ padding: "4px 0", fontWeight: 700 }}>Origen</td><td>{claim.invoice_origin || "—"}</td></tr>
+              <tr><td style={{ padding: "4px 0", fontWeight: 700 }}>Fecha</td><td>{claim.invoice_date}</td></tr>
+              <tr><td style={{ padding: "4px 0", fontWeight: 700 }}>Cliente</td><td>{claim.partner_name || "—"}</td></tr>
+              <tr><td style={{ padding: "4px 0", fontWeight: 700 }}>Vendedor</td><td>{claim.seller_name || "—"}</td></tr>
+              <tr><td style={{ padding: "4px 0", fontWeight: 700 }}>Neto ARS</td><td>{money(claim.neto_ars)}</td></tr>
+              <tr><td style={{ padding: "4px 0", fontWeight: 700 }}>Neto USD</td><td>{claim.neto_usd == null ? "—" : money(claim.neto_usd)}</td></tr>
+            </tbody>
+          </table>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function ComisionDetalleModal({ sellerName, invoices, onClose, onShowClaim }) {
   const portonCount = new Set(
     invoices.filter((i) => i.categoria === "porton" && i.counts_as_porton).map((i) => i.invoice_origin),
   ).size;
@@ -94,6 +147,16 @@ function ComisionDetalleModal({ sellerName, invoices, onClose }) {
                   <td style={{ padding: "8px 10px" }}>
                     {inv.counts_as_porton ? (
                       <span style={{ background: "#2563eb", color: "#fff", borderRadius: 999, padding: "2px 10px", fontWeight: 700, fontSize: 12 }}>Sí</span>
+                    ) : inv.claimed_by ? (
+                      <span
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => onShowClaim(inv)}
+                        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") onShowClaim(inv); }}
+                        style={{ background: "#fff", color: "#2563eb", border: "1px solid #2563eb", borderRadius: 999, padding: "2px 10px", fontWeight: 700, fontSize: 12, cursor: "pointer" }}
+                      >
+                        Ver {docPrefixLabel(inv.claimed_by)}
+                      </span>
                     ) : "—"}
                   </td>
                   <td style={{ padding: "8px 10px", textAlign: "right" }}>{money(inv.neto_ars)}</td>
@@ -160,6 +223,7 @@ export default function ComisionesVendedorPage() {
   const [month, setMonth] = useState(toYyyyMm());
   const [period, setPeriod] = useState(currentQuincena());
   const [detailOpen, setDetailOpen] = useState(false);
+  const [claimRow, setClaimRow] = useState(null);
 
   const commQ = useQuery({
     queryKey: ["myCommission", month, period],
@@ -257,8 +321,11 @@ export default function ComisionesVendedorPage() {
           sellerName={data.seller_name}
           invoices={data.invoices || []}
           onClose={() => setDetailOpen(false)}
+          onShowClaim={setClaimRow}
         />
       ) : null}
+
+      {claimRow ? <ClaimInfoModal row={claimRow} onClose={() => setClaimRow(null)} /> : null}
     </div>
   );
 }
