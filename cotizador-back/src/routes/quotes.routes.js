@@ -1068,6 +1068,15 @@ export function appendPaymentMethodToNote(note, paymentMethod) {
   if (!pm) return note;
   return `${note}\nForma de pago: ${pm}`;
 }
+// La NP inicial (syncQuoteToOdoo/buildDistributorNote) ya incluye el Maps del cliente
+// final en su nota - pero las NV finales (syncDirectProductionFinalToOdoo,
+// syncFinalQuoteToOdoo en este archivo y en measurementFinalization.js) arman su nota
+// desde cero y no lo llevaban. Se centraliza acá para que las 3 lo agreguen igual.
+export function appendMapsUrlToNote(note, mapsUrl) {
+  const url = toText(mapsUrl);
+  if (!url) return note;
+  return `${note}\nMaps: ${url}`;
+}
 function getBudgetObservation(quote) {
   const payload = quote?.payload && typeof quote.payload === "object" ? quote.payload : {};
   return toText(quote?.budget_observation || payload?.budget_observation || payload?.presupuesto_observacion || payload?.quote_observation || "");
@@ -1572,6 +1581,7 @@ async function syncFinalQuoteToOdoo({ odoo, revisionQuote, originalQuote, approv
     + `\nImporte final a facturar: ${finalAmountToCharge}`
     + (sellerName ? `\nVendedor: ${sellerName}` : "");
   if (forcedNv) note += formatHardcodedOdooNote(forcedNv);
+  note = appendMapsUrlToNote(note, revisionQuote?.end_customer?.maps_url || originalQuote?.end_customer?.maps_url);
   note = appendBudgetObservationToNote(note, revisionQuote || originalQuote);
   note = appendPaymentMethodToNote(note, revisionQuote?.payload?.payment_method || originalQuote?.payload?.payment_method);
   note = appendSaleConditionToNote(note, revisionQuote?.payload?.condition_mode ? revisionQuote : originalQuote);
@@ -1728,6 +1738,7 @@ async function syncDirectProductionFinalToOdoo({ odoo, quote, approverUser }) {
     + `\nPortón sin medición: se envía el detalle completo sin instancia adicional de edición.`
     + (quote.note ? `\n${quote.note}` : "")
     + (sellerName ? `\nVendedor: ${sellerName}` : "");
+  note = appendMapsUrlToNote(note, quote?.end_customer?.maps_url);
   note = appendBudgetObservationToNote(note, quote);
   if (forcedDirectNv) note += formatHardcodedOdooNote(forcedDirectNv);
   note = appendPaymentMethodToNote(note, quote?.payload?.payment_method);
@@ -2358,8 +2369,13 @@ export function buildQuotesRouter(odoo) {
     try {
       const u = req.user;
       const id = req.params.id;
+      // parent_requires_measurement: cuando ESTA fila ya es la copia final ("Editar final"),
+      // sirve para distinguir en el frontend si vino del circuito de medición o del de
+      // Acopio->Producción ("Edición postmedición" / "Edición acopio" en QuoteDetailPage) -
+      // el padre es el que sabe si requería medición (la copia no hereda ese campo).
       const r = await dbQuery(
-        `select q.*, fc.final_copy_id, fc.final_copy_status, fc.final_sale_order_name, fc.final_copy_quote_status
+        `select q.*, fc.final_copy_id, fc.final_copy_status, fc.final_sale_order_name, fc.final_copy_quote_status,
+                p.requires_measurement as parent_requires_measurement
          from public.presupuestador_quotes q
          left join lateral (
            select c.id as final_copy_id,
@@ -2371,6 +2387,8 @@ export function buildQuotesRouter(odoo) {
            order by c.created_at desc nulls last, c.id desc
            limit 1
          ) fc on true
+         left join public.presupuestador_quotes p
+           on q.quote_kind = 'copy' and p.id = q.parent_quote_id
          where q.id=$1`,
         [id]
       );

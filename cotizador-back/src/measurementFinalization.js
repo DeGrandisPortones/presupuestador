@@ -22,6 +22,7 @@ import {
   appendPaymentMethodToNote,
   appendBudgetObservationToNote,
   appendCommercialCommentToNote,
+  appendMapsUrlToNote,
 } from "./routes/quotes.routes.js";
 
 const PLACEHOLDER_PRODUCT_ID = Number(
@@ -676,6 +677,11 @@ function getOdooConditionLabel(payload) {
 }
 function calcDetailedUnitWithIva(line, payload, quote = null) {
   // Nombre legacy: este precio unitario es el que se envía a Odoo.
+  // "Facturado previamente" es un dato duro (el neto ya facturado en la NP/NV anterior,
+  // ver buildPreviouslyBilledLine) - no se le aplica coeficiente/margen, ajuste por forma
+  // de pago ni factor de condición. Mismo criterio que calcOdooUnitPrice en
+  // quotes.routes.js (usado por la NP inicial y por Acopio->Producción); acá faltaba.
+  if (line?.previously_billed_line === true) return round2(Number(line.basePrice ?? line.base_price ?? 0));
   if (shouldZeroShippingForOdoo(quote, line)) return 0;
   // Envío: usa el precio de Odoo ya congelado (no el que cargó el distribuidor
   // para su propio presupuesto, que puede estar editado/marcado con margen).
@@ -1339,6 +1345,7 @@ async function syncFinalQuoteToOdoo({ odoo, revisionQuote, originalQuote, source
     ? revisionQuote.payload
     : (sourceQuote?.payload?.condition_mode ? sourceQuote.payload : (originalQuote?.payload || {}));
   let note = `Condición vendida: ${getOdooConditionLabel(conditionPayload)}`;
+  note = appendMapsUrlToNote(note, revisionQuote?.end_customer?.maps_url || sourceQuote?.end_customer?.maps_url || originalQuote?.end_customer?.maps_url);
   note = appendBudgetObservationToNote(note, revisionQuote || sourceQuote || originalQuote);
   note = appendPaymentMethodToNote(note, conditionPayload?.payment_method);
   note = appendCommercialCommentToNote(note, originalQuote?.measurement_commercial_review_notes);
