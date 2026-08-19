@@ -2358,8 +2358,13 @@ export function buildQuotesRouter(odoo) {
     try {
       const u = req.user;
       const id = req.params.id;
+      // parent_requires_measurement: cuando ESTA fila ya es la copia final ("Editar final"),
+      // sirve para distinguir en el frontend si vino del circuito de medición o del de
+      // Acopio->Producción ("Edición postmedición" / "Edición acopio" en QuoteDetailPage) -
+      // el padre es el que sabe si requería medición (la copia no hereda ese campo).
       const r = await dbQuery(
-        `select q.*, fc.final_copy_id, fc.final_copy_status, fc.final_sale_order_name, fc.final_copy_quote_status
+        `select q.*, fc.final_copy_id, fc.final_copy_status, fc.final_sale_order_name, fc.final_copy_quote_status,
+                p.requires_measurement as parent_requires_measurement
          from public.presupuestador_quotes q
          left join lateral (
            select c.id as final_copy_id,
@@ -2371,6 +2376,8 @@ export function buildQuotesRouter(odoo) {
            order by c.created_at desc nulls last, c.id desc
            limit 1
          ) fc on true
+         left join public.presupuestador_quotes p
+           on q.quote_kind = 'copy' and p.id = q.parent_quote_id
          where q.id=$1`,
         [id]
       );
