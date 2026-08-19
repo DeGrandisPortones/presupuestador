@@ -676,12 +676,14 @@ export function buildMeasurementsRouter(odoo = null) {
           error: "En puertas el medidor no puede cambiar secciones/productos. Deja observaciones para devolverlo al vendedor o envia a aprobacion tecnica final.",
         });
       }
-      // El medidor elige libremente a quién enviar (técnico o vendedor). Cambiar el
-      // producto de la sección 18 ya no fuerza el retorno al vendedor por sí solo;
-      // solo se fuerza por el guardia de superficie (portón terminó más grande que
-      // lo presupuestado) o si el medidor lo pide explícitamente.
+      // El medidor SIEMPRE devuelve al vendedor (pedido explícito 2026-08-19): ya no
+      // puede elegir enviarlo directo a Técnica, sin importar guardia de superficie ni
+      // nada más. Para portones "tecnica_only" (sin medidor físico - lo autocompleta
+      // Técnica desde este mismo formulario) esto no aplica: ahí no hay "el medidor
+      // eligiendo a quién mandarlo", es Técnica revisando su propio trabajo.
       const explicitReturnToSeller = body.return_to_seller === true;
       const forceSellerReturn =
+        !!u?.is_medidor ||
         areaGuard.forced_return_to_seller === true ||
         explicitReturnToSeller;
 

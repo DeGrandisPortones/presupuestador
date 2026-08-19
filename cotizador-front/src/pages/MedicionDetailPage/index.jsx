@@ -1390,28 +1390,24 @@ export default function MedicionDetailPage() {
                 </Button>
               </>
             ) : !isReadOnlyMeasurement && isMedidor ? (
-              <>
-                <Button
-                  disabled={saveMedicionM.isPending}
-                  onClick={() => saveMedicionM.mutate({ submit: true, returnToSeller: false })}
-                >
-                  {saveMedicionM.isPending ? "Procesando..." : "Enviar al técnico"}
-                </Button>
-                <Button
-                  variant="ghost"
-                  disabled={saveMedicionM.isPending}
-                  onClick={() => {
-                    const reason = window.prompt("Motivo de devolución al vendedor (opcional):", "") ?? "";
-                    saveMedicionM.mutate({
-                      submit: true,
-                      returnToSeller: true,
-                      returnReason: reason || "El medidor devuelve al vendedor para revisión.",
-                    });
-                  }}
-                >
-                  {saveMedicionM.isPending ? "Procesando..." : "Enviar al vendedor"}
-                </Button>
-              </>
+              // El medidor ya no elige a quién mandarlo (pedido explícito 2026-08-19):
+              // siempre va al vendedor, nunca directo a Técnica. El backend fuerza esto
+              // igual aunque llegue returnToSeller:false, pero se saca el botón de acá
+              // para no mostrar una opción que ya no existe.
+              <Button
+                variant="ghost"
+                disabled={saveMedicionM.isPending}
+                onClick={() => {
+                  const reason = window.prompt("Motivo de devolución al vendedor (opcional):", "") ?? "";
+                  saveMedicionM.mutate({
+                    submit: true,
+                    returnToSeller: true,
+                    returnReason: reason || "El medidor devuelve al vendedor para revisión.",
+                  });
+                }}
+              >
+                {saveMedicionM.isPending ? "Procesando..." : "Enviar al vendedor"}
+              </Button>
             ) : !isReadOnlyMeasurement ? (
               <Button disabled={saveMedicionM.isPending} onClick={() => saveMedicionM.mutate({ submit: true })}>
                 {saveMedicionM.isPending ? "Procesando..." : submitButtonLabel}
