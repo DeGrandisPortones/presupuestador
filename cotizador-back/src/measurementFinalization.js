@@ -351,7 +351,7 @@ async function buildPreproduccionPayload({ originalQuote, sourceQuote, revisionQ
     revisionQuote?.payload && typeof revisionQuote.payload === "object"
       ? revisionQuote.payload
       : {};
-  const dimensions =
+  const budgetDimensions =
     revisionPayload?.dimensions && typeof revisionPayload.dimensions === "object"
       ? revisionPayload.dimensions
       : sourcePayload?.dimensions && typeof sourcePayload.dimensions === "object"
@@ -359,6 +359,20 @@ async function buildPreproduccionPayload({ originalQuote, sourceQuote, revisionQ
         : originalPayload?.dimensions && typeof originalPayload.dimensions === "object"
           ? originalPayload.dimensions
           : {};
+  const finalCalculatedDimensions =
+    revisionPayload?.final_calculated_dimensions && typeof revisionPayload.final_calculated_dimensions === "object" && Object.keys(revisionPayload.final_calculated_dimensions).length
+      ? revisionPayload.final_calculated_dimensions
+      : sourcePayload?.final_calculated_dimensions && typeof sourcePayload.final_calculated_dimensions === "object" && Object.keys(sourcePayload.final_calculated_dimensions).length
+        ? sourcePayload.final_calculated_dimensions
+        : originalPayload?.final_calculated_dimensions && typeof originalPayload.final_calculated_dimensions === "object" && Object.keys(originalPayload.final_calculated_dimensions).length
+          ? originalPayload.final_calculated_dimensions
+          : {};
+  // Produccion fabrica con "las medidas calculadas finales" (salen del vano MEDIDO - ver
+  // persistDimensionsPatch): ancho/alto/paso/hoja/peso pisan el dato del presupuesto acá. Lo
+  // que NO recalcula la medicion (parantes: cantidad/orientacion/distribucion/observaciones,
+  // eso lo sigue definiendo solo la vendedora) se mantiene tal cual venga del presupuesto -
+  // por eso es merge y no reemplazo directo de payload.dimensions.
+  const dimensions = { ...budgetDimensions, ...finalCalculatedDimensions };
   const measurementForm =
     originalQuote?.measurement_form && typeof originalQuote.measurement_form === "object"
       ? originalQuote.measurement_form
@@ -1859,10 +1873,17 @@ async function saveTokenAndNotify(odoo, originalQuote) {
   }
 }
 
+// "Las medidas" (payload.dimensions: ancho/alto/vano que carga la vendedora) son un dato
+// duro - la medicion NUNCA las pisa, ni siquiera cuando Tecnica da la aprobacion final (pedido
+// explicito 2026-08-19: "la medicion no me debe alterar en nada, pero nada nada nada el
+// presupuesto original. Eso lo debe hacer la vendedora"). Lo que sale del vano MEDIDO se
+// guarda aparte, en payload.final_calculated_dimensions, para que produccion/PDF tecnico
+// fabriquen con la medida real sin que la pantalla de edicion (que lee payload.dimensions)
+// se entere ni le cambie el precio a nadie.
 function mergeDimensionsPatch(payload, dimensionsPatch) {
   if (!dimensionsPatch || typeof dimensionsPatch !== "object" || !Object.keys(dimensionsPatch).length) return payload;
   const base = payload && typeof payload === "object" ? payload : {};
-  return { ...base, dimensions: { ...(base.dimensions || {}), ...dimensionsPatch } };
+  return { ...base, final_calculated_dimensions: { ...(base.final_calculated_dimensions || {}), ...dimensionsPatch } };
 }
 // Una vez que el cliente acepto el link, los datos que ve (medidas incluidas) quedan congelados
 // para siempre - no se vuelven a tocar aunque la finalizacion se re-dispare (retry, resync, un
@@ -1870,17 +1891,19 @@ function mergeDimensionsPatch(payload, dimensionsPatch) {
 function isClientAlreadyAccepted(quote) {
   return !!(quote?.measurement_client_accepted_at || quote?.payload?.measurement_client_acceptance?.accepted_at);
 }
-// Actualiza payload.dimensions de la quote dada (original o copia) con las medidas de paso/hoja
-// recalculadas, para que el link de aceptacion del cliente (que lee del original) y cualquier
-// consulta tecnica vean la medida final, no la del presupuesto. jsonb merge para no pisar el resto.
+// Actualiza payload.final_calculated_dimensions de la quote dada (original o copia) con las
+// medidas de paso/hoja recalculadas a partir del vano MEDIDO, para que el link de aceptacion
+// del cliente y cualquier consulta tecnica/produccion vean la medida final - sin tocar
+// payload.dimensions (el presupuesto de la vendedora, dato duro). jsonb merge para no pisar el
+// resto de payload.
 async function persistDimensionsPatch(quoteId, dimensionsPatch) {
   if (!quoteId || !dimensionsPatch || typeof dimensionsPatch !== "object" || !Object.keys(dimensionsPatch).length) return;
   await dbQuery(
     `update public.presupuestador_quotes
         set payload = jsonb_set(
           coalesce(payload, '{}'::jsonb),
-          '{dimensions}',
-          coalesce(payload->'dimensions', '{}'::jsonb) || $2::jsonb,
+          '{final_calculated_dimensions}',
+          coalesce(payload->'final_calculated_dimensions', '{}'::jsonb) || $2::jsonb,
           true
         )
       where id=$1`,
@@ -2112,7 +2135,7 @@ export async function resyncPortonMeasurements({ odoo, originalQuoteId, force = 
     return { ok: false, error: "No se pudieron recalcular las medidas (revisar tipo de portón/líneas del presupuesto)" };
   }
 
-  const beforeDims = originalQuote.payload?.dimensions || {};
+  const beforeDims = originalQuote.payload?.final_calculated_dimensions || {};
   await persistDimensionsPatch(originalQuote.id, dimensionsPatch);
   if (clientAccepted && force) {
     // Unico camino permitido para tocar datos post-aceptacion: queda registrado quien y cuando.

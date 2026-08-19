@@ -188,8 +188,21 @@ function normalizeSellerDimensionMm(value) {
   if (!Number.isFinite(n) || n <= 0) return 0;
   return Math.round(n > 100 ? n : n * 1000);
 }
+// Este PDF (resumen tecnico/de fabricacion) muestra "las medidas calculadas finales" cuando
+// existen (payload.final_calculated_dimensions, salen del vano MEDIDO - ver persistDimensionsPatch
+// en measurementFinalization.js), nunca las del presupuesto puro (payload.dimensions, dato duro
+// de la vendedora) si ya hay medicion final cargada. Merge para no perder campos que la medicion
+// no recalcula (parantes, colocacion, etc.) cuando faltan en el patch.
+function resolveProductionDimensions(quote) {
+  const base = quote?.payload?.dimensions || {};
+  const final = quote?.payload?.final_calculated_dimensions;
+  if (final && typeof final === "object" && Object.keys(final).length) {
+    return { ...base, ...final };
+  }
+  return base;
+}
 function buildSellerDimensionsLine(quote) {
-  const dims = quote?.payload?.dimensions || {};
+  const dims = resolveProductionDimensions(quote);
   const widthMm = normalizeSellerDimensionMm(dims?.width);
   const heightMm = normalizeSellerDimensionMm(dims?.height);
   if (!widthMm && !heightMm) return "";
@@ -214,7 +227,7 @@ async function resolveQuoteSource(payload) {
 // para que getBudgetLuzDimensionsMm (marca Duret, mismo dato con otro nombre)
 // no tenga que duplicar la logica de fallback.
 function resolvePasoDimensionsMm(quote, calculated) {
-  const dims = quote?.payload?.dimensions || {};
+  const dims = resolveProductionDimensions(quote);
   const storedAnchoMm = Number(dims?.paso_ancho_mm || dims?.medidas_paso_ancho_mm || 0);
   const storedAltoMm = Number(dims?.paso_alto_mm || dims?.medidas_paso_alto_mm || 0);
   const anchoMm = storedAnchoMm > 0 ? storedAnchoMm : (calculated?.ancho_paso_mm || calculated?.ancho_calculado_mm || 0);
@@ -272,7 +285,7 @@ export async function buildBudgetVanoTechnicalLines(payload) {
   const technicalSettings = await getTechnicalMeasurementRules();
   const surfaceParameters = technicalSettings?.surface_parameters || {};
   const calculated = computeSurfaceAutomaticContext({ quote, form: quote?.measurement_form || {}, surfaceParameters });
-  const dims = quote?.payload?.dimensions || {};
+  const dims = resolveProductionDimensions(quote);
 
   const left = [];
   const portonTypeLabel = getPortonTypeLabelFromQuote(quote);
