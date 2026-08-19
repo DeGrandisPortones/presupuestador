@@ -188,11 +188,12 @@ function normalizeSellerDimensionMm(value) {
   if (!Number.isFinite(n) || n <= 0) return 0;
   return Math.round(n > 100 ? n : n * 1000);
 }
-// Este PDF (resumen tecnico/de fabricacion) muestra "las medidas calculadas finales" cuando
-// existen (payload.final_calculated_dimensions, salen del vano MEDIDO - ver persistDimensionsPatch
-// en measurementFinalization.js), nunca las del presupuesto puro (payload.dimensions, dato duro
-// de la vendedora) si ya hay medicion final cargada. Merge para no perder campos que la medicion
-// no recalcula (parantes, colocacion, etc.) cuando faltan en el patch.
+// payload.final_calculated_dimensions normalmente esta vacio: la medicion es solo tomar la
+// medida del vano para que la vendedora la aplique al presupuesto (pedido explicito
+// 2026-08-19), nada se calcula/persiste solo. Este campo solo tiene datos si un superusuario
+// corrio el resync manual puntual (resyncPortonMeasurements en measurementFinalization.js) -
+// ahi si conviene mostrarlo en vez del presupuesto. Merge para no perder campos que ese resync
+// no toca (parantes, colocacion, etc.).
 function resolveProductionDimensions(quote) {
   const base = quote?.payload?.dimensions || {};
   const final = quote?.payload?.final_calculated_dimensions;

@@ -367,11 +367,11 @@ async function buildPreproduccionPayload({ originalQuote, sourceQuote, revisionQ
         : originalPayload?.final_calculated_dimensions && typeof originalPayload.final_calculated_dimensions === "object" && Object.keys(originalPayload.final_calculated_dimensions).length
           ? originalPayload.final_calculated_dimensions
           : {};
-  // Produccion fabrica con "las medidas calculadas finales" (salen del vano MEDIDO - ver
-  // persistDimensionsPatch): ancho/alto/paso/hoja/peso pisan el dato del presupuesto acá. Lo
-  // que NO recalcula la medicion (parantes: cantidad/orientacion/distribucion/observaciones,
-  // eso lo sigue definiendo solo la vendedora) se mantiene tal cual venga del presupuesto -
-  // por eso es merge y no reemplazo directo de payload.dimensions.
+  // final_calculated_dimensions normalmente esta vacio: la medicion es solo tomar la medida del
+  // vano para que la vendedora la aplique al presupuesto (pedido explicito 2026-08-19) - nada
+  // se calcula ni persiste automatico. Solo existe si un superusuario corrio el resync manual
+  // puntual (resyncPortonMeasurements, "tengo una queja de este porton"); ahi si pisa
+  // ancho/alto/paso/hoja/peso sobre el presupuesto para ese registro de produccion en particular.
   const dimensions = { ...budgetDimensions, ...finalCalculatedDimensions };
   const measurementForm =
     originalQuote?.measurement_form && typeof originalQuote.measurement_form === "object"
@@ -1875,11 +1875,13 @@ async function saveTokenAndNotify(odoo, originalQuote) {
 
 // "Las medidas" (payload.dimensions: ancho/alto/vano que carga la vendedora) son un dato
 // duro - la medicion NUNCA las pisa, ni siquiera cuando Tecnica da la aprobacion final (pedido
-// explicito 2026-08-19: "la medicion no me debe alterar en nada, pero nada nada nada el
-// presupuesto original. Eso lo debe hacer la vendedora"). Lo que sale del vano MEDIDO se
-// guarda aparte, en payload.final_calculated_dimensions, para que produccion/PDF tecnico
-// fabriquen con la medida real sin que la pantalla de edicion (que lee payload.dimensions)
-// se entere ni le cambie el precio a nadie.
+// explicito 2026-08-19: "la medicion es SOLO tomar las medidas del vano, para que la vendedora
+// despues la aplique, nada mas"). El flujo normal de medicion (finalizeMeasurementToRevisionQuote,
+// mas abajo) YA NO llama a mergeDimensionsPatch/persistDimensionsPatch: la medida medida queda
+// solo en measurement_form (persistente, historial, lo que la vendedora consulta para aplicarla
+// ella misma) y no se calcula/escribe nada mas en ningun lado. Las dos funciones de aca abajo
+// sobreviven unicamente para resyncPortonMeasurements, el resync MANUAL de superusuario (accion
+// explicita de una persona para un porton puntual, no algo que corre solo).
 function mergeDimensionsPatch(payload, dimensionsPatch) {
   if (!dimensionsPatch || typeof dimensionsPatch !== "object" || !Object.keys(dimensionsPatch).length) return payload;
   const base = payload && typeof payload === "object" ? payload : {};
@@ -1891,11 +1893,9 @@ function mergeDimensionsPatch(payload, dimensionsPatch) {
 function isClientAlreadyAccepted(quote) {
   return !!(quote?.measurement_client_accepted_at || quote?.payload?.measurement_client_acceptance?.accepted_at);
 }
-// Actualiza payload.final_calculated_dimensions de la quote dada (original o copia) con las
-// medidas de paso/hoja recalculadas a partir del vano MEDIDO, para que el link de aceptacion
-// del cliente y cualquier consulta tecnica/produccion vean la medida final - sin tocar
-// payload.dimensions (el presupuesto de la vendedora, dato duro). jsonb merge para no pisar el
-// resto de payload.
+// Actualiza payload.final_calculated_dimensions (solo desde resyncPortonMeasurements, ver
+// arriba) sin tocar payload.dimensions (el presupuesto de la vendedora, dato duro). jsonb
+// merge para no pisar el resto de payload.
 async function persistDimensionsPatch(quoteId, dimensionsPatch) {
   if (!quoteId || !dimensionsPatch || typeof dimensionsPatch !== "object" || !Object.keys(dimensionsPatch).length) return;
   await dbQuery(
@@ -1920,9 +1920,6 @@ export async function finalizeMeasurementToRevisionQuote({ odoo, originalQuote, 
   // Porton a produccion sin medicion: la NV ya fue creada al aprobar Comercial+Tecnica.
   // La aprobacion final del circuito tecnico solo debe disparar WhatsApp y no crear otra NV.
   if (isDirectNvAlreadyCreated(originalQuote)) {
-    if (!isClientAlreadyAccepted(originalQuote)) {
-      await persistDimensionsPatch(originalQuote?.id, base.dimensions_patch);
-    }
     const existingOrder = {
       id: Number(originalQuote?.final_sale_order_id || originalQuote?.odoo_sale_order_id || 0) || null,
       name: toText(originalQuote?.final_sale_order_name || originalQuote?.odoo_sale_order_name),
@@ -1956,17 +1953,13 @@ export async function finalizeMeasurementToRevisionQuote({ odoo, originalQuote, 
     };
   }
 
-  const clientAlreadyAccepted = isClientAlreadyAccepted(originalQuote);
-  if (!clientAlreadyAccepted) {
-    await persistDimensionsPatch(originalQuote?.id, base.dimensions_patch);
-  }
-  const patchedSourceQuote = base.dimensions_patch && !clientAlreadyAccepted
-    ? { ...base.source_quote, payload: mergeDimensionsPatch(base.source_quote?.payload, base.dimensions_patch) }
-    : base.source_quote;
-
+  // La medición es solo tomar las medidas del vano para que la vendedora las aplique (pedido
+  // explícito 2026-08-19) - acá no se calcula ni se persiste nada automático a partir de la
+  // medición. payload.dimensions del presupuesto (source_quote) es lo único que se usa, tal
+  // cual haya quedado despues de que la vendedora lo revisó y editó.
   const revisionQuote = await getOrCreateRevisionQuote({
     originalQuote,
-    sourceQuote: patchedSourceQuote,
+    sourceQuote: base.source_quote,
     finalLines,
   });
 
