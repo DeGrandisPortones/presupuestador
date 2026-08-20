@@ -3051,8 +3051,24 @@ export function buildQuotesRouter(odoo) {
       } catch (e) {
         const msg = String(e?.message || "Error al sincronizar cotización final a Odoo");
         console.error("FINAL SYNC ODOO ERROR:", msg);
-        // Only reset to draft if Odoo did NOT create the NV — prevents retry from generating a duplicate
-        await dbQuery(`update public.presupuestador_quotes set final_status='draft' where id=$1 and coalesce(final_sale_order_id, 0) = 0`, [id]);
+        // Only reset to draft if Odoo did NOT create the NV — prevents retry from generating a duplicate.
+        // También hay que revertir final_technical_decision/final_logistics_decision a null: quedaron en
+        // 'approved' arriba (ANTES de intentar el sync), y si no se revierten la fila queda "aprobada" en
+        // apariencia -sin volver a la cola de nadie- aunque la NV final nunca se haya generado (caso real:
+        // NP4303/NP4309). El mensaje de error se guarda en final_technical_notes para diagnosticarlo sin logs.
+        await dbQuery(
+          `update public.presupuestador_quotes
+              set final_status='draft',
+                  final_technical_decision=null,
+                  final_technical_decision_at=null,
+                  final_technical_decision_by_user_id=null,
+                  final_logistics_decision=null,
+                  final_logistics_decision_at=null,
+                  final_logistics_decision_by_user_id=null,
+                  final_technical_notes=$2
+            where id=$1 and coalesce(final_sale_order_id, 0) = 0`,
+          [id, `[Error de sincronización ${new Date().toISOString()}] ${msg}`.slice(0, 2000)],
+        );
         return res.status(502).json({ ok: false, error: process.env.NODE_ENV === "development" ? `Error al sincronizar cotización final a Odoo: ${msg}` : "Error al sincronizar cotización final a Odoo. Reintentá." });
       }
     } catch (e) { next(e); }

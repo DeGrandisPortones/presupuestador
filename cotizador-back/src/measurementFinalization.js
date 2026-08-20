@@ -2003,10 +2003,26 @@ export async function finalizeMeasurementToRevisionQuote({ odoo, originalQuote, 
   } catch (e) {
     // Igual que en /:id/final/submit: si Odoo no llego a crear la NV, volver a
     // draft para que un reintento (re-aprobar la medicion) no quede trabado
-    // para siempre en "syncing_odoo" sin poder reintentar.
+    // para siempre en "syncing_odoo" sin poder reintentar. Tambien hay que
+    // revertir final_technical_decision/final_logistics_decision a null: si
+    // quedan en 'approved' (como se dejaron arriba, ANTES de intentar el sync)
+    // la fila desaparece de la cola de pendientes de Tecnica -aunque la NV
+    // final nunca se haya generado- y queda invisible/atascada para siempre
+    // (caso real: NP4303/NP4309, ver conversacion 2026-08-20). El mensaje de
+    // error se guarda en final_technical_notes para poder diagnosticarlo sin
+    // acceso a logs del servidor.
+    const errMsg = String(e?.message || e || "Error al sincronizar la cotización final a Odoo").slice(0, 2000);
     await dbQuery(
-      `update public.presupuestador_quotes set status='draft', final_status='draft' where id=$1 and coalesce(final_sale_order_id, 0) = 0`,
-      [qSync.id],
+      `update public.presupuestador_quotes
+          set status='draft',
+              final_status='draft',
+              final_technical_decision=null,
+              final_technical_decision_at=null,
+              final_logistics_decision=null,
+              final_logistics_decision_at=null,
+              final_technical_notes=$2
+        where id=$1 and coalesce(final_sale_order_id, 0) = 0`,
+      [qSync.id, `[Error de sincronización ${new Date().toISOString()}] ${errMsg}`],
     );
     throw e;
   }
