@@ -90,8 +90,19 @@ function computeStatusInfo(q) {
 
   if (q.status === "synced_odoo") {
     if (q.fulfillment_mode === "acopio") {
-      if (q.acopio_to_produccion_status === "pending")
-        return { label: "Solicitado pase a producción, pendiente de aprobación técnica", color: "orange" };
+      // El label decía siempre "pendiente de aprobación técnica" sin importar cuál de
+      // las dos ya había decidido — confundía cuando Técnica ya había aprobado y el
+      // que faltaba era Comercial (caso real: NP4418, RIVATA MARIEL, distribuidor
+      // GRIVEL, 2026-08-20: pensaban que estaba trabado en Técnica).
+      if (q.acopio_to_produccion_status === "pending") {
+        const techDone = q.acopio_to_produccion_technical_decision === "approved";
+        const commDone = q.acopio_to_produccion_commercial_decision === "approved";
+        if (techDone && !commDone)
+          return { label: "Solicitado pase a producción — aprobado por Técnica, esperando Comercial", color: "orange" };
+        if (commDone && !techDone)
+          return { label: "Solicitado pase a producción — aprobado por Comercial, esperando Técnica", color: "orange" };
+        return { label: "Solicitado pase a producción, pendiente de aprobación técnica y comercial", color: "orange" };
+      }
       if (q.final_copy_id) {
         if (q.final_copy_status === "synced_odoo")
           return { label: "Completo — orden de producción generada", color: "green" };
