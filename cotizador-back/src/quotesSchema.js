@@ -3,6 +3,42 @@ import { ensureSettingsTable } from "./settingsDb.js";
 
 let ensured = false;
 
+// Columnas de presupuestador_quotes para listados (aprobados/historial, circuito
+// técnico, etc.) — todo MENOS los blobs JSONB pesados (payload puede pesar ~200KB
+// por fila; con 200-300 filas eso son ~40MB y ~15s solo en destoastear en Postgres,
+// medido en vivo). Ninguna de estas listas usa payload/lines/measurement_form/
+// measurement_original_form/measurement_commercial_diff_json en pantalla — esos
+// campos siguen disponibles enteros en GET /:id (detalle de un presupuesto puntual).
+// Si agregás una columna nueva a presupuestador_quotes, sumala acá también.
+export const QUOTE_LIST_COLUMNS_SQL = `
+  q.id, q.created_by_user_id, q.created_by_role, q.status, q.commercial_decision, q.technical_decision,
+  q.commercial_by_user_id, q.commercial_at, q.commercial_notes, q.technical_by_user_id, q.technical_at,
+  q.technical_notes, q.rejection_notes, q.fulfillment_mode, q.pricelist_id, q.bill_to_odoo_partner_id,
+  q.end_customer, q.note, q.odoo_sale_order_id, q.odoo_sale_order_name, q.created_at, q.updated_at,
+  q.acopio_to_produccion_status, q.acopio_to_produccion_requested_by_user_id, q.acopio_to_produccion_requested_at,
+  q.acopio_to_produccion_notes, q.acopio_to_produccion_commercial_decision, q.acopio_to_produccion_commercial_by_user_id,
+  q.acopio_to_produccion_commercial_at, q.acopio_to_produccion_commercial_notes, q.acopio_to_produccion_technical_decision,
+  q.acopio_to_produccion_technical_by_user_id, q.acopio_to_produccion_technical_at, q.acopio_to_produccion_technical_notes,
+  q.catalog_kind, q.requires_measurement, q.measurement_status, q.measurement_assigned_to_user_id,
+  q.measurement_by_user_id, q.measurement_at, q.measurement_review_by_user_id, q.measurement_review_at,
+  q.measurement_review_notes, q.original_quote_id, q.measurement_source_quote_id, q.quote_kind, q.parent_quote_id,
+  q.confirmed_at, q.deposit_amount, q.measurement_share_token, q.measurement_share_enabled_at, q.final_status,
+  q.final_technical_decision, q.final_logistics_decision, q.final_technical_notes, q.final_logistics_notes,
+  q.final_sale_order_id, q.final_sale_order_name, q.final_synced_at, q.final_tolerance_percent, q.final_tolerance_amount,
+  q.final_difference_amount, q.final_absorbed_by_company, q.measurement_scheduled_for, q.measurement_scheduled_by_user_id,
+  q.measurement_scheduled_at, q.quote_number, q.measurement_mode, q.measurement_subtype,
+  q.measurement_commercial_review_required, q.measurement_commercial_review_status, q.measurement_commercial_review_by_user_id,
+  q.measurement_commercial_review_at, q.production_delivery_year, q.production_delivery_week,
+  q.production_delivery_week_start, q.production_delivery_week_end, q.production_delivery_weeks_out,
+  q.production_delivery_capacity, q.production_delivery_committed_count, q.production_delivery_committed_at,
+  q.final_technical_decision_at, q.final_technical_decision_by_user_id, q.final_logistics_decision_at,
+  q.final_logistics_decision_by_user_id, q.measurement_client_accepted_at, q.envio_odoo_price_snapshot,
+  q.measurement_link_sent_confirmed_at, q.measurement_link_sent_confirmed_by_user_id, q.cancelled_at,
+  q.cancelled_by_user_id, q.cancellation_reason, q.quoted_delivery_year, q.quoted_delivery_week,
+  q.quoted_delivery_week_start, q.quoted_delivery_week_end, q.quoted_delivery_weeks_out, q.quoted_delivery_captured_at,
+  q.production_set_at
+`;
+
 function parseMeasurementProductIds(raw) {
   return String(raw || "2865,2961,4229")
     .split(",")

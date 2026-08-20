@@ -1,7 +1,7 @@
 import express from "express";
 import { requireAuth } from "../auth.js";
 import { dbQuery } from "../db.js";
-import { ensureQuotesMeasurementColumns } from "../quotesSchema.js";
+import { ensureQuotesMeasurementColumns, QUOTE_LIST_COLUMNS_SQL } from "../quotesSchema.js";
 import { getCommercialFinalTolerancePercent } from "../settingsDb.js";
 import { commitQuoteProductionWeek, captureQuotedProductionEstimate } from "../productionPlanning.js";
 import { triggerPreproductionForClientAcceptance } from "../measurementFinalization.js";
@@ -2095,7 +2095,10 @@ export function buildQuotesRouter(odoo) {
                order by q.commercial_at desc nulls last, q.id desc limit 200`;
       } else if (scope === "technical_approved") {
         if (!u.is_rev_tecnica) return res.status(403).json({ ok: false, error: "No autorizado" });
-        sql = `select q.*, u.username as created_by_username, u.full_name as created_by_full_name
+        // Sin payload/lines: son listados (no el detalle de un presupuesto puntual),
+        // y payload en particular puede pesar ~200KB/fila TOASTeada — con 200 filas
+        // esto pasó de ~15s a milisegundos (ver QUOTE_LIST_COLUMNS_SQL).
+        sql = `select ${QUOTE_LIST_COLUMNS_SQL}, u.username as created_by_username, u.full_name as created_by_full_name
                from public.presupuestador_quotes q
                left join public.presupuestador_users u on u.id = q.created_by_user_id
                where ${onlyOriginal}
