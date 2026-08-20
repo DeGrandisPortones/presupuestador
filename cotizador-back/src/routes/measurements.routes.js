@@ -2,7 +2,7 @@ import crypto from "crypto";
 import express from "express";
 import { requireAuth } from "../auth.js";
 import { dbQuery } from "../db.js";
-import { ensureQuotesMeasurementColumns } from "../quotesSchema.js";
+import { ensureQuotesMeasurementColumns, QUOTE_LIST_COLUMNS_SQL } from "../quotesSchema.js";
 import {
   finalizeMeasurementToRevisionQuote,
   computeSurfacePricingMetrics,
@@ -560,7 +560,16 @@ export function buildMeasurementsRouter(odoo = null) {
         params.push(dateTo);
         where.push(`q.measurement_scheduled_for <= $${params.length}::date`);
       }
-      const sql = `select q.*, u.username as created_by_username, u.full_name as created_by_full_name from public.presupuestador_quotes q left join public.presupuestador_users u on u.id = q.created_by_user_id where ${where.join(
+      // status="all" es "Circuito técnico" (viewer=tecnica) y "Todas" (viewer=medidor):
+      // puede devolver cientos de filas, y payload puede pesar ~200KB/fila TOASTeada —
+      // era el cuello de botella real (medido: ~15s con payload incluido, con esto queda
+      // en milisegundos; sigue referenciado en el WHERE de arriba, eso no cambia).
+      // Ninguna de esas dos vistas lee payload/lines de la lista. El resto de status
+      // (commercial_review de Comercial, pending/submitted/etc. del medidor) sigue con
+      // q.* tal cual, porque sí muestran la observación del presupuesto en pantalla.
+      // El detalle completo de un presupuesto puntual sigue entero en GET /:id.
+      const selectCols = status === "all" ? QUOTE_LIST_COLUMNS_SQL : "q.*";
+      const sql = `select ${selectCols}, u.username as created_by_username, u.full_name as created_by_full_name from public.presupuestador_quotes q left join public.presupuestador_users u on u.id = q.created_by_user_id where ${where.join(
         " and ",
       )} order by case when q.measurement_scheduled_for is null then 1 else 0 end asc, q.measurement_scheduled_for asc, q.created_at desc nulls last, q.id desc limit 300`;
       const r = await dbQuery(sql, params);
