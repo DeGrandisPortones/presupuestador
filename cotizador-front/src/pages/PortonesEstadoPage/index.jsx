@@ -16,6 +16,8 @@ const STATUS_COLORS = {
   yellow: { bg: "#fffde7", text: "#f57f17", border: "#fff176" },
   orange: { bg: "#fff3e0", text: "#bf360c", border: "#ffcc80" },
   red:    { bg: "#ffebee", text: "#b71c1c", border: "#ef9a9a" },
+  purple: { bg: "#f3e5f5", text: "#6a1b9a", border: "#ce93d8" },
+  pink:   { bg: "#fce4ec", text: "#ad1457", border: "#f48fb1" },
   gray:   { bg: "#f5f5f5", text: "#424242", border: "#e0e0e0" },
 };
 
@@ -47,13 +49,19 @@ function computeStatusInfo(q) {
   // lo revise. El backend resetea status a "draft" en ese caso (mismo status
   // que un borrador nunca confirmado), pero measurement_status lo distingue
   // - mismo chequeo que ya usa PresupuestosPage (isReturnedFromMeasurement).
+  // Color propio (pink): es turno del VENDEDOR, no de Comercial ni Tecnica -
+  // no se confunde con las dos etapas de aprobacion de mas abajo.
   if (q.measurement_status === "returned_to_seller") {
-    return { label: "Devuelto al vendedor — medida distinta a lo presupuestado", color: "orange" };
+    return { label: "Post medición — devuelto al vendedor (debe corregir)", color: "pink" };
   }
   // El vendedor ya reenvio el ajuste (measurement_status volvio a "submitted"), pero
-  // antes de que Tecnica lo revise tiene que pasar por Comercial.
+  // antes de que Tecnica lo revise tiene que pasar por Comercial. Mismo label/color
+  // que la otra rama de "esperando comercial" mas abajo (measurement_status ya
+  // approved pero con revision comercial pendiente): son la misma espera desde el
+  // punto de vista de quien mira la lista, aunque el campo que las distingue
+  // internamente sea distinto.
   if (q.measurement_commercial_review_status === "pending") {
-    return { label: "Reenviado — esperando aprobación comercial", color: "yellow" };
+    return { label: "Post medición — esperando aprobación comercial", color: "yellow" };
   }
 
   if (q.status === "draft") {
@@ -109,14 +117,18 @@ function computeStatusInfo(q) {
 
       if (q.measurement_status === "pending")
         return { label: "Medición pendiente", color: "yellow" };
+      // Color propio (purple): es la PRIMERA revision tecnica de la medicion en si
+      // (que la vendedora aplique bien lo medido), distinta de la aprobacion tecnica
+      // FINAL de mas abajo (que genera la NV) - antes compartian el mismo naranja y
+      // se confundian en la lista.
       if (q.measurement_status === "submitted") {
-        return { label: "Medición entregada, esperando revisión técnica", color: "orange" };
+        return { label: "Post medición — esperando revisión técnica", color: "purple" };
       }
       if (q.measurement_status === "needs_fix")
         return { label: "Medición requiere correcciones", color: "red" };
       if (q.measurement_status === "approved") {
         if (q.measurement_commercial_review_required && q.measurement_commercial_review_status !== "approved")
-          return { label: "Medición aprobada — esperando revisión comercial", color: "orange" };
+          return { label: "Post medición — esperando aprobación comercial", color: "yellow" };
         // La NV se crea junto con la aprobación técnica final; el link se genera DESPUÉS de la NV.
         const nvReady = q.final_copy_status === "synced_odoo" || q.final_status === "synced_odoo";
         const nvSyncing = q.final_copy_status === "syncing_odoo" || q.final_status === "syncing_odoo";
@@ -137,7 +149,12 @@ function computeStatusInfo(q) {
           return { label: "Aprobado — pendiente de envío a Odoo", color: "teal" };
         if (q.final_technical_decision === "approved")
           return { label: "Aprobado técnicamente — esperando aprobación de logística", color: "yellow" };
-        return { label: "Esperando aprobación técnica final", color: "orange" };
+        // Color propio (orange, reservado a esta etapa dentro del cluster de post
+        // medición): es la aprobación técnica FINAL, la que dispara la generación de
+        // la NV real (ver caso NP4303/NP4309) - distinta de la revisión técnica
+        // inicial de la medición (purple, más arriba) y de la espera comercial
+        // (yellow, más arriba también).
+        return { label: "Post medición — esperando aprobación técnica final", color: "orange" };
       }
       return { label: "En producción", color: "teal" };
     }
