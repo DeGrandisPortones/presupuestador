@@ -498,7 +498,12 @@ export default function PortonesEstadoPage() {
         r.statusInfo.label.toLowerCase().includes(s)
       );
     }
-    return out;
+    // Orden por número de NV (o NP/# si todavía no tiene NV asignada), ascendente.
+    return [...out].sort((a, b) => {
+      const na = Number(String(a.displayRef).match(/\d+/)?.[0] ?? 0);
+      const nb = Number(String(b.displayRef).match(/\d+/)?.[0] ?? 0);
+      return na - nb;
+    });
   }, [rows, filterColor, search]);
 
   if (!allowed) {
@@ -589,13 +594,12 @@ export default function PortonesEstadoPage() {
                 <th style={thStyle}>En producción desde</th>
                 <th style={thStyle}>Aceptación del cliente</th>
                 <th style={{ ...thStyle, textAlign: "center" }}>Link enviado</th>
-                <th style={thStyle}>Actualizado</th>
               </tr>
             </thead>
             <tbody>
               {filtered.length === 0 && (
                 <tr>
-                  <td colSpan={8} style={{ textAlign: "center", padding: "24px 16px", color: "#888" }}>
+                  <td colSpan={7} style={{ textAlign: "center", padding: "24px 16px", color: "#888" }}>
                     No hay portones que coincidan con el filtro.
                   </td>
                 </tr>
@@ -741,9 +745,6 @@ export default function PortonesEstadoPage() {
                       ) : (
                         <span style={{ color: "#ccc" }}>—</span>
                       )}
-                    </td>
-                    <td style={{ ...tdStyle, color: "#888", fontSize: 13 }}>
-                      {formatDate(r.updated_at)}
                     </td>
                   </tr>
                 );
