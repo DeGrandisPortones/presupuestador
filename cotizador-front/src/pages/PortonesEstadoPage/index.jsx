@@ -5,6 +5,9 @@ import toast from "react-hot-toast";
 import { listPortonesEstado, confirmMeasurementLinkSent, cancelQuoteNv } from "../../api/quotes.js";
 import { useAuthStore } from "../../domain/auth/store.js";
 import Button from "../../ui/Button.jsx";
+import PaginationControls from "../../ui/PaginationControls.jsx";
+
+const PAGE_SIZE = 25;
 
 const STATUS_COLORS = {
   green:  { bg: "#e8f5e9", text: "#1b5e20", border: "#a5d6a7" },
@@ -432,6 +435,7 @@ export default function PortonesEstadoPage() {
 
   const [filterColor, setFilterColor] = useState("all");
   const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
   const [linkPopupId, setLinkPopupId] = useState(null);
   const [phoneModalRow, setPhoneModalRow] = useState(null);
   const [cancelModalRow, setCancelModalRow] = useState(null);
@@ -498,13 +502,21 @@ export default function PortonesEstadoPage() {
         r.statusInfo.label.toLowerCase().includes(s)
       );
     }
-    // Orden por número de NV (o NP/# si todavía no tiene NV asignada), ascendente.
+    // Orden por número de NV (o NP/# si todavía no tiene NV asignada), descendente
+    // (los más nuevos arriba).
     return [...out].sort((a, b) => {
       const na = Number(String(a.displayRef).match(/\d+/)?.[0] ?? 0);
       const nb = Number(String(b.displayRef).match(/\d+/)?.[0] ?? 0);
-      return na - nb;
+      return nb - na;
     });
   }, [rows, filterColor, search]);
+
+  useEffect(() => setPage(1), [filterColor, search, productKind]);
+
+  const pagedRows = useMemo(() => {
+    const start = (page - 1) * PAGE_SIZE;
+    return filtered.slice(start, start + PAGE_SIZE);
+  }, [filtered, page]);
 
   if (!allowed) {
     return <div className="container"><div className="card">No autorizado.</div></div>;
@@ -604,7 +616,7 @@ export default function PortonesEstadoPage() {
                   </td>
                 </tr>
               )}
-              {filtered.map((r) => {
+              {pagedRows.map((r) => {
                 const acceptanceUrl = r.measurement_share_token ? buildClientAcceptanceUrl(r.measurement_share_token) : null;
                 const acceptance = r.measurement_client_acceptance;
                 const showLinkPopup = linkPopupId === r.id;
@@ -751,6 +763,9 @@ export default function PortonesEstadoPage() {
               })}
             </tbody>
           </table>
+          <div style={{ padding: "0 16px 12px" }}>
+            <PaginationControls page={page} totalItems={filtered.length} pageSize={PAGE_SIZE} onPageChange={setPage} />
+          </div>
         </div>
       )}
 
