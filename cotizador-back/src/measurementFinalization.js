@@ -1646,7 +1646,15 @@ function isDirectNvAlreadyCreated(originalQuote) {
     && finalSaleOrderId > 0
     && saleOrderId === finalSaleOrderId
     && finalStatus === "synced_odoo"
-    && (finalName || initialName).toUpperCase().includes("NV")
+    // Antes exigia que el nombre contuviera "NV" a secas — sirve para portones (NV1234)
+    // pero NUNCA matchea Ipanel (INP1234, sin "V") mientras Odoo no lo renombre a INV.
+    // Por eso un Ipanel "tecnica_only/sin_medicion" con la NV directa ya creada
+    // (saleOrderId===finalSaleOrderId, final_status='synced_odoo') nunca entraba acá,
+    // y como el flujo normal tampoco genera copia para Ipanel ("Sin reglas aplicables"),
+    // el link de aceptación del cliente nunca se generaba (caso real: INP4444,
+    // RODRIGUEZ ALEJANDRA, distribuidor GRIVEL, 2026-08-20). Ahora acepta cualquier
+    // prefijo de documento conocido (NV/NP/INV/INP/PNV/PNP/PLNV/PLNP/ONV/ONP...).
+    && /^[A-Z]{2,4}\d+/.test((finalName || initialName).toUpperCase())
   );
 }
 
