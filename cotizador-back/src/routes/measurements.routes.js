@@ -569,7 +569,28 @@ export function buildMeasurementsRouter(odoo = null) {
       // q.* tal cual, porque sí muestran la observación del presupuesto en pantalla.
       // El detalle completo de un presupuesto puntual sigue entero en GET /:id.
       const selectCols = status === "all" ? QUOTE_LIST_COLUMNS_SQL : "q.*";
-      const sql = `select ${selectCols}, u.username as created_by_username, u.full_name as created_by_full_name from public.presupuestador_quotes q left join public.presupuestador_users u on u.id = q.created_by_user_id where ${where.join(
+      // final_status/final_technical_decision/final_sale_order_id de la fila ORIGINAL casi
+      // nunca se llenan en el circuito con medición: la NV real se genera sobre la "copia"
+      // (quote_kind='copy'), no sobre el original. Sin este join, una medición con
+      // measurement_status='approved' cuya copia quedó trabada (falló el envío a Odoo, o
+      // directamente nunca se generó) es indistinguible en la lista de una ya terminada de
+      // verdad - las dos aparecen "Aprobada" y sin ninguna acción visible para Técnica
+      // (caso real: NP4303/NP4309, ver measurementFinalization.js). Con esto el frontend
+      // puede diferenciarlas.
+      const finalCopyJoin =
+        status === "all"
+          ? `left join lateral (
+               select c.id as final_copy_id, c.final_status as final_copy_status,
+                      c.final_sale_order_id as final_copy_sale_order_id,
+                      c.final_sale_order_name as final_copy_sale_order_name
+                 from public.presupuestador_quotes c
+                where c.quote_kind = 'copy' and c.parent_quote_id = q.id
+                order by c.created_at desc nulls last, c.id desc
+                limit 1
+             ) fc on true`
+          : "";
+      const finalCopyCols = status === "all" ? ", fc.final_copy_id, fc.final_copy_status, fc.final_copy_sale_order_id, fc.final_copy_sale_order_name" : "";
+      const sql = `select ${selectCols}, u.username as created_by_username, u.full_name as created_by_full_name${finalCopyCols} from public.presupuestador_quotes q left join public.presupuestador_users u on u.id = q.created_by_user_id ${finalCopyJoin} where ${where.join(
         " and ",
       )} order by case when q.measurement_scheduled_for is null then 1 else 0 end asc, q.measurement_scheduled_for asc, q.created_at desc nulls last, q.id desc limit 300`;
       const r = await dbQuery(sql, params);
