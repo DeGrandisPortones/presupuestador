@@ -206,6 +206,15 @@ function isMeasurementReadyQuote(quote) {
 }
 function quoteRequiresMeasurementWorkflow(quote) {
   if (!quote) return false;
+  // requires_measurement=true explícito (forzado a mano sobre un presupuesto que
+  // originalmente NO llevaba servicio de medición) tiene que alcanzar por sí solo -
+  // una versión anterior de esta función ya lo contemplaba (measurements.routes.js.bak),
+  // se perdió en un refactor. Sin esto, un portón forzado a entrar a medición sin
+  // agregarle la línea de "Servicio de Medición" queda con requires_measurement=true
+  // en la fila pero bloqueado en cualquier acción del circuito (guardar, agendar,
+  // revisar) con "Este presupuesto no requiere medición" - caso real: Rodrigo Enjamio
+  // (#6030), 2026-08-21.
+  if (quote?.requires_measurement === true) return true;
   if (hasMeasurementLine(quote?.lines)) return true;
   return (
     String(quote?.fulfillment_mode || "").toLowerCase().trim() === "produccion" && isTecnicaOnlyQuote(quote)
