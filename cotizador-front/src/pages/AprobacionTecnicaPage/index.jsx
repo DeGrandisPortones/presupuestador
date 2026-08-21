@@ -303,13 +303,30 @@ function productionStatusLabel(row) {
   const ref = productionReference(row);
   return ref ? `Enviado a producción · ${ref}` : "Enviado a producción";
 }
+// La medición ya pasó measurement_status='approved' (Técnica ya la revisó), pero la NV
+// real vive en la "copia" (quote_kind='copy'), no en la fila original - y esa copia puede
+// haber quedado trabada (falló el envío a Odoo, o directamente nunca llegó a generarse)
+// sin ningún indicio visible: la fila se veía igual que una ya terminada de verdad. Caso
+// real: NP4303/NP4309 (ver measurementFinalization.js) - quedaron invisibles para Técnica
+// durante semanas porque la etiqueta decía "Aprobada" y el botón "Abrir", como cualquier
+// medición ya cerrada.
+function needsFinalTechnicalApproval(row) {
+  if (String(row?.measurement_status || "") !== "approved") return false;
+  const nvReady =
+    row?.final_status === "synced_odoo" ||
+    Number(row?.final_sale_order_id || 0) > 0 ||
+    row?.final_copy_status === "synced_odoo" ||
+    Number(row?.final_copy_sale_order_id || 0) > 0;
+  const nvSyncing = row?.final_status === "syncing_odoo" || row?.final_copy_status === "syncing_odoo";
+  return !nvReady && !nvSyncing;
+}
 function measurementStatusLabel(s, row) {
   if (String(row?.measurement_commercial_review_status || "") === "pending") return "Pendiente aprob. comercial postmedición";
   if (s === "pending") return String(row?.measurement_subtype || "").toLowerCase().trim() === "sin_medicion" ? "Pendiente detalle técnico" : "Pendiente";
   if (s === "needs_fix") return "A corregir";
   if (s === "submitted") return "Pendiente aprobación final";
   if (s === "returned_to_seller") return "Devuelta al vendedor";
-  if (s === "approved") return "Aprobada";
+  if (s === "approved") return needsFinalTechnicalApproval(row) ? "Aprobada — falta generar NV" : "Aprobada";
   return s || "—";
 }
 function measurementSubtypeLabel(row) {
@@ -337,6 +354,7 @@ function toTimeDesc(value) {
 function measurementSortWeight(row) {
   const status = String(row?.measurement_status || "").toLowerCase().trim();
   if (status === "submitted") return 0;
+  if (status === "approved" && needsFinalTechnicalApproval(row)) return 0;
   if (status === "pending") return 1;
   if (status === "needs_fix") return 2;
   if (status === "approved") return 3;
@@ -717,6 +735,7 @@ export default function AprobacionTecnicaPage() {
                       const dateValue = measurementDates[r.id] ?? r.measurement_scheduled_for ?? "";
                       const isSinMedicion = String(r?.measurement_subtype || "normal").toLowerCase().trim() === "sin_medicion";
                       const isSubmitted = String(r?.measurement_status || "").toLowerCase().trim() === "submitted";
+                      const needsFinal = needsFinalTechnicalApproval(r);
                       const isPendingComercial = String(r?.measurement_commercial_review_status || "") === "pending";
                       return (
                         <tr key={r.id}>
@@ -728,7 +747,7 @@ export default function AprobacionTecnicaPage() {
                           <td><OdooReferenceCell value={quoteOdooReference(r)} /></td>
                           {!hideScheduleColumns ? <td>{fmtDate(r.measurement_scheduled_for)}</td> : null}
                           {!hideScheduleColumns ? <td style={{ minWidth: 220 }}><div style={{ display: "flex", gap: 8, alignItems: "center" }}><Input type="date" value={dateValue} disabled={isPendingComercial} onChange={(v) => setMeasurementDates((prev) => ({ ...prev, [r.id]: v }))} style={{ width: "100%" }} /><Button disabled={isPendingComercial || scheduleM.isPending || !dateValue} onClick={() => scheduleM.mutate({ id: r.id, scheduledFor: dateValue })}>Guardar</Button></div></td> : null}
-                          <td className="right"><div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>{isPendingComercial ? <Button variant="ghost" disabled title="Pendiente de aprobación comercial post-medición">Bloqueado</Button> : <Button variant={isSubmitted ? "primary" : "ghost"} onClick={() => navigate(`/mediciones/${r.id}`, { state: { from: "/aprobacion/tecnica" } })}>{isSinMedicion ? "Completar detalle técnico" : (isSubmitted ? "Aprobar final" : "Abrir")}</Button>}</div></td>
+                          <td className="right"><div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>{isPendingComercial ? <Button variant="ghost" disabled title="Pendiente de aprobación comercial post-medición">Bloqueado</Button> : <Button variant={(isSubmitted || needsFinal) ? "primary" : "ghost"} onClick={() => navigate(`/mediciones/${r.id}`, { state: { from: "/aprobacion/tecnica" } })}>{isSinMedicion ? "Completar detalle técnico" : ((isSubmitted || needsFinal) ? "Aprobar final" : "Abrir")}</Button>}</div></td>
                         </tr>
                       );
                     })}
