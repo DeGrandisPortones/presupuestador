@@ -234,46 +234,23 @@ export async function ensureQuotesMeasurementColumns() {
        and coalesce(measurement_status, 'none') <> 'approved'
   `);
 
-  await dbQuery(`
-    update public.presupuestador_quotes
-       set requires_measurement = true,
-           measurement_mode = 'tecnica_only',
-           measurement_subtype = 'sin_medicion',
-           measurement_status = 'approved',
-           measurement_review_at = coalesce(measurement_review_at, final_synced_at, confirmed_at, updated_at, created_at, now()),
-           final_status = 'synced_odoo',
-           final_technical_decision = 'approved',
-           final_logistics_decision = 'approved',
-           final_sale_order_id = coalesce(final_sale_order_id, odoo_sale_order_id),
-           final_sale_order_name = coalesce(final_sale_order_name, odoo_sale_order_name),
-           final_synced_at = coalesce(final_synced_at, confirmed_at, updated_at, created_at, now())
-     where catalog_kind = 'ipanel'
-       and fulfillment_mode = 'produccion'
-       and quote_kind = 'original'
-       and status = 'synced_odoo'
-       and coalesce(final_status, '') not in ('synced_odoo', 'syncing_odoo')
-       and (
-         coalesce(odoo_sale_order_id, 0) <> 0
-         or odoo_sale_order_name is not null
-       )
-  `);
-
-  await dbQuery(`
-    update public.presupuestador_quotes
-       set requires_measurement = true,
-           measurement_mode = 'tecnica_only',
-           measurement_subtype = 'sin_medicion',
-           measurement_status = case
-             when measurement_status = 'approved' then measurement_status
-             else 'pending'
-           end
-     where catalog_kind = 'ipanel'
-       and fulfillment_mode = 'produccion'
-       and quote_kind = 'original'
-       and coalesce(final_sale_order_id, 0) = 0
-       and coalesce(final_status, '') not in ('synced_odoo', 'syncing_odoo')
-       and status in ('pending_approvals', 'synced_odoo', 'syncing_odoo')
-  `);
+  // Se sacaron de acá (2026-08-20) dos UPDATE "one-time" que quedaron corriendo en
+  // CADA arranque del backend (ensureQuotesMeasurementColumns no tiene fecha de
+  // corte, solo el flag `ensured` en memoria de este proceso — se resetea en cada
+  // deploy). La primera marcaba TODO Ipanel en producción ya sincronizado a Odoo
+  // como "medición aprobada + aprobación técnica y logística final aprobadas + NV
+  // generada", sin que nadie lo revisara y sin avisarle a Odoo (nunca llama a
+  // renameOrderToReference) — por eso INP4433/4434/4435/4444 quedaron con nombre
+  // "INP..." en vez de "INV..." aunque figuran como 100% terminados. La segunda
+  // forzaba measurement_mode/subtype a 'tecnica_only'/'sin_medicion' en cualquier
+  // Ipanel en producción sin finalizar, pisando los casos reales que sí necesitan
+  // medición física (measurement_mode='medidor': hay 8 en la base), y reseteaba su
+  // measurement_status a 'pending' si no estaba ya 'approved' — con riesgo real de
+  // pisar el trabajo de un medidor/técnica en curso si el backend reiniciaba en
+  // medio del circuito. Verificado antes de sacarlas: 0 presupuestos afectados hoy
+  // por ninguna de las dos. Los 4 Ipanel ya mal marcados (INP4433/4434/4435/4444)
+  // quedan con ese estado - corregirles el nombre requiere renombrar la orden real
+  // en Odoo, no solo la base.
 
   // One-time: la puerta vinculada al portón NP3994 recibió PNP5981 por error de secuencia.
   // Se corrige a PNP3994 para que la NV futura quede como PNV3994.
