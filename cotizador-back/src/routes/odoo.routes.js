@@ -228,11 +228,20 @@ export function buildOdooRouter(odoo) {
       const requestedId = Number(req.params.id || 0);
       if (!requestedId) throw new Error("id inválido");
 
+      // ?company_id= opcional: fuerza el contexto multiempresa (por default
+      // usa ODOO_COMPANY_ID, que suele ser Dflex). Sin esto no se puede
+      // diagnosticar productos que pertenecen a otra empresa (ej. Vert).
+      const overrideCompanyId = Number(req.query.company_id || 0) || null;
+      const context = overrideCompanyId
+        ? { active_test: false, company_id: overrideCompanyId, force_company: overrideCompanyId, allowed_company_ids: [overrideCompanyId] }
+        : { active_test: false };
+
       const env = {
         url: process.env.ODOO_URL,
         db: process.env.ODOO_DB,
         username: process.env.ODOO_USERNAME,
         companyId: process.env.ODOO_COMPANY_ID || null,
+        overrideCompanyId,
       };
 
       const debug = {
@@ -247,7 +256,8 @@ export function buildOdooRouter(odoo) {
       let variantTemplateId = null;
       try {
         const variantRows = await odoo.executeKw("product.product", "read", [[requestedId]], {
-          fields: ["id", "name", "display_name", "default_code", "list_price", "lst_price", "product_tmpl_id", "write_date"],
+          fields: ["id", "name", "display_name", "default_code", "list_price", "lst_price", "product_tmpl_id", "write_date", "active", "sale_ok", "company_id"],
+          context,
         });
         const variant = Array.isArray(variantRows) ? variantRows[0] || null : null;
         debug.product_product = { ok: !!variant, data: variant, error: null };
@@ -260,7 +270,8 @@ export function buildOdooRouter(odoo) {
 
       try {
         const templateRows = await odoo.executeKw("product.template", "read", [[requestedId]], {
-          fields: ["id", "name", "display_name", "list_price", "write_date"],
+          fields: ["id", "name", "display_name", "list_price", "write_date", "active", "sale_ok", "company_id"],
+          context,
         });
         const template = Array.isArray(templateRows) ? templateRows[0] || null : null;
         debug.product_template_same_id = { ok: !!template, data: template, error: null };
@@ -271,7 +282,8 @@ export function buildOdooRouter(odoo) {
       if (variantTemplateId && variantTemplateId !== requestedId) {
         try {
           const templateRows = await odoo.executeKw("product.template", "read", [[variantTemplateId]], {
-            fields: ["id", "name", "display_name", "list_price", "write_date"],
+            fields: ["id", "name", "display_name", "list_price", "write_date", "active", "sale_ok", "company_id"],
+            context,
           });
           const template = Array.isArray(templateRows) ? templateRows[0] || null : null;
           debug.product_template_from_variant = { ok: !!template, data: template, error: null };
