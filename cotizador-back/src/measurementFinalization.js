@@ -1291,10 +1291,31 @@ async function syncFinalQuoteToOdoo({ odoo, revisionQuote, originalQuote, source
   // ninguno guardado (pasaba con presupuestos de vendedor, que resuelven el cliente
   // recien al crear la NP) caia en el partner_id=1 hardcodeado, que en este Odoo es la
   // propia empresa - por eso NP y NV terminaban con clientes distintos.
-  const partnerId =
+  let partnerId =
     toIntId(revisionQuote?.bill_to_odoo_partner_id) ||
     toIntId(sourceQuote?.bill_to_odoo_partner_id) ||
     toIntId(originalQuote?.bill_to_odoo_partner_id);
+  // Presupuestos de antes de que syncQuoteToOdoo empezara a persistir el partner
+  // resuelto en la NP inicial (ver comentario ahí) pueden llegar hasta acá sin
+  // bill_to_odoo_partner_id guardado en NINGUNA fila, aunque la NP ya exista en Odoo
+  // con un partner real asignado - fallaba con el error de arriba pese a que el dato
+  // correcto ya estaba en Odoo. En vez de tirarlo, se lee el partner directo de esa
+  // NP: es la fuente más confiable posible (el mismo cliente ya facturado ahí), más
+  // segura que volver a resolver por nombre/teléfono y terminar creando o matcheando
+  // un partner distinto. Caso real: NP4303/NP4309, 2026-08-24.
+  const initialOrderId = toIntId(originalQuote?.odoo_sale_order_id);
+  if (!partnerId && initialOrderId) {
+    try {
+      const [initialOrder] = await odoo.executeKw("sale.order", "read", [[initialOrderId]], { fields: ["partner_id"] });
+      partnerId = toIntId(initialOrder?.partner_id);
+      if (partnerId && originalQuote?.id) {
+        await dbQuery(`update public.presupuestador_quotes set bill_to_odoo_partner_id=$2 where id=$1`, [originalQuote.id, partnerId]);
+        originalQuote.bill_to_odoo_partner_id = partnerId;
+      }
+    } catch (e) {
+      console.error("[measurementFinalization] fallback partner desde NP inicial fallo:", e?.message || e);
+    }
+  }
   if (!partnerId) throw new Error("No se encontro bill_to_odoo_partner_id para sincronizar la NV final (revisar la NP inicial)");
   const lines = Array.isArray(revisionQuote.lines) ? revisionQuote.lines : [];
   if (!lines.length) throw new Error("La cotización final no tiene items");
