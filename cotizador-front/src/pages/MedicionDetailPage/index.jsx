@@ -1288,6 +1288,14 @@ export default function MedicionDetailPage() {
         navigate("/menu", { replace: true });
       }
     },
+    // El mensaje de error ya se mostraba abajo del formulario (approveTechnicalM.isError),
+    // pero esa caja queda debajo de un formulario largo y es fácil no notarla al hacer
+    // click en el botón de arriba - resultaba en "no pasó nada" para quien lo probaba,
+    // aunque el pedido sí había fallado con un motivo concreto (caso real: NP4303/NP4309,
+    // 2026-08-24). El alert() garantiza que se vea sin tener que scrollear.
+    onError: (e) => {
+      window.alert(`No se pudo aprobar la revisión técnica final:\n\n${e?.message || "Error desconocido"}`);
+    },
   });
 
   const rejectTechnicalM = useMutation({
@@ -1295,6 +1303,9 @@ export default function MedicionDetailPage() {
     onSuccess: () => {
       window.alert("La revisión técnica final fue enviada al vendedor correctamente.");
       navigate("/menu", { replace: true });
+    },
+    onError: (e) => {
+      window.alert(`No se pudo devolver al vendedor:\n\n${e?.message || "Error desconocido"}`);
     },
   });
 
