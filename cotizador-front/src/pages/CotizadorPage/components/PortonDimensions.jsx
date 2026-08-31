@@ -2153,10 +2153,22 @@ export default function PortonDimensions({ kind = "porton" }) {
   const title = isPlegados ? "Medidas del plegado" : (isPorton ? "Medidas del Vano" : "Medidas del Ipanel");
   function setVanoDimension(key, value) {
     const normalized = normalizeDecimal(value);
+    // vano_size_auto_calc: true acá (y no solo desde el botón "Recalcular ahora" o
+    // "Actualizar presupuesto") es lo que hace que el efecto de más abajo recalcule
+    // ancho/alto - y con eso, la cantidad de los ítems por superficie - apenas el
+    // vendedor edita el vano. Antes, en un presupuesto YA EXISTENTE (vano_size_auto_calc
+    // arranca en false al cargarlo, a propósito, para no tocar números solo por abrirlo)
+    // cambiar el vano acá no alcanzaba: el ítem de superficie se quedaba con la cantidad
+    // vieja hasta que alguien apretara ese botón aparte - fácil de no notar. Esto no
+    // toca el comportamiento al abrir un presupuesto (sigue sin recalcular solo, el
+    // guard de explicitVanoMeasures/vano_size_auto_calc de la ordenación de abajo no
+    // cambió) ni el botón "Recalcular ahora": actúa recién cuando el vendedor edita el
+    // vano de verdad, que es exactamente cuando corresponde recalcular. Caso real:
+    // presupuesto de Juana Beatriz Saez, Natalia Tabbia, 2026-08-31.
     if (key === "width") {
-      setDimensions({ vano_width: normalized, porton_measure_source: "vano" });
+      setDimensions({ vano_width: normalized, porton_measure_source: "vano", vano_size_auto_calc: true });
     } else {
-      setDimensions({ vano_height: normalized, porton_measure_source: "vano" });
+      setDimensions({ vano_height: normalized, porton_measure_source: "vano", vano_size_auto_calc: true });
     }
   }
   const parantesHelper = parantesFieldsReadOnly
