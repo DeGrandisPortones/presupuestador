@@ -513,8 +513,20 @@ export function buildOdooRouter(odoo) {
       const pricelistId = toPositiveInt(pricelist?.id);
       if (!pricelistId) throw new Error("No se pudo resolver la lista de precios para calcular precios");
 
-      const out = [];
-      for (const l of lines) {
+      // Antes esto resolvía línea por línea, en serie: cada línea espera su propio
+      // `read` de producto + toda la cadena de fallbacks de precio de
+      // getPriceFromPricelist (que en el peor caso son varias decenas de llamadas
+      // RPC a Odoo, una atrás de la otra) antes de arrancar la siguiente línea. Con
+      // un presupuesto de 15-20 ítems (lo normal en portones) eso se traduce en
+      // cientos de round-trips seriales a Odoo para un solo refresco de precios -
+      // el motivo real de la demora reportada, que además se agrava mucho con
+      // internet lento porque el costo es la latencia de cada round-trip
+      // multiplicada por la cantidad de llamadas, no el tamaño de los datos.
+      // Las líneas son independientes entre sí (ninguna lee ni escribe estado
+      // compartido, ver resolveProductInfoForPricing/getPriceFromPricelist), así
+      // que resolverlas todas en paralelo no cambia ningún resultado - solo el
+      // tiempo total pasa de "suma de todas las líneas" a "la línea más lenta".
+      const out = await Promise.all(lines.map(async (l) => {
         const productId = toPositiveInt(l.product_id || l.odoo_product_id || l.odoo_external_id || l.odoo_variant_id || l.odoo_template_id);
         const sourceProductId = toPositiveInt(
           l.source_product_id ||
@@ -539,7 +551,7 @@ export function buildOdooRouter(odoo) {
         const finalPrice = price > 0 ? price : productInfo.list_price;
         const resolvedName = cleanText(productInfo.name) || `Producto ${productId}`;
 
-        out.push({
+        return {
           product_id: sourceProductId || productId,
           odoo_product_id: productId,
           qty,
@@ -550,8 +562,8 @@ export function buildOdooRouter(odoo) {
           odoo_template_id: productInfo.odoo_template_id || null,
           product_product_access_error: productInfo.product_product_access_error || null,
           product_template_access_error: productInfo.product_template_access_error || null,
-        });
-      }
+        };
+      }));
 
       res.json({ ok: true, pricelist_id: pricelistId, partner_id: partnerId || null, prices: out });
     } catch (e) {
