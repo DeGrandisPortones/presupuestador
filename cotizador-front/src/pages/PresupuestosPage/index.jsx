@@ -586,7 +586,13 @@ export default function PresupuestosPage() {
                         {effectiveQuoteKind(r) === "plegados" ? <Button variant="ghost" onClick={() => setPlegadoModal(r)}>Plano / comentarios</Button> : null}
                         {r.status === "draft" ? <Button onClick={() => navigate(quoteEditorPath(r))}>Editar</Button> : null}
                         {canAddDoor ? <Button variant="ghost" onClick={() => navigate(`/puertas/nuevo/${r.id}`)}>Agregar puerta</Button> : null}
-                        {hasFinal && finalDraft ? <Button onClick={() => navigate(quoteEditorPath({ ...r, id: r.final_copy_id }))}>{r.requires_measurement ? "Edición postmedición" : "Edición acopio"}</Button> : null}
+                        {hasFinal && finalDraft ? (
+                          r.requires_measurement && !isReturnedFromMeasurement(r) ? (
+                            <Button variant="ghost" disabled title="Ya se confirmó y se envió; está esperando la aprobación de Comercial y/o Técnica antes de generarse la venta final.">Esperando aprobaciones finales</Button>
+                          ) : (
+                            <Button onClick={() => navigate(quoteEditorPath({ ...r, id: r.final_copy_id }))}>{r.requires_measurement ? "Edición postmedición" : "Edición acopio"}</Button>
+                          )
+                        ) : null}
                         {filter === "acopio" ? <Button disabled={moveM.isPending || !canRequestProduction} title={canRequestProduction ? "Solicitar paso a Producción" : "Solo disponible cuando el presupuesto original ya fue aprobado y enviado a Odoo"} onClick={() => moveM.mutate(r.id)}>{r.acopio_to_produccion_status === "pending" ? "Solicitud en revisión" : "Solicitar paso a Producción"}</Button> : null}
                       </td>
                     </tr>
