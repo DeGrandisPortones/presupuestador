@@ -510,6 +510,13 @@ export function buildMeasurementsRouter(odoo = null) {
         return res.status(403).json({ ok: false, error: "No autorizado" });
       }
       const where = [
+        // Solo filas "original": la médición se lleva siempre sobre esa fila, nunca sobre
+        // su "copia" (quote_kind='copy', la que termina siendo la NV). Sin este filtro, una
+        // copia que quedó con measurement_status='returned_to_seller' viejo (de antes de
+        // sincronizarse a Odoo) matchea el mismo WHERE y aparece como una fila fantasma
+        // duplicada al lado de la original, aunque el portón ya tenga NV y esté terminado
+        // (caso real: NP4309/NV4309, visible para Técnica).
+        "coalesce(q.quote_kind, 'original') = 'original'",
         "coalesce(q.catalog_kind, 'porton') in ('porton', 'puerta', 'ipanel', 'plegados')",
         "(q.status = 'synced_odoo' or (q.status = 'pending_approvals' and q.commercial_decision = 'approved' and q.technical_decision = 'approved') or (q.status = 'draft' and q.measurement_status = 'returned_to_seller'))",
         `(
