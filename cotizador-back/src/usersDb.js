@@ -30,6 +30,16 @@ export async function ensureUsersAdminColumns() {
   await dbQuery(`alter table public.presupuestador_users add column if not exists logo_data_url text null;`);
   await dbQuery(`create index if not exists presupuestador_users_assigned_seller_idx on public.presupuestador_users(assigned_seller_user_id);`);
 
+  // API key para integraciones de partner (ver src/partnerAuth.js): permite que el
+  // sistema de un distribuidor pida precios sin loguearse como usuario. Solo se
+  // guarda el hash (nunca la key en texto plano) - prefix es solo para mostrar en
+  // el admin cual key está activa sin poder reconstruirla.
+  await dbQuery(`alter table public.presupuestador_users add column if not exists partner_api_key_hash text null;`);
+  await dbQuery(`alter table public.presupuestador_users add column if not exists partner_api_key_prefix text null;`);
+  await dbQuery(`alter table public.presupuestador_users add column if not exists partner_api_key_created_at timestamptz null;`);
+  await dbQuery(`alter table public.presupuestador_users add column if not exists partner_api_key_last_used_at timestamptz null;`);
+  await dbQuery(`create unique index if not exists presupuestador_users_partner_api_key_hash_idx on public.presupuestador_users(partner_api_key_hash) where partner_api_key_hash is not null;`);
+
   try {
     await dbQuery(`alter table public.presupuestador_users drop constraint if exists presupuestador_users_role_check;`);
   } catch {

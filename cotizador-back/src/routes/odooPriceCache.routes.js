@@ -219,7 +219,7 @@ async function tryPricelistMethod(odoo, method, args, pricelistId, productId) {
   }
 }
 
-async function getPriceFromOdooPricelist({ odoo, pricelistId, productId, qty = 1, partnerId = false }) {
+export async function getPriceFromOdooPricelist({ odoo, pricelistId, productId, qty = 1, partnerId = false }) {
   const plId = toPositiveInt(pricelistId);
   const requestedProductId = toPositiveInt(productId);
   const quantity = Number(qty || 1) || 1;

@@ -28,6 +28,7 @@ import { buildFinancingSettingsRouter } from "./routes/financingSettings.routes.
 import { buildSellerDistributorsRouter } from "./routes/sellerDistributors.routes.js";
 import { buildPriceListsRouter } from "./routes/priceLists.routes.js";
 import { buildCommissionsRouter } from "./routes/commissions.routes.js";
+import { buildPartnerRouter } from "./routes/partner.routes.js";
 import { applyQuotesNpApprovalSyncPatch } from "./patches/quotesNpApprovalSyncPatch.js";
 import { applyPortonPdfSellerDimensionPatch } from "./patches/portonPdfSellerDimensionPatch.js";
 
@@ -77,6 +78,7 @@ app.use("/api/seller-distributors", buildSellerDistributorsRouter());
 app.use("/api/price-lists", buildPriceListsRouter(odoo));
 app.use("/api/pdf", buildPdfRouter(odoo));
 app.use("/api/commissions", buildCommissionsRouter());
+app.use("/api/partner/v1", buildPartnerRouter(odoo));
 app.get("/health", (_req, res) => res.json({ ok: true }));
 
 app.use((err, _req, res, _next) => {
