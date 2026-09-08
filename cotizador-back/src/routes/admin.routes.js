@@ -3,7 +3,7 @@ import { requireAuth } from "../auth.js";
 import { loadCatalogBootstrap, clearCatalogBootstrapCache } from "../catalogBootstrap.js";
 import { normKind, normBrand, createSection, updateSection, deleteSection, setTagSection, setProductAlias, setProductVisibility, setTypeVisibility, getProductPdfNameMap, setProductPdfName, getProductPdfContentMap, setProductPdfContent } from "../catalogDb.js";
 import { dbQuery } from "../db.js";
-import { listUsers, createUser, updateUser } from "../usersDb.js";
+import { listUsers, createUser, updateUser, ensureUsersAdminColumns } from "../usersDb.js";
 import { triggerPreproductionForClientAcceptance, formatPortonTypeLabel, resyncPortonMeasurements } from "../measurementFinalization.js";
 import { ensureQuotesMeasurementColumns } from "../quotesSchema.js";
 import {
@@ -28,6 +28,7 @@ import {
   setProductionPropertyAssignment,
 } from "../productionPropertyAssignments.js";
 import { calcOdooUnitPrice, calcQuoteSubtotal, round2, IVA_RATE, getPayloadConditionMode } from "./quotes.routes.js";
+import { generatePartnerApiKey } from "../partnerAuth.js";
 
 function requireEncComercial(req, res, next) { if (!req.user?.is_enc_comercial) return res.status(403).json({ ok: false, error: "No autorizado" }); next(); }
 function requireSuperuser(req, res, next) { if (!req.user?.is_superuser) return res.status(403).json({ ok: false, error: "No autorizado" }); next(); }
@@ -589,6 +590,50 @@ export function buildAdminRouter(odoo) {
   });
   router.put("/users/:id", requireAuth, requireEncComercialOrSuperuser, async (req, res, next) => {
     try { res.json({ ok: true, user: await updateUser(req.params.id, req.body || {}) }); } catch (e) { next(e); }
+  });
+
+  // ---- API key de partner (ver src/partnerAuth.js y routes/partner.routes.js) ----
+  // Solo superuser: es un credencial que le da acceso a un tercero a pedir precios,
+  // no es una tarea de gestión de usuarios del día a día.
+  router.post("/users/:id/partner-api-key/rotate", requireAuth, requireSuperuser, async (req, res, next) => {
+    try {
+      await ensureUsersAdminColumns();
+      const userId = Number(req.params.id || 0);
+      if (!userId) return res.status(400).json({ ok: false, error: "id inválido" });
+
+      const check = await dbQuery(
+        `select id, odoo_pricelist_id from public.presupuestador_users where id=$1 and coalesce(is_distribuidor,false)=true limit 1`,
+        [userId]
+      );
+      if (!check.rows?.[0]) return res.status(404).json({ ok: false, error: "Distribuidor no encontrado" });
+      if (!check.rows[0].odoo_pricelist_id) return res.status(400).json({ ok: false, error: "Este distribuidor no tiene lista de precios asignada todavía" });
+
+      const { raw, hash, prefix } = generatePartnerApiKey();
+      await dbQuery(
+        `update public.presupuestador_users
+            set partner_api_key_hash = $2, partner_api_key_prefix = $3, partner_api_key_created_at = now(), partner_api_key_last_used_at = null
+          where id = $1`,
+        [userId, hash, prefix]
+      );
+
+      // La key completa se devuelve UNA sola vez acá (no queda guardada en texto
+      // plano en ningún lado) - si se pierde, hay que rotarla de nuevo.
+      res.json({ ok: true, api_key: raw, prefix });
+    } catch (e) { next(e); }
+  });
+
+  router.delete("/users/:id/partner-api-key", requireAuth, requireSuperuser, async (req, res, next) => {
+    try {
+      const userId = Number(req.params.id || 0);
+      if (!userId) return res.status(400).json({ ok: false, error: "id inválido" });
+      await dbQuery(
+        `update public.presupuestador_users
+            set partner_api_key_hash = null, partner_api_key_prefix = null, partner_api_key_created_at = null, partner_api_key_last_used_at = null
+          where id = $1`,
+        [userId]
+      );
+      res.json({ ok: true });
+    } catch (e) { next(e); }
   });
 
   // ---- Historial para rol Administración ----
