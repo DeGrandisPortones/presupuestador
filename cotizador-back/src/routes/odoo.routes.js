@@ -709,7 +709,7 @@ async function readProductTemplateForPricing(odoo, templateId) {
   }
 }
 
-async function resolveProductInfoForPricing(odoo, line) {
+export async function resolveProductInfoForPricing(odoo, line) {
   const productId = toPositiveInt(line?.product_id);
   const explicitTemplateId = toPositiveInt(line?.template_id || line?.odoo_template_id || line?.product_tmpl_id);
   const out = {

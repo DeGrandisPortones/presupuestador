@@ -12,7 +12,7 @@ import express from "express";
 import { partnerRateLimit, requirePartnerApiKey } from "../partnerAuth.js";
 import { loadCatalogBootstrap } from "../catalogBootstrap.js";
 import { normKind } from "../catalogDb.js";
-import { getPriceFromOdooPricelist } from "./odooPriceCache.routes.js";
+import { getPriceFromPricelist, resolveProductInfoForPricing } from "./odoo.routes.js";
 import { IVA_RATE, round2 } from "./quotes.routes.js";
 
 const MAX_ITEMS_PER_REQUEST = 50;
@@ -71,30 +71,44 @@ export function buildPartnerRouter(odoo) {
       const adjustmentPercent = Number(body.adjustment_percent || 0) || 0;
       const conditionMode = String(body.condition_mode || "cond1").trim().toLowerCase() === "cond2" ? "cond2" : "cond1";
 
-      const lines = [];
-      for (const item of items) {
-        const productId = Number(item?.product_id || 0);
-        const qty = Number(item?.qty || 1) || 0;
-        if (!productId || qty <= 0) {
-          return res.status(400).json({ ok: false, error: `item inválido (falta product_id o qty): ${JSON.stringify(item)}` });
-        }
+      // Se valida todo antes de pedir ningun precio: un item invalido no debe dejar
+      // a mitad de camino llamadas a Odoo ya disparadas para los items anteriores.
+      const parsedItems = items.map((item) => ({
+        productId: Number(item?.product_id || 0),
+        qty: Number(item?.qty || 1) || 0,
+        raw: item,
+      }));
+      const invalid = parsedItems.find((it) => !it.productId || it.qty <= 0);
+      if (invalid) {
+        return res.status(400).json({ ok: false, error: `item inválido (falta product_id o qty): ${JSON.stringify(invalid.raw)}` });
+      }
 
-        const basePrice = await getPriceFromOdooPricelist({
+      // Mismo camino que /api/odoo/prices (cotizador interno): resuelve por las
+      // reglas de product.pricelist.item de Odoo, y todos los items en paralelo -
+      // antes esto pedia el precio uno por uno, en serie, con hasta 8 intentos de
+      // metodos de Odoo por producto (el motivo real de la demora reportada antes
+      // con este mismo patron en el cotizador interno, ver getPrices en
+      // odoo.routes.js).
+      const lines = await Promise.all(parsedItems.map(async ({ productId, qty }) => {
+        const productInfo = await resolveProductInfoForPricing(odoo, { product_id: productId });
+        const price = await getPriceFromPricelist({
           odoo,
           pricelistId: distributor.odoo_pricelist_id,
           productId,
           qty,
           partnerId: distributor.odoo_partner_id || false,
+          templateId: productInfo.odoo_template_id || null,
         });
+        const basePrice = price > 0 ? price : productInfo.list_price;
         const unitPrice = calcPartnerUnitPrice(basePrice, marginPercent, adjustmentPercent);
-        lines.push({
+        return {
           product_id: productId,
           qty,
           base_price: round2(basePrice),
           unit_price: unitPrice,
           line_total: round2(unitPrice * qty),
-        });
-      }
+        };
+      }));
 
       const subtotal = round2(lines.reduce((acc, l) => acc + l.line_total, 0));
       const ivaRate = conditionMode === "cond2" ? CONDITION_2_IVA_RATE : IVA_RATE;
