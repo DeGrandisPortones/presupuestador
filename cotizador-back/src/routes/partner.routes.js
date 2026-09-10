@@ -38,6 +38,32 @@ function calcPartnerUnitPrice(basePrice, marginPercent, adjustmentPercent) {
   return round2(base * marginFactor * adjustmentFactor);
 }
 
+// Fechas de producción/instalación de un NV puntual. Viven en la tabla de
+// Planta (public.portones - misma base compartida), no en
+// presupuestador_quotes. A propósito NO se verifica que el NV pertenezca al
+// distribuidor de esta API key: NVs viejos ya no tienen fila viva en
+// presupuestador_quotes (de donde sale el dueño) pero sí siguen en Planta, y
+// confirmado con De Grandis que para esta info (solo fechas, sin precio ni
+// datos de cliente) el riesgo de exponer el NV de otro distribuidor es
+// aceptable. Si esto cambia, hay que cruzar contra
+// presupuestador_quotes.bill_to_odoo_partner_id.
+async function fetchOrderDates(nv) {
+  const r = await dbQuery(
+    `select to_char(fecha_plan_entrega, 'YYYY-MM-DD') as fecha_llegada_instalacion,
+            to_char(fecha_med, 'YYYY-MM-DD') as fecha_medicion
+       from public.portones
+      where nv = $1
+      order by created_at desc
+      limit 1`,
+    [nv]
+  );
+  const row = r.rows?.[0];
+  return {
+    fecha_llegada_instalacion: row?.fecha_llegada_instalacion || null,
+    fecha_medicion: row?.fecha_medicion || null,
+  };
+}
+
 export function buildPartnerRouter(odoo) {
   const router = express.Router();
   router.use(partnerRateLimit, requirePartnerApiKey);
@@ -116,6 +142,12 @@ export function buildPartnerRouter(odoo) {
       const iva = round2(subtotal * ivaRate);
       const total = round2(subtotal + iva);
 
+      // nv es opcional: si el pedido ya tiene un NV asignado (orden ya en
+      // producción), se informan sus fechas junto con el precio en la misma
+      // respuesta - ver fetchOrderDates.
+      const nv = Number(body.nv || 0);
+      const orderDates = nv > 0 ? await fetchOrderDates(nv) : { fecha_llegada_instalacion: null, fecha_medicion: null };
+
       res.json({
         ok: true,
         distributor: { id: distributor.id, name: distributor.full_name },
@@ -127,42 +159,9 @@ export function buildPartnerRouter(odoo) {
         iva_rate: ivaRate,
         iva,
         total,
-      });
-    } catch (e) { next(e); }
-  });
-
-  // Fechas de producción/instalación de un NV puntual. Estas fechas viven en la
-  // tabla de Planta (public.portones - misma base compartida, ver
-  // project_planta_sync_silencioso_portones), no en presupuestador_quotes.
-  //
-  // A propósito NO se verifica que el NV pertenezca al distribuidor de esta API
-  // key: NVs viejos ya no tienen fila viva en presupuestador_quotes (de donde
-  // sale el dueño) pero sí siguen en Planta, y confirmado con De Grandis que
-  // para esta info (solo fechas, sin precios ni datos del cliente) el riesgo de
-  // exponer el NV de otro distribuidor es aceptable. Si esto cambia, hay que
-  // volver a cruzar contra presupuestador_quotes.bill_to_odoo_partner_id.
-  router.get("/orders/:nv", async (req, res, next) => {
-    try {
-      const nv = Number(req.params.nv);
-      if (!Number.isFinite(nv) || nv <= 0) return res.status(400).json({ ok: false, error: "nv inválido" });
-
-      const r = await dbQuery(
-        `select to_char(fecha_plan_entrega, 'YYYY-MM-DD') as fecha_llegada_instalacion,
-                to_char(fecha_med, 'YYYY-MM-DD') as fecha_medicion
-           from public.portones
-          where nv = $1
-          order by created_at desc
-          limit 1`,
-        [nv]
-      );
-      const row = r.rows?.[0];
-      if (!row) return res.status(404).json({ ok: false, error: `NV ${nv} no encontrado` });
-
-      res.json({
-        ok: true,
-        nv,
-        fecha_llegada_instalacion: row.fecha_llegada_instalacion || null,
-        fecha_medicion: row.fecha_medicion || null,
+        nv: nv > 0 ? nv : null,
+        fecha_llegada_instalacion: orderDates.fecha_llegada_instalacion,
+        fecha_medicion: orderDates.fecha_medicion,
       });
     } catch (e) { next(e); }
   });
