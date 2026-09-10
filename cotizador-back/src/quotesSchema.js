@@ -275,6 +275,14 @@ export async function ensureQuotesMeasurementColumns() {
   // quotes.routes.js (create, PUT draft, submit, pase a produccion desde acopio).
   await dbQuery(`alter table public.presupuestador_quotes add column if not exists production_set_at timestamptz null;`);
 
+  // Sin esto, el "buscar la copia de este presupuesto" (quote_kind='copy' and
+  // parent_quote_id=X) que corre una vez por fila en varios listados (GET /,
+  // /portones_estado, GET /:id) hacia un seq scan de toda la tabla por cada fila -
+  // medido en vivo: con esta tabla en ~4200 filas, listar los 133 presupuestos de un
+  // distribuidor pesado tardaba varios segundos solo por esto (caso real: "Mis
+  // presupuestos" de Grivel, 2026-09-10).
+  await dbQuery(`create index if not exists idx_pq_parent_quote_id on public.presupuestador_quotes(parent_quote_id) where quote_kind = 'copy';`);
+
   await ensureSettingsTable();
   ensured = true;
 }

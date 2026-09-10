@@ -2086,6 +2086,15 @@ export function buildQuotesRouter(odoo) {
       let sql = "";
       let params = [];
       const onlyOriginal = "q.quote_kind = 'original'";
+      // Estas listas (a diferencia de GET /:id) no necesitan la foto en si, solo el resto
+      // del payload (descripcion, nombre del archivo, etc.) - la foto de plano adjunta a un
+      // plegado se guarda en base64 dentro de payload.dimensions y puede pesar varios MB por
+      // presupuesto (llegue a ver ~10MB en una sola fila, x2 por un bug de guardado duplicado
+      // ya arreglado). Con varias decenas de presupuestos asi en una lista, esto tardaba
+      // segundos/se colgaba directamente (caso real: "Mis presupuestos" de Grivel, 14+s y
+      // 60MB para 133 filas, medido en vivo 2026-09-10). Se le saca solo el data_url pesado,
+      // el resto del adjunto (nombre, tamaño, tipo) queda igual para poder mostrarlo.
+      const PAYLOAD_WITHOUT_PLEGADO_ATTACHMENT_DATA_SQL = `(q.payload #- '{dimensions,plegado_plano_attachment,data_url}' #- '{dimensions,plano_plegado_attachment,data_url}')`;
       const lateralFinal = `left join lateral (
         select c.id as final_copy_id,
                c.final_status as final_copy_status,
@@ -2100,7 +2109,14 @@ export function buildQuotesRouter(odoo) {
 
       if (scope === "mine") {
         if (!u.is_vendedor && !u.is_distribuidor) return res.status(403).json({ ok: false, error: "No autorizado" });
-        sql = `select q.*, u.username as created_by_username, u.full_name as created_by_full_name, fc.final_copy_id, fc.final_copy_status, fc.final_copy_sale_order_name, fc.final_copy_quote_status
+        // Sin esto (q.* incluye el payload original entero antes de que la columna
+        // calculada de mas abajo lo pise), Postgres tiene que destoastear igual el
+        // payload gigante de cada fila aunque despues se descarte - probado en vivo:
+        // con q.* + payload recortado aparte seguia tardando ~20s, con columnas
+        // explicitas (sin la columna payload original) bajo a <1s. Ver comentario de
+        // PAYLOAD_WITHOUT_PLEGADO_ATTACHMENT_DATA_SQL mas arriba.
+        sql = `select ${QUOTE_LIST_COLUMNS_SQL}, u.username as created_by_username, u.full_name as created_by_full_name, fc.final_copy_id, fc.final_copy_status, fc.final_copy_sale_order_name, fc.final_copy_quote_status,
+                      ${PAYLOAD_WITHOUT_PLEGADO_ATTACHMENT_DATA_SQL} as payload
                from public.presupuestador_quotes q
                left join public.presupuestador_users u on u.id = q.created_by_user_id
                ${lateralFinal}
