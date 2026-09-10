@@ -1717,7 +1717,11 @@ export default function PortonDimensions({ kind = "porton" }) {
     try {
       setPlegadoAttachmentError("");
       const attachment = await fileToPlegadoAttachment(file);
-      setDimensions({ plegado_plano_attachment: attachment, plano_plegado_attachment: attachment });
+      // Un solo campo (getPlegadoAttachment ya sabe leer el nombre viejo "plano_plegado_attachment"
+      // de presupuestos guardados antes de este fix) - guardar el archivo dos veces duplicaba
+      // varios MB por presupuesto y era la causa real de que "Mis presupuestos" tardara
+      // muchísimo para cuentas con fotos de plegados adjuntas (caso real: Grivel, 2026-09-10).
+      setDimensions({ plegado_plano_attachment: attachment });
     } catch (error) {
       setPlegadoAttachmentError(error?.message || "No se pudo adjuntar el plano.");
     } finally {

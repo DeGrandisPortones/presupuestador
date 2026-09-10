@@ -804,6 +804,7 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
   const autosaveTimerRef = useRef(null);
   const autosaveInFlightRef = useRef(false);
   const autosaveLastRemoteSignatureRef = useRef("");
+  const quoteCreationPromiseRef = useRef(null);
   const autosaveRestoredLocalRef = useRef(false);
   const ipanelLamasAlertShownRef = useRef(false);
   const [linkedPortonId, setLinkedPortonId] = useState("");
@@ -1236,6 +1237,27 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
     filtered.push(`Vendedor: ${sellerLabel}`);
     return filtered.join("\n");
   }
+  // Autoguardado, Guardar, Confirmar y Actualizar presupuesto pueden pedir, cada uno por
+  // su lado, "creá el presupuesto si todavia no existe" casi al mismo tiempo (ej: el
+  // usuario completa los datos del cliente, dispara el debounce de autoguardado, y
+  // aprieta Actualizar presupuesto antes de que ese autoguardado termine). Sin esto cada
+  // uno hacia su propio createQuote y terminaban quedando DOS presupuestos casi
+  // identicos (caso real: "Prueba2" duplicado, Grivel, 2026-09-10). Todos comparten esta
+  // misma promesa en curso en vez de crear cada uno la suya.
+  async function ensureQuoteId(payload) {
+    const existing = quoteId || idParam;
+    if (existing) return existing;
+    if (!quoteCreationPromiseRef.current) {
+      quoteCreationPromiseRef.current = createQuote(payload)
+        .then((created) => {
+          setQuoteMeta({ quoteId: created.id, status: created.status, rejectionNotes: created.rejection_notes });
+          return created;
+        })
+        .finally(() => { quoteCreationPromiseRef.current = null; });
+    }
+    const created = await quoteCreationPromiseRef.current;
+    return created.id;
+  }
   function getDraftPayload(options = {}) {
     const base = buildPayloadForBack() || {};
     const linkedPortonMeta = buildLinkedPortonPayload(linkedPorton, linkedPortonId) || extractLinkedPortonPayloadFromQuote(quoteQ.data);
@@ -1318,13 +1340,8 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
     validatePricingContextReady();
     const payload = getDraftPayload();
     validateDraft(payload);
-    if (!quoteId) {
-      const created = await createQuote(payload);
-      setQuoteMeta({ quoteId: created.id, status: created.status, rejectionNotes: created.rejection_notes });
-      qc.invalidateQueries({ queryKey: ["quotes", "mine"] });
-      return { quote: created, payload: { ...payload, id: created.id, quote_id: created.id, quote_number: displayQuoteNumberForKind(catalogKind, created, created.quote_number || ""), seller_name: user?.full_name || user?.username || "", envio_odoo_price_snapshot: created.envio_odoo_price_snapshot } };
-    }
-    const q = await updateQuote(quoteId, payload);
+    const id = await ensureQuoteId(payload);
+    const q = await updateQuote(id, payload);
     setQuoteMeta({ quoteId: q.id, status: q.status, rejectionNotes: q.rejection_notes });
     qc.invalidateQueries({ queryKey: ["quotes", "mine"] });
     return { quote: q, payload: { ...payload, id: q.id, quote_id: q.id, quote_number: displayQuoteNumberForKind(catalogKind, q, q.quote_number || ""), seller_name: user?.full_name || user?.username || "", envio_odoo_price_snapshot: q.envio_odoo_price_snapshot } };
@@ -1418,7 +1435,8 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
     setAutosaveState({ status: "saving", message: "Autoguardando...", savedAt: "" });
     try {
       const existingId = quoteId || idParam;
-      const saved = existingId ? await updateQuote(existingId, payload) : await createQuote(payload);
+      const id = await ensureQuoteId(payload);
+      const saved = await updateQuote(id, payload);
       setQuoteMeta({ quoteId: saved.id, status: saved.status, rejectionNotes: saved.rejection_notes });
       autosaveLastRemoteSignatureRef.current = signature;
       const savedAt = new Date().toISOString();
@@ -1500,7 +1518,7 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
     saveM.mutate();
   }
 
-  const saveM = useMutation({ mutationFn: async () => { const payload = getDraftPayload(); validateDraft(payload); if (quoteId) return await updateQuote(quoteId, payload); return await createQuote(payload); }, onSuccess: (q) => { setQuoteMeta({ quoteId: q.id, status: q.status, rejectionNotes: q.rejection_notes }); qc.invalidateQueries({ queryKey: ["quotes", "mine"] }); if (maybeContinueDoorWorkflow(q)) { toast.success("Presupuesto de puerta guardado. Volviendo al panel."); return; } navigate(editorRouteForKind(catalogKind, q.id)); toast.success("Guardado."); }, onError: (e) => toast.error(e?.message || "No se pudo guardar") });
+  const saveM = useMutation({ mutationFn: async () => { const payload = getDraftPayload(); validateDraft(payload); const id = await ensureQuoteId(payload); return await updateQuote(id, payload); }, onSuccess: (q) => { setQuoteMeta({ quoteId: q.id, status: q.status, rejectionNotes: q.rejection_notes }); qc.invalidateQueries({ queryKey: ["quotes", "mine"] }); if (maybeContinueDoorWorkflow(q)) { toast.success("Presupuesto de puerta guardado. Volviendo al panel."); return; } navigate(editorRouteForKind(catalogKind, q.id)); toast.success("Guardado."); }, onError: (e) => toast.error(e?.message || "No se pudo guardar") });
 
   const confirmM = useMutation({
     mutationFn: async (variables) => {
@@ -1510,8 +1528,8 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
         : {};
       const payload = { ...getDraftPayload(payloadOptions), catalog_kind: catalogKind, fulfillment_mode: chosenMode };
       validateConfirm(payload);
-      let id = quoteId || idParam;
-      if (id) await updateQuote(id, payload); else { const created = await createQuote(payload); id = created.id; setQuoteMeta({ quoteId: created.id, status: created.status, rejectionNotes: created.rejection_notes }); }
+      const id = await ensureQuoteId(payload);
+      await updateQuote(id, payload);
       if (isRevisionQuote) return await submitFinalQuote(id);
       return await confirmQuote(id, { fulfillment_mode: chosenMode });
     },
@@ -1550,9 +1568,7 @@ export default function CotizadorPage({ catalogKind = "porton" }) {
       if (!id) {
         const draftPayload = getDraftPayload();
         validateDraft(draftPayload);
-        const created = await createQuote(draftPayload);
-        id = created.id;
-        setQuoteMeta({ quoteId: created.id, status: created.status, rejectionNotes: created.rejection_notes });
+        id = await ensureQuoteId(draftPayload);
       }
 
       // Presupuestos viejos por vano (antes del calculo automatico) pueden haber quedado sin ancho/alto
