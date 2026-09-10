@@ -14,6 +14,7 @@ import { loadCatalogBootstrap } from "../catalogBootstrap.js";
 import { normKind } from "../catalogDb.js";
 import { getPriceFromPricelist, resolveProductInfoForPricing } from "./odoo.routes.js";
 import { IVA_RATE, round2 } from "./quotes.routes.js";
+import { dbQuery } from "../db.js";
 
 const MAX_ITEMS_PER_REQUEST = 50;
 const CONDITION_2_IVA_RATE = 0.105;
@@ -126,6 +127,42 @@ export function buildPartnerRouter(odoo) {
         iva_rate: ivaRate,
         iva,
         total,
+      });
+    } catch (e) { next(e); }
+  });
+
+  // Fechas de producción/instalación de un NV puntual. Estas fechas viven en la
+  // tabla de Planta (public.portones - misma base compartida, ver
+  // project_planta_sync_silencioso_portones), no en presupuestador_quotes.
+  //
+  // A propósito NO se verifica que el NV pertenezca al distribuidor de esta API
+  // key: NVs viejos ya no tienen fila viva en presupuestador_quotes (de donde
+  // sale el dueño) pero sí siguen en Planta, y confirmado con De Grandis que
+  // para esta info (solo fechas, sin precios ni datos del cliente) el riesgo de
+  // exponer el NV de otro distribuidor es aceptable. Si esto cambia, hay que
+  // volver a cruzar contra presupuestador_quotes.bill_to_odoo_partner_id.
+  router.get("/orders/:nv", async (req, res, next) => {
+    try {
+      const nv = Number(req.params.nv);
+      if (!Number.isFinite(nv) || nv <= 0) return res.status(400).json({ ok: false, error: "nv inválido" });
+
+      const r = await dbQuery(
+        `select to_char(fecha_plan_entrega, 'YYYY-MM-DD') as fecha_llegada_instalacion,
+                to_char(fecha_med, 'YYYY-MM-DD') as fecha_medicion
+           from public.portones
+          where nv = $1
+          order by created_at desc
+          limit 1`,
+        [nv]
+      );
+      const row = r.rows?.[0];
+      if (!row) return res.status(404).json({ ok: false, error: `NV ${nv} no encontrado` });
+
+      res.json({
+        ok: true,
+        nv,
+        fecha_llegada_instalacion: row.fecha_llegada_instalacion || null,
+        fecha_medicion: row.fecha_medicion || null,
       });
     } catch (e) { next(e); }
   });
