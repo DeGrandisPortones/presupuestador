@@ -38,30 +38,60 @@ function calcPartnerUnitPrice(basePrice, marginPercent, adjustmentPercent) {
   return round2(base * marginFactor * adjustmentFactor);
 }
 
-// Fechas de producción/instalación de un NV puntual. Viven en la tabla de
-// Planta (public.portones - misma base compartida), no en
-// presupuestador_quotes. A propósito NO se verifica que el NV pertenezca al
-// distribuidor de esta API key: NVs viejos ya no tienen fila viva en
-// presupuestador_quotes (de donde sale el dueño) pero sí siguen en Planta, y
-// confirmado con De Grandis que para esta info (solo fechas, sin precio ni
-// datos de cliente) el riesgo de exponer el NV de otro distribuidor es
-// aceptable. Si esto cambia, hay que cruzar contra
-// presupuestador_quotes.bill_to_odoo_partner_id.
-async function fetchOrderDates(nv) {
+// Fecha de llegada/instalación de un NV puntual: vive en la tabla de Planta
+// (public.portones - misma base compartida), no en presupuestador_quotes.
+//
+// A propósito NO se verifica que el NV pertenezca al distribuidor de esta API
+// key: NVs viejos ya no tienen fila viva en presupuestador_quotes (de donde
+// sale el dueño) pero sí siguen en Planta, y confirmado con De Grandis que
+// para esta info (solo fechas, sin precio ni datos de cliente) el riesgo de
+// exponer el NV de otro distribuidor es aceptable. Si esto cambia, hay que
+// cruzar contra presupuestador_quotes.bill_to_odoo_partner_id.
+async function fetchInstallationDate(nv) {
   const r = await dbQuery(
-    `select to_char(fecha_plan_entrega, 'YYYY-MM-DD') as fecha_llegada_instalacion,
-            to_char(fecha_med, 'YYYY-MM-DD') as fecha_medicion
+    `select to_char(fecha_plan_entrega, 'YYYY-MM-DD') as fecha_llegada_instalacion
        from public.portones
       where nv = $1
       order by created_at desc
       limit 1`,
     [nv]
   );
+  return r.rows?.[0]?.fecha_llegada_instalacion || null;
+}
+
+// Fecha de medición: NO viene de Planta (portones.fecha_med) - probado contra
+// datos reales, esa columna queda en null en filas de Planta que todavía no
+// sincronizaron el dato aunque la medición ya esté hecha (caso real: NV 4270,
+// medido 20/07/2026 según presupuestador_quotes, portones.fecha_med en null).
+// La fuente confiable es presupuestador_quotes: measurement_at si ya se
+// realizó, si no measurement_scheduled_for (programada pero pendiente). Estos
+// campos viven en la fila 'original' del quote, no en la 'copy' que lleva el
+// NV final, así que se matchea por el número de NV/NP contra cualquiera de
+// los dos nombres de esa fila original.
+async function fetchMeasurementDate(nv) {
+  const r = await dbQuery(
+    `select to_char(measurement_at, 'YYYY-MM-DD') as fecha_realizada,
+            to_char(measurement_scheduled_for, 'YYYY-MM-DD') as fecha_programada
+       from public.presupuestador_quotes
+      where quote_kind = 'original'
+        and (
+          regexp_replace(coalesce(odoo_sale_order_name, ''), '\\D', '', 'g') = $1
+          or regexp_replace(coalesce(final_sale_order_name, ''), '\\D', '', 'g') = $1
+        )
+      order by updated_at desc nulls last, id desc
+      limit 1`,
+    [String(nv)]
+  );
   const row = r.rows?.[0];
-  return {
-    fecha_llegada_instalacion: row?.fecha_llegada_instalacion || null,
-    fecha_medicion: row?.fecha_medicion || null,
-  };
+  return row?.fecha_realizada || row?.fecha_programada || null;
+}
+
+async function fetchOrderDates(nv) {
+  const [fecha_llegada_instalacion, fecha_medicion] = await Promise.all([
+    fetchInstallationDate(nv),
+    fetchMeasurementDate(nv),
+  ]);
+  return { fecha_llegada_instalacion, fecha_medicion };
 }
 
 export function buildPartnerRouter(odoo) {
