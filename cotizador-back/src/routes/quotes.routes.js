@@ -1289,12 +1289,41 @@ async function ensureOdooReferenceSequence() {
   odooReferenceSequenceEnsured = true;
 }
 
+// Puede haber números ya usados por delante del valor actual de la secuencia:
+// quedaron "huérfanos" de cuando la secuencia se reinició manualmente hacia
+// atrás en algún momento (ej. NV5925/PNP5925, NV5276/ONV5276, NV9307/PNP9307
+// - detectados 2026-09-10). Sin este chequeo, al llegar la secuencia a esos
+// valores se generaría un NV/NP duplicado con una orden ya existente de otra
+// línea de catálogo. Se salta dinámicamente cualquier número ya usado (en
+// cualquier prefijo/catalog_kind), en vez de listar los huérfanos a mano,
+// para cubrir también huérfanos futuros que todavía no conocemos.
+async function isOdooReferenceNumberInUse(value) {
+  const r = await dbQuery(
+    `
+    select 1
+    from public.presupuestador_quotes
+    where (final_sale_order_name ~ '[0-9]+$' and (regexp_replace(final_sale_order_name, '[^0-9]', '', 'g'))::bigint = $1::bigint)
+       or (odoo_sale_order_name ~ '[0-9]+$' and (regexp_replace(odoo_sale_order_name, '[^0-9]', '', 'g'))::bigint = $1::bigint)
+    limit 1;
+    `,
+    [value],
+  );
+  return r.rows.length > 0;
+}
+
 async function nextOdooReferenceNumber() {
   await ensureOdooReferenceSequence();
-  const r = await dbQuery(`select nextval('public.presupuestador_odoo_reference_seq') as value`);
-  const value = Number(r.rows?.[0]?.value || 0);
-  if (!Number.isFinite(value) || value <= 0) throw new Error("No se pudo obtener el próximo número Odoo");
-  return value;
+  const MAX_ATTEMPTS = 500;
+  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+    const r = await dbQuery(`select nextval('public.presupuestador_odoo_reference_seq') as value`);
+    const value = Number(r.rows?.[0]?.value || 0);
+    if (!Number.isFinite(value) || value <= 0) throw new Error("No se pudo obtener el próximo número Odoo");
+    // eslint-disable-next-line no-await-in-loop
+    const enUso = await isOdooReferenceNumberInUse(value);
+    if (!enUso) return value;
+    console.warn(`[buildQuoteOdooReference] numero ${value} ya estaba usado por otra orden (huérfano historico) - se saltea`);
+  }
+  throw new Error("No se pudo encontrar un número Odoo libre tras varios intentos");
 }
 
 function getExistingInitialOdooReferenceNumber(quote) {
@@ -1369,6 +1398,28 @@ function mergeLinkedPortonPayload(payload = {}, linkedPorton = null) {
 }
 
 async function syncQuoteToOdoo({ odoo, quote, approverUser }) {
+  // Salvaguarda anti-duplicados (mismo patrón que ya usa syncFinalQuoteToOdoo
+  // en measurementFinalization.js): si esta función se llama dos veces para
+  // el mismo quote -el create en Odoo salió bien pero un paso posterior
+  // (renombrar la orden, o escribir el resultado en nuestra DB) se cortó por
+  // timeout/error, así que el caller cree que falló y deja reintentar- sin
+  // este chequeo se crea una SEGUNDA orden NP real en Odoo y se gasta un
+  // número de más de la secuencia (visto en vivo: NV4262, NV4407 con 2-3
+  // órdenes distintas, mismo problema documentado en measurementFinalization.js).
+  // Acá no se puede buscar por la referencia NV/NP (todavía no existe en el
+  // primer intento, recién se calcula más abajo) así que se busca por la
+  // nota, que siempre incluye el id del quote (estable entre reintentos).
+  const existingByQuoteId = await odoo.executeKw(
+    "sale.order",
+    "search_read",
+    [[["note", "like", `PRESUPUESTADOR QUOTE: ${quote.id}`]]],
+    { fields: ["id", "name", "amount_total", "partner_id", "state", "pricelist_id", "client_order_ref"], order: "id asc", limit: 1 },
+  );
+  if (existingByQuoteId?.length) {
+    const totalExistente = calcQuoteTotalWithIva({ lines: quote.lines, payload: quote.payload, quote });
+    return { order: existingByQuoteId[0], deposit_amount: round2(totalExistente) };
+  }
+
   const pricelistId = resolveQuotePricelistId(quote, quote?.pricelist_id);
   let partnerId = toIntId(quote?.bill_to_odoo_partner_id);
   if (!partnerId) {
