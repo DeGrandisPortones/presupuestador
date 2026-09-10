@@ -38,8 +38,13 @@ function calcPartnerUnitPrice(basePrice, marginPercent, adjustmentPercent) {
   return round2(base * marginFactor * adjustmentFactor);
 }
 
-// Fecha de llegada/instalación de un NV puntual: vive en la tabla de Planta
-// (public.portones - misma base compartida), no en presupuestador_quotes.
+// Fecha de llegada/instalación de un NV puntual: es la fecha de la etapa
+// "despacho" (public.porton_etapas_tiempos - Planta), que es la que hay que
+// considerar como fecha de entrega según De Grandis. portones.fecha_plan_entrega
+// (cuándo Logística programó el viaje) es solo el respaldo mientras el
+// despacho todavía no arrancó - portones.despacho_inicio/despacho_fin NO se
+// usan porque son columnas legacy que quedan sin sincronizar (mismo problema
+// que fecha_med, ver fetchMeasurementDate).
 //
 // A propósito NO se verifica que el NV pertenezca al distribuidor de esta API
 // key: NVs viejos ya no tienen fila viva en presupuestador_quotes (de donde
@@ -49,14 +54,17 @@ function calcPartnerUnitPrice(basePrice, marginPercent, adjustmentPercent) {
 // cruzar contra presupuestador_quotes.bill_to_odoo_partner_id.
 async function fetchInstallationDate(nv) {
   const r = await dbQuery(
-    `select to_char(fecha_plan_entrega, 'YYYY-MM-DD') as fecha_llegada_instalacion
-       from public.portones
-      where nv = $1
-      order by created_at desc
+    `select to_char(coalesce(et.fin, et.inicio), 'YYYY-MM-DD') as fecha_despacho,
+            to_char(p.fecha_plan_entrega, 'YYYY-MM-DD') as fecha_plan_entrega
+       from public.portones p
+       left join public.porton_etapas_tiempos et on et.porton_id = p.id and et.etapa = 'despacho'
+      where p.nv = $1
+      order by p.created_at desc
       limit 1`,
     [nv]
   );
-  return r.rows?.[0]?.fecha_llegada_instalacion || null;
+  const row = r.rows?.[0];
+  return row?.fecha_despacho || row?.fecha_plan_entrega || null;
 }
 
 // Fecha de medición: NO viene de Planta (portones.fecha_med) - probado contra
