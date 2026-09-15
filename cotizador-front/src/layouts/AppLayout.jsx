@@ -7,6 +7,7 @@ import { getTechnicalConsultUnreadSummary } from "../api/technicalConsults.js";
 import { getCommercialConsultUnreadSummary } from "../api/commercialConsults.js";
 import AptoKgProductSectionFilterPatch from "../components/AptoKgProductSectionFilterPatch.jsx";
 import PendingClientAcceptanceModal from "../components/PendingClientAcceptanceModal.jsx";
+import TicketWidget from "../components/TicketWidget.jsx";
 
 const DROPDOWN_ITEM_STYLE = {
   display: "block",
@@ -372,6 +373,7 @@ export default function AppLayout() {
           ) : null}
 
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <TicketWidget />
             <TechnicalConsultHeaderButton />
             <CommercialConsultHeaderButton />
             <OdooStatusBadge />
