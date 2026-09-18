@@ -39,7 +39,7 @@ export default function ProductSearch({ onSearch }) {
       {!loading && (
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           {items.map((p) => (
-            <div key={p.id} style={{ display: "flex", justifyContent: "space-between", gap: 8, border: "1px solid #eee", padding: 10, borderRadius: 10 }}>
+            <div key={p.id} style={{ display: "flex", justifyContent: "space-between", gap: 8, border: "1px solid var(--dg-border)", padding: 10, borderRadius: 10 }}>
               <div style={{ minWidth: 0 }}>
                 <div style={{ fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                   {p.name}

@@ -20,7 +20,10 @@ import { buildPdfRouter } from "./routes/pdf.routes.js";
 import { buildMeasurementsRouter } from "./routes/measurements.routes.js";
 import { buildClientAcceptanceRouter } from "./routes/clientAcceptance.routes.js";
 import { buildDoorsRouter } from "./routes/doors.routes.js";
+import { buildTicketsRouter } from "./routes/tickets.routes.js";
 import { buildTechnicalConsultsRouter } from "./routes/technicalConsults.routes.js";
+import { buildMeetSchedulingRouter } from "./routes/meetScheduling.routes.js";
+import { buildPublicMeetSchedulingRouter } from "./routes/publicMeetScheduling.routes.js";
 import { buildCommercialConsultsRouter } from "./routes/commercialConsults.routes.js";
 import { buildProductionPlanningRouter } from "./routes/productionPlanning.routes.js";
 import { buildQuoteViewerRouter } from "./routes/quoteViewer.routes.js";
@@ -37,6 +40,12 @@ applyPortonPdfSellerDimensionPatch();
 const { buildQuotesRouter } = await import("./routes/quotes.routes.js");
 
 const app = express();
+
+// Necesario para que express-rate-limit (ver publicMeetScheduling.routes.js) vea la IP
+// real de cada cliente y no la del proxy - en local no hay proxy delante asi que esto
+// es invisible, pero en un hosting real (Render, etc.) todo el trafico llega a traves
+// de uno, y sin esto todos los clientes comparten el mismo limite de intentos.
+app.set("trust proxy", 1);
 
 app.use(cors({ origin: true }));
 // 25mb: deja lugar a un adjunto de ticket de hasta 15MB en base64 (~20MB
@@ -72,7 +81,10 @@ app.use("/api/client-acceptance", buildClientAcceptanceRouter(odoo));
 app.use("/api/catalog", buildCatalogRouter(odoo));
 app.use("/api/admin", buildAdminRouter(odoo));
 app.use("/api/quote-viewer", buildQuoteViewerRouter());
+app.use("/api/tickets", buildTicketsRouter());
 app.use("/api/technical-consults", buildTechnicalConsultsRouter());
+app.use("/api/meet-scheduling", buildMeetSchedulingRouter());
+app.use("/api/public/meet-scheduling", buildPublicMeetSchedulingRouter());
 app.use("/api/commercial-consults", buildCommercialConsultsRouter());
 app.use("/api/seller-distributors", buildSellerDistributorsRouter());
 app.use("/api/price-lists", buildPriceListsRouter(odoo));

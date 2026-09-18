@@ -43,6 +43,8 @@ import ApprovalSectionMenuPage from "./pages/ApprovalSectionMenuPage/index.jsx";
 import PortonesEstadoPage from "./pages/PortonesEstadoPage/index.jsx";
 import AdministracionPage from "./pages/AdministracionPage/index.jsx";
 import AdministracionDetailPage from "./pages/AdministracionDetailPage/index.jsx";
+import MeetSchedulingPage from "./pages/MeetSchedulingPage/index.jsx";
+import MeetPublicSchedulingPage from "./pages/MeetPublicSchedulingPage/index.jsx";
 
 import RequireAuth from "./routes/RequireAuth.jsx";
 import AppLayout from "./layouts/AppLayout.jsx";
@@ -87,6 +89,7 @@ export default function App() {
       <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route path="/aceptacion-cliente/:token" element={<ClientAcceptancePage />} />
+        <Route path="/agendar-meet-tecnico" element={<MeetPublicSchedulingPage />} />
         <Route path="/" element={<RequireAuth><AppLayout /></RequireAuth>}>
           <Route index element={<Navigate to="/menu" replace />} />
           <Route path="menu" element={<MenuPage />} />
@@ -131,6 +134,7 @@ export default function App() {
           <Route path="superuser/actividad-vendedores" element={<SalesActorActivityPage />} />
           <Route path="administracion" element={<AdministracionPage />} />
           <Route path="administracion/:id" element={<AdministracionDetailPage />} />
+          <Route path="servicio-tecnico/calendario-meet" element={<MeetSchedulingPage />} />
         </Route>
         <Route path="*" element={<Navigate to={token ? "/menu" : "/login"} replace />} />
       </Routes>

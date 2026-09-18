@@ -42,11 +42,11 @@ export default function DoorFormulaBuilder({ value, onChange }) {
         <Button variant="ghost" onClick={() => setTokens((prev) => prev.slice(0, -1))} disabled={!tokens.length}>Borrar último</Button>
         <Button variant="ghost" onClick={resetBase}>Usar fórmula base</Button>
       </div>
-      <div style={{ border: "1px solid #ddd", borderRadius: 12, padding: 12, background: "#fff", minHeight: 72 }}>
+      <div style={{ border: "1px solid var(--dg-border)", borderRadius: 12, padding: 12, background: "var(--dg-card)", minHeight: 72 }}>
         <div className="muted" style={{ marginBottom: 8 }}>Tokens de la fórmula</div>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
           {tokens.map((token, idx) => (
-            <button key={`${token}-${idx}`} type="button" onClick={() => removeAt(idx)} style={{ border: "1px solid #d1d5db", background: "#f9fafb", borderRadius: 999, padding: "6px 10px", cursor: "pointer" }}>
+            <button key={`${token}-${idx}`} type="button" onClick={() => removeAt(idx)} style={{ border: "1px solid var(--dg-border)", background: "var(--dg-tint)", borderRadius: 999, padding: "6px 10px", cursor: "pointer" }}>
               {token} ✕
             </button>
           ))}

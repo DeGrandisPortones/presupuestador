@@ -18,7 +18,7 @@ const STATUS_COLORS = {
   red:    { bg: "#ffebee", text: "#b71c1c", border: "#ef9a9a" },
   purple: { bg: "#f3e5f5", text: "#6a1b9a", border: "#ce93d8" },
   pink:   { bg: "#fce4ec", text: "#ad1457", border: "#f48fb1" },
-  gray:   { bg: "#f5f5f5", text: "#424242", border: "#e0e0e0" },
+  gray:   { bg: "var(--dg-card)", text: "#424242", border: "var(--dg-border)" },
 };
 
 const PRODUCT_KIND_LABELS = {
@@ -287,17 +287,17 @@ function LinkPopup({ url, onClose }) {
 
   return (
     <div ref={ref} style={{
-      position: "absolute", zIndex: 100, background: "#fff", border: "1px solid #ddd",
+      position: "absolute", zIndex: 100, background: "var(--dg-card)", border: "1px solid #ddd",
       borderRadius: 8, boxShadow: "0 4px 16px rgba(0,0,0,0.15)", padding: "14px 16px",
       minWidth: 340, maxWidth: 480, right: 0, top: "calc(100% + 4px)",
     }}>
       <div style={{ fontSize: 12, color: "#888", marginBottom: 6 }}>Link de aceptación del cliente:</div>
-      <div style={{ fontSize: 12, wordBreak: "break-all", background: "#f5f5f5", padding: "6px 8px", borderRadius: 4, color: "#333", marginBottom: 10 }}>
+      <div style={{ fontSize: 12, wordBreak: "break-all", background: "var(--dg-card)", padding: "6px 8px", borderRadius: 4, color: "var(--dg-text)", marginBottom: 10 }}>
         {url}
       </div>
       <button
         onClick={handleCopy}
-        style={{ padding: "5px 14px", borderRadius: 6, border: "1px solid #ccc", background: copied ? "#e8f5e9" : "#fff", cursor: "pointer", fontSize: 13, fontWeight: 600, color: copied ? "#1b5e20" : "#333" }}
+        style={{ padding: "5px 14px", borderRadius: 6, border: "1px solid #ccc", background: copied ? "#e8f5e9" : "var(--dg-card)", cursor: "pointer", fontSize: 13, fontWeight: 600, color: copied ? "#1b5e20" : "var(--dg-text)" }}
       >
         {copied ? "✓ Copiado" : "Copiar link"}
       </button>
@@ -333,11 +333,11 @@ function PhoneModal({ row, onClose }) {
       <div
         onClick={(e) => e.stopPropagation()}
         style={{
-          background: "#fff", borderRadius: 12, boxShadow: "0 8px 32px rgba(0,0,0,0.2)",
+          background: "var(--dg-card)", borderRadius: 12, boxShadow: "0 8px 32px rgba(0,0,0,0.2)",
           padding: "24px 28px", minWidth: 280, maxWidth: 380,
         }}
       >
-        <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 16, color: "#222" }}>
+        <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 16, color: "var(--dg-text)" }}>
           Teléfonos — {row?.customerName}
         </div>
         {phones.map((p) => (
@@ -357,8 +357,8 @@ function PhoneModal({ row, onClose }) {
           onClick={onClose}
           style={{
             marginTop: 8, width: "100%", padding: "8px 0", borderRadius: 7,
-            border: "1px solid #e0e0e0", background: "#f5f5f5", cursor: "pointer",
-            fontSize: 13, fontWeight: 600, color: "#555",
+            border: "1px solid #e0e0e0", background: "var(--dg-card)", cursor: "pointer",
+            fontSize: 13, fontWeight: 600, color: "var(--dg-muted)",
           }}
         >
           Cerrar
@@ -392,14 +392,14 @@ function CancelNvModal({ row, onClose, onConfirm, pending }) {
       <div
         onClick={(e) => e.stopPropagation()}
         style={{
-          background: "#fff", borderRadius: 12, boxShadow: "0 8px 32px rgba(0,0,0,0.25)",
+          background: "var(--dg-card)", borderRadius: 12, boxShadow: "0 8px 32px rgba(0,0,0,0.25)",
           padding: "24px 26px", width: "100%", maxWidth: 480,
         }}
       >
         <div style={{ fontWeight: 800, fontSize: 16, marginBottom: 10, color: "#b71c1c" }}>
           Cancelar {row?.displayRef}
         </div>
-        <div style={{ fontSize: 13.5, color: "#333", lineHeight: 1.6, marginBottom: 14 }}>
+        <div style={{ fontSize: 13.5, color: "var(--dg-text)", lineHeight: 1.6, marginBottom: 14 }}>
           La cancelación se debe reflejar en la nota de crédito correspondiente. En Odoo esta NV no se modifica —
           eso queda a cargo de Administración por separado.
         </div>
@@ -423,7 +423,7 @@ function CancelNvModal({ row, onClose, onConfirm, pending }) {
             disabled={pending}
             style={{
               padding: "8px 16px", borderRadius: 8, border: "1px solid #e0e0e0",
-              background: "#f5f5f5", cursor: "pointer", fontSize: 13.5, fontWeight: 600, color: "#555",
+              background: "var(--dg-card)", cursor: "pointer", fontSize: 13.5, fontWeight: 600, color: "var(--dg-muted)",
             }}
           >
             Volver
@@ -590,9 +590,9 @@ export default function PortonesEstadoPage() {
               style={{
                 padding: "5px 14px",
                 borderRadius: 999,
-                border: `1px solid ${active ? "#333" : "#ccc"}`,
-                background: active ? "#333" : "#fff",
-                color: active ? "#fff" : "#333",
+                border: `1px solid ${active ? "#333" : "var(--dg-border)"}`,
+                background: active ? "#333" : "var(--dg-card)",
+                color: active ? "#fff" : "var(--dg-text)",
                 fontWeight: active ? 700 : 400,
                 cursor: "pointer",
                 fontSize: 13,
@@ -626,7 +626,7 @@ export default function PortonesEstadoPage() {
         <div className="card" style={{ padding: 0, overflow: "visible" }}>
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead>
-              <tr style={{ background: "#f5f5f5", borderBottom: "2px solid #e0e0e0" }}>
+              <tr style={{ background: "var(--dg-card)", borderBottom: "2px solid #e0e0e0" }}>
                 <th style={thStyle}>Referencia</th>
                 <th style={thStyle}>Cliente</th>
                 <th style={thStyle}>Vendedor / Distribuidor</th>
@@ -658,7 +658,7 @@ export default function PortonesEstadoPage() {
                   >
                     <td style={tdStyle}>
                       <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                        <span style={{ fontWeight: 700, color: "#333" }}>{r.displayRef}</span>
+                        <span style={{ fontWeight: 700, color: "var(--dg-text)" }}>{r.displayRef}</span>
                         {canCancelNv && hasNv && !r.cancelled_at && (
                           <button
                             onClick={() => setCancelModalRow(r)}
@@ -724,7 +724,7 @@ export default function PortonesEstadoPage() {
                       {/* production_set_at es columna nueva (sin backfill a proposito): los que
                           ya estaban en produccion antes de este cambio muestran "—" para siempre,
                           solo se completa para transiciones a produccion de acá en adelante. */}
-                      {r.fulfillment_mode === "produccion" ? formatDate(r.production_set_at) : <span style={{ color: "#ccc" }}>—</span>}
+                      {r.fulfillment_mode === "produccion" ? formatDate(r.production_set_at) : <span style={{ color: "var(--dg-muted)" }}>—</span>}
                     </td>
                     <td style={{ ...tdStyle, position: "relative" }}>
                       {acceptanceUrl && (
@@ -744,9 +744,9 @@ export default function PortonesEstadoPage() {
                         </div>
                       )}
                       {acceptance ? (
-                        <div style={{ fontSize: 12, color: "#333" }}>
+                        <div style={{ fontSize: 12, color: "var(--dg-text)" }}>
                           <div style={{ fontWeight: 600 }}>{acceptance.full_name || "—"}</div>
-                          <div style={{ color: "#666" }}>DNI: {acceptance.dni || "—"}</div>
+                          <div style={{ color: "var(--dg-muted)" }}>DNI: {acceptance.dni || "—"}</div>
                           <div style={{ color: "#888" }}>{formatDateTime(acceptance.accepted_at || r.measurement_client_accepted_at)}</div>
                           {r.production_delivery_week && (
                             <div style={{ color: "#0d47a1", fontWeight: 600, marginTop: 4 }}>
@@ -757,7 +757,7 @@ export default function PortonesEstadoPage() {
                       ) : r.measurement_share_enabled_at ? (
                         <div style={{ fontSize: 12, color: "#999", fontStyle: "italic" }}>Pendiente de aceptación</div>
                       ) : (
-                        <span style={{ color: "#ccc" }}>—</span>
+                        <span style={{ color: "var(--dg-muted)" }}>—</span>
                       )}
                     </td>
                     <td style={{ ...tdStyle, textAlign: "center" }}>
@@ -783,7 +783,7 @@ export default function PortonesEstadoPage() {
                           </button>
                         )
                       ) : (
-                        <span style={{ color: "#ccc" }}>—</span>
+                        <span style={{ color: "var(--dg-muted)" }}>—</span>
                       )}
                     </td>
                   </tr>
@@ -820,7 +820,7 @@ const thStyle = {
   textAlign: "left",
   fontWeight: 700,
   fontSize: 13,
-  color: "#555",
+  color: "var(--dg-muted)",
   whiteSpace: "nowrap",
 };
 

@@ -189,9 +189,9 @@ function BudgetObservationCell({ row }) {
           <div
             onClick={(e) => e.stopPropagation()}
             style={{
-              background: "#fff",
+              background: "var(--dg-card)",
               borderRadius: 14,
-              border: "1px solid #ddd",
+              border: "1px solid var(--dg-border)",
               boxShadow: "0 20px 50px rgba(0,0,0,0.25)",
               width: "min(720px, 96vw)",
               maxHeight: "80vh",
@@ -236,7 +236,7 @@ function PlegadoInfoCell({ row }) {
   const attachment = getPlegadoAttachment(row || {});
   return (
     <>
-      <div style={{ background: "#f7fbff", border: "1px solid #d9e5f7", borderRadius: 10, padding: "6px 8px", maxWidth: 340 }}>
+      <div style={{ background: "var(--dg-tint)", border: "1px solid var(--dg-border)", borderRadius: 10, padding: "6px 8px", maxWidth: 340 }}>
         <div style={{ fontWeight: 900 }}>{surface || "Sin superficie"}</div>
         <div style={{ whiteSpace: "pre-wrap", marginTop: 3, fontWeight: 800, fontSize: 13 }}>{description || "Sin descripción"}</div>
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 6 }}>
@@ -246,7 +246,7 @@ function PlegadoInfoCell({ row }) {
       </div>
       {open ? (
         <div role="dialog" aria-modal="true" onClick={() => setOpen(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 10000, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
-          <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: 14, border: "1px solid #ddd", boxShadow: "0 20px 50px rgba(0,0,0,0.25)", width: "min(760px, 96vw)", maxHeight: "80vh", overflow: "auto", padding: 18 }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ background: "var(--dg-card)", borderRadius: 14, border: "1px solid var(--dg-border)", boxShadow: "0 20px 50px rgba(0,0,0,0.25)", width: "min(760px, 96vw)", maxHeight: "80vh", overflow: "auto", padding: 18 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, marginBottom: 12 }}>
               <h3 style={{ margin: 0 }}>Plano y comentarios del plegado</h3>
               <Button variant="ghost" onClick={() => setOpen(false)}>Cerrar</Button>

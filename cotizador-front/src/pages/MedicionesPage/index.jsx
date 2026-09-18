@@ -1,12 +1,22 @@
 import { useEffect, useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 
 import Button from "../../ui/Button.jsx";
 import Input from "../../ui/Input.jsx";
 import PaginationControls from "../../ui/PaginationControls.jsx";
 import { useAuthStore } from "../../domain/auth/store.js";
-import { listMeasurements } from "../../api/measurements.js";
+import { getMeasurementMedia, listMeasurements, saveMeasurementMedia } from "../../api/measurements.js";
+import {
+  fileToMedicionAttachment,
+  formatMedicionAttachmentMeta,
+  formatMedicionAttachmentsMb,
+  isImageMedicionAttachment,
+  medicionAttachmentsTotalBytes,
+  MAX_MEDICION_ATTACHMENTS_TOTAL_BYTES,
+} from "../../utils/measurementAttachment.js";
+
+const MAX_MEDICION_ADJUNTOS_UI = 12;
 
 const PAGE_SIZE = 25;
 const COMPACT_LAYOUT_MAX_PX = 760;
@@ -135,6 +145,422 @@ function StatusPill({ value }) {
   );
 }
 
+function MediaButton({ count, onClick }) {
+  const n = Number(count || 0);
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={n ? `${n} foto${n === 1 ? "" : "s"}/video${n === 1 ? "" : "s"} adjuntos` : "Agregar foto o video"}
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 5,
+        borderRadius: 999,
+        background: n ? "rgba(1, 163, 159, 0.10)" : "var(--dg-card)",
+        border: n ? "1px solid rgba(1, 163, 159, 0.35)" : "1px solid var(--dg-border)",
+        color: n ? "var(--dg-petrol)" : "var(--dg-muted)",
+        padding: "4px 9px",
+        fontSize: 12,
+        fontWeight: 800,
+        whiteSpace: "nowrap",
+        cursor: "pointer",
+        transition: "box-shadow 120ms ease, border-color 120ms ease",
+      }}
+      onMouseEnter={(e) => { e.currentTarget.style.boxShadow = "0 4px 12px rgba(1, 163, 159, 0.18)"; }}
+      onMouseLeave={(e) => { e.currentTarget.style.boxShadow = "none"; }}
+    >
+      <span aria-hidden>📎</span>
+      {n > 0 ? n : "Agregar"}
+    </button>
+  );
+}
+
+function MediaThumb({ attachment, onClick }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={formatMedicionAttachmentMeta(attachment)}
+      style={{
+        position: "relative",
+        width: 92,
+        height: 92,
+        padding: 0,
+        borderRadius: 10,
+        border: "1px solid var(--dg-border)",
+        background: "var(--dg-bg)",
+        overflow: "hidden",
+        cursor: "pointer",
+        flexShrink: 0,
+      }}
+    >
+      {isImageMedicionAttachment(attachment) ? (
+        <img
+          src={attachment.data_url}
+          alt={attachment.name}
+          style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+        />
+      ) : (
+        <video src={attachment.data_url} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} muted />
+      )}
+      {!isImageMedicionAttachment(attachment) && (
+        <div
+          style={{
+            position: "absolute",
+            inset: 0,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            background: "rgba(0,0,0,0.28)",
+          }}
+        >
+          <span style={{ fontSize: 22, color: "#fff", filter: "drop-shadow(0 1px 2px rgba(0,0,0,0.5))" }}>▶</span>
+        </div>
+      )}
+    </button>
+  );
+}
+
+function MediaLightbox({ media, index, onIndexChange, onClose }) {
+  const canNav = media.length > 1;
+
+  useEffect(() => {
+    function handleKey(e) {
+      if (e.key === "Escape") onClose();
+      if (e.key === "ArrowLeft" && canNav) onIndexChange((index - 1 + media.length) % media.length);
+      if (e.key === "ArrowRight" && canNav) onIndexChange((index + 1) % media.length);
+    }
+    document.addEventListener("keydown", handleKey);
+    return () => document.removeEventListener("keydown", handleKey);
+  }, [index, canNav, media.length, onIndexChange, onClose]);
+
+  const attachment = media[index];
+  if (!attachment) return null;
+
+  return (
+    <div
+      onClick={onClose}
+      className="dg-modal-backdrop"
+      style={{
+        position: "fixed",
+        inset: 0,
+        zIndex: 1100,
+        background: "rgba(11, 27, 29, 0.92)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: 24,
+      }}
+    >
+      <button
+        type="button"
+        onClick={onClose}
+        style={{
+          position: "absolute",
+          top: 16,
+          right: 20,
+          border: "none",
+          background: "transparent",
+          color: "#fff",
+          fontSize: 30,
+          lineHeight: 1,
+          cursor: "pointer",
+        }}
+      >
+        ×
+      </button>
+
+      {canNav && (
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); onIndexChange((index - 1 + media.length) % media.length); }}
+          style={lightboxNavButtonStyle("left")}
+        >
+          ‹
+        </button>
+      )}
+
+      <div onClick={(e) => e.stopPropagation()} style={{ maxWidth: "90vw", maxHeight: "84vh", textAlign: "center" }}>
+        {isImageMedicionAttachment(attachment) ? (
+          <img
+            src={attachment.data_url}
+            alt={attachment.name}
+            style={{ maxWidth: "90vw", maxHeight: "78vh", borderRadius: 10, display: "block", margin: "0 auto" }}
+          />
+        ) : (
+          <video
+            src={attachment.data_url}
+            controls
+            autoPlay
+            style={{ maxWidth: "90vw", maxHeight: "78vh", borderRadius: 10, display: "block", margin: "0 auto", background: "#000" }}
+          />
+        )}
+        <div style={{ color: "rgba(255,255,255,0.85)", fontSize: 12, marginTop: 10 }}>
+          {formatMedicionAttachmentMeta(attachment)}
+          {canNav ? ` · ${index + 1}/${media.length}` : ""}
+        </div>
+      </div>
+
+      {canNav && (
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); onIndexChange((index + 1) % media.length); }}
+          style={lightboxNavButtonStyle("right")}
+        >
+          ›
+        </button>
+      )}
+    </div>
+  );
+}
+
+function lightboxNavButtonStyle(side) {
+  return {
+    position: "absolute",
+    [side]: 12,
+    top: "50%",
+    transform: "translateY(-50%)",
+    width: 44,
+    height: 44,
+    borderRadius: "50%",
+    border: "none",
+    background: "rgba(255,255,255,0.12)",
+    color: "#fff",
+    fontSize: 26,
+    lineHeight: 1,
+    cursor: "pointer",
+  };
+}
+
+function MedicionMediaModal({ quoteId, quoteLabel, onClose, onSaved }) {
+  const [media, setMedia] = useState([]);
+  const [loaded, setLoaded] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [dragActive, setDragActive] = useState(false);
+  const [previewIndex, setPreviewIndex] = useState(null);
+
+  // Liviano a propósito: GET /:id/media trae solo measurement_media, no el
+  // presupuesto entero (payload/lines pueden pesar varios MB en base64) - abrir
+  // este modal desde la tabla no necesita nada más que eso.
+  const q = useQuery({
+    queryKey: ["measurement-media", quoteId],
+    queryFn: () => getMeasurementMedia(quoteId),
+  });
+
+  useEffect(() => {
+    if (!q.data || loaded) return;
+    setMedia(q.data);
+    setLoaded(true);
+  }, [q.data, loaded]);
+
+  const saveM = useMutation({
+    mutationFn: (nextMedia) => saveMeasurementMedia(quoteId, nextMedia),
+    onSuccess: (data) => {
+      const saved = Array.isArray(data?.quote?.measurement_media) ? data.quote.measurement_media : [];
+      setMedia(saved);
+      onSaved?.(saved.length);
+    },
+    onError: (e) => {
+      setError(e?.message || "No se pudo guardar el adjunto.");
+    },
+  });
+
+  const atLimit = media.length >= MAX_MEDICION_ADJUNTOS_UI;
+
+  async function agregarArchivos(fileList) {
+    const files = Array.from(fileList || []);
+    if (!files.length) return;
+    setError("");
+    setBusy(true);
+    try {
+      const nuevos = [];
+      for (const file of files) {
+        nuevos.push(await fileToMedicionAttachment(file));
+      }
+      const combinados = [...media, ...nuevos].slice(0, MAX_MEDICION_ADJUNTOS_UI);
+      const totalBytes = medicionAttachmentsTotalBytes(combinados);
+      if (totalBytes > MAX_MEDICION_ATTACHMENTS_TOTAL_BYTES) {
+        throw new Error(
+          `Entre todas las fotos/videos no pueden superar ${formatMedicionAttachmentsMb(MAX_MEDICION_ATTACHMENTS_TOTAL_BYTES)} ` +
+            `(llevás ${formatMedicionAttachmentsMb(totalBytes)}). Sacá alguno o elegí uno más liviano.`,
+        );
+      }
+      setMedia(combinados);
+      await saveM.mutateAsync(combinados);
+    } catch (err) {
+      setError(err.message || "No se pudo adjuntar el archivo.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function onSeleccionarArchivos(e) {
+    const files = Array.from(e.target.files || []);
+    e.target.value = "";
+    await agregarArchivos(files);
+  }
+
+  function onDropArchivos(e) {
+    e.preventDefault();
+    setDragActive(false);
+    if (busy || atLimit) return;
+    agregarArchivos(e.dataTransfer.files);
+  }
+
+  async function quitarAdjunto(idx) {
+    if (previewIndex === idx) setPreviewIndex(null);
+    const next = media.filter((_, i) => i !== idx);
+    setMedia(next);
+    setError("");
+    try {
+      await saveM.mutateAsync(next);
+    } catch (err) {
+      setError(err.message || "No se pudo quitar el archivo.");
+    }
+  }
+
+  return (
+    <>
+      <div
+        onClick={onClose}
+        className="dg-modal-backdrop"
+        style={{
+          position: "fixed",
+          inset: 0,
+          zIndex: 1000,
+          background: "rgba(11, 27, 29, 0.45)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          padding: 16,
+        }}
+      >
+        <div
+          onClick={(e) => e.stopPropagation()}
+          className="card dg-modal-pop"
+          style={{
+            padding: 20,
+            width: "100%",
+            maxWidth: 480,
+            maxHeight: "85vh",
+            overflowY: "auto",
+          }}
+        >
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}>
+            <div>
+              <div style={{ fontWeight: 900, fontSize: 16, color: "var(--dg-petrol)" }}>Archivos</div>
+              <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>{quoteLabel}</div>
+            </div>
+            <Button variant="ghost" onClick={onClose} style={{ padding: "4px 10px", fontSize: 18, lineHeight: 1 }}>
+              ×
+            </Button>
+          </div>
+
+          <div className="spacer" />
+
+          {q.isLoading ? (
+            <div className="muted">Cargando…</div>
+          ) : q.isError ? (
+            <div style={{ color: "#d93025", fontSize: 13 }}>{q.error?.message || "No se pudieron cargar los archivos"}</div>
+          ) : (
+            <>
+              <label
+                htmlFor="medicion-adjuntos-input-tabla"
+                onDragOver={(e) => { e.preventDefault(); if (!busy && !atLimit) setDragActive(true); }}
+                onDragLeave={() => setDragActive(false)}
+                onDrop={onDropArchivos}
+                style={{
+                  position: "relative",
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  gap: 4,
+                  padding: "16px 10px",
+                  borderRadius: 10,
+                  textAlign: "center",
+                  border: `1.5px dashed ${dragActive ? "var(--dg-teal)" : "var(--dg-border)"}`,
+                  background: dragActive ? "rgba(1, 163, 159, 0.10)" : "rgba(1, 163, 159, 0.05)",
+                  opacity: busy || atLimit ? 0.6 : 1,
+                  cursor: busy || atLimit ? "not-allowed" : "pointer",
+                  transition: "background 120ms ease, border-color 120ms ease",
+                }}
+              >
+                <span style={{ fontSize: 22, lineHeight: 1 }}>📷</span>
+                <span style={{ fontSize: 13, fontWeight: 700, color: "var(--dg-petrol)" }}>
+                  {busy ? "Procesando..." : "Agregar foto o video"}
+                </span>
+                <span className="muted" style={{ fontSize: 11 }}>
+                  Elegí un archivo o arrastralo acá · máx. {MAX_MEDICION_ADJUNTOS_UI}
+                </span>
+                <input
+                  id="medicion-adjuntos-input-tabla"
+                  type="file"
+                  accept="image/*,video/mp4,video/quicktime,video/webm"
+                  multiple
+                  onChange={onSeleccionarArchivos}
+                  disabled={busy || atLimit}
+                  style={{ position: "absolute", width: 1, height: 1, opacity: 0, pointerEvents: "none" }}
+                />
+              </label>
+
+              {error ? <div style={{ color: "#d93025", fontSize: 13, marginTop: 8 }}>{error}</div> : null}
+
+              {media.length > 0 ? (
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginTop: 14 }}>
+                  {media.map((a, idx) => (
+                    <div key={`${a.name}-${a.uploaded_at}-${idx}`} style={{ position: "relative" }}>
+                      <MediaThumb attachment={a} onClick={() => setPreviewIndex(idx)} />
+                      <button
+                        type="button"
+                        onClick={() => quitarAdjunto(idx)}
+                        disabled={busy || saveM.isPending}
+                        title="Quitar"
+                        style={{
+                          position: "absolute",
+                          top: -6,
+                          right: -6,
+                          width: 22,
+                          height: 22,
+                          borderRadius: "50%",
+                          border: "2px solid var(--dg-card)",
+                          background: "#d93025",
+                          color: "#fff",
+                          fontSize: 13,
+                          fontWeight: 700,
+                          lineHeight: 1,
+                          cursor: "pointer",
+                          boxShadow: "0 1px 4px rgba(0,0,0,0.25)",
+                        }}
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="muted" style={{ textAlign: "center", marginTop: 16, fontSize: 12 }}>
+                  Todavía no hay fotos ni videos.
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+
+      {previewIndex !== null && (
+        <MediaLightbox
+          media={media}
+          index={previewIndex}
+          onIndexChange={setPreviewIndex}
+          onClose={() => setPreviewIndex(null)}
+        />
+      )}
+    </>
+  );
+}
+
 function MobileField({ label, value, children, strong = false }) {
   return (
     <div style={{ minWidth: 0 }}>
@@ -146,7 +572,7 @@ function MobileField({ label, value, children, strong = false }) {
   );
 }
 
-function MeasurementCard({ row, onOpen }) {
+function MeasurementCard({ row, onOpen, onOpenMedia }) {
   const phone = row?.end_customer?.phone || "";
   const whatsappUrl = buildWhatsappUrl(phone);
   const status = String(row?.measurement_status || "").toLowerCase();
@@ -155,9 +581,9 @@ function MeasurementCard({ row, onOpen }) {
   return (
     <div
       style={{
-        border: "1px solid #e5e7eb",
+        border: "1px solid var(--dg-border)",
         borderRadius: 14,
-        background: "#fff",
+        background: "var(--dg-card)",
         padding: 12,
         boxShadow: "0 1px 2px rgba(15,23,42,0.06)",
       }}
@@ -177,6 +603,9 @@ function MeasurementCard({ row, onOpen }) {
         <MobileField label="NV"><NvPill value={nvLabel(row)} /></MobileField>
         <MobileField label="Fecha visita" value={fmtDate(row?.measurement_scheduled_for)} />
         <MobileField label="Alta" value={fmtDate(row?.created_at)} />
+        <MobileField label="Archivos">
+          <MediaButton count={row?.measurement_media_count} onClick={() => onOpenMedia(row)} />
+        </MobileField>
       </div>
 
       <div className="spacer" />
@@ -210,6 +639,7 @@ export default function MedicionesPage() {
   const [status, setStatus] = useState("pending");
   const [searchText, setSearchText] = useState("");
   const [page, setPage] = useState(1);
+  const [mediaModalRow, setMediaModalRow] = useState(null);
 
   const enabled = !!user?.is_medidor;
 
@@ -298,7 +728,7 @@ export default function MedicionesPage() {
             {compactLayout ? (
               <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                 {visibleRows.map((row) => (
-                  <MeasurementCard key={row.id} row={row} onOpen={openMeasurement} />
+                  <MeasurementCard key={row.id} row={row} onOpen={openMeasurement} onOpenMedia={setMediaModalRow} />
                 ))}
               </div>
             ) : (
@@ -315,6 +745,7 @@ export default function MedicionesPage() {
                       <th>Teléfono</th>
                       <th>Maps</th>
                       <th>Estado</th>
+                      <th>Archivos</th>
                       <th></th>
                     </tr>
                   </thead>
@@ -340,6 +771,9 @@ export default function MedicionesPage() {
                           ) : "—"}
                         </td>
                         <td>{labelMeasurementStatus(r.measurement_status)}</td>
+                        <td>
+                          <MediaButton count={r.measurement_media_count} onClick={() => setMediaModalRow(r)} />
+                        </td>
                         <td className="right">
                           <Button onClick={() => openMeasurement(r)}>
                             {String(r?.measurement_status || "").toLowerCase() === "approved" ? "Ver medición" : "Formulario"}
@@ -356,6 +790,15 @@ export default function MedicionesPage() {
           </>
         )}
       </div>
+
+      {mediaModalRow && (
+        <MedicionMediaModal
+          quoteId={mediaModalRow.id}
+          quoteLabel={mediaModalRow.end_customer?.name || nvLabel(mediaModalRow)}
+          onClose={() => setMediaModalRow(null)}
+          onSaved={() => measQ.refetch()}
+        />
+      )}
     </div>
   );
 }

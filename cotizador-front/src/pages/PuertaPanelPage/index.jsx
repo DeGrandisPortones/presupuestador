@@ -84,7 +84,7 @@ export default function PuertaPanelPage() {
       </div>
 
       <div className="spacer" />
-      <div className="card" style={{ background: "#fafafa" }}>
+      <div className="card" style={{ background: "var(--dg-card)" }}>
         <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
           <div><span className="muted">Estado:</span> <b>{statusLabel}</b></div>
           <div><span className="muted">Porton:</span> <b>{door?.linked_quote_odoo_name || door?.linked_quote_number || door?.record?.asociado_porton || "Sin vincular"}</b></div>
@@ -101,7 +101,7 @@ export default function PuertaPanelPage() {
             <div style={{ fontWeight: 900, marginBottom: 8 }}>Vincular a porton</div>
             <div className="muted" style={{ marginBottom: 10 }}>La puerta puede guardarse como borrador, pero para confirmarla debe estar vinculada a un presupuesto de porton.</div>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-              <select value={selectedPortonId} onChange={(e) => setSelectedPortonId(e.target.value)} style={{ padding: 10, borderRadius: 10, border: "1px solid #ddd", minWidth: 320 }}>
+              <select value={selectedPortonId} onChange={(e) => setSelectedPortonId(e.target.value)} style={{ padding: 10, borderRadius: 10, border: "1px solid var(--dg-border)", minWidth: 320, background: "var(--dg-card)", color: "var(--dg-text)" }}>
                 <option value="">Seleccionar presupuesto de porton</option>
                 {portonOptions.map((p) => <option key={p.id} value={p.id}>{quoteLabel(p)} · {p?.end_customer?.name || "Sin cliente"}</option>)}
               </select>
@@ -126,7 +126,7 @@ export default function PuertaPanelPage() {
           <div className="muted" style={{ marginBottom: 10 }}>Presupuesto: <b>{numberOrDash(ipanelQ.data?.quote_number || ipanelQuoteId)}</b></div>
           <Button onClick={() => navigate(`/cotizador/ipanel/${ipanelQuoteId}?door_workflow=1&workflow_stage=ipanel&door_id=${encodeURIComponent(id)}`)} disabled={!ipanelQuoteId}>Completar Ipanel</Button>
         </div>
-        <div className="card" style={{ border: "1px solid #eee", background: "#fff" }}>
+        <div className="card" style={{ border: "1px solid var(--dg-border)", background: "var(--dg-card)" }}>
           <div style={{ fontWeight: 900, fontSize: 18, marginBottom: 8 }}>Datos tecnicos</div>
           <div className="muted" style={{ marginBottom: 14 }}>Carga medidas, sentido, mano, interferencias y observaciones.</div>
           <Button variant="secondary" onClick={() => navigate(`/puertas/${id}/marco?door_workflow=1&return_to_panel=1`)}>Abrir datos tecnicos</Button>

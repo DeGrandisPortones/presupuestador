@@ -49,7 +49,7 @@ function Field({ label, value }) {
   return (
     <div style={{ flex: 1, minWidth: 220 }}>
       <div className="muted" style={{ marginBottom: 6 }}>{label}</div>
-      <div style={{ padding: "10px 12px", borderRadius: 10, border: "1px solid #e5e7eb", background: "#fff" }}>
+      <div style={{ padding: "10px 12px", borderRadius: 10, border: "1px solid #e5e7eb", background: "var(--dg-card)" }}>
         {value || <span className="muted">—</span>}
       </div>
     </div>
@@ -189,7 +189,7 @@ export default function QuoteHistoryViewerPage() {
                     border: selected ? "2px solid rgba(1,163,159,0.35)" : "1px solid #e5e7eb",
                     borderRadius: 12,
                     padding: 12,
-                    background: selected ? "rgba(1,163,159,0.06)" : "#fff",
+                    background: selected ? "rgba(1,163,159,0.06)" : "var(--dg-card)",
                     cursor: "pointer",
                   }}
                   onClick={() => setSelectedQuoteId(String(item.id))}
@@ -313,7 +313,7 @@ export default function QuoteHistoryViewerPage() {
             {history.timeline?.length ? (
               <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                 {history.timeline.map((event) => (
-                  <div key={event.key} style={{ border: "1px solid #e5e7eb", borderRadius: 12, padding: 12, background: "#fff" }}>
+                  <div key={event.key} style={{ border: "1px solid #e5e7eb", borderRadius: 12, padding: 12, background: "var(--dg-card)" }}>
                     <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
                       <div style={{ fontWeight: 800 }}>{event.title}</div>
                       <div className="muted">{formatDateTime(event.at)}</div>

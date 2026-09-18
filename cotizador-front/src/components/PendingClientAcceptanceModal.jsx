@@ -76,7 +76,7 @@ function daysSince(dateStr) {
 }
 
 function daysBadgeColor(days) {
-  if (days === null) return { color: "#555", background: "#f1f1f1", border: "#ddd" };
+  if (days === null) return { color: "var(--dg-muted)", background: "var(--dg-tint)", border: "var(--dg-border)" };
   if (days >= 7) return { color: "#a12626", background: "#fdecec", border: "#f3b9b9" };
   if (days >= 3) return { color: "#a66300", background: "#fff3e0", border: "#f3d19a" };
   return { color: "#1f7a45", background: "#eaf8ef", border: "#bfe6c8" };
@@ -200,7 +200,7 @@ export default function PendingClientAcceptanceModal() {
         style={{ maxWidth: 620, width: "100%", maxHeight: "88vh", overflowY: "auto", borderRadius: 16, boxShadow: "0 20px 50px rgba(0,0,0,0.25)" }}
         onClick={(e) => e.stopPropagation()}
       >
-        <div style={{ fontWeight: 900, fontSize: 23, color: "#111827" }}>
+        <div style={{ fontWeight: 900, fontSize: 23, color: "var(--dg-text)" }}>
           Clientes con firma pendiente ({total})
         </div>
         <div style={{ fontSize: 15, marginTop: 6 }}>

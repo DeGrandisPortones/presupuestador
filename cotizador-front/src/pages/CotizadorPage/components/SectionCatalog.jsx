@@ -156,7 +156,7 @@ function ExteriorHelpButton({ open, onToggle }) {
         height: 22,
         borderRadius: 999,
         border: "1px solid #c7d2fe",
-        background: open ? "#eef2ff" : "#fff",
+        background: open ? "#eef2ff" : "var(--dg-card)",
         color: "#3730a3",
         fontWeight: 900,
         lineHeight: 1,
@@ -198,14 +198,14 @@ function RevestimientoKgM2Modal({ open, initialValue, onConfirm, onCancel }) {
       <div
         onClick={(e) => e.stopPropagation()}
         style={{
-          background: "#fff", borderRadius: 14, boxShadow: "0 8px 40px rgba(0,0,0,0.2)",
+          background: "var(--dg-card)", borderRadius: 14, boxShadow: "0 8px 40px rgba(0,0,0,0.2)",
           padding: "28px 28px 20px", width: "100%", maxWidth: 380,
         }}
       >
         <div style={{ fontWeight: 800, fontSize: 16, marginBottom: 6 }}>
           Revestimiento especial
         </div>
-        <div style={{ color: "#555", fontSize: 13, marginBottom: 16 }}>
+        <div style={{ color: "var(--dg-muted)", fontSize: 13, marginBottom: 16 }}>
           Ingresá los Kg/m2 del revestimiento. Este valor reemplaza el peso calculado del portón y define el tipo de piernas.
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
@@ -217,7 +217,7 @@ function RevestimientoKgM2Modal({ open, initialValue, onConfirm, onCancel }) {
             value={value}
             onChange={(e) => setValue(String(e.target.value ?? "").replace(/[^0-9.,]/g, ""))}
             placeholder="Ej: 18"
-            style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid #ddd" }}
+            style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid var(--dg-border)", background: "var(--dg-card)", color: "var(--dg-text)" }}
           />
         </div>
         <div style={{ display: "flex", gap: 8, marginTop: 20 }}>
@@ -1413,7 +1413,7 @@ export default function SectionCatalog({ kind = "porton", onDownloadPresupuesto 
                             className="dg-product-card"
                             style={
                               disabledForUser
-                                ? { opacity: 0.55, background: "#f3f4f6" }
+                                ? { opacity: 0.55, background: "var(--dg-tint)" }
                                 : isSelected
                                   ? { border: "1px solid #60a5fa", background: "#eff6ff" }
                                   : undefined

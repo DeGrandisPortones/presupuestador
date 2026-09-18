@@ -183,7 +183,7 @@ function LogoCell({ distributor, onSave, saving }) {
           {loadingPreview ? (
             <span className="muted" style={{ fontSize: 12 }}>Cargando...</span>
           ) : previewUrl ? (
-            <img src={previewUrl} alt="Logo" style={{ maxWidth: 90, maxHeight: 32, objectFit: "contain", border: "1px solid #eee", borderRadius: 6, background: "#fff" }} />
+            <img src={previewUrl} alt="Logo" style={{ maxWidth: 90, maxHeight: 32, objectFit: "contain", border: "1px solid #eee", borderRadius: 6, background: "var(--dg-card)" }} />
           ) : (
             <span className="muted" style={{ fontSize: 12 }}>Sin vista previa</span>
           )}

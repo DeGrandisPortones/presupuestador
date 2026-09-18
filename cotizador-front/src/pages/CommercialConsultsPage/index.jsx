@@ -66,8 +66,8 @@ function messageBubbleStyle(isOwn, isResolution = false) {
   return {
     alignSelf: isOwn ? "flex-end" : "flex-start",
     maxWidth: "80%",
-    border: `1px solid ${isOwn ? "#01a39f" : "#e0e0e0"}`,
-    background: isOwn ? "rgba(1,163,159,0.10)" : "#fff",
+    border: `1px solid ${isOwn ? "#01a39f" : "var(--dg-border)"}`,
+    background: isOwn ? "rgba(1,163,159,0.10)" : "var(--dg-card)",
     borderRadius: 14,
     padding: 12,
   };
@@ -137,7 +137,7 @@ function MessageAttachment({ attachment }) {
       <button
         type="button"
         onClick={() => openTicketAttachment(attachment)}
-        style={{ border: "1px solid #ddd", borderRadius: 8, background: "#fff", padding: "5px 10px", cursor: "pointer", fontSize: 12 }}
+        style={{ border: "1px solid #ddd", borderRadius: 8, background: "var(--dg-card)", padding: "5px 10px", cursor: "pointer", fontSize: 12 }}
       >
         {formatTicketAttachmentMeta(attachment)}
       </button>
@@ -193,7 +193,7 @@ function RequesterPickerModal({ open, role, onRoleChange, requesters, isLoading,
       onClick={onClose}
     >
       <div
-        style={{ width: "min(480px, 96vw)", maxHeight: "88vh", display: "flex", flexDirection: "column", background: "#fff", borderRadius: 18, padding: 18, boxShadow: "0 22px 70px rgba(15,23,42,0.35)", border: "1px solid #e5e7eb" }}
+        style={{ width: "min(480px, 96vw)", maxHeight: "88vh", display: "flex", flexDirection: "column", background: "var(--dg-card)", borderRadius: 18, padding: 18, boxShadow: "0 22px 70px rgba(15,23,42,0.35)", border: "1px solid #e5e7eb" }}
         onClick={(e) => e.stopPropagation()}
       >
         <div style={{ fontWeight: 900, fontSize: 18, marginBottom: 10 }}>Elegir destinatarios</div>
@@ -704,7 +704,7 @@ export default function CommercialConsultsPage() {
                               style={{
                                 textAlign: "left",
                                 border: "1px solid #e6e6e6",
-                                background: "#fff",
+                                background: "var(--dg-card)",
                                 borderRadius: 10,
                                 padding: "8px 10px",
                                 cursor: "pointer",
@@ -907,7 +907,7 @@ export default function CommercialConsultsPage() {
                     style={{
                       textAlign: "left",
                       border: isSelected ? "2px solid #01a39f" : isLogistica ? "2px solid #38bdf8" : "1px solid #e6e6e6",
-                      background: isSelected ? "rgba(1,163,159,0.06)" : isLogistica ? "#eff8ff" : "#fff",
+                      background: isSelected ? "rgba(1,163,159,0.06)" : isLogistica ? "#eff8ff" : "var(--dg-card)",
                       borderRadius: 14,
                       padding: 12,
                       cursor: "pointer",

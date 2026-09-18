@@ -478,6 +478,41 @@ function buildObservationReturnReason(form) {
   return `${DEFAULT_OBSERVATION_REASON}\n\nObservación del medidor: ${note}`;
 }
 
+// Fotos/videos de la medición (measurement_media). Mismo patrón ya endurecido que
+// tickets.routes.js: el cliente valida antes de mandar, pero acá no hay que confiar
+// ciegamente en eso - es la segunda línea de defensa server-side. Solo imagen/video
+// (sin PDF): esto es documentación del portón/vano, no un adjunto genérico.
+const MAX_MEDICION_ADJUNTOS = 12;
+// ~15MB crudos codificados en base64 (~x1.34) = ~21MB, dejando margen bajo el límite
+// de 25MB del body parser (express.json en index.js) para el resto del JSON del request.
+const MAX_MEDICION_ADJUNTOS_DATA_URL_CHARS = 21 * 1024 * 1024;
+// Igual que ALLOWED_ADJUNTO_DATA_URL_RE en tickets.routes.js: se valida el mime REAL
+// embebido en el data: URI, no el campo `type` (que lo controla quien manda el request).
+const ALLOWED_MEDICION_ADJUNTO_DATA_URL_RE = /^data:(image\/(?:jpeg|png|webp|gif)|video\/(?:mp4|quicktime|webm));base64,/i;
+
+function normalizeMedicionAdjuntos(raw, { uploaderUserId, uploaderUsername } = {}) {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .slice(0, MAX_MEDICION_ADJUNTOS)
+    .map((a) => ({
+      name: String(a?.name || "adjunto").slice(0, 200),
+      type: String(a?.type || "application/octet-stream").slice(0, 100),
+      size: Number(a?.size || 0) || 0,
+      data_url: String(a?.data_url || ""),
+      uploaded_at: a?.uploaded_at || new Date().toISOString(),
+      // Solo se completa si el adjunto todavía no lo tenía (uno nuevo recién
+      // agregado) - un adjunto ya guardado conserva quién lo subió originalmente
+      // aunque después lo reguarde otra persona (el array se reemplaza entero).
+      uploaded_by_user_id: a?.uploaded_by_user_id ?? uploaderUserId ?? null,
+      uploaded_by_username: a?.uploaded_by_username || uploaderUsername || "",
+    }))
+    .filter((a) => ALLOWED_MEDICION_ADJUNTO_DATA_URL_RE.test(a.data_url));
+}
+
+function medicionAdjuntosExceedTotal(adjuntos) {
+  return adjuntos.reduce((sum, a) => sum + a.data_url.length, 0) > MAX_MEDICION_ADJUNTOS_DATA_URL_CHARS;
+}
+
 export function buildMeasurementsRouter(odoo = null) {
   const router = express.Router();
 
@@ -813,6 +848,64 @@ export function buildMeasurementsRouter(odoo = null) {
         [id, JSON.stringify(nextCustomer), JSON.stringify(draftPayload), JSON.stringify(form), statusToKeep],
       );
       return res.json({ ok: true, quote: upd.rows?.[0] || null, measurement_surface_guard: areaGuard });
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  // Liviano a propósito: solo las columnas necesarias para canReadMeasurement +
+  // measurement_media, nunca payload/lines/measurement_form (pueden pesar varios
+  // MB en base64 por fila) - abrir el modal de fotos desde la tabla no necesita
+  // nada de eso, y traerlo igual sería repetir el mismo problema de performance
+  // que ya se resolvió en QUOTE_LIST_COLUMNS_SQL.
+  router.get("/:id/media", async (req, res, next) => {
+    try {
+      const u = req.user;
+      const id = String(req.params.id || "").trim();
+      if (!isUuid(id)) return res.status(400).json({ ok: false, error: "id inválido" });
+      const cur = await dbQuery(
+        `select id, created_by_user_id, measurement_mode, measurement_subtype, measurement_media
+           from public.presupuestador_quotes where id=$1 limit 1`,
+        [id],
+      );
+      const quote = cur.rows?.[0];
+      if (!quote) return res.status(404).json({ ok: false, error: "Presupuesto no encontrado" });
+      if (!canReadMeasurement({ user: u, quote })) {
+        return res.status(403).json({ ok: false, error: "No autorizado" });
+      }
+      res.json({ ok: true, media: Array.isArray(quote.measurement_media) ? quote.measurement_media : [] });
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  // Fotos/videos del portón, independientes del formulario de medición (form/
+  // measurement_status): se pueden agregar o quitar en cualquier momento del
+  // circuito, incluso con la medición ya aprobada/de solo lectura, sin pasar por
+  // /:id (que sí está atado a las reglas de measurement_status de arriba).
+  router.put("/:id/media", requireMeasurementEditor, async (req, res, next) => {
+    try {
+      const u = req.user;
+      const id = String(req.params.id || "").trim();
+      if (!isUuid(id)) return res.status(400).json({ ok: false, error: "id inválido" });
+      const cur = await dbQuery(`select * from public.presupuestador_quotes where id=$1 limit 1`, [id]);
+      const quote = cur.rows?.[0];
+      if (!quote) return res.status(404).json({ ok: false, error: "Presupuesto no encontrado" });
+      if (!canReadMeasurement({ user: u, quote })) {
+        return res.status(403).json({ ok: false, error: "No autorizado" });
+      }
+      const media = normalizeMedicionAdjuntos(req.body?.media, {
+        uploaderUserId: Number(u.user_id),
+        uploaderUsername: u.username,
+      });
+      if (medicionAdjuntosExceedTotal(media)) {
+        return res.status(400).json({ ok: false, error: "Las fotos/videos superan el tamaño total permitido." });
+      }
+      const upd = await dbQuery(
+        `update public.presupuestador_quotes set measurement_media=$2::jsonb, measurement_media_count=$3 where id=$1 returning *`,
+        [id, JSON.stringify(media), media.length],
+      );
+      return res.json({ ok: true, quote: upd.rows?.[0] || null });
     } catch (e) {
       next(e);
     }

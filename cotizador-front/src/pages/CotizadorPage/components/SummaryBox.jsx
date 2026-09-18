@@ -25,7 +25,7 @@ export default function SummaryBox({ totals }) {
             <div style={{ color: "#B91C1C", fontWeight: 700 }}>{formatARS(totals.previouslyBilled)}</div>
           </div>
         ) : null}
-        <div style={{ display: "flex", justifyContent: "space-between", padding: "10px 0", borderTop: "1px solid #eee", fontWeight: 800 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", padding: "10px 0", borderTop: "1px solid var(--dg-border)", fontWeight: 800 }}>
           <div>Total</div>
           <div>{formatARS(totals.total)}</div>
         </div>

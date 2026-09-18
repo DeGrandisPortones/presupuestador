@@ -1,71 +1,48 @@
-/* Header contrast fixes (dark header) */
-.app-header .navlink{
-  background: rgba(255,255,255,.10);
-  color: rgba(255,255,255,.92);
-  border-color: rgba(255,255,255,.22);
-}
+/* El contraste genérico de .app-header (navlink/btn--ghost/btn--secondary/
+   muted) ya lo resuelve styles.css con los tokens --dg-* (sigue el tema).
+   Este archivo ya no redefine esas reglas: al cargarse después de
+   styles.css, una versión fija acá le ganaba en cascada y el header
+   quedaba con contraste "siempre oscuro" aunque el tema fuera claro. */
 
-.app-header .navlink:hover{
-  background: rgba(255,255,255,.14);
-  border-color: rgba(255,255,255,.35);
-}
-
-.app-header .navlink.active{
-  background: var(--dg-teal);
-  border-color: var(--dg-teal);
-  color: #fff;
-}
-
-/* Logout + any ghost buttons in header */
-.app-header .btn--ghost{
-  background: rgba(255,255,255,.10);
-  color: rgba(255,255,255,.92);
-  border-color: rgba(255,255,255,.22);
-}
-
-.app-header .btn--ghost:not(:disabled):hover{
-  background: rgba(255,255,255,.14);
-  border-color: rgba(255,255,255,.35);
-}
-
-/* Secondary buttons (if any) on header */
-.app-header .btn--secondary{
-  background: rgba(255,255,255,.10);
-  color: rgba(255,255,255,.92);
-  border-color: rgba(255,255,255,.22);
-}
-
-.app-header .btn--secondary:not(:disabled):hover{
-  background: rgba(255,255,255,.14);
-  border-color: rgba(255,255,255,.35);
-}
-
-/* Muted text on dark header */
-.app-header .muted{
-  color: rgba(255,255,255,.72);
-}
-
-/* Banner verde clarito para vendedores: ayuda a distinguir la sesion de
-   vendedor de una sesion de distribuidor abierta en otra pestana/incognito.
-   Los extremos van grisaceos y el centro queda verde, con una textura de
-   lineas diagonales sutil encima. */
+/* Banner para vendedores: ayuda a distinguir la sesion de vendedor de una
+   sesion de distribuidor abierta en otra pestana/incognito. Los extremos
+   van grisaceos y el centro queda verde, con una textura de lineas
+   diagonales sutil encima. Usa variables propias (--vendor-*) para poder
+   recolorear todo el bloque en dark mode sin duplicar cada regla. */
 .app-header.app-header--vendedor{
+  --vendor-ink: #14532d;
+  --vendor-ink-muted: rgba(20,83,45,.75);
+  --vendor-tint: rgba(20,83,45,.08);
+  --vendor-tint-hover: rgba(20,83,45,.14);
+  --vendor-border: rgba(20,83,45,.20);
+  --vendor-border-hover: rgba(20,83,45,.32);
   background-image:
     repeating-linear-gradient(135deg, rgba(100,116,139,0.14) 0px, rgba(100,116,139,0.14) 1.5px, transparent 1.5px, transparent 16px),
     linear-gradient(90deg, #e2e8f0 0%, #dcfce7 42%, #dcfce7 58%, #e2e8f0 100%);
-  color: #14532d;
+  color: var(--vendor-ink);
+}
+:root[data-theme="dark"] .app-header.app-header--vendedor{
+  --vendor-ink: #bdf0cf;
+  --vendor-ink-muted: rgba(189,240,207,.75);
+  --vendor-tint: rgba(189,240,207,.08);
+  --vendor-tint-hover: rgba(189,240,207,.14);
+  --vendor-border: rgba(189,240,207,.20);
+  --vendor-border-hover: rgba(189,240,207,.32);
+  background-image:
+    repeating-linear-gradient(135deg, rgba(255,255,255,0.05) 0px, rgba(255,255,255,0.05) 1.5px, transparent 1.5px, transparent 16px),
+    linear-gradient(90deg, #12161a 0%, #123322 42%, #123322 58%, #12161a 100%);
 }
 .app-header--vendedor .muted{
-  color: rgba(20,83,45,.75);
+  color: var(--vendor-ink-muted);
 }
 .app-header--vendedor .navlink{
-  background: rgba(20,83,45,.08);
-  color: rgba(20,83,45,.88);
-  border-color: rgba(20,83,45,.20);
+  background: var(--vendor-tint);
+  color: var(--vendor-ink);
+  border-color: var(--vendor-border);
 }
 .app-header--vendedor .navlink:hover{
-  background: rgba(20,83,45,.14);
-  border-color: rgba(20,83,45,.32);
+  background: var(--vendor-tint-hover);
+  border-color: var(--vendor-border-hover);
 }
 .app-header--vendedor .navlink.active{
   background: var(--dg-teal);
@@ -73,22 +50,22 @@
   color: #fff;
 }
 .app-header--vendedor .btn--ghost{
-  background: rgba(20,83,45,.08);
-  color: rgba(20,83,45,.88);
-  border-color: rgba(20,83,45,.20);
+  background: var(--vendor-tint);
+  color: var(--vendor-ink);
+  border-color: var(--vendor-border);
 }
 .app-header--vendedor .btn--ghost:not(:disabled):hover{
-  background: rgba(20,83,45,.14);
-  border-color: rgba(20,83,45,.32);
+  background: var(--vendor-tint-hover);
+  border-color: var(--vendor-border-hover);
 }
 .app-header--vendedor .btn--secondary{
-  background: rgba(20,83,45,.08);
-  color: rgba(20,83,45,.88);
-  border-color: rgba(20,83,45,.20);
+  background: var(--vendor-tint);
+  color: var(--vendor-ink);
+  border-color: var(--vendor-border);
 }
 .app-header--vendedor .btn--secondary:not(:disabled):hover{
-  background: rgba(20,83,45,.14);
-  border-color: rgba(20,83,45,.32);
+  background: var(--vendor-tint-hover);
+  border-color: var(--vendor-border-hover);
 }
 
 /* Coeficiente: verde si positivo, rojo si negativo */

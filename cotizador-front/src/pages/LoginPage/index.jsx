@@ -123,7 +123,7 @@ export default function LoginPage() {
                 border: "0",
                 borderRadius: 8,
                 background: "transparent",
-                color: "#6b7280",
+                color: "var(--dg-muted)",
                 display: "grid",
                 placeItems: "center",
                 cursor: "pointer",

@@ -1384,6 +1384,23 @@ function preserveLinkedPortonPayload(existingPayload = {}, nextPayload = {}) {
   return out;
 }
 
+// Los datos fiscales que carga Comercial en condicion_1 (payload.billing_customer,
+// ver BillingModal/hasBillingCustomerData mas arriba) se perdian si el vendedor
+// editaba y reenviaba un presupuesto rechazado por Tecnica: el editor (store del
+// front) no conoce esta clave y este mismo PUT pisaba el payload entero sin ella,
+// asi que Comercial tenia que volver a cargar todo de cero. Mismo criterio que
+// preserveLinkedPortonPayload de arriba, pero con el chequeo de "vacio" correcto
+// para un objeto (no un string): reusa hasBillingCustomerData, ya usado para esto
+// mismo en /:id/review/commercial.
+function preserveBillingCustomerPayload(existingPayload = {}, nextPayload = {}) {
+  const existing = existingPayload && typeof existingPayload === "object" ? existingPayload : {};
+  const out = nextPayload && typeof nextPayload === "object" ? { ...nextPayload } : {};
+  if (!hasBillingCustomerData(out.billing_customer) && hasBillingCustomerData(existing.billing_customer)) {
+    out.billing_customer = existing.billing_customer;
+  }
+  return out;
+}
+
 function getLinkedPortonQuoteIdFromBody(body = {}) {
   const payload = body?.payload && typeof body.payload === "object" ? body.payload : {};
   return toText(body?.linked_porton_quote_id || payload?.linked_porton_quote_id || payload?.porton_quote_id || "");
@@ -2593,7 +2610,11 @@ export function buildQuotesRouter(odoo) {
           body.bill_to_odoo_partner_id !== undefined ? (body.bill_to_odoo_partner_id ? Number(body.bill_to_odoo_partner_id) : null) : quote.bill_to_odoo_partner_id,
           JSON.stringify(body.end_customer !== undefined ? body.end_customer : quote.end_customer),
           JSON.stringify(nextLines),
-          JSON.stringify(body.payload !== undefined ? preserveLinkedPortonPayload(quote.payload, body.payload) : quote.payload),
+          JSON.stringify(
+            body.payload !== undefined
+              ? preserveBillingCustomerPayload(quote.payload, preserveLinkedPortonPayload(quote.payload, body.payload))
+              : quote.payload,
+          ),
           body.note !== undefined ? body.note : quote.note,
           catalog_kind,
           measurementFlow.requires_measurement,

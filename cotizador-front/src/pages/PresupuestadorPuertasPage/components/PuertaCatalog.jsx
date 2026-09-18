@@ -456,7 +456,7 @@ export default function PuertaCatalog() {
                         const disabledForUser = isDisabledForUser(product, user);
                         const isSelected = selectedInSection.has(Number(product.id));
                         return (
-                          <div key={product.id} className="dg-product-card" style={disabledForUser ? { opacity: 0.55, background: "#f3f4f6" } : isSelected ? { border: "1px solid #60a5fa", background: "#eff6ff" } : undefined}>
+                          <div key={product.id} className="dg-product-card" style={disabledForUser ? { opacity: 0.55, background: "var(--dg-tint)" } : isSelected ? { border: "1px solid #60a5fa", background: "#eff6ff" } : undefined}>
                             <div className="dg-product-info">
                               <div className="dg-product-name" style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
                                 {getProductLabel(product)}

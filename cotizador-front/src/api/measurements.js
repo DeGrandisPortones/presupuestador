@@ -54,6 +54,16 @@ export async function saveMeasurement(id, { form, submit = false, returnToSeller
   return data?.quote || null;
 }
 
+export async function getMeasurementMedia(id) {
+  const res = await http.get(`/api/measurements/${id}/media`);
+  return res.data?.media || [];
+}
+
+export async function saveMeasurementMedia(id, media) {
+  const res = await http.put(`/api/measurements/${id}/media`, { media });
+  return res.data;
+}
+
 export async function scheduleMeasurement(id, { scheduledFor } = {}) {
   const res = await http.put(`/api/measurements/${id}/schedule`, { scheduled_for: scheduledFor });
   return res.data?.quote;

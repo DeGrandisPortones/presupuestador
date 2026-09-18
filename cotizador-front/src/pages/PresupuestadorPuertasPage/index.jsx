@@ -862,7 +862,7 @@ export default function PresupuestadorPuertasPage() {
 
       {confirmChoiceOpen ? (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0, 0, 0, 0.45)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20, zIndex: 1000 }} onClick={() => { if (!confirmM.isPending) setConfirmChoiceOpen(false); }}>
-          <div className="card" style={{ width: "100%", maxWidth: 880, background: "#fff", border: "1px solid #ddd", boxShadow: "0 20px 60px rgba(0,0,0,0.18)" }} onClick={(e) => e.stopPropagation()}>
+          <div className="card" style={{ width: "100%", maxWidth: 880, background: "var(--dg-card)", border: "1px solid #ddd", boxShadow: "0 20px 60px rgba(0,0,0,0.18)" }} onClick={(e) => e.stopPropagation()}>
             <div style={{ fontWeight: 900, fontSize: 22, marginBottom: 6 }}>Elegí el destino de la puerta</div>
             <div className="muted" style={{ marginBottom: 18 }}>La puerta usa el mismo circuito de aprobación que un portón.</div>
             <div style={{ border: "1px solid #f2d08a", background: "#fff8e1", borderRadius: 14, padding: 14, marginBottom: 16 }}>

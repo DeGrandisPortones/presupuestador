@@ -15,11 +15,51 @@
   --dg-text: #0b1b1d;
   --dg-muted: rgba(81, 88, 89, 0.82);
   --dg-border: rgba(81, 88, 89, 0.18);
+  --dg-border-soft: rgba(81, 88, 89, 0.12);
   --dg-card: #ffffff;
+  --dg-tint: rgba(81, 88, 89, 0.03);
   --dg-shadow: 0 10px 30px rgba(0, 0, 0, 0.06);
 
   font-family: "Mont", "Montserrat", system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
   color-scheme: light;
+}
+
+/* Dark mode: applied via data-theme on <html>, set by src/domain/theme/store.js
+   (persisted mode: light / dark / auto, auto follows prefers-color-scheme). */
+:root[data-theme="dark"] {
+  /* --dg-petrol es texto/heading (nunca fondo) en toda la app: el tono original
+     #005060 es casi ilegible sobre superficies oscuras, así que en dark mode
+     necesita aclararse. Un teal saturado (probado antes) quedaba "neón" al
+     repetirse en cada título/acordeón/botón secundario, así que se optó por
+     un blanco con apenas un dejo frío: se lee como texto, no como color.
+     --dg-gray (íconos secundarios) se aclara por el mismo motivo, también
+     desaturado. --dg-teal se deja igual: es fondo de botón con texto blanco,
+     y ya está calibrado para eso. */
+  --dg-gray: #97a1a3;
+  --dg-petrol: #d9ecea;
+
+  --dg-bg: #0c0f13;
+  --dg-text: #eef2f4;
+  --dg-muted: rgba(238, 242, 244, 0.64);
+  --dg-border: rgba(238, 242, 244, 0.17);
+  --dg-border-soft: rgba(238, 242, 244, 0.11);
+  --dg-card: #1c232c;
+  --dg-tint: rgba(1, 163, 159, 0.06);
+  --dg-shadow: 0 1px 0 rgba(255, 255, 255, 0.05) inset, 0 16px 38px rgba(0, 0, 0, 0.6);
+  color-scheme: dark;
+}
+
+:root[data-theme="dark"] .card {
+  border-color: var(--dg-border);
+}
+
+/* Logos de marca pensados para fondos claros (texto oscuro sobre transparente):
+   en dark mode se les da un respaldo claro para que no se pierdan sobre las
+   tarjetas oscuras. Los logos ya oscuros (Dflex, iPanel) no lo necesitan. */
+:root[data-theme="dark"] img[src*="degrandis"] {
+  background: rgba(255, 255, 255, 0.94);
+  border-radius: 8px;
+  padding: 4px 10px;
 }
 
 * { box-sizing: border-box; }
@@ -72,6 +112,17 @@ body {
 
 .spacer { height: 12px; }
 
+@keyframes dg-modal-backdrop {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes dg-modal-pop {
+  from { opacity: 0; transform: scale(0.96) translateY(6px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+.dg-modal-backdrop { animation: dg-modal-backdrop 140ms ease-out; }
+.dg-modal-pop { animation: dg-modal-pop 160ms cubic-bezier(0.2, 0.7, 0.3, 1); }
+
 .dg-h3 {
   margin-top: 0;
   margin-bottom: 0;
@@ -94,7 +145,7 @@ table {
 
 th, td {
   padding: 10px;
-  border-bottom: 1px solid rgba(81, 88, 89, 0.12);
+  border-bottom: 1px solid var(--dg-border-soft);
   vertical-align: middle;
 }
 
@@ -154,7 +205,7 @@ th, td {
 }
 
 .btn--secondary {
-  background: #fff;
+  background: var(--dg-card);
   color: var(--dg-petrol);
   border-color: var(--dg-border);
 }
@@ -241,7 +292,8 @@ th, td {
   border: 1px solid var(--dg-border);
   outline: none;
   min-width: 180px;
-  background: #fff;
+  background: var(--dg-card);
+  color: var(--dg-text);
 }
 
 .input:focus {
@@ -269,7 +321,8 @@ th, td {
   align-items: center;
   gap: 10px;
   padding: 12px 12px;
-  background: #fff;
+  background: var(--dg-card);
+  color: var(--dg-text);
   border: none;
   cursor: pointer;
   text-align: left;
@@ -303,8 +356,8 @@ th, td {
 
 .dg-acc-body {
   padding: 12px;
-  border-top: 1px solid rgba(81, 88, 89, 0.12);
-  background: rgba(81, 88, 89, 0.03);
+  border-top: 1px solid var(--dg-border-soft);
+  background: var(--dg-tint);
 }
 
 .dg-product-list {
@@ -321,8 +374,9 @@ th, td {
   justify-content: space-between;
   align-items: center;
   gap: 10px;
-  border: 1px solid rgba(81, 88, 89, 0.12);
-  background: #fff;
+  border: 1px solid var(--dg-border-soft);
+  background: var(--dg-card);
+  color: var(--dg-text);
   padding: 10px;
   border-radius: 12px;
 }
@@ -339,13 +393,13 @@ th, td {
 }
 
 
-/* Brand header (Dflex) */
+/* Brand header (Dflex): sigue el tema (claro/oscuro) igual que el resto de
+   la app, en vez de quedar siempre oscuro. */
 .app-header{
-  background: #0b0f10;
-  color: #fff;
+  background: var(--dg-card);
+  color: var(--dg-text);
   border: 0;
 }
-.app-header .muted{ color: rgba(255,255,255,.72); }
 .brand-logo{
   height: 48px;
   width: auto;
@@ -368,17 +422,13 @@ th, td {
   .menu-card-logo{ height: 42px; }
 }
 
-/* Nav links contrast on dark header */
-.app-header .navlink{
-  color: rgba(255,255,255,.88);
-  border-color: rgba(255,255,255,.25);
-}
-.app-header .navlink:hover{
-  border-color: rgba(255,255,255,.45);
-}
+/* El header ya usa los mismos tokens que el resto de la app (arriba), así
+   que .navlink/.muted no necesitan un override acá: la única diferencia es
+   el estado activo, con el acento de marca en vez del contraste blanco fijo
+   que tenía cuando el header era siempre oscuro. */
 .app-header .navlink.active{
-  background: rgba(255,255,255,.14);
-  border-color: rgba(255,255,255,.35);
+  background: rgba(1, 163, 159, 0.14);
+  border-color: rgba(1, 163, 159, 0.4);
 }
 
 
@@ -403,7 +453,7 @@ th, td {
   transform: translateY(-4px) scale(1.02);
   border-color: rgba(1, 163, 159, 0.36);
   box-shadow: 0 18px 36px rgba(0, 80, 96, 0.12);
-  background: linear-gradient(180deg, rgba(1, 163, 159, 0.04) 0%, rgba(255,255,255,1) 38%);
+  background: linear-gradient(180deg, rgba(1, 163, 159, 0.08) 0%, var(--dg-card) 38%);
 }
 .menu-card-media{
   display: flex;
@@ -435,4 +485,42 @@ th, td {
 }
 .menu-description{
   min-height: 32px;
+}
+
+/* Theme toggle (claro / oscuro / auto): sigue el tema, ya no asume que
+   siempre está sobre un header oscuro fijo. */
+.theme-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border-radius: 999px;
+  background: var(--dg-tint);
+  border: 1px solid var(--dg-border);
+}
+
+.theme-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 999px;
+  border: none;
+  background: transparent;
+  color: var(--dg-muted);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease;
+}
+
+.theme-toggle-btn:hover {
+  background: var(--dg-border-soft);
+}
+
+.theme-toggle-btn.active {
+  background: var(--dg-card);
+  color: var(--dg-text);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.18);
 }

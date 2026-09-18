@@ -7,15 +7,18 @@ import { getTechnicalConsultUnreadSummary } from "../api/technicalConsults.js";
 import { getCommercialConsultUnreadSummary } from "../api/commercialConsults.js";
 import AptoKgProductSectionFilterPatch from "../components/AptoKgProductSectionFilterPatch.jsx";
 import PendingClientAcceptanceModal from "../components/PendingClientAcceptanceModal.jsx";
+import TicketWidget from "../components/TicketWidget.jsx";
+import MeetMeetingReminderWatcher from "../components/MeetMeetingReminderWatcher.jsx";
+import ThemeToggle from "../components/ThemeToggle.jsx";
 
 const DROPDOWN_ITEM_STYLE = {
   display: "block",
   padding: "8px 16px",
-  color: "#333",
+  color: "var(--dg-text)",
   textDecoration: "none",
   fontSize: 14,
   whiteSpace: "nowrap",
-  borderBottom: "1px solid #f0f0f0",
+  borderBottom: "1px solid var(--dg-border-soft)",
 };
 
 function SuperusuarioDropdown({ show }) {
@@ -35,21 +38,21 @@ function SuperusuarioDropdown({ show }) {
           position: "absolute",
           top: "100%",
           left: 0,
-          background: "#fff",
-          border: "1px solid #e0e0e0",
+          background: "var(--dg-card)",
+          border: "1px solid var(--dg-border)",
           borderRadius: 6,
           boxShadow: "0 4px 12px rgba(0,0,0,0.12)",
           minWidth: 260,
           zIndex: 200,
           padding: "4px 0",
         }}>
-          <NavLink style={({ isActive }) => ({ ...DROPDOWN_ITEM_STYLE, background: isActive ? "#f0fffe" : undefined, fontWeight: isActive ? 700 : undefined })} to="/dashboard/catalogo-puertas">Catalogo Puertas</NavLink>
-          <NavLink style={({ isActive }) => ({ ...DROPDOWN_ITEM_STYLE, background: isActive ? "#f0fffe" : undefined, fontWeight: isActive ? 700 : undefined })} to="/dashboard/reglas-tecnicas">Reglas Tecnicas</NavLink>
-          <NavLink style={({ isActive }) => ({ ...DROPDOWN_ITEM_STYLE, background: isActive ? "#f0fffe" : undefined, fontWeight: isActive ? 700 : undefined })} to="/superuser/nombres-pdf">Nombres PDF productos</NavLink>
-          <NavLink style={({ isActive }) => ({ ...DROPDOWN_ITEM_STYLE, background: isActive ? "#f0fffe" : undefined, fontWeight: isActive ? 700 : undefined })} to="/superuser/asignacion-produccion">Asignacion Produccion</NavLink>
-          <NavLink style={({ isActive }) => ({ ...DROPDOWN_ITEM_STYLE, background: isActive ? "#f0fffe" : undefined, fontWeight: isActive ? 700 : undefined })} to="/superuser/presupuestos-admin">Admin presupuestos y Odoo</NavLink>
-          <NavLink style={({ isActive }) => ({ ...DROPDOWN_ITEM_STYLE, background: isActive ? "#f0fffe" : undefined, fontWeight: isActive ? 700 : undefined })} to="/superuser/visualizador-porton">Visualizador portones</NavLink>
-          <NavLink style={({ isActive }) => ({ ...DROPDOWN_ITEM_STYLE, borderBottom: "none", background: isActive ? "#f0fffe" : undefined, fontWeight: isActive ? 700 : undefined })} to="/superuser/actividad-vendedores">Actividad vendedores</NavLink>
+          <NavLink style={({ isActive }) => ({ ...DROPDOWN_ITEM_STYLE, background: isActive ? "rgba(1, 163, 159, 0.16)" : undefined, fontWeight: isActive ? 700 : undefined })} to="/dashboard/catalogo-puertas">Catalogo Puertas</NavLink>
+          <NavLink style={({ isActive }) => ({ ...DROPDOWN_ITEM_STYLE, background: isActive ? "rgba(1, 163, 159, 0.16)" : undefined, fontWeight: isActive ? 700 : undefined })} to="/dashboard/reglas-tecnicas">Reglas Tecnicas</NavLink>
+          <NavLink style={({ isActive }) => ({ ...DROPDOWN_ITEM_STYLE, background: isActive ? "rgba(1, 163, 159, 0.16)" : undefined, fontWeight: isActive ? 700 : undefined })} to="/superuser/nombres-pdf">Nombres PDF productos</NavLink>
+          <NavLink style={({ isActive }) => ({ ...DROPDOWN_ITEM_STYLE, background: isActive ? "rgba(1, 163, 159, 0.16)" : undefined, fontWeight: isActive ? 700 : undefined })} to="/superuser/asignacion-produccion">Asignacion Produccion</NavLink>
+          <NavLink style={({ isActive }) => ({ ...DROPDOWN_ITEM_STYLE, background: isActive ? "rgba(1, 163, 159, 0.16)" : undefined, fontWeight: isActive ? 700 : undefined })} to="/superuser/presupuestos-admin">Admin presupuestos y Odoo</NavLink>
+          <NavLink style={({ isActive }) => ({ ...DROPDOWN_ITEM_STYLE, background: isActive ? "rgba(1, 163, 159, 0.16)" : undefined, fontWeight: isActive ? 700 : undefined })} to="/superuser/visualizador-porton">Visualizador portones</NavLink>
+          <NavLink style={({ isActive }) => ({ ...DROPDOWN_ITEM_STYLE, borderBottom: "none", background: isActive ? "rgba(1, 163, 159, 0.16)" : undefined, fontWeight: isActive ? 700 : undefined })} to="/superuser/actividad-vendedores">Actividad vendedores</NavLink>
         </div>
       )}
     </div>
@@ -79,8 +82,8 @@ function AprobacionesDropdown({ show, showCommercial, showTechnical, showPortone
           position: "absolute",
           top: "100%",
           left: 0,
-          background: "#fff",
-          border: "1px solid #e0e0e0",
+          background: "var(--dg-card)",
+          border: "1px solid var(--dg-border)",
           borderRadius: 6,
           boxShadow: "0 4px 12px rgba(0,0,0,0.12)",
           minWidth: 220,
@@ -93,7 +96,7 @@ function AprobacionesDropdown({ show, showCommercial, showTechnical, showPortone
               style={({ isActive }) => ({
                 ...DROPDOWN_ITEM_STYLE,
                 ...(idx === lastIdx ? { borderBottom: "none" } : {}),
-                background: isActive ? "#f0fffe" : undefined,
+                background: isActive ? "rgba(1, 163, 159, 0.16)" : undefined,
                 fontWeight: isActive ? 700 : undefined,
               })}
               to={item.to}
@@ -124,20 +127,20 @@ function PresupuestarDropdown({ show }) {
           position: "absolute",
           top: "100%",
           left: 0,
-          background: "#fff",
-          border: "1px solid #e0e0e0",
+          background: "var(--dg-card)",
+          border: "1px solid var(--dg-border)",
           borderRadius: 6,
           boxShadow: "0 4px 12px rgba(0,0,0,0.12)",
           minWidth: 230,
           zIndex: 200,
           padding: "4px 0",
         }}>
-          <NavLink style={({ isActive }) => ({ ...DROPDOWN_ITEM_STYLE, background: isActive ? "#f0fffe" : undefined, fontWeight: isActive ? 700 : undefined })} to="/cotizador" end>De Grandis Portones</NavLink>
-          <NavLink style={({ isActive }) => ({ ...DROPDOWN_ITEM_STYLE, background: isActive ? "#f0fffe" : undefined, fontWeight: isActive ? 700 : undefined })} to="/cotizador/ipanel">Ipanel</NavLink>
-          <NavLink style={({ isActive }) => ({ ...DROPDOWN_ITEM_STYLE, background: isActive ? "#f0fffe" : undefined, fontWeight: isActive ? 700 : undefined })} to="/cotizador/plegados">Plegados</NavLink>
-          <NavLink style={({ isActive }) => ({ ...DROPDOWN_ITEM_STYLE, background: isActive ? "#f0fffe" : undefined, fontWeight: isActive ? 700 : undefined })} to="/cotizador/puerta">Puertas</NavLink>
-          <NavLink style={({ isActive }) => ({ ...DROPDOWN_ITEM_STYLE, background: isActive ? "#f0fffe" : undefined, fontWeight: isActive ? 700 : undefined })} to="/cotizador/otros">Otros</NavLink>
-          <NavLink style={({ isActive }) => ({ ...DROPDOWN_ITEM_STYLE, borderBottom: "none", background: isActive ? "#f0fffe" : undefined, fontWeight: isActive ? 700 : undefined })} to="/presupuestos">Mis presupuestos</NavLink>
+          <NavLink style={({ isActive }) => ({ ...DROPDOWN_ITEM_STYLE, background: isActive ? "rgba(1, 163, 159, 0.16)" : undefined, fontWeight: isActive ? 700 : undefined })} to="/cotizador" end>De Grandis Portones</NavLink>
+          <NavLink style={({ isActive }) => ({ ...DROPDOWN_ITEM_STYLE, background: isActive ? "rgba(1, 163, 159, 0.16)" : undefined, fontWeight: isActive ? 700 : undefined })} to="/cotizador/ipanel">Ipanel</NavLink>
+          <NavLink style={({ isActive }) => ({ ...DROPDOWN_ITEM_STYLE, background: isActive ? "rgba(1, 163, 159, 0.16)" : undefined, fontWeight: isActive ? 700 : undefined })} to="/cotizador/plegados">Plegados</NavLink>
+          <NavLink style={({ isActive }) => ({ ...DROPDOWN_ITEM_STYLE, background: isActive ? "rgba(1, 163, 159, 0.16)" : undefined, fontWeight: isActive ? 700 : undefined })} to="/cotizador/puerta">Puertas</NavLink>
+          <NavLink style={({ isActive }) => ({ ...DROPDOWN_ITEM_STYLE, background: isActive ? "rgba(1, 163, 159, 0.16)" : undefined, fontWeight: isActive ? 700 : undefined })} to="/cotizador/otros">Otros</NavLink>
+          <NavLink style={({ isActive }) => ({ ...DROPDOWN_ITEM_STYLE, borderBottom: "none", background: isActive ? "rgba(1, 163, 159, 0.16)" : undefined, fontWeight: isActive ? 700 : undefined })} to="/presupuestos">Mis presupuestos</NavLink>
         </div>
       )}
     </div>
@@ -220,7 +223,7 @@ function TechnicalConsultHeaderButton() {
             fontSize: 12,
             fontWeight: 800,
             padding: "0 6px",
-            boxShadow: "0 0 0 3px #fff",
+            boxShadow: "0 0 0 3px var(--dg-card)",
           }}
         >
           {unreadCount > 99 ? "99+" : unreadCount}
@@ -282,7 +285,7 @@ function CommercialConsultHeaderButton() {
             fontSize: 12,
             fontWeight: 800,
             padding: "0 6px",
-            boxShadow: "0 0 0 3px #fff",
+            boxShadow: "0 0 0 3px var(--dg-card)",
           }}
         >
           {unreadCount > 99 ? "99+" : unreadCount}
@@ -355,26 +358,34 @@ export default function AppLayout() {
         className={`card app-header${user?.is_vendedor && !isDevEnv ? " app-header--vendedor" : ""}`}
         style={{ borderRadius: 0, ...(isDevEnv && { background: "#7a1a1a" }) }}
       >
-        <div className="container" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: 0, gap: 16, position: "relative" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+        <div className="container" style={{ display: "flex", alignItems: "center", padding: 0, gap: 16 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 16, flexShrink: 0 }}>
             <img className="brand-logo" src="/brands/dflex.png" alt="Dflex" />
           </div>
 
-          {user ? (
-            <div style={{
-              position: "absolute", left: "50%", top: "50%", transform: "translate(-50%, -50%)",
-              background: "#fff", color: "#111", borderRadius: 999,
-              padding: "10px 24px", fontSize: 17, fontWeight: 800,
-              boxShadow: "0 2px 10px rgba(0,0,0,0.18)", whiteSpace: "nowrap",
-            }}>
-              {user.username} - {roleText}
-            </div>
-          ) : null}
+          <div style={{ flex: 1, minWidth: 0, display: "flex", justifyContent: "center" }}>
+            {user ? (
+              <div
+                title={`${user.username} - ${roleText}`}
+                style={{
+                  background: "rgba(1, 163, 159, 0.10)", color: "var(--dg-text)",
+                  border: "1px solid rgba(1, 163, 159, 0.18)", borderRadius: 999,
+                  padding: "10px 24px", fontSize: 17, fontWeight: 800,
+                  whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+                  maxWidth: "100%",
+                }}
+              >
+                {user.username} - {roleText}
+              </div>
+            ) : null}
+          </div>
 
-          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 12, flexShrink: 0 }}>
+            <TicketWidget />
             <TechnicalConsultHeaderButton />
             <CommercialConsultHeaderButton />
             <OdooStatusBadge />
+            <ThemeToggle />
             <Button
               variant="ghost"
               onClick={() => {
@@ -411,6 +422,7 @@ export default function AppLayout() {
 
       <AptoKgProductSectionFilterPatch />
       <PendingClientAcceptanceModal />
+      {isSuperuser || user?.is_rev_tecnica ? <MeetMeetingReminderWatcher /> : null}
       <Outlet />
       </div>
     </div>

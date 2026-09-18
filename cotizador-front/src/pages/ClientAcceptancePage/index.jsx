@@ -51,7 +51,7 @@ const schemeOverlayBaseStyle = {
   alignItems: "center",
   justifyContent: "center",
   fontWeight: 900,
-  color: "#111",
+  color: "var(--dg-text)",
   textShadow: "0 1px 0 rgba(255,255,255,0.9)",
   background: "rgba(255,255,255,0.65)",
   borderRadius: 6,
@@ -251,7 +251,7 @@ function formatPiernas(value) {
 
 function Card({ title, children }) {
   return (
-    <div className="card" style={{ background: "#fff", marginBottom: 12, border: "1px solid #eee" }}>
+    <div className="card" style={{ background: "var(--dg-card)", marginBottom: 12, border: "1px solid var(--dg-border)" }}>
       {title ? <div style={{ fontWeight: 900, marginBottom: 10 }}>{title}</div> : null}
       {children}
     </div>
@@ -261,7 +261,7 @@ function StaticField({ label, value }) {
   return (
     <div style={{ flex: 1, minWidth: 220 }}>
       <div className="muted" style={{ marginBottom: 6 }}>{label}</div>
-      <div style={{ minHeight: 42, padding: "10px 12px", borderRadius: 10, border: "1px solid #e3e3e3", background: "#fff", whiteSpace: "pre-wrap" }}>
+      <div style={{ minHeight: 42, padding: "10px 12px", borderRadius: 10, border: "1px solid var(--dg-border)", background: "var(--dg-card)", whiteSpace: "pre-wrap" }}>
         {value || <span className="muted">—</span>}
       </div>
     </div>
@@ -427,7 +427,7 @@ function DetailGrid({ rows }) {
   return (
     <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 10 }}>
       {rows.map((item) => (
-        <div key={item.label} style={{ border: "1px solid #e5e5e5", borderRadius: 10, padding: "8px 10px", background: "#fff" }}>
+        <div key={item.label} style={{ border: "1px solid var(--dg-border)", borderRadius: 10, padding: "8px 10px", background: "var(--dg-card)" }}>
           <div className="muted" style={{ fontSize: 12 }}>{item.label}</div>
           <div style={{ fontWeight: 800, marginTop: 4 }}>{item.value}</div>
         </div>
@@ -540,7 +540,7 @@ function MeasurementSchemeVisual({ form }) {
   const altos = normalizeTriple(form?.esquema?.alto || []);
   const anchos = normalizeTriple(form?.esquema?.ancho || []);
   return (
-    <div style={{ border: "1px dashed #cbd5e1", borderRadius: 14, background: "#ffffff", padding: 16 }}>
+    <div style={{ border: "1px dashed var(--dg-border)", borderRadius: 14, background: "var(--dg-card)", padding: 16 }}>
       <div style={{ position: "relative", width: "100%", maxWidth: 780, margin: "0 auto" }}>
         <img src="/measurement_scheme.png" alt="Esquema de medición" style={{ width: "100%", height: "auto", display: "block" }} />
         {SCHEME_RECT_PCTS.alto.map((rect, idx) => (
@@ -612,12 +612,12 @@ function TermsModal({ onClose, onAccept }) {
       <div
         onClick={(e) => e.stopPropagation()}
         style={{
-          background: "#fff", borderRadius: 14, boxShadow: "0 8px 40px rgba(0,0,0,0.2)",
+          background: "var(--dg-card)", borderRadius: 14, boxShadow: "0 8px 40px rgba(0,0,0,0.2)",
           padding: "28px 28px 20px", width: "100%", maxWidth: 640,
           maxHeight: "90vh", display: "flex", flexDirection: "column",
         }}
       >
-        <div style={{ fontWeight: 800, fontSize: 16, marginBottom: 18, color: "#111" }}>
+        <div style={{ fontWeight: 800, fontSize: 16, marginBottom: 18, color: "var(--dg-text)" }}>
           Términos y Condiciones de Venta
         </div>
         <div style={{ overflowY: "auto", flex: 1, paddingRight: 4 }}>
@@ -626,7 +626,7 @@ function TermsModal({ onClose, onAccept }) {
               {p.title ? (
                 <span style={{ fontWeight: 700 }}>{p.title} </span>
               ) : null}
-              <span style={{ fontSize: 13.5, color: "#333", lineHeight: 1.6 }}>{p.text}</span>
+              <span style={{ fontSize: 13.5, color: "var(--dg-muted)", lineHeight: 1.6 }}>{p.text}</span>
             </div>
           ))}
         </div>
@@ -645,7 +645,7 @@ function TermsModal({ onClose, onAccept }) {
                 onChange={(e) => setAccepted(e.target.checked)}
                 style={{ width: 18, height: 18, cursor: "pointer", flexShrink: 0 }}
               />
-              <span style={{ fontSize: 14, color: "#111", fontWeight: 600 }}>
+              <span style={{ fontSize: 14, color: "var(--dg-text)", fontWeight: 600 }}>
                 Acepto los términos y condiciones
               </span>
             </label>
@@ -655,7 +655,7 @@ function TermsModal({ onClose, onAccept }) {
               style={{
                 marginTop: 12, width: "100%", padding: "12px 0", borderRadius: 8,
                 border: "none",
-                background: accepted ? "#111" : "#d1d5db",
+                background: accepted ? "#111" : "var(--dg-border)",
                 cursor: accepted ? "pointer" : "not-allowed",
                 fontSize: 14, fontWeight: 700,
                 color: accepted ? "#fff" : "#9ca3af",
@@ -670,8 +670,8 @@ function TermsModal({ onClose, onAccept }) {
             onClick={onClose}
             style={{
               marginTop: 20, width: "100%", padding: "10px 0", borderRadius: 8,
-              border: "1px solid #e0e0e0", background: "#f5f5f5", cursor: "pointer",
-              fontSize: 14, fontWeight: 600, color: "#555", flexShrink: 0,
+              border: "1px solid var(--dg-border)", background: "var(--dg-tint)", cursor: "pointer",
+              fontSize: 14, fontWeight: 600, color: "var(--dg-muted)", flexShrink: 0,
             }}
           >
             Cerrar
@@ -843,7 +843,7 @@ export default function ClientAcceptancePage() {
         {!budgetDetailLines.length ? <div className="muted">Sin productos informados.</div> : (
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
             {budgetDetailLines.map((line) => (
-              <div key={line.key} style={{ border: "1px solid #eee", borderRadius: 10, padding: 10 }}>
+              <div key={line.key} style={{ border: "1px solid var(--dg-border)", borderRadius: 10, padding: 10 }}>
                 <div className="muted" style={{ fontSize: 12, marginBottom: 4 }}>
                   {line.sectionName || "Detalle del presupuesto"}
                 </div>
@@ -863,7 +863,7 @@ export default function ClientAcceptancePage() {
 
       <Card title="Aceptación del cliente">
         {productionPlanning ? (
-          <div style={{ background: "#f7fbff", border: "1px solid #d9e5f7", borderRadius: 10, padding: 12, marginBottom: 16 }}>
+          <div style={{ background: "var(--dg-tint)", border: "1px solid var(--dg-border)", borderRadius: 10, padding: 12, marginBottom: 16 }}>
             {accepted?.accepted_at ? (
               <div>
                 <span className="muted">Fecha de finalización de producción estimada de su portón: </span>
@@ -950,7 +950,7 @@ export default function ClientAcceptancePage() {
           onClick={() => setShowTerms(true)}
           style={{
             background: "none", border: "none", cursor: "pointer",
-            color: "#6b7280", fontSize: 13, textDecoration: "underline",
+            color: "var(--dg-muted)", fontSize: 13, textDecoration: "underline",
           }}
         >
           Ver términos y condiciones

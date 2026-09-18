@@ -36,7 +36,7 @@ export const QUOTE_LIST_COLUMNS_SQL = `
   q.measurement_link_sent_confirmed_at, q.measurement_link_sent_confirmed_by_user_id, q.cancelled_at,
   q.cancelled_by_user_id, q.cancellation_reason, q.quoted_delivery_year, q.quoted_delivery_week,
   q.quoted_delivery_week_start, q.quoted_delivery_week_end, q.quoted_delivery_weeks_out, q.quoted_delivery_captured_at,
-  q.production_set_at
+  q.production_set_at, q.measurement_media_count
 `;
 
 function parseMeasurementProductIds(raw) {
@@ -129,6 +129,20 @@ export async function ensureQuotesMeasurementColumns() {
   await dbQuery(`alter table public.presupuestador_quotes add column if not exists measurement_subtype text not null default 'normal';`);
   await dbQuery(`alter table public.presupuestador_quotes add column if not exists measurement_form jsonb null;`);
   await dbQuery(`alter table public.presupuestador_quotes add column if not exists measurement_original_form jsonb null;`);
+  // Fotos/videos del portón adjuntados desde la pantalla de medición. A propósito
+  // separado de measurement_form: ese campo se compara entero contra
+  // measurement_original_form para varias reglas de negocio (detectSensitiveItem18Change,
+  // detectDoorBudgetSectionChangeByMedidor, snapshot de measurement_commercial_diff_json,
+  // etc. en measurements.routes.js) y mezclar adjuntos ahí ensuciaría esos diffs. Al ser
+  // su propia columna, se puede guardar/editar en cualquier momento (incluso con la
+  // medición ya aprobada/de solo lectura) sin tocar nada de esa lógica.
+  await dbQuery(`alter table public.presupuestador_quotes add column if not exists measurement_media jsonb not null default '[]'::jsonb;`);
+  // Contador liviano, mantenido a mano en cada UPDATE de measurement_media (ver PUT
+  // /:id/media en measurements.routes.js), para poder mostrar "cuántos adjuntos tiene
+  // esta fila" en el listado SIN traer el jsonb completo (que puede pesar varios MB en
+  // base64 por fila) — mismo motivo por el que QUOTE_LIST_COLUMNS_SQL ya excluye
+  // payload/lines/measurement_form del listado.
+  await dbQuery(`alter table public.presupuestador_quotes add column if not exists measurement_media_count int not null default 0;`);
   await dbQuery(`alter table public.presupuestador_quotes add column if not exists measurement_assigned_to_user_id int null;`);
   await dbQuery(`alter table public.presupuestador_quotes add column if not exists measurement_scheduled_for date null;`);
   await dbQuery(`alter table public.presupuestador_quotes add column if not exists measurement_scheduled_by_user_id int null;`);

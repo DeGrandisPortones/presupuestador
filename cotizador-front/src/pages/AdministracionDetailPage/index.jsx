@@ -39,16 +39,16 @@ function addDaysIso(iso, days) {
 }
 
 function DecisionRow({ label, decision, at, byName, notes }) {
-  const color = decision === "approved" ? "#1b5e20" : decision === "rejected" ? "#b71c1c" : "#888";
+  const color = decision === "approved" ? "#1b5e20" : decision === "rejected" ? "#b71c1c" : "var(--dg-muted)";
   const text = decision === "approved" ? "✓ Aprobado" : decision === "rejected" ? "✗ Rechazado" : decision === "pending" ? "Pendiente" : decision || "—";
   return (
-    <div style={{ display: "flex", gap: 12, alignItems: "flex-start", padding: "8px 0", borderBottom: "1px solid #f0f0f0" }}>
-      <div style={{ minWidth: 160, color: "#666", fontSize: 13 }}>{label}</div>
+    <div style={{ display: "flex", gap: 12, alignItems: "flex-start", padding: "8px 0", borderBottom: "1px solid var(--dg-border)" }}>
+      <div style={{ minWidth: 160, color: "var(--dg-muted)", fontSize: 13 }}>{label}</div>
       <div style={{ flex: 1 }}>
         <span style={{ fontWeight: 700, color }}>{text}</span>
-        {at && <span style={{ fontSize: 12, color: "#888", marginLeft: 10 }}>{fmt(at)}</span>}
-        {byName && <span style={{ fontSize: 12, color: "#555", marginLeft: 10 }}>por {byName}</span>}
-        {notes && <div style={{ fontSize: 12, color: "#666", marginTop: 4, fontStyle: "italic" }}>"{notes}"</div>}
+        {at && <span style={{ fontSize: 12, color: "var(--dg-muted)", marginLeft: 10 }}>{fmt(at)}</span>}
+        {byName && <span style={{ fontSize: 12, color: "var(--dg-muted)", marginLeft: 10 }}>por {byName}</span>}
+        {notes && <div style={{ fontSize: 12, color: "var(--dg-muted)", marginTop: 4, fontStyle: "italic" }}>"{notes}"</div>}
       </div>
     </div>
   );
@@ -56,11 +56,11 @@ function DecisionRow({ label, decision, at, byName, notes }) {
 
 function TimelineRow({ label, value, sub }) {
   return (
-    <div style={{ display: "flex", gap: 12, alignItems: "flex-start", padding: "8px 0", borderBottom: "1px solid #f0f0f0" }}>
-      <div style={{ minWidth: 220, color: "#666", fontSize: 13 }}>{label}</div>
+    <div style={{ display: "flex", gap: 12, alignItems: "flex-start", padding: "8px 0", borderBottom: "1px solid var(--dg-border)" }}>
+      <div style={{ minWidth: 220, color: "var(--dg-muted)", fontSize: 13 }}>{label}</div>
       <div style={{ flex: 1 }}>
         <span style={{ fontSize: 14 }}>{value || "—"}</span>
-        {sub && <div style={{ fontSize: 12, color: "#888", marginTop: 2 }}>{sub}</div>}
+        {sub && <div style={{ fontSize: 12, color: "var(--dg-muted)", marginTop: 2 }}>{sub}</div>}
       </div>
     </div>
   );
@@ -81,7 +81,7 @@ function LinesTable({ lines }) {
     <div style={{ overflowX: "auto" }}>
       <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
         <thead>
-          <tr style={{ background: "#f5f5f5" }}>
+          <tr style={{ background: "var(--dg-tint)" }}>
             <th style={{ padding: "6px 10px", textAlign: "left", fontWeight: 700 }}>Producto</th>
             <th style={{ padding: "6px 10px", textAlign: "right", fontWeight: 700 }}>Cant.</th>
             <th style={{ padding: "6px 10px", textAlign: "right", fontWeight: 700 }}>P. Unitario</th>
@@ -94,7 +94,7 @@ function LinesTable({ lines }) {
             const price = l.official_unit_price ?? (l.basePrice ?? l.base_price ?? l.price ?? l.price_unit ?? l.unit_price ?? 0);
             const sub = l.official_subtotal ?? (price * qty);
             return (
-              <tr key={i} style={{ borderBottom: "1px solid #f0f0f0" }}>
+              <tr key={i} style={{ borderBottom: "1px solid var(--dg-border)" }}>
                 <td style={{ padding: "6px 10px" }}>{l.name || l.raw_name || l.display_name || String(l.product_id || "—")}</td>
                 <td style={{ padding: "6px 10px", textAlign: "right" }}>{qty}</td>
                 <td style={{ padding: "6px 10px", textAlign: "right" }}>{price > 0 ? fmtMoney(price) : "—"}</td>
@@ -149,7 +149,7 @@ function PayloadSummary({ payload, catalogKind }) {
     <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: "8px 16px" }}>
       {fields.map(({ label, val }) => (
         <div key={label}>
-          <div style={{ fontSize: 11, color: "#888", textTransform: "uppercase", letterSpacing: 0.5 }}>{label}</div>
+          <div style={{ fontSize: 11, color: "var(--dg-muted)", textTransform: "uppercase", letterSpacing: 0.5 }}>{label}</div>
           <div style={{ fontSize: 14, fontWeight: 600 }}>{val}</div>
         </div>
       ))}
@@ -218,12 +218,12 @@ export default function AdministracionDetailPage() {
           <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
             {npRef && <span style={{ fontSize: 20, fontWeight: 900 }}>{npRef}</span>}
             {nvRef && <span style={{ fontSize: 16, fontWeight: 700, color: "#1b5e20", background: "#e8f5e9", padding: "2px 10px", borderRadius: 999 }}>{nvRef}</span>}
-            <span style={{ fontSize: 13, color: "#888", padding: "2px 8px", background: "#f5f5f5", borderRadius: 999 }}>{kindLabel}</span>
-            <span style={{ fontSize: 13, color: "#888", padding: "2px 8px", background: "#f5f5f5", borderRadius: 999 }}>{modeLabel}</span>
+            <span style={{ fontSize: 13, color: "var(--dg-muted)", padding: "2px 8px", background: "var(--dg-tint)", borderRadius: 999 }}>{kindLabel}</span>
+            <span style={{ fontSize: 13, color: "var(--dg-muted)", padding: "2px 8px", background: "var(--dg-tint)", borderRadius: 999 }}>{modeLabel}</span>
           </div>
-          <div style={{ marginTop: 6, color: "#444" }}>
+          <div style={{ marginTop: 6, color: "var(--dg-text)" }}>
             <strong>{customerName}</strong>
-            <span style={{ color: "#888", marginLeft: 10, fontSize: 13 }}>Vendedor: {sellerName}</span>
+            <span style={{ color: "var(--dg-muted)", marginLeft: 10, fontSize: 13 }}>Vendedor: {sellerName}</span>
           </div>
           <div style={{ marginTop: 6, display: "flex", gap: 16, flexWrap: "wrap", alignItems: "center" }}>
             {totalAmount && (
@@ -232,7 +232,7 @@ export default function AdministracionDetailPage() {
               </span>
             )}
             {quote.payload?.condition_text && (
-              <span style={{ fontSize: 13, color: "#555", background: "#f3f0ff", padding: "3px 10px", borderRadius: 6, border: "1px solid #d1c4e9" }}>
+              <span style={{ fontSize: 13, color: "var(--dg-muted)", background: "#f3f0ff", padding: "3px 10px", borderRadius: 6, border: "1px solid #d1c4e9" }}>
                 Condición: {quote.payload.condition_text}
               </span>
             )}
@@ -244,12 +244,12 @@ export default function AdministracionDetailPage() {
       <div className="spacer" />
 
       {/* Resumen del presupuesto */}
-      <SectionCard title="Resumen del presupuesto" accent="#555">
+      <SectionCard title="Resumen del presupuesto" accent="var(--dg-muted)">
         <PayloadSummary payload={quote.payload} catalogKind={quote.catalog_kind} />
         <div style={{ marginTop: 12 }}>
           <button
             onClick={() => setShowLines((v) => !v)}
-            style={{ background: "none", border: "1px solid #ccc", borderRadius: 6, padding: "6px 14px", cursor: "pointer", fontSize: 13 }}
+            style={{ background: "none", border: "1px solid var(--dg-border)", borderRadius: 6, padding: "6px 14px", cursor: "pointer", fontSize: 13 }}
           >
             {showLines ? "▲ Ocultar líneas del presupuesto" : "▼ Ver líneas del presupuesto"}
           </button>
@@ -260,7 +260,7 @@ export default function AdministracionDetailPage() {
           </div>
         )}
         {quote.note && (
-          <div style={{ marginTop: 12, padding: "8px 12px", background: "#fffde7", borderRadius: 6, fontSize: 13, color: "#555" }}>
+          <div style={{ marginTop: 12, padding: "8px 12px", background: "#fffde7", borderRadius: 6, fontSize: 13, color: "var(--dg-muted)" }}>
             Observaciones: {quote.note}
           </div>
         )}
@@ -385,7 +385,7 @@ export default function AdministracionDetailPage() {
                   </div>
                 </div>
               ) : (
-                <div style={{ fontSize: 13, color: "#666" }}>Link enviado el {fmt(quote.measurement_share_enabled_at)}</div>
+                <div style={{ fontSize: 13, color: "var(--dg-muted)" }}>Link enviado el {fmt(quote.measurement_share_enabled_at)}</div>
               )}
             </div>
           );

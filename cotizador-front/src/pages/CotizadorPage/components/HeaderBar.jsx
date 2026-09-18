@@ -211,7 +211,7 @@ function ExistingCustomerModal({ open, onClose, onApply }) {
 
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20, zIndex: 1200 }} onClick={onClose}>
-      <div className="card" style={{ width: "100%", maxWidth: 900, maxHeight: "90vh", overflow: "auto", background: "#fff", border: "1px solid #ddd", boxShadow: "0 20px 60px rgba(0,0,0,0.18)" }} onClick={(e) => e.stopPropagation()}>
+      <div className="card" style={{ width: "100%", maxWidth: 900, maxHeight: "90vh", overflow: "auto", background: "var(--dg-card)", border: "1px solid var(--dg-border)", boxShadow: "0 20px 60px rgba(0,0,0,0.18)" }} onClick={(e) => e.stopPropagation()}>
         <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start", flexWrap: "wrap" }}>
           <div>
             <div style={{ fontWeight: 900, fontSize: 24, marginBottom: 4 }}>Datos cliente existente</div>
@@ -236,7 +236,7 @@ function ExistingCustomerModal({ open, onClose, onApply }) {
                   key={item.key || item.quote_id}
                   type="button"
                   onClick={() => apply(item)}
-                  style={{ textAlign: "left", border: "1px solid #e5e7eb", background: "#fff", borderRadius: 12, padding: 12, cursor: "pointer" }}
+                  style={{ textAlign: "left", border: "1px solid var(--dg-border)", background: "var(--dg-card)", borderRadius: 12, padding: 12, cursor: "pointer" }}
                 >
                   <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
                     <div style={{ fontWeight: 900 }}>{label.name}</div>
@@ -307,7 +307,7 @@ function MultiplePaymentModal({ open, onClose, paymentMethods, initialPaymentMet
 
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20, zIndex: 1200 }} onClick={onClose}>
-      <div className="card" style={{ width: "100%", maxWidth: 820, maxHeight: "90vh", overflow: "auto", background: "#fff", border: "1px solid #ddd", boxShadow: "0 20px 60px rgba(0,0,0,0.18)" }} onClick={(e) => e.stopPropagation()}>
+      <div className="card" style={{ width: "100%", maxWidth: 820, maxHeight: "90vh", overflow: "auto", background: "var(--dg-card)", border: "1px solid var(--dg-border)", boxShadow: "0 20px 60px rgba(0,0,0,0.18)" }} onClick={(e) => e.stopPropagation()}>
         <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start" }}>
           <div>
             <div style={{ fontWeight: 900, fontSize: 24, marginBottom: 4 }}>Pago múltiple</div>
@@ -322,10 +322,10 @@ function MultiplePaymentModal({ open, onClose, paymentMethods, initialPaymentMet
           {rows.map((row, idx) => {
             const pct = buildRowPercent(row);
             return (
-              <div key={row.id} style={{ display: "grid", gridTemplateColumns: "minmax(260px, 1.7fr) minmax(140px, 1fr) 120px auto", gap: 8, alignItems: "end", border: "1px solid #eee", borderRadius: 12, padding: 10 }}>
+              <div key={row.id} style={{ display: "grid", gridTemplateColumns: "minmax(260px, 1.7fr) minmax(140px, 1fr) 120px auto", gap: 8, alignItems: "end", border: "1px solid var(--dg-border)", borderRadius: 12, padding: 10 }}>
                 <div>
                   <div className="muted" style={{ marginBottom: 5 }}>Forma de pago {idx + 1}</div>
-                  <select value={row.method} onChange={(e) => updateRow(row.id, { method: e.target.value })} style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: "1px solid #ddd" }}>
+                  <select value={row.method} onChange={(e) => updateRow(row.id, { method: e.target.value })} style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: "1px solid var(--dg-border)", background: "var(--dg-card)", color: "var(--dg-text)" }}>
                     <option value="">Seleccione...</option>
                     {paymentMethods.filter((x) => !isMultiplePaymentMethod(x)).map((method) => <option key={method} value={method}>{method}</option>)}
                   </select>
@@ -573,7 +573,7 @@ export default function HeaderBar({ showMargin }) {
               <select
                 value={isMultiplePayment ? MULTIPLE_PAYMENT_METHOD : (currentPaymentCategory || "")}
                 onChange={(e) => handlePaymentChange(e.target.value)}
-                style={{ padding: "8px 10px", borderRadius: 8, border: "1px solid #ddd", minWidth: 220 }}
+                style={{ padding: "8px 10px", borderRadius: 8, border: "1px solid var(--dg-border)", background: "var(--dg-card)", color: "var(--dg-text)", minWidth: 220 }}
               >
                 <option value="">Seleccione forma de pago</option>
                 {paymentCategoryOptions.map((x) => (
@@ -586,7 +586,7 @@ export default function HeaderBar({ showMargin }) {
               <select
                 value={isCardPaymentMethod(paymentMethod) ? paymentMethod : ""}
                 onChange={(e) => handleCardPaymentChange(e.target.value)}
-                style={{ padding: "8px 10px", borderRadius: 8, border: "1px solid #ddd", minWidth: 220 }}
+                style={{ padding: "8px 10px", borderRadius: 8, border: "1px solid var(--dg-border)", background: "var(--dg-card)", color: "var(--dg-text)", minWidth: 220 }}
               >
                 <option value="">Seleccione tarjeta/cuotas</option>
                 {cardPaymentMethods.map((x) => (
@@ -610,7 +610,7 @@ export default function HeaderBar({ showMargin }) {
                 setConditionMode(nextMode);
               }}
               disabled={!allowsCondition2}
-              style={{ padding: "8px 10px", borderRadius: 8, border: "1px solid #ddd", minWidth: 150 }}
+              style={{ padding: "8px 10px", borderRadius: 8, border: "1px solid var(--dg-border)", background: "var(--dg-card)", color: "var(--dg-text)", minWidth: 150 }}
               title="Condición"
             >
               <option value="cond1">Condición 1</option>

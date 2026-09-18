@@ -63,7 +63,7 @@ export default function PuertaWorkflowPage() {
       </div>
 
       <div className="spacer" />
-      <div className="card" style={{ background: "#fafafa" }}>
+      <div className="card" style={{ background: "var(--dg-card)" }}>
         {portonQ.isLoading && <div className="muted">Cargando presupuesto de porton...</div>}
         {portonQ.isError && <div style={{ color: "#d93025" }}>{portonQ.error.message}</div>}
         {!portonQ.isLoading && !isPorton && <div style={{ color: "#d93025" }}>Este flujo solo aplica a presupuestos de porton.</div>}
@@ -89,7 +89,7 @@ export default function PuertaWorkflowPage() {
           <div className="muted" style={{ marginBottom: 14 }}>El Ipanel es el revestimiento de la puerta y queda vinculado automaticamente.</div>
           <Button onClick={() => createAndOpen("ipanel")} disabled={createM.isPending || !isPorton}>{createM.isPending ? "Preparando..." : "Abrir Ipanel"}</Button>
         </div>
-        <div className="card" style={{ border: "1px solid #eee", background: "#fff" }}>
+        <div className="card" style={{ border: "1px solid var(--dg-border)", background: "var(--dg-card)" }}>
           <div style={{ fontWeight: 900, fontSize: 18, marginBottom: 8 }}>Crear y abrir panel</div>
           <div className="muted" style={{ marginBottom: 14 }}>Abre el panel general de la puerta para completar todo desde ahi.</div>
           <Button variant="secondary" onClick={() => createAndOpen("panel")} disabled={createM.isPending || !isPorton}>{createM.isPending ? "Preparando..." : "Abrir puerta"}</Button>

@@ -295,7 +295,7 @@ function FieldBox({ label, helper, helperColor, children }) {
 }
 function ComputedCard({ label, value }) {
   return (
-    <div style={{ border: "1px solid #e5e7eb", borderRadius: 12, padding: 10, background: "#fff" }}>
+    <div style={{ border: "1px solid #e5e7eb", borderRadius: 12, padding: 10, background: "var(--dg-card)" }}>
       <div className="muted" style={{ fontSize: 12 }}>{label}</div>
       <div style={{ fontWeight: 900, marginTop: 2 }}>{value}</div>
     </div>
@@ -437,7 +437,7 @@ function PanelLamasSetupModal({
 
   return (
     <div role="dialog" aria-modal="true" style={{ position: "fixed", inset: 0, background: "rgba(15, 23, 42, 0.55)", zIndex: 10000, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
-      <div style={{ width: "min(860px, 96vw)", maxHeight: "92vh", overflow: "auto", background: "#fff", borderRadius: 18, padding: 18, boxShadow: "0 22px 70px rgba(15,23,42,0.35)", border: "1px solid #e5e7eb" }}>
+      <div style={{ width: "min(860px, 96vw)", maxHeight: "92vh", overflow: "auto", background: "var(--dg-card)", borderRadius: 18, padding: 18, boxShadow: "0 22px 70px rgba(15,23,42,0.35)", border: "1px solid #e5e7eb" }}>
         <div style={{ fontWeight: 900, fontSize: 20, marginBottom: 6 }}>{config.setupTitle}</div>
         <div className="muted" style={{ marginBottom: 14 }}>{config.description} Después podés modificarlo desde la sección Medidas de la puerta.</div>
 
@@ -449,7 +449,7 @@ function PanelLamasSetupModal({
             <Input type="text" inputMode="decimal" value={heightMeters} onChange={(value) => { setHeightMeters(normalizeDecimal(value)); setClassicMode(false); setError(""); }} onBlur={(e) => setHeightMeters(normalizeDecimal(e?.target?.value))} placeholder="Ej: 2.10" style={inputStateStyle(heightInvalid)} />
           </FieldBox>
           <FieldBox label="Orientación de lamas">
-            <select value={orientation} onChange={(e) => { const nextOrientation = normalizePanelOrientation(e.target.value); const nextMax = getDivisionsMaxByOrientation(nextOrientation); const nextDivisions = clampDivisions(divisions, nextMax); setOrientation(nextOrientation); if (nextDivisions && nextDivisions !== divisions) { setDivisions(nextDivisions); setSectionSizes((current) => sanitizeSectionSizes(current, Number(nextDivisions || 0))); } setError(""); }} style={{ width: "100%", padding: "10px 12px", borderRadius: 8, border: "1px solid #ddd", background: "#fff" }}>
+            <select value={orientation} onChange={(e) => { const nextOrientation = normalizePanelOrientation(e.target.value); const nextMax = getDivisionsMaxByOrientation(nextOrientation); const nextDivisions = clampDivisions(divisions, nextMax); setOrientation(nextOrientation); if (nextDivisions && nextDivisions !== divisions) { setDivisions(nextDivisions); setSectionSizes((current) => sanitizeSectionSizes(current, Number(nextDivisions || 0))); } setError(""); }} style={{ width: "100%", padding: "10px 12px", borderRadius: 8, border: "1px solid #ddd", background: "var(--dg-card)" }}>
               <option value="horizontal">Horizontal</option>
               <option value="vertical">Vertical</option>
             </select>
@@ -461,7 +461,7 @@ function PanelLamasSetupModal({
 
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", margin: "8px 0 14px" }}>
           <button type="button" onClick={applyClassicDistribution} style={{ border: "1px solid #c7d2fe", borderRadius: 10, background: "#eef2ff", padding: "9px 12px", fontWeight: 800, cursor: "pointer" }}>Usar distribución clásica automática</button>
-          <button type="button" onClick={applyUniformDistribution} style={{ border: "1px solid #d1d5db", borderRadius: 10, background: "#fff", padding: "9px 12px", fontWeight: 800, cursor: "pointer" }}>Repartir uniforme</button>
+          <button type="button" onClick={applyUniformDistribution} style={{ border: "1px solid #d1d5db", borderRadius: 10, background: "var(--dg-card)", padding: "9px 12px", fontWeight: 800, cursor: "pointer" }}>Repartir uniforme</button>
         </div>
 
         {divisionsCount >= 2 ? (
@@ -545,13 +545,13 @@ function PanelSketchModal({
 
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.45)", zIndex: 60, display: "flex", alignItems: "center", justifyContent: "center", padding: 18 }}>
-      <div style={{ width: "min(960px, 100%)", maxHeight: "88vh", overflow: "auto", background: "#fff", borderRadius: 18, border: "1px solid #e5e7eb", boxShadow: "0 18px 50px rgba(15,23,42,.18)", padding: 18 }}>
+      <div style={{ width: "min(960px, 100%)", maxHeight: "88vh", overflow: "auto", background: "var(--dg-card)", borderRadius: 18, border: "1px solid #e5e7eb", boxShadow: "0 18px 50px rgba(15,23,42,.18)", padding: 18 }}>
         <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start", marginBottom: 14, flexWrap: "wrap" }}>
           <div>
             <div style={{ fontWeight: 900, fontSize: 18 }}>Esquema del {title}</div>
             <div className="muted" style={{ marginTop: 4 }}>Orientación de lamas {isVertical ? "vertical" : "horizontal"} · {count || 0} secciones · línea entre secciones {formatMm(dividerMm)}</div>
           </div>
-          <button type="button" onClick={onClose} style={{ border: "1px solid #ddd", borderRadius: 10, background: "#fff", padding: "9px 12px", fontWeight: 800, cursor: "pointer" }}>Cerrar</button>
+          <button type="button" onClick={onClose} style={{ border: "1px solid #ddd", borderRadius: 10, background: "var(--dg-card)", padding: "9px 12px", fontWeight: 800, cursor: "pointer" }}>Cerrar</button>
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "minmax(260px, 420px) minmax(240px, 1fr)", gap: 18, alignItems: "start" }}>
           <div style={{ border: "1px solid #e5e7eb", borderRadius: 16, padding: 14, background: "#f8fafc" }}>
@@ -701,7 +701,7 @@ function PanelLamasConfigCard({ config, dimensions, setDimensions }) {
       <div className="spacer" />
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 12, alignItems: "start" }}>
         <FieldBox label="Orientación de lamas">
-          <select value={state.orientation} onChange={(e) => { const nextOrientation = normalizePanelOrientation(e.target.value); const nextMax = getDivisionsMaxByOrientation(nextOrientation); const nextDivisions = clampDivisions(state.divisions, nextMax); setPatch({ [panelField(config, "orientacion")]: nextOrientation, [panelField(config, "orientation")]: nextOrientation, ...(nextDivisions ? { [panelField(config, "divisiones")]: nextDivisions, [panelField(config, "cantidad_divisiones")]: nextDivisions } : {}), [panelField(config, "setup_completed")]: false, [panelField(config, "popup_completed")]: false }); }} style={{ width: "100%", padding: "10px 12px", borderRadius: 8, border: "1px solid #ddd", background: "#fff" }}>
+          <select value={state.orientation} onChange={(e) => { const nextOrientation = normalizePanelOrientation(e.target.value); const nextMax = getDivisionsMaxByOrientation(nextOrientation); const nextDivisions = clampDivisions(state.divisions, nextMax); setPatch({ [panelField(config, "orientacion")]: nextOrientation, [panelField(config, "orientation")]: nextOrientation, ...(nextDivisions ? { [panelField(config, "divisiones")]: nextDivisions, [panelField(config, "cantidad_divisiones")]: nextDivisions } : {}), [panelField(config, "setup_completed")]: false, [panelField(config, "popup_completed")]: false }); }} style={{ width: "100%", padding: "10px 12px", borderRadius: 8, border: "1px solid #ddd", background: "var(--dg-card)" }}>
             <option value="horizontal">Horizontal</option>
             <option value="vertical">Vertical</option>
           </select>
@@ -729,7 +729,7 @@ function PanelLamasConfigCard({ config, dimensions, setDimensions }) {
             ))}
           </div>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 6 }}>
-            <button type="button" onClick={redistributeSections} style={{ border: "1px solid #ddd", borderRadius: 10, background: "#fff", padding: "9px 12px", fontWeight: 800, cursor: "pointer" }}>Repartir en partes iguales</button>
+            <button type="button" onClick={redistributeSections} style={{ border: "1px solid #ddd", borderRadius: 10, background: "var(--dg-card)", padding: "9px 12px", fontWeight: 800, cursor: "pointer" }}>Repartir en partes iguales</button>
             <button type="button" onClick={applyClassicDistribution} style={{ border: "1px solid #0f766e", borderRadius: 10, background: "#ecfdf5", color: "#0f766e", padding: "9px 12px", fontWeight: 800, cursor: "pointer" }}>Distribución clásica</button>
           </div>
           <div style={{ marginTop: 10, padding: "10px 12px", borderRadius: 10, background: metrics.exceeds ? "#fee2e2" : "#eff6ff", color: metrics.exceeds ? "#991b1b" : "#1d4ed8", fontWeight: 700 }}>

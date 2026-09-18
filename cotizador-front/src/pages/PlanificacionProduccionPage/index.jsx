@@ -86,7 +86,7 @@ export default function PlanificacionProduccionPage() {
             <select
               value={planningYear}
               onChange={(e) => setPlanningYear(String(e.target.value || currentYear))}
-              style={{ padding: "10px 12px", borderRadius: 8, border: "1px solid #ddd", outline: "none", background: "#fff" }}
+              style={{ padding: "10px 12px", borderRadius: 8, border: "1px solid var(--dg-border)", outline: "none", background: "var(--dg-card)", color: "var(--dg-text)" }}
             >
               {yearOptions.map((year) => <option key={year} value={year}>{year}</option>)}
             </select>
@@ -143,7 +143,7 @@ export default function PlanificacionProduccionPage() {
                           const nextValue = String(e.target.value || "0");
                           setPlanningDraft((prev) => prev.map((item) => Number(item.week_number || item.week || 0) === week ? { ...item, capacity_input: nextValue } : item));
                         }}
-                        style={{ width: 110, textAlign: "right", padding: "8px 10px", borderRadius: 8, border: "1px solid #ddd", outline: "none" }}
+                        style={{ width: 110, textAlign: "right", padding: "8px 10px", borderRadius: 8, border: "1px solid var(--dg-border)", outline: "none", background: "var(--dg-card)", color: "var(--dg-text)" }}
                       />
                     </td>
                     <td className="right">{committed}</td>

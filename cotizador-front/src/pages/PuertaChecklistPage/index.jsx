@@ -31,13 +31,13 @@ function todayISO() { const d = new Date(); return `${d.getFullYear()}-${String(
 function textOrDash(v) { return safe(v) || "-"; }
 function Select({ value, onChange, options, placeholder = "-", disabled = false, style = {} }) {
   return (
-    <select value={value ?? ""} onChange={(e) => onChange?.(e.target.value)} disabled={disabled} style={{ padding: 10, borderRadius: 10, border: "1px solid #ddd", width: "100%", ...style }}>
+    <select value={value ?? ""} onChange={(e) => onChange?.(e.target.value)} disabled={disabled} style={{ padding: 10, borderRadius: 10, border: "1px solid var(--dg-border)", width: "100%", background: "var(--dg-card)", color: "var(--dg-text)", ...style }}>
       <option value="">{placeholder}</option>
       {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
     </select>
   );
 }
-function Section({ title, children }) { return <div className="card" style={{ background: "#fafafa", marginBottom: 12 }}><div style={{ fontWeight: 900, marginBottom: 8 }}>{title}</div>{children}</div>; }
+function Section({ title, children }) { return <div className="card" style={{ background: "var(--dg-card)", marginBottom: 12 }}><div style={{ fontWeight: 900, marginBottom: 8 }}>{title}</div>{children}</div>; }
 function Row({ children }) { return <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>{children}</div>; }
 function Field({ label, children, minWidth = 220, required = false, invalid = false }) { return <div style={{ flex: 1, minWidth }}><div className="muted" style={{ marginBottom: 6, color: invalid ? "#d93025" : undefined }}>{label}{required ? <span style={{ color: "#d93025" }}> *</span> : null}</div>{children}</div>; }
 function invalidFieldStyle(invalid) { return invalid ? { border: "1px solid #d93025", background: "#fff5f5" } : {}; }
@@ -251,7 +251,7 @@ export default function PuertaChecklistPage() {
             </Row>
             <div className="spacer" />
             {summaryQ.data ? (
-              <div style={{ border: "1px solid #eee", padding: 12, borderRadius: 12, background: "#fff" }}>
+              <div style={{ border: "1px solid var(--dg-border)", padding: 12, borderRadius: 12, background: "var(--dg-card)" }}>
                 <div style={{ fontWeight: 900, marginBottom: 8 }}>Calculo presupuesto puerta</div>
                 <div className="muted">precio_estructura: <b>$ {Number(summaryQ.data.variables?.precio_estructura || 0).toLocaleString("es-AR")}</b></div>
                 <div className="muted">precio_ipanel: <b>$ {Number(summaryQ.data.variables?.precio_ipanel || 0).toLocaleString("es-AR")}</b></div>
@@ -281,7 +281,7 @@ export default function PuertaChecklistPage() {
               <Field label="Lado de cerradura (desde exterior)"><Input value={form.lado_cerradura || ""} onChange={(v) => setForm({ ...form, lado_cerradura: v })} style={{ width: "100%" }} disabled={!canSellerEdit} /></Field>
             </Row>
             <div className="spacer" />
-            <Field label="Motivo / condicion no estandar"><textarea value={form.motivo_no_estandar || ""} onChange={(e) => setForm({ ...form, motivo_no_estandar: e.target.value })} style={{ width: "100%", minHeight: 64, padding: 10, borderRadius: 10, border: "1px solid #ddd", resize: "vertical" }} disabled={!canSellerEdit} /></Field>
+            <Field label="Motivo / condicion no estandar"><textarea value={form.motivo_no_estandar || ""} onChange={(e) => setForm({ ...form, motivo_no_estandar: e.target.value })} style={{ width: "100%", minHeight: 64, padding: 10, borderRadius: 10, border: "1px solid var(--dg-border)", resize: "vertical", background: "var(--dg-card)", color: "var(--dg-text)" }} disabled={!canSellerEdit} /></Field>
           </Section>
 
           <Section title="Checklist de verificacion">
@@ -293,7 +293,7 @@ export default function PuertaChecklistPage() {
                     <tr key={`${row.section}-${idx}`}>
                       <td>{row.section}</td><td style={{ minWidth: 320 }}>{row.item}</td>
                       <td style={{ minWidth: 140 }}><Select value={row.status} onChange={(v) => { const next = form.checklist.slice(); next[idx] = { ...row, status: v, ok: v === "OK" }; setForm({ ...form, checklist: next }); }} options={STATUS_OPTIONS} placeholder="Estado" disabled={!canSellerEdit} /></td>
-                      <td style={{ minWidth: 260 }}><textarea value={row.notes || ""} onChange={(e) => { const next = form.checklist.slice(); next[idx] = { ...row, notes: e.target.value }; setForm({ ...form, checklist: next }); }} style={{ width: "100%", minHeight: 48, padding: 10, borderRadius: 10, border: "1px solid #ddd", resize: "vertical" }} disabled={!canSellerEdit} /></td>
+                      <td style={{ minWidth: 260 }}><textarea value={row.notes || ""} onChange={(e) => { const next = form.checklist.slice(); next[idx] = { ...row, notes: e.target.value }; setForm({ ...form, checklist: next }); }} style={{ width: "100%", minHeight: 48, padding: 10, borderRadius: 10, border: "1px solid var(--dg-border)", resize: "vertical", background: "var(--dg-card)", color: "var(--dg-text)" }} disabled={!canSellerEdit} /></td>
                       <td style={{ minWidth: 180 }}><Input value={row.responsible || ""} onChange={(v) => { const next = form.checklist.slice(); next[idx] = { ...row, responsible: v }; setForm({ ...form, checklist: next }); }} style={{ width: "100%" }} disabled={!canSellerEdit} /></td>
                       <td style={{ minWidth: 160 }}><Input type="date" value={row.date || ""} onChange={(v) => { const next = form.checklist.slice(); next[idx] = { ...row, date: v }; setForm({ ...form, checklist: next }); }} style={{ width: "100%" }} disabled={!canSellerEdit} /></td>
                       <td style={{ textAlign: "center", minWidth: 80 }}><input type="checkbox" checked={!!row.ok} disabled={!canSellerEdit} onChange={(e) => { const checked = e.target.checked; const next = form.checklist.slice(); next[idx] = { ...row, ok: checked, status: checked ? "OK" : (row.status === "OK" ? "Pendiente" : row.status) }; setForm({ ...form, checklist: next }); }} /></td>
@@ -313,12 +313,12 @@ export default function PuertaChecklistPage() {
             </Row>
           </Section>
 
-          <Section title="Registro final (copiar / pegar)"><Field label="Texto estandar" minWidth={500}><textarea value={summary.standardText} onChange={() => {}} readOnly style={{ width: "100%", minHeight: 80, padding: 10, borderRadius: 10, border: "1px solid #ddd", resize: "vertical", background: "#fff" }} /></Field></Section>
-          <Section title="Observaciones"><textarea value={form.observaciones || ""} onChange={(e) => setForm({ ...form, observaciones: e.target.value })} style={{ width: "100%", minHeight: 100, padding: 10, borderRadius: 10, border: "1px solid #ddd", resize: "vertical" }} disabled={!canSellerEdit} /></Section>
+          <Section title="Registro final (copiar / pegar)"><Field label="Texto estandar" minWidth={500}><textarea value={summary.standardText} onChange={() => {}} readOnly style={{ width: "100%", minHeight: 80, padding: 10, borderRadius: 10, border: "1px solid var(--dg-border)", resize: "vertical", background: "var(--dg-card)", color: "var(--dg-text)" }} /></Field></Section>
+          <Section title="Observaciones"><textarea value={form.observaciones || ""} onChange={(e) => setForm({ ...form, observaciones: e.target.value })} style={{ width: "100%", minHeight: 100, padding: 10, borderRadius: 10, border: "1px solid var(--dg-border)", resize: "vertical", background: "var(--dg-card)", color: "var(--dg-text)" }} disabled={!canSellerEdit} /></Section>
 
           {(canCommercialAct || canTechAct) && (
             <Section title="Acciones de revision">
-              <Field label="Observaciones del revisor"><textarea value={reviewNotes} onChange={(e) => setReviewNotes(e.target.value)} style={{ width: "100%", minHeight: 80, padding: 10, borderRadius: 10, border: "1px solid #ddd", resize: "vertical" }} /></Field>
+              <Field label="Observaciones del revisor"><textarea value={reviewNotes} onChange={(e) => setReviewNotes(e.target.value)} style={{ width: "100%", minHeight: 80, padding: 10, borderRadius: 10, border: "1px solid var(--dg-border)", resize: "vertical", background: "var(--dg-card)", color: "var(--dg-text)" }} /></Field>
               <div className="spacer" />
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                 {canCommercialAct && <><Button disabled={commercialM.isPending} onClick={() => commercialM.mutate({ action: "approve" })}>Aprobar Comercial</Button><Button variant="danger" disabled={commercialM.isPending} onClick={() => commercialM.mutate({ action: "reject" })}>Rechazar Comercial</Button></>}

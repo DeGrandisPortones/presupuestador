@@ -49,8 +49,8 @@ function Field({ label, value }) {
           minHeight: 42,
           padding: "10px 12px",
           borderRadius: 10,
-          border: "1px solid #e3e3e3",
-          background: "#fff",
+          border: "1px solid var(--dg-border)",
+          background: "var(--dg-card)",
           whiteSpace: "pre-wrap",
         }}
       >
@@ -64,7 +64,7 @@ function Row({ children }) {
 }
 function Section({ title, children }) {
   return (
-    <div className="card" style={{ background: "#fff", marginBottom: 12, border: "1px solid #eee" }}>
+    <div className="card" style={{ background: "var(--dg-card)", marginBottom: 12, border: "1px solid var(--dg-border)" }}>
       <div style={{ fontWeight: 900, marginBottom: 8 }}>{title}</div>
       {children}
     </div>
@@ -300,9 +300,9 @@ function MeasurementSchemeVisual({ form }) {
   return (
     <div
       style={{
-        border: "1px dashed #cbd5e1",
+        border: "1px dashed var(--dg-border)",
         borderRadius: 14,
-        background: "#ffffff",
+        background: "var(--dg-card)",
         padding: 16,
       }}
     >
@@ -412,7 +412,7 @@ export default function MeasurementReadOnlyView({ quote }) {
         <div className="spacer" />
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           {budgetSummaryItems.length ? budgetSummaryItems.map((item) => (
-            <div key={item.key} style={{ border: "1px solid #eee", borderRadius: 10, padding: 10 }}>
+            <div key={item.key} style={{ border: "1px solid var(--dg-border)", borderRadius: 10, padding: 10 }}>
               <b>{item.sectionName}:</b> {sectionDisplayValue(form, item) || "—"}
             </div>
           )) : <div className="muted">Sin datos presupuestados.</div>}

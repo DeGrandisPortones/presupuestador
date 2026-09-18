@@ -376,7 +376,7 @@ function ParamInput({ label, value, onChange, textarea = false, helper = "" }) {
 function SavedParamItem({ label, value }) {
   const display = value === undefined || value === null || String(value).trim() === "" ? "-" : String(value);
   return (
-    <div style={{ border: "1px solid #d1fae5", borderRadius: 10, padding: 10, background: "#ffffff" }}>
+    <div style={{ border: "1px solid #d1fae5", borderRadius: 10, padding: 10, background: "var(--dg-card)" }}>
       <div className="muted" style={{ fontSize: 12 }}>{label}</div>
       <div style={{ fontWeight: 800, color: "#065f46" }}>{display}</div>
     </div>
@@ -512,7 +512,7 @@ export default function SuperuserMeasurementRulesPage() {
 
   return (
     <div className="container">
-      <div className="card" style={{ background: "#fafafa" }}>
+      <div className="card" style={{ background: "var(--dg-card)" }}>
         <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "flex-start" }}>
           <div>
             <h2 style={{ marginTop: 0, marginBottom: 6 }}>Reglas técnicas</h2>
@@ -527,7 +527,7 @@ export default function SuperuserMeasurementRulesPage() {
         </div>
 
         <div className="spacer" />
-        <div style={{ border: "1px solid #f4e3c4", borderRadius: 12, padding: 12, background: "#fff" }}>
+        <div style={{ border: "1px solid #f4e3c4", borderRadius: 12, padding: 12, background: "var(--dg-card)" }}>
           <div style={{ fontWeight: 900, marginBottom: 6 }}>Automatización del presupuesto</div>
           <div className="muted" style={{ marginBottom: 10 }}>
             Definí reglas para agregar productos automáticamente. En disparadores podés poner IDs separados por coma, espacio, punto y coma o salto de línea. Para exigir un grupo completo usá +, por ejemplo 4037+3996.
@@ -541,7 +541,7 @@ export default function SuperuserMeasurementRulesPage() {
           <div className="spacer" />
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
             {autoRules.map((rule, index) => (
-              <div key={rule.id || index} style={{ border: "1px solid #eee", borderRadius: 12, padding: 12, background: "#fff" }}>
+              <div key={rule.id || index} style={{ border: "1px solid #eee", borderRadius: 12, padding: 12, background: "var(--dg-card)" }}>
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 10, alignItems: "end" }}>
                   <ParamInput label="Nombre" value={rule.name || ""} onChange={(v) => updateAutoRuleAt(setSurfaceParameters, index, { name: v })} />
                   <ParamInput label="Si el presupuesto contiene estos IDs/combinaciones" textarea value={rule.trigger_product_ids || ""} onChange={(v) => updateAutoRuleAt(setSurfaceParameters, index, { trigger_product_ids: v })} helper="Ej: 4037,3996 o 4037+3996" />
@@ -580,7 +580,7 @@ export default function SuperuserMeasurementRulesPage() {
         </div>
 
         <div className="spacer" />
-        <div style={{ border: "1px solid #dbeafe", borderRadius: 12, padding: 12, background: "#fff" }}>
+        <div style={{ border: "1px solid #dbeafe", borderRadius: 12, padding: 12, background: "var(--dg-card)" }}>
           <div style={{ fontWeight: 900, marginBottom: 6 }}>Parámetros de cálculo de piernas, superficie y parantes</div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 10 }}>
             <ParamInput label="ID producto Dentro del vano" value={surfaceParameters.installation_inside_product_id} onChange={(v) => setSurfaceParameters((prev) => ({ ...prev, installation_inside_product_id: v }))} />
@@ -631,7 +631,7 @@ export default function SuperuserMeasurementRulesPage() {
         </div>
 
         <div className="spacer" />
-        <div style={{ border: "1px solid #dbeafe", borderRadius: 12, padding: 12, background: "#fff" }}>
+        <div style={{ border: "1px solid #dbeafe", borderRadius: 12, padding: 12, background: "var(--dg-card)" }}>
           <div style={{ fontWeight: 900, marginBottom: 6 }}>Orientación de parantes para portones NO apto para revestir</div>
           <div className="muted" style={{ marginBottom: 10 }}>Cargá IDs individuales separados con coma, punto, punto y coma o salto de línea. Para exigir una combinación, usá +.</div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 10 }}>
@@ -645,7 +645,7 @@ export default function SuperuserMeasurementRulesPage() {
         </div>
 
         <div className="spacer" />
-        <div style={{ border: "1px solid #e5e7eb", borderRadius: 12, padding: 12, background: "#fff" }}>
+        <div style={{ border: "1px solid #e5e7eb", borderRadius: 12, padding: 12, background: "var(--dg-card)" }}>
           <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
             <div>
               <div style={{ fontWeight: 800, marginBottom: 6 }}>Tabla kg/m² para apto para revestir</div>
@@ -688,7 +688,7 @@ export default function SuperuserMeasurementRulesPage() {
 
         <div className="spacer" />
         <h3 style={{ marginTop: 0 }}>Fórmula de superficie final</h3>
-        <textarea value={surfaceFinalFormula} onChange={(e) => setSurfaceFinalFormula(e.target.value)} style={{ width: "100%", minHeight: 96, padding: 10, borderRadius: 10, border: "1px solid #ddd", resize: "vertical", background: "#fff", color: "#111827" }} />
+        <textarea value={surfaceFinalFormula} onChange={(e) => setSurfaceFinalFormula(e.target.value)} style={{ width: "100%", minHeight: 96, padding: 10, borderRadius: 10, border: "1px solid #ddd", resize: "vertical", background: "var(--dg-card)", color: "var(--dg-text)" }} />
         <div className="muted" style={{ marginTop: 8 }}>Variables útiles: <b>surface_automatica_m2</b>, <b>alto_calculado_mm</b>, <b>ancho_calculado_mm</b>, <b>peso_estimado_kg</b>, <b>kg_m2_porton</b>, <b>instalacion_dentro_vano</b>, <b>instalacion_detras_vano</b>, <b>piernas_angostas</b>, <b>piernas_comunes</b>, <b>piernas_anchas</b>, <b>piernas_superanchas</b>, <b>piernas_especiales</b>.</div>
 
         <div className="spacer" />

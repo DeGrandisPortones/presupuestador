@@ -22,7 +22,7 @@ function formatDate(iso) {
 }
 
 function DecisionBadge({ decision }) {
-  if (!decision || decision === "pending") return <span style={{ color: "#888", fontSize: 12 }}>Pendiente</span>;
+  if (!decision || decision === "pending") return <span style={{ color: "var(--dg-muted)", fontSize: 12 }}>Pendiente</span>;
   if (decision === "approved") return <span style={{ color: "#1b5e20", fontSize: 12, fontWeight: 700 }}>✓ Aprobado</span>;
   if (decision === "rejected") return <span style={{ color: "#b71c1c", fontSize: 12, fontWeight: 700 }}>✗ Rechazado</span>;
   return <span style={{ fontSize: 12 }}>{decision}</span>;
@@ -86,7 +86,7 @@ export default function AdministracionPage() {
           <select
             value={kind}
             onChange={(e) => setKind(e.target.value)}
-            style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: "1px solid #ddd", fontSize: 14 }}
+            style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: "1px solid var(--dg-border)", background: "var(--dg-card)", color: "var(--dg-text)", fontSize: 14 }}
           >
             {KIND_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
           </select>
@@ -97,7 +97,7 @@ export default function AdministracionPage() {
           <select
             value={fulfillment}
             onChange={(e) => setFulfillment(e.target.value)}
-            style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: "1px solid #ddd", fontSize: 14 }}
+            style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: "1px solid var(--dg-border)", background: "var(--dg-card)", color: "var(--dg-text)", fontSize: 14 }}
           >
             <option value="all">Todos</option>
             <option value="acopio">Acopio</option>
@@ -111,7 +111,7 @@ export default function AdministracionPage() {
             type="date"
             value={fromDate}
             onChange={(e) => setFromDate(e.target.value)}
-            style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: "1px solid #ddd", fontSize: 14 }}
+            style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: "1px solid var(--dg-border)", background: "var(--dg-card)", color: "var(--dg-text)", fontSize: 14 }}
           />
         </div>
 
@@ -121,7 +121,7 @@ export default function AdministracionPage() {
             type="date"
             value={toDate}
             onChange={(e) => setToDate(e.target.value)}
-            style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: "1px solid #ddd", fontSize: 14 }}
+            style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: "1px solid var(--dg-border)", background: "var(--dg-card)", color: "var(--dg-text)", fontSize: 14 }}
           />
         </div>
 
@@ -155,7 +155,7 @@ export default function AdministracionPage() {
           <div style={{ overflowX: "auto" }}>
             <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 900 }}>
               <thead>
-                <tr style={{ background: "#f5f5f5", borderBottom: "2px solid #e0e0e0" }}>
+                <tr style={{ background: "var(--dg-tint)", borderBottom: "2px solid var(--dg-border)" }}>
                   <th style={th}>NP / Referencia</th>
                   <th style={th}>NV</th>
                   <th style={th}>Tipo</th>
@@ -170,19 +170,19 @@ export default function AdministracionPage() {
               </thead>
               <tbody>
                 {rows.length === 0 && (
-                  <tr><td colSpan={10} style={{ textAlign: "center", padding: 24, color: "#888" }}>Sin resultados.</td></tr>
+                  <tr><td colSpan={10} style={{ textAlign: "center", padding: 24, color: "var(--dg-muted)" }}>Sin resultados.</td></tr>
                 )}
                 {rows.map((r) => {
                   const nv = getNvRef(r);
                   return (
                     <tr
                       key={r.id}
-                      style={{ borderBottom: "1px solid #f0f0f0", cursor: "pointer" }}
-                      onMouseEnter={(e) => { e.currentTarget.style.background = "#fafafa"; }}
+                      style={{ borderBottom: "1px solid var(--dg-border)", cursor: "pointer" }}
+                      onMouseEnter={(e) => { e.currentTarget.style.background = "var(--dg-tint)"; }}
                       onMouseLeave={(e) => { e.currentTarget.style.background = ""; }}
                     >
                       <td style={td}><span style={{ fontWeight: 700 }}>{r.odoo_sale_order_name || "—"}</span></td>
-                      <td style={td}><span style={{ fontWeight: nv ? 700 : 400, color: nv ? "#1b5e20" : "#aaa" }}>{nv || "—"}</span></td>
+                      <td style={td}><span style={{ fontWeight: nv ? 700 : 400, color: nv ? "#1b5e20" : "var(--dg-muted)" }}>{nv || "—"}</span></td>
                       <td style={td}>{KIND_LABELS[r.catalog_kind] || r.catalog_kind || "—"}</td>
                       <td style={td}>
                         <span style={{ fontSize: 12, padding: "2px 8px", borderRadius: 999, background: r.fulfillment_mode === "acopio" ? "#e3f2fd" : "#e8f5e9", color: r.fulfillment_mode === "acopio" ? "#0d47a1" : "#1b5e20" }}>
@@ -193,13 +193,13 @@ export default function AdministracionPage() {
                       <td style={td}>{r.seller_full_name || r.seller_username || "—"}</td>
                       <td style={{ ...td, whiteSpace: "nowrap" }}>
                         <DecisionBadge decision={r.commercial_decision} />
-                        {r.commercial_at && <div style={{ fontSize: 11, color: "#888", marginTop: 2 }}>{formatDate(r.commercial_at)}</div>}
+                        {r.commercial_at && <div style={{ fontSize: 11, color: "var(--dg-muted)", marginTop: 2 }}>{formatDate(r.commercial_at)}</div>}
                       </td>
                       <td style={{ ...td, whiteSpace: "nowrap" }}>
                         <DecisionBadge decision={r.technical_decision} />
-                        {r.technical_at && <div style={{ fontSize: 11, color: "#888", marginTop: 2 }}>{formatDate(r.technical_at)}</div>}
+                        {r.technical_at && <div style={{ fontSize: 11, color: "var(--dg-muted)", marginTop: 2 }}>{formatDate(r.technical_at)}</div>}
                       </td>
-                      <td style={{ ...td, fontSize: 13, color: "#555" }}>{formatDate(r.confirmed_at || r.created_at)}</td>
+                      <td style={{ ...td, fontSize: 13, color: "var(--dg-muted)" }}>{formatDate(r.confirmed_at || r.created_at)}</td>
                       <td style={td}>
                         <Button
                           variant="ghost"
@@ -223,5 +223,5 @@ export default function AdministracionPage() {
   );
 }
 
-const th = { padding: "10px 14px", textAlign: "left", fontWeight: 700, fontSize: 12, color: "#666", whiteSpace: "nowrap" };
+const th = { padding: "10px 14px", textAlign: "left", fontWeight: 700, fontSize: 12, color: "var(--dg-muted)", whiteSpace: "nowrap" };
 const td = { padding: "10px 14px", fontSize: 14, verticalAlign: "middle" };

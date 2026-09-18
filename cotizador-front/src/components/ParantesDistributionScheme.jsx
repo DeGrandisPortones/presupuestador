@@ -83,7 +83,7 @@ export function ParantesDistributionButton({ quote, label = "Ver esquema de para
               width: "min(980px, 96vw)",
               maxHeight: "92vh",
               overflow: "auto",
-              background: "#fff",
+              background: "var(--dg-card)",
               borderRadius: 16,
               padding: 16,
               boxShadow: "0 20px 60px rgba(15,23,42,0.3)",

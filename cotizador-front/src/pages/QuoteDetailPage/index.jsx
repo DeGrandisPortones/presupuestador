@@ -901,7 +901,7 @@ function ApprovalRowsGrid({ rows }) {
   return (
     <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 10 }}>
       {rows.map((item) => (
-        <div key={item.label} style={{ border: "1px solid #e5e5e5", borderRadius: 10, padding: "8px 10px", background: "#fff" }}>
+        <div key={item.label} style={{ border: "1px solid #e5e5e5", borderRadius: 10, padding: "8px 10px", background: "var(--dg-card)" }}>
           <div className="muted" style={{ fontSize: 12 }}>{item.label}</div>
           <div style={{ fontWeight: 800, marginTop: 4 }}>{item.value}</div>
         </div>
@@ -915,7 +915,7 @@ function ApprovalContextCard({ quote, commercialRows, technicalRows }) {
   const hasTechnical = Array.isArray(technicalRows) && technicalRows.length > 0;
   if (!hasCommercial && !hasTechnical) return null;
   return (
-    <div className="card" style={{ background: "#fafafa" }}>
+    <div className="card" style={{ background: "var(--dg-card)" }}>
       <div style={{ fontWeight: 900, marginBottom: 6 }}>Datos para aprobar</div>
       <div className="muted" style={{ marginBottom: 10 }}>Resumen de solo lectura para Comercial y Técnica. No modifica el flujo de aprobación.</div>
 
@@ -1062,11 +1062,11 @@ function ProformaTotalsCard({ quote, conditionMode, financingPercent = 0 }) {
       <div style={{ fontWeight: 900, marginBottom: 4 }}>Proforma (precios base)</div>
       <div className="muted" style={{ marginBottom: 10, fontSize: 13 }}>Importes a precios De Grandis sin coeficiente distribuidor.</div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 10 }}>
-        <div style={{ border: "1px solid #b2e8e0", borderRadius: 10, padding: "8px 10px", background: "#fff" }}>
+        <div style={{ border: "1px solid #b2e8e0", borderRadius: 10, padding: "8px 10px", background: "var(--dg-card)" }}>
           <div className="muted" style={{ fontSize: 12 }}>Subtotal base</div>
           <div style={{ fontWeight: 800, marginTop: 4 }}>{formatARS(financedSubtotal)}</div>
         </div>
-        <div style={{ border: "1px solid #b2e8e0", borderRadius: 10, padding: "8px 10px", background: "#fff" }}>
+        <div style={{ border: "1px solid #b2e8e0", borderRadius: 10, padding: "8px 10px", background: "var(--dg-card)" }}>
           <div className="muted" style={{ fontSize: 12 }}>IVA ({formatIvaRateForApproval(ivaRate)})</div>
           <div style={{ fontWeight: 800, marginTop: 4 }}>{formatARS(baseIva)}</div>
         </div>
@@ -1095,12 +1095,12 @@ function ApprovalTotalsBottomCard({ quote, conditionMode, financingPercent = 0 }
   ];
 
   return (
-    <div className="card" style={{ background: "#fafafa", marginTop: 12 }}>
+    <div className="card" style={{ background: "var(--dg-card)", marginTop: 12 }}>
       <div style={{ fontWeight: 900, marginBottom: 8 }}>Resumen del presupuesto</div>
       <div className="muted" style={{ marginBottom: 10 }}>Importes calculados igual que en el presupuestador y el PDF enviado al cliente.</div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 10 }}>
         {rows.map((item) => (
-          <div key={item.label} style={{ border: "1px solid #e5e5e5", borderRadius: 10, padding: "8px 10px", background: "#fff" }}>
+          <div key={item.label} style={{ border: "1px solid #e5e5e5", borderRadius: 10, padding: "8px 10px", background: "var(--dg-card)" }}>
             <div className="muted" style={{ fontSize: 12 }}>{item.label}</div>
             <div style={{ fontWeight: item.strong ? 900 : 800, marginTop: 4 }}>{item.value}</div>
           </div>
@@ -1149,11 +1149,11 @@ function BillingModal({ value, onChange, onClose, onConfirm, loading, requiresBi
     };
   }, [vatDigits, odooLookup.status, odooLookup.vat, onChange, value]);
 
-  const lookupColor = odooLookup.status === "found" ? "#0f7b3d" : (odooLookup.status === "not_found" || odooLookup.status === "error" ? "#b91c1c" : "#475569");
+  const lookupColor = odooLookup.status === "found" ? "#0f7b3d" : (odooLookup.status === "not_found" || odooLookup.status === "error" ? "#b91c1c" : "var(--dg-muted)");
 
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20, zIndex: 1000 }} onClick={() => { if (!loading) onClose(); }}>
-      <div className="card" style={{ width: "100%", maxWidth: 860, background: "#fff", border: "1px solid #ddd", boxShadow: "0 20px 60px rgba(0,0,0,0.18)" }} onClick={(e) => e.stopPropagation()}>
+      <div className="card" style={{ width: "100%", maxWidth: 860, background: "var(--dg-card)", border: "1px solid #ddd", boxShadow: "0 20px 60px rgba(0,0,0,0.18)" }} onClick={(e) => e.stopPropagation()}>
         <div style={{ fontWeight: 900, fontSize: 22, marginBottom: 8 }}>Datos fiscales de facturación</div>
         <div className="muted" style={{ marginBottom: 16 }}>{requiresBilling ? "Para esta condición debés cargar los datos fiscales de facturación antes de aprobar." : "Si no cargás estos datos, se facturará con los datos del cliente cargado en el presupuesto."}</div>
         {optionsError ? <div style={{ color: "#d93025", fontSize: 13, marginBottom: 12 }}>{optionsError}</div> : null}
@@ -1173,7 +1173,7 @@ function BillingModal({ value, onChange, onClose, onConfirm, loading, requiresBi
           </div>
           <div>
             <div className="muted" style={{ marginBottom: 6 }}>Tipo de identificación</div>
-            <select value={value.identification_type_id} onChange={(e) => { const selected = normalizeBillingSelectionValue(identificationTypes, e.target.value); onChange({ ...value, identification_type_id: String(e.target.value || ""), identification_type_name: selected?.name || "" }); }} style={{ width: "100%", padding: "10px 12px", borderRadius: 8, border: "1px solid #ddd", outline: "none", background: "#fff" }}>
+            <select value={value.identification_type_id} onChange={(e) => { const selected = normalizeBillingSelectionValue(identificationTypes, e.target.value); onChange({ ...value, identification_type_id: String(e.target.value || ""), identification_type_name: selected?.name || "" }); }} style={{ width: "100%", padding: "10px 12px", borderRadius: 8, border: "1px solid #ddd", outline: "none", background: "var(--dg-card)" }}>
               <option value="">Seleccionar…</option>
               {identificationTypes.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
             </select>
@@ -1181,7 +1181,7 @@ function BillingModal({ value, onChange, onClose, onConfirm, loading, requiresBi
           <div><div className="muted" style={{ marginBottom: 6 }}>Razón social / nombre fiscal</div><Input value={value.name} onChange={(v) => onChange({ ...value, name: v })} style={{ width: "100%" }} /></div>
           <div>
             <div className="muted" style={{ marginBottom: 6 }}>Tipo de responsabilidad AFIP</div>
-            <select value={value.afip_responsibility_type_id} onChange={(e) => { const selected = normalizeBillingSelectionValue(afipResponsibilityTypes, e.target.value); onChange({ ...value, afip_responsibility_type_id: String(e.target.value || ""), afip_responsibility_type_name: selected?.name || "" }); }} style={{ width: "100%", padding: "10px 12px", borderRadius: 8, border: "1px solid #ddd", outline: "none", background: "#fff" }}>
+            <select value={value.afip_responsibility_type_id} onChange={(e) => { const selected = normalizeBillingSelectionValue(afipResponsibilityTypes, e.target.value); onChange({ ...value, afip_responsibility_type_id: String(e.target.value || ""), afip_responsibility_type_name: selected?.name || "" }); }} style={{ width: "100%", padding: "10px 12px", borderRadius: 8, border: "1px solid #ddd", outline: "none", background: "var(--dg-card)" }}>
               <option value="">Seleccionar…</option>
               {afipResponsibilityTypes.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
             </select>
@@ -1421,13 +1421,13 @@ export default function QuoteDetailPage() {
             </div>
             <div className="spacer" />
             {!!linkedDoorsQ.data?.length && !isRevision ? (
-              <div className="card" style={{ background: "#fafafa" }}>
+              <div className="card" style={{ background: "var(--dg-card)" }}>
                 <div style={{ fontWeight: 900, marginBottom: 8 }}>Puertas vinculadas</div>
                 <table><thead><tr><th>Código</th><th>Cliente</th><th>Estado</th><th>Venta Odoo</th><th>Compra Odoo</th><th></th></tr></thead><tbody>{linkedDoorsQ.data.map((d) => <tr key={d.id}><td>{d.door_code}</td><td>{d.record?.end_customer?.name || d.record?.obra_cliente || "—"}</td><td>{d.status}</td><td>{d.odoo_sale_order_name || "—"}</td><td>{d.odoo_purchase_order_name || "—"}</td><td className="right"><Button variant="ghost" onClick={() => navigate(`/puertas/${d.id}`)}>Ver puerta</Button></td></tr>)}</tbody></table>
               </div>
             ) : null}
             <div className="spacer" />
-            {!isRevision ? <div className="card" style={{ background: "#fafafa" }}><div style={{ fontWeight: 900, marginBottom: 6 }}>Aprobaciones</div><div className="muted" style={{ display: "flex", gap: 12, flexWrap: "wrap" }}><span>Comercial: <b>{decisionLabel(quote.commercial_decision)}</b>{quote.commercial_decision === "rejected" && quote.commercial_notes ? ` · ${quote.commercial_notes}` : ""}</span><span>Técnica: <b>{decisionLabel(quote.technical_decision)}</b>{quote.technical_decision === "rejected" && quote.technical_notes ? ` · ${quote.technical_notes}` : ""}</span></div></div> : null}
+            {!isRevision ? <div className="card" style={{ background: "var(--dg-card)" }}><div style={{ fontWeight: 900, marginBottom: 6 }}>Aprobaciones</div><div className="muted" style={{ display: "flex", gap: 12, flexWrap: "wrap" }}><span>Comercial: <b>{decisionLabel(quote.commercial_decision)}</b>{quote.commercial_decision === "rejected" && quote.commercial_notes ? ` · ${quote.commercial_notes}` : ""}</span><span>Técnica: <b>{decisionLabel(quote.technical_decision)}</b>{quote.technical_decision === "rejected" && quote.technical_notes ? ` · ${quote.technical_notes}` : ""}</span></div></div> : null}
             {(!!approvalCommercialRows.length || !!approvalTechnicalRows.length) ? <><div className="spacer" /><ApprovalContextCard quote={quote} commercialRows={approvalCommercialRows} technicalRows={approvalTechnicalRows} /></> : null}
             {showCommercialDiffPanel ? (
               <>
@@ -1445,13 +1445,13 @@ export default function QuoteDetailPage() {
                 />
               </>
             ) : null}
-            {showMeasurement && !isRevision ? <><div className="spacer" /><div className="card" style={{ background: "#fafafa" }}><div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}><div><div style={{ fontWeight: 900 }}>Planilla de medición</div><div className="muted">Estado: <b>{measurementStatusLabel(quote.measurement_status)}</b></div></div>{hasMeasurementForPdf(quote) ? <Button variant="secondary" onClick={() => downloadMedicionPdf(quote.id)}>Descargar PDF</Button> : null}</div><div className="spacer" />{quote.measurement_form ? <MeasurementReadOnlyView quote={quote} /> : null}</div></> : null}
+            {showMeasurement && !isRevision ? <><div className="spacer" /><div className="card" style={{ background: "var(--dg-card)" }}><div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}><div><div style={{ fontWeight: 900 }}>Planilla de medición</div><div className="muted">Estado: <b>{measurementStatusLabel(quote.measurement_status)}</b></div></div>{hasMeasurementForPdf(quote) ? <Button variant="secondary" onClick={() => downloadMedicionPdf(quote.id)}>Descargar PDF</Button> : null}</div><div className="spacer" />{quote.measurement_form ? <MeasurementReadOnlyView quote={quote} /> : null}</div></> : null}
             <h3 style={{ marginTop: 0 }}>Ítems</h3>
             {!lines.length ? <div className="muted">Sin ítems</div> : null}
             {!!lines.length ? <table><thead><tr><th>Producto</th><th className="right">Cant.</th><th className="right">Precio base</th><th className="right">Total base</th><th className="right">Precio con coeficiente</th><th className="right">Total ítem</th></tr></thead><tbody>{approvalLineRows.map((l) => <tr key={l._approvalKey}><td><div style={{ fontWeight: 700 }}>{l.name || `Producto ${l.product_id}`}</div><div className="muted">ID: {l.product_id} {l.code ? `| ${l.code}` : ""}</div></td><td className="right">{l._approvalQty}</td><td className="right" style={{ color: "#1a6b5e" }}>{formatARS(l._approvalBasePrice)}</td><td className="right" style={{ color: "#1a6b5e" }}>{formatARS(l._approvalBaseTotal)}</td><td className="right">{formatARS(l._approvalFinalUnit)}</td><td className="right" style={{ fontWeight: 800 }}>{formatARS(l._approvalTotal)}</td></tr>)}</tbody></table> : null}
             {!!lines.length ? <ProformaTotalsCard quote={quote} conditionMode={conditionMode} financingPercent={quote?.created_by_role === "distribuidor" ? approvalFinancingPercent : 0} /> : null}
             {!!lines.length ? <ApprovalTotalsBottomCard quote={quote} conditionMode={conditionMode} financingPercent={approvalFinancingPercent} /> : null}
-            {(canCommercial || canTech) ? <><div className="spacer" /><div className="card" style={{ background: "#fafafa" }}><div style={{ fontWeight: 900 }}>Acciones de revisión</div><div className="muted">Solo si está en <b>pending_approvals</b> y tu decisión está en <b>pending</b>.</div><div className="spacer" /><div className="muted">Observaciones del revisor</div><textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Motivo si rechaza / si aprueba, este comentario queda en la nota de la NP en Odoo…" style={{ width: "100%", minHeight: 60, padding: "8px 10px", borderRadius: 8, border: "1px solid #ddd", outline: "none", resize: "vertical" }} /><div className="spacer" /><div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>{canCommercial ? <><Button disabled={!canCommercialAct || commercialM.isPending} onClick={handleCommercialApproveClick}>{commercialM.isPending ? "Procesando..." : "Aprobar Comercial"}</Button><Button variant="danger" disabled={!canCommercialAct || commercialM.isPending} onClick={() => commercialM.mutate({ action: "reject", billingCustomer: null })}>Rechazar Comercial</Button></> : null}{canTech ? <><Button disabled={!canTechAct || techM.isPending} onClick={() => techM.mutate({ action: "approve" })}>{techM.isPending ? "Procesando..." : "Aprobar Técnica"}</Button><Button variant="danger" disabled={!canTechAct || techM.isPending} onClick={() => techM.mutate({ action: "reject" })}>Rechazar Técnica</Button></> : null}</div>{commercialM.isError ? <div style={{ color: "#d93025", fontSize: 13, marginTop: 10 }}>{commercialM.error.message}</div> : null}{techM.isError ? <div style={{ color: "#d93025", fontSize: 13, marginTop: 10 }}>{techM.error.message}</div> : null}</div></> : null}
+            {(canCommercial || canTech) ? <><div className="spacer" /><div className="card" style={{ background: "var(--dg-card)" }}><div style={{ fontWeight: 900 }}>Acciones de revisión</div><div className="muted">Solo si está en <b>pending_approvals</b> y tu decisión está en <b>pending</b>.</div><div className="spacer" /><div className="muted">Observaciones del revisor</div><textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Motivo si rechaza / si aprueba, este comentario queda en la nota de la NP en Odoo…" style={{ width: "100%", minHeight: 60, padding: "8px 10px", borderRadius: 8, border: "1px solid #ddd", outline: "none", resize: "vertical" }} /><div className="spacer" /><div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>{canCommercial ? <><Button disabled={!canCommercialAct || commercialM.isPending} onClick={handleCommercialApproveClick}>{commercialM.isPending ? "Procesando..." : "Aprobar Comercial"}</Button><Button variant="danger" disabled={!canCommercialAct || commercialM.isPending} onClick={() => commercialM.mutate({ action: "reject", billingCustomer: null })}>Rechazar Comercial</Button></> : null}{canTech ? <><Button disabled={!canTechAct || techM.isPending} onClick={() => techM.mutate({ action: "approve" })}>{techM.isPending ? "Procesando..." : "Aprobar Técnica"}</Button><Button variant="danger" disabled={!canTechAct || techM.isPending} onClick={() => techM.mutate({ action: "reject" })}>Rechazar Técnica</Button></> : null}</div>{commercialM.isError ? <div style={{ color: "#d93025", fontSize: 13, marginTop: 10 }}>{commercialM.error.message}</div> : null}{techM.isError ? <div style={{ color: "#d93025", fontSize: 13, marginTop: 10 }}>{techM.error.message}</div> : null}</div></> : null}
           </>
         ) : null}
       </div>

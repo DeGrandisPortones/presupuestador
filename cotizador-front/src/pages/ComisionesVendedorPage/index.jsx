@@ -63,7 +63,7 @@ function ClaimInfoModal({ row, onClose }) {
         onClick={(e) => e.stopPropagation()}
       >
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
-          <div style={{ fontWeight: 900, fontSize: 18, color: "#111827" }}>Portón ya contado</div>
+          <div style={{ fontWeight: 900, fontSize: 18, color: "var(--dg-text)" }}>Portón ya contado</div>
           <Button variant="ghost" onClick={onClose}>Cerrar</Button>
         </div>
         <div className="muted" style={{ fontSize: 13, marginTop: 8, marginBottom: 10 }}>
@@ -110,7 +110,7 @@ function ComisionDetalleModal({ sellerName, invoices, onClose, onShowClaim }) {
       >
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
           <div>
-            <div style={{ fontWeight: 900, fontSize: 20, color: "#111827" }}>Facturas — {sellerName}</div>
+            <div style={{ fontWeight: 900, fontSize: 20, color: "var(--dg-text)" }}>Facturas — {sellerName}</div>
             <div className="muted" style={{ fontSize: 13, marginTop: 2 }}>
               {portonCount} portón(es) · {invoices.length} comprobante(s)
             </div>
@@ -153,7 +153,7 @@ function ComisionDetalleModal({ sellerName, invoices, onClose, onShowClaim }) {
                         tabIndex={0}
                         onClick={() => onShowClaim(inv)}
                         onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") onShowClaim(inv); }}
-                        style={{ background: "#fff", color: "#2563eb", border: "1px solid #2563eb", borderRadius: 999, padding: "2px 10px", fontWeight: 700, fontSize: 12, cursor: "pointer" }}
+                        style={{ background: "var(--dg-card)", color: "#2563eb", border: "1px solid #2563eb", borderRadius: 999, padding: "2px 10px", fontWeight: 700, fontSize: 12, cursor: "pointer" }}
                       >
                         Ver {docPrefixLabel(inv.claimed_by)}
                       </span>
@@ -183,7 +183,7 @@ function StatCard({ label, value, accent }) {
         border: "1px solid #eee",
         borderRadius: 14,
         padding: 18,
-        background: accent ? "rgba(1,163,159,0.06)" : "#fff",
+        background: accent ? "rgba(1,163,159,0.06)" : "var(--dg-card)",
       }}
     >
       <div className="muted" style={{ fontSize: 13 }}>{label}</div>

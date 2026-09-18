@@ -135,7 +135,7 @@ export default function AptoKgProductSectionFilterPatch() {
 
   return (
     <div className="container" style={{ paddingTop: 14 }}>
-      <div className="card" style={{ border: "1px solid #dbeafe", background: "#f8fbff" }}>
+      <div className="card" style={{ border: "1px solid var(--dg-border)", background: "var(--dg-tint)" }}>
         <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "end" }}>
           <div>
             <div style={{ fontWeight: 900, marginBottom: 6 }}>Filtro de productos para kg/m² apto para revestir</div>
@@ -146,7 +146,7 @@ export default function AptoKgProductSectionFilterPatch() {
             <select
               value={selectedSectionId}
               onChange={(event) => setSelectedSectionId(event.target.value)}
-              style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid #ddd", background: "#fff" }}
+              style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid var(--dg-border)", background: "var(--dg-card)", color: "var(--dg-text)" }}
             >
               <option value="">Todas las secciones</option>
               {sections.map((section) => (
