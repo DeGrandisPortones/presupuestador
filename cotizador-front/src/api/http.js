@@ -30,7 +30,12 @@ http.interceptors.response.use(
       err?.response?.data?.message ||
       err?.message ||
       "Error HTTP";
-    return Promise.reject(new Error(msg));
+    // Se conserva el status HTTP en el Error (ej. 413 de un body-parser que
+    // rechaza el JSON por tamaño, que no trae `data.error`) para que quien
+    // llama pueda dar un mensaje específico para ese caso puntual.
+    const normalized = new Error(msg);
+    normalized.status = err?.response?.status;
+    return Promise.reject(normalized);
   }
 );
 

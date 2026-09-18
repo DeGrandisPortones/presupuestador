@@ -7,6 +7,8 @@ import { getTechnicalConsultUnreadSummary } from "../api/technicalConsults.js";
 import { getCommercialConsultUnreadSummary } from "../api/commercialConsults.js";
 import AptoKgProductSectionFilterPatch from "../components/AptoKgProductSectionFilterPatch.jsx";
 import PendingClientAcceptanceModal from "../components/PendingClientAcceptanceModal.jsx";
+import TicketWidget from "../components/TicketWidget.jsx";
+import MeetMeetingReminderWatcher from "../components/MeetMeetingReminderWatcher.jsx";
 
 const DROPDOWN_ITEM_STYLE = {
   display: "block",
@@ -355,23 +357,30 @@ export default function AppLayout() {
         className={`card app-header${user?.is_vendedor && !isDevEnv ? " app-header--vendedor" : ""}`}
         style={{ borderRadius: 0, ...(isDevEnv && { background: "#7a1a1a" }) }}
       >
-        <div className="container" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: 0, gap: 16, position: "relative" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+        <div className="container" style={{ display: "flex", alignItems: "center", padding: 0, gap: 16 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 16, flexShrink: 0 }}>
             <img className="brand-logo" src="/brands/dflex.png" alt="Dflex" />
           </div>
 
-          {user ? (
-            <div style={{
-              position: "absolute", left: "50%", top: "50%", transform: "translate(-50%, -50%)",
-              background: "#fff", color: "#111", borderRadius: 999,
-              padding: "10px 24px", fontSize: 17, fontWeight: 800,
-              boxShadow: "0 2px 10px rgba(0,0,0,0.18)", whiteSpace: "nowrap",
-            }}>
-              {user.username} - {roleText}
-            </div>
-          ) : null}
+          <div style={{ flex: 1, minWidth: 0, display: "flex", justifyContent: "center" }}>
+            {user ? (
+              <div
+                title={`${user.username} - ${roleText}`}
+                style={{
+                  background: "#fff", color: "#111", borderRadius: 999,
+                  padding: "10px 24px", fontSize: 17, fontWeight: 800,
+                  boxShadow: "0 2px 10px rgba(0,0,0,0.18)",
+                  whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+                  maxWidth: "100%",
+                }}
+              >
+                {user.username} - {roleText}
+              </div>
+            ) : null}
+          </div>
 
-          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 12, flexShrink: 0 }}>
+            <TicketWidget />
             <TechnicalConsultHeaderButton />
             <CommercialConsultHeaderButton />
             <OdooStatusBadge />
@@ -411,6 +420,7 @@ export default function AppLayout() {
 
       <AptoKgProductSectionFilterPatch />
       <PendingClientAcceptanceModal />
+      {isSuperuser || user?.is_rev_tecnica ? <MeetMeetingReminderWatcher /> : null}
       <Outlet />
       </div>
     </div>

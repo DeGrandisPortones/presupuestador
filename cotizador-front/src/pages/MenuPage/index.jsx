@@ -153,6 +153,7 @@ export default function MenuPage() {
         {showTechInbox && (
           <>
             <MenuTile title="Aprobaciones Técnicas" buttonText="Abrir menú" onClick={() => navigate("/aprobacion/tecnica/menu")} iconSrc="/menu-icons/aprobacion-portones.png" />
+            <MenuTile title="Calendario de Meet Servicio Técnico" buttonText="Abrir calendario" onClick={() => navigate("/servicio-tecnico/calendario-meet")} icon="" />
           </>
         )}
         {showPortonesEstadoStandalone && (

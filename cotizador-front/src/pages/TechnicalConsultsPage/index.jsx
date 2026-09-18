@@ -4,6 +4,7 @@ import { useSearchParams } from "react-router-dom";
 
 import Button from "../../ui/Button.jsx";
 import Input from "../../ui/Input.jsx";
+import PendingMeetingsCard from "../../components/PendingMeetingsCard.jsx";
 import { useAuthStore } from "../../domain/auth/store.js";
 import {
   addTechnicalConsultMessage,
@@ -530,6 +531,8 @@ export default function TechnicalConsultsPage() {
   return (
     <div className="container">
       <div className="spacer" />
+
+      {isTechnical ? <PendingMeetingsCard /> : null}
 
       <div className="card">
         <h2 style={{ marginTop: 0, marginBottom: 6 }}>{headerText}</h2>
